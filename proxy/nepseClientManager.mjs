@@ -72,11 +72,14 @@ function saveSnapshot(data) {
   try {
     const dir = path.dirname(SNAPSHOT_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(SNAPSHOT_FILE, JSON.stringify({
+    const existing = loadSnapshot() || {};
+    const merged = {
+      ...existing,
+      ...data,
       timestamp: Date.now(),
-      savedAt: new Date().toISOString(),
-      ...data
-    }, null, 2), 'utf8');
+      savedAt: new Date().toISOString()
+    };
+    fs.writeFileSync(SNAPSHOT_FILE, JSON.stringify(merged, null, 2), 'utf8');
   } catch (err) {
     console.warn('[nepse-manager] Failed to persist market snapshot:', err.message);
   }
@@ -117,6 +120,31 @@ export class UnifiedNepseClient {
       lastAuthError: null,
     };
 
+    // Resilient Circuit Breaker for NEPSE NOTS (nepalstock.com)
+    // Cloud datacenters (Render, AWS, DigitalOcean) are geo-blocked by NEPSE firewalls.
+    // When NOTS is unreachable, fast-trip the breaker to prevent 15-second cascading request hangs.
+    this.circuitBreaker = {
+      failures: 0,
+      maxFailures: 2,
+      trippedUntil: 0,
+      cooldownMs: 3 * 60 * 1000, // 3 minutes cooldown before probing NOTS again
+      isTripped: () => Date.now() < this.circuitBreaker.trippedUntil,
+      recordFailure: () => {
+        this.circuitBreaker.failures++;
+        if (this.circuitBreaker.failures >= this.circuitBreaker.maxFailures && !this.circuitBreaker.isTripped()) {
+          this.circuitBreaker.trippedUntil = Date.now() + this.circuitBreaker.cooldownMs;
+          console.warn(`[nepse-manager] ⚡ Circuit Breaker TRIPPED: NEPSE NOTS exchange unreachable (cloud geo-block or outage). Fast-bypassing NOTS for 3 minutes to serve instant Tier 2/3 fallbacks.`);
+        }
+      },
+      recordSuccess: () => {
+        if (this.circuitBreaker.failures > 0) {
+          this.circuitBreaker.failures = 0;
+          this.circuitBreaker.trippedUntil = 0;
+          console.log('[nepse-manager] ⚡ Circuit Breaker CLOSED: NEPSE NOTS exchange connectivity restored.');
+        }
+      }
+    };
+
     this.memoryCache = new Map();
     this.cachedKeymap = null;
     this.cachedKeymapTime = 0;
@@ -140,11 +168,15 @@ export class UnifiedNepseClient {
     const transientCodes = ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED', 'EAI_AGAIN', 'EPIPE', 'UND_ERR_CONNECT_TIMEOUT'];
     if (transientCodes.includes(code)) return true;
     if ([429, 502, 503, 504].includes(status)) return true;
-    if (err.message && (
-      err.message.includes('timeout') ||
-      err.message.includes('socket hang up') ||
-      err.message.includes('Network error')
-    )) {
+    const msg = (err.message || '').toLowerCase();
+    if (
+      msg.includes('timeout') ||
+      msg.includes('socket hang up') ||
+      msg.includes('network error') ||
+      msg.includes('fetch failed') ||
+      msg.includes('network_err') ||
+      msg.includes('aborted')
+    ) {
       return true;
     }
     return false;
@@ -167,14 +199,20 @@ export class UnifiedNepseClient {
   /**
    * Executes an async operation with exponential backoff for transient errors only.
    * Auth errors fail immediately to avoid triggering IP rate limits.
+   * Circuit breaker immediately fast-fails to prevent hanging cloud servers.
    */
-  async executeWithBackoff(fn, operationName, maxRetries = 2, baseDelayMs = 500) {
+  async executeWithBackoff(fn, operationName, maxRetries = 1, baseDelayMs = 400) {
+    if (this.circuitBreaker.isTripped()) {
+      throw new Error(`Circuit breaker open for NEPSE NOTS: ${operationName} fast-bypassed`);
+    }
+
     let attempt = 0;
     const startTime = Date.now();
 
     while (attempt <= maxRetries) {
       try {
         const result = await fn();
+        this.circuitBreaker.recordSuccess();
         recordDiagnosticLog({
           operation: operationName,
           attempt: attempt + 1,
@@ -192,6 +230,10 @@ export class UnifiedNepseClient {
         const isAuthErr = this.isAuthenticationError(err);
         const isTransient = this.isTransientNetworkError(err);
 
+        if (isTransient || httpStatus === 'NETWORK_ERR') {
+          this.circuitBreaker.recordFailure();
+        }
+
         recordDiagnosticLog({
           operation: operationName,
           attempt,
@@ -204,21 +246,16 @@ export class UnifiedNepseClient {
           latencyMs: Date.now() - startTime,
         });
 
-        console.error(`[nepse-manager] [${operationName}] Attempt ${attempt} failed:`, {
-          httpStatus,
-          isAuthError: isAuthErr,
-          isTransient,
-          error: err.message,
-          responsePreview: responseBodySnippet,
-        });
+        if (!this.circuitBreaker.isTripped()) {
+          console.warn(`[nepse-manager] [${operationName}] Attempt ${attempt} failed: ${err.message} (${httpStatus})`);
+        }
 
-        // Do NOT retry authentication or client validation errors
-        if (isAuthErr || !isTransient || attempt > maxRetries) {
+        // Do NOT retry authentication, client validation, or when circuit breaker trips
+        if (isAuthErr || !isTransient || attempt > maxRetries || this.circuitBreaker.isTripped()) {
           throw err;
         }
 
-        const delay = Math.min(baseDelayMs * Math.pow(2, attempt - 1), 4000) + Math.floor(Math.random() * 200);
-        console.warn(`[nepse-manager] [${operationName}] Retrying transient error in ${delay}ms...`);
+        const delay = Math.min(baseDelayMs * Math.pow(2, attempt - 1), 2000) + Math.floor(Math.random() * 150);
         await new Promise(res => setTimeout(res, delay));
       }
     }
@@ -290,6 +327,20 @@ export class UnifiedNepseClient {
    * Retrieves official market status with dual-engine fallback
    */
   async getMarketStatus() {
+    if (this.circuitBreaker.isTripped()) {
+      try {
+        const cal = getDetailedMarketStatus();
+        return {
+          isOpen: cal.isOpen ? 'OPEN' : 'CLOSE',
+          asOf: new Date().toISOString(),
+          id: 80,
+          fallback: true,
+          calendarStatus: cal
+        };
+      } catch (_) {}
+      return { isOpen: 'CLOSE', asOf: new Date().toISOString(), id: 80, fallback: true };
+    }
+
     // 1. Try Nepseman WASM first
     try {
       const res = await this.executeWithBackoff(() => this.nepseman.marketStatus(), 'getMarketStatus (Nepseman)');
@@ -327,6 +378,13 @@ export class UnifiedNepseClient {
    * Retrieves live NEPSE and sub-indices
    */
   async getNepseIndex() {
+    if (this.circuitBreaker.isTripped()) {
+      if (this.lastKnownSnapshot.indices?.length > 0) {
+        return this.lastKnownSnapshot.indices;
+      }
+      return [];
+    }
+
     // 1. Try Nepseman WASM
     try {
       const idx = await this.executeWithBackoff(() => this.nepseman.nepseIndex(), 'getNepseIndex (Nepseman)');
@@ -362,6 +420,10 @@ export class UnifiedNepseClient {
    * Retrieves sub-indices
    */
   async getNepseSubIndices() {
+    if (this.circuitBreaker.isTripped()) {
+      return [];
+    }
+
     // 1. Try Nepseman
     try {
       const sub = await this.executeWithBackoff(() => this.nepseman.nepseSubindices(), 'getNepseSubIndices (Nepseman)');
@@ -382,6 +444,13 @@ export class UnifiedNepseClient {
    * Retrieves overall market summary
    */
   async getMarketSummary() {
+    if (this.circuitBreaker.isTripped()) {
+      if (this.lastKnownSnapshot.summary) {
+        return this.lastKnownSnapshot.summary;
+      }
+      return null;
+    }
+
     // 1. Try Nepseman
     try {
       const summary = await this.executeWithBackoff(() => this.nepseman.marketSummary(), 'getMarketSummary (Nepseman)');
@@ -551,6 +620,27 @@ export class UnifiedNepseClient {
   async getLiveOrClosingMarket() {
     const status = await this.getMarketStatus();
     const isOpen = status?.isOpen === 'OPEN';
+
+    if (this.circuitBreaker.isTripped()) {
+      if (this.lastKnownSnapshot.todayPrices?.length > 0) {
+        return {
+          isOpen,
+          marketStatus: isOpen ? 'OPEN' : 'CLOSED',
+          data: this.lastKnownSnapshot.todayPrices,
+          source: 'LAST_KNOWN_OFFICIAL_SNAPSHOT',
+          asOf: status?.asOf || new Date().toISOString(),
+          isStale: true,
+          message: 'Serving last verified market snapshot.'
+        };
+      }
+      return {
+        isOpen,
+        marketStatus: isOpen ? 'OPEN' : 'CLOSED',
+        data: [],
+        source: 'EMPTY',
+        asOf: status?.asOf || new Date().toISOString()
+      };
+    }
 
     // 1. Primary: Nepseman todayPrice (Has continuous real-time ticks during open hours, and official closing records when closed)
     try {
@@ -923,9 +1013,14 @@ export class UnifiedNepseClient {
   getDiagnostics() {
     return {
       activeEngine: this.activeEngine,
+      circuitBreaker: {
+        isTripped: this.circuitBreaker.isTripped(),
+        failures: this.circuitBreaker.failures,
+        trippedUntil: this.circuitBreaker.trippedUntil ? new Date(this.circuitBreaker.trippedUntil).toISOString() : null,
+      },
       authStatus: this.authStatus,
       tlsVerification: 'disabled (insecure cert bypass active)',
-      lastKnownSnapshotAvailable: !!(this.lastKnownSnapshot.indices || this.lastKnownSnapshot.todayPrices?.length),
+      lastKnownSnapshotAvailable: !!(this.lastKnownSnapshot.indices?.length || this.lastKnownSnapshot.todayPrices?.length || this.lastKnownSnapshot.summary),
       recentLogs: diagnosticLogs.slice(0, 50),
     };
   }

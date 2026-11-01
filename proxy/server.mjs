@@ -1229,7 +1229,7 @@ export async function getMarketIndicesInternal(targetDate = '') {
   // Fast Provider 2: Direct Live Feed via NepaliPaisa (real-time exchange quotes)
   try {
     const npCtrl = new AbortController();
-    const npTimer = setTimeout(() => npCtrl.abort(), 4000);
+    const npTimer = setTimeout(() => npCtrl.abort(), 6000);
     const npRes = await fetch('https://www.nepalipaisa.com/api/GetIndexLive', {
       signal: npCtrl.signal,
       headers: {
@@ -1331,7 +1331,7 @@ export async function getMarketIndicesInternal(targetDate = '') {
   // Fallback 1.5: Direct NOTS Intraday Graph + MeroLagani Live Summary
   try {
     const [rawGraph, meroRes] = await Promise.allSettled([
-      nepseClient.getNepseIndexDailyGraph(),
+      quickNots(nepseClient.getNepseIndexDailyGraph(), 3000),
       axios.get('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary', { headers: HEADERS, timeout: 6000 })
     ]);
     const graphData = rawGraph.status === 'fulfilled' && Array.isArray(rawGraph.value) ? rawGraph.value : [];
@@ -13086,12 +13086,19 @@ app.listen(PORT, '0.0.0.0', async () => {
         if (db) {
           const summaryRow = db.prepare('SELECT COUNT(DISTINCT trade_date) as cnt FROM daily_stock_summary').get();
           if (!summaryRow || summaryRow.cnt < 200) {
-            console.log('[startup-warmup] daily_stock_summary lacks 1-year history. Fetching nepse-1year-market-history.json.gz from cloud vault...');
+            console.log('[startup-warmup] daily_stock_summary lacks 1-year history. Hydrating 1-year market history...');
             try {
-              const histUrl = `https://github.com/${getGitHubRepo()}/releases/download/floorsheets-2026/nepse-1year-market-history.json.gz`;
-              const histRes = await axios.get(histUrl, { responseType: 'arraybuffer', timeout: 20000 });
-              if (histRes.data) {
-                const unzipped = zlib.gunzipSync(Buffer.from(histRes.data));
+              let unzipped = null;
+              const localArchive = path.join(__dirname, 'data', 'nepse-1year-market-history.json.gz');
+              if (fs.existsSync(localArchive)) {
+                unzipped = zlib.gunzipSync(fs.readFileSync(localArchive));
+              } else {
+                const histUrl = `https://github.com/${getGitHubRepo()}/releases/download/floorsheets-2026/nepse-1year-market-history.json.gz`;
+                const histRes = await axios.get(histUrl, { responseType: 'arraybuffer', timeout: 20000 });
+                if (histRes.data) unzipped = zlib.gunzipSync(Buffer.from(histRes.data));
+              }
+
+              if (unzipped) {
                 const parsed = JSON.parse(unzipped.toString('utf8'));
                 if (parsed.stocks) {
                   const insertStmt = db.prepare(`
@@ -13100,15 +13107,19 @@ app.listen(PORT, '0.0.0.0', async () => {
                       is_quarantined, calendar_status, tape_scope, source
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'VALID', 'FULL_TAPE', 'CHUKUL_1YEAR_VAULT')
                   `);
-                  const tx = db.transaction(() => {
-                    for (const [sym, candles] of Object.entries(parsed.stocks)) {
-                      if (sym === 'NEPSE') continue;
-                      for (const c of candles) {
-                        insertStmt.run(c.d, sym, c.o, c.h, c.l, c.c, c.v, c.a);
+                  const symbols = Object.keys(parsed.stocks).filter(s => s !== 'NEPSE');
+                  for (let i = 0; i < symbols.length; i += 30) {
+                    const batchSyms = symbols.slice(i, i + 30);
+                    const tx = db.transaction(() => {
+                      for (const sym of batchSyms) {
+                        for (const c of parsed.stocks[sym]) {
+                          insertStmt.run(c.d, sym, c.o, c.h, c.l, c.c, c.v, c.a);
+                        }
                       }
-                    }
-                  });
-                  tx();
+                    });
+                    tx();
+                    await new Promise(r => setImmediate(r));
+                  }
                   console.log(`[startup-warmup] ✅ Hydrated 1-year market history (${parsed.totalCandles} candles) into daily_stock_summary!`);
                 }
               }
