@@ -8,8 +8,8 @@
 // across screeners, radar tabs, and dashboard scans.
 
 import { idbGet, idbSet } from './indexedDb.js';
-import latestBrokerMatrix from '../data/broker_matrix_latest.json';
-import latestFundamentals from '../data/nepse_fundamentals_latest.json';
+import latestBrokerMatrix from '../data/broker_matrix_latest.json' with { type: 'json' };
+import latestFundamentals from '../data/nepse_fundamentals_latest.json' with { type: 'json' };
 
 // Universal in-memory cache maps
 const memHistCache = new Map();
