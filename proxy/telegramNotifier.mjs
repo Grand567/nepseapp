@@ -104,81 +104,62 @@ export function getTelegramStatus() {
 async function callTelegramApi(endpoint, payload = null) {
   const dataStr = payload ? JSON.stringify(payload) : null;
 
-  // Primary Path: Direct HTTPS with SNI to bypass Nepal DNS poisoning instantly
-  const directPromise = new Promise((resolve, reject) => {
-    const req = https.request({
-      host: '149.154.166.110',
-      port: 443,
-      path: endpoint,
-      method: payload ? 'POST' : 'GET',
-      headers: {
-        'Host': 'api.telegram.org',
-        'Content-Type': 'application/json',
-        ...(dataStr ? { 'Content-Length': Buffer.byteLength(dataStr) } : {})
-      },
-      servername: 'api.telegram.org',
-      timeout: 6000
-    }, (res) => {
-      let buf = '';
-      res.on('data', chunk => buf += chunk);
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(buf));
-        } catch (_) {
-          resolve({ ok: false, description: buf || 'Invalid response from Telegram' });
-        }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Telegram direct connection timed out')); });
-    if (dataStr) req.write(dataStr);
-    req.end();
-  });
-
+  // Primary Path: Standard HTTPS fetch to api.telegram.org
   try {
-    return await directPromise;
-  } catch (_) {
-    // Secondary Failover: Standard fetch with abort controller
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 7000);
+    const res = await fetch(`https://api.telegram.org${endpoint}`, {
+      method: payload ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload ? JSON.stringify(payload) : undefined,
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    return await res.json();
+  } catch (fetchErr) {
+    // Secondary Failover: Direct IP with SNI to bypass ISP DNS blackholes
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(`https://api.telegram.org${endpoint}`, {
-        method: payload ? 'POST' : 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        body: payload ? JSON.stringify(payload) : undefined,
-        signal: controller.signal
+      return await new Promise((resolve, reject) => {
+        const req = https.request({
+          host: '149.154.166.110',
+          port: 443,
+          path: endpoint,
+          method: payload ? 'POST' : 'GET',
+          headers: {
+            'Host': 'api.telegram.org',
+            'Content-Type': 'application/json',
+            ...(dataStr ? { 'Content-Length': Buffer.byteLength(dataStr) } : {})
+          },
+          servername: 'api.telegram.org',
+          timeout: 6000
+        }, (res) => {
+          let buf = '';
+          res.on('data', chunk => buf += chunk);
+          res.on('end', () => {
+            try {
+              resolve(JSON.parse(buf));
+            } catch (_) {
+              resolve({ ok: false, description: buf || 'Invalid response from Telegram' });
+            }
+          });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Telegram direct connection timed out')); });
+        if (dataStr) req.write(dataStr);
+        req.end();
       });
-      clearTimeout(timeout);
-      return await res.json();
-    } catch (err) {
-      return { ok: false, description: err.message || 'Telegram network failure' };
+    } catch (directErr) {
+      return { ok: false, description: directErr.message || fetchErr.message || 'Telegram network failure' };
     }
   }
 }
 
 /**
- * Smart Bot API router:
- * Automatically negotiates between Standard Production DC and Telegram Test DC.
- * If one returns 401 Unauthorized, automatically tries the other and saves preference.
+ * Standard Telegram Bot API caller (Production)
  */
 async function callBotApi(token, method, payload = null) {
-  const cfg = loadConfig();
-  const useTest = cfg.isTestServer;
-
-  const pathPrimary = useTest ? `/bot${token}/test/${method}` : `/bot${token}/${method}`;
-  let data = await callTelegramApi(pathPrimary, payload);
-
-  // If primary returns 401 or Unauthorized, auto-test the alternative environment
-  if (!data.ok && (data.error_code === 401 || data.description?.toLowerCase().includes('unauthorized'))) {
-    const pathAlt = useTest ? `/bot${token}/${method}` : `/bot${token}/test/${method}`;
-    const altData = await callTelegramApi(pathAlt, payload);
-    if (altData.ok) {
-      saveTelegramConfig({ botToken: token, isTestServer: !useTest });
-      return altData;
-    }
-  }
-
-  return data;
+  const endpoint = `/bot${token}/${method}`;
+  return await callTelegramApi(endpoint, payload);
 }
 
 /**
