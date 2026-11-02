@@ -71,7 +71,7 @@ export function Master100ProfitWorkstation({
 
   const cleanBotToken = (raw: string) => {
     if (!raw) return '';
-    return raw.trim().replace(/^bot/i, '').replace(/["']/g, '');
+    return raw.replace(/\s+/g, '').replace(/^bot/i, '').replace(/["']/g, '');
   };
 
   useEffect(() => {
@@ -2085,7 +2085,7 @@ export function Master100ProfitWorkstation({
                       placeholder={telegramStatus?.maskedToken ? `Saved: ${telegramStatus.maskedToken}` : "e.g. 7123456789:AAHq_xyz..."}
                       value={telegramToken}
                       onChange={(e) => {
-                        const val = e.target.value;
+                        const val = e.target.value.replace(/\s+/g, '');
                         setTelegramToken(val);
                         try { localStorage.setItem('drabyashree_telegram_token', val); } catch {}
                       }}

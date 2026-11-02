@@ -17,7 +17,7 @@ import stockTelemetryRouter from '../proxy/routes/stockTelemetryRoutes.mjs';
 import signalTrackRecordRouter from '../proxy/routes/signalTrackRecordRoutes.mjs';
 import radarRouter from '../proxy/routes/radarRoutes.js';
 import aiGuruRouter from '../proxy/routes/aiGuruRoutes.mjs';
-import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, fetchSymbolTradingDates, getBrokerName, BROKER_NAMES, getFullSessionFloorsheet, aggregateMarketFloorsheet, getMarketWideBrokerSummaryMap, getBrokerAllTimeTopHoldings } from '../proxy/brokerVault.mjs';
+import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, fetchSymbolTradingDates, getBrokerName, BROKER_NAMES, getFullSessionFloorsheet, aggregateMarketFloorsheet, getMarketWideBrokerSummaryMap, getBrokerAllTimeTopHoldings, getOrFetchAllTimeBrokerHoldings } from '../proxy/brokerVault.mjs';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from '../src/utils/nepseCalendar.js';
 import { 
   adToBs, 
@@ -2418,17 +2418,33 @@ app.get(['/api/market/broker-summary', '/api/broker-analysis/summary-map'], asyn
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 app.get('/api/broker-analysis/:symbol', async (req, res) => {
   const symbol = req.params.symbol.toUpperCase();
-  const days = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 365);
+  const rawDays = String(req.query.days || '').trim().toLowerCase();
+  const isAll = rawDays === 'all' || String(req.query.timeframe || '').trim().toLowerCase() === 'all';
+  const parsedDays = parseInt(rawDays, 10);
+  const days = isNaN(parsedDays) ? 30 : Math.min(Math.max(parsedDays, 1), 365);
   const date = String(req.query.date || '').trim();
   const fromDate = String(req.query.fromDate || '').trim();
   const toDate = String(req.query.toDate || '').trim();
   const refresh = req.query.refresh === 'true';
 
-  const cacheKey = `broker-analysis-${symbol}-${days}-${date}-${fromDate}-${toDate}`;
+  const cacheKey = `broker-analysis-${symbol}-${isAll ? 'all' : days}-${date}-${fromDate}-${toDate}`;
   if (!refresh) {
     const cached = getCache(cacheKey);
     if (cached) {
       return res.json({ success: true, data: cached, cached: true });
+    }
+  }
+
+  // Tier 0: All-Time Broker Holdings ("Till Now" / Cumulative Retention across history)
+  if (isAll) {
+    try {
+      const allTimeData = await getOrFetchAllTimeBrokerHoldings(symbol, { refresh, date });
+      if (allTimeData && (Array.isArray(allTimeData.topHoldings) && allTimeData.topHoldings.length > 0 || Array.isArray(allTimeData.brokers) && allTimeData.brokers.length > 0)) {
+        setCache(cacheKey, allTimeData, 15 * 60 * 1000);
+        return res.json({ success: true, data: allTimeData, source: 'broker_vault_alltime' });
+      }
+    } catch (allErr) {
+      console.warn(`[broker-analysis] All-time fetch error for ${symbol}:`, allErr.message);
     }
   }
 
@@ -3931,6 +3947,26 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
     // 1. Primary for 1D Session: Aggregate from 100% authentic market floorsheet transactions
     if (days === 1) {
       try {
+        // Fast path: if requested date matches broker_matrix_latest.json, return immediately!
+        const matrixDirs = [
+          path.join(process.cwd(), 'src', 'data'),
+          path.join(process.cwd(), 'proxy', 'data'),
+          path.join(__dirname, 'data'),
+          path.join(process.cwd(), 'data')
+        ];
+        for (const mDir of matrixDirs) {
+          const mFile = path.join(mDir, 'broker_matrix_latest.json');
+          if (fs.existsSync(mFile)) {
+            try {
+              const parsed = JSON.parse(fs.readFileSync(mFile, 'utf8'));
+              if (parsed?.matrix?.length > 0 && (!businessDate || parsed.businessDate === businessDate)) {
+                setCache(cacheKey, parsed, 5 * 60 * 1000);
+                return res.json({ success: true, data: parsed, source: 'broker_matrix_latest_snapshot' });
+              }
+            } catch (_) {}
+          }
+        }
+
         const fullTrades = await getFullSessionFloorsheet(businessDate);
         if (Array.isArray(fullTrades) && fullTrades.length > 0) {
           const aggData = aggregateMarketFloorsheet(fullTrades, businessDate || fullTrades[0]?.businessDate);
@@ -4073,17 +4109,67 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
 app.get(['/api/smart-money/broker-holdings/:brokerId', '/api/broker-holdings/:brokerId'], async (req, res) => {
   const brokerId = String(req.params.brokerId || '').replace(/^0+/, '').trim();
   if (!brokerId) return res.status(400).json({ success: false, error: 'Invalid broker id' });
-  const cacheKey = 'broker-alltime-holdings-' + brokerId;
+  const dateStr = String(req.query.date || '').trim();
+  const cacheKey = 'broker-alltime-holdings-' + brokerId + (dateStr ? '_' + dateStr : '');
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: { success: true, data: cached, ...cached }, cached: true });
 
   try {
-    const data = getBrokerAllTimeTopHoldings(brokerId);
-    if (data) {
+    const data = getBrokerAllTimeTopHoldings(brokerId, dateStr);
+    if (data && Array.isArray(data.topHoldings) && data.topHoldings.length > 0) {
       setCache(cacheKey, data, 60 * 60 * 1000);
       return res.json({ success: true, data: { success: true, data, ...data }, source: 'daily_broker_ledger' });
     }
-    return res.json({ success: true, data: { brokerId, brokerName: `Broker #${brokerId}`, topHoldings: [], totalSharesHeld: 0 }, source: 'empty_fallback' });
+    // Fallback: check broker_matrix_latest.json for this broker's scrips
+    const matrixDirs = [
+      path.join(process.cwd(), 'src', 'data'),
+      path.join(process.cwd(), 'proxy', 'data'),
+      path.join(__dirname, 'data'),
+      path.join(process.cwd(), 'data')
+    ];
+    for (const mDir of matrixDirs) {
+      const mFile = path.join(mDir, 'broker_matrix_latest.json');
+      if (fs.existsSync(mFile)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(mFile, 'utf8'));
+          const fBroker = (parsed.matrix || []).find(b => String(b.broker || '').replace(/^0+/, '') === brokerId);
+          if (fBroker) {
+            const scripsList = Array.isArray(fBroker.scrips) ? fBroker.scrips : [];
+            const topHoldings = scripsList
+              .filter(s => (s.buyQty || s.buy || 0) > (s.sellQty || s.sell || 0))
+              .sort((a, b) => ((b.buy || 0) - (b.sell || 0)) - ((a.buy || 0) - (a.sell || 0)))
+              .slice(0, 25)
+              .map((s, idx) => ({
+                rank: idx + 1,
+                symbol: s.symbol,
+                brokerId,
+                brokerName: fBroker.brokerName || `Broker #${brokerId}`,
+                cumHoldQty: s.netQty || s.buyQty || 0,
+                netQty: s.netQty || s.buyQty || 0,
+                totalBuyVol: s.buyQty || 0,
+                totalSellVol: s.sellQty || 0,
+                avgBuyRate: s.avgBuyRate || 0,
+                avgSellRate: s.avgSellRate || 0,
+                retentionPct: s.buyQty ? Math.round(((s.buyQty - (s.sellQty || 0)) / s.buyQty) * 100) : 100,
+                totalBuyAmt: s.buy || 0,
+                totalSellAmt: s.sell || 0,
+                netAmt: (s.buy || 0) - (s.sell || 0),
+                activeSessions: 1
+              }));
+            const fallbackData = {
+              brokerId,
+              brokerName: fBroker.brokerName || `Broker #${brokerId}`,
+              totalHoldingsCount: topHoldings.length,
+              totalSharesHeld: topHoldings.reduce((sum, h) => sum + (h.cumHoldQty || 0), 0),
+              topHoldings
+            };
+            setCache(cacheKey, fallbackData, 30 * 60 * 1000);
+            return res.json({ success: true, data: { success: true, data: fallbackData, ...fallbackData }, source: 'broker_matrix_snapshot' });
+          }
+        } catch (_) {}
+      }
+    }
+    return res.json({ success: true, data: { brokerId, brokerName: getBrokerName(brokerId) || `Broker #${brokerId}`, topHoldings: [], totalSharesHeld: 0 }, source: 'empty_fallback' });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }

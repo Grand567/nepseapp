@@ -47,7 +47,6 @@ audit_screenshots/
 proxy/data/daily_floorsheets/*.json
 proxy/data/daily_floorsheets/*.json.gz
 !proxy/data/daily_floorsheets/archive_index.json
-src/data/broker_matrix_latest.json
 *.db
 *.db-shm
 *.db-wal

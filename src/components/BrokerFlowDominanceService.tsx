@@ -139,14 +139,14 @@ export function BrokerFlowDominanceService({
   const [sessionDateFilter, setSessionDateFilter] = useState(selectedDate || date || '');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(!latestBrokerMatrix);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [mobileView, setMobileView] = useState<'cards' | 'table'>('cards');
   const [smartMoneyFilter, setSmartMoneyFilter] = useState<'ALL' | 'ACCUMULATION' | 'TRAP' | 'RETAIL'>('ALL');
   const [stocks, setStocks] = useState<any[]>([]);
   const [floorsheet, setFloorsheet] = useState<any[]>([]);
-  const [heatmapData, setHeatmapData] = useState<any>(null);
+  const [heatmapData, setHeatmapData] = useState<any>(() => latestBrokerMatrix || null);
   const [fetchedDates, setFetchedDates] = useState<string[]>([]);
   const [selectedBrokerModal, setSelectedBrokerModal] = useState<BrokerStat | null>(null);
   const [selectedTop10BrokerId, setSelectedTop10BrokerId] = useState<string>('58');
@@ -381,8 +381,8 @@ export function BrokerFlowDominanceService({
     if (!targetId) return;
 
     const effDate = asOfDate !== undefined ? asOfDate : (sessionDateFilter || '');
-    // Only use seed fallback when querying all-time (effDate is empty), so historical query doesn't flash today's seed!
-    const seed = !effDate ? (allTimeBrokerHoldingsSeed as Record<string, any>)?.[targetId] : null;
+    // Use seed fallback so broker holdings render instantly (0ms) without waiting for network
+    const seed = (allTimeBrokerHoldingsSeed as Record<string, any>)?.[targetId] || null;
     if (seed && (!brokerRetentionData || String(brokerRetentionData.brokerId || '').replace(/^0+/, '') !== targetId.replace(/^0+/, ''))) {
       setBrokerRetentionData(seed);
     }
@@ -462,6 +462,40 @@ export function BrokerFlowDominanceService({
           : (res && (Array.isArray(res.brokers) || Array.isArray(res.allBrokers) || res.symbol))
             ? res
             : (res?.data || res);
+
+      // Fallback: If network analysis returned nothing, synthesize retention directly from heatmapData scrips
+      if (!payload && heatmapData?.matrix) {
+        const brokersWithScrip: any[] = [];
+        heatmapData.matrix.forEach((b: any) => {
+          const scrips = Array.isArray(b.scrips) ? b.scrips : [];
+          const match = scrips.find((s: any) => String(s.symbol || '').toUpperCase() === targetSym);
+          if (match && ((match.buyQty || match.buy || 0) > 0 || (match.sellQty || match.sell || 0) > 0)) {
+            const netKitta = Number(match.netQty || match.buyQty || 0);
+            brokersWithScrip.push({
+              id: String(b.broker || b.id || ''),
+              brokerId: String(b.broker || b.id || ''),
+              brokerName: b.brokerName || `Broker #${b.broker}`,
+              netQty: netKitta,
+              holdQty: netKitta,
+              totalBuyVol: Number(match.buyQty || 0),
+              totalSellVol: Number(match.sellQty || 0),
+              avgBuyRate: Number(match.avgBuyRate || 0)
+            });
+          }
+        });
+        if (brokersWithScrip.length > 0) {
+          brokersWithScrip.sort((a, b) => b.netQty - a.netQty);
+          const totalHeld = brokersWithScrip.reduce((sum, b) => sum + Math.max(0, b.netQty), 0);
+          payload = {
+            symbol: targetSym,
+            totalSharesHeldTillNow: totalHeld,
+            topHoldings: brokersWithScrip.map(b => ({
+              ...b,
+              holdingSharePct: totalHeld > 0 ? Number(((Math.max(0, b.netQty) / totalHeld) * 100).toFixed(2)) : 0
+            }))
+          };
+        }
+      }
 
       if (payload) {
         // Guarantee topHoldings is always populated from positive net accumulators
@@ -588,20 +622,21 @@ export function BrokerFlowDominanceService({
     targetFrom = fromDate,
     targetTo = toDate
   ) => {
-    setLoading(true);
-    // When switching dates, reset previous heatmapData if dates don't match so stale date data is never displayed
-    if (targetDate && heatmapData?.businessDate && heatmapData.businessDate !== targetDate) {
-      setHeatmapData(null);
-    }
+    // Only show full loading spinner if we have zero data in memory
+    if (!heatmapData) setLoading(true);
+    setRefreshing(true);
+
     try {
       const days = DAYS_MAP[activeTf] || 1;
       const effDate = targetDate || sessionDate || formatNptDateIso(new Date());
-      const [liveDataRes, fsRes, hmRes, summaryMapRes] = await Promise.allSettled([
+
+      // Fetch lightweight broker heatmap and market live data first (ultra-fast, <200ms)
+      const [liveDataRes, hmRes, summaryMapRes] = await Promise.allSettled([
         loadNepseData(),
-        fetchRealFloorsheet(null, effDate, 1, 100000, { days, fromDate: targetFrom, toDate: targetTo }),
         fetchBrokerHeatmap({ days, date: effDate, fromDate: targetFrom, toDate: targetTo }),
         fetchMarketWideBrokerSummaryMap(days, { date: effDate })
       ]);
+
       if (liveDataRes.status === 'fulfilled') {
         const liveStocks = liveDataRes.value?.stocks || [];
         if (summaryMapRes.status === 'fulfilled' && summaryMapRes.value && typeof summaryMapRes.value === 'object') {
@@ -614,34 +649,40 @@ export function BrokerFlowDominanceService({
           setStocks(liveStocks);
         }
       }
-      if (fsRes.status === 'fulfilled') {
-        const fs = fsRes.value;
-        const fsData = Array.isArray(fs?.content)
-          ? fs.content
-          : Array.isArray(fs?.data)
-          ? fs.data
-          : Array.isArray(fs?.rows)
-          ? fs.rows
-          : Array.isArray(fs?.list)
-          ? fs.list
-          : Array.isArray(fs)
-          ? fs
-          : [];
-        setFloorsheet(fsData);
-      }
+
       const hmData = hmRes.status === 'fulfilled' ? (hmRes.value?.data || hmRes.value) : null;
       if (hmData && Array.isArray(hmData.matrix) && hmData.matrix.length > 0) {
         setHeatmapData(hmData);
-      } else if (!targetDate && latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
+      } else if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
+        // Safe fallback: never leave screen blank on network timeout
         setHeatmapData(latestBrokerMatrix);
       }
 
-      // Synchronously align broker retention and stock retention to the chosen date
+      // Fetch floorsheet sample for bilateral deals asynchronously in background (sane size: 250 rows instead of 100k)
+      fetchRealFloorsheet(null, effDate, 1, 250, { days, fromDate: targetFrom, toDate: targetTo })
+        .then((fs) => {
+          const fsData = Array.isArray(fs?.content)
+            ? fs.content
+            : Array.isArray(fs?.data)
+            ? fs.data
+            : Array.isArray(fs?.rows)
+            ? fs.rows
+            : Array.isArray(fs?.list)
+            ? fs.list
+            : Array.isArray(fs)
+            ? fs
+            : [];
+          if (fsData.length > 0) setFloorsheet(fsData);
+        })
+        .catch(() => {});
+
+      // Align broker retention and stock retention
       const retentionDate = targetDate || '';
       loadBrokerRetention(selectedRetentionBrokerId, retentionDate);
       loadStockRetention(selectedStockRetention, false, retentionDate);
     } catch (_) {}
     setLoading(false);
+    setRefreshing(false);
   };
 
   useEffect(() => {
@@ -1481,7 +1522,7 @@ export function BrokerFlowDominanceService({
     return brokerFlowList.find(b => String(b.brokerId || '').replace(/^0+/, '').trim() === normId) || brokerFlowList[0] || null;
   }, [brokerFlowList, selectedTop10BrokerId]);
 
-  if (loading) return <Spinner text="Aggregating Real-Time Institutional Broker Flow…" />;
+  if (loading && !heatmapData) return <Spinner text="Aggregating Real-Time Institutional Broker Flow…" />;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4 min-w-0 overflow-x-hidden">
