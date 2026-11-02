@@ -36,6 +36,14 @@ class RootErrorBoundary extends React.Component {
           <button
             onClick={() => {
               try { localStorage.clear(); } catch (_) {}
+              try { sessionStorage.clear(); } catch (_) {}
+              if (typeof window !== 'undefined' && 'caches' in window) {
+                try {
+                  caches.keys().then(names => {
+                    for (let name of names) caches.delete(name);
+                  });
+                } catch (_) {}
+              }
               window.location.reload();
             }}
             style={{

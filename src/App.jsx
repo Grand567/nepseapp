@@ -66,6 +66,18 @@ function AppInner() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(new Date());
 
+  // ── Core Market data state (declared early to prevent TDZ in event handlers) ──
+  const [stocks,       setStocks]       = useState(initialStocks);
+  const [indices,      setIndices]      = useState(defaultIndices);
+  // 'live' | 'closing' | 'yesterday' | 'offline'
+  const [apiStatus,    setApiStatus]    = useState(() => {
+    const s = getDetailedMarketStatus();
+    return s.isOpen ? 'live' : ((_cachedStocks && _cachedStocks.length > 0) ? 'yesterday' : 'offline');
+  });
+  const [marketStatus, setMarketStatus] = useState(() => getDetailedMarketStatus());
+  const [aiTargetStock, setAiTargetStock] = useState(null);
+  const liveStocksRef = useRef(initialStocks);
+
   // ── Tab Keep-Alive for Instant 0ms Switching ──
   const [visitedTabs, setVisitedTabs] = useState(() => new Set(['dashboard']));
 
@@ -341,19 +353,7 @@ function AppInner() {
     return () => clearTimeout(timer);
   }, []);
 
-  // ── Market data state ──
-  const [stocks,       setStocks]       = useState(initialStocks);
-  const [indices,      setIndices]      = useState(defaultIndices);
-  // 'live' | 'closing' | 'yesterday' | 'offline'
-  const [apiStatus,    setApiStatus]    = useState(() => {
-    const s = getDetailedMarketStatus();
-    return s.isOpen ? 'live' : ((_cachedStocks && _cachedStocks.length > 0) ? 'yesterday' : 'offline');
-  });
-  const [marketStatus, setMarketStatus] = useState(() => getDetailedMarketStatus());
-  const [aiTargetStock, setAiTargetStock] = useState(null);
 
-  // Real live data reference
-  const liveStocksRef = useRef(initialStocks);
 
   // ── Listen for Firebase auth state changes & sync cloud user profiles ──
   useEffect(() => {

@@ -1383,6 +1383,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   const [liveQuote, setLiveQuote] = useState(null);
   const [clockTime, setClockTime] = useState(() => getDetailedMarketStatus().nptTime);
   const [quarterlyReports, setQuarterlyReports] = useState([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState('');
+  const [ledgerTelemetry, setLedgerTelemetry] = useState(null);
 
   // Register mobile back gesture so Android back swipes close this modal smoothly
   useBackHandler(() => {
@@ -2789,10 +2792,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     return null;
   }, [qtyInput, priceInput, waccInput, calcMode, investorType, holdingPeriod, computeNepseRoundTripTrade]);
 
-  // AI State
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiResult, setAiResult] = useState('');
-  const [ledgerTelemetry, setLedgerTelemetry] = useState(null);
+
 
   // Auto-fetch SQLite ledger telemetry row for this stock (used by AI Guru Quantitative Card)
   useEffect(() => {
