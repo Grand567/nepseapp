@@ -11456,9 +11456,11 @@ app.get('/api/telegram/status', (req, res) => {
   }
 });
 
-app.post('/api/telegram/config', (req, res) => {
+app.all('/api/telegram/config', (req, res) => {
   try {
-    const { botToken, chatId, enabled } = req.body || {};
+    const botToken = req.body?.botToken || req.query?.botToken || req.query?.token;
+    const chatId = req.body?.chatId || req.query?.chatId || req.query?.chat;
+    const enabled = req.body?.enabled !== undefined ? Boolean(req.body.enabled) : (req.query?.enabled !== undefined ? req.query.enabled === 'true' : true);
     const result = saveTelegramConfig({ botToken, chatId, enabled });
     res.json({ success: result.success, message: result.success ? 'Telegram configuration saved successfully' : result.error });
   } catch (err) {
@@ -11466,9 +11468,10 @@ app.post('/api/telegram/config', (req, res) => {
   }
 });
 
-app.post('/api/telegram/test', async (req, res) => {
+app.all(['/api/telegram/test', '/api/telegram/test-ping'], async (req, res) => {
   try {
-    const { botToken, chatId } = req.body || {};
+    const botToken = req.body?.botToken || req.query?.botToken || req.query?.token || undefined;
+    const chatId = req.body?.chatId || req.query?.chatId || req.query?.chat || undefined;
     const result = await testTelegramConnection(botToken, chatId);
     res.json(result);
   } catch (err) {
@@ -11476,9 +11479,9 @@ app.post('/api/telegram/test', async (req, res) => {
   }
 });
 
-app.post('/api/telegram/detect-chat-id', async (req, res) => {
+app.all('/api/telegram/detect-chat-id', async (req, res) => {
   try {
-    const { botToken } = req.body || {};
+    const botToken = req.body?.botToken || req.query?.botToken || req.query?.token || undefined;
     const result = await autoDetectChatId(botToken);
     res.json(result);
   } catch (err) {
@@ -11486,11 +11489,11 @@ app.post('/api/telegram/detect-chat-id', async (req, res) => {
   }
 });
 
-app.post('/api/telegram/test-alert', async (req, res) => {
+app.all('/api/telegram/test-alert', async (req, res) => {
   try {
     const mockAlert = {
-      symbol: req.body?.symbol || 'HATHY',
-      ltp: Number(req.body?.ltp || 420),
+      symbol: req.body?.symbol || req.query?.symbol || 'HATHY',
+      ltp: Number(req.body?.ltp || req.query?.ltp || 420),
       buyZone: { low: 415, high: 422 },
       dominantBrokersText: 'Brokers 58, 45, 34',
       concentrationPct: 56,

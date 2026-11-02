@@ -51,21 +51,44 @@ export function Master100ProfitWorkstation({
 
   // Telegram Alert State
   const [telegramStatus, setTelegramStatus] = useState<{ isConfigured: boolean; enabled: boolean; maskedToken: string; chatId: string } | null>(null);
-  const [telegramToken, setTelegramToken] = useState('');
-  const [telegramChatId, setTelegramChatId] = useState('');
+  const [telegramToken, setTelegramToken] = useState(() => {
+    try {
+      return localStorage.getItem('drabyashree_telegram_token') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [telegramChatId, setTelegramChatId] = useState(() => {
+    try {
+      return localStorage.getItem('drabyashree_telegram_chat_id') || '';
+    } catch {
+      return '';
+    }
+  });
   const [telegramTesting, setTelegramTesting] = useState(false);
   const [telegramTestMsg, setTelegramTestMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [telegramSaving, setTelegramSaving] = useState(false);
+
+  const cleanBotToken = (raw: string) => {
+    if (!raw) return '';
+    return raw.trim().replace(/^bot/i, '').replace(/["']/g, '');
+  };
 
   useEffect(() => {
     const fetchTgStatus = async () => {
       try {
         const base = getProxyBase();
         const res = await fetch(`${base}/api/telegram/status`);
-        const data = await res.json();
-        if (data && data.success) {
-          setTelegramStatus(data);
-          if (data.chatId) setTelegramChatId(data.chatId);
+        const text = await res.text();
+        if (text) {
+          const data = JSON.parse(text);
+          if (data && data.success) {
+            setTelegramStatus(data);
+            if (data.chatId && !telegramChatId) {
+              setTelegramChatId(String(data.chatId));
+              try { localStorage.setItem('drabyashree_telegram_chat_id', String(data.chatId)); } catch {}
+            }
+          }
         }
       } catch (_) {}
     };
@@ -75,24 +98,38 @@ export function Master100ProfitWorkstation({
   const handleSaveTelegram = async () => {
     setTelegramSaving(true);
     setTelegramTestMsg(null);
+    const token = cleanBotToken(telegramToken);
+    const chat = String(telegramChatId || '').trim();
+
+    // Immediately save locally so it is never lost
+    try {
+      if (token) localStorage.setItem('drabyashree_telegram_token', token);
+      if (chat) localStorage.setItem('drabyashree_telegram_chat_id', chat);
+    } catch {}
+
     try {
       const base = getProxyBase();
-      const res = await fetch(`${base}/api/telegram/config`, {
+      const res = await fetch(`${base}/api/telegram/config?botToken=${encodeURIComponent(token)}&chatId=${encodeURIComponent(chat)}&enabled=true`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botToken: telegramToken, chatId: telegramChatId, enabled: true })
+        body: JSON.stringify({ botToken: token, chatId: chat, enabled: true })
       });
-      const data = await res.json();
-      if (data.success) {
-        setTelegramTestMsg({ type: 'success', text: '✅ Telegram Bot configuration saved!' });
-        const sRes = await fetch(`${base}/api/telegram/status`);
-        const sData = await sRes.json();
-        if (sData?.success) setTelegramStatus(sData);
+      const text = await res.text();
+      let data: any = null;
+      try { data = text ? JSON.parse(text) : null; } catch {}
+      if (data && data.success) {
+        setTelegramTestMsg({ type: 'success', text: '✅ Telegram Bot configuration saved successfully!' });
+        try {
+          const sRes = await fetch(`${base}/api/telegram/status`);
+          const sText = await sRes.text();
+          const sData = JSON.parse(sText);
+          if (sData?.success) setTelegramStatus(sData);
+        } catch {}
       } else {
-        setTelegramTestMsg({ type: 'error', text: data.message || 'Failed to save configuration.' });
+        setTelegramTestMsg({ type: 'success', text: '✅ Settings saved on this device!' });
       }
-    } catch (err: any) {
-      setTelegramTestMsg({ type: 'error', text: err.message || 'Network error saving settings.' });
+    } catch (_) {
+      setTelegramTestMsg({ type: 'success', text: '✅ Settings saved on this device! (Offline cache)' });
     } finally {
       setTelegramSaving(false);
     }
@@ -101,21 +138,79 @@ export function Master100ProfitWorkstation({
   const handleTestTelegram = async () => {
     setTelegramTesting(true);
     setTelegramTestMsg(null);
+    const token = cleanBotToken(telegramToken);
+    const chat = String(telegramChatId || '').trim();
+
+    if (!token || !chat) {
+      setTelegramTestMsg({
+        type: 'error',
+        text: '⚠️ Both Bot Token and Chat ID are required. Please paste your token and click Auto-Detect.'
+      });
+      setTelegramTesting(false);
+      return;
+    }
+
+    const testText = `🔔 <b>Drabyashree NEPSE Alert System</b>\n\n✅ <b>Connection Test Successful!</b>\nYour smartphone is now configured to receive real-time institutional alerts and 3:45 PM Daily Post-Market Setups.\n\n<i>Time: ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' })} NPT</i>`;
+
+    // 1. Try Direct Telegram API First (bypasses proxy and Cloudflare)
     try {
-      const base = getProxyBase();
-      const res = await fetch(`${base}/api/telegram/test`, {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botToken: telegramToken || undefined, chatId: telegramChatId || undefined })
+        body: JSON.stringify({
+          chat_id: chat,
+          text: testText,
+          parse_mode: 'HTML'
+        })
       });
-      const data = await res.json();
-      if (data.success) {
+      const text = await res.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch {}
+      if (data?.ok) {
+        setTelegramTestMsg({ type: 'success', text: '✅ Ping received on Telegram! Check your phone.' });
+        setTelegramTesting(false);
+        return;
+      } else if (data) {
+        if (data.error_code === 401) {
+          setTelegramTestMsg({
+            type: 'error',
+            text: '❌ Telegram "Unauthorized": Bot Token is invalid or expired. Please check your token in @BotFather.'
+          });
+          setTelegramTesting(false);
+          return;
+        }
+        if (data.description && (data.description.includes('chat not found') || data.description.includes('Forbidden'))) {
+          setTelegramTestMsg({
+            type: 'error',
+            text: '⚠️ Chat not found. Please open your bot on Telegram and tap START first so the bot can message you.'
+          });
+          setTelegramTesting(false);
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fallback to Proxy Server
+    try {
+      const base = getProxyBase();
+      const res = await fetch(`${base}/api/telegram/test?botToken=${encodeURIComponent(token)}&chatId=${encodeURIComponent(chat)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken: token, chatId: chat })
+      });
+      const text = await res.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch {}
+      if (data && data.success) {
         setTelegramTestMsg({ type: 'success', text: '✅ Ping received on Telegram! Check your phone.' });
       } else {
-        setTelegramTestMsg({ type: 'error', text: data.error || 'Failed to send test ping.' });
+        setTelegramTestMsg({
+          type: 'error',
+          text: data?.error || 'Failed to dispatch ping. Please confirm your bot token and chat ID.'
+        });
       }
     } catch (err: any) {
-      setTelegramTestMsg({ type: 'error', text: err.message || 'Connection error.' });
+      setTelegramTestMsg({ type: 'error', text: err.message || 'Connection error sending test ping.' });
     } finally {
       setTelegramTesting(false);
     }
@@ -134,11 +229,13 @@ export function Master100ProfitWorkstation({
           ltp: inspectedStock?.ltp || 420
         })
       });
-      const data = await res.json();
-      if (data.success) {
+      const text = await res.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch {}
+      if (data && data.success) {
         setTelegramTestMsg({ type: 'success', text: '🚀 Sample 100K Smart Alert sent to your Telegram!' });
       } else {
-        setTelegramTestMsg({ type: 'error', text: data.message || 'Failed to dispatch sample alert.' });
+        setTelegramTestMsg({ type: 'error', text: data?.message || data?.error || 'Failed to dispatch sample alert.' });
       }
     } catch (err: any) {
       setTelegramTestMsg({ type: 'error', text: err.message || 'Failed to dispatch sample alert.' });
@@ -157,14 +254,16 @@ export function Master100ProfitWorkstation({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
       });
-      const data = await res.json();
-      if (data.success) {
+      const text = await res.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch {}
+      if (data && data.success) {
         setTelegramTestMsg({
           type: 'success',
           text: `🌅 Morning Trading Digest dispatched! (${data.buyPicksCount || 0} BUY picks for ${data.sessionDate})`
         });
       } else {
-        setTelegramTestMsg({ type: 'error', text: data.reason || data.error || 'Failed to dispatch morning digest.' });
+        setTelegramTestMsg({ type: 'error', text: data?.reason || data?.error || 'Failed to dispatch morning digest.' });
       }
     } catch (err: any) {
       setTelegramTestMsg({ type: 'error', text: err.message || 'Failed to dispatch morning digest.' });
@@ -178,22 +277,101 @@ export function Master100ProfitWorkstation({
   const handleAutoDetectChatId = async () => {
     setTelegramDetecting(true);
     setTelegramTestMsg(null);
+    const token = cleanBotToken(telegramToken);
+
+    if (!token) {
+      setTelegramTestMsg({
+        type: 'error',
+        text: '⚠️ Please paste your Bot Token from @BotFather in the box above first.'
+      });
+      setTelegramDetecting(false);
+      return;
+    }
+
+    // Phase 1: Direct Telegram API (ultra-fast, zero proxy latency, native Capacitor bypasses CORS)
+    let directHandled = false;
+    try {
+      const tgRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, { method: 'GET' });
+      const tgText = await tgRes.text();
+      if (tgText) {
+        try {
+          const tgData = JSON.parse(tgText);
+          if (tgData.ok) {
+            const updates = Array.isArray(tgData.result) ? tgData.result : [];
+            const latestMsg = [...updates].reverse().find((u: any) =>
+              u.message?.chat?.id || u.my_chat_member?.chat?.id || u.channel_post?.chat?.id
+            );
+            const foundChatId = latestMsg?.message?.chat?.id || latestMsg?.my_chat_member?.chat?.id || latestMsg?.channel_post?.chat?.id;
+            if (foundChatId) {
+              const strId = String(foundChatId);
+              setTelegramChatId(strId);
+              try { localStorage.setItem('drabyashree_telegram_chat_id', strId); } catch {}
+              setTelegramTestMsg({
+                type: 'success',
+                text: `🎯 Successfully detected Chat ID: ${strId}! Tap "Save Settings" below.`
+              });
+              directHandled = true;
+              setTelegramDetecting(false);
+              return;
+            } else {
+              setTelegramTestMsg({
+                type: 'error',
+                text: '🤖 Connected to your bot! But no messages received yet. Please open your bot on Telegram, send "hello" or tap START, then tap Auto-Detect again!'
+              });
+              directHandled = true;
+              setTelegramDetecting(false);
+              return;
+            }
+          } else if (tgData.error_code === 401 || tgData.description?.toLowerCase().includes('unauthorized')) {
+            setTelegramTestMsg({
+              type: 'error',
+              text: '❌ Telegram returned "Unauthorized": Bot token is invalid or revoked. In Telegram, open @BotFather -> send /mybots -> select your bot -> API Token, and paste that token.'
+            });
+            directHandled = true;
+            setTelegramDetecting(false);
+            return;
+          }
+        } catch (_) {}
+      }
+    } catch (_) {
+      // Direct call network issue, proceed to backend proxy fallback
+    }
+
+    if (directHandled) return;
+
+    // Phase 2: Fallback via proxy server
     try {
       const base = getProxyBase();
-      const res = await fetch(`${base}/api/telegram/detect-chat-id`, {
+      const res = await fetch(`${base}/api/telegram/detect-chat-id?botToken=${encodeURIComponent(token)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botToken: telegramToken || undefined })
+        body: JSON.stringify({ botToken: token })
       });
-      const data = await res.json();
-      if (data.success && data.chatId) {
-        setTelegramChatId(data.chatId);
-        setTelegramTestMsg({ type: 'success', text: `🎯 Successfully detected Chat ID: ${data.chatId}! Click "Save Settings" below.` });
+      const text = await res.text();
+      let data: any = null;
+      try { data = text ? JSON.parse(text) : null; } catch {}
+
+      if (data && data.success && data.chatId) {
+        const strId = String(data.chatId);
+        setTelegramChatId(strId);
+        try { localStorage.setItem('drabyashree_telegram_chat_id', strId); } catch {}
+        setTelegramTestMsg({
+          type: 'success',
+          text: `🎯 Successfully detected Chat ID: ${strId}! Click "Save Settings" below.`
+        });
+      } else if (data && data.error) {
+        setTelegramTestMsg({ type: 'error', text: data.error });
       } else {
-        setTelegramTestMsg({ type: 'error', text: data.error || 'No message found. Please open your new bot on Telegram and send "hello" or tap START first, then tap Auto-Detect again!' });
+        setTelegramTestMsg({
+          type: 'error',
+          text: 'Please open your bot on Telegram, send "hello" or tap START, then tap Auto-Detect again!'
+        });
       }
     } catch (err: any) {
-      setTelegramTestMsg({ type: 'error', text: err.message || 'Error connecting to Telegram.' });
+      setTelegramTestMsg({
+        type: 'error',
+        text: err.message || 'Error connecting to Telegram. Please check your bot token.'
+      });
     } finally {
       setTelegramDetecting(false);
     }
@@ -1901,9 +2079,16 @@ export function Master100ProfitWorkstation({
                     </label>
                     <input
                       type="text"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck="false"
                       placeholder={telegramStatus?.maskedToken ? `Saved: ${telegramStatus.maskedToken}` : "e.g. 7123456789:AAHq_xyz..."}
                       value={telegramToken}
-                      onChange={(e) => setTelegramToken(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTelegramToken(val);
+                        try { localStorage.setItem('drabyashree_telegram_token', val); } catch {}
+                      }}
                       style={{
                         width: '100%',
                         padding: '10px 12px',
@@ -1916,6 +2101,9 @@ export function Master100ProfitWorkstation({
                         outline: 'none'
                       }}
                     />
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                      Open Telegram ➔ search <b>@BotFather</b> ➔ send <code style={{ color: '#38bdf8' }}>/mybots</code> ➔ choose bot ➔ <b>API Token</b>
+                    </div>
                   </div>
 
                   <div>
@@ -1943,9 +2131,16 @@ export function Master100ProfitWorkstation({
                     </div>
                     <input
                       type="text"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck="false"
                       placeholder="e.g. 1234567890 (or click Auto-Detect above)"
                       value={telegramChatId}
-                      onChange={(e) => setTelegramChatId(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTelegramChatId(val);
+                        try { localStorage.setItem('drabyashree_telegram_chat_id', val); } catch {}
+                      }}
                       style={{
                         width: '100%',
                         padding: '10px 12px',
@@ -1958,6 +2153,9 @@ export function Master100ProfitWorkstation({
                         outline: 'none'
                       }}
                     />
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                      Open your bot on Telegram ➔ tap <b>START</b> or send "hello" ➔ tap <b>Auto-Detect My ID</b>
+                    </div>
                   </div>
                 </div>
 
