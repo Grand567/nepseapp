@@ -18,6 +18,14 @@ import signalTrackRecordRouter from '../proxy/routes/signalTrackRecordRoutes.mjs
 import radarRouter from '../proxy/routes/radarRoutes.js';
 import aiGuruRouter from '../proxy/routes/aiGuruRoutes.mjs';
 import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, fetchSymbolTradingDates, getBrokerName, BROKER_NAMES, getFullSessionFloorsheet, aggregateMarketFloorsheet, getMarketWideBrokerSummaryMap, getBrokerAllTimeTopHoldings, getOrFetchAllTimeBrokerHoldings } from '../proxy/brokerVault.mjs';
+import { 
+  getTelegramStatus, 
+  saveTelegramConfig, 
+  testTelegramConnection, 
+  sendTelegramSmartAlert,
+  sendMorningStockSelectionDigest,
+  autoDetectChatId
+} from '../proxy/telegramNotifier.mjs';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from '../src/utils/nepseCalendar.js';
 import { 
   adToBs, 
@@ -5317,6 +5325,77 @@ app.get('/api/macro/gdp-vs-nepse', async (req, res) => {
     return res.json({ success: true, data: result });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── TELEGRAM NOTIFICATION API ENDPOINTS ──
+app.get('/api/telegram/status', (req, res) => {
+  try {
+    const status = getTelegramStatus();
+    res.json({ success: true, ...status, data: status });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.all('/api/telegram/config', (req, res) => {
+  try {
+    const botToken = req.body?.botToken || req.query?.botToken || req.query?.token;
+    const chatId = req.body?.chatId || req.query?.chatId || req.query?.chat;
+    const enabled = req.body?.enabled !== undefined ? Boolean(req.body.enabled) : (req.query?.enabled !== undefined ? req.query.enabled === 'true' : true);
+    const result = saveTelegramConfig({ botToken, chatId, enabled });
+    res.json({ success: result.success, message: result.success ? 'Telegram configuration saved successfully' : result.error });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.all(['/api/telegram/test', '/api/telegram/test-ping'], async (req, res) => {
+  try {
+    const botToken = req.body?.botToken || req.query?.botToken || req.query?.token || undefined;
+    const chatId = req.body?.chatId || req.query?.chatId || req.query?.chat || undefined;
+    const result = await testTelegramConnection(botToken, chatId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.all('/api/telegram/detect-chat-id', async (req, res) => {
+  try {
+    const botToken = req.body?.botToken || req.query?.botToken || req.query?.token || undefined;
+    const result = await autoDetectChatId(botToken);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.all('/api/telegram/test-alert', async (req, res) => {
+  try {
+    const mockAlert = {
+      symbol: req.body?.symbol || req.query?.symbol || 'HATHY',
+      ltp: Number(req.body?.ltp || req.query?.ltp || 420),
+      buyZone: { low: 415, high: 422 },
+      dominantBrokersText: 'Brokers 58, 45, 34',
+      concentrationPct: 56,
+      stopLoss: 405,
+      target1: 445,
+      target2: 475
+    };
+    const result = await sendTelegramSmartAlert(mockAlert);
+    res.json({ success: result.success, message: result.success ? 'Sample alert sent to your Telegram chat!' : (result.error || result.reason) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.all('/api/telegram/dispatch-morning-digest', async (req, res) => {
+  try {
+    const result = await sendMorningStockSelectionDigest();
+    res.json({ success: result?.success ?? true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
