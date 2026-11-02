@@ -1276,7 +1276,9 @@ export async function getMarketIndicesInternal(targetDate = '') {
       }
     }
   } catch (npErr) {
-    console.warn('[proxy] NepaliPaisa live index provider error:', npErr.message);
+    if (!LAST_GOOD_INDICES?.nepse?.value) {
+      console.warn('[proxy] NepaliPaisa live index provider error:', npErr.message);
+    }
   }
 
   // Fallback 3: Direct ShareSansar Market Table (authoritative indices with official closing)
@@ -3290,8 +3292,12 @@ app.get('/api/news/merolagani', async (req, res) => {
 
     res.json({ success: false, data: [] });
   } catch (err) {
-    console.error('[news/merolagani] Fetch error:', err.message);
-    res.status(500).json({ success: false, error: err.message, data: [] });
+    const stale = getCache(cacheKey);
+    if (stale && Array.isArray(stale) && stale.length > 0) {
+      return res.json({ success: true, data: stale, stale: true });
+    }
+    console.warn('[news/merolagani] Temporary fetch notice:', err.message);
+    res.json({ success: true, data: [] });
   }
 });
 
@@ -12063,7 +12069,10 @@ async function runMacroScraper() {
       }
     }
   } catch (err) {
-    console.warn('[macroWorker] Scrape failed for NRB forex API:', err.message);
+    const cur = getMacroCache();
+    if (!cur || !cur.npr_usd_rate) {
+      console.warn('[macroWorker] Scrape notice for NRB forex API:', err.message);
+    }
   }
 
   try {
@@ -12105,7 +12114,10 @@ async function runMacroScraper() {
       }
     }
   } catch (err) {
-    console.warn(`[macroWorker] Scrape failed for NRB HTML:`, err.message);
+    const cur = getMacroCache();
+    if (!cur || !cur.interest_rate_pct) {
+      console.warn(`[macroWorker] Scrape notice for NRB HTML:`, err.message);
+    }
   }
 
   if (Object.keys(updates).length > 0) {

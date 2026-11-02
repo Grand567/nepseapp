@@ -4,8 +4,15 @@ const { Pool } = pg;
 let pool = null;
 if (process.env.DATABASE_URL) {
   try {
+    let connectionString = process.env.DATABASE_URL;
+    // Suppress pg v9 deprecation warning: use libpq compat or explicit sslmode
+    if (connectionString && !connectionString.includes('sslmode=') && !connectionString.includes('uselibpqcompat=')) {
+      connectionString += (connectionString.includes('?') ? '&' : '?') + 'uselibpqcompat=true&sslmode=require';
+    } else if (connectionString && connectionString.includes('sslmode=require') && !connectionString.includes('uselibpqcompat=')) {
+      connectionString = connectionString.replace('sslmode=require', 'uselibpqcompat=true&sslmode=require');
+    }
     pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 10000,
     });
