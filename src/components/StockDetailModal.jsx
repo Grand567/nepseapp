@@ -1286,7 +1286,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   const [chartTimeframe, setChartTimeframe] = useState('1M');
   const [chartMode, setChartMode] = useState('line');
   const [liveDetail, setLiveDetail] = useState(null);
-  const initialSym = (stock?.symbol || (typeof stock === 'string' ? stock : '')).toUpperCase();
+  const initialSym = (
+    typeof stock === 'string'
+      ? stock
+      : (stock?.symbol || stock?.stockSymbol || stock?.sym || stock?.scrip || stock?.ticker || stock?.item?.symbol || stock?.name || '')
+  ).toUpperCase();
   const [isFavorite, setIsFavorite] = useState(() => isWatched(initialSym));
   const [showAdvancedModal, setShowAdvancedModal] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
@@ -1307,7 +1311,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
 
   // ── Real data state (declared before useMemo/useCallback dependencies) ──
   const [history, setHistory] = useState(() => {
-    const cached = getCachedRealPriceHistory(d?.symbol);
+    const cached = getCachedRealPriceHistory(initialSym);
     if (Array.isArray(cached) && cached.length > 0) {
       return cached.map(item => ({
         date: item.date,
@@ -1322,12 +1326,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     return [];
   });
   const [realPriceHistory, setRealPriceHistory] = useState(() => {
-    const cached = getCachedRealPriceHistory(d?.symbol);
+    const cached = getCachedRealPriceHistory(initialSym);
     if (Array.isArray(cached) && cached.length > 0) return cached;
-    return (Array.isArray(d?.history) && d.history.length > 0) ? d.history : (Array.isArray(d?.candles) ? d.candles : null);
+    return (Array.isArray(stock?.history) && stock.history.length > 0) ? stock.history : (Array.isArray(stock?.candles) ? stock.candles : null);
   });
   const [realHistoryLoading, setRealHistoryLoading] = useState(() => {
-    const cached = getCachedRealPriceHistory(d?.symbol);
+    const cached = getCachedRealPriceHistory(initialSym);
     return !(Array.isArray(cached) && cached.length > 0);
   });
   const [historyFilterDate, setHistoryFilterDate] = useState('');
@@ -1354,13 +1358,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   const [fsExporting, setFsExporting] = useState(false);
   const [fsExportNotice, setFsExportNotice] = useState('');
   const [realBrokerAnalysis, setRealBrokerAnalysis] = useState(() => {
-    return getCachedRealBrokerAnalysis(d?.symbol, 1) || d?.brokerAnalysis || d?.realBrokerAnalysis || null;
+    return getCachedRealBrokerAnalysis(initialSym, 1) || stock?.brokerAnalysis || stock?.realBrokerAnalysis || null;
   });
   const [allTimeBrokerAnalysis, setAllTimeBrokerAnalysis] = useState(() => {
-    return getCachedRealBrokerAnalysis(d?.symbol, 'all') || null;
+    return getCachedRealBrokerAnalysis(initialSym, 'all') || null;
   });
   const [brokerAnalysisLoading, setBrokerAnalysisLoading] = useState(() => {
-    const cached = getCachedRealBrokerAnalysis(d?.symbol, 1) || d?.brokerAnalysis || d?.realBrokerAnalysis;
+    const cached = getCachedRealBrokerAnalysis(initialSym, 1) || stock?.brokerAnalysis || stock?.realBrokerAnalysis;
     return !cached;
   });
   const [brokerDays, setBrokerDays] = useState(1);
