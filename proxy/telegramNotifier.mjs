@@ -40,6 +40,16 @@ try {
   }
 } catch (_) {}
 
+export function cleanBotToken(raw) {
+  if (!raw) return '';
+  let token = String(raw).trim();
+  token = token.replace(/^["']|["']$/g, '').trim();
+  if (token.toLowerCase().startsWith('bot') && token.includes(':')) {
+    token = token.slice(3).trim();
+  }
+  return token;
+}
+
 function loadConfig() {
   let fileConfig = {};
   try {
@@ -49,10 +59,10 @@ function loadConfig() {
   } catch (_) {}
 
   return {
-    botToken: process.env.TELEGRAM_BOT_TOKEN || fileConfig.botToken || '',
-    chatId: process.env.TELEGRAM_CHAT_ID || fileConfig.chatId || '',
+    botToken: cleanBotToken(process.env.TELEGRAM_BOT_TOKEN || fileConfig.botToken || ''),
+    chatId: String(process.env.TELEGRAM_CHAT_ID || fileConfig.chatId || '').trim(),
     enabled: fileConfig.enabled !== false, // default true if token & chatId present
-    isTestServer: Boolean(fileConfig.isTestServer)
+    isTestServer: false
   };
 }
 
@@ -198,8 +208,8 @@ export async function sendTelegramMessage(text, parseMode = 'HTML') {
  */
 export async function testTelegramConnection(customToken, customChatId) {
   const cfg = loadConfig();
-  const token = customToken || cfg.botToken;
-  const chat = customChatId || cfg.chatId;
+  const token = cleanBotToken(customToken || cfg.botToken);
+  const chat = customChatId ? String(customChatId).trim() : cfg.chatId;
 
   if (!token || !chat) {
     return { success: false, error: 'Both Bot Token and Chat ID are required.' };
@@ -216,6 +226,12 @@ export async function testTelegramConnection(customToken, customChatId) {
     if (data.ok) {
       return { success: true, message: 'Test message sent successfully to your Telegram!' };
     } else {
+      if (data.error_code === 401 || data.description?.toLowerCase().includes('unauthorized')) {
+        return {
+          success: false,
+          error: 'Telegram returned "Unauthorized". Your Bot Token is invalid or expired. Please check your token in @BotFather.'
+        };
+      }
       return { success: false, error: data.description || 'Failed to authenticate with Telegram.' };
     }
   } catch (err) {
@@ -228,15 +244,21 @@ export async function testTelegramConnection(customToken, customChatId) {
  */
 export async function autoDetectChatId(customToken) {
   const cfg = loadConfig();
-  const token = customToken || cfg.botToken;
+  const token = cleanBotToken(customToken || cfg.botToken);
 
   if (!token) {
-    return { success: false, error: 'Please enter your Bot Token first.' };
+    return { success: false, error: 'Please paste your Bot Token from @BotFather into the Bot Token box first.' };
   }
 
   try {
     const data = await callBotApi(token, 'getUpdates');
     if (!data.ok) {
+      if (data.error_code === 401 || data.description?.toLowerCase().includes('unauthorized')) {
+        return {
+          success: false,
+          error: 'Telegram returned "Unauthorized". The Bot Token entered is invalid or revoked. Please open @BotFather on Telegram, send /token, copy the token, and paste it into the Bot Token field.'
+        };
+      }
       return { success: false, error: data.description || 'Invalid Bot Token. Check token from @BotFather.' };
     }
 
@@ -244,7 +266,7 @@ export async function autoDetectChatId(customToken) {
     if (updates.length === 0) {
       return { 
         success: false, 
-        error: 'No messages received yet! Open your bot in Telegram (t.me/drabya_trade_alert_bot) and tap START or send "hello", then try Auto-Detect again.' 
+        error: 'No messages received yet! Open your bot in Telegram and tap START or send "hello", then tap Auto-Detect again.' 
       };
     }
 
@@ -262,7 +284,7 @@ export async function autoDetectChatId(customToken) {
       }
     }
 
-    return { success: false, error: 'Could not extract chat ID from messages. Send a message to your bot and try again.' };
+    return { success: false, error: 'Could not extract chat ID from messages. Send a message to your bot in Telegram and try again.' };
   } catch (err) {
     return { success: false, error: err.message };
   }
