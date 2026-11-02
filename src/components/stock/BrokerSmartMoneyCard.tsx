@@ -418,13 +418,13 @@ function BrokerSmartMoneyCardInner({
   };
 
   useEffect(() => {
-    if (initialData && !cached1DPayload) {
+    if (initialData && !cached1DPayload && timeframe === '1D') {
       setCached1DPayload(initialData);
     }
     if (initialData && !rawPayload) {
       setRawPayload(initialData);
     }
-  }, [initialData]);
+  }, [initialData, timeframe]);
 
   useEffect(() => {
     if (!cleanSymbol) return;

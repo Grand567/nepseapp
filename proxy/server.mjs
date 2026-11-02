@@ -3545,6 +3545,7 @@ app.get('/api/price-history/:symbol', async (req, res) => {
   const rawSymbol = sanitizeSymbol(req.params.symbol);
   if (!rawSymbol) return res.status(400).json({ success: false, error: 'Invalid symbol parameter.' });
   const length = Math.min(Math.max(parseInt(req.query.length || '365', 10), 1), 500);
+  res.setHeader('Cache-Control', 'public, max-age=120, stale-while-revalidate=300');
   try {
     const formatted = await getPriceHistoryInternal(rawSymbol, length);
     if (formatted && formatted.length > 0) {
@@ -4427,6 +4428,7 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
     } catch (_) {}
   }
 
+  res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
   const cacheKey = `broker-analysis-${symbol}-${days}-${date}-${fromDate}-${toDate}`;
   if (!refresh) {
     const cached = getCache(cacheKey);
@@ -6970,6 +6972,7 @@ app.get([
 ], async (req, res) => {
   const symbol = sanitizeSymbol(req.params.symbol);
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol is required', data: [] });
+  res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
 
   const tf = String(req.query.timeframe || req.query.tf || '1D').toUpperCase();
   const isAll = req.query.days === 'all' || req.query.days === 'ALL' || tf === 'ALL' || parseInt(req.query.days, 10) >= 300;

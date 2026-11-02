@@ -551,9 +551,15 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
       const meaningfulAcc = topAcc.filter((b) => (b.netAmt || 0) >= 4500000);
       const syndicateCount = meaningfulAcc.length;
 
-      // Broker #58 Anti-Retail Filter
+      // Broker #58 Momentum Ignition & Anti-Churn Gate:
+      // In NEPSE, Broker 58 (Naasa) is the primary liquidity engine. When #58 aggressively net buys,
+      // it triggers market-wide FOMO & explosive momentum rallies. We filter out minor retail churn (< 60% retention)
+      // but enthusiastically capture major #58 net cash pulls (≥ Rs. 1 Cr net inflow or ≥ 65% retention with float dominance).
       if (leadBrokerId === "58") {
-        const broker58Pass = syndicateCount >= 3 || (diag3.bcr3NetPct >= 20.0 && retentionPct >= 78.0);
+        const leadNetAmt = Number(leadAcc?.netAmt || 0);
+        const isWhale58Pull = (leadNetAmt >= 10000000 || (diag3.top5NetInflowAmt || 0) >= 15000000) && retentionPct >= 65.0;
+        const isDominant58Absorption = diag3.bcr3NetPct >= 18.0 && retentionPct >= 70.0;
+        const broker58Pass = syndicateCount >= 3 || isWhale58Pull || isDominant58Absorption;
         if (!broker58Pass) continue;
       }
 

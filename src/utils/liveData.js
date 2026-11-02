@@ -319,9 +319,7 @@ async function tryFetchJSON(url, timeoutMs = 15000) {
         method: 'GET',
         headers: {
           'Accept': 'application/json, text/plain, */*',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           ...extraHeaders
         },
         connectTimeout: timeoutMs,

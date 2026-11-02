@@ -839,40 +839,56 @@ function BeginnerConfidenceCard({
     realBrokerAnalysis?.phase ??
     multiDayDiag?.phase;
 
+  const hasBrokerData = Boolean(
+    realBrokerAnalysis ||
+    (dailyHistory && dailyHistory.length > 0) ||
+    (brokerConcentration && (Number(brokerConcentration.bcr3BuyPct) > 0 || Number(brokerConcentration.totalVolume) > 0))
+  );
+
   let check2Badge = '⚪ Normal Retail Flow';
   let check2Desc = `Buying (${grossBuyPct.toFixed(1)}%) and selling (${grossSellPct.toFixed(1)}%) are evenly spread across retail brokers.`;
   let check2Color = '#94a3b8';
   let check2Bg = 'rgba(148, 163, 184, 0.06)';
   let check2Border = 'rgba(148, 163, 184, 0.2)';
 
-  const isDistributionOrTrap = Boolean(
-    currentPhase === 'DISTRIBUTION_DANGER' ||
-    currentPhase === 'BULL_TRAP' ||
-    (realBrokerAnalysis?.adSignal === 'Distribution' && ((Number(realBrokerAnalysis?.adStrength) || 0) >= 20 || grossSellPct >= grossBuyPct)) ||
-    (grossSellPct >= 38 && grossSellPct > grossBuyPct) ||
-    nbar <= 0.80
-  );
+  if (brokerLoading || (!hasBrokerData && grossBuyPct === 0 && grossSellPct === 0)) {
+    check2Badge = '🔄 Analyzing Smart Money Flow...';
+    check2Desc = `Verifying session floorsheet transactions, broker concentrations, and accumulation metrics for ${d?.symbol || 'stock'}...`;
+    check2Color = '#38bdf8';
+    check2Bg = 'rgba(56, 189, 248, 0.08)';
+    check2Border = 'rgba(56, 189, 248, 0.25)';
+  } else {
+    // Only evaluate Distribution/Trap if there is genuine sell dominance and activity
+    const isDistributionOrTrap = Boolean(
+      currentPhase === 'DISTRIBUTION_DANGER' ||
+      currentPhase === 'BULL_TRAP' ||
+      (realBrokerAnalysis?.adSignal === 'Distribution' && grossSellPct >= 35 && grossSellPct > grossBuyPct) ||
+      (grossSellPct >= 38 && grossSellPct > grossBuyPct && nbar <= 0.85) ||
+      (grossSellPct >= 35 && nbar <= 0.70)
+    );
 
-  const isAccumulation = Boolean(
-    !isDistributionOrTrap && (
-      currentPhase === 'STEALTH_ACCUMULATION' ||
-      currentPhase === 'ACTIVE_MARKUP' ||
-      (grossBuyPct >= 38 && grossBuyPct > grossSellPct && nbar >= 1.15)
-    )
-  );
+    const isAccumulation = Boolean(
+      !isDistributionOrTrap && (
+        currentPhase === 'STEALTH_ACCUMULATION' ||
+        currentPhase === 'ACTIVE_MARKUP' ||
+        (grossBuyPct >= 38 && grossBuyPct > grossSellPct && nbar >= 1.15) ||
+        (realBrokerAnalysis?.adSignal === 'Accumulation' && grossBuyPct >= 35 && grossBuyPct > grossSellPct)
+      )
+    );
 
-  if (isDistributionOrTrap) {
-    check2Badge = '🚨 Big Players Selling (Trap Warning)';
-    check2Desc = `Caution: Top selling brokers account for ${grossSellPct.toFixed(1)}% of volume (vs ${grossBuyPct.toFixed(1)}% buy). Big players are offloading shares.`;
-    check2Color = '#f43f5e';
-    check2Bg = 'rgba(244, 63, 94, 0.08)';
-    check2Border = 'rgba(244, 63, 94, 0.25)';
-  } else if (isAccumulation) {
-    check2Badge = '🟢 Big Players Accumulating';
-    check2Desc = `Top 5 brokers absorbed ${grossBuyPct.toFixed(1)}% of all shares bought${whaleVwap ? ` at Big Broker VWAP of Rs. ${whaleVwap}` : ''} (Net absorption: ${bcr5Net}%).`;
-    check2Color = '#10b981';
-    check2Bg = 'rgba(16, 185, 129, 0.08)';
-    check2Border = 'rgba(16, 185, 129, 0.25)';
+    if (isDistributionOrTrap) {
+      check2Badge = '🚨 Big Players Selling (Trap Warning)';
+      check2Desc = `Caution: Top selling brokers account for ${grossSellPct.toFixed(1)}% of volume (vs ${grossBuyPct.toFixed(1)}% buy). Big players are offloading shares.`;
+      check2Color = '#f43f5e';
+      check2Bg = 'rgba(244, 63, 94, 0.08)';
+      check2Border = 'rgba(244, 63, 94, 0.25)';
+    } else if (isAccumulation) {
+      check2Badge = '🟢 Big Players Accumulating';
+      check2Desc = `Top 5 brokers absorbed ${grossBuyPct.toFixed(1)}% of all shares bought${whaleVwap ? ` at Big Broker VWAP of Rs. ${whaleVwap}` : ''} (Net absorption: ${bcr5Net}%).`;
+      check2Color = '#10b981';
+      check2Bg = 'rgba(16, 185, 129, 0.08)';
+      check2Border = 'rgba(16, 185, 129, 0.25)';
+    }
   }
 
   // Check 3: Entry Price Timing & Safety (Fixed Math Logic & Anchored to Big Broker VWAP)
@@ -1290,9 +1306,30 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   }, [activeTab]);
 
   // ── Real data state (declared before useMemo/useCallback dependencies) ──
-  const [history, setHistory] = useState([]);
-  const [realPriceHistory, setRealPriceHistory] = useState(null);
-  const [realHistoryLoading, setRealHistoryLoading] = useState(false);
+  const [history, setHistory] = useState(() => {
+    const cached = getCachedRealPriceHistory(d?.symbol);
+    if (Array.isArray(cached) && cached.length > 0) {
+      return cached.map(item => ({
+        date: item.date,
+        time: item.date,
+        open: Number(item.open) || Number(item.close),
+        high: Number(item.high) || Number(item.close),
+        low: Number(item.low) || Number(item.close),
+        close: Number(item.close),
+        volume: Number(item.volume) || 0
+      }));
+    }
+    return [];
+  });
+  const [realPriceHistory, setRealPriceHistory] = useState(() => {
+    const cached = getCachedRealPriceHistory(d?.symbol);
+    if (Array.isArray(cached) && cached.length > 0) return cached;
+    return (Array.isArray(d?.history) && d.history.length > 0) ? d.history : (Array.isArray(d?.candles) ? d.candles : null);
+  });
+  const [realHistoryLoading, setRealHistoryLoading] = useState(() => {
+    const cached = getCachedRealPriceHistory(d?.symbol);
+    return !(Array.isArray(cached) && cached.length > 0);
+  });
   const [historyFilterDate, setHistoryFilterDate] = useState('');
   const [realFloorsheet, setRealFloorsheet] = useState(null);
   const [floorsheetLoading, setFloorsheetLoading] = useState(false);
@@ -1316,9 +1353,16 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   const [fsExportFormat, setFsExportFormat] = useState('csv');
   const [fsExporting, setFsExporting] = useState(false);
   const [fsExportNotice, setFsExportNotice] = useState('');
-  const [realBrokerAnalysis, setRealBrokerAnalysis] = useState(null);
-  const [allTimeBrokerAnalysis, setAllTimeBrokerAnalysis] = useState(null);
-  const [brokerAnalysisLoading, setBrokerAnalysisLoading] = useState(false);
+  const [realBrokerAnalysis, setRealBrokerAnalysis] = useState(() => {
+    return getCachedRealBrokerAnalysis(d?.symbol, 1) || d?.brokerAnalysis || d?.realBrokerAnalysis || null;
+  });
+  const [allTimeBrokerAnalysis, setAllTimeBrokerAnalysis] = useState(() => {
+    return getCachedRealBrokerAnalysis(d?.symbol, 'all') || null;
+  });
+  const [brokerAnalysisLoading, setBrokerAnalysisLoading] = useState(() => {
+    const cached = getCachedRealBrokerAnalysis(d?.symbol, 1) || d?.brokerAnalysis || d?.realBrokerAnalysis;
+    return !cached;
+  });
   const [brokerDays, setBrokerDays] = useState(1);
   const [brokerDate, setBrokerDate] = useState('');
   const [realMarketDepth, setRealMarketDepth] = useState(null);
@@ -1971,18 +2015,24 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     });
 
     // Eagerly prefetch real broker analysis so Setup Score is synchronized across Overview & Predictor
+    setBrokerAnalysisLoading(true);
     fetchRealBrokerAnalysis(d.symbol, brokerDays).then(data => {
       if (active && data) {
         setRealBrokerAnalysis(data);
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => {
+      if (active) setBrokerAnalysisLoading(false);
+    });
 
-    // Prefetch authentic all-time multi-year broker accumulator ledger till today
-    fetchRealBrokerAnalysis(d.symbol, 'all').then(data => {
-      if (active && data) {
-        setAllTimeBrokerAnalysis(data);
-      }
-    }).catch(() => {});
+    // Stagger all-time multi-year broker ledger fetch by 400ms to preserve network bandwidth & SQLite concurrency
+    const allTimeTimer = setTimeout(() => {
+      if (!active) return;
+      fetchRealBrokerAnalysis(d.symbol, 'all').then(data => {
+        if (active && data) {
+          setAllTimeBrokerAnalysis(data);
+        }
+      }).catch(() => {});
+    }, 400);
 
     // Check breaking news for corporate alerts (Zero-Dividend risk, fresh dividend proposal)
     setCorporateAlert(null);
@@ -1993,7 +2043,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       }
     }).catch(() => {});
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+      clearTimeout(allTimeTimer);
+    };
   }, [d?.symbol]);
 
   // Fetch real floorsheet (runs when floorsheet or depth_broker tab is active)
@@ -2054,6 +2107,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   const handleBrokerDaysChange = useCallback((newDays) => {
     setBrokerDays(newDays);
     setBrokerDate('');
+    setBrokerAnalysisLoading(true);
     fetchBrokerAnalysisData(newDays, '', { refresh: true });
   }, [fetchBrokerAnalysisData]);
 
