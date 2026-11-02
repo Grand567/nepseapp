@@ -76,6 +76,7 @@ import { calculateStockMetrics, formatNprMoney } from '../utils/stockMetrics';
 import StockSignalsCard from './StockSignalsCard';
 import StockFundamentalsTab from './StockFundamentalsTab';
 import StockBrokerAnalysisTab from './StockBrokerAnalysisTab';
+import { SessionDateDropdown } from './SessionDateDropdown';
 import StockRightShareCard from './StockRightShareCard';
 import StockSeasonalityCard from './StockSeasonalityCard';
 import StockReportsAnnouncementsCard from './StockReportsAnnouncementsCard';
@@ -4882,32 +4883,14 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                       </div>
 
                       {/* Historical Date Picker (up to 500 dates) */}
-                      {((realBrokerAnalysis || ba)?.availableDates?.length > 0) && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#0f172a', padding: '3px 8px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
-                          <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>📅 Session:</span>
-                          <select
-                            value={brokerDate}
-                            onChange={(e) => handleBrokerDateChange(e.target.value)}
-                            style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: 11, fontWeight: 700, outline: 'none', cursor: 'pointer' }}
-                          >
-                            <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>Latest / Aggregate ({(Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))))[0] || 'Today'})</option>
-                            {brokerDate && !Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).includes(brokerDate) && (
-                              <option value={brokerDate} style={{ background: '#0f172a', color: '#38bdf8' }}>{brokerDate} (Selected Session)</option>
-                            )}
-                            {Array.from(new Set([...availableTradingDates, ...((realBrokerAnalysis || ba)?.availableDates || [])])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 500).map(dt => (
-                              <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>{dt}</option>
-                            ))}
-                          </select>
-                          {brokerDate && (
-                            <button
-                              type="button"
-                              onClick={() => handleBrokerDateChange('')}
-                              style={{ background: 'rgba(244, 63, 94, 0.2)', border: 'none', borderRadius: 4, padding: '2px 6px', color: '#fb7185', fontSize: 10, fontWeight: 800, cursor: 'pointer' }}
-                            >
-                              Reset
-                            </button>
-                          )}
-                        </div>
+                      {(((realBrokerAnalysis || ba)?.availableDates?.length > 0) || (availableTradingDates?.length > 0)) && (
+                        <SessionDateDropdown
+                          selectedSessionDate={brokerDate}
+                          onSelectDate={handleBrokerDateChange}
+                          availableDates={Array.from(new Set([...availableTradingDates, ...((realBrokerAnalysis || ba)?.availableDates || [])])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 500)}
+                          label="📅 Session:"
+                          latestLabel={`Latest / Aggregate (${(Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))))[0] || 'Today'})`}
+                        />
                       )}
                     </div>
                   </div>
@@ -5292,66 +5275,20 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                 <div style={{
                   flex: 1,
                   minWidth: 190,
-                  background: '#111827',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: 10,
-                  padding: '8px 12px',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 8
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-                    <Calendar style={{ width: 15, height: 15, color: '#94a3b8' }} />
-                    {fsAvailDates.length > 0 ? (
-                      <select
-                        value={floorsheetDate}
-                        onChange={e => {
-                          const newDt = e.target.value;
-                          setFloorsheetDate(newDt);
-                          fetchFloorsheetData(1, { date: newDt, buyer: floorsheetAppliedBuyer, seller: floorsheetAppliedSeller });
-                        }}
-                        style={{
-                          width: '100%',
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#f8fafc',
-                          fontSize: 13,
-                          fontWeight: 700,
-                          outline: 'none',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>
-                          Select Date ({activeFsDate || 'Latest'})
-                        </option>
-                        {fsAvailDates.map(dt => (
-                          <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>
-                            {dt}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="date"
-                        value={floorsheetDate}
-                        onChange={e => {
-                          const newDt = e.target.value;
-                          setFloorsheetDate(newDt);
-                          fetchFloorsheetData(1, { date: newDt, buyer: floorsheetAppliedBuyer, seller: floorsheetAppliedSeller });
-                        }}
-                        style={{
-                          width: '100%',
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#f8fafc',
-                          fontSize: 13,
-                          fontWeight: 700,
-                          outline: 'none'
-                        }}
-                      />
-                    )}
-                  </div>
+                  <SessionDateDropdown
+                    selectedSessionDate={floorsheetDate}
+                    onSelectDate={(newDt) => {
+                      setFloorsheetDate(newDt);
+                      fetchFloorsheetData(1, { date: newDt, buyer: floorsheetAppliedBuyer, seller: floorsheetAppliedSeller });
+                    }}
+                    availableDates={fsAvailDates.length > 0 ? fsAvailDates : availableTradingDates}
+                    latestLabel={`Select Date (${activeFsDate || 'Latest'})`}
+                    style={{ width: '100%' }}
+                    buttonStyle={{ width: '100%', justifyContent: 'space-between', padding: '8px 12px', fontSize: 13, borderRadius: 10 }}
+                  />
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -5661,36 +5598,24 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 4 }}>From Date</div>
-                          <input
-                            type="date"
-                            value={fsExportFromDate}
-                            onChange={e => setFsExportFromDate(e.target.value)}
-                            style={{
-                              width: '100%',
-                              background: '#0f172a',
-                              border: '1px solid rgba(255,255,255,0.14)',
-                              borderRadius: 8,
-                              padding: '7px 8px',
-                              color: '#f8fafc',
-                              fontSize: 11.5
-                            }}
+                          <SessionDateDropdown
+                            selectedSessionDate={fsExportFromDate}
+                            onSelectDate={setFsExportFromDate}
+                            availableDates={availableTradingDates}
+                            latestLabel="Select From Date"
+                            style={{ width: '100%' }}
+                            buttonStyle={{ width: '100%', justifyContent: 'space-between', padding: '7px 8px', fontSize: 11.5 }}
                           />
                         </div>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 4 }}>To Date</div>
-                          <input
-                            type="date"
-                            value={fsExportToDate}
-                            onChange={e => setFsExportToDate(e.target.value)}
-                            style={{
-                              width: '100%',
-                              background: '#0f172a',
-                              border: '1px solid rgba(255,255,255,0.14)',
-                              borderRadius: 8,
-                              padding: '7px 8px',
-                              color: '#f8fafc',
-                              fontSize: 11.5
-                            }}
+                          <SessionDateDropdown
+                            selectedSessionDate={fsExportToDate}
+                            onSelectDate={setFsExportToDate}
+                            availableDates={availableTradingDates}
+                            latestLabel="Select To Date"
+                            style={{ width: '100%' }}
+                            buttonStyle={{ width: '100%', justifyContent: 'space-between', padding: '7px 8px', fontSize: 11.5 }}
                           />
                         </div>
                       </div>
@@ -6377,48 +6302,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{
-                  background: '#111827',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: 8,
-                  padding: '4px 10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6
-                }}>
-                  <Calendar style={{ width: 13, height: 13, color: '#38bdf8' }} />
-                  <input
-                    type="date"
-                    value={historyFilterDate}
-                    onChange={e => setHistoryFilterDate(e.target.value)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#f8fafc',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      outline: 'none'
-                    }}
-                  />
-                </div>
-                {historyFilterDate && (
-                  <button
-                    type="button"
-                    onClick={() => setHistoryFilterDate('')}
-                    style={{
-                      background: 'rgba(244, 63, 94, 0.14)',
-                      border: '1px solid rgba(244, 63, 94, 0.35)',
-                      borderRadius: 8,
-                      padding: '5px 12px',
-                      color: '#fb7185',
-                      fontSize: 12,
-                      fontWeight: 800,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Reset
-                  </button>
-                )}
+                <SessionDateDropdown
+                  selectedSessionDate={historyFilterDate}
+                  onSelectDate={(newDt) => setHistoryFilterDate(newDt)}
+                  availableDates={availableTradingDates.length > 0 ? availableTradingDates : (Array.isArray(realPriceHistory) ? realPriceHistory.map(h => h.date).filter(Boolean) : [])}
+                  latestLabel="Filter by Session Date"
+                />
                 <button
                   type="button"
                   onClick={() => exportStockPriceHistory({

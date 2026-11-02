@@ -4321,23 +4321,35 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
   const toDate = String(req.query.toDate || '').trim();
   const refresh = req.query.refresh === 'true';
 
-  // Fast path for all-time holding requests
-  if (isAllTime && !date && !fromDate && !toDate) {
+  // Fast path for all-time holding requests (optionally as-of a specific date)
+  if (isAllTime && !fromDate && !toDate) {
     try {
-      let allTimeResult = await getOrFetchAllTimeBrokerHoldings(symbol, { refresh });
+      let allTimeResult = null;
+      if (!date) {
+        allTimeResult = await getOrFetchAllTimeBrokerHoldings(symbol, { refresh });
+      }
       if (!allTimeResult || (!allTimeResult.brokers?.length && !allTimeResult.totalSharesHeldTillNow)) {
         // Direct SQLite fallback from daily_broker_ledger
         if (db) {
-          const rows = db.prepare(`
-            SELECT broker_id,
-                   SUM(buy_vol) as buyQty,
-                   SUM(sell_vol) as sellQty,
-                   SUM(buy_amt) as buyAmt,
-                   SUM(sell_amt) as sellAmt
-            FROM daily_broker_ledger
-            WHERE UPPER(symbol) = ?
-            GROUP BY broker_id
-          `).all(symbol);
+          const query = date
+            ? `SELECT broker_id,
+                      SUM(buy_vol) as buyQty,
+                      SUM(sell_vol) as sellQty,
+                      SUM(buy_amt) as buyAmt,
+                      SUM(sell_amt) as sellAmt
+               FROM daily_broker_ledger
+               WHERE UPPER(symbol) = ? AND trade_date <= ?
+               GROUP BY broker_id`
+            : `SELECT broker_id,
+                      SUM(buy_vol) as buyQty,
+                      SUM(sell_vol) as sellQty,
+                      SUM(buy_amt) as buyAmt,
+                      SUM(sell_amt) as sellAmt
+               FROM daily_broker_ledger
+               WHERE UPPER(symbol) = ?
+               GROUP BY broker_id`;
+          const params = date ? [symbol, date] : [symbol];
+          const rows = db.prepare(query).all(...params);
           if (rows && rows.length > 0) {
             let totalSharesHeldTillNow = 0;
             const accumulators = [];
@@ -4394,6 +4406,7 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
               topDistributors: distributors.slice(0, 50),
               allDistributors: distributors,
               tradingDays: 38,
+              businessDate: date || undefined,
               availableDates: await getMarketTradingDates().catch(() => [])
             };
           }
@@ -6413,12 +6426,13 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
 app.get(['/api/smart-money/broker-holdings/:brokerId', '/api/broker-holdings/:brokerId'], async (req, res) => {
   const brokerId = String(req.params.brokerId || '').replace(/^0+/, '').trim();
   if (!brokerId) return res.status(400).json({ success: false, error: 'Invalid broker id' });
-  const cacheKey = `broker-alltime-holdings-${brokerId}`;
+  const date = String(req.query.date || '').trim();
+  const cacheKey = `broker-alltime-holdings-${brokerId}-${date || 'alltime'}`;
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: { success: true, data: cached, ...cached }, cached: true });
 
   try {
-    const data = getBrokerAllTimeTopHoldings(brokerId);
+    const data = getBrokerAllTimeTopHoldings(brokerId, date);
     if (data) {
       setCache(cacheKey, data, 60 * 60 * 1000);
       return res.json({ success: true, data: { success: true, data, ...data }, source: 'daily_broker_ledger' });

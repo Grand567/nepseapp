@@ -3118,35 +3118,51 @@ export async function getOrFetchBrokerDeskAnalysis(brokerId, options = {}) {
 const _brokerHoldingsCache = new Map();
 
 /**
- * Retrieve a broker's top net-held stocks across all trading sessions (All-Time Net Retention)
+ * Retrieve a broker's top net-held stocks across all trading sessions (or as-of a specific date)
  */
-export function getBrokerAllTimeTopHoldings(brokerId) {
+export function getBrokerAllTimeTopHoldings(brokerId, dateStr = '') {
   const bId = String(brokerId || '').replace(/^0+/, '').trim();
   const bNum = parseInt(bId, 10);
   if (!bNum || !db) return { brokerId: bId, brokerName: getBrokerName(bId), topHoldings: [] };
 
-  const cacheKey = `holdings_${bNum}`;
+  const cleanDate = String(dateStr || '').trim();
+  const cacheKey = `holdings_${bNum}_${cleanDate || 'alltime'}`;
   const cached = _brokerHoldingsCache.get(cacheKey);
   if (cached && (Date.now() - cached.ts < 3600000)) {
     return cached.data;
   }
 
   try {
-    const rows = db.prepare(`
-      SELECT UPPER(symbol) as symbol,
-             SUM(buy_vol) as totalBuyVol,
-             SUM(sell_vol) as totalSellVol,
-             SUM(buy_vol) - SUM(sell_vol) as cumHoldQty,
-             SUM(buy_amt) as totalBuyAmt,
-             SUM(sell_amt) as totalSellAmt,
-             COUNT(DISTINCT trade_date) as activeSessions
-      FROM daily_broker_ledger
-      WHERE broker_id = ?
-      GROUP BY UPPER(symbol)
-      HAVING cumHoldQty > 0
-      ORDER BY cumHoldQty DESC
-      LIMIT 25
-    `).all(bNum);
+    const query = cleanDate
+      ? `SELECT UPPER(symbol) as symbol,
+               SUM(buy_vol) as totalBuyVol,
+               SUM(sell_vol) as totalSellVol,
+               SUM(buy_vol) - SUM(sell_vol) as cumHoldQty,
+               SUM(buy_amt) as totalBuyAmt,
+               SUM(sell_amt) as totalSellAmt,
+               COUNT(DISTINCT trade_date) as activeSessions
+        FROM daily_broker_ledger
+        WHERE broker_id = ? AND trade_date <= ?
+        GROUP BY UPPER(symbol)
+        HAVING cumHoldQty > 0
+        ORDER BY cumHoldQty DESC
+        LIMIT 25`
+      : `SELECT UPPER(symbol) as symbol,
+               SUM(buy_vol) as totalBuyVol,
+               SUM(sell_vol) as totalSellVol,
+               SUM(buy_vol) - SUM(sell_vol) as cumHoldQty,
+               SUM(buy_amt) as totalBuyAmt,
+               SUM(sell_amt) as totalSellAmt,
+               COUNT(DISTINCT trade_date) as activeSessions
+        FROM daily_broker_ledger
+        WHERE broker_id = ?
+        GROUP BY UPPER(symbol)
+        HAVING cumHoldQty > 0
+        ORDER BY cumHoldQty DESC
+        LIMIT 25`;
+
+    const params = cleanDate ? [bNum, cleanDate] : [bNum];
+    const rows = db.prepare(query).all(...params);
 
     const brokerName = getBrokerName(bId);
     let totalSharesHeld = 0;

@@ -389,8 +389,9 @@ export const fetchBrokerDeskDetail = (brokerId, date) => {
   const q = date ? `?date=${encodeURIComponent(date)}` : '';
   return _proxyFetch(`/api/smart-money/broker-desk/${encodeURIComponent(brokerId)}${q}`, { timeout: 45000 }, 120000);
 };
-export const fetchBrokerHoldings = (brokerId) => {
-  return _proxyFetch(`/api/smart-money/broker-holdings/${encodeURIComponent(brokerId)}`, { timeout: 45000 }, 120000);
+export const fetchBrokerHoldings = (brokerId, date = '') => {
+  const q = date ? `?date=${encodeURIComponent(date)}` : '';
+  return _proxyFetch(`/api/smart-money/broker-holdings/${encodeURIComponent(brokerId)}${q}`, { timeout: 45000 }, 120000);
 };
 export const fetchBrokerAnalysis = (symbol, days = 30, forceRefreshOrOptions = false) => {
   const sym = String(symbol || '').toUpperCase().trim();

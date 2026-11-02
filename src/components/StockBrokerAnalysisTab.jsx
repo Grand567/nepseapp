@@ -8,6 +8,7 @@ import { getBrokerName, formatBrokerAmount } from '../utils/accumulationDistribu
 import { exportBrokerAnalysisReport, exportStockFloorsheet } from '../utils/floorsheetExport';
 import { fetchRealBrokerAnalysis, fetchFromBackend, fetchAvailableTradingDates } from '../utils/liveData';
 import { formatNptDateIso } from '../utils/nepseCalendar';
+import { SessionDateDropdown } from './SessionDateDropdown';
 
 function formatCompactQty(val) {
   const n = Math.abs(Number(val) || 0);
@@ -1113,60 +1114,12 @@ export default function StockBrokerAnalysisTab({
 
         {/* Date-Wise Picker & Custom Date Range */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 8,
-            padding: '5px 10px'
-          }}>
-            <Calendar style={{ width: 13, height: 13, color: '#38bdf8' }} />
-            {availableDates.length > 0 ? (
-              <select
-                value={effectiveDate || ''}
-                onChange={e => handleDateSelect(e.target.value)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#f8fafc',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  outline: 'none',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>
-                  {effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : `Latest Session (${availableDates[0] || '1D'})`}
-                </option>
-                {effectiveDate && !availableDates.includes(effectiveDate) && (
-                  <option value={effectiveDate} style={{ background: '#0f172a', color: '#38bdf8' }}>
-                    {effectiveDate} (Selected Session)
-                  </option>
-                )}
-                {availableDates.map(dt => (
-                  <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>
-                    {dt}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type="date"
-                value={effectiveDate || ''}
-                onChange={e => handleDateSelect(e.target.value)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#f8fafc',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  outline: 'none'
-                }}
-              />
-            )}
-          </div>
+          <SessionDateDropdown
+            selectedSessionDate={effectiveDate || ''}
+            onSelectDate={dt => handleDateSelect(dt)}
+            availableDates={availableDates}
+            latestLabel={effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : `Latest Session (${availableDates[0] || '1D'})`}
+          />
 
           {/* Custom Date Range Selector (From → To) */}
           <div style={{
@@ -1176,54 +1129,62 @@ export default function StockBrokerAnalysisTab({
             background: 'rgba(255,255,255,0.04)',
             border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: 8,
-            padding: '5px 10px'
+            padding: '4px 8px',
+            flexWrap: 'wrap'
           }}>
-            <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>From:</span>
-            <input
-              type="date"
-              value={localFromDate}
-              onChange={e => setLocalFromDate(e.target.value)}
-              style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: 11, fontWeight: 700, outline: 'none' }}
+            <SessionDateDropdown
+              selectedSessionDate={localFromDate}
+              onSelectDate={dt => setLocalFromDate(dt)}
+              availableDates={availableDates}
+              label="From:"
+              latestLabel="From Date"
+              compact={true}
             />
-            <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>To:</span>
-            <input
-              type="date"
-              value={localToDate}
-              onChange={e => setLocalToDate(e.target.value)}
-              style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: 11, fontWeight: 700, outline: 'none' }}
+            <SessionDateDropdown
+              selectedSessionDate={localToDate}
+              onSelectDate={dt => setLocalToDate(dt)}
+              availableDates={availableDates}
+              label="To:"
+              latestLabel="To Date"
+              compact={true}
             />
             <button
               type="button"
               onClick={() => handleRangeApply(localFromDate, localToDate)}
               style={{
-                padding: '3px 8px',
+                padding: '4px 9px',
                 borderRadius: 6,
-                background: '#3b82f6',
-                color: '#fff',
-                border: 'none',
+                background: 'rgba(56, 189, 248, 0.2)',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                color: '#38bdf8',
                 fontSize: 11,
                 fontWeight: 800,
                 cursor: 'pointer'
               }}
             >
-              Apply
+              Apply Range
             </button>
             {(localFromDate || localToDate) && (
               <button
                 type="button"
-                onClick={handleRangeReset}
+                onClick={() => {
+                  setLocalFromDate('');
+                  setLocalToDate('');
+                  handleRangeApply('', '');
+                }}
                 style={{
-                  padding: '3px 6px',
+                  padding: '4px 6px',
                   borderRadius: 6,
                   background: 'rgba(244, 63, 94, 0.15)',
-                  color: '#fb7185',
                   border: '1px solid rgba(244, 63, 94, 0.3)',
+                  color: '#fb7185',
                   fontSize: 11,
                   fontWeight: 800,
                   cursor: 'pointer'
                 }}
+                title="Clear custom date range"
               >
-                Reset
+                ✕
               </button>
             )}
           </div>
@@ -1781,64 +1742,14 @@ export default function StockBrokerAnalysisTab({
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8' }}>Session:</span>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: 6,
-                padding: '3px 8px'
-              }}>
-                <Calendar style={{ width: 12, height: 12, color: '#38bdf8' }} />
-                <select
-                  value={effectiveDate || ''}
-                  onChange={e => handleDateSelect(e.target.value)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: '#f8fafc',
-                    fontSize: 11.5,
-                    fontWeight: 700,
-                    outline: 'none',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>
-                    {effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : (availableDates.length > 0 ? `Latest Session (${availableDates[0]})` : 'Latest Trading Session')}
-                  </option>
-                  {effectiveDate && !availableDates.includes(effectiveDate) && (
-                    <option value={effectiveDate} style={{ background: '#0f172a', color: '#38bdf8' }}>
-                      {effectiveDate} (Selected Session)
-                    </option>
-                  )}
-                  {availableDates.map(dt => (
-                    <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>
-                      {dt}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {effectiveDate && (
-                <button
-                  type="button"
-                  onClick={() => handleDateSelect('')}
-                  title="Reset to Latest Session"
-                  style={{
-                    padding: '3px 6px',
-                    borderRadius: 6,
-                    border: '1px solid rgba(244, 63, 94, 0.3)',
-                    background: 'rgba(244, 63, 94, 0.12)',
-                    color: '#fb7185',
-                    fontSize: 10.5,
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  ✕ Reset
-                </button>
-              )}
+              <SessionDateDropdown
+                selectedSessionDate={effectiveDate || ''}
+                onSelectDate={dt => handleDateSelect(dt)}
+                availableDates={availableDates}
+                label="Session:"
+                latestLabel={effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : (availableDates.length > 0 ? `Latest Session (${availableDates[0]})` : 'Latest Trading Session')}
+                compact={true}
+              />
             </div>
           </div>
 

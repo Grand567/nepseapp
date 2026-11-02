@@ -7,6 +7,7 @@ import { exportMarketBrokerSurveillance } from '../utils/floorsheetExport';
 import { StatCard, InfoBanner, Insight, Spinner, TimeframeFilterBar } from './ui';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json';
 import allTimeBrokerHoldingsSeed from '../data/broker_holdings_alltime.json';
+import SessionDateDropdown from './SessionDateDropdown';
 
 export function formatNepaliCurrency(amt: number): string {
   const abs = Math.abs(amt);
@@ -171,7 +172,7 @@ export function BrokerFlowDominanceService({
     const cleanId = String(bId || '58').trim();
     setSelectedTop10BrokerId(cleanId);
     setSelectedRetentionBrokerId(cleanId);
-    loadBrokerRetention(cleanId);
+    loadBrokerRetention(cleanId, sessionDateFilter);
   };
 
   // Sync incoming props from parent
@@ -375,19 +376,20 @@ export function BrokerFlowDominanceService({
 
   // Load all-time broker retention for a specific stock
   // Load all-time top 10 stocks held by a specific broker
-  const loadBrokerRetention = async (bId: string) => {
+  const loadBrokerRetention = async (bId: string, asOfDate?: string) => {
     const targetId = String(bId || selectedRetentionBrokerId || '58').trim();
     if (!targetId) return;
 
-    // Instant offline/bundled fallback so mobile immediately displays verified ledger positions
-    const seed = (allTimeBrokerHoldingsSeed as Record<string, any>)?.[targetId];
+    const effDate = asOfDate !== undefined ? asOfDate : (sessionDateFilter || '');
+    // Only use seed fallback when querying all-time (effDate is empty), so historical query doesn't flash today's seed!
+    const seed = !effDate ? (allTimeBrokerHoldingsSeed as Record<string, any>)?.[targetId] : null;
     if (seed && (!brokerRetentionData || String(brokerRetentionData.brokerId || '').replace(/^0+/, '') !== targetId.replace(/^0+/, ''))) {
       setBrokerRetentionData(seed);
     }
 
     setLoadingBrokerRetention(true);
     try {
-      const res: any = await fetchBrokerHoldings(targetId);
+      const res: any = await fetchBrokerHoldings(targetId, effDate);
       const payload: any = (res && Array.isArray(res.topHoldings) && res.topHoldings.length > 0)
         ? res
         : (res?.data && Array.isArray(res.data.topHoldings) && res.data.topHoldings.length > 0)
@@ -416,16 +418,16 @@ export function BrokerFlowDominanceService({
   useEffect(() => {
     if ((primaryHub === 'broker' && brokerSubView === 'holding_till_now') || (activeMode === 'stockRetention' && retentionViewType === 'byBroker')) {
       if (selectedRetentionBrokerId) {
-        loadBrokerRetention(selectedRetentionBrokerId);
+        loadBrokerRetention(selectedRetentionBrokerId, sessionDateFilter);
       }
     }
-  }, [primaryHub, brokerSubView, activeMode, retentionViewType, selectedRetentionBrokerId]);
+  }, [primaryHub, brokerSubView, activeMode, retentionViewType, selectedRetentionBrokerId, sessionDateFilter]);
 
   const handleCopyBrokerRetentionCard = () => {
     if (!brokerRetentionData) return;
     const topHoldings = brokerRetentionData.topHoldings || [];
     const bName = brokerRetentionData.brokerName || `Broker #${selectedRetentionBrokerId}`;
-    let text = `🏢 TOP 10 STOCKS NET HELD TILL NOW: Broker #${selectedRetentionBrokerId} (${bName})\n`;
+    let text = `🏢 TOP 10 STOCKS NET HELD ${sessionDateFilter ? `AS OF ${sessionDateFilter}` : 'TILL NOW'}: Broker #${selectedRetentionBrokerId} (${bName})\n`;
     text += `📊 Total Retained Shares: ${Number(brokerRetentionData.totalSharesHeld || 0).toLocaleString()} kitta\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     topHoldings.slice(0, 10).forEach((s: any, idx: number) => {
@@ -445,12 +447,13 @@ export function BrokerFlowDominanceService({
     }
   };
 
-  const loadStockRetention = async (sym: string, force = false) => {
+  const loadStockRetention = async (sym: string, force = false, asOfDate?: string) => {
     const targetSym = (sym || selectedStockRetention || 'BARUN').toUpperCase().trim();
     if (!targetSym) return;
+    const effDate = asOfDate !== undefined ? asOfDate : (sessionDateFilter || '');
     setLoadingRetention(true);
     try {
-      const res: any = await fetchBrokerAnalysis(targetSym, 'all', { refresh: force, days: 'all' });
+      const res: any = await fetchBrokerAnalysis(targetSym, 'all', { refresh: force, days: 'all', date: effDate || undefined });
       // Robust unwrap: handle when res has topHoldings, or res.data has topHoldings, or res is already data
       let payload: any = (res && Array.isArray(res.topHoldings) && res.topHoldings.length > 0)
         ? res
@@ -505,17 +508,15 @@ export function BrokerFlowDominanceService({
 
   useEffect(() => {
     if (activeMode === 'stockRetention' && retentionViewType === 'byStock' && selectedStockRetention) {
-      if (!stockRetentionData || stockRetentionData.symbol !== selectedStockRetention.toUpperCase()) {
-        loadStockRetention(selectedStockRetention);
-      }
+      loadStockRetention(selectedStockRetention, false, sessionDateFilter);
     }
-  }, [activeMode, retentionViewType, selectedStockRetention]);
+  }, [activeMode, retentionViewType, selectedStockRetention, sessionDateFilter]);
 
   const handleCopyStockRetentionCard = () => {
     if (!stockRetentionData) return;
     const topHoldings = stockRetentionData.topHoldings || [];
     const totalHeld = stockRetentionData.totalSharesHeldTillNow || 0;
-    let text = `💎 TOP 10 BROKER NET RETENTION TILL NOW: ${selectedStockRetention}\n`;
+    let text = `💎 TOP 10 BROKER NET RETENTION ${sessionDateFilter ? `AS OF ${sessionDateFilter}` : 'TILL NOW'}: ${selectedStockRetention}\n`;
     text += `📊 Total Retained Kitta (Net Accumulators): ${totalHeld.toLocaleString()} kitta\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     topHoldings.slice(0, 10).forEach((b: any, idx: number) => {
@@ -634,6 +635,11 @@ export function BrokerFlowDominanceService({
       } else if (!targetDate && latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         setHeatmapData(latestBrokerMatrix);
       }
+
+      // Synchronously align broker retention and stock retention to the chosen date
+      const retentionDate = targetDate || '';
+      loadBrokerRetention(selectedRetentionBrokerId, retentionDate);
+      loadStockRetention(selectedStockRetention, false, retentionDate);
     } catch (_) {}
     setLoading(false);
   };
@@ -1471,7 +1477,8 @@ export function BrokerFlowDominanceService({
   }, [matchingDeals, search, matchingSortOrder]);
 
   const activeTop10Broker = useMemo(() => {
-    return brokerFlowList.find(b => b.brokerId === selectedTop10BrokerId) || brokerFlowList[0] || null;
+    const normId = String(selectedTop10BrokerId || '58').replace(/^0+/, '').trim();
+    return brokerFlowList.find(b => String(b.brokerId || '').replace(/^0+/, '').trim() === normId) || brokerFlowList[0] || null;
   }, [brokerFlowList, selectedTop10BrokerId]);
 
   if (loading) return <Spinner text="Aggregating Real-Time Institutional Broker Flow…" />;
@@ -1690,7 +1697,7 @@ export function BrokerFlowDominanceService({
                 }`}
               >
                 <BarChart3 size={13} />
-                <span>Today's Top 10 Buys &amp; Sells</span>
+                <span>{sessionDateFilter ? `${sessionDateFilter} Top 10 Buys & Sells` : "Today's Top 10 Buys & Sells"}</span>
               </button>
 
               <button
@@ -1701,7 +1708,7 @@ export function BrokerFlowDominanceService({
                   setRetentionViewType('byBroker');
                   const targetBId = String(selectedTop10BrokerId || selectedRetentionBrokerId || '58').trim();
                   setSelectedRetentionBrokerId(targetBId);
-                  loadBrokerRetention(targetBId);
+                  loadBrokerRetention(targetBId, sessionDateFilter);
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                   (brokerSubView === 'holding_till_now' || (activeMode === 'stockRetention' && retentionViewType === 'byBroker'))
@@ -1710,7 +1717,7 @@ export function BrokerFlowDominanceService({
                 }`}
               >
                 <ShieldCheck size={13} />
-                <span>Top 10 Stocks Held Till Now (Cumulative Portfolio)</span>
+                <span>{sessionDateFilter ? `Top 10 Stocks Held (As of ${sessionDateFilter})` : "Top 10 Stocks Held Till Now (Cumulative Portfolio)"}</span>
               </button>
             </div>
 
@@ -1863,64 +1870,36 @@ export function BrokerFlowDominanceService({
             <span className="text-slate-400 font-bold flex items-center gap-1.5">
               📅 Historical Session:
             </span>
-            {availableDates.length > 0 ? (
-              <select
-                value={sessionDateFilter}
-                onChange={(e) => {
-                  setSessionDateFilter(e.target.value);
-                  setFromDate('');
-                  setToDate('');
-                }}
-                className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-bold text-sky-400 outline-none focus:border-sky-500 cursor-pointer"
-              >
-                <option value="">Latest Session ({sessionDate})</option>
-                {sessionDateFilter && !availableDates.includes(sessionDateFilter) && (
-                  <option value={sessionDateFilter}>{sessionDateFilter} (Selected)</option>
-                )}
-                {availableDates.map(dt => (
-                  <option key={dt} value={dt}>{dt}</option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type="date"
-                value={sessionDateFilter}
-                onChange={(e) => {
-                  setSessionDateFilter(e.target.value);
-                  setFromDate('');
-                  setToDate('');
-                }}
-                className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-sky-400 outline-none focus:border-sky-500"
-              />
-            )}
-            {sessionDateFilter && (
-              <button
-                type="button"
-                onClick={() => setSessionDateFilter('')}
-                className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] font-bold hover:bg-rose-500/30 cursor-pointer"
-              >
-                Reset Date
-              </button>
-            )}
+            <SessionDateDropdown
+              value={sessionDateFilter}
+              onChange={(newDate: string) => {
+                setSessionDateFilter(newDate);
+                setFromDate('');
+                setToDate('');
+              }}
+              availableDates={availableDates}
+              placeholder={`Latest Session (${sessionDate})`}
+              label=""
+            />
           </div>
 
           {/* Custom Date Range Selector */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-slate-400 font-bold">Range:</span>
-            <input
-              type="date"
+            <SessionDateDropdown
               value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] text-sky-400 outline-none focus:border-sky-500"
-              title="From Date"
+              onChange={(val: string) => setFromDate(val)}
+              availableDates={availableDates}
+              placeholder="From Date"
+              label=""
             />
             <span className="text-slate-500">→</span>
-            <input
-              type="date"
+            <SessionDateDropdown
               value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] text-sky-400 outline-none focus:border-sky-500"
-              title="To Date"
+              onChange={(val: string) => setToDate(val)}
+              availableDates={availableDates}
+              placeholder="To Date"
+              label=""
             />
             {(fromDate || toDate) && (
               <button
@@ -2691,7 +2670,7 @@ export function BrokerFlowDominanceService({
               };
             };
 
-            const activeAccScrips = (
+            const rawAccScrips = (
               rankingMetric === 'net_qty'
                 ? (activeTop10Broker.topByNetQty || activeTop10Broker.topAccumulation || [])
                 : rankingMetric === 'gross_buy_amount'
@@ -2699,9 +2678,15 @@ export function BrokerFlowDominanceService({
                 : rankingMetric === 'gross_buy_qty'
                 ? (activeTop10Broker.topByGrossBuyQty || activeTop10Broker.topAccumulation || [])
                 : (activeTop10Broker.topAccumulation || [])
+            );
+
+            const activeAccScrips = (
+              rawAccScrips.length > 0
+                ? rawAccScrips
+                : (activeTop10Broker.topByGrossBuyAmt || (activeTop10Broker.allScrips || []).filter((s: any) => (s.buyAmount > 0 || s.buyQty > 0 || s.buy > 0)))
             ).slice(0, 10);
 
-            const activeDistScrips = (
+            const rawDistScrips = (
               rankingMetric === 'net_qty'
                 ? (activeTop10Broker.topDistByNetQty || activeTop10Broker.topDistribution || [])
                 : rankingMetric === 'gross_buy_amount'
@@ -2709,6 +2694,12 @@ export function BrokerFlowDominanceService({
                 : rankingMetric === 'gross_buy_qty'
                 ? (activeTop10Broker.topDistByGrossSellQty || activeTop10Broker.topDistribution || [])
                 : (activeTop10Broker.topDistribution || [])
+            );
+
+            const activeDistScrips = (
+              rawDistScrips.length > 0
+                ? rawDistScrips
+                : (activeTop10Broker.topDistByGrossSellAmt || (activeTop10Broker.allScrips || []).filter((s: any) => (s.sellAmount > 0 || s.sellQty > 0 || s.sell > 0)))
             ).slice(0, 10);
 
             return (

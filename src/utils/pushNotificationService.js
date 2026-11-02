@@ -125,6 +125,16 @@ export const normalizeNotificationItem = (raw) => {
 
 export function triggerNativeStatusBarNotification(normalized) {
   if (!normalized) return;
+
+  // Suppress outdated alerts older than 60 minutes from triggering system status bar notification
+  if (normalized.timestamp) {
+    const timeMs = new Date(normalized.timestamp).getTime();
+    if (!isNaN(timeMs) && (Date.now() - timeMs > 60 * 60 * 1000)) {
+      console.debug('[PushService] Suppressed outdated status bar alert:', normalized.title);
+      return;
+    }
+  }
+
   const isPro = normalized.category === 'pro' || normalized.tier === 'pro';
   const channelId = isPro ? 'dravyashree-pro-signals' : 'nepse-general-news';
 
