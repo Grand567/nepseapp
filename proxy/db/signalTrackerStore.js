@@ -698,11 +698,11 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
               hasHitT1 = true;
               hasHitTrailFloor = true;
               isRatchetArmed = 1;
-              activeStopPrice = trailFloor;
+              activeStopPrice = Math.max(activeStopPrice, trailFloor);
             } else if (fwdHigh >= thresholdPeak) {
               hasHitTrailFloor = true;
               isRatchetArmed = 1;
-              activeStopPrice = trailFloor;
+              activeStopPrice = Math.max(activeStopPrice, trailFloor);
             }
 
             if (hasHitT1) {
@@ -721,9 +721,10 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
                 break;
               }
             } else if (hasHitTrailFloor) {
-              if (fwdClose < trailFloor) {
-                status = "WIN_RATCHET_STOP";
+              if (fwdClose < activeStopPrice) {
                 exitPrice = Number(fwdClose.toFixed(2));
+                const { netReturnPct: trailNet } = calculateNepseNetReturn(entryPrice, exitPrice);
+                status = trailNet > 0 ? "WIN_RATCHET_STOP" : "STOPPED_OUT";
                 exitDate = fwdDate;
                 holdingDays = j - i;
                 break;
@@ -740,14 +741,9 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
 
             // 12-Session Time-Stop
             if (j - i >= 12) {
-              const gainPct = Number((((peakPrice - entryPrice) / entryPrice) * 100).toFixed(2));
-              if (gainPct >= 4.5 || fwdClose >= entryPrice * 1.02) {
-                status = "WIN_T1";
-                exitPrice = Number(fwdClose.toFixed(2));
-              } else {
-                status = "TIME_EXPIRED";
-                exitPrice = fwdClose;
-              }
+              exitPrice = Number(fwdClose.toFixed(2));
+              const { netReturnPct: timeNet } = calculateNepseNetReturn(entryPrice, exitPrice);
+              status = timeNet > 0 && fwdClose >= entryPrice * 1.015 ? "WIN_T1" : "TIME_EXPIRED";
               exitDate = fwdDate;
               holdingDays = j - i;
               break;
@@ -767,14 +763,9 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
           exitPrice = target1Price;
           exitDate = dates[latestDateIndex];
         } else if (holdingDays >= 12 || i < cutoffSession8d) {
-          const gainPct = Number((((peakPrice - entryPrice) / entryPrice) * 100).toFixed(2));
-          if (latestClose >= entryPrice * 1.02) {
-            status = "WIN_T1";
-            exitPrice = Number(latestClose.toFixed(2));
-          } else {
-            status = "TIME_EXPIRED";
-            exitPrice = latestClose;
-          }
+          exitPrice = Number(latestClose.toFixed(2));
+          const { netReturnPct: timeNet } = calculateNepseNetReturn(entryPrice, exitPrice);
+          status = timeNet > 0 ? "WIN_T1" : "TIME_EXPIRED";
           exitDate = dates[latestDateIndex];
         } else {
           status = "OPEN_ACTIVE";
@@ -784,10 +775,15 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
       }
 
       // Exact NEPSE return calculation
-      const { grossReturnPct, netReturnPct } =
+      let { grossReturnPct, netReturnPct } =
         status === "UNFILLABLE_SKIP"
           ? { grossReturnPct: 0, netReturnPct: 0 }
           : calculateNepseNetReturn(entryPrice, exitPrice);
+
+      // Strict Mathematical Invariant: No trade with net loss can carry a WIN_* status
+      if (status.startsWith("WIN_") && netReturnPct <= 0) {
+        status = holdingDays >= 12 ? "TIME_EXPIRED" : "STOPPED_OUT";
+      }
       const grossPnlPct = grossReturnPct;
       const netPnlPct = netReturnPct;
       const maxGainPct = Number((((peakPrice - entryPrice) / entryPrice) * 100).toFixed(2));

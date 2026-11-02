@@ -546,7 +546,15 @@ export async function handleSignalTrackRecord(req, res) {
   // Filter: status
   if (status !== "ALL") {
     if (status === "WINS") {
-      signals = signals.filter((s) => s.status === "WIN_T1" || s.status === "WIN_T2");
+      signals = signals.filter(
+        (s) =>
+          s.status === "WIN_T1" ||
+          s.status === "WIN_T2" ||
+          s.status === "WIN_RATCHET_STOP" ||
+          s.status === "RATCHET_STOP_WIN" ||
+          s.status === "TARGET_HIT" ||
+          s.status === "CLOSED_WIN"
+      );
     } else {
       signals = signals.filter((s) => s.status === status);
     }
