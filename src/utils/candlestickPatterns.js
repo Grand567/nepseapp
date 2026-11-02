@@ -545,6 +545,29 @@ export function detectCandlestickPatternsFromHistory(history = [], fallbackStock
     })
     .filter(c => c.close > 0);
 
+  // Ensure today's live/session candle is evaluated if provided
+  if (fallbackStock && (Number(fallbackStock.ltp || fallbackStock.close || 0) > 0)) {
+    const todayStr = fallbackStock.businessDate || fallbackStock.date || new Date().toISOString().slice(0, 10);
+    const lastDate = clean.length > 0 ? clean[clean.length - 1].date : '';
+    if (lastDate !== todayStr) {
+      const todayClose = Number(fallbackStock.ltp || fallbackStock.close || 0);
+      const todayOpen = Number(fallbackStock.open || todayClose);
+      const rawHigh = Number(fallbackStock.high || todayClose);
+      const rawLow = Number(fallbackStock.low || todayClose);
+      const todayHigh = Math.max(todayOpen, todayClose, rawHigh, rawLow);
+      const todayLow = Math.min(todayOpen, todayClose, rawHigh > 0 ? rawHigh : todayClose, rawLow > 0 ? rawLow : todayClose);
+      clean.push({
+        date: todayStr,
+        rawTime: todayStr,
+        open: todayOpen,
+        high: todayHigh,
+        low: todayLow,
+        close: todayClose,
+        volume: Number(fallbackStock.volume || 0)
+      });
+    }
+  }
+
   const detections = [];
   const startIdx = Math.max(0, clean.length - 45);
 
@@ -792,12 +815,19 @@ export function calculateTechnicalSpeedometer(stock = {}, history = []) {
     });
     const net = buy - sell;
     const total = items.length || 1;
-    const ratio = net / total; // -1 to +1
     let rating = 'Neutral';
-    if (ratio >= 0.5) rating = 'Strong Buy';
-    else if (ratio >= 0.16) rating = 'Buy';
-    else if (ratio <= -0.5) rating = 'Strong Sell';
-    else if (ratio <= -0.16) rating = 'Sell';
+    // When neutral signals dominate (>=6 out of 12), rating remains Neutral unless buy or sell has strong conviction
+    if (buy >= 8 || (buy >= 6 && buy > sell * 2 && neutral < 6)) {
+      rating = 'Strong Buy';
+    } else if (buy >= 5 && buy > sell + 2 && neutral <= 6) {
+      rating = 'Buy';
+    } else if (sell >= 8 || (sell >= 6 && sell > buy * 2 && neutral < 6)) {
+      rating = 'Strong Sell';
+    } else if (sell >= 5 && sell > buy + 2 && neutral <= 6) {
+      rating = 'Sell';
+    } else {
+      rating = 'Neutral';
+    }
     return { buy, neutral, sell, rating, items };
   };
 

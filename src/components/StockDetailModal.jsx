@@ -752,26 +752,34 @@ function BeginnerConfidenceCard({
   const [selectedCapital, setSelectedCapital] = useState(25000);
 
   // Check 1: Financial Health
-  const eps = Number(d?.eps);
-  const bv = Number(d?.bookValue || d?.bv || 0);
-  const isGoodEps = !isNaN(eps) && eps > 10 && bv >= 100;
-  const isModEps = !isNaN(eps) && eps > 0;
+  const epsVal = Number(d?.eps);
+  const bvVal = Number(d?.bookValue || d?.bv || 0);
+  const hasEpsData = d?.eps !== undefined && d?.eps !== null && !isNaN(epsVal) && epsVal !== 0;
+  const isLossMaking = hasEpsData && epsVal < 0;
+  const isGoodEps = hasEpsData && epsVal > 10 && bvVal >= 100;
+  const isModEps = hasEpsData && epsVal > 0;
 
-  let check1Badge = '🔴 Loss-Making / High Risk';
-  let check1Desc = `Warning: Company is currently reporting negative earnings (EPS Rs. ${isNaN(eps) ? '0' : eps.toFixed(1)}). Beginners should avoid.`;
-  let check1Color = '#f43f5e';
-  let check1Bg = 'rgba(244, 63, 94, 0.08)';
-  let check1Border = 'rgba(244, 63, 94, 0.25)';
+  let check1Badge = '⚪ Data Pending / Filing Interim';
+  let check1Desc = 'Company quarterly filings are being updated from exchange reports.';
+  let check1Color = '#94a3b8';
+  let check1Bg = 'rgba(148, 163, 184, 0.08)';
+  let check1Border = 'rgba(148, 163, 184, 0.25)';
 
-  if (isGoodEps) {
+  if (isLossMaking) {
+    check1Badge = '🔴 Operating Loss / High Risk';
+    check1Desc = `Warning: Company reported negative earnings (EPS -Rs. ${Math.abs(epsVal).toFixed(1)}). Exercise caution.`;
+    check1Color = '#f43f5e';
+    check1Bg = 'rgba(244, 63, 94, 0.08)';
+    check1Border = 'rgba(244, 63, 94, 0.25)';
+  } else if (isGoodEps) {
     check1Badge = '🟢 Strong & Profitable';
-    check1Desc = `Profitable company earning Rs. ${eps.toFixed(1)} per share with a solid Rs. ${bv.toFixed(1)} Book Value.`;
+    check1Desc = `Profitable company earning Rs. ${epsVal.toFixed(1)} per share with a solid Rs. ${bvVal.toFixed(1)} Book Value.`;
     check1Color = '#10b981';
     check1Bg = 'rgba(16, 185, 129, 0.08)';
     check1Border = 'rgba(16, 185, 129, 0.25)';
   } else if (isModEps) {
     check1Badge = '🟡 Moderate Earnings';
-    check1Desc = `Company is profitable (EPS Rs. ${eps.toFixed(1)}), though earnings growth is moderate.`;
+    check1Desc = `Company is profitable (EPS Rs. ${epsVal.toFixed(1)}), though earnings growth is moderate.`;
     check1Color = '#f59e0b';
     check1Bg = 'rgba(245, 158, 11, 0.08)';
     check1Border = 'rgba(245, 158, 11, 0.25)';
@@ -867,27 +875,42 @@ function BeginnerConfidenceCard({
       (grossSellPct >= 35 && nbar <= 0.70)
     );
 
-    const isAccumulation = Boolean(
+    // Harmonize with BrokerSmartMoneyCard gauge: Accumulation requires >= 62% net dominance or strong buy-tilt
+    const totalTop5 = grossBuyPct + grossSellPct;
+    const accumulationPressurePct = totalTop5 > 0 ? Math.round((grossBuyPct / totalTop5) * 100) : 50;
+
+    const isStrongAccumulation = Boolean(
       !isDistributionOrTrap && (
-        currentPhase === 'STEALTH_ACCUMULATION' ||
-        currentPhase === 'ACTIVE_MARKUP' ||
-        (grossBuyPct >= 38 && grossBuyPct > grossSellPct && nbar >= 1.15) ||
-        (realBrokerAnalysis?.adSignal === 'Accumulation' && grossBuyPct >= 35 && grossBuyPct > grossSellPct)
+        accumulationPressurePct >= 62 ||
+        (grossBuyPct >= 42 && grossBuyPct > grossSellPct * 1.3 && nbar >= 1.2) ||
+        currentPhase === 'ACTIVE_MARKUP'
       )
     );
 
-    if (isDistributionOrTrap) {
-      check2Badge = '🚨 Big Players Selling (Trap Warning)';
-      check2Desc = `Caution: Top selling brokers account for ${grossSellPct.toFixed(1)}% of volume (vs ${grossBuyPct.toFixed(1)}% buy). Big players are offloading shares.`;
+    const isStrongDistribution = Boolean(
+      isDistributionOrTrap ||
+      accumulationPressurePct <= 38 ||
+      (grossSellPct >= 42 && grossSellPct > grossBuyPct * 1.3 && nbar <= 0.8)
+    );
+
+    if (isStrongDistribution) {
+      check2Badge = '🚨 Big Players Selling (Distribution Warning)';
+      check2Desc = `Caution: Top selling brokers account for ${grossSellPct.toFixed(1)}% of volume (vs ${grossBuyPct.toFixed(1)}% buy). Big players are offloading inventory.`;
       check2Color = '#f43f5e';
       check2Bg = 'rgba(244, 63, 94, 0.08)';
       check2Border = 'rgba(244, 63, 94, 0.25)';
-    } else if (isAccumulation) {
+    } else if (isStrongAccumulation) {
       check2Badge = '🟢 Big Players Accumulating';
       check2Desc = `Top 5 brokers absorbed ${grossBuyPct.toFixed(1)}% of all shares bought${whaleVwap ? ` at Big Broker VWAP of Rs. ${whaleVwap}` : ''} (Net absorption: ${bcr5Net}%).`;
       check2Color = '#10b981';
       check2Bg = 'rgba(16, 185, 129, 0.08)';
       check2Border = 'rgba(16, 185, 129, 0.25)';
+    } else {
+      check2Badge = '⚖️ Balanced Two-Way Rotation';
+      check2Desc = `Top 5 broker flow is in equilibrium (${grossBuyPct.toFixed(1)}% buy vs ${grossSellPct.toFixed(1)}% sell). Two-way inventory rotation without directional cornering.`;
+      check2Color = '#94a3b8';
+      check2Bg = 'rgba(148, 163, 184, 0.06)';
+      check2Border = 'rgba(148, 163, 184, 0.2)';
     }
   }
 
@@ -1517,9 +1540,18 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       (s.change !== undefined ? s.change : (liveDetail?.change || 0))
     );
     let liveOpen = Number(liveQuote?.open || s.open || s.openPrice || liveDetail?.openPrice || ltp);
-    let liveHigh = Number(liveQuote?.high || s.high || s.highPrice || liveDetail?.highPrice || ltp);
-    let liveLow = Number(liveQuote?.low || s.low || s.lowPrice || liveDetail?.lowPrice || ltp);
+    let rawHigh = Number(liveQuote?.high || s.high || s.highPrice || liveDetail?.highPrice || ltp);
+    let rawLow = Number(liveQuote?.low || s.low || s.lowPrice || liveDetail?.lowPrice || ltp);
     let livePrevClose = Number(liveQuote?.previousClose || s.prevClose || s.previousClose || liveDetail?.prevClose || (ltp > 0 ? ltp - liveChange : ltp));
+
+    if (liveChange === 0 && livePrevClose > 0 && ltp > 0 && ltp !== livePrevClose) {
+      liveChange = Number((ltp - livePrevClose).toFixed(2));
+      livePChange = Number(((liveChange / livePrevClose) * 100).toFixed(2));
+    }
+
+    const pricePoints = [ltp, liveOpen, rawHigh, rawLow].filter(p => typeof p === 'number' && !isNaN(p) && p > 0);
+    let liveHigh = pricePoints.length > 0 ? Math.max(...pricePoints) : ltp;
+    let liveLow = pricePoints.length > 0 ? Math.min(...pricePoints) : ltp;
 
     let sessionCandle = null;
     if (modalSessionDate && Array.isArray(realPriceHistory) && realPriceHistory.length > 0) {
@@ -1551,13 +1583,34 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     const low52w = Number(s.low52w || liveDetail?.low52w || (histLow > 0 ? histLow : (ltp > 0 ? ltp : 0)));
 
     const cachedFundObj = s.symbol ? getCachedStockFundamentals(s.symbol) : null;
-    const rawEps = liveDetail?.eps ?? s.eps ?? cachedFundObj?.eps;
-    const hasRawEps = rawEps !== undefined && rawEps !== null && rawEps !== '' && !isNaN(Number(rawEps));
-    const eps = hasRawEps ? Number(rawEps) : undefined;
+    const isRealEps = (val) => val !== undefined && val !== null && val !== '' && !isNaN(Number(val)) && Number(val) !== 0;
+    const isNegativeEps = (val) => val !== undefined && val !== null && !isNaN(Number(val)) && Number(val) < 0;
 
-    const rawBv = liveDetail?.bookValue ?? liveDetail?.bvps ?? s.bookValue ?? s.bvps ?? cachedFundObj?.bookValue ?? cachedFundObj?.bvps;
-    const hasRawBv = rawBv !== undefined && rawBv !== null && rawBv !== '' && !isNaN(Number(rawBv)) && Number(rawBv) > 0;
-    const bookValue = hasRawBv ? Number(rawBv) : undefined;
+    let validEps = undefined;
+    if (isRealEps(liveDetail?.eps)) validEps = Number(liveDetail.eps);
+    else if (isRealEps(s.eps)) validEps = Number(s.eps);
+    else if (isRealEps(cachedFundObj?.eps)) validEps = Number(cachedFundObj.eps);
+    else if (isNegativeEps(liveDetail?.eps)) validEps = Number(liveDetail.eps);
+    else if (isNegativeEps(s.eps)) validEps = Number(s.eps);
+    else if (isNegativeEps(cachedFundObj?.eps)) validEps = Number(cachedFundObj.eps);
+
+    const eps = validEps;
+
+    const isRealBv = (val) => val !== undefined && val !== null && val !== '' && !isNaN(Number(val)) && Number(val) > 0;
+    let validBv = undefined;
+    if (isRealBv(liveDetail?.bookValue || liveDetail?.bvps)) validBv = Number(liveDetail.bookValue || liveDetail.bvps);
+    else if (isRealBv(s.bookValue || s.bvps || s.bv)) validBv = Number(s.bookValue || s.bvps || s.bv);
+    else if (isRealBv(cachedFundObj?.bookValue || cachedFundObj?.bvps)) validBv = Number(cachedFundObj.bookValue || cachedFundObj.bvps);
+
+    const bookValue = validBv;
+
+    const liveTrades = Number(
+      liveQuote?.trades || liveQuote?.totalTransactions ||
+      s.trades || s.totalTrades || s.totalTransactions || s.transactions ||
+      liveDetail?.totalTransactions || liveDetail?.trades ||
+      (realFloorsheet?.totalElements || (Array.isArray(realFloorsheet?.rows) ? realFloorsheet.rows.length : 0)) ||
+      realBrokerAnalysis?.totalTransactions || 0
+    ) || undefined;
 
     const effectiveSector = (s.sector && s.sector !== 'Unknown') ? s.sector : (liveDetail?.sector || 'Others');
     const bench = getSectorBenchmark(effectiveSector);
@@ -1613,6 +1666,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       prevClose: livePrevClose,
       volume,
       turnover,
+      trades: liveTrades,
+      totalTransactions: liveTrades,
       rvol,
       avgVolume20D,
       eps,
@@ -3421,7 +3476,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                         alignItems: 'center',
                         gap: 4
                       }}>
-                        {isBull ? '▲ +' : '▼ '}{fmt(Math.abs(d.change || 0))} ({isBull ? '+' : ''}{(d.pChange || 0).toFixed(2)}%)
+                        {d.change > 0 ? '▲ +' : d.change < 0 ? '▼ -' : (d.pChange >= 0 ? '▲ +' : '▼ -')}{fmt(Math.abs(d.change || 0))} ({d.pChange > 0 ? '+' : ''}{Math.abs(d.pChange || 0).toFixed(2)}%)
                       </span>
                     </div>
                     <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -3492,19 +3547,19 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   <div>
                     <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Trades</div>
                     <div style={{ fontSize: 13.5, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
-                      {d.trades || d.totalTrades ? Number(d.trades || d.totalTrades).toLocaleString() : (realFloorsheet?.totalElements ? Number(realFloorsheet.totalElements).toLocaleString() : '—')}
+                      {d.trades || d.totalTrades || d.totalTransactions || realFloorsheet?.totalElements || (realFloorsheet?.rows ? realFloorsheet.rows.length : 0) || realBrokerAnalysis?.totalTransactions ? Number(d.trades || d.totalTrades || d.totalTransactions || realFloorsheet?.totalElements || (realFloorsheet?.rows ? realFloorsheet.rows.length : 0) || realBrokerAnalysis?.totalTransactions).toLocaleString() : '—'}
                     </div>
                   </div>
                   <div>
                     <div style={{ fontSize: 11.5, color: '#94a3b8' }}>High</div>
-                    <div style={{ fontSize: 13.5, fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                      Rs. {fmt(d.high || d.ltp)} <span style={{ fontSize: 11, color: '#10b981' }}>({prevClose > 0 && d.high ? `+${((d.high - prevClose) / prevClose * 100).toFixed(1)}%` : '+0%'})</span>
+                    <div style={{ fontSize: 13.5, fontWeight: 800, color: (d.high || d.ltp) >= prevClose ? '#10b981' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
+                      Rs. {fmt(d.high || d.ltp)} <span style={{ fontSize: 11, color: (d.high || d.ltp) >= prevClose ? '#10b981' : '#f43f5e' }}>({prevClose > 0 && d.high ? `${d.high >= prevClose ? '+' : ''}${((d.high - prevClose) / prevClose * 100).toFixed(1)}%` : '+0.0%'})</span>
                     </div>
                   </div>
                   <div>
                     <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Low</div>
-                    <div style={{ fontSize: 13.5, fontWeight: 800, color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                      Rs. {fmt(d.low || d.ltp)} <span style={{ fontSize: 11, color: '#f43f5e' }}>({prevClose > 0 && d.low ? `${((d.low - prevClose) / prevClose * 100).toFixed(1)}%` : '+0%'})</span>
+                    <div style={{ fontSize: 13.5, fontWeight: 800, color: (d.low || d.ltp) >= prevClose ? '#10b981' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
+                      Rs. {fmt(d.low || d.ltp)} <span style={{ fontSize: 11, color: (d.low || d.ltp) >= prevClose ? '#10b981' : '#f43f5e' }}>({prevClose > 0 && d.low ? `${d.low >= prevClose ? '+' : ''}${((d.low - prevClose) / prevClose * 100).toFixed(1)}%` : '+0.0%'})</span>
                     </div>
                   </div>
                   <div>

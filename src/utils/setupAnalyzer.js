@@ -1982,7 +1982,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const isLowLiquidityGate = computedMedianTurnover20D > 0 && computedMedianTurnover20D < 6000000;
 
   // Gate 2: Negative EPS / Loss-Maker (strictly enforced, no stale/score bypass when EPS <= 0)
-  const isStrictLossMaker = stock?.eps !== undefined && stock?.eps !== null && Number(stock.eps) <= 0;
+  const isStrictLossMaker = stock?.eps !== undefined && stock?.eps !== null && !isNaN(Number(stock.eps)) && Number(stock.eps) < 0;
 
   // Gate 4: Downtrend Under 50 EMA (unconditional)
   const ema50Val = technicalReport?.trend?.ema?.ema50 || 0;

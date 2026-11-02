@@ -1436,9 +1436,16 @@ export default function ShareHubChart({
   const hudMetrics = useMemo(() => {
     if (!activeHud) return { change: 0, pChange: 0, isBull: true };
     if (!hoverData && stock && stock.change != null && stock.pChange != null && !isNaN(Number(stock.change))) {
-      const c = Number(stock.change);
-      const pc = Number(stock.pChange);
-      return { change: c, pChange: pc, isBull: c >= 0 };
+      let c = Number(stock.change);
+      let pc = Number(stock.pChange);
+      const ltpVal = Number(stock.ltp || authoritativeLtp || 0);
+      const prevC = Number(stock.prevClose || stock.previousClose || 0);
+      if (c === 0 && prevC > 0 && ltpVal > 0 && ltpVal !== prevC) {
+        c = +(ltpVal - prevC).toFixed(2);
+        pc = +((c / prevC) * 100).toFixed(2);
+      }
+      const isBull = c > 0 || (c === 0 && pc >= 0);
+      return { change: c, pChange: pc, isBull };
     }
     const currentVal = Number(activeHud.close ?? activeHud.value ?? authoritativeLtp ?? 0);
     const prevCloseVal = Number(stock?.prevClose || stock?.previousClose || (stock?.ltp != null && stock?.change != null ? stock.ltp - stock.change : null));
@@ -1451,11 +1458,19 @@ export default function ShareHubChart({
     if (baseline && baseline > 0) {
       const diff = +(currentVal - baseline).toFixed(2);
       const pct = +((diff / baseline) * 100).toFixed(2);
-      return { change: diff, pChange: pct, isBull: diff >= 0 };
+      const isBull = diff > 0 || (diff === 0 && pct >= 0);
+      return { change: diff, pChange: pct, isBull };
     }
-    const fallbackChange = Number(stock?.change ?? 0);
-    const fallbackPct = Number(stock?.pChange ?? 0);
-    return { change: fallbackChange, pChange: fallbackPct, isBull: fallbackChange >= 0 };
+    let fallbackChange = Number(stock?.change ?? 0);
+    let fallbackPct = Number(stock?.pChange ?? 0);
+    const ltpVal = Number(stock?.ltp || authoritativeLtp || 0);
+    const prevC = Number(stock?.prevClose || stock?.previousClose || 0);
+    if (fallbackChange === 0 && prevC > 0 && ltpVal > 0 && ltpVal !== prevC) {
+      fallbackChange = +(ltpVal - prevC).toFixed(2);
+      fallbackPct = +((fallbackChange / prevC) * 100).toFixed(2);
+    }
+    const isBull = fallbackChange > 0 || (fallbackChange === 0 && fallbackPct >= 0);
+    return { change: fallbackChange, pChange: fallbackPct, isBull };
   }, [activeHud, hoverData, authoritativeLtp, stock, processedChartData, isTrulyIntraday]);
 
   const isUp = hudMetrics.isBull;
@@ -1564,7 +1579,7 @@ export default function ShareHubChart({
                   background: isUp ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
                   color: isUp ? '#10B981' : '#F43F5E'
                 }}>
-                  {isUp ? '▲ +' : '▼ '}{Math.abs(hudMetrics.change).toFixed(2)} ({isUp ? '+' : ''}{hudMetrics.pChange.toFixed(2)}%)
+                  {hudMetrics.change > 0 ? '▲ +' : hudMetrics.change < 0 ? '▼ -' : (hudMetrics.pChange >= 0 ? '▲ +' : '▼ -')}{Math.abs(hudMetrics.change).toFixed(2)} ({hudMetrics.pChange > 0 ? '+' : ''}{hudMetrics.pChange.toFixed(2)}%)
                 </span>
                 {latestBar && (
                   <span style={{ fontSize: 11, color: '#64748b' }} className="hidden sm:inline">
@@ -1671,8 +1686,8 @@ export default function ShareHubChart({
               alignItems: 'center',
               gap: 3
             }}>
-              <span>{isUp ? '▲ +' : '▼ '}{Math.abs(hudMetrics.change).toFixed(2)}</span>
-              <span>({isUp ? '+' : ''}{hudMetrics.pChange.toFixed(2)}%)</span>
+              <span>{hudMetrics.change > 0 ? '▲ +' : hudMetrics.change < 0 ? '▼ -' : (hudMetrics.pChange >= 0 ? '▲ +' : '▼ -')}{Math.abs(hudMetrics.change).toFixed(2)}</span>
+              <span>({hudMetrics.pChange > 0 ? '+' : ''}{hudMetrics.pChange.toFixed(2)}%)</span>
             </span>
             {hudTimeLabel && (
               <span style={{ fontSize: 11, color: '#64748b' }}>({hudTimeLabel})</span>

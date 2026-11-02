@@ -357,10 +357,12 @@ export function calculateFundamentalSummary(stock) {
   const fReasons = [];
 
   // EPS quality
-  if (eps > bench.medianEPS * 1.2) { fscore += 12; fReasons.push(`Strong EPS Rs.${eps.toFixed(2)}`); }
-  else if (eps > 0 && eps >= bench.medianEPS * 0.8) { fscore += 6; fReasons.push(`Average EPS Rs.${eps.toFixed(2)}`); }
-  else if (eps <= 0) { fscore -= 20; fReasons.push('Loss-making — EPS negative'); }
-  else { fscore -= 5; fReasons.push(`Weak EPS Rs.${eps.toFixed(2)}`); }
+  const hasEps = stock.eps !== undefined && stock.eps !== null && !isNaN(Number(stock.eps)) && Number(stock.eps) !== 0;
+  if (hasEps && eps > bench.medianEPS * 1.2) { fscore += 12; fReasons.push(`Strong EPS Rs.${eps.toFixed(2)}`); }
+  else if (hasEps && eps > 0 && eps >= bench.medianEPS * 0.8) { fscore += 6; fReasons.push(`Average EPS Rs.${eps.toFixed(2)}`); }
+  else if (hasEps && eps < 0) { fscore -= 20; fReasons.push('Loss-making — EPS negative'); }
+  else if (hasEps) { fscore -= 5; fReasons.push(`Moderate EPS Rs.${eps.toFixed(2)}`); }
+  else { fReasons.push('Periodic filings pending'); }
 
   // PE vs sector
   if (pe > 0) {

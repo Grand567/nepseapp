@@ -36,6 +36,7 @@ export async function fetchStockSnapshot(symbol) {
     companyName: null,
     sector: null,
     ltp: null, pChange: null, change: null, open: null, high: null, low: null, prevClose: null, volume: null, turnover: null,
+    trades: null, totalTransactions: null,
     high52w: null, low52w: null,
     eps: null, pe: null, pb: null, bookValue: null, roe: null, dividendYield: null,
     listedShares: null, paidUpCapital: null, promoterPercentage: null, publicPercentage: null,
@@ -71,20 +72,42 @@ export async function fetchStockSnapshot(symbol) {
       snapshot.pChange = liveDetail.percentageChange ?? liveDetail.pChange ?? null;
       snapshot.change = liveDetail.change ?? null;
       snapshot.open = liveDetail.openPrice ?? liveDetail.open ?? null;
-      snapshot.high = liveDetail.highPrice ?? liveDetail.high ?? null;
-      snapshot.low = liveDetail.lowPrice ?? liveDetail.low ?? null;
+
+      const rawH = liveDetail.highPrice ?? liveDetail.high ?? null;
+      const rawL = liveDetail.lowPrice ?? liveDetail.low ?? null;
+      if (rawH != null && rawL != null && Number(rawH) > 0 && Number(rawL) > 0) {
+        snapshot.high = Math.max(Number(rawH), Number(rawL));
+        snapshot.low = Math.min(Number(rawH), Number(rawL));
+      } else {
+        snapshot.high = rawH;
+        snapshot.low = rawL;
+      }
+
       snapshot.prevClose = liveDetail.previousClose ?? liveDetail.prevClose ?? null;
       snapshot.volume = liveDetail.totalTradeQuantity ?? liveDetail.volume ?? null;
       snapshot.turnover = liveDetail.totalTradeValue ?? liveDetail.turnover ?? null;
+      snapshot.trades = liveDetail.totalTransactions ?? liveDetail.trades ?? liveDetail.transactions ?? null;
+      snapshot.totalTransactions = snapshot.trades;
       
       snapshot.high52w = liveDetail.fiftyTwoWeekHigh ?? liveDetail.high52w ?? null;
       snapshot.low52w = liveDetail.fiftyTwoWeekLow ?? liveDetail.low52w ?? null;
       
-      snapshot.eps = liveDetail.eps ?? null;
-      snapshot.pe = liveDetail.pe ?? null;
-      snapshot.pb = liveDetail.pb ?? liveDetail.pbv ?? null;
-      snapshot.bookValue = liveDetail.bookValue ?? null;
-      snapshot.roe = liveDetail.roe ?? null;
+      // Do not overwrite with 0 placeholders: EPS can be negative (loss-maker) or positive, but 0 is a scrape failure sentinel
+      if (liveDetail.eps !== undefined && liveDetail.eps !== null && Number(liveDetail.eps) !== 0) {
+        snapshot.eps = Number(liveDetail.eps);
+      }
+      if (liveDetail.pe && Number(liveDetail.pe) > 0) {
+        snapshot.pe = Number(liveDetail.pe);
+      }
+      if ((liveDetail.pb || liveDetail.pbv) && Number(liveDetail.pb || liveDetail.pbv) > 0) {
+        snapshot.pb = Number(liveDetail.pb || liveDetail.pbv);
+      }
+      if (liveDetail.bookValue && Number(liveDetail.bookValue) > 0) {
+        snapshot.bookValue = Number(liveDetail.bookValue);
+      }
+      if (liveDetail.roe && Number(liveDetail.roe) !== 0) {
+        snapshot.roe = Number(liveDetail.roe);
+      }
       snapshot.dividendYield = liveDetail.dividendYield ?? null;
       
       snapshot.listedShares = liveDetail.listedShares ?? liveDetail.sharesOutstanding ?? snapshot.listedShares;
