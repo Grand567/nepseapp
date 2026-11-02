@@ -8,7 +8,7 @@
  */
 
 import { getCachedRealPriceHistory, getCachedBrokerData } from './historyCache.js';
-import { aggregateBrokerMicrostructure } from './sharedBrokerAggregationEngine.js';
+import { aggregateBrokerMicrostructure, evaluateOrderFlowVeto } from './sharedBrokerAggregationEngine.js';
 
 export interface Candle {
   date?: string;
@@ -1298,8 +1298,19 @@ export function classifyWyckoffStage(
   let actionableGuidanceNepali = 'पर्खनुहोस् (Wait & Watch): संस्थागत वा अपरेटर गतिविधि स्पष्ट नहुन्जेल प्रवेश नगर्नुहोस्।';
   let actionableGuidanceEnglish = 'Hold or observe; avoid entry until clear institutional footprint appears.';
 
-  // Logic tree for stage classification (with early detection priority)
-  if (pumpDump.riskScore >= 70 || (pumpDump.riskScore >= 55 && pChange > 5) || (earlySignals.effortVsResult.churnRisk === 'HIGH_DISTRIBUTION_CHURN' && pumpDump.riskScore >= 45)) {
+  const orderFlowVeto = evaluateOrderFlowVeto(brokerFlow, stock);
+  const isVetoed = Boolean(orderFlowVeto?.isVetoed);
+
+  // Logic tree for stage classification (with strict Order Flow Veto Law priority)
+  if (isVetoed) {
+    stage = pChange >= 0 ? '⚠️ EUPHORIA_DISTRIBUTION' : '🔴 ACTIVE_DUMP';
+    stageNameNepali = pChange >= 0
+      ? 'बुल ट्र्याप / अपरेटर एक्जिट (Whale Exit Trap)'
+      : 'डम्पिङ / संस्थागत बिक्री (Institutional Dump)';
+    stageDescription = orderFlowVeto.reason || 'Heavy institutional selling dominating tape; smart money offloading inventory.';
+    actionableGuidanceNepali = 'कडा चेतावनी (Exit / Avoid): ठूला ब्रोकरले व्यापक माल फालिरहेका छन्। नयाँ खरिद कडा रूपमा निषेध गरिएको छ।';
+    actionableGuidanceEnglish = 'Strict Exit Liquidity Warning: Top institutional brokers are offloading heavily. Avoid all fresh buys.';
+  } else if (pumpDump.riskScore >= 70 || (pumpDump.riskScore >= 55 && pChange > 5) || (earlySignals.effortVsResult.churnRisk === 'HIGH_DISTRIBUTION_CHURN' && pumpDump.riskScore >= 45)) {
     stage = '⚠️ EUPHORIA_DISTRIBUTION';
     stageNameNepali = earlySignals.effortVsResult.churnRisk === 'HIGH_DISTRIBUTION_CHURN'
       ? 'वितरण / प्रारम्भिक मन्थन (Early Distribution Churn)'
@@ -1369,6 +1380,9 @@ export function classifyWyckoffStage(
     actionableGuidanceNepali,
     actionableGuidanceEnglish,
     earlySignals,
+    orderFlowVeto,
+    isVetoed,
+    vetoReason: orderFlowVeto?.reason || null,
     isDataSynthetic,
     dataQuality
   };

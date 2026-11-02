@@ -6,6 +6,9 @@
  * Strictly deterministic — zero Math.random() calls.
  */
 
+import { evaluateOrderFlowVeto } from './sharedBrokerAggregationEngine.js';
+import { getCachedBrokerData } from './historyCache.js';
+
 export const CANDLESTICK_PATTERNS_CATALOG = [
   {
     id: 'bullish_engulfing',
@@ -708,7 +711,7 @@ export function detectCandlestickPatternsFromHistory(history = [], fallbackStock
  * Computes Moving Averages (6) + Oscillators (6) = 12 Indicators
  * and outputs a needle angle (-90° to +90°) and rating ('Strong Sell' to 'Strong Buy').
  */
-export function calculateTechnicalSpeedometer(stock = {}, history = []) {
+export function calculateTechnicalSpeedometer(stock = {}, history = [], explicitBrokerData = null) {
   const ltp = Number(stock.ltp || stock.close || stock.closePrice || 0);
   const pChange = Number(stock.pChange || 0);
   const closes = Array.isArray(history) && history.length >= 10
@@ -836,16 +839,31 @@ export function calculateTechnicalSpeedometer(stock = {}, history = []) {
   const allItems = [...maItems, ...oscItems];
   const totalSummary = summarize(allItems);
 
+  const effectiveBroker = explicitBrokerData || stock?.brokerData || stock?.realBrokerAnalysis || stock?.brokerAnalysis || (stock?.symbol ? getCachedBrokerData(stock.symbol) : null);
+  const veto = evaluateOrderFlowVeto(effectiveBroker, stock);
+
+  if (veto?.isVetoed) {
+    if (totalSummary.rating === 'Buy' || totalSummary.rating === 'Strong Buy') {
+      totalSummary.rating = '⚠️ Distribution Trap';
+    }
+  }
+
   const netTotal = totalSummary.buy - totalSummary.sell; // -12 to +12
-  const needleAngle = Math.max(-88, Math.min(88, Math.round((netTotal / 12) * 88)));
+  let needleAngle = Math.max(-88, Math.min(88, Math.round((netTotal / 12) * 88)));
+  if (veto?.isVetoed && needleAngle > -10) {
+    needleAngle = -25;
+  }
   const score = Math.round(((netTotal + 12) / 24) * 100);
 
   return {
     overallRating: totalSummary.rating,
     needleAngle,
-    score,
+    score: veto?.isVetoed ? Math.min(35, score) : score,
     summary: totalSummary,
     maSummary,
-    oscSummary
+    oscSummary,
+    orderFlowVeto: veto,
+    isVetoed: Boolean(veto?.isVetoed),
+    vetoReason: veto?.reason || null
   };
 }

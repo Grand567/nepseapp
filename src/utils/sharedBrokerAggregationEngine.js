@@ -137,6 +137,104 @@ export const PHASE_DEFINITIONS = {
 };
 
 /**
+ * Evaluates the Universal Order Flow Veto Law across NEPSE equities.
+ * 
+ * Veto Rule:
+ * 1. Top 1 Seller offloads >= 25% of total market turnover (with net drain >= 15%).
+ * 2. Top 3 Brokers control >= 38% of sell volume (SCR3 >= 38%) with net negative flow.
+ * 3. Extreme dumping: SCR3 >= 50% regardless of minor intraday bounces.
+ * 
+ * Guard: Requires minimum volume of 1,000 shares to avoid illiquid micro-trade noise.
+ */
+export function evaluateOrderFlowVeto(brokerData = {}, stockSummary = {}) {
+  const totalVol = Number(
+    brokerData?.totalVolume ||
+    stockSummary?.total_volume ||
+    stockSummary?.totalTradedQuantity ||
+    stockSummary?.volume ||
+    0
+  );
+
+  if (totalVol < 1000) {
+    return {
+      isVetoed: false,
+      reason: null,
+      severity: 'NONE',
+      scr3: 0,
+      topSeller: null,
+      topSellerShare: 0
+    };
+  }
+
+  const scr3 = Number(
+    brokerData?.scr3SellPct ??
+    brokerData?.grossSellConcentrationPct ??
+    brokerData?.bcr3SellPct ??
+    0
+  );
+
+  const rawTopSellers = Array.isArray(brokerData?.topSellers)
+    ? brokerData.topSellers
+    : (Array.isArray(brokerData?.topSellerBrokers) ? brokerData.topSellerBrokers : []);
+  const topSeller = rawTopSellers[0] || null;
+
+  const topSellerSellQty = Number(topSeller?.sellQty ?? topSeller?.sellVol ?? 0);
+  const topSellerBuyQty = Number(topSeller?.buyQty ?? topSeller?.buyVol ?? 0);
+  const topSellerNetQty = Number(topSeller?.netQty ?? (topSellerBuyQty - topSellerSellQty));
+  const topSellerShare = totalVol > 0 ? Number(((topSellerSellQty / totalVol) * 100).toFixed(2)) : 0;
+  const topSellerNetDrainPct = totalVol > 0 ? Number(((Math.abs(Math.min(0, topSellerNetQty)) / totalVol) * 100).toFixed(2)) : 0;
+
+  const netFlowPct = Number(
+    brokerData?.smartMoneyNetFlowPct ??
+    (brokerData?.bcr3BuyPct != null && brokerData?.bcr3SellPct != null
+      ? (brokerData.bcr3BuyPct - brokerData.bcr3SellPct)
+      : 0)
+  );
+
+  const isWhaleMonopolyDump = topSellerShare >= 25.0 && topSellerNetDrainPct >= 15.0;
+  const isSyndicateDistribution = scr3 >= 38.0 && (netFlowPct < -5.0 || topSellerNetDrainPct >= 10.0);
+  const isExtremeDumping = scr3 >= 50.0;
+
+  if (isWhaleMonopolyDump || isSyndicateDistribution || isExtremeDumping) {
+    const brokerId = String(topSeller?.brokerId || topSeller?.broker || topSeller?.id || '?');
+    const brokerName = topSeller?.name || topSeller?.brokerName || getBrokerName(brokerId);
+
+    let reason = '';
+    if (isWhaleMonopolyDump) {
+      reason = `Whale Dump: ${brokerName} dumped ${topSellerShare}% of total session volume`;
+    } else if (isExtremeDumping) {
+      reason = `Severe Distribution: Top 3 sellers dumped ${scr3.toFixed(1)}% of total volume`;
+    } else {
+      reason = `Syndicate Distribution: Top 3 sellers control ${scr3.toFixed(1)}% of supply with heavy net outflow`;
+    }
+
+    return {
+      isVetoed: true,
+      reason,
+      severity: isWhaleMonopolyDump || isExtremeDumping ? 'CRITICAL' : 'HIGH',
+      scr3,
+      topSellerShare,
+      topSeller: {
+        brokerId,
+        brokerName,
+        sellQty: topSellerSellQty,
+        netQty: topSellerNetQty,
+        sharePct: topSellerShare
+      }
+    };
+  }
+
+  return {
+    isVetoed: false,
+    reason: null,
+    severity: 'NONE',
+    scr3,
+    topSeller: null,
+    topSellerShare: 0
+  };
+}
+
+/**
  * Core Shared Aggregator
  */
 export function aggregateBrokerMicrostructure(params = {}) {
@@ -651,7 +749,22 @@ export function aggregateBrokerMicrostructure(params = {}) {
     const isActiveMarkup = bcr3NetPct >= 15.0 && (bcr3NetPct - scr3NetPct) >= 5.0 && priceChangePct > 4.5 && latestClose >= bigBrokerVWAP;
     const isRetailAbsorption = bcr3BuyPct > scr3SellPct && bcr3NetPct > scr3NetPct && scr3NetPct < 14.0 && scr3GrossSellPct < 30.0 && tradeSizeRatio >= 1.05;
 
-    if (isTwoWayInstitutionalActivity) {
+    const orderFlowVeto = evaluateOrderFlowVeto({
+      totalVolume,
+      scr3SellPct: scr3GrossSellPct,
+      topSellers: sortedSellers,
+      smartMoneyNetFlowPct: bcr3NetPct - scr3NetPct
+    }, stockSummary);
+
+    if (orderFlowVeto.isVetoed) {
+      phase = priceChangePct >= 0 ? "BULL_TRAP" : "DISTRIBUTION_DANGER";
+      phaseLabel = priceChangePct >= 0
+        ? "Bull Trap (Retail Buying into Whale Dump)"
+        : "Distribution Danger (Whale Offloading)";
+      smartMoneyBias = "Operator Offloading";
+      adSignal = "Distribution";
+      smartMoneyScore = Math.min(25, smartMoneyScore);
+    } else if (isTwoWayInstitutionalActivity) {
       phase = "ACCUMULATION_REACCUMULATION";
       phaseLabel = "Balanced Institutional Flow (High 2-Way Volume)";
       smartMoneyBias = "Institutional Absorption";
@@ -709,7 +822,15 @@ export function aggregateBrokerMicrostructure(params = {}) {
   // Direction Consistency Enforcement (Item 4):
   // Score >= 60 is strictly Accumulation; Score <= 40 is strictly Distribution
   if (!isMatchedCrossTrade && !isThinSample && !isUnderactive && totalVolume > 0) {
-    if (smartMoneyScore >= 60 && adSignal !== "Accumulation") {
+    if (orderFlowVeto.isVetoed) {
+      phase = priceChangePct >= 0 ? "BULL_TRAP" : "DISTRIBUTION_DANGER";
+      phaseLabel = priceChangePct >= 0
+        ? "Bull Trap (Retail Buying into Whale Dump)"
+        : "Distribution Danger (Whale Offloading)";
+      smartMoneyBias = "Operator Offloading";
+      adSignal = "Distribution";
+      smartMoneyScore = Math.min(25, smartMoneyScore);
+    } else if (smartMoneyScore >= 60 && adSignal !== "Accumulation") {
       phase = "STEALTH_ACCUMULATION";
       phaseLabel = "Stealth Accumulation";
       smartMoneyBias = "Institutional Cornering";
@@ -790,6 +911,9 @@ export function aggregateBrokerMicrostructure(params = {}) {
     smartMoneyBias,
     adSignal,
     smartMoneyScore,
+    orderFlowVeto,
+    isVetoed: Boolean(orderFlowVeto?.isVetoed),
+    vetoReason: orderFlowVeto?.reason || null,
     isMatchedCrossTrade,
     isUnderactive,
     isInsufficientSample: Boolean(isUnderactive || isThinSample),

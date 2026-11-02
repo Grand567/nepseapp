@@ -73,6 +73,7 @@ import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { analyzePriceAction } from './priceActionEngine.js';
 import { calculateStockRvol } from './watchlistAlerts.js';
 import { getCachedRealPriceHistory } from './historyCache.js';
+import { evaluateOrderFlowVeto } from './sharedBrokerAggregationEngine.js';
 
 function getSafeCachedBrokerData(symbol) {
   if (!symbol || typeof window === 'undefined' || !window.localStorage) return null;
@@ -820,6 +821,9 @@ function computeEffectiveWeights(availabilityMap, { analogSampleSize = 15 } = {}
 }
 
 export function scoreToVerdict(score, riskGate = {}, setupType = '') {
+  if (riskGate.isOrderFlowVeto) {
+    return 'AVOID ENTRY (ORDER FLOW VETO: ' + (riskGate.orderFlowVetoReason || 'WHALE DUMP') + ')';
+  }
   // ── 5 MANDATORY QUALITY GATES + CHASE CAP & NET RRR HARD GATES ──────────
   if (riskGate.isCircuitTrap) {
     return 'NO TRADE (GATE 1: CIRCUIT CEILING TRAP)';
@@ -1846,10 +1850,16 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
 
   // ── Broker Floorsheet & Smart Money Integration ───────────────
   const brokerAnalysis = resolvedBrokerAnalysis;
+  const orderFlowVeto = evaluateOrderFlowVeto(brokerAnalysis, stock);
+  const isOrderFlowVetoed = Boolean(orderFlowVeto?.isVetoed);
   const brokerAdRatio = brokerAnalysis?.adRatio ?? 0;
-  const brokerAdSignal = brokerAnalysis?.adSignal ?? 'Neutral';
-  const brokerAdStrength = parseFloat(brokerAnalysis?.adStrength) || 0;
-  const isInstitutionalDumping = brokerAdSignal === 'Distribution' && (brokerAdStrength >= 35 || brokerAdRatio <= -0.10);
+  const brokerAdSignal = isOrderFlowVetoed ? 'Distribution' : (brokerAnalysis?.adSignal ?? 'Neutral');
+  const brokerAdStrength = isOrderFlowVetoed ? 90 : (parseFloat(brokerAnalysis?.adStrength) || 0);
+  const isInstitutionalDumping = isOrderFlowVetoed || (brokerAdSignal === 'Distribution' && (brokerAdStrength >= 35 || brokerAdRatio <= -0.10));
+  if (isOrderFlowVetoed) {
+    combinedScore = Math.min(combinedScore, 35);
+    bearishFactors.push('⚠️ Order Flow Veto Active: ' + orderFlowVeto.reason);
+  }
 
   // 30D Microstructure Intelligence (Syndicate Co-Accumulation & Operator Unrealized Profit Margin)
   const operatorProfitMarginPct = Number(
@@ -2044,6 +2054,8 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     isSubFriction,
     isUnfavorableRRR,
     isInstitutionalDumping,
+    isOrderFlowVeto: isOrderFlowVetoed,
+    orderFlowVetoReason: orderFlowVeto?.reason || '',
     isDeepHydroDryBreakout,
     isHardCeilingDowntrend: isBelow50EMA,
     isOverheadResistanceCeiling,

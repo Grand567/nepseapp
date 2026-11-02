@@ -34,10 +34,17 @@ export default function StockTechnicalGaugeCard({ stock = {}, history = [] }) {
       ? speedometer.oscSummary
       : speedometer.summary;
 
+  const isVetoed = Boolean(speedometer.isVetoed);
+  const activeRating = isVetoed && (activeData.rating === 'Buy' || activeData.rating === 'Strong Buy')
+    ? '⚠️ Distribution Trap'
+    : activeData.rating;
+
   const activeTotal = (activeData.buy + activeData.neutral + activeData.sell) || 1;
-  const activeAngle = Math.max(-88, Math.min(88, Math.round(((activeData.buy - activeData.sell) / activeTotal) * 88)));
+  const rawAngle = Math.max(-88, Math.min(88, Math.round(((activeData.buy - activeData.sell) / activeTotal) * 88)));
+  const activeAngle = (isVetoed && rawAngle > -10) ? -28 : rawAngle;
 
   const getRatingColor = (rating) => {
+    if (String(rating).includes('Distribution Trap')) return '#f43f5e';
     if (rating === 'Strong Buy') return '#10b981';
     if (rating === 'Buy') return '#34d399';
     if (rating === 'Strong Sell') return '#f43f5e';
@@ -45,7 +52,7 @@ export default function StockTechnicalGaugeCard({ stock = {}, history = [] }) {
     return '#f59e0b';
   };
 
-  const ratingColor = getRatingColor(activeData.rating);
+  const ratingColor = getRatingColor(activeRating);
 
   // Convert needle angle (-90..+90) to SVG coordinates around center (120, 110) with radius 74
   const rad = ((activeAngle - 90) * Math.PI) / 180;
@@ -177,8 +184,26 @@ export default function StockTechnicalGaugeCard({ stock = {}, history = [] }) {
             letterSpacing: '0.02em',
             marginTop: -6
           }}>
-            {activeData.rating.toUpperCase()}
+            {activeRating.toUpperCase()}
           </div>
+          {isVetoed && (
+            <div style={{
+              marginTop: 6,
+              background: 'rgba(244, 63, 94, 0.12)',
+              border: '1px solid rgba(244, 63, 94, 0.35)',
+              borderRadius: 8,
+              padding: '4px 10px',
+              fontSize: 11.5,
+              fontWeight: 700,
+              color: '#fb7185',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5
+            }}>
+              <AlertTriangle style={{ width: 13, height: 13, flexShrink: 0 }} />
+              <span>Order Flow Veto: {speedometer.vetoReason}</span>
+            </div>
+          )}
         </div>
 
         {/* Buy / Neutral / Sell Counter Pills */}

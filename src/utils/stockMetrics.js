@@ -4,10 +4,13 @@
  * Computes exact Float Market Cap, 120D/180D Averages (raw & adjusted), ATH, and Market Cap tiers.
  */
 
+import { getCachedStockFundamentals } from './historyCache.js';
+
 export function calculateStockMetrics(stock = {}, priceHistory = []) {
   const s = stock || {};
   const ltp = Number(s.ltp || s.marketPrice || s.close || 0);
-  const listedShares = Number(s.listedShares || s.sharesOutstanding || 0);
+  const cachedFund = s.symbol ? getCachedStockFundamentals(s.symbol) : null;
+  const listedShares = Number(s.listedShares || s.sharesOutstanding || cachedFund?.listedShares || 0);
 
   // Cascade through all variants of promoter & public float percentages
   // In NEPSE, when promoter lock-in expires (e.g. SHEL), promoter shares = 0 and public float = 100%
@@ -46,12 +49,13 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
   const paidUpCapital = Number(s.paidUpCapital || (listedShares * 100));
 
   // PBV (Price to Book Value)
-  const bookValue = Number(s.bookValue || s.bv || 0);
-  const pbv = bookValue > 0 && ltp > 0 ? Number((ltp / bookValue).toFixed(2)) : Number(s.pbv || 0);
+  const bookValue = Number(s.bookValue || s.bv || s.bvps || cachedFund?.bookValue || cachedFund?.bvps || 0);
+  const pbv = bookValue > 0 && ltp > 0 ? Number((ltp / bookValue).toFixed(2)) : Number(s.pbv || s.pb || cachedFund?.pbv || 0);
 
   // PE Ratio
-  const eps = Number(s.eps || 0);
-  const pe = eps > 0 && ltp > 0 ? Number((ltp / eps).toFixed(2)) : Number(s.pe || 0);
+  const eps = Number(s.eps || cachedFund?.eps || 0);
+  const pe = eps > 0 && ltp > 0 ? Number((ltp / eps).toFixed(2)) : Number(s.pe || cachedFund?.pe || 0);
+  const roe = Number(s.roe || cachedFund?.roe || (bookValue > 0 && eps > 0 ? +((eps / bookValue) * 100).toFixed(2) : 0));
 
   // Moving Averages from History (120D & 180D)
   const history = Array.isArray(priceHistory) ? [...priceHistory].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)) : [];
@@ -125,6 +129,7 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
     pbv,
     eps,
     pe,
+    roe,
     avg120d,
     avg120dAdj,
     avg180d,

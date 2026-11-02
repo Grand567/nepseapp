@@ -9,6 +9,7 @@
 
 import { idbGet, idbSet } from './indexedDb.js';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json';
+import latestFundamentals from '../data/nepse_fundamentals_latest.json';
 
 // Universal in-memory cache maps
 const memHistCache = new Map();
@@ -16,6 +17,15 @@ const memFundCache = new Map();
 const memBrokerCache = new Map();
 const memFloorsheetCache = new Map();
 export const brokerDataCache = new Map();
+
+// Pre-seed in-memory fundamentals cache synchronously from verified baseline
+if (latestFundamentals && typeof latestFundamentals === 'object') {
+  for (const [sym, fund] of Object.entries(latestFundamentals)) {
+    if (sym && fund) {
+      memFundCache.set(sym.toUpperCase(), fund);
+    }
+  }
+}
 
 /**
  * Builds precomputed per-scrip broker analysis map from bundled verified broker matrix.
@@ -350,6 +360,12 @@ export function getCachedStockFundamentals(sym) {
       }
     }
   } catch (_) {}
+
+  if (latestFundamentals && latestFundamentals[key]) {
+    const f = latestFundamentals[key];
+    memFundCache.set(key, f);
+    return f;
+  }
 
   memFundCache.set(key, null);
   return null;

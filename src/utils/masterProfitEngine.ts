@@ -36,6 +36,7 @@ import {
 } from './accumulationDistributionEngine';
 
 import { getCachedStockFundamentals, getCachedRealPriceHistory, getCachedRealBrokerAnalysis } from './historyCache.js';
+import { evaluateOrderFlowVeto } from './sharedBrokerAggregationEngine.js';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from './nepseCalendar.js';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import sebonPipelineData from '../data/sebonPipelineData.json';
@@ -483,8 +484,12 @@ export function evaluateMasterStock(
     ? wyckoffResult.stage
     : (cachedBroker?.phase || '🟢 STEALTH_ACCUMULATION');
 
+  const orderFlowVeto = (wyckoffResult as any)?.orderFlowVeto || evaluateOrderFlowVeto(brokerConc, stock);
+  const isVetoed = Boolean(orderFlowVeto?.isVetoed || cachedBroker?.isVetoed);
+
   // Traps & Lock-in Check (Anti-Distribution & Operator Exit Liquidity Trap Gate)
   const isDumping = Boolean(
+    isVetoed ||
     cachedBroker?.isInstitutionalDumping ||
     cachedBroker?.phase === 'DISTRIBUTION_DANGER' ||
     cachedBroker?.phase === 'BULL_TRAP' ||
@@ -495,7 +500,7 @@ export function evaluateMasterStock(
     wyckoffStageStr.includes('DUMP') ||
     Boolean(stock?.isDistributionTrap)
   );
-  const isDistributionTrap = isDumping && pChange >= 0;
+  const isDistributionTrap = isVetoed || (isDumping && pChange >= 0);
 
   // Enhanced 3-Year Promoter Lock-in Check
   let daysToLockin: number | null = null;

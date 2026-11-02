@@ -73,6 +73,7 @@ import {
 import { calculateMultiDayDiagnostics, buildDailyHistoryFromStockData } from '../utils/microstructureEngine';
 import { calculateStockSignals } from '../utils/stockSignals';
 import { calculateStockMetrics, formatNprMoney } from '../utils/stockMetrics';
+import { evaluateOrderFlowVeto } from '../utils/sharedBrokerAggregationEngine';
 import StockSignalsCard from './StockSignalsCard';
 import StockFundamentalsTab from './StockFundamentalsTab';
 import StockBrokerAnalysisTab from './StockBrokerAnalysisTab';
@@ -866,8 +867,10 @@ function BeginnerConfidenceCard({
     check2Bg = 'rgba(56, 189, 248, 0.08)';
     check2Border = 'rgba(56, 189, 248, 0.25)';
   } else {
+    const cardOrderFlowVeto = evaluateOrderFlowVeto(realBrokerAnalysis, d);
     // Only evaluate Distribution/Trap if there is genuine sell dominance and activity
     const isDistributionOrTrap = Boolean(
+      cardOrderFlowVeto.isVetoed ||
       currentPhase === 'DISTRIBUTION_DANGER' ||
       currentPhase === 'BULL_TRAP' ||
       (realBrokerAnalysis?.adSignal === 'Distribution' && grossSellPct >= 35 && grossSellPct > grossBuyPct) ||
@@ -894,11 +897,14 @@ function BeginnerConfidenceCard({
     );
 
     if (isStrongDistribution) {
-      check2Badge = '🚨 Big Players Selling (Distribution Warning)';
-      check2Desc = `Caution: Top selling brokers account for ${grossSellPct.toFixed(1)}% of volume (vs ${grossBuyPct.toFixed(1)}% buy). Big players are offloading inventory.`;
+      const cardOrderFlowVeto = evaluateOrderFlowVeto(realBrokerAnalysis, d);
+      check2Badge = cardOrderFlowVeto.isVetoed ? '🚨 Order Flow Veto: Whale Dump' : '🚨 Big Players Selling (Distribution Warning)';
+      check2Desc = cardOrderFlowVeto.isVetoed
+        ? `Order Flow Veto: ${cardOrderFlowVeto.reason}. Heavy institutional selling overrides all accumulation patterns.`
+        : `Caution: Top selling brokers account for ${grossSellPct.toFixed(1)}% of volume (vs ${grossBuyPct.toFixed(1)}% buy). Big players are offloading inventory.`;
       check2Color = '#f43f5e';
-      check2Bg = 'rgba(244, 63, 94, 0.08)';
-      check2Border = 'rgba(244, 63, 94, 0.25)';
+      check2Bg = 'rgba(244, 63, 94, 0.12)';
+      check2Border = 'rgba(244, 63, 94, 0.35)';
     } else if (isStrongAccumulation) {
       check2Badge = '🟢 Big Players Accumulating';
       check2Desc = `Top 5 brokers absorbed ${grossBuyPct.toFixed(1)}% of all shares bought${whaleVwap ? ` at Big Broker VWAP of Rs. ${whaleVwap}` : ''} (Net absorption: ${bcr5Net}%).`;
@@ -1037,14 +1043,17 @@ function BeginnerConfidenceCard({
   const slPct = (buyCalc?.totalAmount > 0) ? ((Math.abs(lossSL) / buyCalc.totalAmount) * 100).toFixed(1) : '0.0';
 
   // Bottom Action Plan Banner
+  const beginnerOrderFlowVeto = evaluateOrderFlowVeto(realBrokerAnalysis, d);
   const verdict = String(entryExitPlan?.verdict || '').toUpperCase();
-  const isBuyVerdict = verdict.includes('BUY') || verdict.includes('ACCUMULATE');
-  const isHoldVerdict = verdict.includes('HOLD') || verdict.includes('WAIT');
+  const isBuyVerdict = !beginnerOrderFlowVeto.isVetoed && (verdict.includes('BUY') || verdict.includes('ACCUMULATE'));
+  const isHoldVerdict = !beginnerOrderFlowVeto.isVetoed && (verdict.includes('HOLD') || verdict.includes('WAIT'));
 
   let planBg = 'rgba(244, 63, 94, 0.08)';
   let planBorder = 'rgba(244, 63, 94, 0.3)';
-  let planTitle = '🛑 Step-by-Step Plan: Stand Aside / Capital Protection';
-  let planText = `Stand aside and protect your capital. Do not enter fresh buy orders while ${bcr3Sell > bcr3Buy ? 'major brokers are net selling shares' : 'risk gates are triggered'}. Wait for clear institutional support.`;
+  let planTitle = beginnerOrderFlowVeto.isVetoed ? '🛑 Step-by-Step Plan: Order Flow Veto Active — Stand Aside' : '🛑 Step-by-Step Plan: Stand Aside / Capital Protection';
+  let planText = beginnerOrderFlowVeto.isVetoed
+    ? `Order Flow Veto: ${beginnerOrderFlowVeto.reason}. Do NOT buy or average down. Big institutions are aggressively offloading.`
+    : `Stand aside and protect your capital. Do not enter fresh buy orders while ${bcr3Sell > bcr3Buy ? 'major brokers are net selling shares' : 'risk gates are triggered'}. Wait for clear institutional support.`;
 
   if (isBuyVerdict) {
     planBg = 'rgba(16, 185, 129, 0.08)';
@@ -2393,12 +2402,15 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   }, [realMarketDepth]);
 
   const graham = useMemo(() => {
-    const res = calculateGrahamIntrinsicValue(d?.eps, d?.bookValue, d?.ltp);
+    const effEps = d?.eps ?? stockMetrics?.eps;
+    const effBv = d?.bookValue ?? stockMetrics?.bookValue;
+    const effLtp = d?.ltp ?? stockMetrics?.ltp;
+    const res = calculateGrahamIntrinsicValue(effEps, effBv, effLtp);
     return {
       ...res,
       isBenchmarkEstimate: Boolean(d?.isBenchmarkEstimate)
     };
-  }, [d?.eps, d?.bookValue, d?.ltp, d?.isBenchmarkEstimate]);
+  }, [d?.eps, d?.bookValue, d?.ltp, d?.isBenchmarkEstimate, stockMetrics?.eps, stockMetrics?.bookValue, stockMetrics?.ltp]);
   const actionZone = useMemo(() => {
     return classifyActionZone({
       ...d,
@@ -3372,6 +3384,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
 
           const circuitCeiling = prevClose > 0 ? +(prevClose * 1.15).toFixed(1) : null;
           const circuitFloor = prevClose > 0 ? +(prevClose * 0.85).toFixed(1) : null;
+          const overviewOrderFlowVeto = evaluateOrderFlowVeto(realBrokerAnalysis || d?.realBrokerAnalysis, d);
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -3547,7 +3560,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   <div>
                     <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Trades</div>
                     <div style={{ fontSize: 13.5, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
-                      {d.trades || d.totalTrades || d.totalTransactions || realFloorsheet?.totalElements || (realFloorsheet?.rows ? realFloorsheet.rows.length : 0) || realBrokerAnalysis?.totalTransactions ? Number(d.trades || d.totalTrades || d.totalTransactions || realFloorsheet?.totalElements || (realFloorsheet?.rows ? realFloorsheet.rows.length : 0) || realBrokerAnalysis?.totalTransactions).toLocaleString() : '—'}
+                      {(() => {
+                        const tradesCount = d.trades || d.totalTrades || d.totalTransactions || d.transactions ||
+                          realFloorsheet?.totalElements || (Array.isArray(realFloorsheet?.rows) ? realFloorsheet.rows.length : 0) || (Array.isArray(realFloorsheet) ? realFloorsheet.length : 0) ||
+                          realBrokerAnalysis?.totalTrades || realBrokerAnalysis?.totalTransactions || realBrokerAnalysis?.trades ||
+                          (Array.isArray(realBrokerAnalysis?.brokers) ? Math.round(realBrokerAnalysis.brokers.reduce((acc, b) => acc + (b.trades || b.transactions || 0), 0) / 2) : 0);
+                        return tradesCount > 0 ? Number(tradesCount).toLocaleString() : '—';
+                      })()}
                     </div>
                   </div>
                   <div>
@@ -3576,6 +3595,44 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   </div>
                 </div>
               </div>
+
+              {/* ── ORDER FLOW VETO ALERT BANNER ── */}
+              {overviewOrderFlowVeto?.isVetoed && (
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.22), rgba(185, 28, 28, 0.32))',
+                  border: '1.5px solid rgba(239, 68, 68, 0.75)',
+                  borderRadius: 16,
+                  padding: '14px 18px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                  boxShadow: '0 4px 20px rgba(239, 68, 68, 0.25)'
+                }}>
+                  <AlertTriangle style={{ width: 24, height: 24, color: '#f87171', flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{
+                        background: '#ef4444',
+                        color: '#ffffff',
+                        fontSize: 10.5,
+                        fontWeight: 900,
+                        padding: '2px 7px',
+                        borderRadius: 5,
+                        letterSpacing: '0.04em',
+                        textTransform: 'uppercase'
+                      }}>
+                        ORDER FLOW VETO LAW
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 900, color: '#fecaca', letterSpacing: '0.01em' }}>
+                        INSTITUTIONAL EXIT LIQUIDITY TRAP
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: '#f1f5f9', marginTop: 5, lineHeight: 1.5 }}>
+                      <strong style={{ color: '#fca5a5' }}>{overviewOrderFlowVeto.reason}</strong>. All accumulation and buy indicators have been strictly locked and overridden to prevent retail bull-trap entry.
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ── 2. Interactive Chart (PROMINENT RIGHT UNDER PRICE — GROWW / KITE REFERENCE) ── */}
               <div style={{
@@ -3958,21 +4015,26 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                 const eeIsHold = !eeIsBuy && !eeIsAvoid;
                 const rvolNow = modalRvol || 1.0;
                 const pChangeNow = Number(d?.pChange || 0);
-                const brokerDumping = Boolean(realBrokerAnalysis?.adSignal === 'Distribution' && (realBrokerAnalysis?.adRatio || 0) < -0.05);
-                const brokerAccum = Boolean(realBrokerAnalysis?.adSignal === 'Accumulation' && !brokerDumping);
+                const masterOrderFlowVeto = evaluateOrderFlowVeto(realBrokerAnalysis || d?.realBrokerAnalysis, d);
+                const brokerDumping = masterOrderFlowVeto.isVetoed || Boolean(realBrokerAnalysis?.adSignal === 'Distribution' && (realBrokerAnalysis?.adRatio || 0) < -0.05);
+                const brokerAccum = !masterOrderFlowVeto.isVetoed && Boolean(realBrokerAnalysis?.adSignal === 'Accumulation' && !brokerDumping);
                 let zoneSignal = 'NEUTRAL';
                 if (brokerDumping || (pChangeNow >= 8 && rvolNow < 1.2)) zoneSignal = 'AVOID';
                 else if (brokerAccum && rvolNow >= 1.3 && pChangeNow >= 0) zoneSignal = 'BUY';
                 else if (rvolNow >= 1.4 && pChangeNow >= 2) zoneSignal = 'BUY';
                 else if (pChangeNow <= -3 && !brokerAccum) zoneSignal = 'AVOID';
                 else if (brokerAccum || rvolNow >= 1.1) zoneSignal = 'HOLD';
-                const consensusBuy = eeIsBuy && (zoneSignal === 'BUY' || zoneSignal === 'NEUTRAL');
-                const consensusAvoid = eeIsAvoid || (eeIsHold && zoneSignal === 'AVOID') || (eeIsBuy && zoneSignal === 'AVOID');
-                const conflictDetected = (eeIsBuy && zoneSignal === 'AVOID') || (eeIsAvoid && zoneSignal === 'BUY');
-                const setupQuality = entryExitPlan?.setupScore || 0;
+                const consensusBuy = !masterOrderFlowVeto.isVetoed && eeIsBuy && (zoneSignal === 'BUY' || zoneSignal === 'NEUTRAL');
+                const consensusAvoid = masterOrderFlowVeto.isVetoed || eeIsAvoid || (eeIsHold && zoneSignal === 'AVOID') || (eeIsBuy && zoneSignal === 'AVOID');
+                const conflictDetected = !masterOrderFlowVeto.isVetoed && ((eeIsBuy && zoneSignal === 'AVOID') || (eeIsAvoid && zoneSignal === 'BUY'));
+                const setupQuality = masterOrderFlowVeto.isVetoed ? Math.min(entryExitPlan?.setupScore || 0, 30) : (entryExitPlan?.setupScore || 0);
                 let label = 'HOLD / OBSERVE'; let sublabel = 'Awaiting alignment of all signals before entry.';
                 let bg = 'rgba(245, 158, 11, 0.09)'; let border = 'rgba(245, 158, 11, 0.35)'; let color = '#fbbf24'; let icon = '🔵';
-                if (conflictDetected) {
+                if (masterOrderFlowVeto.isVetoed) {
+                  label = '⚠️ ORDER FLOW VETO — AVOID / EXIT';
+                  sublabel = `Institutional Exit Liquidity Trap: ${masterOrderFlowVeto.reason}. Fresh buy positions strictly forbidden.`;
+                  bg = 'rgba(244, 63, 94, 0.12)'; border = 'rgba(244, 63, 94, 0.45)'; color = '#f87171'; icon = '🚨';
+                } else if (conflictDetected) {
                   label = '⚠️ SIGNALS CONFLICT — DO NOT ENTER';
                   sublabel = `Entry/Exit Analyzer says "${eeVerdict}" BUT broker flow diverges. Await confirmation before initiating.`;
                   bg = 'rgba(244, 63, 94, 0.10)'; border = 'rgba(244, 63, 94, 0.45)'; color = '#f87171'; icon = '⚠️';
