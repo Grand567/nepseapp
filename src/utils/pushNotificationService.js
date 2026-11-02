@@ -147,7 +147,8 @@ export function triggerNativeStatusBarNotification(normalized) {
         channelId,
         normalized.symbol || '',
         normalized.type || '',
-        normalized.action || ''
+        normalized.action || (normalized.symbol ? 'OPEN_STOCK' : 'OPEN_NEWS'),
+        normalized.url || ''
       );
       return;
     } catch (e) {
@@ -288,6 +289,9 @@ export async function initPushNotifications() {
         const notification = action.notification || {};
         const normalized = normalizeNotificationItem(notification);
         markNotificationAsRead(normalized.id);
+
+        // Dispatch unified notification clicked event
+        window.dispatchEvent(new CustomEvent('dravyashree_notification_clicked', { detail: normalized }));
 
         if (normalized.action === 'OPEN_IPO') {
           window.dispatchEvent(new CustomEvent('dravyashree_open_ipo', { detail: normalized }));

@@ -145,32 +145,95 @@ function AppInner() {
     };
   }, []);
 
+  // Unified Notification Click Router (Status Bar, Lockscreen, Drawer, Deep Links)
+  const routeNotificationClick = useCallback((item) => {
+    if (!item) return;
+    console.log('[App] Routing notification click action:', item);
+
+    const action = String(item.action || '').toUpperCase();
+    const type = String(item.type || '').toUpperCase();
+    const category = String(item.category || '').toLowerCase();
+    const symbol = String(item.symbol || '').toUpperCase().trim();
+    const url = item.url || '';
+
+    // 1. NEWS & Corporate Announcements ("balut news" -> about news)
+    const isNews = action === 'OPEN_NEWS' || category === 'news' || type === 'NEWS_ALERT' || type.includes('NEWS') || (!symbol && url);
+    if (isNews) {
+      try {
+        localStorage.setItem('open_service_id', 'news');
+        window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'news', url, headline: item.title } }));
+      } catch (_) {}
+      setActiveTab('services');
+      if (url && typeof window !== 'undefined') {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+
+    // 2. IPO Alert
+    const isIpo = action === 'OPEN_IPO' || type === 'IPO_ALERT' || category === 'ipo' || item.title?.toLowerCase().includes('ipo');
+    if (isIpo) {
+      setActiveTab('portfolio');
+      return;
+    }
+
+    // 3. BREAKOUT / STOCK Alert ("if it is of stock then so on")
+    if (symbol) {
+      const found = Array.isArray(stocks) ? stocks.find(s => s && String(s.symbol || '').toUpperCase() === symbol) : null;
+      const targetStock = found || { symbol, name: item.title || symbol, ltp: Number(item.ltp || 0) };
+      setSmartAlertModal({ isOpen: false, alert: null });
+      setActiveTab('market');
+      openStockDetail(targetStock);
+      return;
+    }
+
+    // 4. Pro Breakout / Accumulation Radar (no specific symbol)
+    if (action === 'OPEN_RADAR' || type.includes('BREAKOUT') || category === 'pro') {
+      try {
+        localStorage.setItem('open_service_id', 'breakout-trap-radar');
+        window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'breakout-trap-radar' } }));
+      } catch (_) {}
+      setActiveTab('services');
+      return;
+    }
+
+    // Fallback: Open smart alert modal if alert details exist
+    setSmartAlertModal({ isOpen: true, alert: item });
+  }, [stocks, openStockDetail, setActiveTab]);
+
   // Listen for Lockscreen / Deep Link tap or In-App Banner clicks
   useEffect(() => {
-    const handleOpenSmartAlert = (e) => {
-      const alertData = e.detail;
-      if (alertData) {
-        setSmartAlertModal({ isOpen: true, alert: alertData });
-      }
-    };
-    const handleOpenIpo = () => {
-      setActiveTab('portfolio');
-    };
-    const handleOpenNews = (e) => {
-      if (e.detail?.url) {
-        window.open(e.detail.url, '_blank', 'noopener,noreferrer');
-      }
+    const handleNotificationEvent = (e) => {
+      routeNotificationClick(e.detail);
     };
 
-    window.addEventListener('dravyashree_open_smart_alert', handleOpenSmartAlert);
-    window.addEventListener('dravyashree_open_ipo', handleOpenIpo);
-    window.addEventListener('dravyashree_open_news', handleOpenNews);
+    window.addEventListener('dravyashree_notification_clicked', handleNotificationEvent);
+    window.addEventListener('dravyashree_open_smart_alert', handleNotificationEvent);
+    window.addEventListener('dravyashree_open_ipo', handleNotificationEvent);
+    window.addEventListener('dravyashree_open_news', handleNotificationEvent);
+
+    // Consume any pending deep link from Android native intent (cold start / closed app)
+    if (typeof window !== 'undefined' && window.NepseNativeNotifier && typeof window.NepseNativeNotifier.getPendingNotification === 'function') {
+      try {
+        const pendingRaw = window.NepseNativeNotifier.getPendingNotification();
+        if (pendingRaw) {
+          const parsed = JSON.parse(pendingRaw);
+          setTimeout(() => {
+            routeNotificationClick(parsed);
+          }, 450);
+        }
+      } catch (err) {
+        console.warn('[App] Error consuming pending notification:', err);
+      }
+    }
+
     return () => {
-      window.removeEventListener('dravyashree_open_smart_alert', handleOpenSmartAlert);
-      window.removeEventListener('dravyashree_open_ipo', handleOpenIpo);
-      window.removeEventListener('dravyashree_open_news', handleOpenNews);
+      window.removeEventListener('dravyashree_notification_clicked', handleNotificationEvent);
+      window.removeEventListener('dravyashree_open_smart_alert', handleNotificationEvent);
+      window.removeEventListener('dravyashree_open_ipo', handleNotificationEvent);
+      window.removeEventListener('dravyashree_open_news', handleNotificationEvent);
     };
-  }, [setActiveTab]);
+  }, [routeNotificationClick]);
 
   useBackHandler(() => {
     setShowNotificationCenter(false);
@@ -963,12 +1026,13 @@ function AppInner() {
 
   const synchronizedSelectedStock = useMemo(() => {
     if (!selectedStock) return null;
-    const targetSym = String(selectedStock.symbol || '').toUpperCase().trim();
-    if (!targetSym || !Array.isArray(stocks) || stocks.length === 0) return selectedStock;
+    const baseObj = typeof selectedStock === 'string' ? { symbol: selectedStock, name: selectedStock } : selectedStock;
+    const targetSym = String(baseObj.symbol || '').toUpperCase().trim();
+    if (!targetSym || !Array.isArray(stocks) || stocks.length === 0) return baseObj;
     const liveMatch = stocks.find(
       s => String(s.symbol || '').toUpperCase().trim() === targetSym
     );
-    return liveMatch ? { ...selectedStock, ...liveMatch } : selectedStock;
+    return liveMatch ? { ...baseObj, ...liveMatch } : baseObj;
   }, [selectedStock, stocks]);
 
   // ── Auth checking splash ──

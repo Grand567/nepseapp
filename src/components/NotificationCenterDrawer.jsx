@@ -107,15 +107,31 @@ export function NotificationCenterDrawer({
     markNotificationAsRead(item.id);
     setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n));
 
-    if (item.action === 'OPEN_IPO') {
+    const isNews = item.action === 'OPEN_NEWS' || item.type === 'NEWS_ALERT' || item.category === 'news' || (!item.symbol && item.url);
+    if (isNews) {
+      onClose();
+      try {
+        localStorage.setItem('open_service_id', 'news');
+        window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'news', url: item.url, headline: item.title } }));
+      } catch (_) {}
+      if (onNavigateTab) onNavigateTab('services');
+      if (item.url) window.open(item.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (item.action === 'OPEN_IPO' || item.type === 'IPO_ALERT' || item.title?.toLowerCase().includes('ipo')) {
       onClose();
       if (onNavigateTab) onNavigateTab('portfolio');
-    } else if (item.action === 'OPEN_NEWS' && item.url) {
-      window.open(item.url, '_blank', 'noopener,noreferrer');
-    } else if (item.symbol && onOpenStock && (item.type?.includes('NEWS') || item.type?.includes('EXIT'))) {
+      return;
+    }
+
+    if (item.symbol && onOpenStock) {
       onClose();
       onOpenStock(item.symbol);
-    } else if (onOpenAlertModal) {
+      return;
+    }
+
+    if (onOpenAlertModal) {
       onClose();
       onOpenAlertModal(item);
     }
