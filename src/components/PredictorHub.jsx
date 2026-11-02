@@ -327,12 +327,21 @@ export default function PredictorHub({
       if (isAbove200EMA === true) score += 5;
       if (isAbove200EMA === false) score -= 8;
 
-      // ── Institutional Broker Flow (Cornering vs Offloading) ─────────────
-      if (vol >= 200 && bcr3Buy >= 40 && bcr3Buy > bcr3Sell) {
-        score += 6; // Institutional Cornering bonus
-      }
-      if (vol >= 200 && bcr3Sell >= 42 && bcr3Sell > bcr3Buy) {
-        score -= 10; // Operator Offloading penalty
+      // ── Order Flow Veto Guard ───────────────────────────────────────────
+      const sBrokerData = s.brokerAnalysis || s.realBrokerAnalysis || s.brokerData || s;
+      const orderFlowVeto = evaluateOrderFlowVeto(sBrokerData, s);
+      const isOrderFlowVetoed = Boolean(orderFlowVeto?.isVetoed);
+
+      if (isOrderFlowVetoed) {
+        score = Math.min(score, 25);
+      } else {
+        // ── Institutional Broker Flow (Cornering vs Offloading) ─────────────
+        if (vol >= 200 && bcr3Buy >= 40 && bcr3Buy > bcr3Sell) {
+          score += 6; // Institutional Cornering bonus
+        }
+        if (vol >= 200 && bcr3Sell >= 42 && bcr3Sell > bcr3Buy) {
+          score -= 10; // Operator Offloading penalty
+        }
       }
 
       // ── Hydro Dry Season Seasonality ─────────────────────────────────────
@@ -365,9 +374,9 @@ export default function PredictorHub({
         }
       }
 
-      // ── Apply Hard Trend Ceiling ──────────────────────────────────────────
+      // ── Apply Hard Trend Ceiling & Order Flow Veto ─────────────────────────
       const rawScore = Math.max(10, Math.min(98, Math.round(score)));
-      let compositeScore = hardCeilingApplied ? Math.min(48, rawScore) : rawScore;
+      let compositeScore = isOrderFlowVetoed ? Math.min(25, rawScore) : (hardCeilingApplied ? Math.min(48, rawScore) : rawScore);
 
       // Deep dry season hydro stocks are also capped at 55 to prevent speculative traps
       if (hydroSeason.isHydro && hydroSeason.isDrySeason && hydroSeason.penaltyPoints <= -15) {
@@ -388,7 +397,8 @@ export default function PredictorHub({
         trendWarning += `❄️ [${hydroSeason.seasonLabel}]: RoR generation at winter low. `;
       }
 
-      if (compositeScore >= 70) reasoning = `${trendWarning}Strong volume expansion (${vsr.toFixed(1)}x) with multi-factor momentum alignment above moving averages.`;
+      if (isOrderFlowVetoed) reasoning = `🚨 ORDER FLOW VETO ACTIVE: ${orderFlowVeto.reason}. Heavy institutional selling in progress — fresh buys strictly avoided.`;
+      else if (compositeScore >= 70) reasoning = `${trendWarning}Strong volume expansion (${vsr.toFixed(1)}x) with multi-factor momentum alignment above moving averages.`;
       else if (compositeScore >= 55) reasoning = `${trendWarning}Constructive accumulation with steady buyer participation.`;
       else if (hardCeilingApplied) reasoning = `${trendWarning}Rally into structural resistance. Await confirmed close above 50 EMA before considering entry.`;
       else if (compositeScore <= 35) reasoning = `${trendWarning}Lagging volume and breakdown below intermediate support. High risk profile.`;

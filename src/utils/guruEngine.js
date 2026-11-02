@@ -38,6 +38,7 @@ import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { getCachedStockFundamentals, getCachedRealPriceHistory } from './historyCache.js';
 import { calculateStockRvol } from './watchlistAlerts.js';
 import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
+import { evaluateOrderFlowVeto } from './sharedBrokerAggregationEngine.js';
 
 /**
  * Evaluates a single stock setup with unified quantitative & statistical gates.
@@ -57,12 +58,14 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
   }
   const historyDays = candles.length;
 
-  // Floor sheet broker metrics
+  // Floor sheet broker metrics & Order Flow Veto Law
   const broker = brokerData || stock?.brokerAnalysis || {};
+  const orderFlowVeto = evaluateOrderFlowVeto(broker, stock);
+  const isVetoed = Boolean(orderFlowVeto?.isVetoed);
   const adRatio = Number(broker.adRatio || 0);
   const lbas = Number(broker.lbas || 0.35); // Large-block absorption share
-  const isBrokerDumping = adRatio <= -0.10 || (broker.adSignal === 'Distribution' && adRatio < 0);
-  const isBrokerAccumulating = adRatio >= 0.06 || broker.adSignal === 'Accumulation';
+  const isBrokerDumping = isVetoed || adRatio <= -0.10 || (broker.adSignal === 'Distribution' && adRatio < 0);
+  const isBrokerAccumulating = !isVetoed && (adRatio >= 0.06 || broker.adSignal === 'Accumulation');
 
   // 1. Corporate action adjusted candles
   const { adjustedCandles } = historyDays >= 30
@@ -209,7 +212,12 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     } catch (_) {}
   }
 
-  if (isCircuitCeilingTrap) {
+  if (isVetoed) {
+    actionState = 'ORDER_FLOW_VETO_DUMP';
+    setupClass = 'Whale Dump / Institutional Trap';
+    isPrimeCandidate = false;
+    disqualificationReason = `Order Flow Veto: ${orderFlowVeto.reason}. Heavy institutional selling overrides all patterns.`;
+  } else if (isCircuitCeilingTrap) {
     actionState = 'CIRCUIT_CEILING_TRAP';
     setupClass = 'Circuit Ceiling Overhang (Upside Exhausted)';
     isPrimeCandidate = false;
@@ -328,8 +336,10 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
   // Final Clamped Score (12 to 96 max - never 100+!)
   let guruScore = Math.max(12, Math.min(96, Math.round(rawScore)));
 
-  // If disqualified, hard resistance ceiling, or dumping, cap score at 45
-  if (!isPrimeCandidate || isBrokerDumping || (isTesting200EMA && (analogWinRate === null || analogWinRate < 50))) {
+  // If disqualified, hard resistance ceiling, or dumping, cap score at 45 (or 25 if vetoed)
+  if (isVetoed) {
+    guruScore = Math.min(25, guruScore);
+  } else if (!isPrimeCandidate || isBrokerDumping || (isTesting200EMA && (analogWinRate === null || analogWinRate < 50))) {
     guruScore = Math.min(45, guruScore);
   }
 
@@ -442,6 +452,7 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
  */
 export function isActionableBuySignal(plan) {
   if (!plan) return false;
+  if (plan.actionState === 'ORDER_FLOW_VETO_DUMP' || plan.isVetoed) return false;
   const vUpper = String(plan.verdict || '').toUpperCase();
   const score = Number(plan.setupScore || plan.score || plan.compositeScore || 0);
 
