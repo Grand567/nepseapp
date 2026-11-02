@@ -625,13 +625,22 @@ function BrokerSmartMoneyCardInner({
       {/* 1. HEADER & 1D / 5D / 1M TIMEFRAME SWITCHER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3.5">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-base md:text-lg font-bold text-white tracking-tight">
               Broker Smart Money Flow ({cleanSymbol || 'NEPSE'})
             </h3>
             <span className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
               30D Baseline Normalized
             </span>
+            {(() => {
+              const pDate = (rawPayload as any)?.date || (rawPayload as any)?.businessDate || (rawPayload as any)?.startDate || (rawPayload as any)?.toDate || (initialData as any)?.date || (initialData as any)?.startDate || '';
+              if (!pDate) return null;
+              return (
+                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-800/90 text-cyan-300 border border-cyan-800/40">
+                  Session: {pDate}
+                </span>
+              );
+            })()}
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
             Detects institutional floor-sheet accumulation vs. retail herd volume using anomaly multiples &amp; ticket sizes.

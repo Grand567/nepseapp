@@ -4028,6 +4028,18 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, color: '#f8fafc' }}>
                     <Layers style={{ width: 17, height: 17, color: '#6366f1' }} />
                     Broker Footprint Ledger
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      letterSpacing: '0.04em',
+                      padding: '2px 8px',
+                      borderRadius: 6,
+                      background: 'rgba(99, 102, 241, 0.18)',
+                      color: '#a5b4fc',
+                      border: '1px solid rgba(99, 102, 241, 0.35)'
+                    }}>
+                      ALL-TIME CUMULATIVE
+                    </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{
@@ -4123,7 +4135,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                           const qtyVal = b.netQty !== undefined ? b.netQty : (b.holdQty !== undefined ? b.holdQty : b.volume);
                           const bId = b.broker || b.id || b.brokerId;
                           const bName = b.brokerName || b.name || getBrokerName(bId);
-                          const amtVal = b.holdAmt || b.amount || b.netAmt || b.buyAmt || 0;
+                          const amtVal = Math.abs(b.holdAmt || (b.netAmt != null && b.netAmt !== 0 ? b.netAmt : (b.buyAmt || b.buyAmount || b.amount || 0)));
                           return (
                             <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
                               <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -4152,6 +4164,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {(brokerConcentration.topNetDistributors?.length ? brokerConcentration.topNetDistributors : (brokerConcentration.topSellerBrokers || [])).slice(0, 3).map((s, idx) => {
                         const qtyVal = Math.abs(s.netQty !== undefined ? s.netQty : s.volume);
+                        const sellAmtVal = Math.abs(s.netAmt != null && s.netAmt !== 0 ? s.netAmt : (s.sellAmt || s.sellAmount || s.amount || 0));
                         return (
                           <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
                             <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -4162,7 +4175,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                             </span>
                             <div style={{ textAlign: 'right' }}>
                               <span style={{ color: '#f87171', fontWeight: 800 }}>-{Number(qtyVal || 0).toLocaleString()}</span>
-                              <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 6 }}>({formatBrokerAmount(Math.abs(s.amount || s.netAmt || s.sellAmt || 0))})</span>
+                              <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 6 }}>({formatBrokerAmount(sellAmtVal)})</span>
                             </div>
                           </div>
                         );

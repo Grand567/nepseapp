@@ -80,7 +80,7 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
   const high52wAdj = Number((high52w * adjFactor).toFixed(1));
   const low52wAdj = Number((low52w * adjFactor).toFixed(1));
 
-  // All-Time High (ATH)
+  // All-Time High (ATH) — Must mathematically be >= 52W High and LTP
   let ath = Number(s.allTimeHigh || s.ath || 0);
   let athDate = s.athDate || s.allTimeHighDate || '';
   if (!ath && history.length > 0) {
@@ -98,6 +98,14 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
   } else if (!ath) {
     ath = Math.max(ltp * 1.6, high52w || ltp);
     athDate = '2021-08-18';
+  }
+
+  // Critical Mathematical Consistency: ATH cannot be strictly lower than 52-Week High or current LTP
+  if (high52w > ath) {
+    ath = high52w;
+  }
+  if (ltp > ath) {
+    ath = ltp;
   }
   const athAdj = Number((ath * adjFactor).toFixed(1));
 
