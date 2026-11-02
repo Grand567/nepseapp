@@ -6,7 +6,8 @@ import {
   CheckCircle2, XCircle, HelpCircle, Calendar, History, Clock, Sparkles,
   Download, Upload, Crown, ChevronDown, ChevronUp, Users
 } from 'lucide-react';
-import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, fetchRealBrokerAnalysis, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchMarketWideBrokerSummaryMap, fetchPrecomputedRadar, fetchPrecomputedDiagnostic, fetchAvailableTradingDates } from '../utils/liveData';
+import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, fetchRealBrokerAnalysis, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchMarketWideBrokerSummaryMap, fetchPrecomputedRadar, fetchPrecomputedDiagnostic, fetchAvailableTradingDates, getCachedStocks } from '../utils/liveData';
+import { BUNDLED_BROKER_DATE, bundledBrokerMap } from '../utils/historyCache.js';
 import {
   calculateChaikinADL,
   calculateCMF,
@@ -582,18 +583,27 @@ export function AccumulationDistributionRadar({
   const [showAllSectorChamps, setShowAllSectorChamps] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStockSymbol, setSelectedStockSymbol] = useState(initialSymbol || 'NABIL');
-  const [loading, setLoading] = useState(true);
-  const [stocks, setStocks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [stocks, setStocks] = useState<any[]>(() => getCachedStocks());
   const [floorsheet, setFloorsheet] = useState<any[]>([]);
-  const [availableSessionDates, setAvailableSessionDates] = useState<string[]>([]);
-  const [stockBrokerDataMap, setStockBrokerDataMap] = useState<Record<string, any>>({});
+  const [availableSessionDates, setAvailableSessionDates] = useState<string[]>([BUNDLED_BROKER_DATE]);
+  const [stockBrokerDataMap, setStockBrokerDataMap] = useState<Record<string, any>>(() => {
+    const pre = bundledBrokerMap || {};
+    const keyed: Record<string, any> = {};
+    for (const [k, v] of Object.entries(pre)) {
+      const u = k.toUpperCase();
+      keyed[u] = v;
+      keyed[`${u}_1`] = v;
+    }
+    return keyed;
+  });
   const [whaleArchive, setWhaleArchive] = useState<any[]>(() => getStoredWhaleArchive());
   const [selectedArchiveDate, setSelectedArchiveDate] = useState<string>('');
   const [modalStock, setModalStock] = useState<any>(null);
   const [sortBy, setSortBy] = useState<'qai' | 'stealth' | 'dumpRisk' | 'pChange' | 'turnover' | 'cmf'>('qai');
   const [brokerLedgerMetric, setBrokerLedgerMetric] = useState<'netFlow' | 'turnover' | 'kitta'>('netFlow');
   const [radarDays, setRadarDays] = useState<number>(1);
-  const [radarDate, setRadarDate] = useState<string>('');
+  const [radarDate, setRadarDate] = useState<string>(BUNDLED_BROKER_DATE);
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
   const [isRecalculatingTimeframe, setIsRecalculatingTimeframe] = useState<boolean>(false);
   const [diagnosticDays, setDiagnosticDays] = useState<number>(1);
@@ -921,10 +931,10 @@ export function AccumulationDistributionRadar({
     if (sym) {
       setSelectedStockSymbol(sym);
       if (!stockBrokerDataMap[sym]) {
-        fetchRealBrokerAnalysis(sym, 30)
+        fetchRealBrokerAnalysis(sym, radarDays, { date: radarDate || BUNDLED_BROKER_DATE })
           .then(res => {
             if (res && (res.topBuyers?.length > 0 || res.topNetBuyers?.length > 0)) {
-              setStockBrokerDataMap(prev => ({ ...prev, [sym]: res }));
+              setStockBrokerDataMap(prev => ({ ...prev, [sym]: res, [`${sym}_${radarDays}`]: res }));
             }
           })
           .catch(() => {});
@@ -980,7 +990,7 @@ export function AccumulationDistributionRadar({
     let active = true;
 
     const daysToFetch = activeTab === 'diagnostic' ? diagnosticDays : radarDays;
-    fetchRealBrokerAnalysis(sym, daysToFetch, { refresh: false })
+    fetchRealBrokerAnalysis(sym, daysToFetch, { date: radarDate || BUNDLED_BROKER_DATE, refresh: false })
       .then(res => {
         if (active && res && (res.topBuyers?.length > 0 || res.topNetBuyers?.length > 0)) {
           setStockBrokerDataMap(prev => ({
@@ -997,7 +1007,7 @@ export function AccumulationDistributionRadar({
     }
 
     return () => { active = false; };
-  }, [selectedStockSymbol, activeTab, diagnosticDays, radarDays]);
+  }, [selectedStockSymbol, activeTab, diagnosticDays, radarDays, radarDate]);
 
   // Fast map of multi-session consecutive whale streaks from archive
   const whaleStreakMap = useMemo(() => {
@@ -1149,8 +1159,8 @@ export function AccumulationDistributionRadar({
 
       const stockBrokerAnalysis =
         stockBrokerDataMap[`${symUpper}_${radarDays}`] ||
-        getCachedRealBrokerAnalysis(sym, radarDays) ||
         stockBrokerDataMap[symUpper] ||
+        getCachedRealBrokerAnalysis(sym, radarDays, { date: radarDate || BUNDLED_BROKER_DATE }) ||
         s.realBrokerAnalysis ||
         s.brokerAnalysis;
 
@@ -1392,8 +1402,8 @@ export function AccumulationDistributionRadar({
     const symUpper = sym ? sym.toUpperCase().trim() : '';
     const diagBrokerAnalysis =
       stockBrokerDataMap[`${symUpper}_${diagnosticDays}`] ||
-      getCachedRealBrokerAnalysis(sym, diagnosticDays) ||
-      stockBrokerDataMap[symUpper];
+      stockBrokerDataMap[symUpper] ||
+      getCachedRealBrokerAnalysis(sym, diagnosticDays, { date: radarDate || BUNDLED_BROKER_DATE });
 
     const cachedHist = getCachedRealPriceHistory(sym);
     const historyCandles: Candle[] =
@@ -1495,7 +1505,7 @@ export function AccumulationDistributionRadar({
     const targetSym = (symToVerify || selectedStockSymbol || 'NABIL').toUpperCase().trim();
     setZeroSumAudit({ loading: true, symbol: targetSym, buyVol: 0, sellVol: 0, delta: 0, balanced: false, brokerCount: 0 });
     try {
-      const res = await fetchRealBrokerAnalysis(targetSym, radarDays, { date: radarDate, refresh: true });
+      const res = await fetchRealBrokerAnalysis(targetSym, radarDays, { date: radarDate || BUNDLED_BROKER_DATE, refresh: true });
       const brokers = Array.isArray(res?.brokers) ? res.brokers : [];
       const sumBuy = brokers.reduce((acc: number, b: any) => acc + Number(b.buyQty || b.buyQuantity || 0), 0) || Number(res?.totalVolume || 0);
       const sumSell = brokers.reduce((acc: number, b: any) => acc + Number(b.sellQty || b.sellQuantity || 0), 0) || Number(res?.totalVolume || 0);

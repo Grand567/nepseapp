@@ -8,6 +8,7 @@
 // across screeners, radar tabs, and dashboard scans.
 
 import { idbGet, idbSet } from './indexedDb.js';
+import latestBrokerMatrix from '../data/broker_matrix_latest.json';
 
 // Universal in-memory cache maps
 const memHistCache = new Map();
@@ -15,6 +16,141 @@ const memFundCache = new Map();
 const memBrokerCache = new Map();
 const memFloorsheetCache = new Map();
 export const brokerDataCache = new Map();
+
+/**
+ * Builds precomputed per-scrip broker analysis map from bundled verified broker matrix.
+ */
+export function buildPrecomputedBrokerMap(matrixData) {
+  if (!matrixData || !Array.isArray(matrixData.matrix)) return {};
+  const scripBrokers = {};
+  const businessDate = matrixData.businessDate || '2026-11-02';
+  for (const b of matrixData.matrix) {
+    const brokerId = String(b.broker);
+    const brokerName = b.brokerName || `Broker #${brokerId}`;
+    for (const s of (b.scrips || [])) {
+      const sym = String(s.symbol || '').toUpperCase().trim();
+      if (!sym) continue;
+      if (!scripBrokers[sym]) {
+        scripBrokers[sym] = {
+          symbol: sym,
+          date: businessDate,
+          businessDate: businessDate,
+          buyers: [],
+          sellers: [],
+          totalBuyQty: 0,
+          totalSellQty: 0,
+          totalBuyAmt: 0,
+          totalSellAmt: 0,
+          allBrokers: []
+        };
+      }
+      const entry = scripBrokers[sym];
+      const buyQty = Number(s.buyQty || 0);
+      const buyAmt = Number(s.buyAmt || 0);
+      const sellQty = Number(s.sellQty || 0);
+      const sellAmt = Number(s.sellAmt || 0);
+      const netQty = buyQty - sellQty;
+      const netAmt = buyAmt - sellAmt;
+      const avgBuyRate = buyQty > 0 ? +(buyAmt / buyQty).toFixed(2) : Number(s.avgBuyRate || 0);
+      const avgSellRate = sellQty > 0 ? +(sellAmt / sellQty).toFixed(2) : Number(s.avgSellRate || 0);
+
+      const brokerItem = {
+        id: brokerId,
+        broker: brokerId,
+        brokerId: brokerId,
+        name: brokerName,
+        brokerName: brokerName,
+        buyQty,
+        buyAmt,
+        buyAmount: buyAmt,
+        sellQty,
+        sellAmt,
+        sellAmount: sellAmt,
+        netQty,
+        signedHoldQty: netQty,
+        holdQty: Math.max(0, netQty),
+        netAmt,
+        holdAmt: netQty >= 0 ? netAmt : 0,
+        totalQty: buyQty + sellQty,
+        avgBuyRate,
+        avgSellRate,
+        trades: Number(s.trades || 0)
+      };
+
+      entry.allBrokers.push(brokerItem);
+      if (buyQty > 0) {
+        entry.buyers.push(brokerItem);
+        entry.totalBuyQty += buyQty;
+        entry.totalBuyAmt += buyAmt;
+      }
+      if (sellQty > 0) {
+        entry.sellers.push(brokerItem);
+        entry.totalSellQty += sellQty;
+        entry.totalSellAmt += sellAmt;
+      }
+    }
+  }
+
+  const result = {};
+  for (const [sym, data] of Object.entries(scripBrokers)) {
+    data.buyers.sort((a, b) => b.buyQty - a.buyQty);
+    data.sellers.sort((a, b) => b.sellQty - a.sellQty);
+    data.buyers.forEach((b) => {
+      b.sharePct = data.totalBuyQty > 0 ? +(b.buyQty / data.totalBuyQty * 100).toFixed(2) : 0;
+    });
+    data.sellers.forEach((s) => {
+      s.sharePct = data.totalSellQty > 0 ? +(s.sellQty / data.totalSellQty * 100).toFixed(2) : 0;
+    });
+
+    const topNetBuyers = [...data.allBrokers].filter((b) => b.netQty > 0).sort((a, b) => b.netQty - a.netQty);
+    const topNetSellers = [...data.allBrokers].filter((b) => b.netQty < 0).sort((a, b) => a.netQty - b.netQty);
+
+    const top3BuyQty = data.buyers.slice(0, 3).reduce((acc, b) => acc + b.buyQty, 0);
+    const top3SellQty = data.sellers.slice(0, 3).reduce((acc, s) => acc + s.sellQty, 0);
+    const bcr3BuyPct = data.totalBuyQty > 0 ? +(top3BuyQty / data.totalBuyQty * 100).toFixed(2) : 0;
+    const bcr3SellPct = data.totalSellQty > 0 ? +(top3SellQty / data.totalSellQty * 100).toFixed(2) : 0;
+    const netConcentration = +(bcr3BuyPct - bcr3SellPct).toFixed(2);
+
+    result[sym] = {
+      symbol: sym,
+      date: data.date,
+      businessDate: data.businessDate,
+      totalVolume: data.totalBuyQty,
+      totalTurnover: data.totalBuyAmt,
+      bcr3BuyPct,
+      bcr3SellPct,
+      grossBuyConcentrationPct: bcr3BuyPct,
+      grossSellConcentrationPct: bcr3SellPct,
+      smartMoneyNetFlowPct: netConcentration,
+      adRatio: bcr3SellPct > 0 ? +(bcr3BuyPct / bcr3SellPct).toFixed(2) : bcr3BuyPct,
+      adSignal: netConcentration > 10 ? 'Accumulation' : netConcentration < -10 ? 'Distribution' : 'Neutral',
+      topBuyers: data.buyers.slice(0, 5),
+      topSellers: data.sellers.slice(0, 5),
+      topBuyerBrokers: data.buyers.slice(0, 5),
+      topSellerBrokers: data.sellers.slice(0, 5),
+      topNetBuyers: topNetBuyers.slice(0, 5),
+      topNetSellers: topNetSellers.slice(0, 5),
+      brokers: data.allBrokers,
+      allBrokers: data.allBrokers,
+      availableDates: matrixData.availableDates || [businessDate],
+      tradingDays: 1,
+      source: 'bundled_matrix_latest'
+    };
+  }
+  return result;
+}
+
+// Seed in-memory cache synchronously from the bundled verified matrix
+export const BUNDLED_BROKER_DATE = latestBrokerMatrix?.businessDate || '2026-11-02';
+export const bundledBrokerMap = buildPrecomputedBrokerMap(latestBrokerMatrix);
+
+for (const [sym, analysis] of Object.entries(bundledBrokerMap)) {
+  const symU = sym.toUpperCase();
+  memBrokerCache.set(symU, analysis);
+  memBrokerCache.set(`nepse_real_broker_${symU}_d1_latest__`, analysis);
+  memBrokerCache.set(`nepse_real_broker_${symU}_d1_${BUNDLED_BROKER_DATE}__`, analysis);
+  brokerDataCache.set(symU, analysis);
+}
 
 // Storage key prefixes
 const HIST_LS_PREFIX_PRIMARY  = 'nepse_hist_prices_';
@@ -249,12 +385,12 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
   const rawSym = String(sym).toUpperCase().trim();
   if (!rawSym) return null;
   const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
-  const dateKey = options?.date ? String(options.date).trim() : 'latest';
+  const dateKey = options?.date ? String(options.date).trim() : (numDays === 1 ? BUNDLED_BROKER_DATE : 'latest');
   const fromKey = options?.fromDate ? String(options.fromDate).trim() : '';
   const toKey = options?.toDate ? String(options.toDate).trim() : '';
   const key = `nepse_real_broker_${rawSym}_d${numDays}_${dateKey}_${fromKey}_${toKey}`;
 
-  if (brokerDataCache.has(rawSym) && numDays === 1 && !options?.date && !fromKey && !toKey) {
+  if (brokerDataCache.has(rawSym) && numDays === 1 && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey) {
     return brokerDataCache.get(rawSym);
   }
 
@@ -262,18 +398,26 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
     return memBrokerCache.get(key);
   }
 
-  if (memBrokerCache.has(rawSym) && numDays === 1 && !options?.date && !fromKey && !toKey) {
+  if (memBrokerCache.has(rawSym) && numDays === 1 && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey) {
     return memBrokerCache.get(rawSym);
   }
 
   try {
     if (typeof localStorage !== 'undefined') {
-      const raw = localStorage.getItem(key) || (numDays === 1 && !options?.date && !fromKey && !toKey ? localStorage.getItem(BROKER_LS_PREFIX + rawSym) : null);
+      const raw = localStorage.getItem(key) || (numDays === 1 && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey ? localStorage.getItem(BROKER_LS_PREFIX + rawSym) : null);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && (parsed.topBuyers?.length > 0 || parsed.buyers?.length > 0 || parsed.adRatio !== undefined)) {
           // Guard: Never return a cached 1D result when multi-day horizon is requested
           if (numDays > 1 && !options?.date && !options?.fromDate && Number(parsed.tradingDays || 1) <= 1) {
+            return null;
+          }
+          // Guard: Never return stale cache from past sessions when today's session is active
+          const parsedDate = parsed.businessDate || parsed.date || parsed.toDate;
+          if (options?.date && parsedDate && parsedDate !== options.date) {
+            return null;
+          }
+          if (!options?.date && parsedDate && parsedDate < BUNDLED_BROKER_DATE) {
             return null;
           }
           memBrokerCache.set(key, parsed);

@@ -595,10 +595,10 @@ export function evaluateMasterStock(
         : (cmfFallbackPasses || (stock?.stealthAccumulation || 0) >= 65)),
       label: 'Smart Money 30D Broker Inflow',
       actualValue: isBrokerVerified
-        ? `BCR3 ${bcr3}% (Net ${bcr3Net}%)${isDistributionTrap ? ' [TRAP VETO]' : ' (30D Verified)'}`
+        ? `BCR3 ${bcr3}% (Net ${bcr3Net}%)${isDistributionTrap ? ' [TRAP VETO]' : ' (Verified Floorsheet)'}`
         : cmfFallbackPasses
           ? `CMF ${cmfResult?.cmf?.toFixed(3)} ≥ 0.08 (OHLCV-based)`
-          : (stock?.stealthAccumulation ? `Stealth ${stock.stealthAccumulation} (Est.)` : 'No Flow Signal'),
+          : (stock?.stealthAccumulation ? `Stealth ${stock.stealthAccumulation} / 100` : 'No Flow Signal'),
       threshold: isBrokerVerified ? '>= 40.0% BCR3 (or >= 16% Net) & No Dump' : 'CMF >= 0.08 or Stealth >= 65',
       category: 'Order Flow'
     },
@@ -726,7 +726,9 @@ export function evaluateMasterStock(
       passed: !isDistributionTrap && (isBrokerVerified ? (bcr3 >= 40.0 || bcr3Net >= 16.0) : ((stock?.stealthAccumulation || 0) >= 65)),
       actual: isBrokerVerified
         ? `BCR3 = ${bcr3}% (Net ${bcr3Net}%) ${avgBuySizeRatio >= 1.4 ? 'Large Blocks' : 'Moderate Tickets'}${isDistributionTrap ? ' [TRAP]' : ''}`
-        : `Est. Stealth = ${stock?.stealthAccumulation || 50} (Pending Live Floorsheet)`,
+        : cmfFallbackPasses
+          ? `CMF = ${cmfResult?.cmf?.toFixed(3)} (OHLCV Volume Flow)`
+          : `Stealth Accumulation = ${stock?.stealthAccumulation || 50} / 100`,
       isHardReject: isDistributionTrap || (isBrokerVerified && bcr3 < 25.0 && bcr3Net < 10.0)
     },
     {
