@@ -45,6 +45,7 @@ import { fetchNewsArticle, fetchDividendHistory } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
 import ShortTermProfitPlan from './ShortTermProfitPlan';
 import { Master100ProfitWorkstation } from './Master100ProfitWorkstation';
+import { ErrorBoundary } from './ErrorBoundary';
 import NepseAgentDashboard from './NepseAgentDashboard';
 import ProGate from './ProGate';
 import { getHydroSeasonality, computeFiscalCycle, evaluatePreOpenExecutionGate, resolveDynamicStockRSI, resolveDynamicStockEMAs } from '../utils/quantEngine';
@@ -1266,11 +1267,13 @@ export default function PredictorHub({
             VIEW 0: UNIFIED MASTER 100% PROFIT WORKSTATION
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'master_100_profit' && (
-          <Master100ProfitWorkstation
-            stocks={stocks}
-            indices={indices}
-            onSelectStock={onSelectStock}
-          />
+          <ErrorBoundary moduleName="Master 100% Profit Workstation" activeTab={activeTab}>
+            <Master100ProfitWorkstation
+              stocks={stocks}
+              indices={indices}
+              onSelectStock={onSelectStock}
+            />
+          </ErrorBoundary>
         )}
 
         {/* ══════════════════════════════════════════════════════════

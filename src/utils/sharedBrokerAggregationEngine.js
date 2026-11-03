@@ -392,12 +392,13 @@ export function evaluateOperatorOffloadWarning(symbol, brokerAnalysis = {}, stoc
 }
 
 export function aggregateBrokerMicrostructure(params = {}) {
-  const normSym = String(params.symbol || params.targetSymbol || '').toUpperCase().trim();
-  const windowData = Array.isArray(params.windowData) ? params.windowData : (Array.isArray(params.dailyHistory) ? params.dailyHistory : []);
-  const rawTrades = Array.isArray(params.contracts) ? params.contracts : (Array.isArray(params.trades) ? params.trades : (Array.isArray(params.floorsheet) ? params.floorsheet : []));
-  const dailyLedgerRows = Array.isArray(params.dailyLedgerRows) ? params.dailyLedgerRows : (Array.isArray(params.brokerRows) ? params.brokerRows : []);
-  const stockSummary = params.stockSummary || {};
-  const days = Number(params.days || 1);
+  const p = params || {};
+  const normSym = String(p.symbol || p.targetSymbol || '').toUpperCase().trim();
+  const windowData = Array.isArray(p.windowData) ? p.windowData : (Array.isArray(p.dailyHistory) ? p.dailyHistory : []);
+  const rawTrades = Array.isArray(p.contracts) ? p.contracts : (Array.isArray(p.trades) ? p.trades : (Array.isArray(p.floorsheet) ? p.floorsheet : []));
+  const dailyLedgerRows = Array.isArray(p.dailyLedgerRows) ? p.dailyLedgerRows : (Array.isArray(p.brokerRows) ? p.brokerRows : []);
+  const stockSummary = p.stockSummary || {};
+  const days = Number(p.days || 1);
 
   const brokerMap = new Map();
   let totalVolume = 0;
@@ -410,7 +411,7 @@ export function aggregateBrokerMicrostructure(params = {}) {
   let crossTurnover = 0;
 
   // Check if rawTrades is an incomplete partial sample (e.g. from 100-trade paginated floorsheet)
-  const rbaCandidate = params.realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis;
+  const rbaCandidate = p.realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis;
   const hasFullRba = Boolean(
     rbaCandidate && (
       (Array.isArray(rbaCandidate.brokers) && rbaCandidate.brokers.length > 0) ||
@@ -641,8 +642,8 @@ export function aggregateBrokerMicrostructure(params = {}) {
     // When non-cross total is 0, do NOT fallback to totalVolume (Part D)
   }
   // PATH 4: realBrokerAnalysis / cached broker data provided
-  else if (params.realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis) {
-    const rba = params.realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis;
+  else if (p.realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis) {
+    const rba = p.realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis;
     const rawBuyers = Array.isArray(rba?.topBuyers) ? rba.topBuyers : (Array.isArray(rba?.topBuyerBrokers) ? rba.topBuyerBrokers : []);
     const rawSellers = Array.isArray(rba?.topSellers) ? rba.topSellers : (Array.isArray(rba?.topSellerBrokers) ? rba.topSellerBrokers : []);
     const brokersList = Array.isArray(rba?.brokers) && rba.brokers.length > 0 ? rba.brokers : [...rawBuyers, ...rawSellers];
@@ -785,7 +786,7 @@ export function aggregateBrokerMicrostructure(params = {}) {
   let scr3SellPct = effSellVol > 0 ? Number(Math.min(100.0, (top3GrossSellVol / effSellVol) * 100).toFixed(1)) : 0;
 
   // If authentic concentration was already supplied in rba without raw trades
-  const rbaData = params.realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis;
+  const rbaData = p.realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis;
   if (rawTrades.length === 0 && rbaData?.bcr3BuyPct !== undefined) {
     bcr3BuyPct = Number(rbaData.bcr3BuyPct);
     bcr5BuyPct = Number(rbaData.bcr5BuyPct || (bcr3BuyPct / 0.77).toFixed(1));
@@ -844,7 +845,7 @@ export function aggregateBrokerMicrostructure(params = {}) {
   // Absolute floors:
   // MIN_ABS_VOLUME = 200 kitta, MIN_ABS_TURNOVER = 50,000 NPR, MIN_ABS_BROKERS = 3, MIN_ABS_TRADES = 3
   // Relative baseline: 20-session average volume, turnover, trade count
-  const baseline20d = params.baseline20d || stockSummary?.baseline20d || stockSummary?.history20d || null;
+  const baseline20d = p.baseline20d || stockSummary?.baseline20d || stockSummary?.history20d || null;
   const avgVol20 = Number(baseline20d?.avgVolume || baseline20d?.avgVol || stockSummary?.avgVolume20 || 0);
   const avgTurnover20 = Number(baseline20d?.avgTurnover || stockSummary?.avgTurnover20 || 0);
   const avgTrades20 = Number(baseline20d?.avgTrades || stockSummary?.avgTrades20 || 0);

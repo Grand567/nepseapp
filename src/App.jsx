@@ -1734,25 +1734,27 @@ function AppInner() {
       {/* ── Content ── */}
       <main className="app-main-content">
         <div className="app-content-body">
-          <ErrorBoundary>
+          <ErrorBoundary activeTab={activeTab} moduleName="Core Workspace" onNavigateDashboard={() => setActiveTab('dashboard')}>
             <div style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               {/* Tab 1: Dashboard / Market */}
               {visitedTabs.has('dashboard') && (
                 <div style={{ display: activeTab === 'dashboard' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                  <PullToRefresh onRefresh={triggerTick} isRefreshing={isRefreshing}>
-                    <Dashboard
-                      stocks={stocks}
-                      indices={indices}
-                      onRefresh={triggerTick}
-                      isRefreshing={isRefreshing}
-                      triggerTick={triggerTick}
-                      apiStatus={apiStatus}
-                      marketStatus={marketStatus}
-                      lastSyncTime={lastSyncTime}
-                      onSelectStock={openStockDetail}
-                      onOpenCalendar={() => setShowCalendarModal(true)}
-                    />
-                  </PullToRefresh>
+                  <ErrorBoundary activeTab={activeTab} moduleName="Market Dashboard" onNavigateDashboard={() => setActiveTab('dashboard')}>
+                    <PullToRefresh onRefresh={triggerTick} isRefreshing={isRefreshing}>
+                      <Dashboard
+                        stocks={stocks}
+                        indices={indices}
+                        onRefresh={triggerTick}
+                        isRefreshing={isRefreshing}
+                        triggerTick={triggerTick}
+                        apiStatus={apiStatus}
+                        marketStatus={marketStatus}
+                        lastSyncTime={lastSyncTime}
+                        onSelectStock={openStockDetail}
+                        onOpenCalendar={() => setShowCalendarModal(true)}
+                      />
+                    </PullToRefresh>
+                  </ErrorBoundary>
                 </div>
               )}
 
@@ -1761,70 +1763,82 @@ function AppInner() {
                 {/* Tab 2: Portfolio & Bulk IPO */}
                 {visitedTabs.has('portfolio') && (
                   <div style={{ display: (activeTab === 'portfolio' || activeTab === 'bulk_ipo' || activeTab === 'simulator') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                    <PortfolioHub
-                      marketStocks={stocks}
-                      userId={user?.uid}
-                      userEmail={user?.email}
-                      apiStatus={apiStatus}
-                      initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : activeTab === 'simulator' ? 'simulator' : 'portfolio'}
-                      onSelectStock={openStockDetail}
-                    />
+                    <ErrorBoundary activeTab={activeTab} moduleName="Portfolio & IPO Hub" onNavigateDashboard={() => setActiveTab('dashboard')}>
+                      <PortfolioHub
+                        marketStocks={stocks}
+                        userId={user?.uid}
+                        userEmail={user?.email}
+                        apiStatus={apiStatus}
+                        initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : activeTab === 'simulator' ? 'simulator' : 'portfolio'}
+                        onSelectStock={openStockDetail}
+                      />
+                    </ErrorBoundary>
                   </div>
                 )}
 
                 {/* Tab 3: Predictor Hub */}
                 {visitedTabs.has('predictor') && (
                   <div style={{ display: (activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                    <PredictorHub
-                      stocks={stocks}
-                      indices={indices}
-                      onSelectStock={openStockDetail}
-                      initialSubTab={activeTab === 'master_100_profit' ? 'master_100_profit' : activeTab === 'entry_exit' ? 'entry_exit' : activeTab === 'short_term_plan' ? 'short_term_plan' : undefined}
-                    />
+                    <ErrorBoundary activeTab={activeTab} moduleName="Predictor & Quant Hub" onNavigateDashboard={() => setActiveTab('dashboard')}>
+                      <PredictorHub
+                        stocks={stocks}
+                        indices={indices}
+                        onSelectStock={openStockDetail}
+                        initialSubTab={activeTab === 'master_100_profit' ? 'master_100_profit' : activeTab === 'entry_exit' ? 'entry_exit' : activeTab === 'short_term_plan' ? 'short_term_plan' : undefined}
+                      />
+                    </ErrorBoundary>
                   </div>
                 )}
 
                 {/* Tab 4: Services */}
                 {visitedTabs.has('services') && (
                   <div style={{ display: activeTab === 'services' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                    <ServicesHub
-                      stocks={stocks}
-                      indices={indices}
-                      apiStatus={apiStatus}
-                      userId={user?.uid}
-                      onNavigateTab={setActiveTab}
-                      onSelectStock={openStockDetail}
-                      onAskGuruAi={(stockOrSymbol) => {
-                        const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
-                        setAiTargetStock(sym);
-                        setActiveTab('ai');
-                      }}
-                    />
+                    <ErrorBoundary activeTab={activeTab} moduleName="Services & Tools Hub" onNavigateDashboard={() => setActiveTab('dashboard')}>
+                      <ServicesHub
+                        stocks={stocks}
+                        indices={indices}
+                        apiStatus={apiStatus}
+                        userId={user?.uid}
+                        onNavigateTab={setActiveTab}
+                        onSelectStock={openStockDetail}
+                        onAskGuruAi={(stockOrSymbol) => {
+                          const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
+                          setAiTargetStock(sym);
+                          setActiveTab('ai');
+                        }}
+                      />
+                    </ErrorBoundary>
                   </div>
                 )}
 
                 {/* Tab 5: Calculator */}
                 {visitedTabs.has('calculator') && (
                   <div style={{ display: activeTab === 'calculator' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                    <Calculator />
+                    <ErrorBoundary activeTab={activeTab} moduleName="Calculator Hub" onNavigateDashboard={() => setActiveTab('dashboard')}>
+                      <Calculator />
+                    </ErrorBoundary>
                   </div>
                 )}
 
                 {/* Tab 6: Guru AI */}
                 {visitedTabs.has('ai') && (
                   <div style={{ display: activeTab === 'ai' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                    <AiAnalyst
-                      marketStocks={stocks}
-                      initialStock={aiTargetStock}
-                      onClearInitialStock={() => setAiTargetStock(null)}
-                    />
+                    <ErrorBoundary activeTab={activeTab} moduleName="Guru AI Analyst" onNavigateDashboard={() => setActiveTab('dashboard')}>
+                      <AiAnalyst
+                        marketStocks={stocks}
+                        initialStock={aiTargetStock}
+                        onClearInitialStock={() => setAiTargetStock(null)}
+                      />
+                    </ErrorBoundary>
                   </div>
                 )}
 
                 {/* Tab 7: Resources */}
                 {visitedTabs.has('resources') && (
                   <div style={{ display: activeTab === 'resources' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                    <Resources onNavigateTab={setActiveTab} />
+                    <ErrorBoundary activeTab={activeTab} moduleName="Resources & Education" onNavigateDashboard={() => setActiveTab('dashboard')}>
+                      <Resources onNavigateTab={setActiveTab} />
+                    </ErrorBoundary>
                   </div>
                 )}
 

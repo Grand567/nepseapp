@@ -3661,188 +3661,192 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
               </div>
 
               {/* ── 1B. INSTITUTIONAL OPERATOR FLOOR & SAFE ENTRY RADAR ── */}
-              <div style={{
-                background: isOverextended
-                  ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(17, 24, 39, 0.95))'
-                  : 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(17, 24, 39, 0.95))',
-                border: isOverextended
-                  ? '1.5px solid rgba(245, 158, 11, 0.45)'
-                  : '1.5px solid rgba(16, 185, 129, 0.45)',
-                borderRadius: 16,
-                padding: '16px 18px',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 12
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{
-                      background: isOverextended ? '#f59e0b' : '#10b981',
-                      color: '#0f172a',
-                      fontWeight: 900,
-                      fontSize: 11,
-                      padding: '3px 8px',
-                      borderRadius: 6,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase'
-                    }}>
-                      {isOverextended ? '⚠️ HIGH TRAP RISK / PULLBACK REQUIRED' : '🟢 SAFE OPERATOR ACCUMULATION ZONE'}
-                    </span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: '#f8fafc' }}>
-                      Institutional Operator Radar
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: '#94a3b8' }}>
-                    Accumulators: <strong style={{ color: '#e2e8f0' }}>{leadBrokerStr}</strong>
-                  </div>
-                </div>
-
-                {/* 4-Item Key Metrics Grid */}
+              <CardLocalErrorBoundary>
                 <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-                  gap: 10,
-                  background: 'rgba(0, 0, 0, 0.35)',
-                  borderRadius: 12,
-                  padding: '12px 14px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
-                }}>
-                  {/* Current LTP */}
-                  <div>
-                    <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Current LTP</div>
-                    <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                      Rs. {fmt(d.ltp)}
-                    </div>
-                    <div style={{ fontSize: 10.5, color: Number(d.pChange || 0) >= 0 ? '#10b981' : '#f43f5e', fontWeight: 700 }}>
-                      {Number(d.pChange || 0) >= 0 ? '+' : ''}{Number(d.pChange || 0).toFixed(2)}%
-                    </div>
-                  </div>
-
-                  {/* Operator Floor */}
-                  <div>
-                    <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Operator Floor (Buy VWAP)</div>
-                    <div style={{ fontSize: 16, fontWeight: 900, color: '#38bdf8', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                      {operatorFloor > 0 ? `Rs. ${fmt(operatorFloor)}` : 'Computing...'}
-                    </div>
-                    <div style={{ fontSize: 10.5, color: operatorPremiumPct > 10 ? '#f59e0b' : '#38bdf8', fontWeight: 600 }}>
-                      {operatorFloor > 0 ? `${operatorPremiumPct >= 0 ? '+' : ''}${operatorPremiumPct.toFixed(1)}% vs cost` : 'Multi-session VWAP'}
-                      {netCashBreakeven > 0 && Math.abs(netCashBreakeven - operatorFloor) >= 1 && (
-                        <span style={{ color: '#94a3b8', marginLeft: 4 }}>• Net: Rs. {fmt(netCashBreakeven)}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Invalidation Stop-Loss */}
-                  <div>
-                    <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Invalidation Stop-Loss</div>
-                    <div style={{ fontSize: 16, fontWeight: 900, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                      Rs. {fmt(overviewStopLoss?.price || (Number(d.ltp || 100) * 0.95))}
-                    </div>
-                    <div style={{ fontSize: 10.5, color: '#fca5a5', fontWeight: 600 }}>
-                      {overviewStopLoss?.pct ? `-${overviewStopLoss.pct}%` : '-5.0%'} (Exit floor breach)
-                    </div>
-                  </div>
-
-                  {/* Target 1 */}
-                  <div>
-                    <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Target 1 (Harvest)</div>
-                    <div style={{ fontSize: 16, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                      Rs. {fmt(overviewTarget1?.price || (Number(d.ltp || 100) * 1.10))}
-                    </div>
-                    <div style={{ fontSize: 10.5, color: '#86efac', fontWeight: 600 }}>
-                      +{overviewTarget1?.pct || 10.0}% ({overviewTarget1?.horizon || '1-2 Weeks'})
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action Banner */}
-                <div style={{
-                  background: isOverextended ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                  borderLeft: isOverextended ? '4px solid #f59e0b' : '4px solid #10b981',
-                  borderRadius: '4px 8px 8px 4px',
-                  padding: '10px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: 8
-                }}>
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: isOverextended ? '#fcd34d' : '#6ee7b7', textTransform: 'uppercase' }}>
-                      Safe Entry Action
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', marginTop: 2 }}>
-                      {isOverextended
-                        ? `Pullback Required: Wait for dip between Rs. ${overviewEntryZone?.min || (d.ltp * 0.92).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 0.96).toFixed(1)}. Do NOT chase at Rs. ${fmt(d.ltp)}!`
-                        : `Accumulate between Rs. ${overviewEntryZone?.min || (d.ltp * 0.98).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 1.01).toFixed(1)} (Entry Window: 1:15–2:30 PM • Protected by Operator Floor)`
-                      }
-                    </div>
-                  </div>
-                  <div style={{
-                    background: isOverextended ? '#f59e0b22' : '#10b98122',
-                    border: isOverextended ? '1px solid #f59e0b66' : '1px solid #10b98166',
-                    borderRadius: 8,
-                    padding: '5px 10px',
-                    fontSize: 12,
-                    fontWeight: 800,
-                    color: isOverextended ? '#f59e0b' : '#10b981'
-                  }}>
-                    {isOverextended ? '⚠️ DO NOT CHASE' : '🟢 SAFE TO ACCUMULATE'}
-                  </div>
-                </div>
-              </div>
-
-              {/* ── OPERATOR OFFLOAD WARNING BANNER ── */}
-              {overviewOffloadWarning?.isOffloading && (
-                <div style={{
-                  background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(185, 28, 28, 0.35))',
-                  border: '1.5px solid rgba(239, 68, 68, 0.85)',
+                  background: isOverextended
+                    ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(17, 24, 39, 0.95))'
+                    : 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(17, 24, 39, 0.95))',
+                  border: isOverextended
+                    ? '1.5px solid rgba(245, 158, 11, 0.45)'
+                    : '1.5px solid rgba(16, 185, 129, 0.45)',
                   borderRadius: 16,
-                  padding: '14px 18px',
+                  padding: '16px 18px',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
                   display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 12,
-                  boxShadow: '0 4px 20px rgba(239, 68, 68, 0.3)'
+                  flexDirection: 'column',
+                  gap: 12
                 }}>
-                  <AlertTriangle style={{ width: 24, height: 24, color: '#f87171', flexShrink: 0, marginTop: 1 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{
-                        background: '#ef4444',
-                        color: '#ffffff',
-                        fontSize: 10.5,
+                        background: isOverextended ? '#f59e0b' : '#10b981',
+                        color: '#0f172a',
                         fontWeight: 900,
-                        padding: '2px 7px',
-                        borderRadius: 5,
+                        fontSize: 11,
+                        padding: '3px 8px',
+                        borderRadius: 6,
                         letterSpacing: '0.04em',
                         textTransform: 'uppercase'
                       }}>
-                        OPERATOR OFFLOAD ALERT
+                        {isOverextended ? '⚠️ HIGH TRAP RISK / PULLBACK REQUIRED' : '🟢 SAFE OPERATOR ACCUMULATION ZONE'}
                       </span>
-                      <span style={{ fontSize: 13, fontWeight: 900, color: '#fecaca', letterSpacing: '0.01em' }}>
-                        {overviewOffloadWarning.title}
+                      <span style={{ fontSize: 13, fontWeight: 800, color: '#f8fafc' }}>
+                        Institutional Operator Radar
                       </span>
                     </div>
-                    <div style={{ fontSize: 12.5, color: '#f1f5f9', marginTop: 5, lineHeight: 1.5 }}>
-                      <strong style={{ color: '#fca5a5' }}>{overviewOffloadWarning.reason}</strong>
+                    <div style={{ fontSize: 11.5, color: '#94a3b8' }}>
+                      Accumulators: <strong style={{ color: '#e2e8f0' }}>{leadBrokerStr}</strong>
                     </div>
-                    <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>
-                      Nepali Guidance: <em>{overviewOffloadWarning.guidanceNepali}</em>
+                  </div>
+
+                  {/* 4-Item Key Metrics Grid */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                    gap: 10,
+                    background: 'rgba(0, 0, 0, 0.35)',
+                    borderRadius: 12,
+                    padding: '12px 14px',
+                    border: '1px solid rgba(255, 255, 255, 0.05)'
+                  }}>
+                    {/* Current LTP */}
+                    <div>
+                      <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Current LTP</div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                        Rs. {fmt(d.ltp)}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: Number(d.pChange || 0) >= 0 ? '#10b981' : '#f43f5e', fontWeight: 700 }}>
+                        {Number(d.pChange || 0) >= 0 ? '+' : ''}{Number(d.pChange || 0).toFixed(2)}%
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 11.5, background: 'rgba(239, 68, 68, 0.2)', padding: '3px 8px', borderRadius: 6, color: '#fca5a5', fontWeight: 700 }}>
-                        Action: {overviewOffloadWarning.suggestedAction === 'IMMEDIATE_PROFIT_HARVEST' ? 'Harvest Profits / Sell Target 1' : 'Tighten Trailing Stop'}
-                      </span>
-                      {overviewOffloadWarning.suggestedTrailingStop > 0 && (
-                        <span style={{ fontSize: 11.5, background: 'rgba(255, 255, 255, 0.1)', padding: '3px 8px', borderRadius: 6, color: '#ffffff', fontWeight: 700 }}>
-                          Trailing Stop Floor: Rs. {overviewOffloadWarning.suggestedTrailingStop}
-                        </span>
-                      )}
+
+                    {/* Operator Floor */}
+                    <div>
+                      <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Operator Floor (Buy VWAP)</div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: '#38bdf8', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                        {operatorFloor > 0 ? `Rs. ${fmt(operatorFloor)}` : 'Computing...'}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: operatorPremiumPct > 10 ? '#f59e0b' : '#38bdf8', fontWeight: 600 }}>
+                        {operatorFloor > 0 ? `${operatorPremiumPct >= 0 ? '+' : ''}${operatorPremiumPct.toFixed(1)}% vs cost` : 'Multi-session VWAP'}
+                        {netCashBreakeven > 0 && Math.abs(netCashBreakeven - operatorFloor) >= 1 && (
+                          <span style={{ color: '#94a3b8', marginLeft: 4 }}>• Net: Rs. {fmt(netCashBreakeven)}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Invalidation Stop-Loss */}
+                    <div>
+                      <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Invalidation Stop-Loss</div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                        Rs. {fmt(overviewStopLoss?.price || (Number(d.ltp || 100) * 0.95))}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: '#fca5a5', fontWeight: 600 }}>
+                        {overviewStopLoss?.pct ? `-${overviewStopLoss.pct}%` : '-5.0%'} (Exit floor breach)
+                      </div>
+                    </div>
+
+                    {/* Target 1 */}
+                    <div>
+                      <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Target 1 (Harvest)</div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                        Rs. {fmt(overviewTarget1?.price || (Number(d.ltp || 100) * 1.10))}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: '#86efac', fontWeight: 600 }}>
+                        +{overviewTarget1?.pct || 10.0}% ({overviewTarget1?.horizon || '1-2 Weeks'})
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Banner */}
+                  <div style={{
+                    background: isOverextended ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                    borderLeft: isOverextended ? '4px solid #f59e0b' : '4px solid #10b981',
+                    borderRadius: '4px 8px 8px 4px',
+                    padding: '10px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 8
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: isOverextended ? '#fcd34d' : '#6ee7b7', textTransform: 'uppercase' }}>
+                        Safe Entry Action
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', marginTop: 2 }}>
+                        {isOverextended
+                          ? `Pullback Required: Wait for dip between Rs. ${overviewEntryZone?.min || (d.ltp * 0.92).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 0.96).toFixed(1)}. Do NOT chase at Rs. ${fmt(d.ltp)}!`
+                          : `Accumulate between Rs. ${overviewEntryZone?.min || (d.ltp * 0.98).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 1.01).toFixed(1)} (Entry Window: 1:15–2:30 PM • Protected by Operator Floor)`
+                        }
+                      </div>
+                    </div>
+                    <div style={{
+                      background: isOverextended ? '#f59e0b22' : '#10b98122',
+                      border: isOverextended ? '1px solid #f59e0b66' : '1px solid #10b98166',
+                      borderRadius: 8,
+                      padding: '5px 10px',
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: isOverextended ? '#f59e0b' : '#10b981'
+                    }}>
+                      {isOverextended ? '⚠️ DO NOT CHASE' : '🟢 SAFE TO ACCUMULATE'}
                     </div>
                   </div>
                 </div>
-              )}
+              </CardLocalErrorBoundary>
+
+              {/* ── OPERATOR OFFLOAD WARNING BANNER ── */}
+              <CardLocalErrorBoundary>
+                {overviewOffloadWarning?.isOffloading && (
+                  <div style={{
+                    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(185, 28, 28, 0.35))',
+                    border: '1.5px solid rgba(239, 68, 68, 0.85)',
+                    borderRadius: 16,
+                    padding: '14px 18px',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 12,
+                    boxShadow: '0 4px 20px rgba(239, 68, 68, 0.3)'
+                  }}>
+                    <AlertTriangle style={{ width: 24, height: 24, color: '#f87171', flexShrink: 0, marginTop: 1 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{
+                          background: '#ef4444',
+                          color: '#ffffff',
+                          fontSize: 10.5,
+                          fontWeight: 900,
+                          padding: '2px 7px',
+                          borderRadius: 5,
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase'
+                        }}>
+                          OPERATOR OFFLOAD ALERT
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 900, color: '#fecaca', letterSpacing: '0.01em' }}>
+                          {overviewOffloadWarning.title}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12.5, color: '#f1f5f9', marginTop: 5, lineHeight: 1.5 }}>
+                        <strong style={{ color: '#fca5a5' }}>{overviewOffloadWarning.reason}</strong>
+                      </div>
+                      <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>
+                        Nepali Guidance: <em>{overviewOffloadWarning.guidanceNepali}</em>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11.5, background: 'rgba(239, 68, 68, 0.2)', padding: '3px 8px', borderRadius: 6, color: '#fca5a5', fontWeight: 700 }}>
+                          Action: {overviewOffloadWarning.suggestedAction === 'IMMEDIATE_PROFIT_HARVEST' ? 'Harvest Profits / Sell Target 1' : 'Tighten Trailing Stop'}
+                        </span>
+                        {overviewOffloadWarning.suggestedTrailingStop > 0 && (
+                          <span style={{ fontSize: 11.5, background: 'rgba(255, 255, 255, 0.1)', padding: '3px 8px', borderRadius: 6, color: '#ffffff', fontWeight: 700 }}>
+                            Trailing Stop Floor: Rs. {overviewOffloadWarning.suggestedTrailingStop}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardLocalErrorBoundary>
 
               {/* ── ORDER FLOW VETO ALERT BANNER ── */}
               {overviewOrderFlowVeto?.isVetoed && (
