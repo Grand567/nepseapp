@@ -128,6 +128,12 @@ export const PHASE_DEFINITIONS = {
     criteria: "Evenly dispersed buy/sell orders without dominant broker cornering",
     explanation: "Trading is distributed across broad retail participants without asymmetric institutional dominance."
   },
+  INTRADAY_CHURN: {
+    title: "Intraday Churn",
+    badge: "🔄 Day-Trading Churn",
+    criteria: "High 2-Way Volume with Net Retention < 25% | Rapid In-and-Out Scalping",
+    explanation: "Dominant brokers are buying and selling on the same session with low inventory retention. Characterized by day-trading, wash churning, or quick intraday scalp execution rather than institutional accumulation."
+  },
   INSUFFICIENT_ACTIVITY: {
     title: "Insufficient Activity",
     badge: "⚪ Insufficient Activity",
@@ -748,7 +754,11 @@ export function aggregateBrokerMicrostructure(params = {}) {
     // All thresholds below are UNTUNED heuristic baseline thresholds (Item 5)
     // Symmetrical k=3 comparisons on both buy and sell sides with dominance margins
     // Prevents false distribution trap when buy concentration (BCR3) is high (e.g. 54.1%) and matches or approaches selling
-    const isTwoWayInstitutionalActivity = bcr3BuyPct >= 35.0 && scr3GrossSellPct >= 35.0 && Math.abs(bcr3BuyPct - scr3GrossSellPct) < 8.0;
+    // Intraday Churn & Retention Rate (Distinguishes day-trading scalps from genuine multi-day cold storage)
+    const top3NetRetentionRate = top3GrossBuyVol > 0 ? (top3NetBuyVol / top3GrossBuyVol) : 0;
+    const isDayTradingChurn = (bcr3BuyPct >= 30.0 || scr3GrossSellPct >= 30.0) && top3NetRetentionRate < 0.25 && Math.abs(bcr3BuyPct - scr3GrossSellPct) < 10.0;
+
+    const isTwoWayInstitutionalActivity = !isDayTradingChurn && bcr3BuyPct >= 35.0 && scr3GrossSellPct >= 35.0 && Math.abs(bcr3BuyPct - scr3GrossSellPct) < 8.0;
 
     const isInstitutionalDumping = !isTwoWayInstitutionalActivity && (
                                    (scr3NetPct >= 20.0 && (scr3NetPct - bcr3NetPct) >= 8.0) ||
@@ -756,7 +766,7 @@ export function aggregateBrokerMicrostructure(params = {}) {
                                    (scr3GrossSellPct >= 45.0 && tradeSizeRatio <= 0.70));
     const isBullTrap = !isTwoWayInstitutionalActivity && scr3NetPct >= 20.0 && (scr3NetPct - bcr3NetPct) >= 8.0 && priceChangePct > 2.5;
     const isInstitutionalAccumulation = (bcr3NetPct >= 18.0 && (bcr3NetPct - scr3NetPct) >= 6.0 && scr3NetPct < 15.0) ||
-                                        (bcr3BuyPct >= 40.0 && (bcr3BuyPct - scr3GrossSellPct) >= 5.0 && tradeSizeRatio >= 1.25);
+                                        (bcr3BuyPct >= 40.0 && (bcr3BuyPct - scr3GrossSellPct) >= 5.0 && tradeSizeRatio >= 1.25 && top3NetRetentionRate >= 0.40);
     const isActiveMarkup = bcr3NetPct >= 15.0 && (bcr3NetPct - scr3NetPct) >= 5.0 && priceChangePct > 4.5 && latestClose >= bigBrokerVWAP;
     const isRetailAbsorption = bcr3BuyPct > scr3SellPct && bcr3NetPct > scr3NetPct && scr3NetPct < 14.0 && scr3GrossSellPct < 30.0 && tradeSizeRatio >= 1.05;
 
@@ -775,6 +785,11 @@ export function aggregateBrokerMicrostructure(params = {}) {
       smartMoneyBias = "Operator Offloading";
       adSignal = "Distribution";
       smartMoneyScore = Math.min(25, smartMoneyScore);
+    } else if (isDayTradingChurn) {
+      phase = "INTRADAY_CHURN";
+      phaseLabel = "Intraday Churn (Day Trading / Low Retention)";
+      smartMoneyBias = "Intraday Churn";
+      adSignal = "Neutral";
     } else if (isTwoWayInstitutionalActivity) {
       phase = "ACCUMULATION_REACCUMULATION";
       phaseLabel = "Balanced Institutional Flow (High 2-Way Volume)";
