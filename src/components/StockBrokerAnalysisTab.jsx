@@ -10,8 +10,21 @@ import { fetchRealBrokerAnalysis, fetchFromBackend, fetchAvailableTradingDates }
 import { formatNptDateIso } from '../utils/nepseCalendar';
 import { SessionDateDropdown } from './SessionDateDropdown';
 
+function safeNum(val, fallback = 0) {
+  const n = Number(val);
+  return isNaN(n) ? fallback : n;
+}
+
+function safeFmtInt(val) {
+  return safeNum(val, 0).toLocaleString();
+}
+
+function safeFmtDec(val, digits = 2) {
+  return safeNum(val, 0).toFixed(digits);
+}
+
 function formatCompactQty(val) {
-  const n = Math.abs(Number(val) || 0);
+  const n = Math.abs(safeNum(val, 0));
   if (n >= 10000000) return `${(n / 10000000).toFixed(1)}Cr`;
   if (n >= 100000) return `${(n / 100000).toFixed(1)}L`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
@@ -19,7 +32,7 @@ function formatCompactQty(val) {
 }
 
 function formatShareHubCurrency(val) {
-  const n = Number(val) || 0;
+  const n = safeNum(val, 0);
   const abs = Math.abs(n);
   const sign = n < 0 ? '-' : '';
   if (abs >= 1e9) return `${sign}${(abs / 1e7).toFixed(2)} Cr`;
@@ -29,7 +42,7 @@ function formatShareHubCurrency(val) {
   return `${sign}Rs ${abs.toFixed(0)}`;
 }
 
-export default function StockBrokerAnalysisTab({
+function StockBrokerAnalysisTabInner({
   brokerData = null,
   floorsheetData = [],
   symbol = '',
@@ -1419,15 +1432,16 @@ export default function StockBrokerAnalysisTab({
               gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
               gap: 10
             }}>
-              {sortedCumulativeBrokers.slice(0, 5).map((b, idx) => {
-                const totalHeld = b.cumHoldQty || b.holdQty || 0;
-                const poolTotal = brokerHoldingTotals.cumHold || totalCumulativeHoldingKitta || 1;
+              {(sortedCumulativeBrokers || []).slice(0, 5).map((b, idx) => {
+                const totalHeld = safeNum(b?.cumHoldQty || b?.holdQty, 0);
+                const poolTotal = safeNum(brokerHoldingTotals?.cumHold || totalCumulativeHoldingKitta, 1);
                 const sharePct = poolTotal > 0 ? ((totalHeld / poolTotal) * 100).toFixed(1) : '0.0';
+                const avgBuy = safeNum(b?.cumAvgBuy || b?.avgBuy, 0);
                 return (
                   <div
-                    key={b.id}
-                    onClick={() => setFilterQuery(filterQuery === b.id ? '' : b.id)}
-                    title={`Click to filter view to Broker #${b.id}`}
+                    key={b?.id || idx}
+                    onClick={() => setFilterQuery(filterQuery === b?.id ? '' : (b?.id || ''))}
+                    title={`Click to filter view to Broker #${b?.id || ''}`}
                     style={{
                       background: idx === 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.04)',
                       border: idx === 0 ? '1.5px solid rgba(16, 185, 129, 0.55)' : '1px solid rgba(255, 255, 255, 0.08)',
@@ -1446,21 +1460,21 @@ export default function StockBrokerAnalysisTab({
                         background: idx === 0 ? '#10b981' : 'rgba(255, 255, 255, 0.1)',
                         color: idx === 0 ? '#064e3b' : '#ffffff'
                       }}>
-                        #{b.id} {idx === 0 ? '👑 #1 HOLDER' : ''}
+                        #{b?.id} {idx === 0 ? '👑 #1 HOLDER' : ''}
                       </span>
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: '#38bdf8' }}>
                         {sharePct}% of pool
                       </span>
                     </div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 4 }}>
-                      {b.name}
+                      {b?.name}
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                      +{totalHeld.toLocaleString()} <span style={{ fontSize: 11, fontWeight: 700, color: '#a7f3d0' }}>kitta</span>
+                      +{safeFmtInt(totalHeld)} <span style={{ fontSize: 11, fontWeight: 700, color: '#a7f3d0' }}>kitta</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8', marginTop: 4 }}>
-                      <span>Avg: Rs. {b.cumAvgBuy > 0 ? b.cumAvgBuy.toFixed(1) : (b.avgBuy > 0 ? b.avgBuy.toFixed(1) : '—')}</span>
-                      <span>Val: {formatShareHubCurrency(b.cumHoldAmt || (totalHeld * (b.cumAvgBuy || ltp || 100)))}</span>
+                      <span>Avg: Rs. {avgBuy > 0 ? avgBuy.toFixed(1) : '—'}</span>
+                      <span>Val: {formatShareHubCurrency(b?.cumHoldAmt || (totalHeld * (avgBuy || ltp || 100)))}</span>
                     </div>
                   </div>
                 );
@@ -1668,22 +1682,22 @@ export default function StockBrokerAnalysisTab({
             <div style={{ borderRight: '1px solid rgba(255,255,255,0.08)' }}>
               <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 3 }}>Traded Volume</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
-                {totalVolume.toLocaleString()}
+                {safeFmtInt(totalVolume)}
               </div>
             </div>
             <div style={{ borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgba(16, 185, 129, 0.06)', borderRadius: 8, padding: '2px 4px' }}>
               <div style={{ fontSize: 11, color: '#10b981', fontWeight: 800, marginBottom: 3 }}>Total Broker Holding (Till Today)</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                +{brokerHoldingTotals.cumHold.toLocaleString()} <span style={{ fontSize: 11, color: '#34d399', fontWeight: 700 }}>kitta</span>
+                +{safeFmtInt(brokerHoldingTotals?.cumHold)} <span style={{ fontSize: 11, color: '#34d399', fontWeight: 700 }}>kitta</span>
               </div>
               <div style={{ fontSize: 9.5, color: '#64748b' }}>
-                Session: +{brokerHoldingTotals.sessionHold.toLocaleString()} kitta
+                Session: +{safeFmtInt(brokerHoldingTotals?.sessionHold)} kitta
               </div>
             </div>
             <div>
               <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 3 }}>Transactions</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
-                {totalTransactions.toLocaleString()}
+                {safeFmtInt(totalTransactions)}
               </div>
             </div>
           </div>
@@ -2085,40 +2099,40 @@ export default function StockBrokerAnalysisTab({
                             #{b.id} <span style={{ color: '#94a3b8', fontWeight: 500 }}>{b.name}</span>
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                            {b.buyQty.toLocaleString()}
+                            {safeFmtInt(b.buyQty)}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                            {b.sellQty.toLocaleString()}
+                            {safeFmtInt(b.sellQty)}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>
-                            {b.matchedQty.toLocaleString()}
+                            {safeFmtInt(b.matchedQty)}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: isNetPos ? '#38bdf8' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                            {b.signedHoldQty.toLocaleString()}
+                            {safeFmtInt(b.signedHoldQty)}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
                             {b.cumHoldQty !== undefined && b.cumHoldQty > 0
-                              ? `+${b.cumHoldQty.toLocaleString()}`
+                              ? `+${safeFmtInt(b.cumHoldQty)}`
                               : (b.cumHoldQty === 0 ? '—' : (hasCumData ? '—' : '...'))}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
-                            {b.avgBuy > 0 ? b.avgBuy.toFixed(2) : '0.00'}
+                            {safeNum(b.avgBuy) > 0 ? safeNum(b.avgBuy).toFixed(2) : '0.00'}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
-                            {b.avgSell > 0 ? b.avgSell.toFixed(2) : '0.00'}
+                            {safeNum(b.avgSell) > 0 ? safeNum(b.avgSell).toFixed(2) : '0.00'}
                           </td>
                         </tr>
                       );
                     })
                   ) : (
-                    sortedCumulativeBrokers.slice(0, 80).map((b, idx) => {
-                      const holdQty = b.cumHoldQty || Math.max(0, b.signedHoldQty || 0);
-                      const holdVal = b.cumHoldAmt || (holdQty * (b.cumAvgBuy || b.avgBuy || ltp || 100));
-                      const avgBuy = b.cumAvgBuy || b.avgBuy || 0;
-                      const avgSell = b.cumAvgSell || b.avgSell || 0;
-                      const ret = b.cumRetentionPct || b.holdPctOfBuy || 0;
+                    (sortedCumulativeBrokers || []).slice(0, 80).map((b, idx) => {
+                      const holdQty = safeNum(b.cumHoldQty || b.signedHoldQty, 0);
+                      const avgBuy = safeNum(b.cumAvgBuy || b.avgBuy, 0);
+                      const avgSell = safeNum(b.cumAvgSell || b.avgSell, 0);
+                      const holdVal = safeNum(b.cumHoldAmt, holdQty * (avgBuy || ltp || 100));
+                      const ret = safeNum(b.cumRetentionPct || b.holdPctOfBuy, 0);
                       return (
-                        <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <tr key={b.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                           <td style={{ padding: '8px 6px', color: '#64748b', fontSize: 11 }}>
                             {idx + 1}
                           </td>
@@ -2126,7 +2140,7 @@ export default function StockBrokerAnalysisTab({
                             #{b.id} <span style={{ color: '#94a3b8', fontWeight: 500 }}>{b.name}</span>
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                            +{holdQty.toLocaleString()}
+                            +{safeFmtInt(holdQty)}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
                             {formatShareHubCurrency(holdVal)}
@@ -2149,13 +2163,13 @@ export default function StockBrokerAnalysisTab({
                   <tfoot>
                     <tr style={{ borderTop: '2px solid rgba(56, 189, 248, 0.4)', background: 'rgba(15, 23, 42, 0.9)', fontWeight: 800 }}>
                       <td style={{ padding: '10px 6px', color: '#38bdf8' }}>TOTAL (All Brokers)</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#10b981', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.sessionBuy.toLocaleString()}</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.sessionSell.toLocaleString()}</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.sessionMatched.toLocaleString()}</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>+{brokerHoldingTotals.sessionHold.toLocaleString()}</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#10b981', fontWeight: 900, fontFamily: 'var(--font-mono)' }}>+{brokerHoldingTotals.cumHold.toLocaleString()}</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.weightedAvgBuy > 0 ? brokerHoldingTotals.weightedAvgBuy.toFixed(2) : '—'}</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.weightedAvgSell > 0 ? brokerHoldingTotals.weightedAvgSell.toFixed(2) : '—'}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#10b981', fontFamily: 'var(--font-mono)' }}>{safeFmtInt(brokerHoldingTotals?.sessionBuy)}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>{safeFmtInt(brokerHoldingTotals?.sessionSell)}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>{safeFmtInt(brokerHoldingTotals?.sessionMatched)}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>+{safeFmtInt(brokerHoldingTotals?.sessionHold)}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#10b981', fontWeight: 900, fontFamily: 'var(--font-mono)' }}>+{safeFmtInt(brokerHoldingTotals?.cumHold)}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{safeNum(brokerHoldingTotals?.weightedAvgBuy) > 0 ? safeNum(brokerHoldingTotals?.weightedAvgBuy).toFixed(2) : '—'}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{safeNum(brokerHoldingTotals?.weightedAvgSell) > 0 ? safeNum(brokerHoldingTotals?.weightedAvgSell).toFixed(2) : '—'}</td>
                     </tr>
                   </tfoot>
                 ) : (
@@ -2163,11 +2177,11 @@ export default function StockBrokerAnalysisTab({
                     <tr style={{ borderTop: '2px solid rgba(16, 185, 129, 0.4)', background: 'rgba(15, 23, 42, 0.9)', fontWeight: 800 }}>
                       <td style={{ padding: '10px 6px', color: '#64748b' }}>Σ</td>
                       <td style={{ padding: '10px 6px', color: '#10b981' }}>TOTAL ACCUMULATED (Till Today)</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#10b981', fontWeight: 900, fontFamily: 'var(--font-mono)' }}>+{brokerHoldingTotals.cumHold.toLocaleString()} kitta</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>{formatShareHubCurrency(brokerHoldingTotals.cumHoldAmt)}</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.weightedAvgBuy > 0 ? 'Rs. ' + brokerHoldingTotals.weightedAvgBuy.toFixed(2) : '—'}</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.weightedAvgSell > 0 ? 'Rs. ' + brokerHoldingTotals.weightedAvgSell.toFixed(2) : '—'}</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#a78bfa', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.overallRetention}%</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#10b981', fontWeight: 900, fontFamily: 'var(--font-mono)' }}>+{safeFmtInt(brokerHoldingTotals?.cumHold)} kitta</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>{formatShareHubCurrency(brokerHoldingTotals?.cumHoldAmt || 0)}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{safeNum(brokerHoldingTotals?.weightedAvgBuy) > 0 ? 'Rs. ' + safeNum(brokerHoldingTotals?.weightedAvgBuy).toFixed(2) : '—'}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>{safeNum(brokerHoldingTotals?.weightedAvgSell) > 0 ? 'Rs. ' + safeNum(brokerHoldingTotals?.weightedAvgSell).toFixed(2) : '—'}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#a78bfa', fontFamily: 'var(--font-mono)' }}>{safeNum(brokerHoldingTotals?.overallRetention)}%</td>
                     </tr>
                   </tfoot>
                 )}
@@ -2307,12 +2321,12 @@ export default function StockBrokerAnalysisTab({
                     <div style={{ fontSize: 10.5, color: '#10b981', fontWeight: 800 }}>🏆 Total Held Till Today</div>
                     <div style={{ fontSize: 14, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
                       {b.cumHoldQty !== undefined && b.cumHoldQty > 0
-                        ? `+${b.cumHoldQty.toLocaleString()} kitta`
-                        : (b.cumHoldQty === 0 ? '0 kitta' : (effectiveDays === 'all' ? `+${Math.max(0, b.signedHoldQty).toLocaleString()} kitta` : '...'))}
+                        ? `+${safeFmtInt(b.cumHoldQty)} kitta`
+                        : (b.cumHoldQty === 0 ? '0 kitta' : (effectiveDays === 'all' ? `+${safeFmtInt(Math.max(0, safeNum(b.signedHoldQty)))} kitta` : '...'))}
                     </div>
                     {effectiveDays !== 'all' && (
                       <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 1 }}>
-                        Session: {isNetPositive ? '+' : ''}{b.signedHoldQty.toLocaleString()}
+                        Session: {isNetPositive ? '+' : ''}{safeFmtInt(b.signedHoldQty)}
                       </div>
                     )}
                   </div>
@@ -2325,14 +2339,14 @@ export default function StockBrokerAnalysisTab({
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Matched</div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
-                      {b.matchedQty.toLocaleString()}
+                      {safeFmtInt(b.matchedQty)}
                     </div>
                   </div>
 
                   <div>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Buy Volume</div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                      {b.buyQty.toLocaleString()} <span style={{ fontSize: 11, color: '#10b981' }}>({b.buyMktShare}%)</span>
+                      {safeFmtInt(b.buyQty)} <span style={{ fontSize: 11, color: '#10b981' }}>({b.buyMktShare}%)</span>
                     </div>
                   </div>
                   <div style={{ textAlign: 'center' }}>
@@ -2344,14 +2358,14 @@ export default function StockBrokerAnalysisTab({
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Avg Buy Price</div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                      {b.avgBuy > 0 ? b.avgBuy.toFixed(2) : '0.00'}
+                      {safeNum(b.avgBuy) > 0 ? safeNum(b.avgBuy).toFixed(2) : '0.00'}
                     </div>
                   </div>
 
                   <div>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Sell Volume</div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                      {b.sellQty.toLocaleString()} <span style={{ fontSize: 11, color: '#f43f5e' }}>({b.sellMktShare}%)</span>
+                      {safeFmtInt(b.sellQty)} <span style={{ fontSize: 11, color: '#f43f5e' }}>({b.sellMktShare}%)</span>
                     </div>
                   </div>
                   <div style={{ textAlign: 'center' }}>
@@ -2363,7 +2377,7 @@ export default function StockBrokerAnalysisTab({
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Avg Sell Price</div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                      {b.avgSell > 0 ? b.avgSell.toFixed(2) : '0.00'}
+                      {safeNum(b.avgSell) > 0 ? safeNum(b.avgSell).toFixed(2) : '0.00'}
                     </div>
                   </div>
                 </div>
@@ -2568,15 +2582,15 @@ export default function StockBrokerAnalysisTab({
                 </tr>
               </thead>
               <tbody>
-                {brokerRecords.slice(0, 30).map((b, idx) => {
-                  const netQty = b.buyQty - b.sellQty;
-                  const isNetBuy = zeroSumUnit === 'amount' ? (b.netAmt > 0) : (netQty > 0);
-                  const buyDisplay = zeroSumUnit === 'amount' ? formatShareHubCurrency(b.buyAmt) : b.buyQty.toLocaleString();
-                  const sellDisplay = zeroSumUnit === 'amount' ? formatShareHubCurrency(b.sellAmt) : b.sellQty.toLocaleString();
-                  const matchedDisplay = zeroSumUnit === 'amount' ? formatShareHubCurrency(b.matchedAmt || (b.matchedQty * (b.avgBuy || ltp || 100))) : b.matchedQty.toLocaleString();
+                {(brokerRecords || []).slice(0, 30).map((b, idx) => {
+                  const netQty = safeNum(b.buyQty) - safeNum(b.sellQty);
+                  const isNetBuy = zeroSumUnit === 'amount' ? (safeNum(b.netAmt) > 0) : (netQty > 0);
+                  const buyDisplay = zeroSumUnit === 'amount' ? formatShareHubCurrency(b.buyAmt) : safeFmtInt(b.buyQty);
+                  const sellDisplay = zeroSumUnit === 'amount' ? formatShareHubCurrency(b.sellAmt) : safeFmtInt(b.sellQty);
+                  const matchedDisplay = zeroSumUnit === 'amount' ? formatShareHubCurrency(b.matchedAmt || (safeNum(b.matchedQty) * (safeNum(b.avgBuy) || ltp || 100))) : safeFmtInt(b.matchedQty);
                   const netDisplay = zeroSumUnit === 'amount'
-                    ? ((b.netAmt >= 0 ? '+' : '') + formatShareHubCurrency(b.netAmt))
-                    : ((netQty >= 0 ? '+' : '') + netQty.toLocaleString());
+                    ? ((safeNum(b.netAmt) >= 0 ? '+' : '') + formatShareHubCurrency(b.netAmt))
+                    : ((netQty >= 0 ? '+' : '') + safeFmtInt(netQty));
 
                   return (
                     <tr key={b.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
@@ -2613,5 +2627,73 @@ export default function StockBrokerAnalysisTab({
         </div>
       )}
     </div>
+  );
+}
+
+export class StockBrokerAnalysisErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[StockBrokerAnalysisTab] Caught render exception:', error, info);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (this.state.hasError && (prevProps.symbol !== this.props.symbol || prevProps.selectedDays !== this.props.selectedDays)) {
+      this.setState({ hasError: false, error: null });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          background: '#111827',
+          border: '1px solid rgba(245, 158, 11, 0.4)',
+          borderRadius: 16,
+          padding: 16,
+          color: '#e2e8f0',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#f59e0b', marginBottom: 6 }}>
+            ⚠️ Broker Flow Telemetry Recovery Mode
+          </div>
+          <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>
+            A temporary microstructure aggregation mismatch occurred ({this.state.error?.message || 'Incomplete broker data'}).
+          </p>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false, error: null })}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 8,
+              border: 'none',
+              background: '#0284c7',
+              color: '#ffffff',
+              fontSize: 12,
+              fontWeight: 800,
+              cursor: 'pointer'
+            }}
+          >
+            Retry Broker Flow
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function StockBrokerAnalysisTab(props) {
+  return (
+    <StockBrokerAnalysisErrorBoundary symbol={props.symbol} selectedDays={props.selectedDays}>
+      <StockBrokerAnalysisTabInner {...props} />
+    </StockBrokerAnalysisErrorBoundary>
   );
 }

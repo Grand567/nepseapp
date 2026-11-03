@@ -48,6 +48,7 @@ import { PromoterSharesService } from './PromoterSharesService';
 import { StrategyLabService } from './StrategyLabService';
 import { BacktestReportScreen } from './BacktestReportScreen';
 import { PaperTradingJournalScreen } from './PaperTradingJournalScreen';
+import { ErrorBoundary } from './ErrorBoundary';
 import { StockSelectionScreener } from './StockSelectionScreener';
 import { BrokerAccumulationView } from './BrokerAccumulationView';
 import { WatchlistEntryAlertModal } from './WatchlistEntryAlertModal';
@@ -1516,11 +1517,32 @@ export default function ServicesHub({
         <div className="services-detail-body">
           <div className="services-detail-card">
             {Component ? (
-              PRO_SERVICE_IDS.has(s.id) ? (
-                <ProGate
-                  featureName={s.name}
-                  description={`Unlock full institutional quantitative analytics, live floor sheet data, and smart-money signals for ${s.name} with a Pro monthly pass.`}
-                >
+              <ErrorBoundary moduleName={s.name} resetKey={s.id}>
+                {PRO_SERVICE_IDS.has(s.id) ? (
+                  <ProGate
+                    featureName={s.name}
+                    description={`Unlock full institutional quantitative analytics, live floor sheet data, and smart-money signals for ${s.name} with a Pro monthly pass.`}
+                  >
+                    <Component
+                      {...({
+                        stocks: activeStocks,
+                        selectedDate: selectedSessionDate,
+                        date: selectedSessionDate,
+                        availableDates: availableTradingDates,
+                        onSelectStock,
+                        indices,
+                        apiStatus,
+                        userId,
+                        onNavigateTab,
+                        onAskGuruAi,
+                        initialSymbol: serviceInitialSymbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '',
+                        onSymbolChange: (newSym: string) => {
+                          if (newSym) setServiceInitialSymbol(newSym);
+                        },
+                      } as any)}
+                    />
+                  </ProGate>
+                ) : (
                   <Component
                     {...({
                       stocks: activeStocks,
@@ -1539,27 +1561,8 @@ export default function ServicesHub({
                       },
                     } as any)}
                   />
-                </ProGate>
-              ) : (
-                <Component
-                  {...({
-                    stocks: activeStocks,
-                    selectedDate: selectedSessionDate,
-                    date: selectedSessionDate,
-                    availableDates: availableTradingDates,
-                    onSelectStock,
-                    indices,
-                    apiStatus,
-                    userId,
-                    onNavigateTab,
-                    onAskGuruAi,
-                    initialSymbol: serviceInitialSymbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '',
-                    onSymbolChange: (newSym: string) => {
-                      if (newSym) setServiceInitialSymbol(newSym);
-                    },
-                  } as any)}
-                />
-              )
+                )}
+              </ErrorBoundary>
             ) : (
               <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--text-muted, #94a3b8)' }}>
                 <Activity size={40} color="#64748b" style={{ margin: '0 auto 16px' }} />

@@ -6546,68 +6546,78 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
 
         {/* ════ TAB 4: BROKER ANALYSIS (Share Hub APK Video Parity + Date-Wise Buying/Selling) ════ */}
         {(activeTab === 'broker_analysis' || activeTab === 'depth_broker') && (
-          <div>
-            {/* ── Share Hub Parity: Interactive Broker Cards, Top Holdings/Buyers/Sellers Chart & Date-Wise Flow ── */}
-            <div style={{ marginBottom: 16 }}>
-              <StockBrokerAnalysisTab
-                brokerData={realBrokerAnalysis}
-                allTimeHoldingData={allTimeBrokerAnalysis}
-                floorsheetData={realFloorsheet}
-                symbol={d.symbol}
-                ltp={d.ltp}
-                selectedDays={brokerDays}
-                selectedDate={brokerDate}
-                onDaysChange={handleBrokerDaysChange}
-                onDateChange={handleBrokerDateChange}
-                loading={brokerAnalysisLoading}
-                availableDates={availableTradingDates}
-              />
-            </div>
-
-            {/* ── Drabyashree Pro Analytics: Aggressive Holding & Broker Dominance Suite ── */}
-            <StockYanAnalyticsCard
-              stock={d}
-              history={realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory : (history || [])}
-              brokerData={realBrokerAnalysis}
-              floorsheet={realFloorsheet}
-            />
-
-            {/* Multi-Session Broker Accumulation / Distribution Footprint */}
-            {multiSessionFootprint && <BrokerFootprintCard footprint={multiSessionFootprint} />}
-
-            {/* Broker Daily Institutional Flow Tracker */}
-            <div style={{ background: '#151922', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff' }}>
-                  🤝 Institutional Net Broker Flow (Recent Sessions)
-                </div>
-                <span style={{ fontSize: 12, color: 'var(--primary-light)', fontWeight: 700 }}>
-                  Verified Exchange Flow
-                </span>
+          <CardLocalErrorBoundary>
+            <div>
+              {/* ── Share Hub Parity: Interactive Broker Cards, Top Holdings/Buyers/Sellers Chart & Date-Wise Flow ── */}
+              <div style={{ marginBottom: 16 }}>
+                <CardLocalErrorBoundary>
+                  <StockBrokerAnalysisTab
+                    brokerData={realBrokerAnalysis}
+                    allTimeHoldingData={allTimeBrokerAnalysis}
+                    floorsheetData={realFloorsheet}
+                    symbol={d.symbol}
+                    ltp={d.ltp}
+                    selectedDays={brokerDays}
+                    selectedDate={brokerDate}
+                    onDaysChange={handleBrokerDaysChange}
+                    onDateChange={handleBrokerDateChange}
+                    loading={brokerAnalysisLoading}
+                    availableDates={availableTradingDates}
+                  />
+                </CardLocalErrorBoundary>
               </div>
 
-              {Array.isArray(broker12M) && broker12M.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {broker12M.slice(0, 8).map((b, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => handleBrokerDateChange(b.date)}
-                      style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, fontSize: 12, alignItems: 'center', cursor: 'pointer' }}
-                    >
-                      <span style={{ fontWeight: 800, color: '#ffffff' }}>📅 {b.date || `Session ${idx + 1}`}</span>
-                      <span style={{ color: (b.netFlow || 0) >= 0 ? 'var(--bull)' : '#F43F5E', fontWeight: 800 }}>
-                        {(b.netFlow || 0) >= 0 ? '+' : ''}{(b.netFlow || 0).toLocaleString()} Net Qty
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                  {brokerAnalysisLoading ? 'Loading institutional broker flow...' : 'No historical broker net flow records available for this stock.'}
-                </div>
+              {/* ── Drabyashree Pro Analytics: Aggressive Holding & Broker Dominance Suite ── */}
+              <CardLocalErrorBoundary>
+                <StockYanAnalyticsCard
+                  stock={d}
+                  history={realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory : (history || [])}
+                  brokerData={realBrokerAnalysis}
+                  floorsheet={realFloorsheet}
+                />
+              </CardLocalErrorBoundary>
+
+              {/* Multi-Session Broker Accumulation / Distribution Footprint */}
+              {multiSessionFootprint && (
+                <CardLocalErrorBoundary>
+                  <BrokerFootprintCard footprint={multiSessionFootprint} />
+                </CardLocalErrorBoundary>
               )}
+
+              {/* Broker Daily Institutional Flow Tracker */}
+              <div style={{ background: '#151922', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff' }}>
+                    🤝 Institutional Net Broker Flow (Recent Sessions)
+                  </div>
+                  <span style={{ fontSize: 12, color: 'var(--primary-light)', fontWeight: 700 }}>
+                    Verified Exchange Flow
+                  </span>
+                </div>
+
+                {Array.isArray(broker12M) && broker12M.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {broker12M.slice(0, 8).map((b, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleBrokerDateChange(b.date)}
+                        style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, fontSize: 12, alignItems: 'center', cursor: 'pointer' }}
+                      >
+                        <span style={{ fontWeight: 800, color: '#ffffff' }}>📅 {b.date || `Session ${idx + 1}`}</span>
+                        <span style={{ color: (b.netFlow || 0) >= 0 ? 'var(--bull)' : '#F43F5E', fontWeight: 800 }}>
+                          {(b.netFlow || 0) >= 0 ? '+' : ''}{(Number(b.netFlow) || 0).toLocaleString()} Net Qty
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                    {brokerAnalysisLoading ? 'Loading institutional broker flow...' : 'No historical broker net flow records available for this stock.'}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          </CardLocalErrorBoundary>
         )}
 
         {/* ════ TAB 5: PRICE HISTORY (Share Hub Parity with Date Filter & Colored Rows) ════ */}

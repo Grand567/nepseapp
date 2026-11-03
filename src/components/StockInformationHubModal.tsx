@@ -602,7 +602,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     {
       key: "BROKER_FLOW",
       label: "2. Broker Flow & Smart Money",
-      badge: `${telemetry.smartMoney5D.netAccumulationRatio}%`,
+      badge: telemetry?.smartMoney5D?.netAccumulationRatio != null ? `${telemetry.smartMoney5D.netAccumulationRatio}%` : undefined,
     },
     { key: "AI_GURU_TOOLS", label: "3. AI Guru & Targets", badge: "🧠 AI" },
     { key: "STOCK_SCORE", label: "★ Stock Score & Selection" },
@@ -610,12 +610,12 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     {
       key: "MARKET_DEPTH",
       label: "5. Market Depth",
-      badge: `OBIR ${telemetry.marketDepth.obir}x`,
+      badge: telemetry?.marketDepth?.obir != null ? `OBIR ${telemetry.marketDepth.obir}x` : undefined,
     },
     {
       key: "FLOORSHEET",
       label: "6. Floorsheet Tape",
-      badge: telemetry.overview.totalContracts,
+      badge: telemetry?.overview?.totalContracts,
     },
     {
       key: "VOLUME_PROFILE",
@@ -1097,17 +1097,17 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
               <div className="font-semibold text-emerald-300 mb-2">
                 Top 5 Institutional Accumulators (Baseline-Deflated)
               </div>
-              {telemetry.smartMoney5D.topAccumulators.map((b) => (
+              {(telemetry?.smartMoney5D?.topAccumulators || []).map((b) => (
                 <div
                   key={b.brokerId}
                   className="flex items-center justify-between py-1.5 border-b border-slate-800/70"
                 >
                   <span className="font-medium text-white">Broker #{b.brokerId}</span>
                   <span className="text-emerald-400 font-semibold">
-                    +{b.netKitta.toLocaleString()} kitta
+                    +{Number(b.netKitta || 0).toLocaleString()} kitta
                   </span>
                   <span className="text-indigo-300">
-                    {b.anomalyScore.toFixed(2)}x • Avg {b.avgTicketKitta}k
+                    {Number(b.anomalyScore || 1).toFixed(2)}x • Avg {Math.round(Number(b.avgTicketKitta || 0))}k
                   </span>
                 </div>
               ))}
@@ -1115,14 +1115,14 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
 
             <div className="rounded-lg border border-rose-500/20 bg-slate-900 p-3">
               <div className="font-semibold text-rose-300 mb-2">Top 5 Net Distributors</div>
-              {telemetry.smartMoney5D.topDistributors.map((b) => (
+              {(telemetry?.smartMoney5D?.topDistributors || []).map((b) => (
                 <div
                   key={b.brokerId}
                   className="flex items-center justify-between py-1.5 border-b border-slate-800/70"
                 >
                   <span className="font-medium text-white">Broker #{b.brokerId}</span>
                   <span className="text-rose-400 font-semibold">
-                    {b.netKitta.toLocaleString()} kitta
+                    {Number(b.netKitta || 0).toLocaleString()} kitta
                   </span>
                   <span className="text-slate-400">Avg {b.avgTicketKitta} kitta/trade</span>
                 </div>
@@ -1139,7 +1139,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                   All Brokers Holding Till Now (Full Ledger Telemetry)
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                  Total: +{totalHeldKitta.toLocaleString()} kitta ({allHoldingsList.length} holders)
+                  Total: +{Number(totalHeldKitta || 0).toLocaleString()} kitta ({allHoldingsList?.length || 0} holders)
                 </span>
               </div>
 
@@ -1249,7 +1249,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                           </td>
                         )}
                         <td className="py-1.5 px-2.5 text-right text-slate-200">
-                          Rs {(b.holdingValueRs / 100000).toFixed(2)} L
+                          Rs {((Number(b.holdingValueRs) || 0) / 100000).toFixed(2)} L
                         </td>
                         <td className="py-1.5 px-2.5 text-right text-emerald-300">
                           {b.avgBuyPrice > 0 ? `Rs ${b.avgBuyPrice}` : "—"}

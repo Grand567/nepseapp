@@ -1,7 +1,7 @@
 # Drabyashree NEPSE: Walk-Forward Parameter Optimization Report
 
-**Generated At:** 2026-11-01T06:02:05.686Z  
-**Historical Horizon:** 38 NEPSE Trading Sessions  
+**Generated At:** 2026-11-03T09:40:35.925Z  
+**Historical Horizon:** 40 NEPSE Trading Sessions  
 **Validation Methodology:** Rolling 60% In-Sample Training / 40% Out-of-Sample Forward Testing  
 **Frictional Deductions:** 5-Tier SEBON Brokerage, 0.015% SEBON fee, Rs. 25 DP fee, 7.5% CGT, Slippage, and T+2 Demat Lock.
 
@@ -11,7 +11,7 @@
 
 > [!IMPORTANT]
 > **Recommended Calibration: Preset C: Technical Momentum Follower**  
-> Demonstrates the highest forward risk-adjusted return with a Profit Factor of **0.92**, a Win Rate of **57.1%**, and Walk-Forward Efficiency of **0%**.
+> Demonstrates the highest forward risk-adjusted return with a Profit Factor of **1.33**, a Win Rate of **63.6%**, and Walk-Forward Efficiency of **-46.8%**.
 
 ### Optimal Weight Allocation
 | Pillar | Optimized Weight | Description |
@@ -34,10 +34,10 @@
 
 | Preset Candidate | Weight Breakdown (B/T/F/M) | Buy Score | Trades (OOS) | Win Rate % | Profit Factor | Net PnL (NPR) | WFE % | Verdict |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Preset C: Technical Momentum Follower** | 25/45/15/15 | 68 | 14 | 57.1% | **0.92** | Rs. 22,679 | 0% | ⚠️ Sensitive |
-| **Preset B: Institutional Flow Dominant** | 45/20/15/20 | 72 | 12 | 50% | **0.69** | Rs. -3,959 | 0% | ⚠️ Sensitive |
-| **Preset D: High-Safety Value Conservative** | 30/20/30/20 | 75 | 12 | 50% | **0.66** | Rs. -2,219 | 0% | ⚠️ Sensitive |
-| **Preset A: Current Baseline Balanced** | 35/25/20/20 | 70 | 10 | 40% | **0.58** | Rs. -7,531 | 0% | ⚠️ Sensitive |
+| **Preset C: Technical Momentum Follower** | 25/45/15/15 | 68 | 55 | 63.6% | **1.33** | Rs. 52,110 | -46.8% | ✅ Robust |
+| **Preset A: Current Baseline Balanced** | 35/25/20/20 | 70 | 44 | 56.8% | **1.16** | Rs. 24,882 | -52.6% | ⚠️ Sensitive |
+| **Preset B: Institutional Flow Dominant** | 45/20/15/20 | 72 | 48 | 60.4% | **1.1** | Rs. 18,585 | -83.6% | ⚠️ Sensitive |
+| **Preset D: High-Safety Value Conservative** | 30/20/30/20 | 75 | 49 | 59.2% | **1** | Rs. 8,897 | -98.9% | ⚠️ Sensitive |
 
 ---
 
@@ -52,7 +52,7 @@
 4. **Volume Participation Ceiling:**
    - Position sizing capped at a maximum of 5% of daily volume to ensure genuine order fill reality in thin liquidity.
 5. **Sample Power Guard:**
-   - ⚠️ **CAUTION:** Forward trade sample is currently underpowered (N < 30). Accumulate additional forward sessions before deploying large live capital.
+   - ✓ Forward sample meets minimum statistical viability (N >= 30).
 
 ---
 

@@ -3885,7 +3885,7 @@ export function AccumulationDistributionRadar({
                       <div className="flex justify-between items-center text-xs">
                         <span className="font-bold text-slate-300">Ticket Size Asymmetry &amp; Net Offloading</span>
                         <span className={`font-black ${isTrap || isDumping ? 'text-rose-400' : 'text-emerald-400'}`}>
-                          {activeStock.wyckoff?.tradeSizeRatio?.toFixed(2) || 1.0}x Ticket Ratio
+                          {Number(activeStock.wyckoff?.tradeSizeRatio || 1).toFixed(2)}x Ticket Ratio
                         </span>
                       </div>
                       <div className="text-xs text-slate-300 leading-relaxed">
@@ -3899,7 +3899,7 @@ export function AccumulationDistributionRadar({
                           </span>
                         ) : isAccumulation ? (
                           <span className="text-emerald-300 font-semibold">
-                            ✓ Institutions are absorbing large trade blocks ({activeStock.wyckoff?.tradeSizeRatio?.toFixed(2)}x ticket ratio) while selling is dispersed across retail brokers.
+                            ✓ Institutions are absorbing large trade blocks ({Number(activeStock.wyckoff?.tradeSizeRatio || 1).toFixed(2)}x ticket ratio) while selling is dispersed across retail brokers.
                           </span>
                         ) : (
                           <span className="text-slate-400">
@@ -4049,7 +4049,7 @@ export function AccumulationDistributionRadar({
                                   </div>
                                 </td>
                                 <td className={`py-2.5 text-right font-bold ${brokerLedgerMetric === 'kitta' ? 'text-emerald-300 font-black' : 'text-emerald-400'}`}>
-                                  +{b.volume.toLocaleString()}
+                                  +{Number(b.volume || 0).toLocaleString()}
                                 </td>
                                 <td className={`py-2.5 text-right font-semibold text-[11px] ${brokerLedgerMetric === 'turnover' ? 'text-amber-300 font-black' : 'text-slate-300'}`}>
                                   {formatBrokerAmount(b.amount)}
@@ -4058,8 +4058,8 @@ export function AccumulationDistributionRadar({
                                   {b.pct}%
                                 </td>
                                 <td className={`py-2.5 text-right font-extrabold text-[11px] ${brokerLedgerMetric === 'netFlow' ? 'underline' : ''}`}>
-                                  <span className={b.netQty >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                                    {b.netQty >= 0 ? '+' : ''}{b.netQty.toLocaleString()}
+                                  <span className={(Number(b.netQty) || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                    {(Number(b.netQty) || 0) >= 0 ? '+' : ''}{(Number(b.netQty) || 0).toLocaleString()}
                                   </span>
                                 </td>
                               </tr>
@@ -4120,7 +4120,7 @@ export function AccumulationDistributionRadar({
                                   </div>
                                 </td>
                                 <td className={`py-2.5 text-right font-bold ${brokerLedgerMetric === 'kitta' ? 'text-rose-300 font-black' : 'text-red-400'}`}>
-                                  -{s.volume.toLocaleString()}
+                                  -{Number(s.volume || 0).toLocaleString()}
                                 </td>
                                 <td className={`py-2.5 text-right font-semibold text-[11px] ${brokerLedgerMetric === 'turnover' ? 'text-amber-300 font-black' : 'text-slate-300'}`}>
                                   {formatBrokerAmount(s.amount)}
@@ -4129,8 +4129,8 @@ export function AccumulationDistributionRadar({
                                   {s.pct}%
                                 </td>
                                 <td className={`py-2.5 text-right font-extrabold text-[11px] ${brokerLedgerMetric === 'netFlow' ? 'underline' : ''}`}>
-                                  <span className={s.netQty <= 0 ? 'text-red-400' : 'text-emerald-400'}>
-                                    {s.netQty > 0 ? '+' : ''}{s.netQty.toLocaleString()}
+                                  <span className={(Number(s.netQty) || 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}>
+                                    {(Number(s.netQty) || 0) > 0 ? '+' : ''}{(Number(s.netQty) || 0).toLocaleString()}
                                   </span>
                                 </td>
                               </tr>
@@ -4159,7 +4159,7 @@ export function AccumulationDistributionRadar({
                   <div className="flex flex-wrap gap-2 pt-1">
                     {(activeStock.brokerData?.topNetAccumulators || []).slice(0, 3).map((b: BrokerDetail, i: number) => (
                       <span key={i} className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-bold text-[11px]">
-                        #{b.broker} {b.brokerName.split(' ')[0]}: +{b.netQty.toLocaleString()} kitta ({formatBrokerAmount(b.netAmount)})
+                        #{b.broker} {String(b.brokerName || '').split(' ')[0]}: +{Number(b.netQty || 0).toLocaleString()} kitta ({formatBrokerAmount(b.netAmount)})
                       </span>
                     ))}
                   </div>
@@ -4172,7 +4172,7 @@ export function AccumulationDistributionRadar({
                   <div className="flex flex-wrap gap-2 pt-1">
                     {(activeStock.brokerData?.topNetDistributors || []).slice(0, 3).map((s: BrokerDetail, i: number) => (
                       <span key={i} className="px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 font-bold text-[11px]">
-                        #{s.broker} {s.brokerName.split(' ')[0]}: {s.netQty.toLocaleString()} kitta ({formatBrokerAmount(s.netAmount)})
+                        #{s.broker} {String(s.brokerName || '').split(' ')[0]}: {Number(s.netQty || 0).toLocaleString()} kitta ({formatBrokerAmount(s.netAmount)})
                       </span>
                     ))}
                   </div>
