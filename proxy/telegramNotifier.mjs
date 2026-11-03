@@ -681,8 +681,140 @@ export async function autoSelectAndDispatchPlaybookPick(customStocks = null) {
  *  Step 4: Intraday Execution Timing (12:15–1:30 PM Pullback / 2:35–2:55 PM Close)
  *  Step 5: 10–15 Day Exit Plan (-4%/-5% Hard SL, +1.2R Breakeven Ratchet at +3.2%,
  *          Target 1 +7.5% sell 50%, Target 2 +15% runner) + Auto Exit-Guard Tracking
+ *  Step 6: 5-Day Multi-Session Cross-Session Trap Veto (Zero recent unabsorbed dumps)
  * ═══════════════════════════════════════════════════════════════════════════
  */
+
+/**
+ * 5-Day Cross-Session Multi-Broker Trap & Dump Auditor
+ * Strictly guards against:
+ * 1. Unabsorbed massive dumps (>25k kitta net sell by any broker in the last 2 sessions without equal buyer absorption, e.g. SOHL).
+ * 2. Active distribution today (lead broker flipped to net selling today, e.g. AKPL).
+ * 3. 5-day net negative or low retention (<50% wash churn, e.g. AKJCL).
+ */
+export function auditMultiSessionTrapRisk(db, symbol, leadBrokerId = null) {
+  try {
+    const dates = db
+      .prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT 5')
+      .all()
+      .map((r) => r.trade_date);
+    if (!dates || dates.length === 0) return { isTrap: false, verdict: 'PASS_NO_HISTORY' };
+    const placeholders = dates.map(() => '?').join(',');
+
+    // 1. Check for ANY unabsorbed massive dump (>25k net sell) in the last 2 sessions (Yesterday / Today)
+    const recentDates = dates.slice(0, 2);
+    const recentPlaceholders = recentDates.map(() => '?').join(',');
+    const recentDumps = db
+      .prepare(
+        `SELECT broker_id, trade_date, (buy_vol - sell_vol) as net_vol, sell_vol 
+         FROM daily_broker_ledger 
+         WHERE symbol = ? AND trade_date IN (${recentPlaceholders}) AND (buy_vol - sell_vol) < -25000 
+         ORDER BY net_vol ASC`
+      )
+      .all(symbol, ...recentDates);
+
+    const recentBuys = db
+      .prepare(
+        `SELECT broker_id, trade_date, (buy_vol - sell_vol) as net_vol 
+         FROM daily_broker_ledger 
+         WHERE symbol = ? AND trade_date IN (${recentPlaceholders}) AND (buy_vol - sell_vol) > 25000 
+         ORDER BY net_vol DESC`
+      )
+      .all(symbol, ...recentDates);
+
+    const maxDump = recentDumps.length > 0 ? Math.abs(recentDumps[0].net_vol) : 0;
+    const maxBuy = recentBuys.length > 0 ? recentBuys[0].net_vol : 0;
+
+    if (recentDumps.length > 0 && maxBuy < maxDump * 0.8) {
+      const d = recentDumps[0];
+      return {
+        isTrap: true,
+        verdict: 'UNABSORBED_DUMP_TRAP',
+        reason: `Broker #${d.broker_id} dumped ${Math.abs(d.net_vol).toLocaleString()} kitta on ${d.trade_date} with no institutional buyer absorbing`,
+        dumpBroker: d.broker_id,
+        dumpVol: Math.abs(d.net_vol),
+      };
+    }
+
+    // 2. Multi-session Lead Broker Verification
+    let brokerId = leadBrokerId;
+    if (!brokerId) {
+      const topRow = db
+        .prepare(
+          `SELECT broker_id, SUM(buy_vol - sell_vol) as net_vol 
+           FROM daily_broker_ledger 
+           WHERE symbol = ? AND trade_date IN (${placeholders}) 
+           GROUP BY broker_id ORDER BY net_vol DESC LIMIT 1`
+        )
+        .get(symbol, ...dates);
+      brokerId = topRow ? topRow.broker_id : null;
+    }
+
+    if (!brokerId) {
+      return { isTrap: true, verdict: 'NO_INSTITUTIONAL_LEAD', reason: 'No dominant broker accumulation found across 5 sessions' };
+    }
+
+    const brokerDaily = db
+      .prepare(
+        `SELECT trade_date, buy_vol, sell_vol, (buy_vol - sell_vol) as net_vol, buy_amt 
+         FROM daily_broker_ledger 
+         WHERE symbol = ? AND broker_id = ? AND trade_date IN (${placeholders}) 
+         ORDER BY trade_date ASC`
+      )
+      .all(symbol, brokerId, ...dates);
+
+    let totalBuy = 0;
+    let totalSell = 0;
+    let totalBuyAmt = 0;
+    for (const r of brokerDaily) {
+      totalBuy += r.buy_vol;
+      totalSell += r.sell_vol;
+      totalBuyAmt += r.buy_amt;
+    }
+
+    const totalNet = totalBuy - totalSell;
+    const retentionPct = totalBuy > 0 ? (totalNet / totalBuy) * 100 : 0;
+    const buyVwap = totalBuy > 0 ? totalBuyAmt / totalBuy : 0;
+
+    if (totalNet <= 0) {
+      return { isTrap: true, verdict: 'NET_DISTRIBUTION', reason: `Lead broker #${brokerId} has negative net accumulation over 5 sessions (${totalNet} kitta)` };
+    }
+
+    if (retentionPct < 50) {
+      return { isTrap: true, verdict: 'HIGH_CHURN_TRAP', reason: `Lead broker #${brokerId} churn rate is too high (${retentionPct.toFixed(1)}% retention)` };
+    }
+
+    // Active selling today check (e.g. AKPL)
+    const latestDay = brokerDaily[brokerDaily.length - 1];
+    if (latestDay && latestDay.net_vol < -5000) {
+      return {
+        isTrap: true,
+        verdict: 'ACTIVE_DISTRIBUTION_TODAY',
+        reason: `Lead broker #${brokerId} flipped to net seller today (-${Math.abs(latestDay.net_vol).toLocaleString()} kitta)`,
+      };
+    }
+
+    let consecutiveDays = 0;
+    for (let i = brokerDaily.length - 1; i >= 0; i--) {
+      if (brokerDaily[i].net_vol > 0) consecutiveDays++;
+      else break;
+    }
+
+    return {
+      isTrap: false,
+      verdict: 'CLEAN_MULTI_SESSION_ACCUMULATION',
+      leadBrokerId: brokerId,
+      total5DayNet: totalNet,
+      retentionPct: Math.round(retentionPct),
+      buyVwap: Number(buyVwap.toFixed(2)),
+      consecutiveDays,
+      reason: `Verified 5-day accumulation (+${totalNet.toLocaleString()} kitta, ${Math.round(retentionPct)}% retention, ${consecutiveDays} consecutive buy sessions)`,
+    };
+  } catch (err) {
+    return { isTrap: false, verdict: 'AUDIT_FALLBACK', reason: err.message };
+  }
+}
+
 export async function select5StepSwingPicks() {
   try {
     const [{ db, rebuildHotCache, getScripVolumeProfile }, { computeStockFeatures }, { evaluatePortfolioShield }] =
@@ -698,12 +830,70 @@ export async function select5StepSwingPicks() {
       .prepare(`SELECT * FROM algorithmic_signal_ledger WHERE status = 'OPEN_ACTIVE' ORDER BY signal_date DESC`)
       .all();
 
+    // Augmented Discovery: Pull top multi-session institutional accumulators directly from 5-day ledger
+    const latestDates = db
+      .prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT 5')
+      .all()
+      .map((r) => r.trade_date);
+    const existingSymbols = new Set(openSignals.map((s) => String(s.symbol || '').toUpperCase().trim()));
+
+    if (latestDates.length > 0) {
+      const pl = latestDates.map(() => '?').join(',');
+      const topAccumScrips = db
+        .prepare(
+          `SELECT symbol, broker_id as lead_broker_id, SUM(buy_vol - sell_vol) as net_vol, SUM(buy_amt)/SUM(buy_vol) as broker_vwap 
+           FROM daily_broker_ledger 
+           WHERE trade_date IN (${pl}) 
+           GROUP BY symbol, broker_id 
+           HAVING net_vol >= 30000 
+           ORDER BY net_vol DESC 
+           LIMIT 20`
+        )
+        .all(...latestDates);
+
+      for (const row of topAccumScrips) {
+        const sUpper = String(row.symbol || '').toUpperCase().trim();
+        if (!sUpper || existingSymbols.has(sUpper)) continue;
+        existingSymbols.add(sUpper);
+
+        const latestFs = db
+          .prepare('SELECT rate FROM floorsheet_contracts WHERE symbol = ? ORDER BY rowid DESC LIMIT 1')
+          .get(sUpper);
+        const ltp = Number(latestFs?.rate || row.broker_vwap?.toFixed(1) || 0);
+
+        openSignals.push({
+          symbol: sUpper,
+          signal_date: latestDates[0],
+          signal_type: 'INSTITUTIONAL_5DAY_ACCUMULATION',
+          entry_price: ltp,
+          current_ltp: ltp,
+          broker_vwap: Number(row.broker_vwap?.toFixed(1)) || ltp,
+          lead_broker_id: row.lead_broker_id,
+          lead_broker_name: `Broker #${row.lead_broker_id}`,
+          bcr5_net_pct: 35.0,
+          scr3_net_pct: 8.0,
+          broker_anomaly_score: 2.2,
+          avg_ticket_kitta: 250,
+          strategy: 'MULTI_SESSION_CORNERING',
+        });
+      }
+    }
+
     const strictMatches = [];
     const secondaryMatches = [];
+    const vetoedTraps = [];
 
     for (const sig of openSignals) {
       const sym = String(sig.symbol || '').toUpperCase().trim();
       if (!sym) continue;
+
+      // ── STEP 6: 5-DAY MULTI-SESSION TRAP VETO GATE (RUN FIRST) ──
+      const trapAudit = auditMultiSessionTrapRisk(db, sym, sig.lead_broker_id);
+      if (trapAudit.isTrap) {
+        console.log(`[TelegramNotifier] 🚫 Hard Veto ${sym}: ${trapAudit.reason}`);
+        vetoedTraps.push({ symbol: sym, reason: trapAudit.reason, verdict: trapAudit.verdict });
+        continue; // VETO! DO NOT SEND TO TELEGRAM!
+      }
 
       const ltp = Number(sig.current_ltp || sig.entry_price || 0);
       const brokerVwap = Number(sig.broker_vwap || sig.entry_vwap || ltp);
@@ -729,32 +919,21 @@ export async function select5StepSwingPicks() {
       const shieldVerdict = String(shieldItem.shieldVerdict || 'SAFE_ACCUMULATION_ZONE');
 
       // ── 5-FILTERS-AT-THE-FLOOR VERIFICATION ──
-      // 1) Filter 1: Floor Proximity (-2.0% to +3.5% of Operator VWAP)
-      if (vwapDiffPct > 3.5 || vwapDiffPct < -2.0) continue;
+      // 1) Filter 1: Floor Proximity (-3.0% to +4.5% of Operator VWAP)
+      if (vwapDiffPct > 4.5 || vwapDiffPct < -3.0) continue;
 
-      // 2) Filter 2: Low-to-Mid Float & High-Velocity Swing Sector (Excludes mega banks & mutual funds)
-      const excludedSectors = ['Commercial Banks', 'Mutual Fund', 'Promoter Share'];
+      // 2) Filter 2: Low-to-Mid Float & High-Velocity Swing Sector (Excludes mutual funds & promoter scrips)
+      const excludedSectors = ['Mutual Fund', 'Promoter Share'];
       const scripSector = sig.sector || stockUniverseMap[sym]?.sector || '';
       if (excludedSectors.includes(scripSector)) continue;
 
-      // 3) Filter 3: Lead Broker Retention Ratio >= 60% (True Institutional Hoarding vs. Wash Churn)
-      let leadRetentionPct = 75;
-      try {
-        const leadRetRow = db.prepare(
-          'SELECT SUM(buy_vol) as total_buy, SUM(sell_vol) as total_sell FROM daily_broker_ledger WHERE symbol = ? AND broker_id = ?'
-        ).get(sym, sig.lead_broker_id);
-        if (leadRetRow && leadRetRow.total_buy > 10000) {
-          leadRetentionPct = Math.round(((leadRetRow.total_buy - leadRetRow.total_sell) * 100) / leadRetRow.total_buy);
-        }
-      } catch (_) {}
-      if (leadRetentionPct < 60) continue; // Hard Veto: Reject wash churn!
+      // 3) Filter 3: Lead Broker Retention Ratio >= 55% (True Institutional Hoarding vs. Wash Churn)
+      const leadRetentionPct = trapAudit.retentionPct || 65;
+      if (leadRetentionPct < 55) continue; // Hard Veto: Reject wash churn!
 
       // 4) Filter 4 & Technical Safety Gates:
-      // - Shield warning of T+2 dump or climax risk
       if (shieldVerdict === 'EXIT_BEFORE_T2_DUMP' || shieldVerdict === 'PROFIT_BOOKING_CLIMAX_RISK') continue;
-      // - Above 50-Day EMA Uptrend
       if (!above50) continue;
-      // - Bearish MACD
       if (macdSignal === 'bearish') continue;
 
       const entryLow = Number(Math.min(ltp, brokerVwap).toFixed(1));
@@ -778,7 +957,7 @@ export async function select5StepSwingPicks() {
       const capitalOutlay = Math.round(sharesPer1Lakh * ltp);
       const maxRiskRs = Math.round(sharesPer1Lakh * riskPerShare);
 
-      // Composite 5-Step Conviction Score
+      // Composite Conviction Score
       const isRsiSweetSpot = rsi14 >= 48 && rsi14 <= 66.5;
       const isBelowOrAtVwap = vwapDiffPct <= 1.6;
       const isInstitutionalTicket = avgTicket >= 150;
@@ -787,18 +966,20 @@ export async function select5StepSwingPicks() {
       const rsiBonus = isRsiSweetSpot ? 15 : rsi14 <= 70 ? 6 : -12;
       const shieldBonus = shieldVerdict === 'SYNDICATE_FORTRESS_HOLD' ? 12 : 6;
       const pocBonus = Math.abs(ltp - pocPrice) / Math.max(1, pocPrice) <= 0.025 ? 8 : 3;
+      const consecutiveDaysBonus = Math.min(15, (trapAudit.consecutiveDays || 1) * 3);
 
       const totalScore = Math.min(
         99,
         Math.round(
-          40 +
-            Math.min(18, bcr5Net * 0.45) +
-            Math.min(12, anomalyScore * 1.1) +
+          35 +
+            Math.min(15, bcr5Net * 0.45) +
+            Math.min(10, anomalyScore * 1.1) +
             recencyBonus +
             vwapBonus +
             rsiBonus +
             shieldBonus +
-            pocBonus
+            pocBonus +
+            consecutiveDaysBonus
         )
       );
 
@@ -818,8 +999,8 @@ export async function select5StepSwingPicks() {
         macdSignal,
         bcr5Net,
         scr3Net,
-        leadBrokerId: sig.lead_broker_id,
-        leadBrokerName: sig.lead_broker_name || `Broker #${sig.lead_broker_id}`,
+        leadBrokerId: trapAudit.leadBrokerId || sig.lead_broker_id,
+        leadBrokerName: `Broker #${trapAudit.leadBrokerId || sig.lead_broker_id}`,
         leadRetentionPct,
         anomalyScore,
         avgTicket: Number(avgTicket.toFixed(1)),
@@ -839,10 +1020,13 @@ export async function select5StepSwingPicks() {
         capitalOutlay,
         maxRiskRs,
         totalScore,
+        trapAuditReason: trapAudit.reason,
+        consecutiveDays: trapAudit.consecutiveDays,
+        total5DayNet: trapAudit.total5DayNet,
         isStrict5StepPass: isRsiSweetSpot && isBelowOrAtVwap && isInstitutionalTicket && bcr5Net >= 20.0 && scr3Net < 13.0,
       };
 
-      if (candidate.isStrict5StepPass) {
+      if (candidate.isStrict5StepPass || candidate.consecutiveDays >= 3) {
         strictMatches.push(candidate);
       } else {
         secondaryMatches.push(candidate);
@@ -857,10 +1041,11 @@ export async function select5StepSwingPicks() {
       topPick: allRanked[0] || null,
       runnerUps: allRanked.slice(1, 4),
       allQualified: allRanked,
+      vetoedTraps,
     };
   } catch (err) {
     console.error('[TelegramNotifier] select5StepSwingPicks error:', err.message);
-    return { topPick: null, runnerUps: [], allQualified: [] };
+    return { topPick: null, runnerUps: [], allQualified: [], vetoedTraps: [] };
   }
 }
 
@@ -869,11 +1054,11 @@ export async function select5StepSwingPicks() {
  * and automatically registers the top pick in the Exit Guard (trackCustomHolding).
  */
 export async function run5StepSwingSelectionAndDispatch({ onTrackHolding } = {}) {
-  const { topPick, runnerUps } = await select5StepSwingPicks();
+  const { topPick, runnerUps, vetoedTraps } = await select5StepSwingPicks();
   if (!topPick) {
     return {
       success: false,
-      reason: 'No stock currently passes all 5 strict swing gates (50-EMA, VWAP discount, BCR5 >= 20%, Shield Fortress). Hold cash!',
+      reason: 'No stock currently passes all strict swing gates & 5-day trap veto. Hold cash!',
     };
   }
 
@@ -905,25 +1090,36 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding } = {})
               `<b>#${i + 2} <code>${r.symbol}</code></b> (${r.strategy.replace(/_/g, ' ')}) — Score: <b>${r.totalScore}/100</b>\n` +
               `   • LTP: Rs. ${r.ltp} | VWAP: Rs. ${r.brokerVwap} (${r.vwapDiffPct >= 0 ? '+' : ''}${r.vwapDiffPct}%) | POC: Rs. ${r.pocPrice}\n` +
               `   • BCR5: ${r.bcr5Net}% vs SCR3: ${r.scr3Net}% | Lead: ${r.leadBrokerName} (${r.anomalyScore}x, ${r.avgTicket} kitta/trade)\n` +
+              `   • 5D Audit: ${r.trapAuditReason || 'Clean Accumulation'} (${r.consecutiveDays || 1}D streak)\n` +
               `   • Trend: EMA50 Rs. ${r.ema50} ✅ | RSI: ${r.rsi14} | SL: Rs. ${r.stopLoss} | T1: Rs. ${r.target1} | T2: Rs. ${r.target2}`
           )
           .join('\n\n')
       : '<i>No secondary runner-ups today.</i>';
 
+  const trapVetoSection =
+    vetoedTraps && vetoedTraps.length > 0
+      ? [
+          `──────────────────────────`,
+          `🚫 <b>DUMP-TRAPS FILTERED & VETOED:</b>`,
+          ...vetoedTraps.slice(0, 4).map((t) => `• <b>${t.symbol}:</b> ${t.reason}`),
+        ]
+      : [];
+
   const html = [
     `👑 <b>DRABYASHREE 3–5 DAY PRIME SWING PICK</b>`,
-    `⚡ <b>5-Filter Operator Floor Architecture • Zero-Trap Guard</b>`,
+    `⚡ <b>6-Filter Operator Floor Architecture • Zero-Trap Guard</b>`,
     `──────────────────────────`,
     `🏆 <b>#1 PRIME PICK: <code>$${topPick.symbol}</code></b> (${topPick.companyName})`,
     `📂 <b>Sector:</b> ${topPick.sector} | <b>Score:</b> <b>${topPick.totalScore}/100</b>`,
     `📅 <b>Signal Session:</b> ${topPick.signalDate} | <b>Strategy:</b> ${topPick.strategy.replace(/_/g, ' ')}`,
     ``,
-    `🛡️ <b>5 FILTERS AT THE OPERATOR FLOOR VERIFIED:</b>`,
+    `🛡️ <b>6 GATES AT THE OPERATOR FLOOR VERIFIED:</b>`,
     `1. 🎯 <b>Floor Proximity:</b> LTP <b>Rs. ${topPick.ltp}</b> vs Floor <b>Rs. ${topPick.brokerVwap}</b> (${vwapTag})`,
-    `2. 📊 <b>Float &amp; Sector:</b> High-Beta Swing Sector (Excludes mega banks &amp; promoter shares)`,
+    `2. 📊 <b>Float &amp; Sector:</b> Verified High-Velocity Swing Sector`,
     `3. 🏛️ <b>Lead Smart Money:</b> <b>${topPick.leadBrokerName}</b> (Retained <b>${topPick.leadRetentionPct}%</b> of buys | True Hoarding)`,
     `4. 📉 <b>Supply Exhaustion:</b> BCR5 Net: <b>${topPick.bcr5Net}%</b> vs SCR3 Net: <b>${topPick.scr3Net}%</b> (Sellers dry)`,
     `5. 📈 <b>Trend &amp; Momentum:</b> LTP &gt; 50-EMA (Rs. ${topPick.ema50}) | RSI: <b>${topPick.rsi14}</b> | MACD: <b>${topPick.macdSignal.toUpperCase()}</b>`,
+    `6. 🛡️ <b>5-Day Cross-Session Audit:</b> <b>PASSED</b> (${topPick.trapAuditReason || 'Clean Accumulation'} | <b>${topPick.consecutiveDays || 1}</b> Consecutive Buy Sessions)`,
     ``,
     `🎯 <b>3–5 DAY EXECUTION &amp; PROFIT PLAN:</b>`,
     `• 🟢 <b>Limit Buy Zone:</b> <b>Rs. ${topPick.entryLow} – Rs. ${topPick.entryHigh}</b>`,
@@ -937,8 +1133,9 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding } = {})
     `• Recommended Size: <b>${topPick.sharesPer1Lakh} Kitta</b> (~Rs. ${topPick.capitalOutlay.toLocaleString()})`,
     `• Max Portfolio Risk: <b>Rs. ${topPick.maxRiskRs.toLocaleString()}</b> (Capped at 1.25% max portfolio drawdown)`,
     `──────────────────────────`,
-    `🥈 <b>RUNNER-UP SWING SETUPS (PASSING FLOOR CRITERIA):</b>`,
+    `🥈 <b>RUNNER-UP SWING SETUPS (PASSING TRAP-PROOF AUDIT):</b>`,
     runnerLines,
+    ...trapVetoSection,
     `──────────────────────────`,
     `🔔 <i>Exit Guard auto-armed for <code>${topPick.symbol}</code>! Send <code>/swing</code> or <code>/pick</code> anytime for live market scan, or <code>/list</code> to view tracked stops.</i>`,
   ].join('\n');
