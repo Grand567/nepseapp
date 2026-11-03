@@ -62,6 +62,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'smart_alert_state.json');
 const HISTORY_FILE = path.join(DATA_DIR, 'smart_alert_history.json');
 const TOKENS_FILE = path.join(DATA_DIR, 'push_tokens.json');
+const SEEN_NEWS_FILE = path.join(DATA_DIR, 'seen_news_keys.json');
 
 let stockMap = {};
 try {
@@ -181,16 +182,39 @@ export function broadcastAlert(alertPayload) {
     alertPayload.category = isProType ? 'pro' : 'general';
   }
 
-  // Deduplicate against recent history
-  const isDuplicate = alertHistory.some(a => 
-    a.id === alertPayload.id || 
-    (a.symbol === alertPayload.symbol && a.type === alertPayload.type && (Date.now() - new Date(a.triggeredAt).getTime() < 180000))
-  );
-  if (!isDuplicate) {
-    alertHistory.unshift(alertPayload);
-    if (alertHistory.length > 200) alertHistory.pop();
-    saveJson(HISTORY_FILE, alertHistory);
+  // Strict Deduplication against recent history
+  const cleanTitle = String(alertPayload.title || '').trim().toLowerCase();
+  const cleanBody = String(alertPayload.body || '').trim().toLowerCase();
+  const nowMs = Date.now();
+
+  const isDuplicate = alertHistory.some(a => {
+    if (a.id === alertPayload.id) return true;
+    const aTitle = String(a.title || '').trim().toLowerCase();
+    const aBody = String(a.body || '').trim().toLowerCase();
+    const ageMs = nowMs - new Date(a.triggeredAt || a.timestamp || 0).getTime();
+
+    // Exact title or substantive body match within 12 hours
+    if (aTitle === cleanTitle || (cleanBody.length > 20 && aBody === cleanBody)) {
+      if (ageMs < 12 * 60 * 60 * 1000) return true;
+    }
+
+    // Same symbol & type within 45 minutes
+    const sameSymbol = a.symbol && alertPayload.symbol && a.symbol.toUpperCase() === alertPayload.symbol.toUpperCase();
+    const sameType = a.type === alertPayload.type;
+    if (sameSymbol && sameType && ageMs < 45 * 60 * 1000) {
+      return true;
+    }
+    return false;
+  });
+
+  if (isDuplicate) {
+    console.debug(`[SmartAlertEngine] ℹ️ Suppressed duplicate alert: "${alertPayload.title}" (${alertPayload.symbol || alertPayload.type})`);
+    return false; // MUST RETURN IMMEDIATELY — do not dispatch duplicate push/SSE/Telegram/Discord!
   }
+
+  alertHistory.unshift(alertPayload);
+  if (alertHistory.length > 200) alertHistory.pop();
+  saveJson(HISTORY_FILE, alertHistory);
 
   // 1. Dispatch to in-memory web/app listeners (SSE)
   const dataString = `data: ${JSON.stringify(alertPayload)}\n\n`;
@@ -249,26 +273,37 @@ export function broadcastAlert(alertPayload) {
 
 // ── 3. FCM PUSH DISPATCHER ──────────────────────────────────────────────────
 
-export async function registerPushToken(token, platform = 'android') {
+export const userTrackedSymbolsSet = new Set();
+
+export async function registerPushToken(token, platform = 'android', portfolioSymbols = []) {
   if (!token || typeof token !== 'string') return false;
   const cleanToken = token.trim();
   const existingIdx = pushTokens.findIndex(p => p.token === cleanToken);
   const now = new Date().toISOString();
 
+  if (Array.isArray(portfolioSymbols)) {
+    portfolioSymbols.forEach(s => {
+      const clean = String(s || '').toUpperCase().trim();
+      if (clean) userTrackedSymbolsSet.add(clean);
+    });
+  }
+
   if (existingIdx >= 0) {
     pushTokens[existingIdx].lastActiveAt = now;
     pushTokens[existingIdx].platform = platform;
+    if (portfolioSymbols.length > 0) pushTokens[existingIdx].portfolioSymbols = portfolioSymbols;
   } else {
     pushTokens.push({
       token: cleanToken,
       platform,
       registeredAt: now,
-      lastActiveAt: now
+      lastActiveAt: now,
+      portfolioSymbols: Array.isArray(portfolioSymbols) ? portfolioSymbols : []
     });
   }
 
   saveJson(TOKENS_FILE, pushTokens);
-  console.log(`[SmartAlertEngine] Push token registered (${platform}). Total tokens: ${pushTokens.length}`);
+  console.log(`[SmartAlertEngine] Push token registered (${platform}). Tracked portfolio symbols: ${userTrackedSymbolsSet.size}. Total tokens: ${pushTokens.length}`);
 
   // Subscribe token to 'institutional_alerts' and 'general_alerts' topics if FCM is active
   if (isFcmInitialized && fcmMessaging) {
@@ -286,7 +321,7 @@ export async function dispatchFcmNotification(alertItem) {
   const symbol = alertItem.symbol || 'NEPSE';
   const ltp = Number(alertItem.ltp || 0);
   const type = alertItem.type || 'INSTITUTIONAL_ENTRY';
-  const isPro = alertItem.category === 'pro' || ['BREAKOUT', 'INSTITUTIONAL_ENTRY', 'ACCUMULATION', 'PROFIT_BOOKING', 'STOP_LOSS_WARNING'].includes(type);
+  const isPro = alertItem.category === 'pro' || ['BREAKOUT', 'INSTITUTIONAL_ENTRY', 'ACCUMULATION', 'PROFIT_BOOKING', 'STOP_LOSS_WARNING', 'DIVIDEND_ALERT', 'RIGHT_SHARE_ALERT', 'PORTFOLIO_NEWS_ALERT'].includes(type);
   const channelId = isPro ? 'dravyashree-pro-signals' : 'nepse-general-news';
 
   const buyZone = alertItem.buyZone || {};
@@ -301,6 +336,11 @@ export async function dispatchFcmNotification(alertItem) {
   if (!title) {
     if (type === 'PROFIT_BOOKING') title = `💰 Target Hit: Take Profit on ${symbol}`;
     else if (type === 'STOP_LOSS_WARNING') title = `🛑 Exit Guard: Stop-Loss Hit for ${symbol}`;
+    else if (type === 'DIVIDEND_ALERT') title = `💰 Dividend Declared: ${symbol}`;
+    else if (type === 'RIGHT_SHARE_ALERT') title = `📈 Right Share Notice: ${symbol}`;
+    else if (type === 'BOOK_CLOSURE_ALERT') title = `📅 Book Closure Notice: ${symbol}`;
+    else if (type === 'PORTFOLIO_NEWS_ALERT') title = `💼 Portfolio Alert: ${symbol}`;
+    else if (type === 'NEPSE_MACRO') title = `🏛️ NEPSE Market & Policy Alert`;
     else if (type === 'BREAKOUT') title = `⚡ Breakout Alert: ${symbol} Expanding`;
     else if (type === 'ACCUMULATION') title = `🐋 Stealth Whale Accumulation: ${symbol}`;
     else if (type === 'NEWS_ALERT') title = `📰 NEPSE Announcement: ${symbol}`;
@@ -1202,59 +1242,150 @@ export function getUserTrackedHoldings() {
 
 // ── 9. LIVE NEWS & IPO WATCHER ──────────────────────────────────────────────
 
-const seenNewsTitles = new Set();
+const seenNewsKeys = new Set(loadJson(SEEN_NEWS_FILE, []));
 const seenIpoStatusKeys = new Set();
+
+function saveSeenNewsKeys() {
+  try {
+    saveJson(SEEN_NEWS_FILE, Array.from(seenNewsKeys).slice(-600));
+  } catch (_) {}
+}
+
+function generateNewsContentKey(title, url = '') {
+  let hash = 0;
+  const clean = String(title || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  for (let i = 0; i < clean.length; i++) {
+    hash = ((hash << 5) - hash) + clean.charCodeAt(i);
+    hash |= 0;
+  }
+  return `news_${Math.abs(hash).toString(36)}`;
+}
 
 export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListingsFn = null) {
   let actualNewsFn = fetchNewsFn;
   let actualIpoFn = getIpoListingsFn;
-  if (typeof fetchNewsFn === 'object' && fetchNewsFn !== null) {
-    actualNewsFn = fetchNewsFn.scrapeMeroLaganiNews || fetchNewsFn.fetchNewsFn || null;
-    actualIpoFn = fetchNewsFn.getLiveIpoListings || fetchNewsFn.getIpoListingsFn || null;
-  }
 
-  // 1. Check Live News & Corporate Announcements
+  // 1. Check Live News & Corporate Announcements across multi-portal scrapers
   try {
     let articles = [];
-    if (typeof actualNewsFn === 'function') {
+    if (typeof fetchNewsFn === 'object' && fetchNewsFn !== null) {
+      actualIpoFn = fetchNewsFn.getLiveIpoListings || fetchNewsFn.getIpoListingsFn || null;
+
+      const scrapers = [];
+      if (typeof fetchNewsFn.scrapeMeroLaganiNews === 'function') scrapers.push(fetchNewsFn.scrapeMeroLaganiNews().catch(() => []));
+      if (typeof fetchNewsFn.scrapeShareSansarNews === 'function') scrapers.push(fetchNewsFn.scrapeShareSansarNews().catch(() => []));
+      if (typeof fetchNewsFn.fetchNewsFn === 'function') scrapers.push(fetchNewsFn.fetchNewsFn().catch(() => []));
+
+      const settled = await Promise.allSettled(scrapers);
+      for (const s of settled) {
+        if (s.status === 'fulfilled' && Array.isArray(s.value)) {
+          articles.push(...s.value);
+        }
+      }
+    } else if (typeof actualNewsFn === 'function') {
       articles = await actualNewsFn().catch(() => []);
     }
+
     if (Array.isArray(articles) && articles.length > 0) {
       const impactKeywords = [
-        'लाभांश', 'बोनस', 'हकप्रद', 'साधारण सभा', 'वित्तीय विवरण', 'आइपिओ', 'म्युचुअल फन्ड',
-        'dividend', 'bonus', 'right share', 'agm', 'quarterly', 'financial report', 'ipo', 'circuit', 'halt', 'monetary policy'
+        'लाभांश', 'बोनस', 'हकप्रद', 'साधारण सभा', 'वित्तीय विवरण', 'आइपिओ', 'म्युचुअल फन्ड', 'बुक क्लोज', 'बुकक्लोज',
+        'dividend', 'bonus', 'right share', 'rights issue', 'agm', 'quarterly', 'financial report', 'ipo', 'circuit', 'halt', 'monetary policy', 'ब्याजदर', 'राष्ट्र बैंक', 'धितोपत्र बोर्ड'
       ];
 
-      for (const item of articles.slice(0, 20)) {
+      for (const item of articles.slice(0, 30)) {
         const title = String(item.title || '').trim();
-        if (!title || seenNewsTitles.has(title)) continue;
-        seenNewsTitles.add(title);
-        if (seenNewsTitles.size > 500) seenNewsTitles.clear();
+        if (!title || title.length < 10) continue;
+
+        // Generate deterministic, stable key for this news story
+        const itemKey = (item.id && !String(item.id).startsWith('ss-') && !String(item.id).startsWith('ml-'))
+          ? `news_${item.id}`
+          : generateNewsContentKey(title, item.url || item.link);
+
+        if (seenNewsKeys.has(itemKey)) continue;
 
         const lowerTitle = title.toLowerCase();
         const hasImpact = impactKeywords.some(kw => lowerTitle.includes(kw));
-        if (hasImpact) {
-          let foundSym = null;
-          if (stockMap && typeof stockMap === 'object') {
-            for (const sym of Object.keys(stockMap)) {
-              if (sym.length >= 3 && title.toUpperCase().includes(sym)) {
+
+        // Stock Symbol extraction
+        let foundSym = null;
+        if (stockMap && typeof stockMap === 'object') {
+          const uTitle = title.toUpperCase();
+          for (const sym of Object.keys(stockMap)) {
+            if (sym.length >= 3) {
+              const regex = new RegExp(`(^|[\\s\\(\\)\\[\\]\\,\\.\\-])(${sym})([\\s\\(\\)\\[\\]\\,\\.\\-]|$)`, 'i');
+              if (regex.test(uTitle)) {
                 foundSym = sym;
                 break;
               }
             }
           }
+        }
 
-          const isMacro = ['मौद्रिक नीति', 'ब्याजदर', 'धितोपत्र बोर्ड', 'राष्ट्र बैंक', 'सर्कुलर', 'monetary policy', 'interest rate', 'sebon', 'nrb', 'halt'].some(m => lowerTitle.includes(m));
+        const isPortfolioTracked = foundSym && userTrackedSymbolsSet.has(foundSym);
+
+        // Only alert if keyword matches OR it's a corporate announcement for a portfolio holding
+        if (hasImpact || isPortfolioTracked) {
+          seenNewsKeys.add(itemKey);
+          saveSeenNewsKeys();
+
+          // Categorize by impact type
+          const isDividend = ['लाभांश', 'बोनस', 'नगद लाभांश', 'dividend', 'bonus share', 'cash dividend', 'प्रतिशत लाभांश'].some(kw => lowerTitle.includes(kw));
+          const isRightShare = ['हकप्रद', 'right share', 'right issue', 'rights issue', 'हकप्रद सेयर'].some(kw => lowerTitle.includes(kw));
+          const isBookClosure = ['बुक क्लोज', 'बुकक्लोज', 'साधारण सभा', 'book closure', 'agm', 'annual general meeting'].some(kw => lowerTitle.includes(kw));
+          const isFinancial = ['वित्तीय विवरण', 'त्रैमासिक', 'quarterly report', 'financial report', 'earnings', 'खुद नाफा'].some(kw => lowerTitle.includes(kw));
+          const isMacro = ['मौद्रिक नीति', 'ब्याजदर', 'धितोपत्र बोर्ड', 'राष्ट्र बैंक', 'सर्कुलर', 'सर्किट', 'monetary policy', 'interest rate', 'sebon', 'nrb', 'halt', 'circuit breaker'].some(kw => lowerTitle.includes(kw));
+
+          let notifType = 'NEWS_ALERT';
+          let notifCategory = 'general';
+          let notifTitle = '';
+
+          if (isDividend) {
+            notifType = 'DIVIDEND_ALERT';
+            notifCategory = 'pro';
+            notifTitle = foundSym
+              ? `💰 ${isPortfolioTracked ? '💼 [Portfolio] ' : ''}${foundSym} Dividend / Bonus Announced`
+              : `💰 NEPSE Dividend Announcement`;
+          } else if (isRightShare) {
+            notifType = 'RIGHT_SHARE_ALERT';
+            notifCategory = 'pro';
+            notifTitle = foundSym
+              ? `📈 ${isPortfolioTracked ? '💼 [Portfolio] ' : ''}${foundSym} Right Share Notice`
+              : `📈 NEPSE Right Share Notice`;
+          } else if (isBookClosure) {
+            notifType = 'BOOK_CLOSURE_ALERT';
+            notifCategory = 'general';
+            notifTitle = foundSym
+              ? `📅 ${isPortfolioTracked ? '💼 [Portfolio] ' : ''}${foundSym} Book Closure / AGM Notice`
+              : `📅 NEPSE Book Closure Notice`;
+          } else if (isFinancial) {
+            notifType = 'EARNINGS_ALERT';
+            notifCategory = 'general';
+            notifTitle = foundSym
+              ? `📊 ${isPortfolioTracked ? '💼 [Portfolio] ' : ''}${foundSym} Financial Results`
+              : `📊 Financial Announcement`;
+          } else if (isMacro) {
+            notifType = 'NEPSE_MACRO';
+            notifCategory = 'general';
+            notifTitle = `🏛️ NEPSE Market & Policy Alert`;
+          } else if (isPortfolioTracked && foundSym) {
+            notifType = 'PORTFOLIO_NEWS_ALERT';
+            notifCategory = 'pro';
+            notifTitle = `💼 Portfolio Alert: ${foundSym}`;
+          } else {
+            notifType = 'NEWS_ALERT';
+            notifCategory = 'general';
+            notifTitle = foundSym ? `📰 ${foundSym} Corporate Announcement` : `📰 NEPSE Announcement`;
+          }
 
           broadcastAlert({
-            id: `news_${item.id || Date.now()}_${Math.random().toString(36).substr(2, 3)}`,
-            type: isMacro ? 'NEPSE_MACRO' : 'NEWS_ALERT',
-            category: 'general',
-            title: isMacro ? '🏛️ NEPSE Macro News' : (foundSym ? `📰 ${foundSym} Corporate Announcement` : `📰 NEPSE Announcement`),
+            id: itemKey,
+            type: notifType,
+            category: notifCategory,
+            title: notifTitle,
             body: title,
             symbol: foundSym || 'NEPSE',
             url: item.url || item.link || '',
-            source: item.source || 'MeroLagani',
+            source: item.source || 'Financial News',
             action: 'OPEN_NEWS',
             triggeredAt: new Date().toISOString()
           });

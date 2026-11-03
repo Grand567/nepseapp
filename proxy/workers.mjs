@@ -111,6 +111,7 @@ let _getDividendHistoryInternal = null;
 let _getMarketIndicesInternal = null;
 let _db = null;
 let _scrapeMeroLaganiNews = null;
+let _scrapeShareSansarNews = null;
 let _getLiveIpoListings = null;
 
 export function initWorkerDependencies({
@@ -123,6 +124,7 @@ export function initWorkerDependencies({
   getMarketIndicesInternal,
   db,
   scrapeMeroLaganiNews,
+  scrapeShareSansarNews,
   getLiveIpoListings,
 }) {
   _getPriceHistoryInternal = getPriceHistoryInternal;
@@ -134,6 +136,7 @@ export function initWorkerDependencies({
   _getMarketIndicesInternal = getMarketIndicesInternal;
   _db = db;
   _scrapeMeroLaganiNews = scrapeMeroLaganiNews;
+  _scrapeShareSansarNews = scrapeShareSansarNews;
   _getLiveIpoListings = getLiveIpoListings;
 }
 
@@ -697,13 +700,14 @@ export function startWorkers() {
   }, 4000);
 
   // 4. Live News & IPO Alert Poller (General + Pro Users):
-  // Checks news and IPO pipeline status every 3 minutes.
-  // Sends push notifications and Telegram updates for new listings, IPO open/close, and major announcements.
+  // Checks news (ShareSansar + MeroLagani) and IPO pipeline status every 3 minutes.
+  // Sends push notifications, SSE events, and Telegram updates for dividends, right shares, macro alerts, IPOs, and corporate announcements.
   setInterval(async () => {
     try {
-      if (_scrapeMeroLaganiNews || _getLiveIpoListings) {
+      if (_scrapeMeroLaganiNews || _scrapeShareSansarNews || _getLiveIpoListings) {
         await pollLiveNewsAndIpoAlerts({
           scrapeMeroLaganiNews: _scrapeMeroLaganiNews,
+          scrapeShareSansarNews: _scrapeShareSansarNews,
           getLiveIpoListings: _getLiveIpoListings
         });
       }
@@ -715,9 +719,10 @@ export function startWorkers() {
   // Initial check 12 seconds after startup
   setTimeout(async () => {
     try {
-      if (_scrapeMeroLaganiNews || _getLiveIpoListings) {
+      if (_scrapeMeroLaganiNews || _scrapeShareSansarNews || _getLiveIpoListings) {
         await pollLiveNewsAndIpoAlerts({
           scrapeMeroLaganiNews: _scrapeMeroLaganiNews,
+          scrapeShareSansarNews: _scrapeShareSansarNews,
           getLiveIpoListings: _getLiveIpoListings
         });
       }

@@ -15,7 +15,7 @@ import axios from 'axios';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse.js';
 import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
 import { calculateEMA, calculateMACD, calculateRSI } from './indicators.js';
-import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt, isNepseTradingDay, setLiveMarketOverride, clearLiveMarketOverride } from './nepseCalendar.js';
+import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt, isNepseTradingDay, setLiveMarketOverride, clearLiveMarketOverride, generateTradingDaysSequence } from './nepseCalendar.js';
 import { adjustPricesForCorporateActions, aggregateToWeeklyCandles, classifyLiquidity } from './priceAdjustment.js'; // C1 C2 C3
 import { idbGet, idbSet } from './indexedDb.js';
 import {
@@ -2620,23 +2620,30 @@ export async function fetchAvailableTradingDates() {
       .sort((a, b) => b.localeCompare(a));
   };
 
+  // Authoritative NEPSE calendar sequence + verified recent exchange sessions
+  const calendarDates = generateTradingDaysSequence(60).map(d => formatNptDateIso(d));
+  const baseTradingDays = [
+    todayIso,
+    '2026-11-03',
+    '2026-11-02',
+    '2026-10-30',
+    '2026-10-29',
+    '2026-10-28',
+    '2026-10-27',
+    '2026-10-26',
+    '2026-10-16',
+    '2026-10-15',
+    '2026-10-14',
+    '2026-10-13',
+    '2026-10-12',
+    ...calendarDates
+  ];
+
   try {
     const res = await fetchFromBackend('/api/trading-dates', 5000);
     const list = res?.dates || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
-    const valid = sanitizeDates(list);
-    if (valid.length > 0) {
-      _cachedTradingDatesList = valid;
-      _cachedTradingDatesTs = now;
-      return valid;
-    }
-  } catch (_) {}
-
-  try {
-    const res = await fetchFromBackend('/api/floorsheet/archives', 5000);
-    const arr = res?.archives || (Array.isArray(res) ? res : []);
-    if (Array.isArray(arr) && arr.length > 0) {
-      const dates = arr.map(a => a.date || a).filter(Boolean);
-      const valid = sanitizeDates(dates);
+    if (Array.isArray(list) && list.length > 0) {
+      const valid = sanitizeDates([...list, ...baseTradingDays]);
       if (valid.length > 0) {
         _cachedTradingDatesList = valid;
         _cachedTradingDatesTs = now;
@@ -2645,8 +2652,24 @@ export async function fetchAvailableTradingDates() {
     }
   } catch (_) {}
 
-  const fallback = sanitizeDates([todayIso, '2026-10-29', '2026-10-28', '2026-10-27', '2026-10-26', '2026-10-16', '2026-10-15', '2026-10-14', '2026-10-13', '2026-10-12']);
-  return _cachedTradingDatesList.length > 0 ? _cachedTradingDatesList : fallback;
+  try {
+    const res = await fetchFromBackend('/api/floorsheet/archives', 5000);
+    const arr = res?.archives || (Array.isArray(res) ? res : []);
+    if (Array.isArray(arr) && arr.length > 0) {
+      const dates = arr.map(a => a.date || a).filter(Boolean);
+      const valid = sanitizeDates([...dates, ...baseTradingDays]);
+      if (valid.length > 0) {
+        _cachedTradingDatesList = valid;
+        _cachedTradingDatesTs = now;
+        return valid;
+      }
+    }
+  } catch (_) {}
+
+  const fallback = sanitizeDates(baseTradingDays);
+  _cachedTradingDatesList = fallback;
+  _cachedTradingDatesTs = now;
+  return fallback;
 }
 
 // In-memory full-session trade store by symbol: Map<string, { list: Array, date: string, ts: number }>

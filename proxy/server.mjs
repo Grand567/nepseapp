@@ -73,7 +73,7 @@ import {
   sendDiscordPrimePickAlert
 } from './discordNotifier.mjs';
 import { assembleScripDossier, buildAgentAnalysisPrompt } from './agentTools.mjs';
-import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseTradingDay, formatNptDateIso, setLiveMarketOverride } from '../src/utils/nepseCalendar.js';
+import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseTradingDay, formatNptDateIso, setLiveMarketOverride, generateTradingDaysSequence } from '../src/utils/nepseCalendar.js';
 import { 
   getArchiveIndex, 
   downloadAndArchiveDailyFloorsheet, 
@@ -3704,6 +3704,12 @@ export async function getMarketTradingDates() {
   try {
     const ext = await fetchSymbolTradingDates('NABIL');
     if (Array.isArray(ext)) ext.slice(0, 500).forEach(d => d && d <= todayIso && datesSet.add(d));
+  } catch (_) {}
+
+  try {
+    const calendarDates = generateTradingDaysSequence(60).map(d => formatNptDateIso(d));
+    calendarDates.forEach(d => d && d <= todayIso && datesSet.add(d));
+    ['2026-11-03', '2026-11-02', '2026-10-30', '2026-10-29', '2026-10-28', '2026-10-27', '2026-10-26'].forEach(d => d <= todayIso && datesSet.add(d));
   } catch (_) {}
 
   // Strict Calendar & Trading Day Filter: Never future, never weekends (Fri/Sat), never public holidays
@@ -11257,10 +11263,10 @@ app.get('/api/smart-alerts/status', (req, res) => {
 
 app.post('/api/smart-alerts/register-token', async (req, res) => {
   try {
-    const { token, platform } = req.body || {};
+    const { token, platform, portfolioSymbols } = req.body || {};
     if (!token) return res.status(400).json({ success: false, error: 'Push token required' });
-    const ok = await registerPushToken(token, platform || 'android');
-    res.json({ success: ok, message: 'Push token registered successfully' });
+    const ok = await registerPushToken(token, platform || 'android', portfolioSymbols || []);
+    res.json({ success: ok, message: 'Push token and portfolio symbols registered successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -12981,6 +12987,7 @@ app.listen(PORT, '0.0.0.0', async () => {
           getMarketIndicesInternal,
           db,
           scrapeMeroLaganiNews,
+          scrapeShareSansarNews,
           getLiveIpoListings,
           fetchTodayPricesInternal: async () => {
             const stockData = getCache('today-prices') || getCache('market-summary');

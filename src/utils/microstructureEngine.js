@@ -98,22 +98,34 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
 
   const windowData = dailyHistory.slice(0, Math.max(1, parseInt(days || 1, 10)));
   const actualDays = windowData.length;
-  const bigBrokerVWAP = agg.bigBrokerVWAP;
-  const latestClose = agg.latestClose;
-  const buyZoneMin = Number((bigBrokerVWAP * 0.99).toFixed(1));
-  const buyZoneMax = Number((bigBrokerVWAP * 1.035).toFixed(1));
+  const rawBigBrokerVWAP = Number(agg.bigBrokerVWAP);
+  const latestClose = Number(agg.latestClose || 0);
+  const marketVWAP = Number(agg.marketVWAP || 0);
+
+  // Robust Anchor: if bigBrokerVWAP is absent/zero, anchor to latestClose or marketVWAP so bounds are NEVER 0
+  const anchorPrice = rawBigBrokerVWAP > 0
+    ? rawBigBrokerVWAP
+    : (latestClose > 0 ? latestClose : (marketVWAP > 0 ? marketVWAP : 100));
+
+  const bigBrokerVWAP = rawBigBrokerVWAP > 0 ? rawBigBrokerVWAP : anchorPrice;
+  const buyZoneMin = Number((anchorPrice * 0.985).toFixed(1));
+  const buyZoneMax = Number((anchorPrice * 1.035).toFixed(1));
   let entryStatus = "⚪ Neutral Entry";
   let entryDescription = "";
 
+  const pullbackTarget = rawBigBrokerVWAP > 0
+    ? `Rs. ${rawBigBrokerVWAP.toFixed(1)}`
+    : `Safe Buy Zone (Rs. ${buyZoneMin}–${buyZoneMax})`;
+
   if (latestClose < buyZoneMin) {
     entryStatus = "🟢 Discounted / Below Buy Zone";
-    entryDescription = `Current price (Rs. ${latestClose}) is trading below the Safe Buy Zone (Rs. ${buyZoneMin}–${buyZoneMax}) and near/below Big Broker VWAP (Rs. ${bigBrokerVWAP.toFixed(1)}).`;
+    entryDescription = `Current price (Rs. ${latestClose}) is trading below the Safe Buy Zone (Rs. ${buyZoneMin}–${buyZoneMax})${rawBigBrokerVWAP > 0 ? ` and near/below Big Broker VWAP (Rs. ${rawBigBrokerVWAP.toFixed(1)})` : ''}.`;
   } else if (latestClose >= buyZoneMin && latestClose <= buyZoneMax) {
     entryStatus = "🟢 Within Safe Buy Zone";
-    entryDescription = `Current price (Rs. ${latestClose}) is strictly inside the Safe Buy Zone (Rs. ${buyZoneMin}–${buyZoneMax}) anchored by Big Broker VWAP (Rs. ${bigBrokerVWAP.toFixed(1)}).`;
+    entryDescription = `Current price (Rs. ${latestClose}) is strictly inside the Safe Buy Zone (Rs. ${buyZoneMin}–${buyZoneMax})${rawBigBrokerVWAP > 0 ? ` anchored by Big Broker VWAP (Rs. ${rawBigBrokerVWAP.toFixed(1)})` : ''}.`;
   } else {
     entryStatus = "🟠 Extended Above Buy Zone";
-    entryDescription = `Current price (Rs. ${latestClose}) is extended above the Safe Buy Zone (Rs. ${buyZoneMin}–${buyZoneMax}). Wait for pullback toward Rs. ${bigBrokerVWAP.toFixed(1)}.`;
+    entryDescription = `Current price (Rs. ${latestClose}) is extended above the Safe Buy Zone (Rs. ${buyZoneMin}–${buyZoneMax}). Wait for pullback toward ${pullbackTarget}.`;
   }
 
   const top5NetInflowAmt = Number(agg.topAccumulators.slice(0, 5).reduce((sum, b) => sum + Math.max(0, b.netAmt), 0).toFixed(2));
@@ -595,9 +607,10 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
     tacticalAdvice = `Mild institutional interest (+${smh3dPct}% SMH). Watch for volume expansion above 1.5x.`;
   }
 
-  // Safe buy zone around 3D Big Broker VWAP
-  const buyZoneMin = Number((bigBrokerVWAP3d * 0.975).toFixed(1));
-  const buyZoneMax = Number((bigBrokerVWAP3d * 1.035).toFixed(1));
+  // Safe buy zone around 3D Big Broker VWAP (never 0)
+  const anchor3d = bigBrokerVWAP3d > 0 ? bigBrokerVWAP3d : (ltp > 0 ? ltp : 100);
+  const buyZoneMin = Number((anchor3d * 0.975).toFixed(1));
+  const buyZoneMax = Number((anchor3d * 1.035).toFixed(1));
 
   return {
     symbol: sym,

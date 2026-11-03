@@ -137,8 +137,23 @@ export const normalizeNotificationItem = (raw) => {
   };
 };
 
+const recentlyTriggeredAlerts = new Set();
+
 export function triggerNativeStatusBarNotification(normalized) {
   if (!normalized) return;
+
+  // Deduplicate on client to prevent multi-firing within 10 minutes
+  const alertFingerprint = `${normalized.id || ''}_${normalized.title || ''}_${normalized.symbol || ''}`.trim();
+  if (alertFingerprint && recentlyTriggeredAlerts.has(alertFingerprint)) {
+    console.debug('[PushService] Suppressed duplicate status bar notification:', alertFingerprint);
+    return;
+  }
+  recentlyTriggeredAlerts.add(alertFingerprint);
+  if (recentlyTriggeredAlerts.size > 200) {
+    const arr = Array.from(recentlyTriggeredAlerts).slice(-100);
+    recentlyTriggeredAlerts.clear();
+    arr.forEach(a => recentlyTriggeredAlerts.add(a));
+  }
 
   // Suppress outdated alerts older than 20 minutes from triggering system status bar notification
   if (normalized.timestamp) {
@@ -259,18 +274,40 @@ export async function initPushNotifications() {
         console.log('[PushService] Received native device push token:', token);
         localStorage.setItem(PUSH_REGISTERED_KEY, token);
 
-        // Sync token with backend
+        // Sync token and portfolio symbols with backend
         try {
+          let portfolioSymbols = [];
+          try {
+            const rawProfs = localStorage.getItem('nepse_portfolio_profiles') || '[]';
+            const profs = JSON.parse(rawProfs);
+            if (Array.isArray(profs)) {
+              profs.forEach(p => (p.holdings || []).forEach(h => {
+                const s = h.symbol || h.scrip;
+                if (s) portfolioSymbols.push(String(s).toUpperCase().trim());
+              }));
+            }
+            const rawWl = localStorage.getItem('nepse_user_watchlist') || '[]';
+            const wl = JSON.parse(rawWl);
+            if (Array.isArray(wl)) {
+              wl.forEach(w => {
+                const s = typeof w === 'string' ? w : (w.symbol || w.scrip);
+                if (s) portfolioSymbols.push(String(s).toUpperCase().trim());
+              });
+            }
+            portfolioSymbols = Array.from(new Set(portfolioSymbols));
+          } catch (_) {}
+
           const apiBase = getApiBase();
           await fetch(`${apiBase}/api/smart-alerts/register-token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               token,
-              platform: Capacitor.getPlatform() || 'android'
+              platform: Capacitor.getPlatform() || 'android',
+              portfolioSymbols
             })
           });
-          console.log('[PushService] Device push token successfully registered with Dravyashree backend.');
+          console.log('[PushService] Device push token & tracked symbols successfully registered with Dravyashree backend.');
         } catch (syncErr) {
           console.warn('[PushService] Error saving token to backend:', syncErr.message);
         }

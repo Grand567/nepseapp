@@ -923,30 +923,49 @@ function BeginnerConfidenceCard({
   }
 
   // Check 3: Entry Price Timing & Safety (Fixed Math Logic & Anchored to Big Broker VWAP)
+  const validPositive = (v) => {
+    const n = Number(v);
+    return (!isNaN(n) && isFinite(n) && n > 0) ? n : null;
+  };
+
   const ltp = Number(d?.ltp || 100);
   const pChange = Number(d?.pChange || 0);
   const lv = entryExitPlan?.levels;
   const entryLow = Number(
-    (isHistorySufficient ? multiDayDiag?.buyZoneMin : null) ??
-    realBrokerAnalysis?.buyZoneMin ??
-    multiDayDiag?.buyZoneMin ??
-    lv?.entryZone?.low ??
-    lv?.pullbackAnchor ??
+    (isHistorySufficient ? validPositive(multiDayDiag?.buyZoneMin) : null) ??
+    validPositive(realBrokerAnalysis?.buyZoneMin) ??
+    validPositive(multiDayDiag?.buyZoneMin) ??
+    validPositive(lv?.entryZone?.low) ??
+    validPositive(lv?.pullbackAnchor) ??
     +(ltp * 0.98).toFixed(1)
   );
   const entryHigh = Number(
-    (isHistorySufficient ? multiDayDiag?.buyZoneMax : null) ??
-    realBrokerAnalysis?.buyZoneMax ??
-    multiDayDiag?.buyZoneMax ??
-    lv?.entryZone?.high ??
-    lv?.entryZone?.max ??
-    lv?.breakoutPivot ??
+    (isHistorySufficient ? validPositive(multiDayDiag?.buyZoneMax) : null) ??
+    validPositive(realBrokerAnalysis?.buyZoneMax) ??
+    validPositive(multiDayDiag?.buyZoneMax) ??
+    validPositive(lv?.entryZone?.high) ??
+    validPositive(lv?.entryZone?.max) ??
+    validPositive(lv?.breakoutPivot) ??
     +(ltp * 1.02).toFixed(1)
   );
   const isCircuitTrap = Boolean(entryExitPlan?.riskGate?.isCircuitTrap || pChange >= 10);
 
+  const fallbackPullbackTarget = (whaleVwap && Number(whaleVwap) > 0)
+    ? Number(whaleVwap)
+    : (entryHigh > 0 ? entryHigh : +(ltp * 0.98).toFixed(1));
+
+  // Sanitize description: If multiDayDiag?.entryDescription contains '0–0' or 'Rs. 0' or '0.0', discard and regenerate cleanly
+  const rawDiagDesc = multiDayDiag?.entryDescription;
+  const isDiagDescInvalid = !rawDiagDesc ||
+    rawDiagDesc.includes('0–0') ||
+    rawDiagDesc.includes(' 0-0') ||
+    rawDiagDesc.includes('Rs. 0.0') ||
+    rawDiagDesc.includes('Rs. 0)') ||
+    rawDiagDesc.includes('Rs. 0 ');
+
   let check3Badge = '🟡 Extended Above Buy Zone';
-  let check3Desc = multiDayDiag?.entryDescription || `Price (Rs. ${ltp}) is extended above the ideal Buy Zone (Rs. ${entryLow}–${entryHigh}). Wait for a pullback toward Rs. ${entryHigh} instead of chasing.`;
+  let check3Desc = (!isDiagDescInvalid ? rawDiagDesc : null) ||
+    `Price (Rs. ${ltp}) is extended above the ideal Buy Zone (Rs. ${entryLow}–${entryHigh}). Wait for a pullback toward Rs. ${fallbackPullbackTarget} instead of chasing.`;
   let check3Color = '#f59e0b';
   let check3Bg = 'rgba(245, 158, 11, 0.08)';
   let check3Border = 'rgba(245, 158, 11, 0.25)';
@@ -971,7 +990,8 @@ function BeginnerConfidenceCard({
     check3Border = 'rgba(16, 185, 129, 0.25)';
   } else {
     check3Badge = '🟡 Extended Above Buy Zone';
-    check3Desc = `Current price (Rs. ${ltp}) is extended above the Safe Buy Zone (Rs. ${entryLow}–${entryHigh}). Wait for a pullback toward Rs. ${whaleVwap || entryHigh} instead of chasing.`;
+    check3Desc = (!isDiagDescInvalid ? rawDiagDesc : null) ||
+      `Current price (Rs. ${ltp}) is extended above the Safe Buy Zone (Rs. ${entryLow}–${entryHigh}). Wait for a pullback toward Rs. ${fallbackPullbackTarget} instead of chasing.`;
     check3Color = '#f59e0b';
     check3Bg = 'rgba(245, 158, 11, 0.08)';
     check3Border = 'rgba(245, 158, 11, 0.25)';

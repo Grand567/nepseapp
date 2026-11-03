@@ -332,6 +332,22 @@ export function NotificationCenterDrawer({
                         <ShieldAlert className="w-3 h-3" />
                         Exit Signal
                       </span>
+                    ) : item.type === 'DIVIDEND_ALERT' ? (
+                      <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                        💰 Dividend
+                      </span>
+                    ) : item.type === 'RIGHT_SHARE_ALERT' ? (
+                      <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                        📈 Right Share
+                      </span>
+                    ) : item.type === 'BOOK_CLOSURE_ALERT' ? (
+                      <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                        📅 Book Closure
+                      </span>
+                    ) : item.type === 'NEPSE_MACRO' ? (
+                      <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                        🏛️ Macro Policy
+                      </span>
                     ) : isPro ? (
                       <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
                         <Zap className="w-3 h-3 text-amber-400" />

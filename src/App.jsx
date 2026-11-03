@@ -23,6 +23,7 @@ import PullToRefresh from './components/PullToRefresh';
 import SubscriptionModal from './components/SubscriptionModal';
 import { RiskDisclaimer } from './components/DataQualityBanner'; // A1: Global disclaimer
 import { InstitutionalAlertCardModal } from './components/InstitutionalAlertCardModal';
+import { InAppNewsReaderModal } from './components/InAppNewsReaderModal';
 import { SmartAlertBanner } from './components/SmartAlertBanner';
 import { NotificationCenterDrawer } from './components/NotificationCenterDrawer';
 import { initPushNotifications, fetchActiveSmartAlerts, triggerTestAlert, getUnreadNotificationCount } from './utils/pushNotificationService';
@@ -137,6 +138,7 @@ function AppInner() {
 
   // ── Dravyashree Smart Institutional Alert Modal & Live Notification Drawer State ──
   const [smartAlertModal, setSmartAlertModal] = useState({ isOpen: false, alert: null });
+  const [activeNewsArticle, setActiveNewsArticle] = useState({ isOpen: false, article: null });
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [unreadAlertCount, setUnreadAlertCount] = useState(0);
 
@@ -171,14 +173,35 @@ function AppInner() {
     const symbol = String(item.symbol || '').toUpperCase().trim();
     const url = item.url || '';
 
-    // 1. NEWS & Corporate Announcements
-    const isNews = action === 'OPEN_NEWS' || category === 'news' || type === 'NEWS_ALERT' || type.includes('NEWS') || (!symbol && url);
+    // 1. NEWS, Dividends, Right Shares, Macro & Corporate Announcements (In-App Reader Parity)
+    const isNews = action === 'OPEN_NEWS' ||
+      category === 'news' ||
+      category === 'dividend' ||
+      category === 'right_share' ||
+      type === 'NEWS_ALERT' ||
+      type === 'DIVIDEND_ALERT' ||
+      type === 'RIGHT_SHARE_ALERT' ||
+      type === 'BOOK_CLOSURE_ALERT' ||
+      type === 'EARNINGS_ALERT' ||
+      type === 'NEPSE_MACRO' ||
+      type === 'PORTFOLIO_NEWS_ALERT' ||
+      type.includes('NEWS') ||
+      Boolean(url && !type.includes('BREAKOUT') && !type.includes('STOP_LOSS') && !type.includes('PROFIT') && !type.includes('ENTRY'));
+
     if (isNews) {
-      try {
-        localStorage.setItem('open_service_id', 'news');
-        window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'news', url, headline: item.title } }));
-      } catch (_) {}
-      setActiveTab('services');
+      setActiveNewsArticle({
+        isOpen: true,
+        article: {
+          title: item.title,
+          body: item.body,
+          url: item.url,
+          symbol: item.symbol,
+          source: item.source || 'Financial News',
+          date: item.triggeredAt || item.timestamp || 'Recent',
+          type: item.type,
+          paragraphs: item.body ? [item.body] : []
+        }
+      });
       return;
     }
 
@@ -267,6 +290,11 @@ function AppInner() {
     setSmartAlertModal({ isOpen: false, alert: null });
     return true;
   }, smartAlertModal.isOpen, 60);
+
+  useBackHandler(() => {
+    setActiveNewsArticle({ isOpen: false, article: null });
+    return true;
+  }, activeNewsArticle.isOpen, 65);
 
   // Memoized user portfolio and watchlist symbols for notification filtering
   const userPortfolioSymbols = useMemo(() => {
@@ -1864,6 +1892,13 @@ function AppInner() {
                 alert={smartAlertModal.alert}
                 onClose={() => setSmartAlertModal({ isOpen: false, alert: null })}
                 onOpenRadar={handleOpenRadarFromAlert}
+              />
+
+              {/* ── In-App News Article Reader Modal (ShareHub Parity) ── */}
+              <InAppNewsReaderModal
+                isOpen={activeNewsArticle.isOpen}
+                article={activeNewsArticle.article}
+                onClose={() => setActiveNewsArticle({ isOpen: false, article: null })}
               />
 
               {/* ── Live Notification Center Drawer (PRO vs General Alerts) ── */}

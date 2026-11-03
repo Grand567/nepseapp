@@ -163,6 +163,44 @@ export const getServiceCategory = (s: { id: string; cat: string }): string => {
   return 'trading';
 };
 
+// Services where historical date filtering and multi-session interpretation are strictly necessary.
+// For all other services (calculators, tools, IPO portals, current screeners, notes), the date filter is omitted
+// and the tool cleanly renders the verified latest session data only.
+export const HISTORICAL_SESSION_SERVICE_IDS = new Set([
+  // Core Floor Sheet & Order Tape
+  'floor-sheet',
+  'zero-sum-floorsheet',
+  'unusual-trades',
+  // Smart Money & Broker Intelligence
+  'broker-flow',
+  'broker-smart-flow',
+  'broker-dominance',
+  'broker-top10',
+  'broker-heatmap',
+  'broker-favourites',
+  'whale-daily-archive',
+  'daily-whale-tracker',
+  'matching-buy-sell',
+  'aggressive-accumulators',
+  'aggressive-holdings',
+  'distribution-leaders',
+  'slow-accumulation',
+  'stealth-accumulation-tracker',
+  'sector-wise-ad',
+  // Market Session Summaries & Leaderboards
+  'live-market',
+  'market-summary',
+  'today-prices',
+  'top-gainers',
+  'top-losers',
+  'top-volume',
+  'top-turnover',
+  'top-transactions',
+  // Sector Dynamics
+  'sector-rotation',
+  'sector-heatmap',
+]);
+
 const FILTER_TABS = [
   { id: 'all', label: 'All Tools', icon: Sparkles },
   { id: 'flagship', label: '⭐ Flagship Suites', icon: Sparkles },
@@ -1306,8 +1344,9 @@ export default function ServicesHub({
     let active = true;
     setDateStocksLoading(true);
     fetchLiveMarketData(selectedSessionDate).then(data => {
-      if (active && Array.isArray(data) && data.length > 0) {
-        setDateStocks(data);
+      const stockArr = Array.isArray(data) ? data : (data?.stocks || data?.data || []);
+      if (active && Array.isArray(stockArr) && stockArr.length > 0) {
+        setDateStocks(stockArr);
       }
     }).catch(() => {}).finally(() => {
       if (active) setDateStocksLoading(false);
@@ -1508,27 +1547,75 @@ export default function ServicesHub({
               <span style={{ textTransform: 'capitalize' }}>{s.cat.replace('-', ' ')}</span>
             </div>
           </div>
-          <SessionDateDropdown
-            selectedSessionDate={selectedSessionDate}
-            onSelectDate={setSelectedSessionDate}
-            availableDates={availableTradingDates}
-          />
+          {HISTORICAL_SESSION_SERVICE_IDS.has(s.id) ? (
+            <SessionDateDropdown
+              selectedSessionDate={selectedSessionDate}
+              onSelectDate={setSelectedSessionDate}
+              availableDates={availableTradingDates}
+            />
+          ) : (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                background: 'rgba(16, 185, 129, 0.1)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: 8,
+                padding: '4px 9px',
+                color: '#10b981',
+                fontSize: 11,
+                fontWeight: 800,
+                whiteSpace: 'nowrap',
+              }}
+              title="This service displays the verified latest live session data and interpretation."
+            >
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+              <span>Latest Session</span>
+            </div>
+          )}
         </div>
         <div className="services-detail-body">
           <div className="services-detail-card">
-            {Component ? (
-              <ErrorBoundary moduleName={s.name} resetKey={s.id}>
-                {PRO_SERVICE_IDS.has(s.id) ? (
-                  <ProGate
-                    featureName={s.name}
-                    description={`Unlock full institutional quantitative analytics, live floor sheet data, and smart-money signals for ${s.name} with a Pro monthly pass.`}
-                  >
+            {Component ? (() => {
+              const isHistorical = HISTORICAL_SESSION_SERVICE_IDS.has(s.id);
+              const effDate = isHistorical ? selectedSessionDate : '';
+              const effStocks = (isHistorical && selectedSessionDate && dateStocks.length > 0) ? dateStocks : stocks;
+              const effAvailDates = isHistorical ? availableTradingDates : [];
+
+              return (
+                <ErrorBoundary moduleName={s.name} resetKey={s.id}>
+                  {PRO_SERVICE_IDS.has(s.id) ? (
+                    <ProGate
+                      featureName={s.name}
+                      description={`Unlock full institutional quantitative analytics, live floor sheet data, and smart-money signals for ${s.name} with a Pro monthly pass.`}
+                    >
+                      <Component
+                        {...({
+                          stocks: effStocks,
+                          selectedDate: effDate,
+                          date: effDate,
+                          availableDates: effAvailDates,
+                          onSelectStock,
+                          indices,
+                          apiStatus,
+                          userId,
+                          onNavigateTab,
+                          onAskGuruAi,
+                          initialSymbol: serviceInitialSymbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '',
+                          onSymbolChange: (newSym: string) => {
+                            if (newSym) setServiceInitialSymbol(newSym);
+                          },
+                        } as any)}
+                      />
+                    </ProGate>
+                  ) : (
                     <Component
                       {...({
-                        stocks: activeStocks,
-                        selectedDate: selectedSessionDate,
-                        date: selectedSessionDate,
-                        availableDates: availableTradingDates,
+                        stocks: effStocks,
+                        selectedDate: effDate,
+                        date: effDate,
+                        availableDates: effAvailDates,
                         onSelectStock,
                         indices,
                         apiStatus,
@@ -1541,29 +1628,10 @@ export default function ServicesHub({
                         },
                       } as any)}
                     />
-                  </ProGate>
-                ) : (
-                  <Component
-                    {...({
-                      stocks: activeStocks,
-                      selectedDate: selectedSessionDate,
-                      date: selectedSessionDate,
-                      availableDates: availableTradingDates,
-                      onSelectStock,
-                      indices,
-                      apiStatus,
-                      userId,
-                      onNavigateTab,
-                      onAskGuruAi,
-                      initialSymbol: serviceInitialSymbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '',
-                      onSymbolChange: (newSym: string) => {
-                        if (newSym) setServiceInitialSymbol(newSym);
-                      },
-                    } as any)}
-                  />
-                )}
-              </ErrorBoundary>
-            ) : (
+                  )}
+                </ErrorBoundary>
+              );
+            })() : (
               <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--text-muted, #94a3b8)' }}>
                 <Activity size={40} color="#64748b" style={{ margin: '0 auto 16px' }} />
                 <h3 style={{ color: '#ffffff', fontSize: 18, fontWeight: 800 }}>{s.name}</h3>
@@ -1589,11 +1657,6 @@ export default function ServicesHub({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <SessionDateDropdown
-              selectedSessionDate={selectedSessionDate}
-              onSelectDate={setSelectedSessionDate}
-              availableDates={availableTradingDates}
-            />
             <div className="badge-live">
               <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />
               <span>LIVE</span>

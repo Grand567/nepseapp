@@ -6,6 +6,7 @@ import { fetchBrokerAnalysis, fetchBrokerHeatmap, fetchBrokerHoldings } from '..
 import { exportMarketBrokerSurveillance } from '../utils/floorsheetExport';
 import { StatCard, InfoBanner, Insight, Spinner, TimeframeFilterBar } from './ui';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json';
+import historicalMatricesSeed from '../data/broker_matrices_historical.json';
 import allTimeBrokerHoldingsSeed from '../data/broker_holdings_alltime.json';
 import SessionDateDropdown from './SessionDateDropdown';
 
@@ -146,7 +147,13 @@ export function BrokerFlowDominanceService({
   const [smartMoneyFilter, setSmartMoneyFilter] = useState<'ALL' | 'ACCUMULATION' | 'TRAP' | 'RETAIL'>('ALL');
   const [stocks, setStocks] = useState<any[]>([]);
   const [floorsheet, setFloorsheet] = useState<any[]>([]);
-  const [heatmapData, setHeatmapData] = useState<any>(() => latestBrokerMatrix || null);
+  const [heatmapData, setHeatmapData] = useState<any>(() => {
+    const initDate = selectedDate || date;
+    if (initDate && (historicalMatricesSeed as any)?.[initDate]) {
+      return (historicalMatricesSeed as any)[initDate];
+    }
+    return latestBrokerMatrix || null;
+  });
   const [fetchedDates, setFetchedDates] = useState<string[]>([]);
   const [selectedBrokerModal, setSelectedBrokerModal] = useState<BrokerStat | null>(null);
   const [selectedTop10BrokerId, setSelectedTop10BrokerId] = useState<string>('58');
@@ -239,13 +246,6 @@ export function BrokerFlowDominanceService({
     // Filter strictly through isNepseTradingDay to guarantee no Saturday/Sunday weekends or Dashain holidays leak in
     const valid = Array.from(set).filter(d => {
       if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
-      // During active trading hours, omit today's incomplete date from floorsheet filter to avoid partial data interpretation
-      if (d === todayIso) {
-        const now = new Date();
-        const nptOffset = 5 * 60 + 45;
-        const totalMins = (now.getUTCHours() * 60 + now.getUTCMinutes() + nptOffset) % 1440;
-        if (totalMins < 15 * 60 + 30) return false; // Full day floorsheet reconciles after 3:30 PM
-      }
       try {
         return isNepseTradingDay(new Date(d + 'T12:00:00+05:45'));
       } catch {
@@ -630,6 +630,13 @@ export function BrokerFlowDominanceService({
       const days = DAYS_MAP[activeTf] || 1;
       const effDate = targetDate || sessionDate || formatNptDateIso(new Date());
 
+      // Immediate local baseline switch (0ms) from pre-compiled historical matrices
+      if (effDate && (historicalMatricesSeed as any)?.[effDate]?.matrix?.length > 0) {
+        setHeatmapData((historicalMatricesSeed as any)[effDate]);
+      } else if (!targetDate && latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
+        setHeatmapData(latestBrokerMatrix);
+      }
+
       // Fetch lightweight broker heatmap and market live data first (ultra-fast, <200ms)
       const [liveDataRes, hmRes, summaryMapRes] = await Promise.allSettled([
         loadNepseData(),
@@ -653,8 +660,10 @@ export function BrokerFlowDominanceService({
       const hmData = hmRes.status === 'fulfilled' ? (hmRes.value?.data || hmRes.value) : null;
       if (hmData && Array.isArray(hmData.matrix) && hmData.matrix.length > 0) {
         setHeatmapData(hmData);
-      } else if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
-        // Safe fallback: never leave screen blank on network timeout
+      } else if (effDate && (historicalMatricesSeed as any)?.[effDate]?.matrix?.length > 0) {
+        setHeatmapData((historicalMatricesSeed as any)[effDate]);
+      } else if (!targetDate && latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
+        // Safe fallback: only if no specific historical date was picked
         setHeatmapData(latestBrokerMatrix);
       }
 
@@ -1959,10 +1968,19 @@ export function BrokerFlowDominanceService({
       </div>
 
       {/* Date Notice Banner if selected date has no compiled records */}
-      {sessionDateFilter && !availableDates.includes(sessionDateFilter) && (
-        <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300 flex items-center justify-between gap-3">
+      {sessionDateFilter && sessionDateFilter === formatNptDateIso(new Date()) && (
+        <div className="w-full rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-300 flex items-center justify-between gap-2.5 shadow-md">
+          <div className="flex items-center gap-2">
+            <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#10B981' }} />
+            <span>Today's Session (<strong>{sessionDateFilter}</strong>): Live TMS Continuous Feed • Full-day floorsheet contracts reconcile post-close (3:30 PM NPT).</span>
+          </div>
+        </div>
+      )}
+
+      {sessionDateFilter && !availableDates.includes(sessionDateFilter) && sessionDateFilter !== formatNptDateIso(new Date()) && (
+        <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300 flex items-center justify-between gap-3 shadow-md">
           <span>
-            ⚠️ No floorsheet records compiled yet for <strong>{sessionDateFilter}</strong> (session in progress or settlement pending). Showing latest completed session: <strong>{availableDates[0] || '2026-10-29'}</strong>.
+            ⚠️ No floorsheet records compiled yet for <strong>{sessionDateFilter}</strong>. Showing latest completed session: <strong>{availableDates[0] || '2026-11-02'}</strong>.
           </span>
           <button
             type="button"
@@ -2496,19 +2514,33 @@ export function BrokerFlowDominanceService({
               </div>
 
               {/* Dropdown Selector */}
-              <div className="flex items-center gap-2">
-                <label className="text-[11px] font-semibold text-slate-400 shrink-0">Broker:</label>
-                <select
-                  value={selectedTop10BrokerId}
-                  onChange={(e) => setSelectedTop10BrokerId(e.target.value)}
-                  className="bg-slate-950 border border-slate-700 hover:border-slate-600 text-white text-xs font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
-                >
-                  {brokerFlowList.map((b) => (
-                    <option key={b.brokerId} value={b.brokerId}>
-                      Broker #{b.brokerId} — {b.brokerName} ({b.netFlow >= 0 ? '+' : ''}Rs. {(b.netFlow / 1e7).toFixed(2)} Cr)
-                    </option>
-                  ))}
-                </select>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[11px] font-semibold text-slate-400 shrink-0">📅 Session:</label>
+                  <SessionDateDropdown
+                    value={sessionDateFilter}
+                    onChange={(newDate: string) => {
+                      setSessionDateFilter(newDate);
+                    }}
+                    availableDates={availableDates}
+                    placeholder={`Latest Session (${sessionDate})`}
+                    label=""
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[11px] font-semibold text-slate-400 shrink-0">Broker:</label>
+                  <select
+                    value={selectedTop10BrokerId}
+                    onChange={(e) => setSelectedTop10BrokerId(e.target.value)}
+                    className="bg-slate-950 border border-slate-700 hover:border-slate-600 text-white text-xs font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                  >
+                    {brokerFlowList.map((b) => (
+                      <option key={b.brokerId} value={b.brokerId}>
+                        Broker #{b.brokerId} — {b.brokerName} ({b.netFlow >= 0 ? '+' : ''}Rs. {(b.netFlow / 1e7).toFixed(2)} Cr)
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -2693,8 +2725,9 @@ export function BrokerFlowDominanceService({
               }
               const bNorm = String(brokerId || '').replace(/^0+/, '');
               const sSym = String(sc.symbol || '').toUpperCase().trim();
-              const fBroker = Array.isArray((latestBrokerMatrix as any)?.matrix)
-                ? (latestBrokerMatrix as any).matrix.find((bm: any) => String(bm.broker || bm.id || '').replace(/^0+/, '') === bNorm)
+              const effMatrix = Array.isArray((heatmapData as any)?.matrix) ? (heatmapData as any).matrix : (latestBrokerMatrix as any)?.matrix;
+              const fBroker = Array.isArray(effMatrix)
+                ? effMatrix.find((bm: any) => String(bm.broker || bm.id || '').replace(/^0+/, '') === bNorm)
                 : null;
               const fScrip = fBroker?.topAccumulation?.find((fs: any) => String(fs.symbol).toUpperCase() === sSym)
                 || fBroker?.scrips?.find((fs: any) => String(fs.symbol).toUpperCase() === sSym);
