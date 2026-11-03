@@ -756,7 +756,13 @@ export function calculateTechnicalSpeedometer(stock = {}, history = [], explicit
   if (stock.rsi != null && !isNaN(Number(stock.rsi))) {
     const rsiVal = Number(stock.rsi);
     const rsiClamped = Math.min(95, Math.max(10, +rsiVal.toFixed(1)));
-    const rsiAction = rsiClamped >= 52 && rsiClamped <= 72 ? 'Buy' : rsiClamped < 32 ? 'Buy' : rsiClamped > 75 || rsiClamped < 44 ? 'Sell' : 'Neutral';
+    const isHealthyUptrend = pChange >= 0 || (stock.ema50 && ltp >= stock.ema50) || (stock.ema20 && ltp >= stock.ema20);
+    const rsiAction = rsiClamped >= 52 && rsiClamped <= 72 ? 'Buy'
+      : rsiClamped > 72 && isHealthyUptrend && rsiClamped <= 88 ? 'Neutral'
+      : rsiClamped < 32 ? 'Buy'
+      : rsiClamped > 88 ? 'Sell'
+      : rsiClamped < 44 ? 'Sell'
+      : 'Neutral';
     oscItems.push({ label: 'RSI (14)', value: `${rsiClamped}`, action: rsiAction });
   } else {
     oscItems.push({ label: 'RSI (14)', value: '—', action: 'Neutral' });
@@ -776,7 +782,12 @@ export function calculateTechnicalSpeedometer(stock = {}, history = [], explicit
     const high52 = Number(stock.high52w);
     const low52 = Number(stock.low52w);
     const stochK = +(((ltp - low52) / (high52 - low52)) * 100).toFixed(1);
-    const stochAction = stochK >= 50 && stochK <= 82 ? 'Buy' : stochK < 22 ? 'Buy' : stochK < 40 || stochK > 88 ? 'Sell' : 'Neutral';
+    const isStochUptrend = pChange >= 0 || (stock.ema50 && ltp >= stock.ema50);
+    const stochAction = stochK >= 50 && stochK <= 85 ? 'Buy'
+      : stochK > 85 && isStochUptrend && stochK <= 94 ? 'Neutral'
+      : stochK < 22 ? 'Buy'
+      : stochK < 40 || stochK > 94 ? 'Sell'
+      : 'Neutral';
     oscItems.push({ label: 'Stochastic %K', value: `${stochK}%`, action: stochAction });
   } else {
     oscItems.push({ label: 'Stochastic %K', value: '—', action: 'Neutral' });

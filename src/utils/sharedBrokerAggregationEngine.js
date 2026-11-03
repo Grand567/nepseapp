@@ -191,9 +191,19 @@ export function evaluateOrderFlowVeto(brokerData = {}, stockSummary = {}) {
       : 0)
   );
 
+  const bcr3 = Number(
+    brokerData?.bcr3BuyPct ??
+    brokerData?.grossBuyConcentrationPct ??
+    0
+  );
+
+  // Absorption check: If top buyers corner volume (BCR3 >= SCR3) and net smart money flow is positive,
+  // this is institutional handover/absorption, NOT syndicate dumping.
+  const isAbsorbedByInstitutionalSyndicate = bcr3 >= scr3 && netFlowPct >= 0;
+
   const isWhaleMonopolyDump = topSellerShare >= 25.0 && topSellerNetDrainPct >= 15.0;
-  const isSyndicateDistribution = scr3 >= 38.0 && (netFlowPct < -5.0 || topSellerNetDrainPct >= 10.0);
-  const isExtremeDumping = scr3 >= 50.0;
+  const isSyndicateDistribution = !isAbsorbedByInstitutionalSyndicate && scr3 >= 38.0 && (netFlowPct < -5.0 || (topSellerNetDrainPct >= 10.0 && netFlowPct < 0));
+  const isExtremeDumping = scr3 >= 50.0 && !isAbsorbedByInstitutionalSyndicate;
 
   if (isWhaleMonopolyDump || isSyndicateDistribution || isExtremeDumping) {
     const brokerId = String(topSeller?.brokerId || topSeller?.broker || topSeller?.id || '?');
@@ -717,6 +727,7 @@ export function aggregateBrokerMicrostructure(params = {}) {
   let phaseLabel = "Normal Retail Flow";
   let smartMoneyBias = "Neutral";
   let adSignal = "Neutral";
+  let orderFlowVeto = { isVetoed: false, reason: null, severity: 'NONE' };
 
   if (isPureCrossTrade || isMatchedCrossTrade) {
     phase = "NEUTRAL_RETAIL";
@@ -749,7 +760,7 @@ export function aggregateBrokerMicrostructure(params = {}) {
     const isActiveMarkup = bcr3NetPct >= 15.0 && (bcr3NetPct - scr3NetPct) >= 5.0 && priceChangePct > 4.5 && latestClose >= bigBrokerVWAP;
     const isRetailAbsorption = bcr3BuyPct > scr3SellPct && bcr3NetPct > scr3NetPct && scr3NetPct < 14.0 && scr3GrossSellPct < 30.0 && tradeSizeRatio >= 1.05;
 
-    const orderFlowVeto = evaluateOrderFlowVeto({
+    orderFlowVeto = evaluateOrderFlowVeto({
       totalVolume,
       scr3SellPct: scr3GrossSellPct,
       topSellers: sortedSellers,

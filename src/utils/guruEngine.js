@@ -37,6 +37,7 @@ import {
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { getCachedStockFundamentals, getCachedRealPriceHistory } from './historyCache.js';
 import { calculateStockRvol } from './watchlistAlerts.js';
+import { calculateEMA } from './indicators.js';
 import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
 import { evaluateOrderFlowVeto } from './sharedBrokerAggregationEngine.js';
 
@@ -264,10 +265,22 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     disqualificationReason = 'Winter RoR hydrology cash flows depressed';
   } else if (resolveDynamicStockRSI(stock) >= 70) {
     const dynRsi = resolveDynamicStockRSI(stock);
-    actionState = 'OVERBOUGHT_DISTRIBUTION';
-    setupClass = 'Overbought Peak (Take Profit / Exit)';
-    isPrimeCandidate = false;
-    disqualificationReason = `RSI extended at ${dynRsi.toFixed(1)} (>= 70) — overbought exhaustion / distribution risk`;
+    const ema9Arr = closes.length >= 9 ? calculateEMA(closes, 9) : null;
+    const lastEma9 = (ema9Arr && ema9Arr.length > 0) ? ema9Arr[ema9Arr.length - 1] : (stock.ema20 || stock.ema50 || (ltp * 0.95));
+    const isAboveEma9 = lastEma9 != null ? ltp >= lastEma9 : true;
+    const isHealthyPowerTrend = isAboveEma9 && !isBrokerDumping && !isUpperWickRejection;
+
+    if (isHealthyPowerTrend) {
+      actionState = 'POWER_TREND_RUNNER';
+      setupClass = 'Stage 2 Power Trend (RSI Momentum Runner)';
+      isPrimeCandidate = false; // Protect new buyers from chasing at peaks
+      disqualificationReason = `Strong momentum runner (RSI ${dynRsi.toFixed(1)}). For existing holders: HOLD & TRAIL STOP at 9-EMA (Rs. ${lastEma9.toFixed(1)}). Fresh buyers: wait for dip.`;
+    } else {
+      actionState = 'OVERBOUGHT_DISTRIBUTION';
+      setupClass = 'Overbought Peak (Take Profit / Exit)';
+      isPrimeCandidate = false;
+      disqualificationReason = `RSI extended at ${dynRsi.toFixed(1)} (>= 70) with seller rejection — overbought exhaustion / distribution risk`;
+    }
   } else if (pCh >= 8.0) {
     // GAP-4: Anti-FOMO gate — stock already up 8%+ on the day is an extended breakout
     // Entry at this level means buying into a parabolic move with T+2 freeze risk
@@ -370,6 +383,10 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
   let verdict = 'HOLD / WAIT FOR CONFIRMATION';
   if (actionState === 'ORDER_FLOW_VETO_DUMP') {
     verdict = 'AVOID ENTRY (ORDER FLOW VETO: WHALE DUMP)';
+  } else if (actionState === 'POWER_TREND_RUNNER') {
+    const ema9Arr = closes.length >= 9 ? calculateEMA(closes, 9) : null;
+    const lastEma9 = (ema9Arr && ema9Arr.length > 0) ? ema9Arr[ema9Arr.length - 1] : (ltp * 0.96);
+    verdict = `HOLD RUNNER (TRAIL STOP AT 9-EMA: Rs. ${lastEma9.toFixed(1)})`;
   } else if (actionState === 'UPPER_WICK_REJECTION_AVOID') {
     verdict = 'AVOID / DO NOT CHASE (UPPER REJECTION WICK TRAP)';
   } else if (actionState === 'DISTRIBUTION_AVOID' || actionState === 'OVERBOUGHT_DISTRIBUTION') {

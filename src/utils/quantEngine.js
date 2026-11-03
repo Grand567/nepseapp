@@ -1128,8 +1128,22 @@ export function classifyActionZone(stock, macroContext = {}) {
     stopLoss = `Rs. ${(Math.max(1, ltp - (1.5 * atr))).toFixed(1)} (-${(((1.5 * atr) / ltp) * 100).toFixed(1)}%)`;
     systematicStrategy = 'Accumulate positions quietly within the support range alongside institutional buyers.';
   }
-  // 3. EXIT ZONE (Overbought / Broker Distribution / Smart Money Dumping)
-  else if (rsi >= 75 || factors.iSmartMoney <= -0.40 || hasHeavyBrokerDumping || (stock?.pChange >= 8.5 && rsi > 70)) {
+  // 2b. POWER TREND RUNNER (Stage 2 Markup: RSI >= 70 momentum runner holding above 20 EMA with no broker dumping)
+  else if (rsi >= 70 && !hasHeavyBrokerDumping && !isConfirmedBearishStructure && ltp >= (ema20 > 0 ? ema20 : (stock.ema50 || 0)) && factors.iSmartMoney >= -0.15) {
+    zone = 'Holding Zone';
+    zoneColor = '#0284c7';
+    zoneBadge = '⚡ POWER TREND (RUNNER HOLD)';
+    zoneIcon = 'TrendingUp';
+    const trailingStop = +(Math.max(ema20 > 0 ? ema20 : ltp * 0.94, ltp * 0.94)).toFixed(1);
+    triggerLogic = `Strong Stage 2 momentum runner (RSI: ${rsi.toFixed(0)}). Price trades cleanly above 20-EMA with steady institutional backing.`;
+    entryTarget = `Hold Existing Positions — Do NOT chase peak (Wait for pullback near Rs. ${(ema20 > 0 ? ema20 : ltp * 0.95).toFixed(1)})`;
+    profitTarget1 = `Rs. ${r2.toFixed(1)} (Extension R2)`;
+    profitTarget2 = `Rs. ${(high52w > ltp ? high52w : ltp * 1.10).toFixed(1)} (Blue Sky Target)`;
+    stopLoss = `Rs. ${trailingStop} (Trailing Stop at 20-EMA)`;
+    systematicStrategy = 'RIDE THE TREND: Hold existing runner positions and trail your stop-loss upward along the 20-day EMA. Do not sell early simply because oscillators appear high during strong market markups.';
+  }
+  // 3. EXIT ZONE (Overbought Exhaustion with Broker Distribution or Smart Money Dumping)
+  else if (hasHeavyBrokerDumping || factors.iSmartMoney <= -0.40 || (rsi >= 75 && (factors.iSmartMoney < -0.10 || ltp < ema20)) || (stock?.pChange >= 8.5 && rsi > 70 && hasHeavyBrokerDumping)) {
     zone = 'Exit Zone';
     zoneColor = '#eab308';
     zoneBadge = '🟡 EXIT ZONE (TAKE PROFIT / DISTRIBUTION)';
