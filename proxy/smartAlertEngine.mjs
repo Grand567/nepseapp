@@ -780,6 +780,8 @@ export async function runMarketAlertScanCycle({
     // ── 0. EVALUATE ACTIVE POSITIONS FOR STOP-LOSS BREACH & TARGET PROFIT ──
     try {
       let alertHistoryModified = false;
+      const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
+      const shouldDispatchTelegram = !isTestEnv || process.env.TEST_LIVE_TELEGRAM === 'true';
       const dispatchedAlertsThisCycle = new Set();
       for (const alert of alertHistory) {
         if (alert.status !== 'ACTIVE' && alert.status !== 'ACTIVE_T2') continue;
@@ -821,15 +823,17 @@ export async function runMarketAlertScanCycle({
               triggeredAt: new Date().toISOString()
             };
             broadcastAlert(slPayload);
-            sendTelegramExitAlert({
-              symbol: alert.symbol,
-              type: 'STOP_LOSS_HIT',
-              ltp: currentLtp,
-              entryPrice: alert.ltp,
-              stopLoss: sl,
-              kitta: alert.kitta || 100,
-              isT2Cleared
-            }).catch(err => console.warn('[SmartAlertEngine] Exit alert dispatch notice:', err.message));
+            if (shouldDispatchTelegram) {
+              sendTelegramExitAlert({
+                symbol: alert.symbol,
+                type: 'STOP_LOSS_HIT',
+                ltp: currentLtp,
+                entryPrice: alert.ltp,
+                stopLoss: sl,
+                kitta: alert.kitta || 100,
+                isT2Cleared
+              }).catch(err => console.warn('[SmartAlertEngine] Exit alert dispatch notice:', err.message));
+            }
           }
         } else if (t2 > 0 && currentLtp >= t2 && !alert.target2Hit) {
           // TARGET 2 HIT: Full swing profit achieved
@@ -858,16 +862,18 @@ export async function runMarketAlertScanCycle({
               triggeredAt: new Date().toISOString()
             };
             broadcastAlert(t2Payload);
-            sendTelegramExitAlert({
-              symbol: alert.symbol,
-              type: 'TARGET_2_REACHED',
-              targetLevel: 2,
-              ltp: currentLtp,
-              entryPrice: alert.ltp,
-              targetPrice: t2,
-              kitta: alert.kitta || 100,
-              isT2Cleared
-            }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
+            if (shouldDispatchTelegram) {
+              sendTelegramExitAlert({
+                symbol: alert.symbol,
+                type: 'TARGET_2_REACHED',
+                targetLevel: 2,
+                ltp: currentLtp,
+                entryPrice: alert.ltp,
+                targetPrice: t2,
+                kitta: alert.kitta || 100,
+                isT2Cleared
+              }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
+            }
           }
         } else if (t1 > 0 && currentLtp >= t1 && !alert.target1Hit) {
           // TARGET 1 HIT: Sell 50% & Move Stop-Loss to Statutory Zero-Loss Breakeven
@@ -905,18 +911,20 @@ export async function runMarketAlertScanCycle({
               triggeredAt: new Date().toISOString()
             };
             broadcastAlert(t1Payload);
-            sendTelegramExitAlert({
-              symbol: alert.symbol,
-              type: 'TARGET_REACHED',
-              targetLevel: 1,
-              ltp: currentLtp,
-              entryPrice: alert.ltp,
-              targetPrice: t1,
-              target2: t2,
-              raisedStopLoss: statutoryBeStop,
-              kitta: totalKitta,
-              isT2Cleared
-            }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
+            if (shouldDispatchTelegram) {
+              sendTelegramExitAlert({
+                symbol: alert.symbol,
+                type: 'TARGET_REACHED',
+                targetLevel: 1,
+                ltp: currentLtp,
+                entryPrice: alert.ltp,
+                targetPrice: t1,
+                target2: t2,
+                raisedStopLoss: statutoryBeStop,
+                kitta: totalKitta,
+                isT2Cleared
+              }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
+            }
           }
         }
       }
