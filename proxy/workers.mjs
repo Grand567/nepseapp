@@ -10,11 +10,12 @@ import {
   sendMorningStockSelectionDigest,
   run5StepSwingSelectionAndDispatch,
   pollIncomingTelegramCommands,
-  sendTelegramMessage
+  sendTelegramMessage,
+  auditMultiSessionTrapRisk
 } from './telegramNotifier.mjs';
 import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
 import { getOrFetchSymbolFloorsheet, getFullSessionFloorsheet } from './brokerVault.mjs';
-import { ingestDailyStockPrices, getDailyCompletenessStatus } from './db/ledgerStore.js';
+import { ingestDailyStockPrices, getDailyCompletenessStatus, db } from './db/ledgerStore.js';
 import { downloadAndArchiveDailyFloorsheet } from './utils/dailyFloorsheetCollector.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -226,6 +227,17 @@ export async function runFullUniversePrimePick() {
 
         if (isDisqualified || !hasBuyKeyword || scoreVal < 55) {
           continue; // Disqualified — must be actionable BUY/ACCUMULATE
+        }
+
+        // ── 5-DAY MULTI-SESSION TRAP VETO GATE ──
+        if (db) {
+          try {
+            const trapAudit = auditMultiSessionTrapRisk(db, sym);
+            if (trapAudit.isTrap) {
+              console.log(`[PrimePickWorker] 🚫 Hard Veto ${sym}: ${trapAudit.reason}`);
+              continue; // VETO! Trap detected across multi-session ledger!
+            }
+          } catch (_) {}
         }
 
         const passesAll5 =

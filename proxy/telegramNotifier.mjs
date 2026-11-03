@@ -1179,6 +1179,16 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding } = {})
 export async function sendTelegramPrimePickAlert(winner) {
   if (!winner || !winner.symbol) return;
 
+  // Enforce 5-Day Multi-Session Trap Veto Gate
+  try {
+    const { db } = await import('./db/ledgerStore.js');
+    const trapAudit = auditMultiSessionTrapRisk(db, winner.symbol);
+    if (trapAudit.isTrap) {
+      console.log(`[sendTelegramPrimePickAlert] 🚫 Hard Veto ${winner.symbol}: ${trapAudit.reason}`);
+      return { success: false, reason: trapAudit.reason };
+    }
+  } catch (_) {}
+
   const sym = winner.symbol;
   const name = winner.name || winner.companyName || sym;
   const ltp = Number(winner.ltp || 0);
