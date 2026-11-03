@@ -190,6 +190,11 @@ async function callBotApi(token, method, payload = null) {
  * Sends a raw HTML/Markdown message to Telegram
  */
 export async function sendTelegramMessage(text, parseMode = 'HTML') {
+  const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
+  if (isTestEnv && process.env.TEST_LIVE_TELEGRAM !== 'true') {
+    return { success: true, messageId: 999999, mocked: true };
+  }
+
   const cfg = loadConfig();
   if (!cfg.enabled || !cfg.botToken || !cfg.chatId) {
     return { success: false, reason: 'Telegram notifications not configured or disabled' };
