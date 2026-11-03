@@ -631,8 +631,13 @@ export function BrokerFlowDominanceService({
       const effDate = targetDate || sessionDate || formatNptDateIso(new Date());
 
       // Immediate local baseline switch (0ms) from pre-compiled historical matrices
-      if (effDate && (historicalMatricesSeed as any)?.[effDate]?.matrix?.length > 0) {
-        setHeatmapData((historicalMatricesSeed as any)[effDate]);
+      const histSeed = effDate ? (historicalMatricesSeed as any)?.[effDate] : null;
+      const histList: any[] = Array.isArray(histSeed?.matrix)
+        ? histSeed.matrix
+        : (histSeed?.matrix && typeof histSeed.matrix === 'object' ? Object.values(histSeed.matrix) : []);
+
+      if (histList.length > 0) {
+        setHeatmapData({ ...histSeed, matrix: histList });
       } else if (!targetDate && latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         setHeatmapData(latestBrokerMatrix);
       }
@@ -658,10 +663,14 @@ export function BrokerFlowDominanceService({
       }
 
       const hmData = hmRes.status === 'fulfilled' ? (hmRes.value?.data || hmRes.value) : null;
-      if (hmData && Array.isArray(hmData.matrix) && hmData.matrix.length > 0) {
-        setHeatmapData(hmData);
-      } else if (effDate && (historicalMatricesSeed as any)?.[effDate]?.matrix?.length > 0) {
-        setHeatmapData((historicalMatricesSeed as any)[effDate]);
+      const hmList: any[] = Array.isArray(hmData?.matrix)
+        ? hmData.matrix
+        : (hmData?.matrix && typeof hmData.matrix === 'object' ? Object.values(hmData.matrix) : []);
+
+      if (hmList.length > 0) {
+        setHeatmapData({ ...hmData, matrix: hmList });
+      } else if (histList.length > 0) {
+        setHeatmapData({ ...histSeed, matrix: histList });
       } else if (!targetDate && latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         // Safe fallback: only if no specific historical date was picked
         setHeatmapData(latestBrokerMatrix);
@@ -724,9 +733,14 @@ export function BrokerFlowDominanceService({
   // 1. Compute Broker Flow from Real Multi-Day Heatmap or Floorsheet
   const brokerFlowList: BrokerStat[] = useMemo(() => {
     // A. Primary: use real aggregated broker vault matrix (unified across 1D, 1W, 1M, etc.)
-    if (heatmapData?.matrix && heatmapData.matrix.length > 0) {
+    const rawMatrix = heatmapData?.matrix;
+    const matrixList: any[] = Array.isArray(rawMatrix)
+      ? rawMatrix
+      : (rawMatrix && typeof rawMatrix === 'object' ? Object.values(rawMatrix) : []);
+
+    if (matrixList.length > 0) {
       const list: BrokerStat[] = [];
-      heatmapData.matrix.forEach((b: any) => {
+      matrixList.forEach((b: any) => {
         const bId = String(b.broker || '').trim();
         const bInfo = MAJOR_BROKERS.find(m => m.id === bId);
         const name = b.brokerName || (bInfo ? bInfo.name : `Broker #${bId}`);
@@ -1182,10 +1196,15 @@ export function BrokerFlowDominanceService({
     };
 
     // A. Primary: compute directly from heatmapData scrips breakdown (unified across 1D, 1W, 1M, etc.)
-    if (heatmapData?.matrix && heatmapData.matrix.length > 0) {
+    const rawMatrix = heatmapData?.matrix;
+    const matrixList: any[] = Array.isArray(rawMatrix)
+      ? rawMatrix
+      : (rawMatrix && typeof rawMatrix === 'object' ? Object.values(rawMatrix) : []);
+
+    if (matrixList.length > 0) {
       const stockBrokerMap = new Map<string, { totalBuy: number; totalSell: number; buyers: Map<string, number>; sellers: Map<string, number> }>();
 
-      heatmapData.matrix.forEach((bItem: any) => {
+      matrixList.forEach((bItem: any) => {
         const bId = String(bItem.broker || '').trim();
         if (!bId || !bItem.scrips) return;
         const scripsList: { symbol: string; buy: number; sell: number }[] = Array.isArray(bItem.scrips)
@@ -2725,7 +2744,10 @@ export function BrokerFlowDominanceService({
               }
               const bNorm = String(brokerId || '').replace(/^0+/, '');
               const sSym = String(sc.symbol || '').toUpperCase().trim();
-              const effMatrix = Array.isArray((heatmapData as any)?.matrix) ? (heatmapData as any).matrix : (latestBrokerMatrix as any)?.matrix;
+              const rawEff = (heatmapData as any)?.matrix;
+              const effMatrix = Array.isArray(rawEff)
+                ? rawEff
+                : (rawEff && typeof rawEff === 'object' ? Object.values(rawEff) : (latestBrokerMatrix as any)?.matrix);
               const fBroker = Array.isArray(effMatrix)
                 ? effMatrix.find((bm: any) => String(bm.broker || bm.id || '').replace(/^0+/, '') === bNorm)
                 : null;
