@@ -680,6 +680,13 @@ export async function processStockTickEvaluation(evaluationData) {
     const alertItem = {
       id: `alert_${sym}_${now}`,
       symbol: sym,
+      type: 'INSTITUTIONAL_ENTRY',
+      category: 'pro',
+      tier: 'pro',
+      isPro: true,
+      title: `⚡ Institutional Accumulation: ${sym}`,
+      body: `Price Rs. ${ltp} inside Buy Zone (${buyZone.low}-${buyZone.high}). Lead accumulators: ${buyerConcentration.dominantBrokersText || 'Smart Money'}.`,
+      action: 'OPEN_STOCK_DETAIL',
       ltp,
       triggeredAt: new Date(now).toISOString(),
       buyZone: buyZone,

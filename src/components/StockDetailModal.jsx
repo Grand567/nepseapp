@@ -1311,10 +1311,10 @@ function BeginnerConfidenceCard({
   );
 }
 
-export default function StockDetailModal({ stock, allStocks = [], onClose, marketStatus: propMarketStatus }) {
+export default function StockDetailModal({ stock, allStocks = [], onClose, marketStatus: propMarketStatus, initialTab }) {
   const marketStatus = useMemo(() => propMarketStatus || getDetailedMarketStatus(), [propMarketStatus]);
   const { setActiveTab: setGlobalActiveTab } = useNavigation();
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(() => (typeof stock === 'object' && stock?.initialTab) || initialTab || 'overview');
   const [tabCategory, setTabCategory] = useState('all'); // 'all' | 'trading' | 'financials' | 'tools'
   const tabBarRef = useRef(null);
   const [chartTimeframe, setChartTimeframe] = useState('1M');

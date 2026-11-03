@@ -9,7 +9,8 @@ import {
   sendTelegramPreOpenGate,
   sendMorningStockSelectionDigest,
   run5StepSwingSelectionAndDispatch,
-  pollIncomingTelegramCommands 
+  pollIncomingTelegramCommands,
+  sendTelegramMessage
 } from './telegramNotifier.mjs';
 import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
 import { getOrFetchSymbolFloorsheet, getFullSessionFloorsheet } from './brokerVault.mjs';
@@ -402,6 +403,7 @@ export async function runPostMarketCloseAnalysis(force = false) {
 
 let lastPreMarketDispatchedDate = null;
 let lastPreOpenDispatchedDate = null;
+let lastMarketOpenDispatchedDate = null;
 let lastMorningDigestDispatchedDate = null;
 
 // Phase 1: 10:15 AM Pre-Market Scan & Breadth Check
@@ -591,6 +593,18 @@ export function startWorkers() {
         if (nptMins >= 650 && nptMins < 660 && lastPreOpenDispatchedDate !== status.targetSessionDate) {
           runPreOpenGateScan();
         }
+        // Phase 4: 11:00 AM - 11:05 AM Market Open Bell & Live Order Flow Scanner Ignition
+        if (nptMins >= 660 && nptMins < 665 && lastMarketOpenDispatchedDate !== status.targetSessionDate) {
+          lastMarketOpenDispatchedDate = status.targetSessionDate;
+          sendTelegramMessage([
+            `🔔 <b>NEPSE MARKET OPEN (11:00 AM NPT)</b>`,
+            `───────────────────────────────`,
+            `⚡ Live Intraday Smart Alert Scanner is now ACTIVE.`,
+            `📡 <b>Scope:</b> Real-time institutional accumulation & breakout radar`,
+            `🛡️ <b>Anti-Trap Guard:</b> Hard Veto 8 active (>12% operator premium vetoed)`,
+            `🎯 Verified Phase C/D swing entries will dispatch here automatically as confirmed.`
+          ].join('\n'), 'HTML').catch(() => {});
+        }
       }
     } catch (schedErr) {
       console.warn('[PremarketWorker] Schedule check notice:', schedErr.message);
@@ -603,7 +617,7 @@ export function startWorkers() {
   //   - Price in [VWAP Support, VWAP + 2%]
   //   - Buyer Concentration (Top 3 Brokers) > 50%
   //   - Seller Volume at Support < 20-Day Average
-  // Dispatches instant mobile lockscreen push notifications via FCM.
+  // Dispatches instant mobile lockscreen push notifications via FCM & Telegram.
   setInterval(() => {
     try {
       const status = getDetailedMarketStatus();
@@ -617,8 +631,11 @@ export function startWorkers() {
             return [];
           },
           getFloorsheet: async (sym) => {
-            const fsData = await getOrFetchSymbolFloorsheet(sym, { days: 1, page: 1, size: 50000 });
-            return fsData?.rows || [];
+            try {
+              const fsData = await getOrFetchSymbolFloorsheet(sym, { days: 1, page: 1, size: 50000 });
+              if (fsData?.rows && fsData.rows.length > 0) return fsData.rows;
+            } catch (_) {}
+            return [];
           },
           getPriceHistory: async (sym) => {
             if (_getPriceHistoryInternal) return await _getPriceHistoryInternal(sym);

@@ -106,34 +106,11 @@ export function NotificationCenterDrawer({
   const handleItemClick = (item) => {
     markNotificationAsRead(item.id);
     setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n));
+    onClose();
 
-    const isNews = item.action === 'OPEN_NEWS' || item.type === 'NEWS_ALERT' || item.category === 'news' || (!item.symbol && item.url);
-    if (isNews) {
-      onClose();
-      try {
-        localStorage.setItem('open_service_id', 'news');
-        window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'news', url: item.url, headline: item.title } }));
-      } catch (_) {}
-      if (onNavigateTab) onNavigateTab('services');
-      if (item.url) window.open(item.url, '_blank', 'noopener,noreferrer');
-      return;
-    }
-
-    if (item.action === 'OPEN_IPO' || item.type === 'IPO_ALERT' || item.title?.toLowerCase().includes('ipo')) {
-      onClose();
-      if (onNavigateTab) onNavigateTab('portfolio');
-      return;
-    }
-
-    if (item.symbol && onOpenStock) {
-      onClose();
-      onOpenStock(item.symbol);
-      return;
-    }
-
-    if (onOpenAlertModal) {
-      onClose();
-      onOpenAlertModal(item);
+    // Unified routing through central notification router in App.jsx
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('dravyashree_notification_clicked', { detail: item }));
     }
   };
 

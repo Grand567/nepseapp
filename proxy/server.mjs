@@ -11271,13 +11271,24 @@ app.get('/api/notifications', (req, res) => {
   try {
     const category = (req.query.category || 'all').toLowerCase();
     const limit = Math.min(parseInt(req.query.limit || '50', 10), 100);
+    const includeExpired = req.query.includeExpired === 'true';
     const history = getSmartAlertHistory(100);
 
-    let filtered = history;
+    const now = Date.now();
+    const maxAgeMs = 24 * 60 * 60 * 1000;
+
+    let filtered = history.filter(a => {
+      if (includeExpired) return true;
+      const t = a.triggeredAt || a.timestamp || a.date;
+      if (!t) return false;
+      const timeMs = new Date(t).getTime();
+      return !isNaN(timeMs) && (now - timeMs <= maxAgeMs);
+    });
+
     if (category === 'pro') {
-      filtered = history.filter(a => a.category === 'pro' || a.tier === 'pro' || a.isPro);
+      filtered = filtered.filter(a => a.category === 'pro' || a.tier === 'pro' || a.isPro);
     } else if (category === 'general') {
-      filtered = history.filter(a => a.category === 'general' || a.tier === 'general' || a.type === 'NEWS_ALERT' || a.type === 'IPO_ALERT' || a.type === 'NEPSE_MACRO');
+      filtered = filtered.filter(a => a.category === 'general' || a.tier === 'general' || a.type === 'NEWS_ALERT' || a.type === 'IPO_ALERT' || a.type === 'NEPSE_MACRO');
     }
 
     res.json({
@@ -13000,6 +13011,26 @@ app.listen(PORT, '0.0.0.0', async () => {
                   }
                 });
                 if (list.length > 0) setCache('today-prices', list, 30000);
+              } catch (_) {}
+            }
+            if (list.length === 0 && db) {
+              try {
+                const dbRows = db.prepare(`
+                  SELECT symbol, close_price as ltp, open_price, high_price, low_price, total_volume as volume, total_turnover as turnover
+                  FROM daily_stock_summary
+                  WHERE trade_date = (SELECT MAX(trade_date) FROM daily_stock_summary)
+                `).all();
+                if (dbRows && dbRows.length > 0) {
+                  list = dbRows.map(r => ({
+                    symbol: r.symbol,
+                    ltp: Number(r.ltp || 0),
+                    prevClose: Number(r.open_price || r.ltp || 0),
+                    pChange: 0,
+                    turnover: Number(r.turnover || 0),
+                    volume: Number(r.volume || 0),
+                    source: 'drabyashree_ledger_db'
+                  }));
+                }
               } catch (_) {}
             }
             return list;

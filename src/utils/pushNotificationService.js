@@ -17,16 +17,30 @@ import { playBreakoutChime, triggerBreakoutVibration } from './watchlistAlerts.j
 
 const PUSH_REGISTERED_KEY = 'dravyashree_fcm_token_registered';
 const NOTIFICATIONS_CACHE_KEY = 'dravyashree_notifications_cache';
+const MAX_NOTIFICATION_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours max age for active feed
 
 export const getCachedNotifications = (filterCategory = 'all') => {
   try {
     const raw = localStorage.getItem(NOTIFICATIONS_CACHE_KEY);
     const list = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(list)) return [];
-    if (filterCategory === 'all') return list;
-    if (filterCategory === 'pro') return list.filter(n => n.category === 'pro' || n.tier === 'pro' || n.isPro);
-    if (filterCategory === 'general') return list.filter(n => n.category === 'general' || n.type === 'NEWS_ALERT' || n.type === 'IPO_ALERT' || n.type === 'NEPSE_MACRO');
-    return list;
+
+    const now = Date.now();
+    // Auto-purge outdated notifications older than 24 hours
+    const freshList = list.filter(n => {
+      if (!n || !n.timestamp) return false;
+      const t = new Date(n.timestamp).getTime();
+      return !isNaN(t) && (now - t <= MAX_NOTIFICATION_AGE_MS);
+    });
+
+    if (freshList.length !== list.length) {
+      localStorage.setItem(NOTIFICATIONS_CACHE_KEY, JSON.stringify(freshList));
+    }
+
+    if (filterCategory === 'all') return freshList;
+    if (filterCategory === 'pro') return freshList.filter(n => n.category === 'pro' || n.tier === 'pro' || n.isPro);
+    if (filterCategory === 'general') return freshList.filter(n => n.category === 'general' || n.type === 'NEWS_ALERT' || n.type === 'IPO_ALERT' || n.type === 'NEPSE_MACRO');
+    return freshList;
   } catch (_) {
     return [];
   }
@@ -126,10 +140,10 @@ export const normalizeNotificationItem = (raw) => {
 export function triggerNativeStatusBarNotification(normalized) {
   if (!normalized) return;
 
-  // Suppress outdated alerts older than 60 minutes from triggering system status bar notification
+  // Suppress outdated alerts older than 20 minutes from triggering system status bar notification
   if (normalized.timestamp) {
     const timeMs = new Date(normalized.timestamp).getTime();
-    if (!isNaN(timeMs) && (Date.now() - timeMs > 60 * 60 * 1000)) {
+    if (!isNaN(timeMs) && (Date.now() - timeMs > 20 * 60 * 1000)) {
       console.debug('[PushService] Suppressed outdated status bar alert:', normalized.title);
       return;
     }
@@ -376,9 +390,16 @@ export async function fetchNotificationsFeed(category = 'all', limit = 50) {
         }
       });
 
-      const merged = Array.from(map.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-      localStorage.setItem(NOTIFICATIONS_CACHE_KEY, JSON.stringify(merged.slice(0, 120)));
-      return merged.slice(0, limit);
+      const now = Date.now();
+      const freshMerged = Array.from(map.values())
+        .filter(item => {
+          if (!item.timestamp) return false;
+          const t = new Date(item.timestamp).getTime();
+          return !isNaN(t) && (now - t <= MAX_NOTIFICATION_AGE_MS);
+        })
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      localStorage.setItem(NOTIFICATIONS_CACHE_KEY, JSON.stringify(freshMerged.slice(0, 100)));
+      return freshMerged.slice(0, limit);
     }
   } catch (err) {
     console.warn('[PushService] Network fetch failed, falling back to cached notifications:', err.message);

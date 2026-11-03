@@ -162,13 +162,16 @@ function AppInner() {
     if (!item) return;
     console.log('[App] Routing notification click action:', item);
 
+    // Dismiss drawer on tap
+    setShowNotificationCenter(false);
+
     const action = String(item.action || '').toUpperCase();
     const type = String(item.type || '').toUpperCase();
     const category = String(item.category || '').toLowerCase();
     const symbol = String(item.symbol || '').toUpperCase().trim();
     const url = item.url || '';
 
-    // 1. NEWS & Corporate Announcements ("balut news" -> about news)
+    // 1. NEWS & Corporate Announcements
     const isNews = action === 'OPEN_NEWS' || category === 'news' || type === 'NEWS_ALERT' || type.includes('NEWS') || (!symbol && url);
     if (isNews) {
       try {
@@ -176,23 +179,31 @@ function AppInner() {
         window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'news', url, headline: item.title } }));
       } catch (_) {}
       setActiveTab('services');
-      if (url && typeof window !== 'undefined') {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      }
       return;
     }
 
-    // 2. IPO Alert
+    // 2. IPO Alert & Pipeline
     const isIpo = action === 'OPEN_IPO' || type === 'IPO_ALERT' || category === 'ipo' || item.title?.toLowerCase().includes('ipo');
     if (isIpo) {
-      setActiveTab('portfolio');
+      try {
+        localStorage.setItem('open_service_id', 'ipolist');
+        window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'ipolist' } }));
+      } catch (_) {}
+      setActiveTab('services');
       return;
     }
 
-    // 3. BREAKOUT / STOCK Alert ("if it is of stock then so on")
+    // 3. BREAKOUT / STOCK / OPERATOR ACCUMULATION ALERT ("shows to respective notice place")
     if (symbol) {
       const found = Array.isArray(stocks) ? stocks.find(s => s && String(s.symbol || '').toUpperCase() === symbol) : null;
-      const targetStock = found || { symbol, name: item.title || symbol, ltp: Number(item.ltp || 0) };
+      const targetStock = found ? { ...found } : { symbol, name: item.title || symbol, ltp: Number(item.ltp || 0) };
+
+      if (action === 'OPEN_BROKER' || type.includes('BROKER') || type.includes('CORNERING')) {
+        targetStock.initialTab = 'broker';
+      } else {
+        targetStock.initialTab = 'overview'; // Opens Institutional Operator Radar, Entry Zone & Breakout Defense
+      }
+
       setSmartAlertModal({ isOpen: false, alert: null });
       setActiveTab('market');
       openStockDetail(targetStock);
@@ -211,7 +222,7 @@ function AppInner() {
 
     // Fallback: Open smart alert modal if alert details exist
     setSmartAlertModal({ isOpen: true, alert: item });
-  }, [stocks, openStockDetail, setActiveTab]);
+  }, [stocks, openStockDetail, setActiveTab, setShowNotificationCenter]);
 
   // Listen for Lockscreen / Deep Link tap or In-App Banner clicks
   useEffect(() => {
