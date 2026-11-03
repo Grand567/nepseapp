@@ -10,12 +10,14 @@
 import { idbGet, idbSet } from './indexedDb.js';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json' with { type: 'json' };
 import latestFundamentals from '../data/nepse_fundamentals_latest.json' with { type: 'json' };
+import cumulativeBrokerLedger from '../data/nepse_cumulative_broker_ledger.json' with { type: 'json' };
 
 // Universal in-memory cache maps
 const memHistCache = new Map();
 const memFundCache = new Map();
 const memBrokerCache = new Map();
 const memFloorsheetCache = new Map();
+const memCumulativeBrokerCache = new Map();
 export const brokerDataCache = new Map();
 
 // Pre-seed in-memory fundamentals cache synchronously from verified baseline
@@ -25,6 +27,26 @@ if (latestFundamentals && typeof latestFundamentals === 'object') {
       memFundCache.set(sym.toUpperCase(), fund);
     }
   }
+}
+
+// Pre-seed in-memory cumulative multi-session broker ledger cache
+if (cumulativeBrokerLedger && typeof cumulativeBrokerLedger === 'object') {
+  for (const [sym, cData] of Object.entries(cumulativeBrokerLedger)) {
+    if (sym && cData) {
+      memCumulativeBrokerCache.set(sym.toUpperCase(), cData);
+    }
+  }
+}
+
+/**
+ * Synchronous lookup for multi-session cumulative broker audit data
+ * @param {string} symbol - Stock ticker symbol
+ * @returns {Object|null} Multi-session broker summary (cost basis, top accumulators, cumulative volume)
+ */
+export function getCumulativeBrokerData(symbol) {
+  if (!symbol) return null;
+  const key = String(symbol).toUpperCase().trim();
+  return memCumulativeBrokerCache.get(key) || null;
 }
 
 /**
@@ -491,20 +513,34 @@ export function getCachedBrokerData(symbol) {
   const key = String(symbol).toUpperCase().trim();
   if (!key) return null;
 
+  let res = null;
   if (brokerDataCache.has(key)) {
-    return brokerDataCache.get(key) || null;
-  }
-  if (memBrokerCache.has(key)) {
-    return memBrokerCache.get(key) || null;
+    res = brokerDataCache.get(key) || null;
+  } else if (memBrokerCache.has(key)) {
+    res = memBrokerCache.get(key) || null;
+  } else {
+    const fallback = getCachedRealBrokerAnalysis(key, 1);
+    if (fallback) {
+      brokerDataCache.set(key, fallback);
+      res = fallback;
+    }
   }
 
-  const fallback = getCachedRealBrokerAnalysis(key, 1);
-  if (fallback) {
-    brokerDataCache.set(key, fallback);
-    return fallback;
+  // Enrich with multi-session cumulative ledger data
+  const cum = getCumulativeBrokerData(key);
+  if (res && cum) {
+    res.cumulative = cum;
+    if (res.institutionalCostBasis == null) res.institutionalCostBasis = cum.institutionalCostBasis;
+    if (res.cumTopAccumulators == null) res.cumTopAccumulators = cum.topAccumulators;
+  } else if (!res && cum) {
+    res = {
+      symbol: key,
+      isCumulativeBaseline: true,
+      ...cum
+    };
   }
 
-  return null;
+  return res;
 }
 
 /**

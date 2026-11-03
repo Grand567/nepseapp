@@ -74,6 +74,7 @@ import { calculateMultiDayDiagnostics, buildDailyHistoryFromStockData } from '..
 import { calculateStockSignals } from '../utils/stockSignals';
 import { calculateStockMetrics, formatNprMoney } from '../utils/stockMetrics';
 import { evaluateOrderFlowVeto } from '../utils/sharedBrokerAggregationEngine';
+import { getCumulativeBrokerData } from '../utils/historyCache';
 import StockSignalsCard from './StockSignalsCard';
 import StockFundamentalsTab from './StockFundamentalsTab';
 import StockBrokerAnalysisTab from './StockBrokerAnalysisTab';
@@ -2932,6 +2933,41 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
 
   const multiSessionFootprint = useMemo(() => {
     if (!d?.symbol) return null;
+
+    // Fast-path: Prioritize authentic bundled multi-session ledger audit data
+    const cum = realBrokerAnalysis?.cumulative || getCumulativeBrokerData(d.symbol);
+    if (cum && Array.isArray(cum.topAccumulators) && cum.topAccumulators.length > 0) {
+      const topDom = Number(cum.bcr3Cumulative || 35);
+      return {
+        symbol: d.symbol,
+        totalSessions: cum.sessionsCount || 39,
+        totalVolume: cum.totalVolume,
+        totalTurnover: cum.totalVolume * (cum.institutionalCostBasis || d.ltp || 100),
+        netAccumulators: cum.topAccumulators.map(a => ({
+          brokerId: String(a.broker),
+          brokerName: getBrokerName(String(a.broker)),
+          netKitta: a.netQty,
+          buyKitta: a.buyVol,
+          sellKitta: a.sellVol,
+          avgRate: a.avgBuyRate,
+          retentionPct: a.buyVol > 0 ? Number(((a.netQty / a.buyVol) * 100).toFixed(1)) : 100
+        })),
+        netDistributors: (cum.topDistributors || []).map(a => ({
+          brokerId: String(a.broker),
+          brokerName: getBrokerName(String(a.broker)),
+          netKitta: Math.abs(a.netQty),
+          buyKitta: a.buyVol,
+          sellKitta: a.sellVol,
+          avgRate: a.avgSellRate,
+          retentionPct: 0
+        })),
+        smartMoneyStance: cum.smartMoneyNetFlowPct >= 5.0 ? 'OPERATOR_ACCUMULATION' : cum.smartMoneyNetFlowPct <= -5.0 ? 'OPERATOR_DISTRIBUTION' : 'RETAIL_FRAGMENTED',
+        stanceExplanation: `Multi-Session Ledger Audit: Top accumulators control ${cum.bcr3Cumulative}% concentration with institutional cost basis at Rs. ${cum.institutionalCostBasis}.`,
+        topBrokerDominancePct: topDom,
+        washTradingRisk: cum.bcr3Cumulative >= 35 && cum.scr3Cumulative >= 35 ? 'MODERATE_CHURN' : 'LOW'
+      };
+    }
+
     const sessions = [];
     if (Array.isArray(floorsheet) && floorsheet.length > 0) {
       sessions.push(floorsheet);
