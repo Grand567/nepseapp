@@ -350,6 +350,17 @@ export default function PredictorHub({
         score += hydroSeason.penaltyPoints;
       }
 
+      // ── Upper Rejection Wick Anti-Dump Check ─────────────────────────────
+      const pHigh = Number(s.high || s.dayHigh || s.ltp);
+      const pLow = Number(s.low || s.dayLow || s.ltp);
+      const pOpen = Number(s.open || s.ltp);
+      const pRange = Math.max(0.1, pHigh - pLow);
+      const upperWickRatio = pHigh > pLow ? ((pHigh - Math.max(pOpen, s.ltp)) / pRange) : 0;
+      const isUpperWickDump = upperWickRatio >= 0.35;
+      if (isUpperWickDump) {
+        score -= 22; // Penalize severe intraday rejection
+      }
+
       // ── Sector-Relative Valuation (Section 3.2 of NEPSE Predictor App Documentation) ──
       const secStr = String(s.sector || uInfo?.sector || s.sectorName || '').toLowerCase();
       let medianPE = 22;
@@ -374,9 +385,9 @@ export default function PredictorHub({
         }
       }
 
-      // ── Apply Hard Trend Ceiling & Order Flow Veto ─────────────────────────
+      // ── Apply Hard Trend Ceiling, Upper Wick Cap & Order Flow Veto ──────────
       const rawScore = Math.max(10, Math.min(98, Math.round(score)));
-      let compositeScore = isOrderFlowVetoed ? Math.min(25, rawScore) : (hardCeilingApplied ? Math.min(48, rawScore) : rawScore);
+      let compositeScore = isOrderFlowVetoed ? Math.min(25, rawScore) : (isUpperWickDump ? Math.min(45, rawScore) : (hardCeilingApplied ? Math.min(48, rawScore) : rawScore));
 
       // Deep dry season hydro stocks are also capped at 55 to prevent speculative traps
       if (hydroSeason.isHydro && hydroSeason.isDrySeason && hydroSeason.penaltyPoints <= -15) {

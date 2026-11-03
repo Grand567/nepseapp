@@ -76,6 +76,16 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
   const atr = calculateATR(adjustedCandles.slice(-60), 14);
   const t2Risk = calculateT2LockupRisk(adjustedCandles, ltp, atr, stock);
 
+  // Latest candle upper rejection wick analysis (Anti-Dump Gate)
+  const latestCandle = adjustedCandles[adjustedCandles.length - 1] || {};
+  const cHigh = Number(stock?.high || latestCandle.high || ltp);
+  const cLow = Number(stock?.low || latestCandle.low || ltp);
+  const cOpen = Number(stock?.open || latestCandle.open || ltp);
+  const cClose = Number(ltp || latestCandle.close || 0);
+  const cRange = Math.max(0.01, cHigh - cLow);
+  const upperWickRatio = cHigh > cLow ? +((cHigh - Math.max(cOpen, cClose)) / cRange).toFixed(2) : 0;
+  const isUpperWickRejection = upperWickRatio >= 0.35 && (cHigh - Math.max(cOpen, cClose)) >= (atr * 0.25);
+
   // Structural moving averages
   let technicalReport = null;
   if (adjustedCandles.length >= 25) {
@@ -242,6 +252,11 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     setupClass = 'Institutional Distribution';
     isPrimeCandidate = false;
     disqualificationReason = 'Top institutional brokers are net offloading inventory';
+  } else if (isUpperWickRejection) {
+    actionState = 'UPPER_WICK_REJECTION_AVOID';
+    setupClass = 'Upper Wick Rejection (Distribution Overhang)';
+    isPrimeCandidate = false;
+    disqualificationReason = `Excessive upper rejection wick (${Math.round(upperWickRatio * 100)}% >= 35% of daily range) — big sellers hammered the high`;
   } else if (isDeepHydroDry && ltp < ema50) {
     actionState = 'HYDRO_DRY_SEASON_CAUTION';
     setupClass = 'Seasonal Headwind';
@@ -339,8 +354,8 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
   // If disqualified, hard resistance ceiling, or dumping, cap score at 45 (or 25 if vetoed)
   if (isVetoed) {
     guruScore = Math.min(25, guruScore);
-  } else if (!isPrimeCandidate || isBrokerDumping || (isTesting200EMA && (analogWinRate === null || analogWinRate < 50))) {
-    guruScore = Math.min(45, guruScore);
+  } else if (!isPrimeCandidate || isUpperWickRejection || isBrokerDumping || (isTesting200EMA && (analogWinRate === null || analogWinRate < 50))) {
+    guruScore = Math.min(40, guruScore);
   }
 
   // Entry corridor
@@ -353,7 +368,11 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
 
   // Verdict translation
   let verdict = 'HOLD / WAIT FOR CONFIRMATION';
-  if (actionState === 'DISTRIBUTION_AVOID' || actionState === 'OVERBOUGHT_DISTRIBUTION') {
+  if (actionState === 'ORDER_FLOW_VETO_DUMP') {
+    verdict = 'AVOID ENTRY (ORDER FLOW VETO: WHALE DUMP)';
+  } else if (actionState === 'UPPER_WICK_REJECTION_AVOID') {
+    verdict = 'AVOID / DO NOT CHASE (UPPER REJECTION WICK TRAP)';
+  } else if (actionState === 'DISTRIBUTION_AVOID' || actionState === 'OVERBOUGHT_DISTRIBUTION') {
     verdict = 'AVOID / EXIT (OVERBOUGHT DISTRIBUTION)';
   } else if (actionState === 'LOW_WIN_RATE_AVOID') {
     verdict = 'NO TRADE (LOW HISTORICAL WIN RATE <50%)';
