@@ -62,7 +62,7 @@ function loadConfig() {
     botToken: cleanBotToken(process.env.TELEGRAM_BOT_TOKEN || fileConfig.botToken || ''),
     chatId: String(process.env.TELEGRAM_CHAT_ID || fileConfig.chatId || '').trim(),
     enabled: fileConfig.enabled !== false, // default true if token & chatId present
-    isTestServer: false
+    isTestServer: Boolean(fileConfig.isTestServer || process.env.TELEGRAM_TEST_SERVER === 'true')
   };
 }
 
@@ -165,11 +165,25 @@ async function callTelegramApi(endpoint, payload = null) {
 }
 
 /**
- * Standard Telegram Bot API caller (Production)
+ * Standard Telegram Bot API caller with automatic Test DC failover
  */
 async function callBotApi(token, method, payload = null) {
-  const endpoint = `/bot${token}/${method}`;
-  return await callTelegramApi(endpoint, payload);
+  const cfg = loadConfig();
+  const primaryEndpoint = cfg.isTestServer ? `/bot${token}/test/${method}` : `/bot${token}/${method}`;
+  let res = await callTelegramApi(primaryEndpoint, payload);
+
+  // If primary returns 401 Unauthorized, automatically try alternate DC environment
+  if (!res.ok && (res.error_code === 401 || String(res.description || '').toLowerCase().includes('unauthorized'))) {
+    const fallbackEndpoint = cfg.isTestServer ? `/bot${token}/${method}` : `/bot${token}/test/${method}`;
+    const fallbackRes = await callTelegramApi(fallbackEndpoint, payload);
+    if (fallbackRes.ok) {
+      console.log(`[TelegramNotifier] Auto-detected Telegram DC switch (isTestServer: ${!cfg.isTestServer})`);
+      saveTelegramConfig({ ...cfg, isTestServer: !cfg.isTestServer });
+      return fallbackRes;
+    }
+  }
+
+  return res;
 }
 
 /**

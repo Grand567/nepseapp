@@ -154,7 +154,7 @@ export function Master100ProfitWorkstation({
 
     // 1. Try Direct Telegram API First (bypasses proxy and Cloudflare)
     try {
-      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      let res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -163,9 +163,27 @@ export function Master100ProfitWorkstation({
           parse_mode: 'HTML'
         })
       });
-      const text = await res.text();
+      let text = await res.text();
       let data: any = null;
       try { data = JSON.parse(text); } catch {}
+
+      // If unauthorized on prod DC, auto-try Telegram Test DC
+      if (!data?.ok && (data?.error_code === 401 || data?.description?.toLowerCase().includes('unauthorized'))) {
+        try {
+          const testRes = await fetch(`https://api.telegram.org/bot${token}/test/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chat,
+              text: testText,
+              parse_mode: 'HTML'
+            })
+          });
+          const testTextResp = await testRes.text();
+          try { data = JSON.parse(testTextResp); } catch {}
+        } catch (_) {}
+      }
+
       if (data?.ok) {
         setTelegramTestMsg({ type: 'success', text: '✅ Ping received on Telegram! Check your phone.' });
         setTelegramTesting(false);
@@ -291,11 +309,21 @@ export function Master100ProfitWorkstation({
     // Phase 1: Direct Telegram API (ultra-fast, zero proxy latency, native Capacitor bypasses CORS)
     let directHandled = false;
     try {
-      const tgRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, { method: 'GET' });
-      const tgText = await tgRes.text();
-      if (tgText) {
+      let tgRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, { method: 'GET' });
+      let tgText = await tgRes.text();
+      let tgData: any = null;
+      try { tgData = tgText ? JSON.parse(tgText) : null; } catch {}
+
+      if (!tgData?.ok && (tgData?.error_code === 401 || tgData?.description?.toLowerCase().includes('unauthorized'))) {
         try {
-          const tgData = JSON.parse(tgText);
+          const testTgRes = await fetch(`https://api.telegram.org/bot${token}/test/getUpdates`, { method: 'GET' });
+          const testTgText = await testTgRes.text();
+          try { tgData = testTgText ? JSON.parse(testTgText) : tgData; } catch {}
+        } catch (_) {}
+      }
+
+      if (tgData) {
+        try {
           if (tgData.ok) {
             const updates = Array.isArray(tgData.result) ? tgData.result : [];
             const latestMsg = [...updates].reverse().find((u: any) =>
