@@ -253,6 +253,53 @@ export function StockSelectionScreener({
           </button>
         </div>
 
+        {/* Operator Radar Filter Pills */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mr-1">
+            Operator Floor Distance:
+          </span>
+          <button
+            onClick={() => setFloorFilter('ALL')}
+            className={`rounded-lg px-2.5 py-1 transition-all ${
+              floorFilter === 'ALL'
+                ? 'bg-purple-600 text-white font-bold'
+                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            All Distances
+          </button>
+          <button
+            onClick={() => setFloorFilter('AT_FLOOR')}
+            className={`rounded-lg px-2.5 py-1 transition-all ${
+              floorFilter === 'AT_FLOOR'
+                ? 'bg-emerald-600 text-white font-bold shadow-md shadow-emerald-900/30'
+                : 'bg-emerald-950/30 text-emerald-400 border border-emerald-900/40 hover:bg-emerald-900/30'
+            }`}
+          >
+            🟢 At Operator Floor (±3%) ({atFloorCount})
+          </button>
+          <button
+            onClick={() => setFloorFilter('EXTENDED')}
+            className={`rounded-lg px-2.5 py-1 transition-all ${
+              floorFilter === 'EXTENDED'
+                ? 'bg-red-600 text-white font-bold shadow-md shadow-red-900/30'
+                : 'bg-red-950/30 text-red-400 border border-red-900/40 hover:bg-red-900/30'
+            }`}
+          >
+            🚨 Overextended / Offload Risk ({extendedCount})
+          </button>
+          <button
+            onClick={() => setFloorFilter('UNDERWATER')}
+            className={`rounded-lg px-2.5 py-1 transition-all ${
+              floorFilter === 'UNDERWATER'
+                ? 'bg-amber-600 text-white font-bold shadow-md shadow-amber-900/30'
+                : 'bg-amber-950/30 text-amber-400 border border-amber-900/40 hover:bg-amber-900/30'
+            }`}
+          >
+            📉 Below Cost Floor / Deep Discount ({underwaterCount})
+          </button>
+        </div>
+
         {/* Filter Controls Bar */}
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 text-xs">
           {/* Search */}
@@ -390,6 +437,36 @@ export function StockSelectionScreener({
                           {res.action === 'AVOID' && <XCircle size={12} />}
                           <span>{res.action}</span>
                         </span>
+                      </td>
+                      <td className="p-3">
+                        {item.operatorFloor > 0 ? (
+                          <div>
+                            <div className="font-mono text-xs font-bold text-slate-200">
+                              Rs. {item.operatorFloor}
+                            </div>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-semibold ${
+                                item.isAtOperatorFloor 
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
+                                  : item.isOverextended 
+                                  ? 'bg-red-500/20 text-red-400 border border-red-500/40' 
+                                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                              }`}>
+                                {item.operatorPremiumPct !== null && item.operatorPremiumPct >= 0 ? '+' : ''}{item.operatorPremiumPct}%
+                              </span>
+                              {item.isOverextended && (
+                                <span className="text-[9px] font-bold text-red-400 bg-red-950/80 px-1 py-0.5 rounded border border-red-800 animate-pulse" title="Dominant accumulator sitting on >12% profit. High distribution risk.">
+                                  ⚠️ OFFLOAD
+                                </span>
+                              )}
+                            </div>
+                            {item.leadAccumulator && (
+                              <div className="text-[9px] text-slate-500 truncate max-w-[110px]">{item.leadAccumulator}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 font-mono text-xs">—</span>
+                        )}
                       </td>
                       <td className="p-3">
                         <div className="font-mono text-sm font-black text-white">{res.compositeScore} / 100</div>

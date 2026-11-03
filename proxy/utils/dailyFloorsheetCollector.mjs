@@ -67,6 +67,135 @@ function saveArchiveIndex(indexList) {
 }
 
 /**
+ * Automatically export cumulative broker ledger to src/data/nepse_cumulative_broker_ledger.json
+ * Recomputes multi-session institutional cost basis, net cash breakeven, and top accumulators/distributors.
+ */
+export function exportCumulativeBrokerLedger(databaseInstance = db) {
+  if (!databaseInstance) return null;
+  try {
+    const symbols = databaseInstance.prepare(
+      `SELECT DISTINCT symbol FROM daily_broker_ledger WHERE symbol IS NOT NULL AND symbol != ''`
+    ).all().map(r => r.symbol);
+
+    const ledgerMap = {};
+
+    const queryBrokersForSymbol = databaseInstance.prepare(`
+      SELECT 
+        broker_id,
+        SUM(buy_vol) as buyVol,
+        SUM(sell_vol) as sellVol,
+        SUM(buy_amt) as buyAmt,
+        SUM(sell_amt) as sellAmt,
+        (SUM(buy_vol) - SUM(sell_vol)) as netQty,
+        (SUM(buy_amt) - SUM(sell_amt)) as netAmt,
+        ROUND(SUM(buy_amt) / NULLIF(SUM(buy_vol), 0), 1) as avgBuyRate,
+        ROUND(SUM(sell_amt) / NULLIF(SUM(sell_vol), 0), 1) as avgSellRate
+      FROM daily_broker_ledger
+      WHERE symbol = ?
+      GROUP BY broker_id
+    `);
+
+    for (const sym of symbols) {
+      const rows = queryBrokersForSymbol.all(sym);
+      if (!rows || rows.length === 0) continue;
+
+      let totalVol = 0;
+      let totalBuyAmtAcc = 0;
+      let totalBuyVolAcc = 0;
+      let totalNetCashAcc = 0;
+      let totalNetQtyAcc = 0;
+
+      const accumulators = [];
+      const distributors = [];
+
+      for (const r of rows) {
+        totalVol += (r.buyVol + r.sellVol);
+        if (r.netQty > 0) {
+          accumulators.push({
+            broker: String(r.broker_id),
+            netQty: r.netQty,
+            buyVol: r.buyVol,
+            sellVol: r.sellVol,
+            avgBuyRate: r.avgBuyRate || 0,
+            avgSellRate: r.avgSellRate || 0,
+            netAmt: Math.round(r.netAmt || 0)
+          });
+        } else if (r.netQty < 0) {
+          distributors.push({
+            broker: String(r.broker_id),
+            netQty: r.netQty,
+            buyVol: r.buyVol,
+            sellVol: r.sellVol,
+            avgBuyRate: r.avgBuyRate || 0,
+            avgSellRate: r.avgSellRate || 0,
+            netAmt: Math.round(r.netAmt || 0)
+          });
+        }
+      }
+
+      accumulators.sort((a, b) => b.netQty - a.netQty);
+      distributors.sort((a, b) => a.netQty - b.netQty);
+
+      const topAcc = accumulators.slice(0, 4);
+      const topDist = distributors.slice(0, 4);
+
+      for (const a of topAcc) {
+        totalBuyAmtAcc += (a.buyVol * a.avgBuyRate);
+        totalBuyVolAcc += a.buyVol;
+        totalNetCashAcc += a.netAmt;
+        totalNetQtyAcc += a.netQty;
+      }
+
+      const institutionalCostBasis = totalBuyVolAcc > 0 ? +(totalBuyAmtAcc / totalBuyVolAcc).toFixed(1) : 0;
+      const netCashBreakeven = totalNetQtyAcc > 0 ? +(totalNetCashAcc / totalNetQtyAcc).toFixed(1) : institutionalCostBasis;
+
+      const top3BuyVol = accumulators.slice(0, 3).reduce((sum, a) => sum + a.buyVol, 0);
+      const top3SellVol = distributors.slice(0, 3).reduce((sum, d) => sum + d.sellVol, 0);
+      const totalHalfVol = Math.max(1, totalVol / 2);
+      const bcr3Cumulative = +(Math.min(100, (top3BuyVol / totalHalfVol) * 100)).toFixed(1);
+      const scr3Cumulative = +(Math.min(100, (top3SellVol / totalHalfVol) * 100)).toFixed(1);
+      const smartMoneyNetFlowPct = +(bcr3Cumulative - scr3Cumulative).toFixed(1);
+
+      ledgerMap[sym] = {
+        symbol: sym,
+        totalVolume: Math.round(totalVol / 2),
+        bcr3Cumulative,
+        scr3Cumulative,
+        smartMoneyNetFlowPct,
+        institutionalCostBasis,
+        netCashBreakeven,
+        topAccumulators: topAcc.map(a => ({
+          broker: a.broker,
+          netQty: a.netQty,
+          buyVol: a.buyVol,
+          sellVol: a.sellVol,
+          avgBuyRate: a.avgBuyRate
+        })),
+        topDistributors: topDist.map(d => ({
+          broker: d.broker,
+          netQty: d.netQty,
+          buyVol: d.buyVol,
+          sellVol: d.sellVol,
+          avgSellRate: d.avgSellRate
+        }))
+      };
+    }
+
+    const outPath = path.resolve(process.cwd(), 'src', 'data', 'nepse_cumulative_broker_ledger.json');
+    try {
+      fs.writeFileSync(outPath, JSON.stringify(ledgerMap, null, 2), 'utf8');
+      console.log(`[dailyFloorsheetCollector] Synced cumulative broker ledger (${Object.keys(ledgerMap).length} symbols) to ${outPath}`);
+    } catch (writeErr) {
+      console.warn(`[dailyFloorsheetCollector] Failed to write cumulative broker ledger file:`, writeErr.message);
+    }
+    return ledgerMap;
+  } catch (err) {
+    console.error(`[dailyFloorsheetCollector] exportCumulativeBrokerLedger error:`, err.message);
+    return null;
+  }
+}
+
+/**
  * Ingest contracts into SQLite ledger tables:
  * - floorsheet_contracts
  * - daily_broker_ledger
@@ -196,6 +325,14 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
     }
 
     console.log(`[dailyFloorsheetCollector] Ingested ${totalInserted} contracts into drabyashree_ledger.db for ${cleanDate}.`);
+
+    // Automatically recalculate and sync cumulative broker ledger JSON for frontend / offline APK
+    try {
+      exportCumulativeBrokerLedger(db);
+    } catch (exportErr) {
+      console.warn('[dailyFloorsheetCollector] Auto-export cumulative ledger warning:', exportErr.message);
+    }
+
     return totalInserted;
   } catch (err) {
     console.error(`[dailyFloorsheetCollector] Ingestion error for ${cleanDate}:`, err.message);

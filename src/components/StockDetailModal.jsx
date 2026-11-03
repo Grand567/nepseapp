@@ -3427,6 +3427,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           // ── INSTITUTIONAL OPERATOR FLOOR & SAFE ENTRY RADAR DATA ──
           const cumLedger = realBrokerAnalysis?.cumulative || getCumulativeBrokerData(d.symbol);
           const operatorFloor = cumLedger?.institutionalCostBasis || Number(d.institutionalCostBasis || 0);
+          const netCashBreakeven = Number(cumLedger?.netCashBreakeven || operatorFloor);
           const operatorPremiumPct = operatorFloor > 0 ? (((Number(d.ltp || 0) - operatorFloor) / operatorFloor) * 100) : 0;
           const overviewAtr = (d.atr && Number(d.atr) > 0) ? Number(d.atr) : (Math.max(2, (Number(d.ltp) || 100) * 0.035));
           const horizonTargets = calculateMultiHorizonTargets(
@@ -3717,12 +3718,15 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
 
                   {/* Operator Floor */}
                   <div>
-                    <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Operator Floor</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Operator Floor (Buy VWAP)</div>
                     <div style={{ fontSize: 16, fontWeight: 900, color: '#38bdf8', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                       {operatorFloor > 0 ? `Rs. ${fmt(operatorFloor)}` : 'Computing...'}
                     </div>
                     <div style={{ fontSize: 10.5, color: operatorPremiumPct > 10 ? '#f59e0b' : '#38bdf8', fontWeight: 600 }}>
                       {operatorFloor > 0 ? `${operatorPremiumPct >= 0 ? '+' : ''}${operatorPremiumPct.toFixed(1)}% vs cost` : 'Multi-session VWAP'}
+                      {netCashBreakeven > 0 && Math.abs(netCashBreakeven - operatorFloor) >= 1 && (
+                        <span style={{ color: '#94a3b8', marginLeft: 4 }}>• Net: Rs. {fmt(netCashBreakeven)}</span>
+                      )}
                     </div>
                   </div>
 

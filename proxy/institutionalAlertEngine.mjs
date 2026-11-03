@@ -730,7 +730,8 @@ export function evaluateVetoFilters({
   sector = '',
   fundamentals = null,
   daysToLockInExpiry = null,
-  lockinType = 'promoter'
+  lockinType = 'promoter',
+  institutionalCostBasis = null
 }) {
   const currentLtp = Number(ltp || 0);
   const prevClose = Number(previousClose || (currentLtp > 0 ? currentLtp : 0));
@@ -827,6 +828,16 @@ export function evaluateVetoFilters({
     }
   }
 
+  // HARD VETO 8: Operator Cost Basis Overextension (> 12% above Institutional Cost Floor)
+  const costFloor = Number(institutionalCostBasis || 0);
+  if (costFloor > 0 && currentLtp >= costFloor * 1.12) {
+    const premiumPct = +(((currentLtp - costFloor) / costFloor) * 100).toFixed(1);
+    vetoTriggers.push({
+      code: 'VETO_OPERATOR_OVEREXTENSION',
+      reason: `Operator Trap Guard: LTP (Rs. ${currentLtp}) is ${premiumPct}% above Institutional Cost Floor (Rs. ${costFloor}). Dominant accumulators have massive profit margin; high risk of distribution into retail breakouts.`
+    });
+  }
+
   const isVetoed = vetoTriggers.length > 0;
 
   return {
@@ -891,7 +902,8 @@ export function evaluateInstitutionalAlert({
   marketTurnoverArba = 5.5,
   fundamentals = null,
   daysToLockInExpiry = null,
-  lockinType = 'promoter'
+  lockinType = 'promoter',
+  institutionalCostBasis = null
 }) {
   const sym = String(symbol || 'STOCK').toUpperCase().trim();
   const currentPrice = Number(ltp || 0);
@@ -977,7 +989,8 @@ export function evaluateInstitutionalAlert({
     sector,
     fundamentals,
     daysToLockInExpiry,
-    lockinType
+    lockinType,
+    institutionalCostBasis
   });
 
   // 7. Calculate Friction-Adjusted RRR & Dynamic Position Sizing (Layer 5)
