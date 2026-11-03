@@ -1405,7 +1405,7 @@ async function handleTelegramCommand(text, {
       `• <b>Market Session:</b> ${marketStatus.statusLabel || 'Closed'}`,
       `• <b>Schedule:</b> ${marketStatus.message || 'Market closed'}`,
       `──────────────────────────`,
-      `<i>Verified real exchange session data. Statutory weekend: Fri & Sat closed.</i>`
+      `<i>Verified real exchange session data. Trading: Mon–Fri (Sat & Sun weekend closed).</i>`
     ].join('\n');
     return await sendTelegramMessage(indexMsg);
   }

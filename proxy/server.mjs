@@ -3712,7 +3712,7 @@ export async function getMarketTradingDates() {
     ['2026-11-03', '2026-11-02', '2026-10-30', '2026-10-29', '2026-10-28', '2026-10-27', '2026-10-26'].forEach(d => d <= todayIso && datesSet.add(d));
   } catch (_) {}
 
-  // Strict Calendar & Trading Day Filter: Never future, never weekends (Fri/Sat), never public holidays
+  // Strict Calendar & Trading Day Filter: Never future, never weekends (Sat/Sun), never public holidays
   const sorted = Array.from(datesSet)
     .filter(d => {
       if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;

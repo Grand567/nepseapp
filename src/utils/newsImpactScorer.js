@@ -464,8 +464,8 @@ export function sortNewsByNepseImpact(newsList = []) {
 
 /**
  * Calculates elapsed NEPSE trading hours between two timestamps.
- * Continuous trading: Sunday - Thursday, 11:00 AM - 3:00 PM NPT (4 hours/day).
- * Friday, Saturday, and off-market hours are frozen from decay so weekend
+ * Continuous trading: Monday - Friday, 11:00 AM - 3:00 PM NPT (4 hours/day).
+ * Saturday, Sunday, and off-market hours are frozen from decay so weekend
  * dividend/AGM announcements retain full strength until market opens!
  */
 export function calculateTradingSessionHoursElapsed(fromTimestampMs, toTimestampMs = Date.now()) {
@@ -485,8 +485,8 @@ export function calculateTradingSessionHoursElapsed(fromTimestampMs, toTimestamp
     const day = nptDate.getUTCDay(); // 0: Sun, 1: Mon, 2: Tue, 3: Wed, 4: Thu, 5: Fri, 6: Sat
     const mins = nptDate.getUTCHours() * 60 + nptDate.getUTCMinutes();
 
-    // Active trading session: Sunday (0) to Thursday (4), 11:00 AM (660m) to 3:00 PM (900m)
-    if (day >= 0 && day <= 4 && mins >= 660 && mins < 900) {
+    // Active trading session: Monday (1) to Friday (5), 11:00 AM (660m) to 3:00 PM (900m)
+    if (day >= 1 && day <= 5 && mins >= 660 && mins < 900) {
       tradingMinutes += 15;
     }
   }
