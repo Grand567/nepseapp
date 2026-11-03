@@ -3444,7 +3444,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           const overviewTarget1 = horizonTargets?.target1;
           const topAccumulators = cumLedger?.topAccumulators || [];
           const leadBrokerStr = topAccumulators.length > 0
-            ? topAccumulators.slice(0, 2).map(a => `Broker #${a.broker} (${(a.netQty / 1000).toFixed(0)}k)`).join(', ')
+            ? topAccumulators.slice(0, 2).map(a => {
+                const ret = a.buyVol > 0 ? Math.round((a.netQty / a.buyVol) * 100) : 100;
+                return `Broker #${a.broker} (${(a.netQty / 1000).toFixed(0)}k • ${ret}% kept)`;
+              }).join(', ')
             : 'Multi-Session Accumulators';
 
           return (
@@ -3772,7 +3775,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', marginTop: 2 }}>
                       {isOverextended
                         ? `Pullback Required: Wait for dip between Rs. ${overviewEntryZone?.min || (d.ltp * 0.92).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 0.96).toFixed(1)}. Do NOT chase at Rs. ${fmt(d.ltp)}!`
-                        : `Accumulate between Rs. ${overviewEntryZone?.min || (d.ltp * 0.98).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 1.01).toFixed(1)} (Protected by Operator Floor)`
+                        : `Accumulate between Rs. ${overviewEntryZone?.min || (d.ltp * 0.98).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 1.01).toFixed(1)} (Entry Window: 1:15–2:30 PM • Protected by Operator Floor)`
                       }
                     </div>
                   </div>

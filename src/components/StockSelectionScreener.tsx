@@ -110,6 +110,8 @@ export function StockSelectionScreener({
         marketSignals: { compositeScore: 60 }
       });
 
+      const isSwingLeader = isAtOperatorFloor && !['Commercial Banks', 'Mutual Fund', 'Promoter Share'].includes(stock.sector || '') && (evalResult.compositeScore >= 60 || Boolean(leadAccumulator));
+
       return {
         ...stock,
         ltp,
@@ -122,6 +124,7 @@ export function StockSelectionScreener({
         isAtOperatorFloor,
         isOverextended,
         isUnderwater,
+        isSwingLeader,
         leadAccumulator
       };
     });
@@ -144,6 +147,7 @@ export function StockSelectionScreener({
       if (selectedSector !== 'ALL' && item.sector !== selectedSector) return false;
       if (res.compositeScore < minScore) return false;
       if (onlyPassedHardFilters && !res.hardFilters.passedAll) return false;
+      if (floorFilter === 'SWING_LEADERS' && !item.isSwingLeader) return false;
       if (floorFilter === 'AT_FLOOR' && !item.isAtOperatorFloor) return false;
       if (floorFilter === 'EXTENDED' && !item.isOverextended) return false;
       if (floorFilter === 'UNDERWATER' && !item.isUnderwater) return false;
@@ -174,6 +178,7 @@ export function StockSelectionScreener({
   const buyCount = scoredStocks.filter(s => s.evalResult.action === 'BUY').length;
   const watchCount = scoredStocks.filter(s => s.evalResult.action === 'WATCH').length;
   const avoidCount = scoredStocks.filter(s => s.evalResult.action === 'AVOID').length;
+  const swingLeadersCount = scoredStocks.filter(s => s.isSwingLeader).length;
   const atFloorCount = scoredStocks.filter(s => s.isAtOperatorFloor).length;
   const extendedCount = scoredStocks.filter(s => s.isOverextended).length;
   const underwaterCount = scoredStocks.filter(s => s.isUnderwater).length;
@@ -267,6 +272,16 @@ export function StockSelectionScreener({
             }`}
           >
             All Distances
+          </button>
+          <button
+            onClick={() => setFloorFilter('SWING_LEADERS')}
+            className={`rounded-lg px-2.5 py-1 transition-all ${
+              floorFilter === 'SWING_LEADERS'
+                ? 'bg-cyan-600 text-white font-bold shadow-md shadow-cyan-900/30'
+                : 'bg-cyan-950/30 text-cyan-400 border border-cyan-900/40 hover:bg-cyan-900/30'
+            }`}
+          >
+            ⭐ 5-Filter Swing Leaders ({swingLeadersCount})
           </button>
           <button
             onClick={() => setFloorFilter('AT_FLOOR')}
