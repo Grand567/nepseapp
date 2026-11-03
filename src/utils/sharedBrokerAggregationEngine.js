@@ -928,7 +928,6 @@ export function aggregateBrokerMicrostructure(params = {}) {
         : "Distribution Danger (Whale Offloading)";
       smartMoneyBias = "Operator Offloading";
       adSignal = "Distribution";
-      smartMoneyScore = Math.min(25, smartMoneyScore);
     } else if (isDayTradingChurn) {
       phase = "INTRADAY_CHURN";
       phaseLabel = "Intraday Churn (Day Trading / Low Retention)";
