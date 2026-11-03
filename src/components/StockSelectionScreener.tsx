@@ -8,6 +8,7 @@ import { StatCard, InfoBanner, Spinner, StockSearchSelect } from './ui';
 import { evaluateStockSelection } from '../utils/signals/stockScoringEngine';
 import { SCORING_CONFIG } from '../utils/signals/scoringConfig';
 import { fetchFromBackend, loadNepseData } from '../utils/liveData';
+import { getCumulativeBrokerData } from '../utils/historyCache.js';
 
 export function StockSelectionScreener({
   stocks: propStocks = [],
@@ -24,6 +25,7 @@ export function StockSelectionScreener({
 
   // Filter States
   const [actionFilter, setActionFilter] = useState<'ALL' | 'BUY' | 'WATCH' | 'AVOID'>('ALL');
+  const [floorFilter, setFloorFilter] = useState<'ALL' | 'AT_FLOOR' | 'EXTENDED' | 'UNDERWATER'>('ALL');
   const [selectedSector, setSelectedSector] = useState<string>('ALL');
   const [minScore, setMinScore] = useState<number>(50);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -69,6 +71,14 @@ export function StockSelectionScreener({
       const volume = Number(stock.volume || 0);
       const turnover = Number(stock.turnover || (ltp * volume));
 
+      const cum = getCumulativeBrokerData(stock.symbol);
+      const operatorFloor = Number(cum?.institutionalCostBasis || stock.institutionalCostBasis || 0);
+      const operatorPremiumPct = (operatorFloor > 0 && ltp > 0) ? +(((ltp - operatorFloor) / operatorFloor) * 100).toFixed(1) : null;
+      const isAtOperatorFloor = operatorPremiumPct !== null && operatorPremiumPct >= -3.0 && operatorPremiumPct <= 4.5;
+      const isOverextended = operatorPremiumPct !== null && operatorPremiumPct > 12.0;
+      const isUnderwater = operatorPremiumPct !== null && operatorPremiumPct < -3.0;
+      const leadAccumulator = cum?.topAccumulators?.[0]?.broker ? `Broker #${cum.topAccumulators[0].broker}` : null;
+
       const bcr3Buy = Number(stock.bcr3Buy ?? stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? stock.realBrokerAnalysis?.bcr3BuyPct ?? 0);
       const bcr5Buy = Number(stock.bcr5Buy ?? stock.bcr5BuyPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? stock.realBrokerAnalysis?.bcr5BuyPct ?? 0);
       const nbar = Number(stock.nbar ?? stock.brokerAnalysis?.nbar ?? 1.0);
@@ -106,7 +116,13 @@ export function StockSelectionScreener({
         pChange,
         volume,
         turnover,
-        evalResult
+        evalResult,
+        operatorFloor,
+        operatorPremiumPct,
+        isAtOperatorFloor,
+        isOverextended,
+        isUnderwater,
+        leadAccumulator
       };
     });
   }, [stocks]);
@@ -128,6 +144,9 @@ export function StockSelectionScreener({
       if (selectedSector !== 'ALL' && item.sector !== selectedSector) return false;
       if (res.compositeScore < minScore) return false;
       if (onlyPassedHardFilters && !res.hardFilters.passedAll) return false;
+      if (floorFilter === 'AT_FLOOR' && !item.isAtOperatorFloor) return false;
+      if (floorFilter === 'EXTENDED' && !item.isOverextended) return false;
+      if (floorFilter === 'UNDERWATER' && !item.isUnderwater) return false;
       if (searchQuery) {
         const q = searchQuery.toUpperCase();
         if (!item.symbol?.toUpperCase().includes(q) && !item.name?.toUpperCase().includes(q)) return false;
@@ -150,11 +169,14 @@ export function StockSelectionScreener({
       }
       return sortAsc ? valA - valB : valB - valA;
     });
-  }, [scoredStocks, actionFilter, selectedSector, minScore, onlyPassedHardFilters, searchQuery, sortField, sortAsc]);
+  }, [scoredStocks, actionFilter, floorFilter, selectedSector, minScore, onlyPassedHardFilters, searchQuery, sortField, sortAsc]);
 
   const buyCount = scoredStocks.filter(s => s.evalResult.action === 'BUY').length;
   const watchCount = scoredStocks.filter(s => s.evalResult.action === 'WATCH').length;
   const avoidCount = scoredStocks.filter(s => s.evalResult.action === 'AVOID').length;
+  const atFloorCount = scoredStocks.filter(s => s.isAtOperatorFloor).length;
+  const extendedCount = scoredStocks.filter(s => s.isOverextended).length;
+  const underwaterCount = scoredStocks.filter(s => s.isUnderwater).length;
 
   return (
     <div className="space-y-6 pb-12">
@@ -325,6 +347,7 @@ export function StockSelectionScreener({
                     Symbol {sortField === 'symbol' && (sortAsc ? '▲' : '▼')}
                   </th>
                   <th className="p-3">Decision</th>
+                  <th className="p-3">Operator Floor</th>
                   <th className="p-3 cursor-pointer" onClick={() => { setSortField('score'); setSortAsc(!sortAsc); }}>
                     Composite Score {sortField === 'score' && (sortAsc ? '▲' : '▼')}
                   </th>

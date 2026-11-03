@@ -1,3 +1,4 @@
+import { getCumulativeBrokerData } from './historyCache.js';
 /**
  * src/utils/sharedBrokerAggregationEngine.js
  *
@@ -253,6 +254,143 @@ export function evaluateOrderFlowVeto(brokerData = {}, stockSummary = {}) {
 /**
  * Core Shared Aggregator
  */
+/**
+ * Evaluates whether dominant multi-session institutional accumulators are offloading
+ * their inventory into retail liquidity.
+ *
+ * Checks:
+ * 1. Premium over multi-session institutional cost basis (>= 15% to 20%)
+ * 2. Lead accumulator brokers appearing on the active selling side today with negative net retention
+ * 3. Daily distribution climax footprints (upthrust candle with high volume rejection)
+ *
+ * @param {string} symbol - Stock ticker symbol
+ * @param {Object} brokerAnalysis - Current broker analysis (sortedSellers, brokers, scr3, etc.)
+ * @param {Object} stockSummary - Price summary (ltp, high, low, open, close, volume)
+ * @returns {Object} Warning status, severity, selling brokers, and actionable guidance
+ */
+export function evaluateOperatorOffloadWarning(symbol, brokerAnalysis = {}, stockSummary = {}) {
+  const sym = String(symbol || stockSummary?.symbol || '').toUpperCase().trim();
+  if (!sym) {
+    return { isOffloading: false, severity: 'NONE', reason: null };
+  }
+
+  const cum = getCumulativeBrokerData(sym);
+  const operatorFloor = cum?.institutionalCostBasis || Number(stockSummary?.institutionalCostBasis || 0);
+  const ltp = Number(stockSummary?.ltp || stockSummary?.close_price || stockSummary?.closePrice || 0);
+
+  if (operatorFloor <= 0 || ltp <= 0) {
+    return { isOffloading: false, severity: 'NONE', reason: null };
+  }
+
+  const profitMarginPct = ((ltp - operatorFloor) / operatorFloor) * 100;
+  const topCumAccumulators = (cum?.topAccumulators || []).map(a => String(a.broker));
+
+  // If price is near or below cost, operators are defending/accumulating, NOT offloading
+  if (profitMarginPct < 8.0) {
+    return {
+      isOffloading: false,
+      severity: 'NONE',
+      profitMarginPct: +profitMarginPct.toFixed(1),
+      operatorFloor: +operatorFloor.toFixed(1),
+      status: 'SAFE_HOLD',
+      message: `Price is near operator cost basis (Rs. ${operatorFloor.toFixed(1)}). Dominant brokers have strong incentive to defend this floor.`
+    };
+  }
+
+  // Check today's active selling side
+  const activeSellers = Array.isArray(brokerAnalysis?.topSellers)
+    ? brokerAnalysis.topSellers
+    : (Array.isArray(brokerAnalysis?.brokers) ? brokerAnalysis.brokers.filter(b => (b.sellVolume || b.sell_vol || b.sellVol || 0) > 0) : []);
+
+  const offloadingBrokers = [];
+  for (const s of activeSellers) {
+    const bId = String(s.brokerId || s.broker || s.broker_id || '');
+    if (topCumAccumulators.includes(bId)) {
+      const sellVol = Number(s.sellVolume || s.sell_vol || s.sellVol || s.sellQty || 0);
+      const buyVol = Number(s.buyVolume || s.buy_vol || s.buyVol || s.buyQty || 0);
+      const netQty = buyVol - sellVol;
+      if (netQty < 0 && sellVol >= 1000) {
+        offloadingBrokers.push({
+          brokerId: bId,
+          brokerName: getBrokerName(bId),
+          sellVol,
+          buyVol,
+          netQty
+        });
+      }
+    }
+  }
+
+  // Price action distribution check: upper wick >= 35% on daily candle
+  const high = Number(stockSummary?.high || stockSummary?.high_price || ltp);
+  const low = Number(stockSummary?.low || stockSummary?.low_price || ltp);
+  const open = Number(stockSummary?.open || stockSummary?.open_price || ltp);
+  const candleRange = Math.max(0.1, high - low);
+  const upperWick = high - Math.max(open, ltp);
+  const upperWickRatio = upperWick / candleRange;
+  const hasUpthrustRejection = upperWickRatio >= 0.35 && candleRange >= (ltp * 0.02);
+
+  // Severity decision
+  if (profitMarginPct >= 18.0 && offloadingBrokers.length > 0) {
+    const leadSeller = offloadingBrokers[0];
+    return {
+      isOffloading: true,
+      severity: 'CRITICAL_OFFLOAD',
+      profitMarginPct: +profitMarginPct.toFixed(1),
+      operatorFloor: +operatorFloor.toFixed(1),
+      offloadingBrokers,
+      suggestedAction: 'IMMEDIATE_PROFIT_HARVEST',
+      suggestedTrailingStop: +(Math.max(operatorFloor * 1.05, ltp * 0.94)).toFixed(1),
+      title: '🚨 CRITICAL OPERATOR OFFLOAD DETECTED',
+      reason: `Key accumulator Broker #${leadSeller.brokerId} is net selling (${Math.abs(leadSeller.netQty).toLocaleString()} units) at +${profitMarginPct.toFixed(1)}% profit over cost basis (Rs. ${operatorFloor.toFixed(1)}).`,
+      guidanceNepali: `सावधान! प्रमुख अपरेटर (ब्रोकर #${leadSeller.brokerId}) +${profitMarginPct.toFixed(1)}% नाफामा माल बेच्दैछ। तत्काल नाफा सुरक्षित गर्नुहोस् वा स्टप-लस बढाउनुहोस्।`,
+      guidanceEnglish: `Secure Target 1 or lock in profits immediately. Dominant brokers are offloading inventory into retail liquidity.`
+    };
+  }
+
+  if (profitMarginPct >= 14.0 && (hasUpthrustRejection || Number(brokerAnalysis?.scr3SellPct || 0) >= 45)) {
+    return {
+      isOffloading: true,
+      severity: 'PROFIT_TAKING_CLIMAX',
+      profitMarginPct: +profitMarginPct.toFixed(1),
+      operatorFloor: +operatorFloor.toFixed(1),
+      offloadingBrokers,
+      suggestedAction: 'TIGHTEN_TRAILING_STOP',
+      suggestedTrailingStop: +(Math.max(operatorFloor * 1.05, ltp * 0.95)).toFixed(1),
+      title: '⚠️ OPERATOR PROFIT-TAKING CLIMAX',
+      reason: `Stock is extended +${profitMarginPct.toFixed(1)}% above operator floor with high-volume upper wick rejection (${(upperWickRatio * 100).toFixed(0)}% wick).`,
+      guidanceNepali: `चेतावनी! +${profitMarginPct.toFixed(1)}% नाफामा बिक्री चाप (माथिल्लो विक ${(upperWickRatio * 100).toFixed(0)}%) देखिएको छ। ट्रेलिङ स्टप कडा गर्नुहोस्।`,
+      guidanceEnglish: `Tighten your trailing stop to protect gains. Supply exhaustion indicates institutional scale-out.`
+    };
+  }
+
+  if (profitMarginPct >= 20.0) {
+    return {
+      isOffloading: false,
+      severity: 'EXTENDED_PROFIT_WATCH',
+      profitMarginPct: +profitMarginPct.toFixed(1),
+      operatorFloor: +operatorFloor.toFixed(1),
+      offloadingBrokers: [],
+      suggestedAction: 'MONITOR_CLOSELY',
+      suggestedTrailingStop: +(Math.max(operatorFloor * 1.08, ltp * 0.93)).toFixed(1),
+      title: '👀 EXTENDED OPERATOR PROFIT ZONE',
+      reason: `Operators are sitting on +${profitMarginPct.toFixed(1)}% gain. Watch for sudden block selling.`,
+      guidanceNepali: `अपरेटरहरू +${profitMarginPct.toFixed(1)}% नाफामा छन्। ठूला बिक्री अर्डर आएमा तुरुन्त बाहिरिनुहोस्।`,
+      guidanceEnglish: `Operators hold deep profits. Ride the trend but do not add new money.`
+    };
+  }
+
+  return {
+    isOffloading: false,
+    severity: 'NONE',
+    profitMarginPct: +profitMarginPct.toFixed(1),
+    operatorFloor: +operatorFloor.toFixed(1),
+    offloadingBrokers: [],
+    status: 'NORMAL_HOLD',
+    message: 'No institutional offloading detected.'
+  };
+}
+
 export function aggregateBrokerMicrostructure(params = {}) {
   const normSym = String(params.symbol || params.targetSymbol || '').toUpperCase().trim();
   const windowData = Array.isArray(params.windowData) ? params.windowData : (Array.isArray(params.dailyHistory) ? params.dailyHistory : []);
@@ -777,6 +915,12 @@ export function aggregateBrokerMicrostructure(params = {}) {
       smartMoneyNetFlowPct: bcr3NetPct - scr3NetPct
     }, stockSummary);
 
+    const operatorOffloadWarning = evaluateOperatorOffloadWarning(stockSummary?.symbol, {
+      topSellers: sortedSellers,
+      brokers: allBrokers,
+      scr3SellPct: scr3GrossSellPct
+    }, stockSummary);
+
     if (orderFlowVeto.isVetoed) {
       phase = priceChangePct >= 0 ? "BULL_TRAP" : "DISTRIBUTION_DANGER";
       phaseLabel = priceChangePct >= 0
@@ -939,6 +1083,8 @@ export function aggregateBrokerMicrostructure(params = {}) {
     smartMoneyScore,
     orderFlowVeto,
     isVetoed: Boolean(orderFlowVeto?.isVetoed),
+    operatorOffloadWarning: typeof operatorOffloadWarning !== 'undefined' ? operatorOffloadWarning : null,
+    isOperatorOffloading: typeof operatorOffloadWarning !== 'undefined' ? Boolean(operatorOffloadWarning?.isOffloading) : false,
     vetoReason: orderFlowVeto?.reason || null,
     isMatchedCrossTrade,
     isUnderactive,

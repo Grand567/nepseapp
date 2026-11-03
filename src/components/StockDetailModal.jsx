@@ -74,7 +74,7 @@ import {
 import { calculateMultiDayDiagnostics, buildDailyHistoryFromStockData } from '../utils/microstructureEngine';
 import { calculateStockSignals } from '../utils/stockSignals';
 import { calculateStockMetrics, formatNprMoney } from '../utils/stockMetrics';
-import { evaluateOrderFlowVeto } from '../utils/sharedBrokerAggregationEngine';
+import { evaluateOrderFlowVeto, evaluateOperatorOffloadWarning } from '../utils/sharedBrokerAggregationEngine';
 import { getCumulativeBrokerData } from '../utils/historyCache';
 import StockSignalsCard from './StockSignalsCard';
 import StockFundamentalsTab from './StockFundamentalsTab';
@@ -3422,6 +3422,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           const circuitCeiling = prevClose > 0 ? +(prevClose * 1.15).toFixed(1) : null;
           const circuitFloor = prevClose > 0 ? +(prevClose * 0.85).toFixed(1) : null;
           const overviewOrderFlowVeto = evaluateOrderFlowVeto(realBrokerAnalysis || d?.realBrokerAnalysis, d);
+          const overviewOffloadWarning = realBrokerAnalysis?.operatorOffloadWarning || evaluateOperatorOffloadWarning(d.symbol, realBrokerAnalysis || d?.realBrokerAnalysis, d);
 
           // ── INSTITUTIONAL OPERATOR FLOOR & SAFE ENTRY RADAR DATA ──
           const cumLedger = realBrokerAnalysis?.cumulative || getCumulativeBrokerData(d.symbol);
@@ -3784,6 +3785,57 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   </div>
                 </div>
               </div>
+
+              {/* ── OPERATOR OFFLOAD WARNING BANNER ── */}
+              {overviewOffloadWarning?.isOffloading && (
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(185, 28, 28, 0.35))',
+                  border: '1.5px solid rgba(239, 68, 68, 0.85)',
+                  borderRadius: 16,
+                  padding: '14px 18px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                  boxShadow: '0 4px 20px rgba(239, 68, 68, 0.3)'
+                }}>
+                  <AlertTriangle style={{ width: 24, height: 24, color: '#f87171', flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{
+                        background: '#ef4444',
+                        color: '#ffffff',
+                        fontSize: 10.5,
+                        fontWeight: 900,
+                        padding: '2px 7px',
+                        borderRadius: 5,
+                        letterSpacing: '0.04em',
+                        textTransform: 'uppercase'
+                      }}>
+                        OPERATOR OFFLOAD ALERT
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 900, color: '#fecaca', letterSpacing: '0.01em' }}>
+                        {overviewOffloadWarning.title}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: '#f1f5f9', marginTop: 5, lineHeight: 1.5 }}>
+                      <strong style={{ color: '#fca5a5' }}>{overviewOffloadWarning.reason}</strong>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>
+                      Nepali Guidance: <em>{overviewOffloadWarning.guidanceNepali}</em>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11.5, background: 'rgba(239, 68, 68, 0.2)', padding: '3px 8px', borderRadius: 6, color: '#fca5a5', fontWeight: 700 }}>
+                        Action: {overviewOffloadWarning.suggestedAction === 'IMMEDIATE_PROFIT_HARVEST' ? 'Harvest Profits / Sell Target 1' : 'Tighten Trailing Stop'}
+                      </span>
+                      {overviewOffloadWarning.suggestedTrailingStop > 0 && (
+                        <span style={{ fontSize: 11.5, background: 'rgba(255, 255, 255, 0.1)', padding: '3px 8px', borderRadius: 6, color: '#ffffff', fontWeight: 700 }}>
+                          Trailing Stop Floor: Rs. {overviewOffloadWarning.suggestedTrailingStop}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ── ORDER FLOW VETO ALERT BANNER ── */}
               {overviewOrderFlowVeto?.isVetoed && (
