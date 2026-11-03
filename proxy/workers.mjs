@@ -585,26 +585,18 @@ export function startWorkers() {
         if (nptMins >= 615 && nptMins < 630 && lastPreMarketDispatchedDate !== status.targetSessionDate) {
           runPreMarketMorningScan();
         }
-        // Phase 2: 10:45 AM - 10:55 AM Quantitative Morning Selection Digest
+        // Phase 2: 10:45 AM - 10:55 AM Verified Single Prime Pick (Pruned noise - sends #1 Pick passing 5-Filters)
         if (nptMins >= 645 && nptMins < 655 && lastMorningDigestDispatchedDate !== status.targetSessionDate) {
-          runMorningStockSelectionDigestWorker();
+          lastMorningDigestDispatchedDate = status.targetSessionDate;
+          run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(err => {
+            console.warn('[PremarketWorker] Morning swing dispatch notice:', err.message);
+          });
         }
-        // Phase 3: 10:50 AM - 11:00 AM Pre-Open Order Book Gate
+        // Phase 3: 10:50 AM - 11:00 AM Pre-Open Order Book Gate Check (Gap Risk Veto)
         if (nptMins >= 650 && nptMins < 660 && lastPreOpenDispatchedDate !== status.targetSessionDate) {
           runPreOpenGateScan();
         }
-        // Phase 4: 11:00 AM - 11:05 AM Market Open Bell & Live Order Flow Scanner Ignition
-        if (nptMins >= 660 && nptMins < 665 && lastMarketOpenDispatchedDate !== status.targetSessionDate) {
-          lastMarketOpenDispatchedDate = status.targetSessionDate;
-          sendTelegramMessage([
-            `🔔 <b>NEPSE MARKET OPEN (11:00 AM NPT)</b>`,
-            `───────────────────────────────`,
-            `⚡ Live Intraday Smart Alert Scanner is now ACTIVE.`,
-            `📡 <b>Scope:</b> Real-time institutional accumulation & breakout radar`,
-            `🛡️ <b>Anti-Trap Guard:</b> Hard Veto 8 active (>12% operator premium vetoed)`,
-            `🎯 Verified Phase C/D swing entries will dispatch here automatically as confirmed.`
-          ].join('\n'), 'HTML').catch(() => {});
-        }
+        // Phase 4: 11:00 AM Market Open Bell suppressed to eliminate notification clutter
       }
     } catch (schedErr) {
       console.warn('[PremarketWorker] Schedule check notice:', schedErr.message);

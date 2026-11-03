@@ -225,6 +225,14 @@ export function broadcastAlert(alertPayload) {
         console.warn('[SmartAlertEngine] Telegram exit alert dispatch warning:', err.message);
       });
     } else if (isProAlert) {
+      // Golden Entry Window: Suppress entry buy recommendations during 11:00-11:45 AM morning wash period
+      const status = getDetailedMarketStatus();
+      const nptMins = status.nptTotalMinutes;
+      const isMorningWashPeriod = status.isOpen && nptMins >= 660 && nptMins < 705; // 11:00 AM - 11:45 AM NPT
+      if (isMorningWashPeriod && (alertPayload.type === 'INSTITUTIONAL_ENTRY' || alertPayload.type === 'ACCUMULATION' || alertPayload.type === 'BREAKOUT')) {
+        console.log(`[SmartAlertEngine] Suppressing morning entry alert for ${alertPayload.symbol} during 11:00-11:45 AM wash period. Golden Window opens at 11:45 AM.`);
+        return;
+      }
       sendTelegramSmartAlert(alertPayload).catch(err => {
         console.warn('[SmartAlertEngine] Telegram alert dispatch warning:', err.message);
       });

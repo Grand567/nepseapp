@@ -723,14 +723,33 @@ export async function select5StepSwingPicks() {
       const pocPrice = Number(vp?.pocPrice || brokerVwap);
       const shieldVerdict = String(shieldItem.shieldVerdict || 'SAFE_ACCUMULATION_ZONE');
 
-      // Disqualify any stock failing hard safety gates:
-      // 1) Shield warning of T+2 dump or climax risk
+      // ── 5-FILTERS-AT-THE-FLOOR VERIFICATION ──
+      // 1) Filter 1: Floor Proximity (-2.0% to +3.5% of Operator VWAP)
+      if (vwapDiffPct > 3.5 || vwapDiffPct < -2.0) continue;
+
+      // 2) Filter 2: Low-to-Mid Float & High-Velocity Swing Sector (Excludes mega banks & mutual funds)
+      const excludedSectors = ['Commercial Banks', 'Mutual Fund', 'Promoter Share'];
+      const scripSector = sig.sector || stockUniverseMap[sym]?.sector || '';
+      if (excludedSectors.includes(scripSector)) continue;
+
+      // 3) Filter 3: Lead Broker Retention Ratio >= 60% (True Institutional Hoarding vs. Wash Churn)
+      let leadRetentionPct = 75;
+      try {
+        const leadRetRow = db.prepare(
+          'SELECT SUM(buy_vol) as total_buy, SUM(sell_vol) as total_sell FROM daily_broker_ledger WHERE symbol = ? AND broker_id = ?'
+        ).get(sym, sig.lead_broker_id);
+        if (leadRetRow && leadRetRow.total_buy > 10000) {
+          leadRetentionPct = Math.round(((leadRetRow.total_buy - leadRetRow.total_sell) * 100) / leadRetRow.total_buy);
+        }
+      } catch (_) {}
+      if (leadRetentionPct < 60) continue; // Hard Veto: Reject wash churn!
+
+      // 4) Filter 4 & Technical Safety Gates:
+      // - Shield warning of T+2 dump or climax risk
       if (shieldVerdict === 'EXIT_BEFORE_T2_DUMP' || shieldVerdict === 'PROFIT_BOOKING_CLIMAX_RISK') continue;
-      // 2) Below 50-Day EMA downtrend
+      // - Above 50-Day EMA Uptrend
       if (!above50) continue;
-      // 3) Extended > +3.5% above Big Broker VWAP or < -2.5% breakdown
-      if (vwapDiffPct > 3.5 || vwapDiffPct < -2.5) continue;
-      // 4) Bearish MACD
+      // - Bearish MACD
       if (macdSignal === 'bearish') continue;
 
       const entryLow = Number(Math.min(ltp, brokerVwap).toFixed(1));
@@ -796,6 +815,7 @@ export async function select5StepSwingPicks() {
         scr3Net,
         leadBrokerId: sig.lead_broker_id,
         leadBrokerName: sig.lead_broker_name || `Broker #${sig.lead_broker_id}`,
+        leadRetentionPct,
         anomalyScore,
         avgTicket: Number(avgTicket.toFixed(1)),
         shieldVerdict,
@@ -886,39 +906,36 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding } = {})
       : '<i>No secondary runner-ups today.</i>';
 
   const html = [
-    `👑 <b>DRABYASHREE 5-STEP SWING PICK (7–15 DAYS)</b>`,
-    `⚡ <b>Zero-Look-Ahead SQLite Audit • T+2 &amp; Fee Adjusted</b>`,
+    `👑 <b>DRABYASHREE 3–5 DAY PRIME SWING PICK</b>`,
+    `⚡ <b>5-Filter Operator Floor Architecture • Zero-Trap Guard</b>`,
     `──────────────────────────`,
     `🏆 <b>#1 PRIME PICK: <code>$${topPick.symbol}</code></b> (${topPick.companyName})`,
     `📂 <b>Sector:</b> ${topPick.sector} | <b>Score:</b> <b>${topPick.totalScore}/100</b>`,
     `📅 <b>Signal Session:</b> ${topPick.signalDate} | <b>Strategy:</b> ${topPick.strategy.replace(/_/g, ' ')}`,
     ``,
-    `✅ <b>5-STEP CHECKLIST VERIFICATION:</b>`,
-    `<b>1. Trend &amp; Regime:</b> LTP <b>Rs. ${topPick.ltp}</b> &gt; 50-EMA (Rs. ${topPick.ema50}) | RSI(14): <b>${topPick.rsi14}</b> (Sweet Spot 48–66) | MACD: <b>${topPick.macdSignal.toUpperCase()}</b>`,
-    `<b>2. Smart Money Flow:</b> BCR5 Net: <b>${topPick.bcr5Net}%</b> (≥20%) vs SCR3 Net: <b>${topPick.scr3Net}%</b> (&lt;13% Exhausted)`,
-    `   • Lead Accumulator: <b>${topPick.leadBrokerName}</b> (<b>${topPick.anomalyScore}x</b> Anomaly | Avg Ticket: <b>${topPick.avgTicket} kitta</b> Inst.)`,
-    `<b>3. 13-Tab Price &amp; Volume Profile Audit:</b>`,
-    `   • Big Broker VWAP: <b>Rs. ${topPick.brokerVwap}</b> (${vwapTag})`,
-    `   • Volume Profile POC Support: <b>Rs. ${topPick.pocPrice}</b>`,
-    `   • Portfolio Shield Verdict: <b>🛡️ ${topPick.shieldVerdict.replace(/_/g, ' ')}</b>`,
+    `🛡️ <b>5 FILTERS AT THE OPERATOR FLOOR VERIFIED:</b>`,
+    `1. 🎯 <b>Floor Proximity:</b> LTP <b>Rs. ${topPick.ltp}</b> vs Floor <b>Rs. ${topPick.brokerVwap}</b> (${vwapTag})`,
+    `2. 📊 <b>Float &amp; Sector:</b> High-Beta Swing Sector (Excludes mega banks &amp; promoter shares)`,
+    `3. 🏛️ <b>Lead Smart Money:</b> <b>${topPick.leadBrokerName}</b> (Retained <b>${topPick.leadRetentionPct}%</b> of buys | True Hoarding)`,
+    `4. 📉 <b>Supply Exhaustion:</b> BCR5 Net: <b>${topPick.bcr5Net}%</b> vs SCR3 Net: <b>${topPick.scr3Net}%</b> (Sellers dry)`,
+    `5. 📈 <b>Trend &amp; Momentum:</b> LTP &gt; 50-EMA (Rs. ${topPick.ema50}) | RSI: <b>${topPick.rsi14}</b> | MACD: <b>${topPick.macdSignal.toUpperCase()}</b>`,
     ``,
-    `🎯 <b>STEP 4 &amp; 5: 10–15 DAY EXECUTION &amp; EXIT PLAN</b>`,
+    `🎯 <b>3–5 DAY EXECUTION &amp; PROFIT PLAN:</b>`,
     `• 🟢 <b>Limit Buy Zone:</b> <b>Rs. ${topPick.entryLow} – Rs. ${topPick.entryHigh}</b>`,
-    `• ⏰ <b>Best Entry Window:</b> 12:15–1:30 PM (VWAP Pullback) or 2:35–2:55 PM NPT`,
-    `• ⚠️ <b>Chase Cap (+2.5% Max):</b> Do NOT buy above <b>Rs. ${topPick.chaseCap}</b>`,
-    `• 🛡️ <b>Hard Stop-Loss (-${topPick.slPct}%):</b> <b>Rs. ${topPick.stopLoss}</b>`,
-    `• 🔒 <b>+1.2R Ratchet Floor (+3.2%):</b> Raise SL to <b>Rs. ${topPick.ratchetFloor}</b> once price hits +5.5% (100% Risk-Free after CGT &amp; fees)`,
-    `• 🎯 <b>Target 1 (4–7 Days, Sell 50%):</b> <b>Rs. ${topPick.target1}</b> (+${topPick.t1Pct}%)`,
-    `• 🚀 <b>Target 2 (10–15 Days, Sell 50%):</b> <b>Rs. ${topPick.target2}</b> (+${topPick.t2Pct}% | RRR <b>${topPick.rrr}:1</b>)`,
+    `• ⏰ <b>Golden Entry Window:</b> 1:15 PM – 2:30 PM (or 11:45 AM pullback)`,
+    `• ⚠️ <b>Chase Cap:</b> Do NOT buy above <b>Rs. ${topPick.chaseCap}</b> (+2.5% max)`,
+    `• 🛡️ <b>Hard Stop-Loss (-${topPick.slPct}%):</b> <b>Rs. ${topPick.stopLoss}</b> (Cut loss if floor breaks)`,
+    `• 💰 <b>Target 1 (Day 3 / T+2):</b> <b>Rs. ${topPick.target1}</b> (+${topPick.t1Pct}% | <b>SELL 50% &amp; Move SL to Breakeven</b>)`,
+    `• 🚀 <b>Target 2 (Day 4–5):</b> <b>Rs. ${topPick.target2}</b> (+${topPick.t2Pct}% | RRR <b>${topPick.rrr}:1</b>)`,
     ``,
-    `💼 <b>POSITION SIZING (Per Rs. 1,00,000 Capital):</b>`,
+    `💼 <b>CAPITAL RISK SIZING (Per Rs. 1,00,000 Portfolio):</b>`,
     `• Recommended Size: <b>${topPick.sharesPer1Lakh} Kitta</b> (~Rs. ${topPick.capitalOutlay.toLocaleString()})`,
-    `• Max Capital Risk at SL: <b>Rs. ${topPick.maxRiskRs.toLocaleString()}</b>`,
+    `• Max Portfolio Risk: <b>Rs. ${topPick.maxRiskRs.toLocaleString()}</b> (Capped at 1.25% max portfolio drawdown)`,
     `──────────────────────────`,
-    `🥈 <b>QUALIFIED RUNNER-UP SWING SETUPS:</b>`,
+    `🥈 <b>RUNNER-UP SWING SETUPS (PASSING FLOOR CRITERIA):</b>`,
     runnerLines,
     `──────────────────────────`,
-    `🔔 <i>Exit Guard auto-armed for <code>${topPick.symbol}</code>! Send <code>/swing</code> or <code>/pick</code> anytime for a live re-scan, or <code>/list</code> to check tracked stops.</i>`,
+    `🔔 <i>Exit Guard auto-armed for <code>${topPick.symbol}</code>! Send <code>/swing</code> or <code>/pick</code> anytime for live market scan, or <code>/list</code> to view tracked stops.</i>`,
   ].join('\n');
 
   const telegramResult = await sendTelegramMessage(html, 'HTML');
