@@ -13,7 +13,7 @@
  * 10. Quantitative Risk-Reward Ratio (RRR >= 2.0) & ATR-based Target Formulations
  */
 import { calculateRSI, calculateEMA, calculateMACD } from './indicators.js';
-import { getCachedRealPriceHistory } from './historyCache.js';
+import { getCachedRealPriceHistory, getCumulativeBrokerData } from './historyCache.js';
 
 /**
  * Dynamic resolution helpers to guarantee authentic, stock-specific metrics for all scrips
@@ -1068,19 +1068,42 @@ export function classifyActionZone(stock, macroContext = {}) {
   const hasHeavyBrokerDumping = brokerScore.adSignal === 'Distribution' && (brokerScore.adStrength >= 40 || brokerScore.adRatio <= -0.10);
   const isDeepHydroDry = hydroSeason.isHydro && hydroSeason.isDrySeason && hydroSeason.penaltyPoints <= -15;
 
+  const sym = String(stock?.symbol || '').toUpperCase().trim();
+  const cumBroker = sym ? getCumulativeBrokerData(sym) : null;
+  const instCost = cumBroker?.institutionalCostBasis || Number(stock?.institutionalCostBasis || 0);
+  const instProfitPct = (instCost > 0 && ltp > 0) ? ((ltp - instCost) / instCost) * 100 : 0;
+  const isOperatorExtended = instProfitPct > 10.0;
+
   if (effectiveMS > 0.55 && (zVol >= 1.4 || volSurge >= 1.4 || ltp >= r1 * 0.99) && !isConfirmedBearishStructure && !hasHeavyBrokerDumping && !isDeepHydroDry) {
-    zone = 'Entry Zone';
-    zoneColor = '#10B981';
-    zoneBadge = '🚀 ENTRY ZONE (BREAKOUT)';
-    zoneIcon = 'Zap';
     const emaNote = isAbove50EMA === true ? ` · Price is above 50 EMA (Rs. ${ema50.toFixed(1)}) confirming structural uptrend.` : '';
     const brokerNote = brokerScore.scoreDelta > 0 ? ` · ${brokerScore.label} (+${brokerScore.scoreDelta}pts)` : '';
-    triggerLogic = `Composite Momentum (+${effectiveMS.toFixed(2)}) & Volume Z-Score (${zVol}) >= 1.4 confirming institutional markup.${emaNote}${brokerNote}`;
-    entryTarget = `Rs. ${ltp.toFixed(1)} – Rs. ${(ltp * 1.015).toFixed(1)} (Breakout Execution)`;
-    profitTarget1 = `Rs. ${(ltp + (1.5 * atr)).toFixed(1)} (+${(((1.5 * atr) / ltp) * 100).toFixed(1)}%)`;
-    profitTarget2 = `Rs. ${(r2).toFixed(1)} (+${(((r2 - ltp) / ltp) * 100).toFixed(1)}%)`;
-    stopLoss = `Rs. ${(ltp - (1.2 * atr)).toFixed(1)} (-${(((1.2 * atr) / ltp) * 100).toFixed(1)}%)`;
-    systematicStrategy = 'Execute market/limit buy orders as upward momentum expands with volume confirmation.';
+
+    if (isOperatorExtended) {
+      zone = 'Holding Zone';
+      zoneColor = '#f59e0b';
+      zoneBadge = `⚠️ MOMENTUM EXTENDED (+${instProfitPct.toFixed(1)}% OVER OPERATOR COST)`;
+      zoneIcon = 'AlertCircle';
+      triggerLogic = `Strong momentum (+${effectiveMS.toFixed(2)}) but price is extended (+${instProfitPct.toFixed(1)}%) above institutional cost basis (Rs. ${instCost.toFixed(1)}). Chasing breakout here carries severe T+2 delivery dump risk.${emaNote}`;
+      const pullbackFloor = +(Math.max(s1, instCost * 1.02)).toFixed(1);
+      const pullbackCeil = +(Math.min(ltp * 0.96, Math.max(pullbackFloor, instCost * 1.06))).toFixed(1);
+      entryTarget = `Wait for Retest Pullback near Rs. ${pullbackFloor} – Rs. ${pullbackCeil} (Do Not Chase Peak)`;
+      profitTarget1 = `Rs. ${(ltp + (1.5 * atr)).toFixed(1)} (+${(((1.5 * atr) / ltp) * 100).toFixed(1)}%)`;
+      profitTarget2 = `Rs. ${(r2).toFixed(1)} (+${(((r2 - ltp) / ltp) * 100).toFixed(1)}%)`;
+      stopLoss = `Rs. ${(Math.max(instCost * 0.98, ltp - (1.2 * atr))).toFixed(1)} (Trailing Stop)`;
+      systematicStrategy = 'PROTECT CAPITAL: Do NOT chase breakout green candles when operators are sitting on heavy profits. Wait for a low-volume retest pullback toward operator cost basis.';
+    } else {
+      zone = 'Entry Zone';
+      zoneColor = '#10B981';
+      zoneBadge = '🚀 ENTRY ZONE (BREAKOUT)';
+      zoneIcon = 'Zap';
+      triggerLogic = `Composite Momentum (+${effectiveMS.toFixed(2)}) & Volume Z-Score (${zVol}) >= 1.4 confirming institutional markup.${emaNote}${brokerNote}`;
+      const safeEntryFloor = instCost > 0 ? Math.min(ltp, Math.max(s1, instCost * 0.99)) : Math.max(s1, ltp * 0.985);
+      entryTarget = `Rs. ${safeEntryFloor.toFixed(1)} – Rs. ${ltp.toFixed(1)} (Confirmed Retest Corridor)`;
+      profitTarget1 = `Rs. ${(ltp + (1.5 * atr)).toFixed(1)} (+${(((1.5 * atr) / ltp) * 100).toFixed(1)}%)`;
+      profitTarget2 = `Rs. ${(r2).toFixed(1)} (+${(((r2 - ltp) / ltp) * 100).toFixed(1)}%)`;
+      stopLoss = `Rs. ${(ltp - (1.2 * atr)).toFixed(1)} (-${(((1.2 * atr) / ltp) * 100).toFixed(1)}%)`;
+      systematicStrategy = 'Execute orders on low-volume retest pullbacks within the entry corridor alongside institutional accumulators.';
+    }
   }
   // 1b. COUNTER-TREND BOUNCE (Price below 50 EMA but volume/MS temporarily positive)
   // This catches the exact AHPC situation: single-day +2.96% bounce with RVOL > 1.25x
@@ -1120,9 +1143,14 @@ export function classifyActionZone(stock, macroContext = {}) {
     zoneIcon = 'Target';
     const brokerNote = brokerScore.scoreDelta > 0 ? ` · ${brokerScore.label}` : '';
     triggerLogic = `Composite Score (+${effectiveMS.toFixed(2)}) in accumulation pocket with institutional absorption (I_SmartMoney: +${factors.iSmartMoney})${brokerNote}.`;
-    const entryMin = +(Math.min(ltp * 0.99, Math.max(s1, ltp * 0.975))).toFixed(1);
-    const entryMax = +(ltp * 1.012).toFixed(1);
-    entryTarget = `Rs. ${entryMin} – Rs. ${entryMax} (Accumulation Corridor)`;
+    const entryMin = instCost > 0
+      ? +(Math.min(ltp * 0.985, Math.max(s1, instCost * 0.98))).toFixed(1)
+      : +(Math.min(ltp * 0.99, Math.max(s1, ltp * 0.975))).toFixed(1);
+    const entryMax = instCost > 0
+      ? +(Math.min(ltp, Math.max(instCost * 1.03, ltp * 0.995))).toFixed(1)
+      : +(ltp * 1.012).toFixed(1);
+    const operatorSuffix = instCost > 0 ? ` (Operator Floor: Rs. ${instCost.toFixed(1)})` : ' (Accumulation Corridor)';
+    entryTarget = `Rs. ${entryMin} – Rs. ${entryMax}${operatorSuffix}`;
     profitTarget1 = `Rs. ${(ltp + (1.5 * atr)).toFixed(1)} (+${(((1.5 * atr) / ltp) * 100).toFixed(1)}%)`;
     profitTarget2 = `Rs. ${(ltp + (3.0 * atr)).toFixed(1)} (+${(((3.0 * atr) / ltp) * 100).toFixed(1)}%)`;
     stopLoss = `Rs. ${(Math.max(1, ltp - (1.5 * atr))).toFixed(1)} (-${(((1.5 * atr) / ltp) * 100).toFixed(1)}%)`;
@@ -1810,7 +1838,7 @@ export function calculateTradeLabRankScore(stock) {
  * 20. Multi-Horizon Predictive Target & Risk Formulation
  * Computes T1 (Conservative Scalp), T2 (Institutional Swing), T3 (Cycle Expansion), and Invalidation Stop
  */
-export function calculateMultiHorizonTargets(ltp = 100, high52w = 0, low52w = 0, atr = 0, pChange = 0) {
+export function calculateMultiHorizonTargets(ltp = 100, high52w = 0, low52w = 0, atr = 0, pChange = 0, symbolOrCostBasis = null) {
   const price = Number(ltp) || 100;
   const calculatedAtr = Number(atr) > 0 ? Number(atr) : Math.max(2, price * 0.035);
   const pChg = Number(pChange) || 0;
@@ -1848,13 +1876,34 @@ export function calculateMultiHorizonTargets(ltp = 100, high52w = 0, low52w = 0,
   const rrr1 = Number((reward1 / risk).toFixed(2));
   const rrr2 = Number((reward2 / risk).toFixed(2));
 
-  // Entry Accumulation Zone
-  const entryMin = Number((price * 0.985).toFixed(1));
-  const entryMax = Number((price * 1.01).toFixed(1));
+  // Institutional Cost-Anchored Entry Zone
+  let instCostBasis = null;
+  if (typeof symbolOrCostBasis === 'number' && symbolOrCostBasis > 0) {
+    instCostBasis = symbolOrCostBasis;
+  } else if (typeof symbolOrCostBasis === 'string' && symbolOrCostBasis) {
+    const cum = getCumulativeBrokerData(symbolOrCostBasis);
+    if (cum && cum.institutionalCostBasis > 0) instCostBasis = cum.institutionalCostBasis;
+  }
+
+  let entryMin, entryMax, entryLabel, isOverextended = false;
+  if (instCostBasis && price > instCostBasis * 1.08) {
+    isOverextended = true;
+    entryMin = +(Math.max(price * 0.91, instCostBasis * 0.99)).toFixed(1);
+    entryMax = +(Math.max(price * 0.95, instCostBasis * 1.04)).toFixed(1);
+    entryLabel = `Pullback to Rs. ${entryMin} – Rs. ${entryMax} (Operator Cost: Rs. ${instCostBasis.toFixed(1)})`;
+  } else if (instCostBasis) {
+    entryMin = +(Math.min(price * 0.985, Math.max(price * 0.95, instCostBasis * 0.98))).toFixed(1);
+    entryMax = +(Math.max(instCostBasis * 1.02, Math.min(price, instCostBasis * 1.04))).toFixed(1);
+    entryLabel = `Rs. ${entryMin} – Rs. ${entryMax} (Operator Floor: Rs. ${instCostBasis.toFixed(1)})`;
+  } else {
+    entryMin = Number((price * 0.985).toFixed(1));
+    entryMax = Number((price * 1.01).toFixed(1));
+    entryLabel = `Rs. ${entryMin} – Rs. ${entryMax}`;
+  }
 
   return {
     ltp: price,
-    entryZone: { min: entryMin, max: entryMax, label: `Rs. ${entryMin} – Rs. ${entryMax}` },
+    entryZone: { min: entryMin, max: entryMax, label: entryLabel || `Rs. ${entryMin} – Rs. ${entryMax}`, isOverextended, operatorCostBasis: instCostBasis },
     target1: { price: target1, pct: t1Pct, horizon: '1–2 Weeks (Swing)', label: `Rs. ${target1} (+${t1Pct}%)` },
     target2: { price: target2, pct: t2Pct, horizon: '3–6 Weeks (Breakout)', label: `Rs. ${target2} (+${t2Pct}%)` },
     target3: { price: target3, pct: t3Pct, horizon: '2–4 Months (Macro Peak)', label: `Rs. ${target3} (+${t3Pct}%)` },

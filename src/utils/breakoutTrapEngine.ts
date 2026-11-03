@@ -10,6 +10,8 @@
  */
 
 
+import { getCumulativeBrokerData } from './historyCache.js';
+
 export interface Candle {
   date?: string;
   time?: string;
@@ -327,14 +329,25 @@ export function calculateBreakoutQuality(
   }
 
   // ── Operator Unrealized Profit Margin & Distribution Risk Guard ──
-  const operatorProfitMarginPct = Number(
+  const sym = String(stock?.symbol || '').toUpperCase().trim();
+  const cumBroker = sym ? getCumulativeBrokerData(sym) : null;
+  const operatorCostBasis = cumBroker?.institutionalCostBasis || Number(stock?.institutionalCostBasis || 0);
+
+  let operatorProfitMarginPct = Number(
     stock?.operatorProfitMarginPct ??
     stock?.brokerAnalysis?.leadAccumulator?.unrealizedProfitPct ??
     stock?.brokerAnalysis?.operatorProfitMarginPct ??
     stock?.unrealizedProfitPct ??
     0
   );
-  const isOperatorExtendedProfit = operatorProfitMarginPct > 28;
+
+  if (operatorCostBasis > 0 && price > 0) {
+    const calcProfit = ((price - operatorCostBasis) / operatorCostBasis) * 100;
+    operatorProfitMarginPct = Math.max(operatorProfitMarginPct, calcProfit);
+  }
+
+  // Under NEPSE T+2 delivery dynamics, operator profit > 10% creates high dump hazard on breakouts
+  const isOperatorExtendedProfit = operatorProfitMarginPct >= 10.0;
 
   // ── DYNAMIC CONTINUOUS SCORING FOUNDATIONS ──
   const baseTrap = Math.round(
@@ -393,7 +406,7 @@ export function calculateBreakoutQuality(
     if (isDecisive && rvol >= 1.25) {
       const isNearCircuit = pChange >= 12.5;
       const isCircuitLocked = pChange >= 14.8;
-      const isOverextended = isNearCircuit || pChange >= 8.5;
+      const isOverextended = isNearCircuit || pChange >= 8.5 || isOperatorExtendedProfit;
 
       return {
         detected: true,
@@ -607,7 +620,7 @@ export function calculateTrapProofLevels(
   };
 
   let recommendedEntry: TrapProofLevels['recommendedEntry'] = 'Conservative Retest';
-  if (breakoutEval.t2Hazard === '🚨 EXTREME_TRAP_HAZARD') {
+  if (breakoutEval.t2Hazard === '🚨 EXTREME_TRAP_HAZARD' || breakoutEval.bullTrapProbability >= 55) {
     recommendedEntry = 'Avoid / No Entry';
   } else if (breakoutEval.t2Hazard === '🟢 PRIME_RETEST_ENTRY') {
     recommendedEntry = 'Conservative Retest';

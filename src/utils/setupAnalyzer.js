@@ -52,6 +52,7 @@
 import { calculateRSI, calculateEMA } from './indicators.js';
 import { runBacktest, quantMultiFactorStrategy } from './backtest.js';
 import { calculateNetRiskRewardRatio, calculateStatutoryBreakevenPrice } from './calculations.js';
+import { getCumulativeBrokerData } from './historyCache.js';
 import {
   calculateATR,
   calculateMultiHorizonTargets,
@@ -1253,7 +1254,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const t2Risk = calculateT2LockupRisk(adjustedCandles, ltp, atr, stock);
 
   // ── Risk levels (circuit-capped) ─────────────────────────────
-  const rawLevels = calculateMultiHorizonTargets(ltp, high52w, low52w, atr, pChange);
+  const rawLevels = calculateMultiHorizonTargets(ltp, high52w, low52w, atr, pChange, stock?.symbol);
   const holdDays  = options.maxHoldDays ?? 20;
 
   const high20 = closes.length >= 20 ? Math.max(...adjustedCandles.slice(-21, -1).map((c) => {

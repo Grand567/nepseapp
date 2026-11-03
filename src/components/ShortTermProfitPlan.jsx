@@ -40,6 +40,7 @@ import {
   Percent
 } from 'lucide-react';
 import { calculateBuyDetails, calculateSellDetails, formatSouthAsian } from '../utils/calculations';
+import { getCumulativeBrokerData } from '../utils/historyCache.js';
 import {
   calculateMultiHorizonTargets,
   calculateATR,
@@ -137,7 +138,7 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   const volTier = atrPct < 2.5 ? 'Low-Beta Blue-Chip' : atrPct <= 4.2 ? 'Moderate Volatility' : 'High-Beta Momentum';
 
   // Multi horizon & Targets calculation calibrated with true dynamic ATR
-  const levels = calculateMultiHorizonTargets(ltp, stock.high52, stock.low52, dynamicAtr, pChg) || {};
+  const levels = calculateMultiHorizonTargets(ltp, stock.high52, stock.low52, dynamicAtr, pChg, stock.symbol) || {};
   const t2Guard = calculateT2CircuitTrapGuard(stock) || { isSafeToEnter: true, status: 'SAFE_ENTRY', advice: 'Safe' };
 
   // Suggested Entry, Stop Loss, Target 1
@@ -726,7 +727,8 @@ export default function ShortTermProfitPlan({
   }, [selectedSymbol]);
 
   // ── 8. Pricing & Profit Calculations ──
-  const entryPrice = customEntryPrice !== null ? Number(customEntryPrice) : Number(activeStock?.ltp || 100);
+  const defaultEntry = (activeStock?.entryMin && Number(activeStock.entryMin) > 0) ? Number(activeStock.entryMin) : Number(activeStock?.ltp || 100);
+  const entryPrice = customEntryPrice !== null ? Number(customEntryPrice) : defaultEntry;
   const stopLossPrice = customStopLoss !== null
     ? Number(customStopLoss)
     : Number(activeStock?.stopLoss || (entryPrice * 0.96).toFixed(1));
