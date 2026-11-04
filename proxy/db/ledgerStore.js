@@ -2271,43 +2271,54 @@ export function auditAntiDematDumpGuard(symbol, floorsheetTrades = []) {
       return { isTrap: false, reason: 'No dominant past accumulator holding settled Demat inventory' };
     }
 
-    // 2. Map today's sell volume per broker
-    const brokerSellToday = {};
+    // 2. Map today's buy and sell volume per broker to evaluate NET flow
+    const brokerFlowToday = {};
     if (Array.isArray(floorsheetTrades) && floorsheetTrades.length > 0) {
       for (const t of floorsheetTrades) {
+        const b = Number(t.buyerBroker || t.buyer || t.buyer_broker || 0);
         const s = Number(t.sellerBroker || t.seller || t.seller_broker || 0);
         const q = Number(t.qty || t.quantity || t.kitta || 0);
+        if (b > 0) {
+          brokerFlowToday[b] = brokerFlowToday[b] || { buy: 0, sell: 0 };
+          brokerFlowToday[b].buy += q;
+        }
         if (s > 0) {
-          brokerSellToday[s] = (brokerSellToday[s] || 0) + q;
+          brokerFlowToday[s] = brokerFlowToday[s] || { buy: 0, sell: 0 };
+          brokerFlowToday[s].sell += q;
         }
       }
     } else {
       // Check today's recorded ledger if available
       const latestDate = recentDates[0];
       const todayRows = db.prepare(`
-        SELECT broker_id, sell_vol 
+        SELECT broker_id, buy_vol, sell_vol 
         FROM daily_broker_ledger 
         WHERE symbol = ? AND trade_date = ?
       `).all(cleanSym, latestDate);
       for (const r of todayRows) {
-        brokerSellToday[r.broker_id] = r.sell_vol;
+        brokerFlowToday[r.broker_id] = { buy: r.buy_vol, sell: r.sell_vol };
       }
     }
 
-    // 3. Evaluate each past accumulator
+    // 3. Evaluate each past accumulator for NET liquidation / dumping
     for (const acc of pastAccumulators) {
       const bId = acc.broker_id;
-      const soldToday = brokerSellToday[bId] || 0;
+      const flow = brokerFlowToday[bId] || { buy: 0, sell: 0 };
+      const netSellToday = flow.sell - flow.buy;
       const netAcc = acc.net_acc;
 
-      if (soldToday >= 1500 && (soldToday >= netAcc * 0.15 || soldToday >= 10000)) {
+      // True dump requires net liquidation: sold more than bought by >= 5,000 kitta
+      // and dumping >= 15% of accumulated position or >= 10,000 kitta net
+      if (netSellToday >= 5000 && (netSellToday >= netAcc * 0.15 || netSellToday >= 10000)) {
         return {
           isTrap: true,
           code: 'VETO_PAST_ACCUMULATOR_DUMPING',
           dumpingBroker: bId,
-          soldToday,
+          soldToday: flow.sell,
+          boughtToday: flow.buy,
+          netSellToday,
           netAccumulated: netAcc,
-          reason: `T+2 Demat Dump Trap: Past accumulator Broker #${bId} (who cornered ${netAcc.toLocaleString()} kitta over past sessions) is dumping today (${soldToday.toLocaleString()} kitta sold into retail). VETOED to prevent retail lock-in.`
+          reason: `T+2 Demat Dump Trap: Past accumulator Broker #${bId} (who cornered ${netAcc.toLocaleString()} kitta over past sessions) is net dumping today (-${netSellToday.toLocaleString()} net kitta sold into retail). VETOED to prevent retail lock-in.`
         };
       }
     }
