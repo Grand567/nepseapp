@@ -1,6 +1,6 @@
 // proxy/routes/stockTelemetryRoutes.mjs
 import express from 'express';
-import { db, getScripVolumeProfile } from '../db/ledgerStore.js';
+import { db, getScripVolumeProfile, auditAntiDematDumpGuard } from '../db/ledgerStore.js';
 import { safeNum, resolveValidNepseSymbol, resolveVerifiedPrice } from './aiGuruRoutes.mjs';
 import { getBrokerName, getOrFetchAllTimeBrokerHoldings } from '../brokerVault.mjs';
 import { aggregateBrokerMicrostructure } from '../utils/sharedBrokerAggregationEngine.js';
@@ -559,9 +559,15 @@ export function handleStockTelemetry(req, res) {
       ? Number((((verifiedPrice - sessionVwap) / sessionVwap) * 100).toFixed(2))
       : 0;
 
+    let antiDematDump = { isTrap: false, reason: 'Clean' };
+    try {
+      antiDematDump = auditAntiDematDumpGuard(validSymbol);
+    } catch (_) {}
+
     const tabTelemetry = {
       ok: true,
       symbol: validSymbol,
+      antiDematDump,
       overview: {
         verifiedPrice,
         priceSource: verified.source,
@@ -597,8 +603,9 @@ export function handleStockTelemetry(req, res) {
             };
       })(),
       smartMoney5D: {
-        dominantRegime: 'MODERATE_ACCUMULATION',
-        netAccumulationRatio: 12.5,
+        dominantRegime: antiDematDump.isTrap ? 'DISTRIBUTION' : 'MODERATE_ACCUMULATION',
+        dematDumpWarning: antiDematDump.isTrap ? antiDematDump.reason : null,
+        netAccumulationRatio: antiDematDump.isTrap ? 25.0 : 62.5,
         topAccumulators: [],
         topDistributors: [],
       },

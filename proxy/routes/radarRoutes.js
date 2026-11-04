@@ -18,6 +18,7 @@ import {
   getSymbolHistoryFromDb,
   getLedgerStatusInfo,
   getScripLedgerTelemetry,
+  auditAntiDematDumpGuard,
   db,
   rebuildSignalTrackRecord
 } from "../db/ledgerStore.js";
@@ -379,6 +380,7 @@ router.get("/radar/broker-tracker", async (req, res) => {
       streakDays: Number(targetBroker.streakDays || 0),
       consistencyPct: Number(targetBroker.consistencyPct || 0),
       unrealizedProfitPct,
+      antiDematDump: auditAntiDematDumpGuard(stock.symbol),
       isSyndicateCoAccumulation: Boolean(diag.isSyndicateCoAccumulation),
       syndicateBrokers: diag.syndicateBrokers || [],
       dailySeries: Array.isArray(targetBroker.dailySeries) ? targetBroker.dailySeries : []
