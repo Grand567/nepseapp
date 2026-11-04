@@ -48,6 +48,9 @@ import {
   getSmartAlertSystemStatus, 
   registerPushToken, 
   testTriggerAlert, 
+  testTriggerBroker58Alert,
+  detectBroker58EarlyIgnition,
+  scanUniverseForBroker58Ignitions,
   subscribeAlertEvents,
   trackCustomHolding,
   untrackCustomHolding,
@@ -58,6 +61,7 @@ import {
   saveTelegramConfig, 
   testTelegramConnection, 
   sendTelegramSmartAlert,
+  sendTelegramEarlyIgnitionAlert,
   sendTelegramPrimePickAlert,
   sendTelegramExitAlert,
   sendMorningStockSelectionDigest,
@@ -66,7 +70,9 @@ import {
   initTelegramPlaybookDependencies,
   selectPlaybookMidStagePick,
   sendTelegramPlaybookPickAlert,
-  autoSelectAndDispatchPlaybookPick
+  autoSelectAndDispatchPlaybookPick,
+  runBroker58RadarAndDispatch,
+  formatBroker58RadarHtml
 } from './telegramNotifier.mjs';
 import {
   getDiscordStatus,
@@ -867,7 +873,7 @@ export async function getEnrichedStockUniverse() {
 }
 
 // Initialize Telegram Playbook automated picker dependencies
-initTelegramPlaybookDependencies({ getEnrichedStockUniverse });
+initTelegramPlaybookDependencies({ getEnrichedStockUniverse, scanUniverseForBroker58Ignitions });
 
 app.get('/api/market-summary', async (req, res) => {
   const reqDate = String(req.query.date || '').trim();
@@ -11383,6 +11389,39 @@ app.post('/api/smart-alerts/test-trigger', async (req, res) => {
     const { symbol, ltp, vwap } = req.body || {};
     const result = await testTriggerAlert(symbol || 'GHL', { ltp, vwap });
     res.json({ success: true, message: 'Test alert triggered and dispatched', result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Broker #58 Early Ignition Radar & Test Trigger Endpoints
+app.get(['/api/smart-alerts/broker58-radar', '/api/alerts/broker58-radar'], async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const symbol = req.query.symbol || null;
+    const sessionDate = req.query.date || null;
+    const result = await scanUniverseForBroker58Ignitions({ limit, sessionDate, symbol });
+    res.json({ success: true, sessionDate: result.sessionDate, count: result.setups.length, setups: result.setups });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/smart-alerts/test-broker58', async (req, res) => {
+  try {
+    const { symbol, ltp, operatorVwap, buyVol, sellVol, marketSharePct, pChange } = req.body || {};
+    const result = await testTriggerBroker58Alert(symbol || 'GHL', { ltp, operatorVwap, buyVol, sellVol, marketSharePct, pChange });
+    res.json({ success: true, message: 'Broker #58 early ignition test alert triggered and dispatched', result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/telegram/dispatch-broker58-radar', async (req, res) => {
+  try {
+    const { symbol } = req.body || {};
+    const result = await runBroker58RadarAndDispatch(symbol);
+    res.json({ success: true, message: 'Broker #58 radar dispatched to Telegram', result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

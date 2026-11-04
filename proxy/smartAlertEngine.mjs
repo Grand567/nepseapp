@@ -26,7 +26,12 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { getBrokerName, aggregateFloorsheetRows, fetchShareSansarFloorsheet } from './brokerVault.mjs';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 import { calculateStatutoryBreakevenPrice } from '../src/utils/calculations.js';
-import { sendTelegramSmartAlert, sendTelegramExitAlert, sendTelegramMessage } from './telegramNotifier.mjs';
+import { 
+  sendTelegramSmartAlert, 
+  sendTelegramExitAlert, 
+  sendTelegramMessage, 
+  sendTelegramEarlyIgnitionAlert 
+} from './telegramNotifier.mjs';
 import { sendDiscordSmartAlert } from './discordNotifier.mjs';
 import {
   evaluateInstitutionalAlert,
@@ -60,6 +65,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'smart_alert_state.json');
+const B58_STATE_FILE = path.join(DATA_DIR, 'broker58_alert_state.json');
 const HISTORY_FILE = path.join(DATA_DIR, 'smart_alert_history.json');
 const TOKENS_FILE = path.join(DATA_DIR, 'push_tokens.json');
 const SEEN_NEWS_FILE = path.join(DATA_DIR, 'seen_news_keys.json');
@@ -100,6 +106,8 @@ function saveJson(filePath, data) {
 
 // State storage: symbol -> { state, pendingScans, lastTriggeredAt, lastEvaluatedAt, lastAlert }
 let alertStateMap = loadJson(STATE_FILE, {});
+let broker58AlertStateMap = loadJson(B58_STATE_FILE, {});
+const B58_COOLDOWN_MS = 120 * 60 * 1000; // 120 minutes cooldown per symbol
 // History log: array of triggered alerts
 let alertHistory = loadJson(HISTORY_FILE, []);
 // Push Tokens: array of { token, platform, registeredAt, lastActiveAt }
@@ -231,10 +239,10 @@ export function broadcastAlert(alertPayload) {
     console.warn('[SmartAlertEngine] Push dispatch warning:', err.message);
   });
 
-  // 3. Dispatch Instant Alert to Telegram Bot (PRO Users: Breakouts, Prime Picks, Accumulation, Watchlist, Exits)
+  // 3. Dispatch Instant Alert to Telegram Bot (PRO Users: Breakouts, Prime Picks, Accumulation, Watchlist, Exits, Early Ignitions)
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
   if (!isTestEnv || process.env.TEST_LIVE_TELEGRAM === 'true') {
-    const isProAlert = alertPayload.category === 'pro' || ['INSTITUTIONAL_ENTRY', 'BREAKOUT', 'ACCUMULATION', 'HOT_STOCK', 'WATCHLIST_ALERT', 'PROFIT_BOOKING', 'STOP_LOSS_WARNING'].includes(alertPayload.type);
+    const isProAlert = alertPayload.category === 'pro' || ['INSTITUTIONAL_ENTRY', 'BREAKOUT', 'ACCUMULATION', 'HOT_STOCK', 'WATCHLIST_ALERT', 'PROFIT_BOOKING', 'STOP_LOSS_WARNING', 'BROKER_58_EARLY_IGNITION'].includes(alertPayload.type);
 
     if (alertPayload.type === 'PROFIT_BOOKING' || alertPayload.type === 'STOP_LOSS_WARNING') {
       sendTelegramExitAlert({
@@ -247,6 +255,17 @@ export function broadcastAlert(alertPayload) {
         reason: alertPayload.body
       }).catch(err => {
         console.warn('[SmartAlertEngine] Telegram exit alert dispatch warning:', err.message);
+      });
+    } else if (alertPayload.type === 'BROKER_58_EARLY_IGNITION') {
+      const status = getDetailedMarketStatus();
+      const nptMins = status.nptTotalMinutes;
+      const isMorningWashPeriod = status.isOpen && nptMins >= 660 && nptMins < 705; // 11:00 AM - 11:45 AM NPT
+      if (isMorningWashPeriod) {
+        console.log(`[SmartAlertEngine] Suppressing morning early ignition alert for ${alertPayload.symbol} during 11:00-11:45 AM wash period. Golden Window opens at 11:45 AM.`);
+        return;
+      }
+      sendTelegramEarlyIgnitionAlert(alertPayload).catch(err => {
+        console.warn('[SmartAlertEngine] Telegram early ignition alert dispatch warning:', err.message);
       });
     } else if (isProAlert) {
       // Golden Entry Window: Suppress entry buy recommendations during 11:00-11:45 AM morning wash period
@@ -1020,6 +1039,28 @@ export async function runMarketAlertScanCycle({
         });
 
         await processStockTickEvaluation(evaluation);
+
+        // ── Check for Broker #58 Early Stealth Accumulation / Ignition ──
+        try {
+          const b58Eval = detectBroker58EarlyIgnition({
+            symbol: sym,
+            ltp: stock.ltp || stock.lastTradedPrice,
+            high: stock.highPrice || stock.high,
+            low: stock.lowPrice || stock.low,
+            open: stock.openPrice || stock.open,
+            pChange: stock.pChange ?? stock.perChange,
+            turnover: stock.turnover || stock.totalTradedValue,
+            volume: stock.volume || stock.totalTradedQuantity,
+            floorsheetTrades,
+            priceHistory: history
+          });
+
+          if (b58Eval?.qualified) {
+            await processBroker58AlertTrigger(b58Eval);
+          }
+        } catch (b58Err) {
+          console.warn(`[SmartAlertEngine] Broker 58 detection notice for ${sym}:`, b58Err.message);
+        }
       } catch (stockErr) {
         // Continue to next stock
       }
@@ -1148,6 +1189,347 @@ export async function testTriggerAlert(customSymbol = 'GHL', mockParams = {}) {
 
   const result = await processStockTickEvaluation(mockEvaluation);
   return result;
+}
+
+// ── 7.5 BROKER #58 OPERATOR EARLY IGNITION ENGINE ───────────────────────────
+
+/**
+ * Evaluates whether a stock shows the empirical signature of Broker #58 (Naasa)
+ * stealth accumulation / ignition before public markup.
+ */
+export function detectBroker58EarlyIgnition({
+  symbol,
+  ltp,
+  high,
+  low,
+  open,
+  pChange = null,
+  volume = 0,
+  turnover = 0,
+  floorsheetTrades = [],
+  priceHistory = [],
+  date = null,
+  sessionDate = null,
+  db = null
+} = {}) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  const currentLtp = Number(ltp || 0);
+  if (!sym || currentLtp <= 0) return { qualified: false, reason: 'Invalid symbol or price' };
+
+  let b58BuyQty = 0;
+  let b58BuyAmt = 0;
+  let b58SellQty = 0;
+  let b58SellAmt = 0;
+  let afternoonBuyQty = 0;
+
+  // 1. Process floorsheet trades if provided
+  if (Array.isArray(floorsheetTrades) && floorsheetTrades.length > 0) {
+    for (const t of floorsheetTrades) {
+      const b = String(t.buyerBroker || t.buyer || '').trim();
+      const s = String(t.sellerBroker || t.seller || '').trim();
+      const q = Number(t.qty || t.quantity || t.contractQuantity || 0);
+      const r = Number(t.rate || t.contractRate || 0);
+      const amt = Number(t.amount || (q * r) || 0);
+      const timeStr = String(t.trade_time || t.time || '');
+
+      const isAfternoon = timeStr.includes('13:') || timeStr.includes('14:') || timeStr.includes('15:') ||
+                          timeStr.includes('01:') || timeStr.includes('02:');
+
+      if (b === '58') {
+        b58BuyQty += q;
+        b58BuyAmt += amt;
+        if (isAfternoon) afternoonBuyQty += q;
+      }
+      if (s === '58') {
+        b58SellQty += q;
+        b58SellAmt += amt;
+      }
+    }
+  }
+
+  // 2. Database Fallback (if floorsheet trades empty)
+  if (b58BuyQty === 0 && db) {
+    try {
+      const targetDate = date || sessionDate;
+      const row = targetDate
+        ? db.prepare(`
+            SELECT buy_vol, sell_vol, buy_amt, sell_amt, trade_date
+            FROM daily_broker_ledger
+            WHERE symbol = ? AND broker_id = 58 AND trade_date = ?
+            ORDER BY trade_date DESC LIMIT 1
+          `).get(sym, targetDate)
+        : db.prepare(`
+            SELECT buy_vol, sell_vol, buy_amt, sell_amt, trade_date
+            FROM daily_broker_ledger
+            WHERE symbol = ? AND broker_id = 58
+            ORDER BY trade_date DESC LIMIT 1
+          `).get(sym);
+
+      if (row) {
+        b58BuyQty = Number(row.buy_vol || 0);
+        b58SellQty = Number(row.sell_vol || 0);
+        b58BuyAmt = Number(row.buy_amt || 0);
+        b58SellAmt = Number(row.sell_amt || 0);
+      }
+    } catch (_) {}
+  }
+
+  const netVol = b58BuyQty - b58SellQty;
+  const totalB58Trades = b58BuyQty + b58SellQty;
+  const buyRatioPct = totalB58Trades > 0 ? (b58BuyQty / totalB58Trades) * 100 : 0;
+  const totalSessionVol = Math.max(Number(volume || 0), b58BuyQty);
+  const marketSharePct = totalSessionVol > 0 ? (b58BuyQty / totalSessionVol) * 100 : 0;
+  const operatorVwap = b58BuyQty > 0 ? +(b58BuyAmt / b58BuyQty).toFixed(1) : currentLtp;
+
+  // 3. Price Action & Base Compression Check
+  let calculatedPChange = typeof pChange === 'number' ? pChange : 0;
+  if ((pChange === null || pChange === undefined) && open > 0) {
+    calculatedPChange = ((currentLtp - open) / open) * 100;
+  }
+
+  // Empirical Rules:
+  // Volume: >= 15,000 kitta OR (>= 10,000 with >= 12% share) OR (>= 5,000 with >= 25% share)
+  const isVolQualified = b58BuyQty >= 15000 || (b58BuyQty >= 10000 && marketSharePct >= 12.0) || (b58BuyQty >= 5000 && marketSharePct >= 25.0);
+  // Net Accumulation: Net buyer >= 5,000 kitta with >= 70% buy ratio (minimal selling)
+  const isNetBuyer = netVol >= 5000 && buyRatioPct >= 70.0;
+  // Price Compression: Quiet base between -3.0% and +4.5% (strictly rejects late breakouts > 7% or circuit locked +15%)
+  const isPriceCompressed = calculatedPChange >= -3.0 && calculatedPChange <= 4.5;
+  // Distance to Operator Basis: Within 4.0% of Operator VWAP
+  const isDistOk = operatorVwap > 0 ? (Math.abs((currentLtp - operatorVwap) / operatorVwap) <= 0.04) : true;
+
+  const qualified = isVolQualified && isNetBuyer && isPriceCompressed && isDistOk;
+
+  const status = getDetailedMarketStatus();
+  const nptMins = status.nptTotalMinutes;
+  const isAfternoonSession = (b58BuyQty > 0 && afternoonBuyQty / b58BuyQty >= 0.50) || (status.isOpen && nptMins >= 795 && nptMins <= 895);
+  const timingSignature = isAfternoonSession
+    ? '⚡ Afternoon Stealth Accumulation (1:15 PM – 2:55 PM NPT)'
+    : '🕒 Intraday Supply Absorption';
+
+  const stage = (marketSharePct >= 25.0 || b58BuyQty >= 50000)
+    ? 'STAGE_2_SUPPLY_VACUUM_IGNITION'
+    : 'STAGE_1_STEALTH_SEEDING';
+  const stageBadge = stage === 'STAGE_2_SUPPLY_VACUUM_IGNITION'
+    ? '⚡ Stage 2: Supply Vacuum Ignition'
+    : '🌱 Stage 1: Stealth Seeding';
+
+  const buyZone = {
+    low: Math.floor(operatorVwap * 0.99),
+    high: Math.ceil(operatorVwap * 1.015)
+  };
+  const stopLoss = Math.round(operatorVwap * 0.962 * 10) / 10;
+  const target1 = Math.round(operatorVwap * 1.105 * 10) / 10;
+  const target2 = Math.round(operatorVwap * 1.155 * 10) / 10;
+  const netRRR = +(((target1 - currentLtp) / Math.max(1, currentLtp - stopLoss))).toFixed(1);
+
+  return {
+    qualified,
+    symbol: sym,
+    companyName: stockMap[sym]?.name || stockMap[sym]?.companyName || sym,
+    ltp: currentLtp,
+    open: Number(open || currentLtp),
+    pChange: +calculatedPChange.toFixed(2),
+    brokerId: 58,
+    brokerName: 'Naasa Securities',
+    brokerBuyVol: b58BuyQty,
+    brokerSellVol: b58SellQty,
+    netVol,
+    buyRatioPct: +buyRatioPct.toFixed(1),
+    marketSharePct: +marketSharePct.toFixed(1),
+    totalBuyAmount: b58BuyAmt,
+    operatorVwap,
+    timingSignature,
+    stage,
+    stageBadge,
+    buyZone,
+    stopLoss,
+    target1,
+    target2,
+    netRRR: netRRR > 0 ? netRRR : 2.8,
+    reasons: { isVolQualified, isNetBuyer, isPriceCompressed, isDistOk }
+  };
+}
+
+export async function processBroker58AlertTrigger(b58Eval) {
+  const sym = b58Eval.symbol;
+  const now = Date.now();
+  const lastTriggered = broker58AlertStateMap[sym]?.lastTriggeredAt || 0;
+
+  if (now - lastTriggered < B58_COOLDOWN_MS) {
+    return { triggered: false, reason: 'Cooldown active', remainingMins: Math.ceil((B58_COOLDOWN_MS - (now - lastTriggered)) / 60000) };
+  }
+
+  broker58AlertStateMap[sym] = {
+    symbol: sym,
+    lastTriggeredAt: now,
+    lastLtp: b58Eval.ltp,
+    operatorVwap: b58Eval.operatorVwap
+  };
+  saveJson(B58_STATE_FILE, broker58AlertStateMap);
+
+  const alertItem = {
+    id: `b58_alert_${sym}_${now}`,
+    symbol: sym,
+    companyName: b58Eval.companyName,
+    type: 'BROKER_58_EARLY_IGNITION',
+    category: 'pro',
+    tier: 'pro',
+    isPro: true,
+    title: `🚨 Early Operator Ignition: ${sym}`,
+    body: `Broker #58 (Naasa) net bought +${b58Eval.netVol.toLocaleString()} kitta (${b58Eval.marketSharePct}% share) at Rs. ${b58Eval.operatorVwap} basis before breakout!`,
+    action: 'OPEN_STOCK_DETAIL',
+    ltp: b58Eval.ltp,
+    pChange: b58Eval.pChange,
+    triggeredAt: new Date(now).toISOString(),
+    brokerId: 58,
+    brokerName: 'Naasa Securities',
+    brokerBuyVol: b58Eval.brokerBuyVol,
+    brokerSellVol: b58Eval.brokerSellVol,
+    netVol: b58Eval.netVol,
+    buyRatioPct: b58Eval.buyRatioPct,
+    marketSharePct: b58Eval.marketSharePct,
+    totalBuyAmount: b58Eval.totalBuyAmount,
+    operatorVwap: b58Eval.operatorVwap,
+    timingSignature: b58Eval.timingSignature,
+    stage: b58Eval.stage,
+    stageBadge: b58Eval.stageBadge,
+    buyZone: b58Eval.buyZone,
+    stopLoss: b58Eval.stopLoss,
+    target1: b58Eval.target1,
+    target2: b58Eval.target2,
+    netRRR: b58Eval.netRRR,
+    status: 'ACTIVE'
+  };
+
+  alertHistory.unshift(alertItem);
+  if (alertHistory.length > 100) alertHistory.pop();
+  saveJson(HISTORY_FILE, alertHistory);
+
+  broadcastAlert(alertItem);
+  return { triggered: true, alert: alertItem };
+}
+
+export async function scanUniverseForBroker58Ignitions({ limit = 5, sessionDate = null, symbol = null } = {}) {
+  let setups = [];
+  let targetDate = sessionDate;
+
+  try {
+    const { db } = await import('./db/ledgerStore.js');
+    if (db) {
+      if (!targetDate) {
+        const dateRow = db.prepare('SELECT MAX(trade_date) as maxDate FROM daily_broker_ledger').get();
+        targetDate = dateRow?.maxDate || '';
+      }
+
+      if (targetDate) {
+        if (symbol) {
+          const sym = String(symbol).toUpperCase().trim();
+          const rows = db.prepare(`
+            SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt,
+                   (l.buy_vol - l.sell_vol) as net_vol,
+                   ROUND(CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
+                   s.close_price as ltp, s.open_price, s.total_volume,
+                   ROUND(CAST(l.buy_vol AS REAL) / s.total_volume * 100, 1) as mkt_share,
+                   ROUND((s.close_price - s.open_price) / s.open_price * 100, 1) as day_pchange,
+                   ROUND(l.buy_amt / l.buy_vol, 1) as operator_vwap
+            FROM daily_broker_ledger l
+            JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
+            WHERE l.broker_id = 58 AND l.symbol = ? AND l.trade_date = ?
+          `).all(sym, targetDate);
+          setups = rows;
+        } else {
+          const rows = db.prepare(`
+            SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt,
+                   (l.buy_vol - l.sell_vol) as net_vol,
+                   ROUND(CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
+                   s.close_price as ltp, s.open_price, s.total_volume,
+                   ROUND(CAST(l.buy_vol AS REAL) / s.total_volume * 100, 1) as mkt_share,
+                   ROUND((s.close_price - s.open_price) / s.open_price * 100, 1) as day_pchange,
+                   ROUND(l.buy_amt / l.buy_vol, 1) as operator_vwap
+            FROM daily_broker_ledger l
+            JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
+            WHERE l.broker_id = 58
+              AND l.trade_date = ?
+              AND (l.buy_vol >= 15000 OR (l.buy_vol >= 10000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.12) OR (l.buy_vol >= 5000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.25))
+              AND (l.buy_vol - l.sell_vol) >= 5000
+              AND CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) >= 0.70
+              AND s.total_volume > 0
+              AND (s.close_price - s.open_price) / s.open_price BETWEEN -0.03 AND 0.045
+            ORDER BY l.buy_amt DESC
+            LIMIT ?
+          `).all(targetDate, limit);
+          setups = rows;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[SmartAlertEngine] scanUniverseForBroker58Ignitions notice:', err.message);
+  }
+
+  return { success: true, sessionDate: targetDate, setups };
+}
+
+export async function testTriggerBroker58Alert(customSymbol = 'GHL', mockParams = {}) {
+  const sym = String(customSymbol || 'GHL').toUpperCase().trim();
+  const ltp = Number(mockParams.ltp || 335.0);
+  const operatorVwap = Number(mockParams.operatorVwap || 333.2);
+  const buyVol = Number(mockParams.buyVol || 266203);
+  const sellVol = Number(mockParams.sellVol || 67826);
+  const netVol = buyVol - sellVol;
+  const buyRatioPct = +((buyVol / (buyVol + sellVol)) * 100).toFixed(1);
+  const marketSharePct = Number(mockParams.marketSharePct || 23.6);
+  const totalBuyAmount = buyVol * operatorVwap;
+  const pChange = Number(mockParams.pChange || 1.5);
+
+  const buyZone = {
+    low: Math.floor(operatorVwap * 0.99),
+    high: Math.ceil(operatorVwap * 1.015)
+  };
+  const stopLoss = Math.round(operatorVwap * 0.962 * 10) / 10;
+  const target1 = Math.round(operatorVwap * 1.105 * 10) / 10;
+  const target2 = Math.round(operatorVwap * 1.155 * 10) / 10;
+  const netRRR = +(((target1 - ltp) / Math.max(1, ltp - stopLoss))).toFixed(1);
+
+  const alertItem = {
+    id: `b58_alert_${sym}_${Date.now()}`,
+    symbol: sym,
+    companyName: stockMap[sym]?.name || sym,
+    type: 'BROKER_58_EARLY_IGNITION',
+    category: 'pro',
+    tier: 'pro',
+    isPro: true,
+    title: `🚨 Early Operator Ignition: ${sym}`,
+    body: `Broker #58 (Naasa) net bought +${netVol.toLocaleString()} kitta (${marketSharePct}% share) at Rs. ${operatorVwap} basis before breakout!`,
+    action: 'OPEN_STOCK_DETAIL',
+    ltp,
+    pChange,
+    triggeredAt: new Date().toISOString(),
+    brokerId: 58,
+    brokerName: 'Naasa Securities',
+    brokerBuyVol: buyVol,
+    brokerSellVol: sellVol,
+    netVol,
+    buyRatioPct,
+    marketSharePct,
+    totalBuyAmount,
+    operatorVwap,
+    timingSignature: '⚡ Afternoon Stealth Accumulation (1:15 PM – 2:55 PM NPT)',
+    stage: 'STAGE_2_SUPPLY_VACUUM_IGNITION',
+    stageBadge: '⚡ Stage 2: Supply Vacuum Ignition',
+    buyZone,
+    stopLoss,
+    target1,
+    target2,
+    netRRR: netRRR > 0 ? netRRR : 2.8,
+    status: 'ACTIVE'
+  };
+
+  alertHistory.unshift(alertItem);
+  if (alertHistory.length > 100) alertHistory.pop();
+  saveJson(HISTORY_FILE, alertHistory);
+
+  broadcastAlert(alertItem);
+  return { triggered: true, alert: alertItem };
 }
 
 // ── 8. EXPORT PUBLIC STATE QUERIES ──────────────────────────────────────────

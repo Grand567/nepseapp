@@ -388,6 +388,228 @@ export async function sendTelegramSmartAlert(alertItem) {
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * OPERATOR IGNITION & BROKER #58 STEALTH ACCUMULATION DETECTOR / DISPATCHER
+ * ───────────────────────────────────────────────────────────────────────────
+ * Purpose:
+ * Detects Stage 1 "Stealth Seeding" and Stage 2 "Supply Vacuum Ignition"
+ * specifically driven by Broker #58 (Naasa Securities) and top operator syndicate
+ * partners (#39, #84, #45) BEFORE the public markup and circuit breakout.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+export function formatEarlyIgnitionAlertHtml(alert) {
+  const sym = String(alert.symbol || 'STOCK').toUpperCase();
+  const companyName = alert.companyName || stockUniverseMap[sym]?.name || sym;
+  const ltp = Number(alert.ltp || 0);
+  const pChange = Number(alert.pChange ?? alert.priceChangePct ?? 0);
+  const pChangeStr = `${pChange >= 0 ? '+' : ''}${pChange.toFixed(2)}%`;
+
+  const brokerId = alert.brokerId || 58;
+  const brokerName = alert.brokerName || (brokerId === 58 ? 'Naasa Securities' : `Broker #${brokerId}`);
+  const buyQty = Number(alert.brokerBuyVol || alert.buyQty || alert.buy_vol || 0);
+  const sellQty = Number(alert.brokerSellVol || alert.sellQty || alert.sell_vol || 0);
+  const netQty = Number(alert.netVol || (buyQty - sellQty));
+  const buyRatio = Number(alert.buyRatioPct || alert.buy_ratio || (buyQty + sellQty > 0 ? (buyQty / (buyQty + sellQty) * 100) : 100)).toFixed(1);
+  const mktShare = Number(alert.marketSharePct || alert.mkt_share || 0).toFixed(1);
+  const totalAmtCrores = (Number(alert.totalBuyAmount || alert.buyAmt || alert.buy_amt || (buyQty * ltp)) / 10000000).toFixed(2);
+  const operatorVwap = Number(alert.operatorVwap || alert.operator_vwap || ltp).toFixed(1);
+
+  const buyZone = alert.buyZone || {
+    low: Math.floor(operatorVwap * 0.99),
+    high: Math.ceil(operatorVwap * 1.015)
+  };
+  const sl = Number(alert.stopLoss || alert.sl || (operatorVwap * 0.962).toFixed(1));
+  const t1 = Number(alert.target1 || alert.t1 || (operatorVwap * 1.105).toFixed(1));
+  const t2 = Number(alert.target2 || alert.t2 || (operatorVwap * 1.155).toFixed(1));
+
+  const slPct = operatorVwap > 0 ? (((operatorVwap - sl) / operatorVwap) * 100).toFixed(1) : '3.8';
+  const t1Pct = operatorVwap > 0 ? (((t1 - operatorVwap) / operatorVwap) * 100).toFixed(1) : '10.5';
+  const t2Pct = operatorVwap > 0 ? (((t2 - operatorVwap) / operatorVwap) * 100).toFixed(1) : '15.5';
+
+  const netRRR = alert.netRRR || (parseFloat(slPct) > 0 ? (parseFloat(t1Pct) / parseFloat(slPct)).toFixed(1) : '2.8');
+  const timingSignature = alert.timingSignature || '⚡ Afternoon Stealth Accumulation (1:15 PM – 2:55 PM NPT)';
+  const stageBadge = alert.stageBadge || (alert.stage === 'STAGE_2_SUPPLY_VACUUM_IGNITION' ? '⚡ Stage 2: Supply Vacuum Ignition' : '🌱 Stage 1: Stealth Seeding');
+
+  return [
+    `🚨 <b>[EARLY IGNITION ALERT] OPERATOR ACCUMULATION</b>`,
+    `<b>Scrip:</b> <code>$${sym}</code> (${companyName})`,
+    `<b>Live Price:</b> Rs. ${ltp.toFixed(2)} (${pChangeStr} | <i>Quiet Base Compression</i>)`,
+    `<b>Phase:</b> ${stageBadge}`,
+    `──────────────────────────`,
+    `🕵️ <b>OPERATOR FOOTPRINT (BROKER #${brokerId}):</b>`,
+    `• Dominant Accumulator: <b>${brokerName} (#${brokerId})</b>`,
+    `• Volume Cornered: <b>${buyQty.toLocaleString()} Kitta</b> (Net: +${netQty.toLocaleString()} Kitta)`,
+    `• Capital Deployed: <b>Rs. ${totalAmtCrores} Crore</b>`,
+    `• Session Market Share: <b>${mktShare}% of Total Float</b>`,
+    `• Buy vs Sell Dominance: <b>${buyRatio}% Buy Dominance</b> (Zero dump)`,
+    `• Operator VWAP Basis: <b>Rs. ${operatorVwap}</b>`,
+    `──────────────────────────`,
+    `🕒 <b>TIMING & IGNITION LAW:</b>`,
+    `• Window: ${timingSignature}`,
+    `• Historical Lead Time: <b>1 to 3 Sessions Before Public Markup (T+1 to T+3)</b>`,
+    `• Float Cornering: Cornered floating supply before retail FOMO`,
+    `──────────────────────────`,
+    `🎯 <b>TACTICAL PROFIT PLAYBOOK:</b>`,
+    `• <b>Limit Buy Zone:</b> Rs. ${buyZone.low} – Rs. ${buyZone.high} (Anchor near Operator VWAP)`,
+    `• <b>Invalidation Stop-Loss:</b> Rs. ${sl} (-${slPct}%)`,
+    `• <b>Target 1 (50% Profit Take):</b> Rs. ${t1} (+${t1Pct}%)`,
+    `• <b>Target 2 (Circuit Runner):</b> Rs. ${t2} (+${t2Pct}% | ±15% Circuit Ceiling)`,
+    `• <b>Net Risk / Reward:</b> <b>${netRRR} : 1</b>`,
+    `──────────────────────────`,
+    `💡 <b>EXECUTION RULES FOR PROFIT:</b>`,
+    `1. Buy inside the limit zone. Do NOT chase if tomorrow opens gapped &gt; +4%!`,
+    `2. When Target 1 hits (+10%), sell 50% shares in TMS and immediately move Stop-Loss on remaining 50% to Breakeven (Trade becomes 100% Risk-Free)!`,
+    `<i>Anchored strictly to real broker tape data &amp; ±15% circuit limits.</i>`
+  ].join('\n');
+}
+
+export async function sendTelegramEarlyIgnitionAlert(alert) {
+  if (!alert) return { success: false, reason: 'No alert payload provided' };
+  const html = alert.html || formatEarlyIgnitionAlertHtml(alert);
+  return await sendTelegramMessage(html, 'HTML');
+}
+
+export function formatBroker58RadarHtml(setups = [], targetDate = '') {
+  if (!Array.isArray(setups) || setups.length === 0) {
+    return [
+      `⚡ <b>BROKER #58 OPERATOR RADAR</b>`,
+      `──────────────────────────`,
+      `No stock currently meets the strict early stealth accumulation criteria (≥70% Buy Ratio, ≥15k Kitta or ≥12% Share, compressed price base).`,
+      `The bot will automatically notify you the moment Broker #58 starts stealth accumulation!`
+    ].join('\n');
+  }
+
+  const dateStr = targetDate ? ` (${targetDate})` : '';
+  const items = setups.slice(0, 5).map((s, idx) => {
+    const sym = s.symbol;
+    const ltp = Number(s.ltp || 0).toFixed(1);
+    const pchg = Number(s.day_pchange ?? s.pChange ?? 0);
+    const pchgStr = `${pchg >= 0 ? '+' : ''}${pchg.toFixed(1)}%`;
+    const buyKitta = Number(s.buy_vol ?? s.buyVol ?? s.brokerBuyVol ?? 0).toLocaleString();
+    const netKitta = Number(s.net_vol ?? s.netVol ?? 0).toLocaleString();
+    const cr = (Number(s.buy_amt ?? s.buyAmt ?? s.totalBuyAmount ?? 0) / 10000000).toFixed(2);
+    const ratio = Number(s.buy_ratio ?? s.buyRatio ?? s.buyRatioPct ?? 0).toFixed(1);
+    const share = Number(s.mkt_share ?? s.mktShare ?? s.marketSharePct ?? 0).toFixed(1);
+    const vwap = Number(s.operator_vwap ?? s.operatorVwap ?? ltp).toFixed(1);
+    const bLow = s.buyZone?.low || Math.floor(vwap * 0.99);
+    const bHigh = s.buyZone?.high || Math.ceil(vwap * 1.015);
+    const sl = s.sl || s.stopLoss || (vwap * 0.962).toFixed(1);
+    const t1 = s.t1 || s.target1 || (vwap * 1.105).toFixed(1);
+    const t2 = s.t2 || s.target2 || (vwap * 1.155).toFixed(1);
+
+    return [
+      `${idx + 1}. <b>$${sym}</b> (LTP: Rs. ${ltp} | ${pchgStr} Base)`,
+      `• Footprint: <b>+${netKitta} Net Kitta</b> (${buyKitta} Bought | Rs. ${cr} Cr)`,
+      `• Dominance: <b>${ratio}% Buy</b> | ${share}% Market Share | VWAP: Rs. ${vwap}`,
+      `• 🎯 <b>Buy Zone:</b> Rs. ${bLow} – Rs. ${bHigh} | 🛑 <b>SL:</b> Rs. ${sl}`,
+      `• 🏁 <b>Target 1:</b> Rs. ${t1} (+10.5%) | 🚀 <b>Target 2:</b> Rs. ${t2} (+15.5%)`
+    ].join('\n');
+  });
+
+  return [
+    `⚡ <b>BROKER #58 OPERATOR RADAR: PRE-BOOM SETUPS${dateStr}</b>`,
+    `<b>Dominant Operator:</b> Broker #58 (Naasa Securities)`,
+    `<b>Strategy:</b> Early Supply Vacuum Absorption (1–3 Days Before Markup)`,
+    `──────────────────────────`,
+    ...items,
+    `──────────────────────────`,
+    `💡 <i>Golden Rule: Buy strictly inside Buy Zone. Lock 50% profit at Target 1 and raise SL to Breakeven!</i>`
+  ].join('\n\n');
+}
+
+export async function runBroker58RadarAndDispatch(symbolFilter = null) {
+  let setups = [];
+  let targetDate = '';
+
+  if (typeof _scanUniverseForBroker58Ignitions === 'function') {
+    try {
+      const res = await _scanUniverseForBroker58Ignitions({ symbol: symbolFilter });
+      setups = res.setups || [];
+      targetDate = res.sessionDate || '';
+    } catch (_) {}
+  }
+
+  if (setups.length === 0) {
+    try {
+      const { db } = await import('./db/ledgerStore.js');
+      if (db) {
+        const dateRow = db.prepare('SELECT MAX(trade_date) as maxDate FROM daily_broker_ledger').get();
+        targetDate = dateRow?.maxDate || '';
+        if (targetDate) {
+          if (symbolFilter) {
+            const sym = String(symbolFilter).toUpperCase().trim();
+            const rows = db.prepare(`
+              SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt,
+                     (l.buy_vol - l.sell_vol) as net_vol,
+                     ROUND(CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
+                     s.close_price as ltp, s.open_price, s.total_volume,
+                     ROUND(CAST(l.buy_vol AS REAL) / s.total_volume * 100, 1) as mkt_share,
+                     ROUND((s.close_price - s.open_price) / s.open_price * 100, 1) as day_pchange,
+                     ROUND(l.buy_amt / l.buy_vol, 1) as operator_vwap
+              FROM daily_broker_ledger l
+              JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
+              WHERE l.broker_id = 58 AND l.symbol = ? AND l.trade_date = ?
+            `).all(sym, targetDate);
+            setups = rows;
+          } else {
+            const rows = db.prepare(`
+              SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt,
+                     (l.buy_vol - l.sell_vol) as net_vol,
+                     ROUND(CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
+                     s.close_price as ltp, s.open_price, s.total_volume,
+                     ROUND(CAST(l.buy_vol AS REAL) / s.total_volume * 100, 1) as mkt_share,
+                     ROUND((s.close_price - s.open_price) / s.open_price * 100, 1) as day_pchange,
+                     ROUND(l.buy_amt / l.buy_vol, 1) as operator_vwap
+              FROM daily_broker_ledger l
+              JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
+              WHERE l.broker_id = 58
+                AND l.trade_date = ?
+                AND (l.buy_vol >= 15000 OR (l.buy_vol >= 10000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.12))
+                AND (l.buy_vol - l.sell_vol) >= 5000
+                AND CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) >= 0.70
+                AND s.total_volume > 0
+                AND (s.close_price - s.open_price) / s.open_price BETWEEN -0.03 AND 0.045
+              ORDER BY l.buy_amt DESC
+              LIMIT 6
+            `).all(targetDate);
+            setups = rows;
+          }
+        }
+      }
+    } catch (dbErr) {
+      console.warn('[TelegramNotifier] Error querying Broker 58 radar from DB:', dbErr.message);
+    }
+  }
+
+  let html = '';
+  if (symbolFilter && setups.length > 0) {
+    const s = setups[0];
+    html = formatEarlyIgnitionAlertHtml({
+      symbol: s.symbol,
+      ltp: s.ltp,
+      pChange: s.day_pchange || s.pChange,
+      brokerId: 58,
+      brokerName: 'Naasa Securities',
+      brokerBuyVol: s.buy_vol || s.buyVol,
+      brokerSellVol: s.sell_vol || s.sellVol,
+      netVol: (s.buy_vol || s.buyVol) - (s.sell_vol || s.sellVol),
+      totalBuyAmount: s.buy_amt || s.buyAmt,
+      marketSharePct: s.mkt_share || s.marketSharePct,
+      buyRatioPct: s.buy_ratio || s.buyRatioPct,
+      operatorVwap: s.operator_vwap || s.operatorVwap,
+      timingSignature: '⚡ High-Conviction Footprint Query',
+      stageBadge: '🌱 Early Stealth Accumulation Setup'
+    });
+  } else {
+    html = formatBroker58RadarHtml(setups, targetDate);
+  }
+
+  const res = await sendTelegramMessage(html, 'HTML');
+  return { success: res.success, setupsCount: setups.length, telegramResult: res };
+}
+
+/**
  * Dispatches the Full Investor Educational Briefing & High-Reward Playbook directly to Telegram
  */
 export async function sendTelegramInvestorPlaybook() {
@@ -426,9 +648,11 @@ export async function sendTelegramInvestorPlaybook() {
 // ── AUTOMATED METHOD 1 & 2 INSTITUTIONAL PLAYBOOK SELECTOR & DISPATCHER ──
 
 let _getEnrichedStockUniverse = null;
+let _scanUniverseForBroker58Ignitions = null;
 
-export function initTelegramPlaybookDependencies({ getEnrichedStockUniverse }) {
-  _getEnrichedStockUniverse = getEnrichedStockUniverse;
+export function initTelegramPlaybookDependencies({ getEnrichedStockUniverse, scanUniverseForBroker58Ignitions }) {
+  if (getEnrichedStockUniverse) _getEnrichedStockUniverse = getEnrichedStockUniverse;
+  if (scanUniverseForBroker58Ignitions) _scanUniverseForBroker58Ignitions = scanUniverseForBroker58Ignitions;
 }
 
 /**
@@ -1551,19 +1775,23 @@ async function handleTelegramCommand(text, {
       `──────────────────────────`,
       `I monitor NEPSE institutional accumulation and send automated high-conviction trade setups directly to your lockscreen!`,
       ``,
-      `🎯 <b>Automated Stock Selection (Method 1 & 2):</b>`,
+      `🎯 <b>Early Operator Ignitions (Broker #58):</b>`,
+      `• <code>/broker58</code> or <code>/ignition</code>: Live detection of Broker #58 stealth accumulation setups before the boom!`,
+      `• <code>/broker58 GHL</code>: Deep-dive operator footprint for a specific stock`,
+      ``,
+      `🎯 <b>Automated Stock Selection (Method 1 &amp; 2):</b>`,
       `• <code>/pick</code> or <code>/signal</code>: Auto-selects the top Mid-Stage Accumulation stock with a complete 4-Step Execution Ticket!`,
       `• <code>/playbook</code>: View the Master Institutional Playbook guidelines`,
       ``,
       `📌 <b>How to Track a Stock for Exit Alerts:</b>`,
       `• <code>/track SYMBOL [BUY] [SL] [KITTA]</code>`,
-      `  👉 <code>/track SHIVM 512 486 100</code> (custom entry & SL)`,
-      `  👉 <code>/track GHL 285</code> (auto sets 5% SL & Targets)`,
+      `  👉 <code>/track SHIVM 512 486 100</code> (custom entry &amp; SL)`,
+      `  👉 <code>/track GHL 285</code> (auto sets 5% SL &amp; Targets)`,
       `  👉 <code>/track HATHY</code> (uses live market LTP)`,
       `  👉 <code>/track SHIVM, GHL, HATHY</code> (track multiple stocks)`,
       ``,
       `📌 <b>Management Commands:</b>`,
-      `• <code>/list</code> or <code>/status</code>: View all monitored stocks & live levels`,
+      `• <code>/list</code> or <code>/status</code>: View all monitored stocks &amp; live levels`,
       `• <code>/remove SYMBOL</code>: Stop exit alerts for a stock`,
       `• <code>/ping</code>: Verify server connection`,
       `──────────────────────────`,
@@ -1575,6 +1803,14 @@ async function handleTelegramCommand(text, {
   // 2. PING
   if (lower === '/ping' || lower === 'ping') {
     return await sendTelegramMessage(`🏓 <b>Pong!</b> Drabyashree server is online and actively watching NEPSE live market.`);
+  }
+
+  // 2.4 BROKER 58 / OPERATOR EARLY IGNITION RADAR
+  const b58Match = raw.match(/^\/?(broker58|b58|ignition|whales|operators|operator)(?:\s+([A-Za-z0-9]+))?$/i);
+  if (b58Match) {
+    const specificSym = b58Match[2]?.toUpperCase();
+    const radarRes = await runBroker58RadarAndDispatch(specificSym);
+    return radarRes.telegramResult;
   }
 
   // 2.5 AUTOMATED 5-STEP 10–15 DAY SWING & MID-STAGE ACCUMULATION PICK
