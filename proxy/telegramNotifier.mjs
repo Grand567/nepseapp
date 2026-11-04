@@ -605,7 +605,36 @@ export function formatBroker58RadarHtml(setups = [], targetDate = '') {
   ].join('\n\n');
 }
 
+/**
+ * Guarantees that if the market has closed for today (post 3:05 PM NPT),
+ * today's consolidated floorsheet and broker ledger are automatically ingested before running analysis.
+ */
+export async function ensureTodaySessionIngested() {
+  try {
+    const status = getDetailedMarketStatus();
+    const nptMins = status.nptTotalMinutes || 0;
+    // Check if market has closed on a trading day (>= 15:05 NPT = 905 mins)
+    if (status.isTradingDay && nptMins >= 905) {
+      const now = new Date();
+      const nowNpt = new Date(now.getTime() + (5 * 60 + 45) * 60 * 1000);
+      const todayIso = nowNpt.toISOString().split('T')[0];
+      const { db } = await import('./db/ledgerStore.js');
+      if (db) {
+        const hasToday = db.prepare('SELECT 1 FROM daily_broker_ledger WHERE trade_date = ? LIMIT 1').get(todayIso);
+        if (!hasToday) {
+          console.log(`[TelegramNotifier] Today's session (${todayIso}) missing after market close. Auto-downloading floorsheet...`);
+          const { downloadAndArchiveDailyFloorsheet } = await import('./utils/dailyFloorsheetCollector.mjs');
+          await downloadAndArchiveDailyFloorsheet(todayIso);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[TelegramNotifier] ensureTodaySessionIngested notice:', err.message);
+  }
+}
+
 export async function runBroker58RadarAndDispatch(symbolFilter = null) {
+  await ensureTodaySessionIngested();
   let setups = [];
   let targetDate = '';
 
@@ -1187,6 +1216,7 @@ export function auditMultiSessionTrapRisk(db, symbol, leadBrokerId = null) {
 }
 
 export async function select5StepSwingPicks() {
+  await ensureTodaySessionIngested();
   try {
     const [{ db, rebuildHotCache, getScripVolumeProfile }, { computeStockFeatures }, { evaluatePortfolioShield }] =
       await Promise.all([

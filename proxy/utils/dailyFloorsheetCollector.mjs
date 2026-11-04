@@ -233,7 +233,14 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
 
     const tx = db.transaction((rows) => {
       let inserted = 0;
-      for (const t of rows) {
+      // Sort chronologically (earliest to latest) so open_price and close_price (LTP) are accurately established
+      const sortedRows = [...rows].sort((a, b) => {
+        const timeA = String(a.tradeTime || a.trade_time || a.contractId || a.contract_no || '');
+        const timeB = String(b.tradeTime || b.trade_time || b.contractId || b.contract_no || '');
+        return timeA.localeCompare(timeB);
+      });
+
+      for (const t of sortedRows) {
         const cNo = String(t.contractId || t.contractNo || t.id || `${cleanDate.replace(/-/g, '')}-${inserted}`);
         const sym = String(t.stockSymbol || t.symbol || '').toUpperCase().trim();
         if (!sym) continue;

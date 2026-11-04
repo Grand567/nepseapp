@@ -1303,9 +1303,25 @@ export function detectBroker58EarlyIgnition({
 
   const qualified = isVolQualified && isNetBuyer && isPriceCompressed && isDistOk;
 
+  // Check afternoon volume from database if historical or not provided in live array
+  if (afternoonBuyQty === 0 && db && (date || sessionDate)) {
+    try {
+      const targetDate = date || sessionDate;
+      const aftRow = db.prepare(`
+        SELECT SUM(kitta) as aft_kitta 
+        FROM floorsheet_contracts 
+        WHERE symbol = ? AND trade_date = ? AND buyer_broker = 58 
+          AND (trade_time LIKE '% 13:%' OR trade_time LIKE '%T13:%' OR trade_time LIKE '% 14:%' OR trade_time LIKE '%T14:%' OR trade_time LIKE '% 01:%' OR trade_time LIKE '% 02:%')
+      `).get(sym, targetDate);
+      if (aftRow?.aft_kitta) afternoonBuyQty = Number(aftRow.aft_kitta);
+    } catch (_) {}
+  }
+
   const status = getDetailedMarketStatus();
   const nptMins = status.nptTotalMinutes;
-  const isAfternoonSession = (b58BuyQty > 0 && afternoonBuyQty / b58BuyQty >= 0.50) || (status.isOpen && nptMins >= 795 && nptMins <= 895);
+  const isAfternoonSession = (b58BuyQty > 0 && afternoonBuyQty / b58BuyQty >= 0.40) || 
+                             (status.isOpen && nptMins >= 795 && nptMins <= 895) ||
+                             (!status.isOpen && b58BuyQty >= 15000);
   const timingSignature = isAfternoonSession
     ? '⚡ Afternoon Stealth Accumulation (1:15 PM – 2:55 PM NPT)'
     : '🕒 Intraday Supply Absorption';
@@ -1419,6 +1435,25 @@ export async function scanUniverseForBroker58Ignitions({ limit = 5, sessionDate 
   let targetDate = sessionDate;
 
   try {
+    const status = getDetailedMarketStatus();
+    const nptMins = status.nptTotalMinutes || 0;
+    // Auto-sync today's session if market closed (post 3:05 PM NPT) and missing
+    if (status.isTradingDay && nptMins >= 905 && !sessionDate) {
+      const now = new Date();
+      const nowNpt = new Date(now.getTime() + (5 * 60 + 45) * 60 * 1000);
+      const todayIso = nowNpt.toISOString().split('T')[0];
+      const { db } = await import('./db/ledgerStore.js');
+      if (db) {
+        const hasToday = db.prepare('SELECT 1 FROM daily_broker_ledger WHERE trade_date = ? LIMIT 1').get(todayIso);
+        if (!hasToday) {
+          try {
+            const { downloadAndArchiveDailyFloorsheet } = await import('./utils/dailyFloorsheetCollector.mjs');
+            await downloadAndArchiveDailyFloorsheet(todayIso);
+          } catch (_) {}
+        }
+      }
+    }
+
     const { db } = await import('./db/ledgerStore.js');
     if (db) {
       if (!targetDate) {
