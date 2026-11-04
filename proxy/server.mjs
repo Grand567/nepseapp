@@ -91,6 +91,14 @@ import {
   listAvailableCloudFloorsheetDates,
   syncLocalFloorsheetsToCloud
 } from './utils/cloudFloorsheetVault.mjs';
+import {
+  readHistorical4DayLedger,
+  readLiveTodaySession,
+  getScrip5DayCombined,
+  runCalendarGuardedDailyTransition,
+  HISTORICAL_4D_GZ,
+  LIVE_TODAY_GZ
+} from './utils/rollingLedgerEngine.mjs';
 import { generateEntryExitPlan } from '../src/utils/setupAnalyzer.js';
 import { 
   adToBs, 
@@ -3657,6 +3665,55 @@ app.get('/api/floorsheet/archives', (req, res) => {
   try {
     const archives = getArchiveIndex();
     return res.json({ success: true, count: archives.length, archives });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── Dual-File 5-Day Rolling Ledger Routes ────────────────────────────────────
+app.get('/api/ledger/4day-history', (req, res) => {
+  try {
+    const acceptEncoding = req.headers['accept-encoding'] || '';
+    if (acceptEncoding.includes('gzip') && fs.existsSync(HISTORICAL_4D_GZ)) {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Encoding', 'gzip');
+      return fs.createReadStream(HISTORICAL_4D_GZ).pipe(res);
+    }
+    const ledger = readHistorical4DayLedger();
+    return res.json(ledger);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/ledger/live-today', (req, res) => {
+  try {
+    const session = readLiveTodaySession();
+    return res.json(session);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/ledger/scrip/:symbol', (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').toUpperCase().trim();
+    const data = getScrip5DayCombined(symbol);
+    if (!data) {
+      return res.status(404).json({ success: false, error: `Scrip ${symbol} not found in 5-day ledger` });
+    }
+    return res.json({ success: true, data });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/ledger/transition', async (req, res) => {
+  try {
+    const force = Boolean(req.body?.force);
+    const targetDate = req.body?.targetDate;
+    const result = await runCalendarGuardedDailyTransition({ force, targetDate });
+    return res.json(result);
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }

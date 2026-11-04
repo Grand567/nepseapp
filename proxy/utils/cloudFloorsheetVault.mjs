@@ -38,13 +38,31 @@ import {
   ListObjectsV2Command
 } from '@aws-sdk/client-s3';
 import { DAILY_FLOORSHEETS_DIR } from './dailyFloorsheetCollector.mjs';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ─── GitHub Releases Configuration (100% Free Forever, No Credit Card) ───────
+let _cachedGitToken = null;
+
 export function getGitHubToken() {
-  return (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
+  const envToken = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
+  if (envToken) return envToken;
+  if (_cachedGitToken) return _cachedGitToken;
+  try {
+    const cred = execSync('git credential fill', {
+      input: 'protocol=https\nhost=github.com\n\n',
+      stdio: ['pipe', 'pipe', 'ignore'],
+      timeout: 3000
+    }).toString();
+    const match = cred.split('\n').find(l => l.startsWith('password='));
+    if (match) {
+      _cachedGitToken = match.replace('password=', '').trim();
+      return _cachedGitToken;
+    }
+  } catch (_) {}
+  return '';
 }
 
 export function getGitHubRepo() {

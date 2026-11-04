@@ -17,6 +17,7 @@ import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
 import { getOrFetchSymbolFloorsheet, getFullSessionFloorsheet } from './brokerVault.mjs';
 import { ingestDailyStockPrices, getDailyCompletenessStatus, db } from './db/ledgerStore.js';
 import { downloadAndArchiveDailyFloorsheet } from './utils/dailyFloorsheetCollector.mjs';
+import { runCalendarGuardedDailyTransition } from './utils/rollingLedgerEngine.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -407,6 +408,10 @@ export async function runPostMarketCloseAnalysis(force = false) {
     // Run the 5-Step 10–15 Day High-Alpha Swing Pick & auto-arm Exit Guard
     await run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(e =>
       console.warn('[Post-Market Worker] 5-Step Swing dispatch notice:', e.message)
+    );
+    // 5-Day Rolling Ledger Roll: Roll today into 4-day immutable ledger, prune oldest, & reset File A
+    await runCalendarGuardedDailyTransition({ targetDate }).catch(e =>
+      console.warn('[Post-Market Worker] Calendar-Guarded transition notice:', e.message)
     );
     lastPostMarketSessionAnalyzed = targetDate;
   } catch (err) {
