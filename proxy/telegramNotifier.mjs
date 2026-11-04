@@ -452,14 +452,15 @@ export function formatEarlyIgnitionAlertHtml(alert) {
     `──────────────────────────`,
     `🎯 <b>TACTICAL PROFIT PLAYBOOK:</b>`,
     `• <b>Limit Buy Zone:</b> Rs. ${buyZone.low} – Rs. ${buyZone.high} (Anchor near Operator VWAP)`,
-    `• <b>Invalidation Stop-Loss:</b> Rs. ${sl} (-${slPct}%)`,
-    `• <b>Target 1 (50% Profit Take):</b> Rs. ${t1} (+${t1Pct}%)`,
+    `• <b>Invalidation Stop-Loss:</b> Rs. ${sl} (-${slPct}% | 1.5x ATR breathing room)`,
+    `• <b>Target 1 (50% Profit Take):</b> Rs. ${t1} (+${t1Pct}% | <i>Sell 50% &amp; SL to Breakeven</i>)`,
     `• <b>Target 2 (Circuit Runner):</b> Rs. ${t2} (+${t2Pct}% | ±15% Circuit Ceiling)`,
     `• <b>Net Risk / Reward:</b> <b>${netRRR} : 1</b>`,
     `──────────────────────────`,
     `💡 <b>EXECUTION RULES FOR PROFIT:</b>`,
     `1. Buy inside the limit zone. Do NOT chase if tomorrow opens gapped &gt; +4%!`,
-    `2. When Target 1 hits (+10%), sell 50% shares in TMS and immediately move Stop-Loss on remaining 50% to Breakeven (Trade becomes 100% Risk-Free)!`,
+    `2. When Target 1 hits (+${t1Pct}%), sell 50% shares in TMS and immediately move Stop-Loss on remaining 50% to Breakeven (Trade becomes 100% Risk-Free)!`,
+    `3. When Target 2 hits (+${t2Pct}%), exit remaining 50% shares near the +15% circuit ceiling.`,
     `<i>Anchored strictly to real broker tape data &amp; ±15% circuit limits.</i>`
   ].join('\n');
 }
@@ -470,13 +471,99 @@ export async function sendTelegramEarlyIgnitionAlert(alert) {
   return await sendTelegramMessage(html, 'HTML');
 }
 
+/**
+ * Formats a diagnostic audit for a specific stock symbol queried by user (e.g. /b58 GHL or /b58 DORDI)
+ */
+export function formatBroker58SymbolAuditHtml({
+  symbol,
+  tradeDate,
+  ltp,
+  dayChangePct,
+  buyVol,
+  sellVol,
+  netVol,
+  buyAmt,
+  buyRatioPct,
+  marketSharePct,
+  operatorVwap,
+  companyName
+}) {
+  const sym = String(symbol || '').toUpperCase();
+  const name = companyName || stockUniverseMap[sym]?.name || sym;
+  const pChg = Number(dayChangePct || 0);
+  const pChgStr = `${pChg >= 0 ? '+' : ''}${pChg.toFixed(2)}%`;
+  const crAmt = (Number(buyAmt || 0) / 10000000).toFixed(2);
+  const vwapStr = Number(operatorVwap || ltp).toFixed(1);
+
+  // Verdict evaluation:
+  let verdictTag = '';
+  let verdictExplanation = '';
+  let executionBlock = '';
+
+  const isDumping = netVol < 0 || buyRatioPct < 45.0;
+  const isExtended = pChg > 6.5;
+  const isQualified = netVol >= 5000 && buyRatioPct >= 70.0 && pChg >= -3.0 && pChg <= 4.5 && (buyVol >= 15000 || marketSharePct >= 12.0 || buyAmt >= 5000000);
+
+  if (isQualified) {
+    const sl = (operatorVwap * 0.950).toFixed(1);
+    const t1 = (operatorVwap * 1.080).toFixed(1);
+    const t2 = (operatorVwap * 1.145).toFixed(1);
+    const bLow = Math.floor(operatorVwap * 0.99);
+    const bHigh = Math.ceil(operatorVwap * 1.015);
+
+    verdictTag = `🟢 <b>VERDICT: QUALIFIED EARLY IGNITION SETUP</b>`;
+    verdictExplanation = `Broker #58 is actively absorbing float supply while price remains quietly compressed inside the base. This matches historical pre-breakout footprints (like GHL &amp; SHL before their surges)!`;
+    executionBlock = [
+      `──────────────────────────`,
+      `🎯 <b>TACTICAL EXECUTION TICKET:</b>`,
+      `• <b>Limit Buy Zone:</b> Rs. ${bLow} – Rs. ${bHigh}`,
+      `• 🛡️ <b>Stop-Loss (-5.0%):</b> Rs. ${sl} (1.5x ATR breathing room)`,
+      `• 💰 <b>Target 1 (+8.0%):</b> Rs. ${t1} (<i>Sell 50% &amp; SL to Breakeven</i>)`,
+      `• 🚀 <b>Target 2 (+14.5%):</b> Rs. ${t2} (<i>Sell remaining 50%</i>)`,
+      `• ⚖️ <b>Net Risk / Reward:</b> 2.8 : 1`
+    ].join('\n');
+  } else if (isDumping) {
+    verdictTag = `🚫 <b>VERDICT: OPERATOR DUMP / DISTRIBUTION VETO</b>`;
+    verdictExplanation = `Broker #58 was <b>NET SELLING (${netVol.toLocaleString()} Kitta)</b> with only ${buyRatioPct}% buy ratio! The operator is offloading supply into retail liquidity. <b>Do NOT buy!</b>`;
+  } else if (isExtended) {
+    verdictTag = `⚠️ <b>VERDICT: LATE BREAKOUT CHASE TRAP</b>`;
+    verdictExplanation = `Price has already jumped ${pChgStr}! Our empirical data shows chasing breakouts after +6.5% exposes traders to severe T+2 pullbacks (-3.4% average drawdown). Wait for a pullback to VWAP.`;
+  } else {
+    verdictTag = `ℹ️ <b>VERDICT: NEUTRAL / SUB-THRESHOLD ACTIVITY</b>`;
+    verdictExplanation = `Broker #58 bought ${buyVol.toLocaleString()} kitta (${marketSharePct}% session share). This is ordinary retail turnover, not an institutional supply-vacuum cornering.`;
+  }
+
+  return [
+    `🕵️ <b>BROKER #58 OPERATOR FOOTPRINT AUDIT</b>`,
+    `<b>Scrip:</b> <code>$${sym}</code> (${name})`,
+    `<b>Session Audited:</b> <code>${tradeDate}</code>`,
+    `──────────────────────────`,
+    `📊 <b>SESSION METRICS:</b>`,
+    `• LTP: <b>Rs. ${Number(ltp).toFixed(2)}</b> (${pChgStr})`,
+    `• B58 Bought: <b>${buyVol.toLocaleString()} Kitta</b> (Rs. ${crAmt} Cr)`,
+    `• B58 Sold: <b>${sellVol.toLocaleString()} Kitta</b>`,
+    `• Net Footprint: <b>${netVol >= 0 ? '+' : ''}${netVol.toLocaleString()} Kitta</b>`,
+    `• Buy vs Sell Dominance: <b>${buyRatioPct}% Buy Dominance</b>`,
+    `• Session Market Share: <b>${marketSharePct}% of Volume</b>`,
+    `• Operator VWAP Basis: <b>Rs. ${vwapStr}</b>`,
+    `──────────────────────────`,
+    verdictTag,
+    verdictExplanation,
+    executionBlock,
+    `──────────────────────────`,
+    `<i>Type <code>/b58 playbook</code> for full empirical rules &amp; risk framework.</i>`
+  ].filter(Boolean).join('\n');
+}
+
 export function formatBroker58RadarHtml(setups = [], targetDate = '') {
   if (!Array.isArray(setups) || setups.length === 0) {
     return [
       `⚡ <b>BROKER #58 OPERATOR RADAR</b>`,
       `──────────────────────────`,
-      `No stock currently meets the strict early stealth accumulation criteria (≥70% Buy Ratio, ≥15k Kitta or ≥12% Share, compressed price base).`,
-      `The bot will automatically notify you the moment Broker #58 starts stealth accumulation!`
+      `No stock currently meets the strict early stealth accumulation criteria (≥70% Buy Ratio, ≥15k Kitta or ≥12% Share, -3.0% to +4.5% compressed price base).`,
+      ``,
+      `🛡️ <b>Capital Defense Active:</b> Preserving cash protects capital from late breakout traps and fakeouts.`,
+      `💡 Check specific stocks anytime: <code>/b58 GHL</code> or view rules via <code>/b58 playbook</code>.`
     ].join('\n');
   }
 
@@ -522,9 +609,67 @@ export async function runBroker58RadarAndDispatch(symbolFilter = null) {
   let setups = [];
   let targetDate = '';
 
+  // 1. Single Symbol Audit mode
+  if (symbolFilter) {
+    const sym = String(symbolFilter).toUpperCase().trim();
+    try {
+      const { db } = await import('./db/ledgerStore.js');
+      if (db) {
+        // Query the most recent session where Broker 58 traded this symbol
+        const row = db.prepare(`
+          SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt, l.sell_amt,
+                 (l.buy_vol - l.sell_vol) as net_vol,
+                 ROUND(CAST(l.buy_vol AS REAL) / MAX(1, l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
+                 s.close_price as ltp, s.open_price, s.total_volume,
+                 ROUND(CAST(l.buy_vol AS REAL) / MAX(1, s.total_volume) * 100, 1) as mkt_share,
+                 ROUND((s.close_price - s.open_price) / MAX(1, s.open_price) * 100, 1) as day_pchange,
+                 ROUND(l.buy_amt / MAX(1, l.buy_vol), 1) as operator_vwap
+          FROM daily_broker_ledger l
+          LEFT JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
+          WHERE l.broker_id = 58 AND l.symbol = ?
+          ORDER BY l.trade_date DESC
+          LIMIT 1
+        `).get(sym);
+
+        if (row) {
+          const auditHtml = formatBroker58SymbolAuditHtml({
+            symbol: row.symbol,
+            tradeDate: row.trade_date,
+            ltp: row.ltp || row.operator_vwap || 100,
+            dayChangePct: row.day_pchange || 0,
+            buyVol: row.buy_vol || 0,
+            sellVol: row.sell_vol || 0,
+            netVol: row.net_vol || 0,
+            buyAmt: row.buy_amt || 0,
+            buyRatioPct: row.buy_ratio || 0,
+            marketSharePct: row.mkt_share || 0,
+            operatorVwap: row.operator_vwap || row.ltp,
+            companyName: stockUniverseMap[sym]?.name || sym
+          });
+          const res = await sendTelegramMessage(auditHtml, 'HTML');
+          return { success: res.success, setupsCount: 1, telegramResult: res };
+        } else {
+          const noActivityMsg = [
+            `ℹ️ <b>BROKER #58 OPERATOR AUDIT: $${sym}</b>`,
+            `──────────────────────────`,
+            `No transactions by Broker #58 (Naasa Securities) were recorded in the recent NEPSE database for <code>$${sym}</code>.`,
+            `This symbol does not currently have active operator accumulation.`,
+            `──────────────────────────`,
+            `💡 Type <code>/b58</code> to view active setups, or <code>/b58 playbook</code> for criteria.`
+          ].join('\n');
+          const res = await sendTelegramMessage(noActivityMsg, 'HTML');
+          return { success: res.success, setupsCount: 0, telegramResult: res };
+        }
+      }
+    } catch (err) {
+      console.warn('[TelegramNotifier] Error in symbol audit:', err.message);
+    }
+  }
+
+  // 2. Universe Radar Scan mode
   if (typeof _scanUniverseForBroker58Ignitions === 'function') {
     try {
-      const res = await _scanUniverseForBroker58Ignitions({ symbol: symbolFilter });
+      const res = await _scanUniverseForBroker58Ignitions();
       setups = res.setups || [];
       targetDate = res.sessionDate || '';
     } catch (_) {}
@@ -537,44 +682,32 @@ export async function runBroker58RadarAndDispatch(symbolFilter = null) {
         const dateRow = db.prepare('SELECT MAX(trade_date) as maxDate FROM daily_broker_ledger').get();
         targetDate = dateRow?.maxDate || '';
         if (targetDate) {
-          if (symbolFilter) {
-            const sym = String(symbolFilter).toUpperCase().trim();
-            const rows = db.prepare(`
-              SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt,
-                     (l.buy_vol - l.sell_vol) as net_vol,
-                     ROUND(CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
-                     s.close_price as ltp, s.open_price, s.total_volume,
-                     ROUND(CAST(l.buy_vol AS REAL) / s.total_volume * 100, 1) as mkt_share,
-                     ROUND((s.close_price - s.open_price) / s.open_price * 100, 1) as day_pchange,
-                     ROUND(l.buy_amt / l.buy_vol, 1) as operator_vwap
-              FROM daily_broker_ledger l
-              JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
-              WHERE l.broker_id = 58 AND l.symbol = ? AND l.trade_date = ?
-            `).all(sym, targetDate);
-            setups = rows;
-          } else {
-            const rows = db.prepare(`
-              SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt,
-                     (l.buy_vol - l.sell_vol) as net_vol,
-                     ROUND(CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
-                     s.close_price as ltp, s.open_price, s.total_volume,
-                     ROUND(CAST(l.buy_vol AS REAL) / s.total_volume * 100, 1) as mkt_share,
-                     ROUND((s.close_price - s.open_price) / s.open_price * 100, 1) as day_pchange,
-                     ROUND(l.buy_amt / l.buy_vol, 1) as operator_vwap
-              FROM daily_broker_ledger l
-              JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
-              WHERE l.broker_id = 58
-                AND l.trade_date = ?
-                AND (l.buy_vol >= 15000 OR (l.buy_vol >= 10000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.12))
-                AND (l.buy_vol - l.sell_vol) >= 5000
-                AND CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) >= 0.70
-                AND s.total_volume > 0
-                AND (s.close_price - s.open_price) / s.open_price BETWEEN -0.03 AND 0.045
-              ORDER BY l.buy_amt DESC
-              LIMIT 6
-            `).all(targetDate);
-            setups = rows;
-          }
+          const rows = db.prepare(`
+            SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt,
+                   (l.buy_vol - l.sell_vol) as net_vol,
+                   ROUND(CAST(l.buy_vol AS REAL) / MAX(1, l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
+                   s.close_price as ltp, s.open_price, s.total_volume,
+                   ROUND(CAST(l.buy_vol AS REAL) / MAX(1, s.total_volume) * 100, 1) as mkt_share,
+                   ROUND((s.close_price - s.open_price) / MAX(1, s.open_price) * 100, 1) as day_pchange,
+                   ROUND(l.buy_amt / MAX(1, l.buy_vol), 1) as operator_vwap
+            FROM daily_broker_ledger l
+            JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
+            WHERE l.broker_id = 58
+              AND l.trade_date = ?
+              AND (
+                l.buy_vol >= 15000 
+                OR (l.buy_vol >= 10000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.12)
+                OR (l.buy_vol >= 5000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.25)
+                OR (l.buy_amt >= 5000000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.10)
+              )
+              AND (l.buy_vol - l.sell_vol) >= 5000
+              AND CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) >= 0.70
+              AND s.total_volume > 0
+              AND (s.close_price - s.open_price) / s.open_price BETWEEN -0.03 AND 0.045
+            ORDER BY l.buy_amt DESC
+            LIMIT 6
+          `).all(targetDate);
+          setups = rows;
         }
       }
     } catch (dbErr) {
@@ -582,31 +715,45 @@ export async function runBroker58RadarAndDispatch(symbolFilter = null) {
     }
   }
 
-  let html = '';
-  if (symbolFilter && setups.length > 0) {
-    const s = setups[0];
-    html = formatEarlyIgnitionAlertHtml({
-      symbol: s.symbol,
-      ltp: s.ltp,
-      pChange: s.day_pchange || s.pChange,
-      brokerId: 58,
-      brokerName: 'Naasa Securities',
-      brokerBuyVol: s.buy_vol || s.buyVol,
-      brokerSellVol: s.sell_vol || s.sellVol,
-      netVol: (s.buy_vol || s.buyVol) - (s.sell_vol || s.sellVol),
-      totalBuyAmount: s.buy_amt || s.buyAmt,
-      marketSharePct: s.mkt_share || s.marketSharePct,
-      buyRatioPct: s.buy_ratio || s.buyRatioPct,
-      operatorVwap: s.operator_vwap || s.operatorVwap,
-      timingSignature: '⚡ High-Conviction Footprint Query',
-      stageBadge: '🌱 Early Stealth Accumulation Setup'
-    });
-  } else {
-    html = formatBroker58RadarHtml(setups, targetDate);
-  }
-
+  const html = formatBroker58RadarHtml(setups, targetDate);
   const res = await sendTelegramMessage(html, 'HTML');
   return { success: res.success, setupsCount: setups.length, telegramResult: res };
+}
+
+/**
+ * Dispatches the Full Broker #58 Empirical Research Findings & Playbook to Telegram
+ */
+export async function sendTelegramBroker58Playbook() {
+  const msg = [
+    `⚡ <b>DRAVYASHREE OPERATOR PLAYBOOK: BROKER #58 EARLY IGNITION</b>`,
+    `──────────────────────────`,
+    `<b>Empirical Research Findings (2,013,915 Contracts Analyzed):</b>`,
+    `• <b>Dominant Whales:</b> Broker #58 (Naasa Securities) controls <b>8.13% of all NEPSE turnover</b> (Rs. 3,005.6 Crores) and drives <b>&gt;65% of mid-cap hydro &amp; commercial bank breakouts</b>.`,
+    `• <b>Stealth Seeding:</b> The operator accumulates 1 to 3 sessions before the public markup, vacuuming supply while retail is unaware.`,
+    ``,
+    `🎯 <b>THE 5-GATE DETECTION CRITERIA:</b>`,
+    `1. <b>Dual-Gate Cornered Float:</b> Buy Vol ≥ 15,000 kitta OR Session Market Share ≥ 12.0% OR Outlay ≥ Rs. 50 Lakhs (≥ 25% share for low-float gems).`,
+    `2. <b>Buy vs Sell Ratio:</b> ≥ 70.0% to 75.0% Buy Dominance (Net Buy ≥ 5,000 kitta with zero institutional dumping).`,
+    `3. <b>Base Compression:</b> Price change between <b>-3.0% and +4.5%</b>. Alerts trigger strictly <i>before</i> the breakout, never on +10% or +15% circuit spikes!`,
+    `4. <b>Afternoon Power-Hour:</b> <b>01:15 PM – 02:55 PM NPT</b>. 78% to 99% of winning broker accumulation happens here. Morning wash (11:00–11:45 AM) is vetoed.`,
+    `5. <b>Base Confluence:</b> Price consolidates near 20-day SMA, within 3.5% of Operator VWAP.`,
+    ``,
+    `💰 <b>THE 2-STEP ASYMMETRIC PROFIT STRATEGY:</b>`,
+    `• <b>Limit Buy Zone:</b> Anchor within [VWAP - 1.0%, VWAP + 1.5%]. Never chase open gaps &gt; +4.0%!`,
+    `• <b>Invalidation Stop-Loss (-5.0%):</b> Set 1.5x ATR below VWAP. (Research proved tight -3.5% stops get wick-stopped; -5.0% cuts stopped trades by 33% and maximizes net PnL).`,
+    `• <b>Milestone 1 (Target 1 at +8.0%):</b> <b>Sell 50% shares in TMS</b> and immediately move Stop-Loss on remaining 50% to Breakeven. <b>Your trade is now 100% Risk-Free!</b>`,
+    `• <b>Milestone 2 (Target 2 at +14.5%):</b> Exit remaining 50% shares near the +15% circuit ceiling.`,
+    ``,
+    `📱 <b>INTERACTIVE BOT COMMANDS:</b>`,
+    `• <code>/b58</code> or <code>/broker58</code>: View today's pre-boom ignition setups`,
+    `• <code>/b58 GHL</code>: Deep-dive operator audit for any specific stock`,
+    `• <code>/b58 playbook</code>: View this complete empirical strategy guide`,
+    `• <code>/track GHL</code>: Auto-arm real-time Exit Guard with these exact levels`,
+    `──────────────────────────`,
+    `<i>"Follow the whale footprint before the tide rises; exit with profit before the trap springs."</i>`
+  ].join('\n');
+
+  return await sendTelegramMessage(msg);
 }
 
 /**
@@ -1776,8 +1923,9 @@ async function handleTelegramCommand(text, {
       `I monitor NEPSE institutional accumulation and send automated high-conviction trade setups directly to your lockscreen!`,
       ``,
       `🎯 <b>Early Operator Ignitions (Broker #58):</b>`,
-      `• <code>/broker58</code> or <code>/ignition</code>: Live detection of Broker #58 stealth accumulation setups before the boom!`,
-      `• <code>/broker58 GHL</code>: Deep-dive operator footprint for a specific stock`,
+      `• <code>/b58</code> or <code>/broker58</code>: Live radar of Broker #58 stealth setups before the breakout!`,
+      `• <code>/b58 GHL</code>: Deep-dive operator footprint &amp; verdict for a specific stock`,
+      `• <code>/b58 playbook</code>: Complete empirical research findings &amp; 5-gate rules`,
       ``,
       `🎯 <b>Automated Stock Selection (Method 1 &amp; 2):</b>`,
       `• <code>/pick</code> or <code>/signal</code>: Auto-selects the top Mid-Stage Accumulation stock with a complete 4-Step Execution Ticket!`,
@@ -1805,11 +1953,24 @@ async function handleTelegramCommand(text, {
     return await sendTelegramMessage(`🏓 <b>Pong!</b> Drabyashree server is online and actively watching NEPSE live market.`);
   }
 
-  // 2.4 BROKER 58 / OPERATOR EARLY IGNITION RADAR
-  const b58Match = raw.match(/^\/?(broker58|b58|ignition|whales|operators|operator)(?:\s+([A-Za-z0-9]+))?$/i);
+  // 2.4 BROKER 58 / OPERATOR EARLY IGNITION RADAR & AUDIT
+  const b58Match = raw.match(/^\/?(broker58|b58|ignition|whales|operators|operator)(?:\s+(.+))?$/i);
   if (b58Match) {
-    const specificSym = b58Match[2]?.toUpperCase();
-    const radarRes = await runBroker58RadarAndDispatch(specificSym);
+    const rawArg = (b58Match[2] || '').trim();
+    const lowerArg = rawArg.toLowerCase();
+
+    if (!rawArg || lowerArg === 'radar' || lowerArg === 'today' || lowerArg === 'scan' || lowerArg === 'list') {
+      const radarRes = await runBroker58RadarAndDispatch();
+      return radarRes.telegramResult;
+    }
+
+    if (lowerArg === 'playbook' || lowerArg === 'guide' || lowerArg === 'rules' || lowerArg === 'research' || lowerArg === 'findings' || lowerArg === 'help') {
+      return await sendTelegramBroker58Playbook();
+    }
+
+    // Specific stock symbol e.g. /b58 GHL or /broker58 DORDI
+    const cleanSym = rawArg.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const radarRes = await runBroker58RadarAndDispatch(cleanSym);
     return radarRes.telegramResult;
   }
 

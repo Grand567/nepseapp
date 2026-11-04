@@ -27,7 +27,9 @@ async function runTests() {
     formatEarlyIgnitionAlertHtml, 
     sendTelegramEarlyIgnitionAlert,
     formatBroker58RadarHtml,
-    runBroker58RadarAndDispatch
+    formatBroker58SymbolAuditHtml,
+    runBroker58RadarAndDispatch,
+    sendTelegramBroker58Playbook
   } = await import('../proxy/telegramNotifier.mjs');
 
   let passed = 0;
@@ -153,7 +155,21 @@ async function runTests() {
   console.log('✅ Test 8 Passed: testTriggerBroker58Alert successfully created and dispatched alert item.\n');
   passed++;
 
-  console.log(`🎉 All ${passed}/8 Automated Tests Passed with 100% Precision!`);
+  // ── TEST 9: Broker #58 Playbook & Empirical Briefing Dispatcher ──
+  console.log('Test 9: Testing sendTelegramBroker58Playbook (/b58 playbook)...');
+  const playbookRes = await sendTelegramBroker58Playbook();
+  assert.strictEqual(playbookRes.success, true, 'Playbook dispatch should succeed');
+  console.log('✅ Test 9 Passed: sendTelegramBroker58Playbook dispatched successfully.\n');
+  passed++;
+
+  // ── TEST 10: Single-Scrip Audit on DORDI (Dump / Sub-threshold Protection) ──
+  console.log('Test 10: Testing single scrip audit on DORDI (/b58 DORDI)...');
+  const dordiRadarRes = await runBroker58RadarAndDispatch('DORDI');
+  assert.strictEqual(dordiRadarRes.success, true, 'DORDI single scrip audit should succeed');
+  console.log('✅ Test 10 Passed: /b58 DORDI single scrip audit generated diagnostic verdict.\n');
+  passed++;
+
+  console.log(`🎉 All ${passed}/10 Automated Tests Passed with 100% Precision!`);
 }
 
 runTests().catch(err => {

@@ -1288,8 +1288,12 @@ export function detectBroker58EarlyIgnition({
   }
 
   // Empirical Rules:
-  // Volume: >= 15,000 kitta OR (>= 10,000 with >= 12% share) OR (>= 5,000 with >= 25% share)
-  const isVolQualified = b58BuyQty >= 15000 || (b58BuyQty >= 10000 && marketSharePct >= 12.0) || (b58BuyQty >= 5000 && marketSharePct >= 25.0);
+  // Volume: >= 15,000 kitta OR (>= 10,000 with >= 12% share) OR (>= 5,000 with >= 25% share) OR Capital Outlay >= Rs. 50L/1Cr
+  const isVolQualified = b58BuyQty >= 15000 || 
+                         (b58BuyQty >= 10000 && marketSharePct >= 12.0) || 
+                         (b58BuyQty >= 5000 && marketSharePct >= 25.0) ||
+                         (b58BuyAmt >= 5000000 && (marketSharePct >= 10.0 || b58BuyQty >= 10000)) ||
+                         (b58BuyAmt >= 10000000 && marketSharePct >= 8.0);
   // Net Accumulation: Net buyer >= 5,000 kitta with >= 70% buy ratio (minimal selling)
   const isNetBuyer = netVol >= 5000 && buyRatioPct >= 70.0;
   // Price Compression: Quiet base between -3.0% and +4.5% (strictly rejects late breakouts > 7% or circuit locked +15%)
@@ -1451,7 +1455,13 @@ export async function scanUniverseForBroker58Ignitions({ limit = 5, sessionDate 
             JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
             WHERE l.broker_id = 58
               AND l.trade_date = ?
-              AND (l.buy_vol >= 15000 OR (l.buy_vol >= 10000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.12) OR (l.buy_vol >= 5000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.25))
+              AND (
+                l.buy_vol >= 15000 
+                OR (l.buy_vol >= 10000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.12) 
+                OR (l.buy_vol >= 5000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.25)
+                OR (l.buy_amt >= 5000000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.10)
+                OR (l.buy_amt >= 10000000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.08)
+              )
               AND (l.buy_vol - l.sell_vol) >= 5000
               AND CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) >= 0.70
               AND s.total_volume > 0
