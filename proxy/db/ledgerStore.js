@@ -2222,3 +2222,104 @@ export function verifyDailyThreeWayConservation(tradeDate) {
   };
 }
 
+/**
+ * ANTI-DEMAT DUMP GUARD
+ * Prevents retail investors from being trapped when past accumulating brokers
+ * dump settled Demat shares into morning liquidity (e.g. DORDI, SOHL, AKPL).
+ *
+ * Scans the last 3 completed sessions for brokers with net accumulation >= 5,000 kitta.
+ * Then checks current intraday trades (or today's ledger) to see if any past accumulator
+ * is selling >= 1,500 kitta AND (>= 15% of their accumulated position OR >= 10,000 kitta).
+ */
+export function auditAntiDematDumpGuard(symbol, floorsheetTrades = []) {
+  try {
+    const cleanSym = String(symbol || '').trim().toUpperCase();
+    if (!cleanSym) return { isTrap: false, reason: 'No symbol provided' };
+
+    // 1. Get the 4 most recent distinct trade dates
+    const recentDates = db.prepare(`
+      SELECT DISTINCT trade_date 
+      FROM daily_broker_ledger 
+      WHERE symbol = ? 
+      ORDER BY trade_date DESC 
+      LIMIT 4
+    `).all(cleanSym).map(r => r.trade_date);
+
+    if (recentDates.length < 2) {
+      return { isTrap: false, reason: 'Insufficient historical sessions to evaluate demat dump' };
+    }
+
+    // Prior 3 sessions (excluding today's latest session)
+    const priorDates = recentDates.slice(1, 4);
+    if (priorDates.length === 0) return { isTrap: false, reason: 'No prior sessions' };
+
+    const placeholders = priorDates.map(() => '?').join(',');
+    const pastAccumulators = db.prepare(`
+      SELECT 
+        broker_id, 
+        SUM(buy_vol) as total_bought, 
+        SUM(sell_vol) as total_sold, 
+        SUM(buy_vol - sell_vol) as net_acc
+      FROM daily_broker_ledger
+      WHERE symbol = ? AND trade_date IN (${placeholders})
+      GROUP BY broker_id
+      HAVING net_acc >= 5000
+      ORDER BY net_acc DESC
+    `).all(cleanSym, ...priorDates);
+
+    if (!pastAccumulators || pastAccumulators.length === 0) {
+      return { isTrap: false, reason: 'No dominant past accumulator holding settled Demat inventory' };
+    }
+
+    // 2. Map today's sell volume per broker
+    const brokerSellToday = {};
+    if (Array.isArray(floorsheetTrades) && floorsheetTrades.length > 0) {
+      for (const t of floorsheetTrades) {
+        const s = Number(t.sellerBroker || t.seller || t.seller_broker || 0);
+        const q = Number(t.qty || t.quantity || t.kitta || 0);
+        if (s > 0) {
+          brokerSellToday[s] = (brokerSellToday[s] || 0) + q;
+        }
+      }
+    } else {
+      // Check today's recorded ledger if available
+      const latestDate = recentDates[0];
+      const todayRows = db.prepare(`
+        SELECT broker_id, sell_vol 
+        FROM daily_broker_ledger 
+        WHERE symbol = ? AND trade_date = ?
+      `).all(cleanSym, latestDate);
+      for (const r of todayRows) {
+        brokerSellToday[r.broker_id] = r.sell_vol;
+      }
+    }
+
+    // 3. Evaluate each past accumulator
+    for (const acc of pastAccumulators) {
+      const bId = acc.broker_id;
+      const soldToday = brokerSellToday[bId] || 0;
+      const netAcc = acc.net_acc;
+
+      if (soldToday >= 1500 && (soldToday >= netAcc * 0.15 || soldToday >= 10000)) {
+        return {
+          isTrap: true,
+          code: 'VETO_PAST_ACCUMULATOR_DUMPING',
+          dumpingBroker: bId,
+          soldToday,
+          netAccumulated: netAcc,
+          reason: `T+2 Demat Dump Trap: Past accumulator Broker #${bId} (who cornered ${netAcc.toLocaleString()} kitta over past sessions) is dumping today (${soldToday.toLocaleString()} kitta sold into retail). VETOED to prevent retail lock-in.`
+        };
+      }
+    }
+
+    return {
+      isTrap: false,
+      reason: 'All past accumulators are holding or expanding positions; zero Demat dumping detected',
+      pastAccumulatorsCount: pastAccumulators.length
+    };
+  } catch (err) {
+    return { isTrap: false, reason: `Audit error: ${err.message}` };
+  }
+}
+
+

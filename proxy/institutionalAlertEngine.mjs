@@ -731,7 +731,8 @@ export function evaluateVetoFilters({
   fundamentals = null,
   daysToLockInExpiry = null,
   lockinType = 'promoter',
-  institutionalCostBasis = null
+  institutionalCostBasis = null,
+  antiDematDump = null
 }) {
   const currentLtp = Number(ltp || 0);
   const prevClose = Number(previousClose || (currentLtp > 0 ? currentLtp : 0));
@@ -838,6 +839,14 @@ export function evaluateVetoFilters({
     });
   }
 
+  // HARD VETO 9: T+2/T-3 Demat Dump Risk by Past Accumulator Brokers
+  if (antiDematDump && antiDematDump.isTrap) {
+    vetoTriggers.push({
+      code: 'VETO_PAST_ACCUMULATOR_DUMPING',
+      reason: antiDematDump.reason || 'T+2 Demat Dump Trap: Past accumulating broker is dumping settled shares today into retail bids. VETOED to prevent retail lock-in.'
+    });
+  }
+
   const isVetoed = vetoTriggers.length > 0;
 
   return {
@@ -903,7 +912,8 @@ export function evaluateInstitutionalAlert({
   fundamentals = null,
   daysToLockInExpiry = null,
   lockinType = 'promoter',
-  institutionalCostBasis = null
+  institutionalCostBasis = null,
+  antiDematDump = null
 }) {
   const sym = String(symbol || 'STOCK').toUpperCase().trim();
   const currentPrice = Number(ltp || 0);
@@ -990,7 +1000,8 @@ export function evaluateInstitutionalAlert({
     fundamentals,
     daysToLockInExpiry,
     lockinType,
-    institutionalCostBasis
+    institutionalCostBasis,
+    antiDematDump
   });
 
   // 7. Calculate Friction-Adjusted RRR & Dynamic Position Sizing (Layer 5)

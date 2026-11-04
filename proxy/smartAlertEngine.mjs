@@ -46,6 +46,7 @@ import {
   evaluateVetoFilters,
   calculateNetExpectancyAndSizing
 } from './institutionalAlertEngine.mjs';
+import { auditAntiDematDumpGuard } from './db/ledgerStore.js';
 
 export {
   evaluateInstitutionalAlert,
@@ -620,6 +621,13 @@ export function evaluateStockAlertConditions({
 
   // ── Run Institutional Confluence & Veto Engine (Modules 1 - 5) ──
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
+
+  // Anti-Demat Dump Guard: Check if past 3 sessions' accumulators are dumping settled shares today
+  let antiDematDump = { isTrap: false };
+  try {
+    antiDematDump = auditAntiDematDumpGuard(sym, floorsheetTrades);
+  } catch (_) {}
+
   const institutional = evaluateInstitutionalAlert({
     symbol: sym,
     ltp: currentLtp,
@@ -642,7 +650,8 @@ export function evaluateStockAlertConditions({
     sector10DReturn: sector10DReturn != null ? sector10DReturn : 3.0,
     target1,
     target2,
-    bypassTimingGate: isTestEnv
+    bypassTimingGate: isTestEnv,
+    antiDematDump
   });
 
   const conditionsMetCount = (isPriceInBase ? 1 : 0) + (isBuyerConcentrationMet ? 1 : 0) + (isSellerVolumeDry ? 1 : 0);
@@ -693,6 +702,8 @@ export function evaluateStockAlertConditions({
     institutionalConfluence: institutional,
     all4PillarsPassed: institutional?.all4PillarsPassed ?? false,
     isInstitutionalQualified: institutional?.isQualified ?? false,
+    antiDematDump,
+    isExecutableBuyTrigger: Boolean(institutional?.isQualified && allConditionsMet && !antiDematDump?.isTrap),
     ticketPayload: institutional?.ticketPayload
   };
 }
