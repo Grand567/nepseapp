@@ -9,6 +9,7 @@ import {
   sendTelegramPreOpenGate,
   sendMorningStockSelectionDigest,
   run5StepSwingSelectionAndDispatch,
+  runBroker58RadarAndDispatch,
   pollIncomingTelegramCommands,
   sendTelegramMessage,
   auditMultiSessionTrapRisk
@@ -408,6 +409,10 @@ export async function runPostMarketCloseAnalysis(force = false) {
     // Run the 5-Step 10–15 Day High-Alpha Swing Pick & auto-arm Exit Guard
     await run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(e =>
       console.warn('[Post-Market Worker] 5-Step Swing dispatch notice:', e.message)
+    );
+    // Method 3: Run Broker #58 Pre-Boom Operator Radar
+    await runBroker58RadarAndDispatch().catch(e =>
+      console.warn('[Post-Market Worker] Broker #58 Radar dispatch notice:', e.message)
     );
     // 5-Day Rolling Ledger Roll: Roll today into 4-day immutable ledger, prune oldest, & reset File A
     await runCalendarGuardedDailyTransition({ targetDate }).catch(e =>

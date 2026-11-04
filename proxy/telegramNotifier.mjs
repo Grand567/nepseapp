@@ -1768,7 +1768,7 @@ export async function sendTelegramPreMarketScan({
           `• ⚠️ Chase Cap (+2.5% max): Rs. ${c.chaseCap}`,
           `• 🛡️ Stop-Loss Floor: Rs. ${c.stopLoss} (-${c.slPct || '4.8'}%)`,
           `• 🚀 Target 1: Rs. ${c.target1} (+${c.t1Pct || '9.6'}%) | T2: Rs. ${c.target2}`,
-          `• Score: <b>${c.score || c.setupScore || 85}/100</b> | Float: ${c.floatM || '<15'}M shares`
+          `• Score: <b>${c.score || c.setupScore || 85}/100</b> | Float: ${c.floatM || '&lt;15'}M shares`
         ].join('\n');
       }).join('\n\n')
     : '<i>No candidates met all 8 institutional gates today. Preserving 100% cash!</i>';
