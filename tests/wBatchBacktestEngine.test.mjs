@@ -155,12 +155,12 @@ it('runComprehensiveBacktest: enforces mandatory T+2 settlement lock (no day-T o
 });
 
 // 2B. Statutory Trading Calendar T+2 Holding Sequence: Thursday -> Sunday -> Monday
-it('runComprehensiveBacktest: enforces calendar-accurate Thursday -> Sunday (T+1 lock) -> Monday (T+2 unlock)', () => {
+it('runComprehensiveBacktest: enforces calendar-accurate Thursday -> Friday (T+1 lock) -> Monday (T+2 unlock)', () => {
   // 1. Assert session counts across weekend
   assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-09'), 0, 'Day T (Thu entry) must have 0 elapsed hold sessions');
-  assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-10'), 0, 'Friday weekend must not advance trading sessions');
-  assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-11'), 0, 'Saturday weekend must not advance trading sessions');
-  assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-12'), 1, 'Sunday is Day T+1 (holdSessions = 1, locked in Demat settlement)');
+  assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-10'), 1, 'Friday is Day T+1 (holdSessions = 1, locked in Demat settlement)');
+  assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-11'), 1, 'Saturday weekend must not advance trading sessions');
+  assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-12'), 1, 'Sunday weekend must not advance trading sessions');
   assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-13'), 2, 'Monday is Day T+2 (holdSessions = 2, unlocked for exit eligibility)');
 
   // 2. Assert that backtest execution strictly locks exit on Sunday T+1 even under severe price moves
@@ -168,7 +168,7 @@ it('runComprehensiveBacktest: enforces calendar-accurate Thursday -> Sunday (T+1
   const start = new Date('2024-11-20T00:00:00Z');
   for (let i = 0; i < 50; i++) {
     const d = new Date(start.getTime() + i * 24 * 3600 * 1000);
-    if (d.getUTCDay() === 5 || d.getUTCDay() === 6) continue;
+    if (d.getUTCDay() === 0 || d.getUTCDay() === 6) continue;
     candles.push({
       date: d.toISOString().slice(0, 10),
       open: 400 + i,

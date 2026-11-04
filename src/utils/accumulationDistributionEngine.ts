@@ -813,7 +813,7 @@ export function calculateBrokerConcentration(
       })
     : [];
 
-  const rba = realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis || getCachedBrokerData(normSym);
+  const rba = realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis || (trades.length === 0 ? getCachedBrokerData(normSym) : null);
 
   const res = aggregateBrokerMicrostructure({
     contracts: trades,

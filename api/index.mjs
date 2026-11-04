@@ -3983,13 +3983,13 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
         }
 
         // 1.5. Snapshot fallback if raw floorsheet JSON isn't available
-        const matrixDirs = [
+        const fallbackMatrixDirs = [
           path.join(__dirname, 'data'),
           path.join(process.cwd(), 'data'),
           path.join(process.cwd(), 'proxy', 'data'),
           path.join(process.cwd(), 'src', 'data')
         ];
-        for (const mDir of matrixDirs) {
+        for (const mDir of fallbackMatrixDirs) {
           const mFile = path.join(mDir, 'broker_matrix_latest.json');
           if (fs.existsSync(mFile)) {
             try {

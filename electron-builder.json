@@ -34,7 +34,14 @@
         "**/*.mjs",
         "**/*.js",
         "**/*.json",
-        "data/**/*",
+        "data/drabyashree_ledger.db*",
+        "data/broker_matrix_latest.json",
+        "data/*.json",
+        "!data/floorsheet-full-*.json",
+        "!data/broker_vault/**/*",
+        "!data/broker_alltime/**/*",
+        "!data/raw_floorsheet_backups/**/*",
+        "!data/daily_floorsheets/**/*",
         "!node_modules/**/*",
         "!scratch/**/*"
       ]

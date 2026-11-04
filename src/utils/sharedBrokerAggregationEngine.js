@@ -431,7 +431,7 @@ export function aggregateBrokerMicrostructure(params = {}) {
   // If we have an authentic realBrokerAnalysis and the raw trades cover less than 85% of total volume,
   // or if rawTradesVol is less than 50% of expected session volume, do NOT let the partial snippet corrupt broker concentration.
   const isPartialFragment = (hasFullRba && expectedVol >= 500 && rawTradesVol < expectedVol * 0.85) ||
-                            (expectedVol >= 500 && rawTradesVol < expectedVol * 0.5);
+                            (expectedVol >= 500 && rawTradesVol < expectedVol * 0.5 && (hasFullRba || windowData.length > 0 || dailyLedgerRows.length > 0));
 
   // PATH 1: Raw floorsheet contracts provided (only if representative of the session)
   if (rawTrades.length > 0 && !isPartialFragment) {

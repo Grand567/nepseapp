@@ -32,6 +32,7 @@ import { SubscriptionProvider, useSubscription } from './context/SubscriptionCon
 import { fetchHolidays, fetchNepseIntradayGraph } from './utils/servicesApi.js';
 import { getUpcomingHolidays, toNepaliDigits } from './utils/bikramSambat.js';
 
+import { initLocalLedger } from './utils/localLedgerManager';
 import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices, warmUpServer } from './utils/liveData';
 import { getDetailedMarketStatus, clearDynamicMarketHalt, setLiveMarketOverride } from './utils/nepseCalendar';
 // MOCK_DATA_DISABLED — mock data is permanently disabled; import removed.
@@ -106,7 +107,7 @@ function AppInner() {
   const avatarBtnRef = useRef(null);
 
   // ── Render cold-start warm-up — fire ASAP so server is ready before fetchMarket runs ──
-  useEffect(() => { warmUpServer().catch(() => {}); }, []);
+  useEffect(() => { warmUpServer().catch(() => {}); initLocalLedger().catch(() => {}); }, []);
 
   // Close account menu on any click or touch outside
   useEffect(() => {

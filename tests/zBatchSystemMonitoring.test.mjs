@@ -78,12 +78,12 @@ it('evaluateCompletenessHealth: identifies clean ingestion, flags discrepancies,
   assert.ok(severeResult.completenessPct < 80);
 
   // D. Missing Session Record on Expected Trading Session (e.g. Sunday 2026-11-01)
-  const missingSessionDate = '2026-11-01'; // Normal Trading Sunday
-  const sundayDate = new Date('2026-11-01T12:00:00+05:45');
+  const missingSessionDate = '2026-11-02'; // Normal Trading Monday
+  const mondayDate = new Date('2026-11-02T15:30:00+05:45');
   const missingResult = evaluateCompletenessHealth({
     completenessRecord: null,
     expectedTradingDate: missingSessionDate,
-    now: sundayDate
+    now: mondayDate
   });
   assert.strictEqual(missingResult.status, 'CRITICAL');
   assert.strictEqual(missingResult.code, 'MISSING_SESSION');

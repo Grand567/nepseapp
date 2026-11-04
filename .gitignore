@@ -19,7 +19,9 @@ run_this_first.py
 
 # Capacitor / Android
 android/
-/Drabyashree-NEPSE.apk
+*.apk
+*.apk.idsig
+*.aab
 .DS_Store
 
 .vercel

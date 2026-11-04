@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { idbGet, idbSet } from './indexedDb.js';
+import { fetchFromBackend } from './liveData.js';
 
 export interface ScripTacticalLevels {
   limit_buy_min: number;
@@ -137,9 +138,11 @@ export async function initLocalLedger(): Promise<Historical4DayLedger | null> {
  */
 export async function syncLedgerFromServer(): Promise<Historical4DayLedger | null> {
   try {
-    const res = await fetch('/api/ledger/4day-history');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data: Historical4DayLedger = await res.json();
+    let data: any = await fetchFromBackend('/api/ledger/4day-history', 15000);
+    if (!data && typeof fetch !== 'undefined') {
+      const res = await fetch('/api/ledger/4day-history');
+      if (res.ok) data = await res.json();
+    }
 
     if (data && data.stocks) {
       _hotHistoricalLedger = data;
@@ -258,10 +261,13 @@ export function useServiceHubData() {
 export async function fetchCloudHistoricalData(symbol: string, days: number = 365) {
   const sym = String(symbol || '').toUpperCase().trim();
   try {
-    const res = await fetch(`/api/history/${sym}?days=${days}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data;
+    const data = await fetchFromBackend(`/api/history/${sym}?days=${days}`, 10000);
+    if (data) return data;
+    if (typeof fetch !== 'undefined') {
+      const res = await fetch(`/api/history/${sym}?days=${days}`);
+      if (res.ok) return await res.json();
+    }
+    return null;
   } catch (err) {
     console.warn(`[LocalLedger] Cloud historical stream notice for ${sym}:`, (err as Error).message);
     return null;

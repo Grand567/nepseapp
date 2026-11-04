@@ -1,14 +1,9 @@
 /**
  * tests/abBatchTelegramMorningDigest.test.mjs
  * Test Suite: Automated Morning Telegram / Push Dispatcher (Post-Build Stage 3)
- *
- * Verifies:
- * 1. Morning Digest HTML message formatting (Header, Confluence Breakdown, Entry/Stops, Sizing, Microstructure)
- * 2. Zero-Buy Capital Preservation fallback handling
- * 3. Graceful Telegram API dispatch error handling when bot token is unconfigured
- * 4. NEPSE trading day schedule filter (Sunday–Thursday vs Friday/Saturday & Dashain holidays)
- * 5. Worker integration executing runDailyPaperRun and generating morning digest dispatch output
  */
+process.env.SUPPRESS_TEST_ALERTS = 'true';
+process.env.NODE_ENV = 'test';
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';

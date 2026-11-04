@@ -14,6 +14,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { runComprehensiveBacktest } from '../src/utils/signals/backtestEngine.js';
+import { isNepseTradingDay } from '../src/utils/nepseCalendar.js';
 import { calculateLiquiditySlippage } from '../src/utils/nepseWalkForwardBacktest.mjs';
 import { evaluateStockSelection } from '../src/utils/signals/stockScoringEngine.js';
 import { evaluateFundamentalConfluence } from '../src/utils/signals/fundamentalSignals.js';
@@ -24,50 +25,54 @@ describe('Audit Item 1: Elimination of Look-Ahead Bias (T+1 Open Fill Execution)
   function generateTestCandles(count = 28) {
     const candles = [];
     const baseDate = new Date('2026-01-01');
+    let cursor = new Date(baseDate);
 
-    for (let i = 0; i < count; i++) {
-      const d = new Date(baseDate.getTime() + i * 24 * 60 * 60 * 1000);
-      const dateStr = d.toISOString().slice(0, 10);
-      
-      let open = 500;
-      let high = 505;
-      let low = 495;
-      let close = 500;
-      let volume = 50000;
-      let turnover = 25000000;
+    while (candles.length < count) {
+      if (isNepseTradingDay(cursor)) {
+        const dateStr = cursor.toISOString().slice(0, 10);
+        const i = candles.length;
+        
+        let open = 500;
+        let high = 505;
+        let low = 495;
+        let close = 500;
+        let volume = 50000;
+        let turnover = 25000000;
 
-      if (i === 21) {
-        // Day T (2026-01-22): Breakout impulse at close
-        open = 502;
-        high = 552;
-        low = 501;
-        close = 550; // Breaks out above 20-day high (505) -> BUY signal generated at close
-      } else if (i === 22) {
-        // Day T+1 (2026-01-23): Opens higher at 555
-        open = 555;
-        high = 560;
-        low = 550;
-        close = 558;
-      } else if (i === 23) {
-        // Day T+2 (2026-01-24): Demat lock
-        open = 558;
-        high = 562;
-        low = 556;
-        close = 560;
-      } else if (i === 24) {
-        // Day T+3 (2026-01-25): Surges to hit Target 1
-        open = 560;
-        high = 720;
-        low = 559;
-        close = 710;
-      } else if (i === 25) {
-        open = 710;
-        high = 730;
-        low = 705;
-        close = 725;
+        if (i === 21) {
+          // Day T: Breakout impulse at close
+          open = 502;
+          high = 552;
+          low = 501;
+          close = 550; // Breaks out above 20-day high (505) -> BUY signal generated at close
+        } else if (i === 22) {
+          // Day T+1: Opens higher at 555
+          open = 555;
+          high = 560;
+          low = 550;
+          close = 558;
+        } else if (i === 23) {
+          // Day T+2: Demat lock
+          open = 558;
+          high = 562;
+          low = 556;
+          close = 560;
+        } else if (i === 24) {
+          // Day T+3: Surges to hit Target 1
+          open = 560;
+          high = 720;
+          low = 559;
+          close = 710;
+        } else if (i === 25) {
+          open = 710;
+          high = 730;
+          low = 705;
+          close = 725;
+        }
+
+        candles.push({ date: dateStr, open, high, low, close, volume, turnover });
       }
-
-      candles.push({ date: dateStr, open, high, low, close, volume, turnover });
+      cursor.setDate(cursor.getDate() + 1);
     }
     return candles;
   }
