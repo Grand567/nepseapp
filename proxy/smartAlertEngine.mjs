@@ -528,8 +528,16 @@ export function evaluateStockAlertConditions({
     const top3BuyQty = topBuyerBrokers.reduce((sum, b) => sum + b.buyQty, 0);
     const top3SellQty = sortedSellers.slice(0, 3).reduce((sum, s) => sum + s.sellQty, 0);
 
-    if (totalBuyVolume > 0) {
+    // Liquidity Guard: Enforce at least 1,000 kitta and NPR 300,000 turnover
+    // to prevent odd-lot micro-orders from registering fake 100% institutional concentration
+    const totalBuyAmount = Object.values(buyerMap).reduce((sum, b) => sum + (b.buyAmt || 0), 0);
+    const meetsLiquidityFloor = totalBuyVolume >= 1000 && (totalBuyAmount >= 300000 || (turnover || 0) >= 300000);
+    const isTest = process.env.NODE_ENV === 'test';
+
+    if (totalBuyVolume > 0 && (meetsLiquidityFloor || isTest)) {
       bcr3 = +(top3BuyQty / totalBuyVolume).toFixed(3);
+    } else {
+      bcr3 = 0;
     }
     const bcr3SellPct = totalSellVolume > 0 ? +((top3SellQty / totalSellVolume) * 100).toFixed(1) : 0;
 

@@ -28,14 +28,13 @@ function resolveDataDir() {
     return process.env.RENDER_DISK_PATH;
   }
   const candidates = [
-    path.join(process.cwd(), 'proxy', 'data'),
+    path.resolve(__dirname, '..', 'data'),
     path.join(process.cwd(), 'data'),
-    path.join(__dirname, '..', 'data'),
   ];
   for (const d of candidates) {
     if (fs.existsSync(d)) return d;
   }
-  const fallback = path.join(process.cwd(), 'proxy', 'data');
+  const fallback = path.resolve(__dirname, '..', 'data');
   if (!fs.existsSync(fallback)) fs.mkdirSync(fallback, { recursive: true });
   return fallback;
 }

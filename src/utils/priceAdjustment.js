@@ -314,12 +314,20 @@ export function aggregateToWeeklyCandles(dailyCandles) {
     const dt = new Date(d.date);
     if (isNaN(dt.getTime())) continue;
 
-    // ISO week: Monday = day 1. Get Monday of the current week.
-    const day = dt.getDay(); // 0=Sun, 1=Mon … 6=Sat
-    const daysToMonday = day === 0 ? 6 : day - 1; // roll back to Monday
-    const monday = new Date(dt);
-    monday.setDate(dt.getDate() - daysToMonday);
-    const weekKey = monday.toISOString().slice(0, 10);
+    // Regime Shift: Before April 6, 2026, trading week started Sunday (day 0).
+    // From April 6, 2026 onward, trading week starts Monday (day 1).
+    const dateStr = d.date ? String(d.date).slice(0, 10) : dt.toISOString().slice(0, 10);
+    const isPostShift = dateStr >= '2026-04-06';
+    const weekStartDt = new Date(dt);
+    if (isPostShift) {
+      const day = dt.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+      const daysToMonday = day === 0 ? 6 : day - 1; // roll back to Monday
+      weekStartDt.setDate(dt.getDate() - daysToMonday);
+    } else {
+      const day = dt.getDay(); // roll back to Sunday (day 0)
+      weekStartDt.setDate(dt.getDate() - day);
+    }
+    const weekKey = weekStartDt.toISOString().slice(0, 10);
 
     if (!weeks.has(weekKey)) {
       weeks.set(weekKey, {

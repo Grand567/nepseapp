@@ -465,9 +465,11 @@ export async function fetchLiveCalendarMonth(bsYear, bsMonth) {
     const isHoliday = localHoliday.isHoliday || isRemoteHoliday;
     const holidayName = localHoliday.holidayNameNp || festival || null;
 
-    // Statutory NEPSE weekend holidays: Saturday (6) and Sunday (0). Monday (1) to Friday (5) are open trading days!
-    const isWeekend = (dayOfWeek === 6 || dayOfWeek === 0);
-    const isTradingDay = !isWeekend && !isHoliday; // Monday to Friday
+    const adIso = adDate ? adDate.toISOString().split('T')[0] : '';
+    const isPostShift = !adIso || adIso >= '2026-04-06';
+    // Pre-April 6, 2026: Fri (5) & Sat (6) were weekends. Post-April 6, 2026: Sat (6) & Sun (0) are weekends.
+    const isWeekend = isPostShift ? (dayOfWeek === 6 || dayOfWeek === 0) : (dayOfWeek === 5 || dayOfWeek === 6);
+    const isTradingDay = !isWeekend && !isHoliday;
 
     const dayObj = {
       bsYear,

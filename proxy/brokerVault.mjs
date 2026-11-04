@@ -39,6 +39,30 @@ try {
   console.warn('[brokerVault] Failed to create broker alltime dir:', e.message);
 }
 
+let _cachedMatrixObj = null;
+let _cachedMatrixMtime = 0;
+let _cachedMatrixPath = '';
+
+/**
+ * Non-blocking, mtime-cached loader for broker_matrix_latest.json (9MB payload)
+ */
+async function loadBrokerMatrixJson(matrixPath) {
+  try {
+    const stats = await fs.promises.stat(matrixPath);
+    if (_cachedMatrixObj && _cachedMatrixPath === matrixPath && stats.mtimeMs === _cachedMatrixMtime) {
+      return _cachedMatrixObj;
+    }
+    const raw = await fs.promises.readFile(matrixPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    _cachedMatrixObj = parsed;
+    _cachedMatrixMtime = stats.mtimeMs;
+    _cachedMatrixPath = matrixPath;
+    return parsed;
+  } catch (err) {
+    return null;
+  }
+}
+
 export const BROKER_NAMES = {
   '1': 'Kumari Securities',
   '3': 'Arun Securities',
@@ -2718,7 +2742,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
     const matrixPath = path.join(dataDir, 'broker_matrix_latest.json');
     if (fs.existsSync(matrixPath)) {
       try {
-        const matrixObj = JSON.parse(fs.readFileSync(matrixPath, 'utf8'));
+        const matrixObj = await loadBrokerMatrixJson(matrixPath);
         if (Array.isArray(matrixObj?.matrix) && matrixObj.matrix.length > 0) {
           const mDate = matrixObj.businessDate || nptDate;
           if (cleanDate && mDate !== cleanDate) {
@@ -2775,7 +2799,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
           }
           if (reconstructedTrades.length > 0) {
             const saveFile = path.join(dataDir, `floorsheet-full-${mDate}.json`);
-            try { fs.writeFileSync(saveFile, JSON.stringify(reconstructedTrades)); } catch (_) {}
+            try { await fs.promises.writeFile(saveFile, JSON.stringify(reconstructedTrades)); } catch (_) {}
             return reconstructedTrades;
           }
         }
@@ -2942,7 +2966,7 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
       const matrixPath = path.join(dataDir, 'broker_matrix_latest.json');
       if (fs.existsSync(matrixPath)) {
         try {
-          const matrixObj = JSON.parse(fs.readFileSync(matrixPath, 'utf8'));
+          const matrixObj = await loadBrokerMatrixJson(matrixPath);
           if (Array.isArray(matrixObj?.matrix)) {
             const matrixSymRows = {};
             for (const b of matrixObj.matrix) {

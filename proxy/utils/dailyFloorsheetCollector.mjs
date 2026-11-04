@@ -23,9 +23,8 @@ const __dirname = path.dirname(__filename);
 
 function resolveDailyFloorsheetDir() {
   const candidates = [
-    path.join(process.cwd(), 'proxy', 'data', 'daily_floorsheets'),
-    path.join(process.cwd(), 'data', 'daily_floorsheets'),
-    path.join(__dirname, '..', 'data', 'daily_floorsheets')
+    path.resolve(__dirname, '..', 'data', 'daily_floorsheets'),
+    path.join(process.cwd(), 'data', 'daily_floorsheets')
   ];
 
   for (const dir of candidates) {

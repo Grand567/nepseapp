@@ -33,17 +33,26 @@
       "filter": [
         "**/*.mjs",
         "**/*.js",
-        "**/*.json",
         "data/drabyashree_ledger.db*",
         "data/broker_matrix_latest.json",
-        "data/*.json",
+        "data/nepse-1year-market-history.json.gz",
+        "!proxy/**/*",
+        "!data/sync_vaults/**/*",
+        "!data/sync_vaults*.*",
+        "!data/*_seed.json",
+        "!data/telegram_config.json",
+        "!data/telegram_offset.json",
+        "!data/discord_config.json",
+        "!data/push_tokens.json",
+        "!meroshare_accounts.json",
         "!data/floorsheet-full-*.json",
         "!data/broker_vault/**/*",
         "!data/broker_alltime/**/*",
         "!data/raw_floorsheet_backups/**/*",
         "!data/daily_floorsheets/**/*",
         "!node_modules/**/*",
-        "!scratch/**/*"
+        "!scratch/**/*",
+        "!.env*"
       ]
     }
   ]

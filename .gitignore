@@ -28,6 +28,10 @@ android/
 .agents/
 launch-claude-code.*
 proxy/data/sync_vaults/
+proxy/data/sync_vaults*.json
+proxy/data/*_seed.json
+meroshare_accounts.json
+proxy/meroshare_accounts.json
 proxy/data/broker_vault/
 proxy/data/push_tokens.json
 proxy/data/telegram_config.json
@@ -49,6 +53,7 @@ audit_screenshots/
 proxy/data/daily_floorsheets/*.json
 proxy/data/daily_floorsheets/*.json.gz
 !proxy/data/daily_floorsheets/archive_index.json
+proxy/data/raw_floorsheet_backups/
 *.db
 *.db-shm
 *.db-wal

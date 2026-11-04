@@ -19,6 +19,7 @@ import {
   calculateVolumeZScore,
   calculateAccumulationDistributionIndex,
 } from './quantEngine.js';
+import { adjustPricesForCorporateActions } from './priceAdjustment.js';
 
 /**
  * Calculates Simple Moving Average array.
@@ -583,10 +584,13 @@ export function analyzeVolatility(candles) {
 
 /**
  * Runs the full technical analysis suite over the candles dataset.
+ * Automatically adjusts historical candles for corporate actions (dividends, splits, bonuses)
+ * if corporateActions are supplied, preventing false breakdown signals.
  * @param {Array<{date: string, open: number, high: number, low: number, close: number, volume: number}>} candles
+ * @param {Array<Object>} [corporateActions=[]]
  * @returns {Object} Cohesive technical report
  */
-export function analyzeTechnical(candles) {
+export function analyzeTechnical(candles, corporateActions = []) {
   if (!Array.isArray(candles) || candles.length < 30) {
     return {
       supported: false,
@@ -594,11 +598,16 @@ export function analyzeTechnical(candles) {
     };
   }
 
-  const closes = candles.map((c) => Number(c.close));
+  // Pre-adjust historical prices for stock splits, rights, and bonus shares
+  const effectiveCandles = Array.isArray(corporateActions) && corporateActions.length > 0
+    ? adjustPricesForCorporateActions(candles, corporateActions)
+    : candles;
+
+  const closes = effectiveCandles.map((c) => Number(c.close));
   const trend = analyzeTrend(closes);
   const momentum = analyzeMomentum(closes, trend.direction);
-  const volume = analyzeVolume(candles);
-  const volatility = analyzeVolatility(candles);
+  const volume = analyzeVolume(effectiveCandles);
+  const volatility = analyzeVolatility(effectiveCandles);
 
   // Blended technical score (0 - 100)
   const compositeScore = Math.round(

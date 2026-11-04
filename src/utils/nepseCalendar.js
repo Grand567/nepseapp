@@ -293,6 +293,8 @@ export function isNepsePublicHoliday(date = new Date()) {
  * Under current NEPSE rules: Saturday (6) and Sunday (0) are weekend market closures.
  * Monday (1) through Friday (5) are active trading days (11:00 AM – 3:00 PM NPT).
  */
+export const NEPSE_SCHEDULE_SHIFT_DATE = '2026-04-06';
+
 export function isNepseWeekend(date = new Date()) {
   const d = new Date(date);
   // Get Day of Week in Asia/Kathmandu
@@ -312,9 +314,15 @@ export function isNepseWeekend(date = new Date()) {
     else if (dayStr === 'Sat') dayOfWeek = 6;
   } catch (_) {}
 
-  // Statutory NEPSE weekend holidays: Saturday (6) and Sunday (0).
-  // Monday (1) through Friday (5) are standard active trading days.
-  const isWeekend = (dayOfWeek === 6 || dayOfWeek === 0);
+  const dateIso = formatNptDateIso(d);
+  const isPostShift = dateIso >= NEPSE_SCHEDULE_SHIFT_DATE;
+  // Statutory NEPSE weekend holidays:
+  // Pre-shift (prior to April 6, 2026): Friday (5) and Saturday (6) were statutory weekends (Sun-Thu trading).
+  // Post-shift (from April 6, 2026 onward): Saturday (6) and Sunday (0) are statutory weekends (Mon-Fri trading).
+  const isWeekend = isPostShift
+    ? (dayOfWeek === 6 || dayOfWeek === 0)
+    : (dayOfWeek === 5 || dayOfWeek === 6);
+
   return {
     isWeekend,
     dayName: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek],

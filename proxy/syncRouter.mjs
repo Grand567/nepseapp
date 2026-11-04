@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { pool, query } from './db.mjs';
 
@@ -8,6 +9,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = Router();
+
+// Constant-time timing-safe password hash verification
+function verifyPasswordHash(storedHash, providedHash) {
+  if (!storedHash || !providedHash) return false;
+  const bufA = Buffer.from(String(storedHash));
+  const bufB = Buffer.from(String(providedHash));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 // Data storage directories
 const VAULT_DIR = path.resolve(__dirname, 'data', 'sync_vaults');
@@ -312,13 +322,15 @@ router.post('/login', async (req, res) => {
       }
     }
 
-    // Verify passwordHash if set
-    if (vault.passwordHash && passwordHash && vault.passwordHash !== passwordHash) {
-      return res.status(401).json({
-        success: false,
-        code: 'INVALID_CREDENTIALS',
-        message: 'Invalid password. Please check your credentials.'
-      });
+    // Strictly verify passwordHash if vault requires authentication
+    if (vault.passwordHash) {
+      if (!passwordHash || !verifyPasswordHash(vault.passwordHash, passwordHash)) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_CREDENTIALS',
+          message: 'Invalid password. Please check your credentials.'
+        });
+      }
     }
 
     res.json({
@@ -366,9 +378,15 @@ router.post('/push', async (req, res) => {
         syncVersion: 1
       };
     } else {
-      // If password provided and mismatch, reject
-      if (vault.passwordHash && passwordHash && vault.passwordHash !== passwordHash) {
-        return res.status(401).json({ success: false, message: 'Invalid credentials.' });
+      // Strictly verify passwordHash if vault requires authentication
+      if (vault.passwordHash) {
+        if (!passwordHash || !verifyPasswordHash(vault.passwordHash, passwordHash)) {
+          return res.status(401).json({
+            success: false,
+            code: 'INVALID_CREDENTIALS',
+            message: 'Invalid credentials. Password required to modify this vault.'
+          });
+        }
       }
 
       // Update data snapshot with safe intelligent merge
@@ -435,8 +453,15 @@ router.all('/pull', async (req, res) => {
       });
     }
 
-    if (vault.passwordHash && passwordHash && vault.passwordHash !== passwordHash) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
+    // Strictly verify passwordHash if vault requires authentication
+    if (vault.passwordHash) {
+      if (!passwordHash || !verifyPasswordHash(vault.passwordHash, passwordHash)) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_CREDENTIALS',
+          message: 'Invalid credentials. Password required to access this vault.'
+        });
+      }
     }
 
     res.json({

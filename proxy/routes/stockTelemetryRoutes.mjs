@@ -586,7 +586,7 @@ export function handleStockTelemetry(req, res) {
         bids: [],
         asks: [],
       },
-      floorsheetTape: enrichedTape,
+      floorsheetTape: enrichedTape.slice(0, 50),
       volumeProfile: (() => {
         const vp = getScripVolumeProfile(validSymbol);
         return vp && Array.isArray(vp.nodes) && vp.nodes.length > 0
@@ -738,7 +738,7 @@ export function handleStockTelemetry(req, res) {
       quoteData,
       historicalCandles,
       ledgerTelemetry,
-      rawFloorsheetContracts,
+      rawFloorsheetContracts: rawFloorsheetContracts.slice(0, 50),
       liveDepth,
       broker5DPayload,
       availableFloorsheetDates,

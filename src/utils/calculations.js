@@ -149,13 +149,23 @@ export const SEBON_FEE_RATE = 0.00015;       // 0.015%
 export const CDSC_DP_CHARGE_NPR = 25;        // Flat Rs. 25 per transaction settlement
 export const MIN_BROKERAGE_NPR = 10;         // Minimum Rs. 10 brokerage floor
 export const NEPSE_CIRCUIT_LIMIT_PCT = 15.0; // ±15.0% Fourth Amendment 2082
+export const NEPSE_CIRCUIT_SHIFT_DATE = '2026-04-20';
 
-export function clampToNepseCircuitBand(referenceClose, targetPrice) {
+export function getNepseCircuitLimitPct(tradeDate = null) {
+  if (tradeDate) {
+    const dStr = String(tradeDate).slice(0, 10);
+    if (dStr < NEPSE_CIRCUIT_SHIFT_DATE) return 10.0;
+  }
+  return 15.0; // Current post-April 20, 2026 statutory band
+}
+
+export function clampToNepseCircuitBand(referenceClose, targetPrice, tradeDate = null) {
   const ref = Number(referenceClose) || 0;
   const tgt = Number(targetPrice) || 0;
   if (ref <= 0 || tgt <= 0) return Math.max(0, tgt);
-  const floor = +(ref * 0.85).toFixed(2);
-  const ceiling = +(ref * 1.15).toFixed(2);
+  const pct = getNepseCircuitLimitPct(tradeDate) / 100;
+  const floor = +(ref * (1 - pct)).toFixed(2);
+  const ceiling = +(ref * (1 + pct)).toFixed(2);
   return +Math.min(ceiling, Math.max(floor, tgt)).toFixed(2);
 }
 
@@ -202,7 +212,7 @@ export function calculateNepseNetTrade({
   const grossBuy = +(kitta * bPx).toFixed(2);
   const { commission: buyComm } = calculateBrokerageCommission(grossBuy);
   const buySebon = +(grossBuy * SEBON_FEE_RATE).toFixed(2);
-  const buyDp = CDSC_DP_CHARGE_NPR;
+  const buyDp = 0; // Per CDSC bylaws, DP fee is charged strictly on the SELL leg upon debiting shares
   const totalBuyCost = +(grossBuy + buyComm + buySebon + buyDp).toFixed(2);
 
   const grossSell = +(kitta * sPx).toFixed(2);
@@ -338,7 +348,7 @@ export function calculateBuyDetails(quantity, price) {
   const shareValue = quantity * price;
   const commission = calculateBrokerCommission(shareValue);
   const sebonFee = calculateSebonFee(shareValue);
-  const dpFee = DP_CHARGE;
+  const dpFee = 0; // Per CDSC regulations, DP fee (Rs. 25) is levied strictly on the SELL leg
   const totalAmount = shareValue + commission + sebonFee + dpFee;
 
   return {

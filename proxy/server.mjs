@@ -1,6 +1,8 @@
 import express from 'express';
 import compression from 'compression';
 import zlib from 'zlib';
+import util from 'util';
+const gunzipAsync = util.promisify(zlib.gunzip);
 import cors from 'cors';
 import rateLimit from 'express-rate-limit'; // A7: Rate limiting
 import axios from 'axios';
@@ -19,6 +21,7 @@ import { getMacroFeatures, getPoliticalEventFlag, computeStockFeatures } from '.
 import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
+import { requireAdminSecret } from './middleware/requireAdminSecret.mjs';
 import radarRouter from './routes/radarRoutes.js';
 import aiGuruRouter from './routes/aiGuruRoutes.mjs';
 import floorsheetHubRouter from './routes/floorsheetHubRoutes.mjs';
@@ -11530,7 +11533,7 @@ app.get('/api/telegram/status', (req, res) => {
   }
 });
 
-app.all('/api/telegram/config', (req, res) => {
+app.all('/api/telegram/config', requireAdminSecret, (req, res) => {
   try {
     const botToken = req.body?.botToken || req.query?.botToken || req.query?.token;
     const chatId = req.body?.chatId || req.query?.chatId || req.query?.chat;
@@ -11646,7 +11649,7 @@ app.get('/api/discord/status', (req, res) => {
   }
 });
 
-app.post('/api/discord/config', (req, res) => {
+app.post('/api/discord/config', requireAdminSecret, (req, res) => {
   try {
     const { webhookUrl, enabled } = req.body || {};
     const result = saveDiscordConfig({ webhookUrl, enabled });
@@ -13218,11 +13221,12 @@ app.listen(PORT, '0.0.0.0', async () => {
               let unzipped = null;
               const localArchive = path.join(__dirname, 'data', 'nepse-1year-market-history.json.gz');
               if (fs.existsSync(localArchive)) {
-                unzipped = zlib.gunzipSync(fs.readFileSync(localArchive));
+                const fileBuf = await fs.promises.readFile(localArchive);
+                unzipped = await gunzipAsync(fileBuf);
               } else {
                 const histUrl = `https://github.com/${getGitHubRepo()}/releases/download/floorsheets-2026/nepse-1year-market-history.json.gz`;
                 const histRes = await axios.get(histUrl, { responseType: 'arraybuffer', timeout: 20000 });
-                if (histRes.data) unzipped = zlib.gunzipSync(Buffer.from(histRes.data));
+                if (histRes.data) unzipped = await gunzipAsync(Buffer.from(histRes.data));
               }
 
               if (unzipped) {

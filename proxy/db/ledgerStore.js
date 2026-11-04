@@ -3,7 +3,9 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import zlib from "zlib";
+import util from "util";
 import { pipeline } from "stream/promises";
+const gzipAsync = util.promisify(zlib.gzip);
 import { fileURLToPath } from "url";
 import { calculateMultiDayDiagnostics, evaluateEarlyIgnition, PHASE_DEFINITIONS } from "../utils/microstructureEngine.js";
 import {
@@ -24,9 +26,8 @@ function resolveDataDir() {
   }
   const asarUnpacked = __dirname.replace('app.asar', 'app.asar.unpacked');
   const candidates = [
-    path.join(process.cwd(), "proxy", "data"),
+    path.resolve(__dirname, "..", "data"),
     path.join(process.cwd(), "data"),
-    path.join(__dirname, "..", "data"),
     path.join(asarUnpacked, "..", "data"),
     path.join(process.resourcesPath || '', "app.asar.unpacked", "proxy", "data"),
   ];
@@ -125,6 +126,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_broker_symbol_date ON daily_broker_ledger(symbol, trade_date DESC);
   CREATE INDEX IF NOT EXISTS idx_broker_id_symbol ON daily_broker_ledger(broker_id, symbol);
   CREATE INDEX IF NOT EXISTS idx_stock_summary_date ON daily_stock_summary(trade_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_stock_summary_upper_symbol_date ON daily_stock_summary(UPPER(symbol), trade_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_broker_ledger_upper_symbol_date ON daily_broker_ledger(UPPER(symbol), trade_date DESC);
 
   -- 1. Raw Floorsheet Contracts Table (Tick-by-Tick Persistence)
   CREATE TABLE IF NOT EXISTS floorsheet_contracts (
@@ -461,9 +464,12 @@ export function validateNepseTradingDate(tradeDate, allowLegacy = false) {
     return true;
   }
   const dayOfWeek = d.getUTCDay(); // 0 = Sunday, 1 = Monday, ..., 4 = Thursday, 5 = Friday, 6 = Saturday
-  if (dayOfWeek === 6 || dayOfWeek === 0) {
-    const dayName = dayOfWeek === 6 ? 'Saturday' : 'Sunday';
-    throw new Error(`[NEPSE Calendar Validator] Rejected non-trading weekday '${cleanDate}' (${dayName}). Statutory NEPSE trading schedule is strictly Monday through Friday (11:00 AM – 3:00 PM NPT).`);
+  const isPostShift = cleanDate >= '2026-04-06';
+  const isWeekend = isPostShift ? (dayOfWeek === 6 || dayOfWeek === 0) : (dayOfWeek === 5 || dayOfWeek === 6);
+  if (isWeekend) {
+    const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek];
+    const scheduleDesc = isPostShift ? 'strictly Monday through Friday' : 'strictly Sunday through Thursday';
+    throw new Error(`[NEPSE Calendar Validator] Rejected non-trading weekday '${cleanDate}' (${dayName}). Statutory NEPSE trading schedule for this period is ${scheduleDesc} (11:00 AM – 3:00 PM NPT).`);
   }
   // Reject future trading dates beyond current NPT date (allow 2099 in unit tests)
   if (!cleanDate.startsWith('2099') && process.env.NODE_ENV !== 'test') {
@@ -643,25 +649,25 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
     console.warn(`[ledgerStore] Tick contract ingestion notice for ${tradeDate}:`, contractErr.message);
   }
 
-  // Prune records older than 40 trading days
+  // Prune records older than 250 trading days (1 full trading year) for summaries & 30 days for tick contracts
   db.prepare(`
     DELETE FROM daily_stock_summary 
     WHERE trade_date NOT IN (
-      SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 40
+      SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 250
     )
   `).run();
 
   db.prepare(`
     DELETE FROM daily_broker_ledger 
     WHERE trade_date NOT IN (
-      SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 40
+      SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 250
     )
   `).run();
 
   db.prepare(`
     DELETE FROM floorsheet_contracts
     WHERE trade_date NOT IN (
-      SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 2
+      SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 30
     )
   `).run();
 
@@ -1037,6 +1043,43 @@ export function getScripVolumeProfile(symbol) {
   }
 }
 
+export async function exportLedgerSnapshotGzAsync() {
+  try {
+    const dates = getStoredDates(40);
+    if (dates.length === 0) return false;
+    const oldestDate = dates[dates.length - 1];
+
+    const stockSummaries = db
+      .prepare(`SELECT * FROM daily_stock_summary WHERE trade_date >= ? ORDER BY trade_date DESC`)
+      .all(oldestDate);
+    const brokerLedger = db
+      .prepare(`SELECT * FROM daily_broker_ledger WHERE trade_date >= ?`)
+      .all(oldestDate);
+
+    if (stockSummaries.length === 0) return false;
+
+    const payload = JSON.stringify({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      tradingDates: dates,
+      stockSummaries,
+      brokerLedger,
+    });
+
+    const compressed = await gzipAsync(Buffer.from(payload, "utf8"), { level: 6 });
+    const targetFile = path.join(DATA_DIR, "ledger_seed_snapshot.json.gz");
+    await fs.promises.writeFile(targetFile, compressed);
+
+    console.log(
+      `[Drabyashree Ledger] Exported compressed snapshot asynchronously to ${targetFile} (${(compressed.length / 1024 / 1024).toFixed(2)} MB, ${dates.length} dates, ${stockSummaries.length} summaries, ${brokerLedger.length} broker rows)`
+    );
+    return true;
+  } catch (err) {
+    console.warn("[Drabyashree Ledger] Failed to export snapshot gz asynchronously:", err.message);
+    return false;
+  }
+}
+
 export function exportLedgerSnapshotGz() {
   try {
     const dates = getStoredDates(40);
@@ -1060,7 +1103,7 @@ export function exportLedgerSnapshotGz() {
       brokerLedger,
     });
 
-    const compressed = zlib.gzipSync(Buffer.from(payload, "utf8"), { level: 9 });
+    const compressed = zlib.gzipSync(Buffer.from(payload, "utf8"), { level: 6 });
     const targetFile = path.join(DATA_DIR, "ledger_seed_snapshot.json.gz");
     fs.writeFileSync(targetFile, compressed);
 
@@ -1340,12 +1383,40 @@ export function rebuildHotCache() {
     .map((r) => r.symbol)
     .filter((s) => !isNonEquityScrip(s));
 
-  const stmtSummary = db.prepare(
-    `SELECT * FROM daily_stock_summary WHERE symbol = ? AND trade_date >= ? ORDER BY trade_date DESC`
-  );
-  const stmtBrokers = db.prepare(
-    `SELECT * FROM daily_broker_ledger WHERE symbol = ? AND trade_date >= ?`
-  );
+  // Bulk load all summaries and broker ledgers in 2 batch queries instead of 500 N+1 roundtrips
+  const allSummaries = db
+    .prepare(`SELECT * FROM daily_stock_summary WHERE trade_date >= ? ORDER BY trade_date DESC`)
+    .all(oldestDate);
+  const summariesBySymbol = new Map();
+  for (const s of allSummaries) {
+    let arr = summariesBySymbol.get(s.symbol);
+    if (!arr) {
+      arr = [];
+      summariesBySymbol.set(s.symbol, arr);
+    }
+    arr.push(s);
+  }
+
+  const allBrokers = db
+    .prepare(`SELECT trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt FROM daily_broker_ledger WHERE trade_date >= ?`)
+    .all(oldestDate);
+  const brokersBySymDate = new Map();
+  for (const b of allBrokers) {
+    const key = `${b.symbol}_${b.trade_date}`;
+    let arr = brokersBySymDate.get(key);
+    if (!arr) {
+      arr = [];
+      brokersBySymDate.set(key, arr);
+    }
+    arr.push({
+      brokerId: b.broker_id,
+      broker: b.broker_id,
+      buyVol: b.buy_vol,
+      sellVol: b.sell_vol,
+      buyAmt: b.buy_amt,
+      sellAmt: b.sell_amt,
+    });
+  }
 
   const timeframes = [1, 3, 5, 15, 30];
   const nextRadar = { 1: [], 3: [], 5: [], 15: [], 30: [] };
@@ -1354,26 +1425,8 @@ export function rebuildHotCache() {
 
   for (let i = 0; i < symbols.length; i++) {
     const symbol = symbols[i];
-    const summs = stmtSummary.all(symbol, oldestDate);
+    const summs = summariesBySymbol.get(symbol) || [];
     if (summs.length === 0) continue;
-
-    const rawBrokers = stmtBrokers.all(symbol, oldestDate);
-    const bByDate = new Map();
-    for (const b of rawBrokers) {
-      let arr = bByDate.get(b.trade_date);
-      if (!arr) {
-        arr = [];
-        bByDate.set(b.trade_date, arr);
-      }
-      arr.push({
-        brokerId: b.broker_id,
-        broker: b.broker_id,
-        buyVol: b.buy_vol,
-        sellVol: b.sell_vol,
-        buyAmt: b.buy_amt,
-        sellAmt: b.sell_amt,
-      });
-    }
 
     const dailyHistory = summs.map((s) => ({
       date: s.trade_date,
@@ -1383,7 +1436,7 @@ export function rebuildHotCache() {
       closePrice: s.close_price,
       totalVolume: s.total_volume,
       totalTurnover: s.total_turnover,
-      brokers: bByDate.get(s.trade_date) || [],
+      brokers: brokersBySymDate.get(`${symbol}_${s.trade_date}`) || [],
     }));
 
     let diag3 = null;

@@ -367,7 +367,7 @@ export function calculateNetExpectancyAndSizing({
 
   const buyCostFriction = entry * (brokerRate + sebonRate + slipRate);
   const sellProceedsFriction = t1 * (brokerRate + sebonRate + slipRate);
-  const dpPerShare = (dpCharge * 2) / 100;
+  const dpPerShare = dpCharge / 100; // CDSC DP fee is charged once per round trip (exclusively on the sell leg)
   const roundTripFeesPerShare = +(buyCostFriction + sellProceedsFriction + dpPerShare).toFixed(2);
 
   const grossProfitPerShare = t1 - entry;

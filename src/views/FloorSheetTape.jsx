@@ -66,7 +66,8 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
 
     try {
       const sym = filterScrip !== 'ALL' ? filterScrip : (searchQuery.trim() ? searchQuery.trim().toUpperCase() : '');
-      const numDays = daysMap[currentTf] || 1;
+      // Cap tick-by-tick contract query to max 5 days to prevent mobile WebView OOM crashes
+      const numDays = Math.min(daysMap[currentTf] || 1, 5);
       const opts = {
         buyer: buyerFilter.trim(),
         seller: sellerFilter.trim(),

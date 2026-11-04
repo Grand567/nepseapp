@@ -12,6 +12,7 @@ import {
   getBackfillStatus,
   backfillRealHistoricalFloorsheets,
   exportLedgerSnapshotGz,
+  exportLedgerSnapshotGzAsync,
   seedFromDiskVault,
   seedFromSnapshotGz,
   getSymbolHistoryFromDb,
@@ -1185,14 +1186,14 @@ router.get(["/radar/rebuild-cache", "/admin/rebuild-cache"], handleRebuildCache)
 
 /**
  * POST /api/radar/export-snapshot
- * Forces export of ledger_seed_snapshot.json.gz
+ * Forces asynchronous export of ledger_seed_snapshot.json.gz
  */
-router.post("/radar/export-snapshot", (req, res) => {
+router.post("/radar/export-snapshot", async (req, res) => {
   try {
-    const ok = exportLedgerSnapshotGz();
+    const ok = await exportLedgerSnapshotGzAsync();
     return res.json({
       success: ok,
-      message: ok ? "Successfully exported compressed snapshot gz" : "Failed to export snapshot",
+      message: ok ? "Successfully exported compressed snapshot gz asynchronously" : "Failed to export snapshot",
     });
   } catch (err) {
     return res.status(500).json({

@@ -8,6 +8,7 @@ import { wrapper } from 'axios-cookiejar-support';
 
 import { fileURLToPath } from 'url';
 import { getLiveIpoListings } from './ipoHelper.js';
+import { requireAdminSecret } from './middleware/requireAdminSecret.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -186,6 +187,7 @@ async function getRealClientId(boid, dpCode, client) {
 }
 
 // --- Endpoints ---
+router.use('/accounts', requireAdminSecret);
 
 // 1. Get Accounts (masking passwords and pins)
 router.get('/accounts', (req, res) => {
@@ -351,7 +353,7 @@ router.get('/ipos', async (req, res) => {
 });
 
 // 5. Bulk Apply to IPO (sequential processing with F5 BIG-IP WAF compliance)
-router.post('/apply', async (req, res) => {
+router.post('/apply', requireAdminSecret, async (req, res) => {
   const { companyShareId, appliedKitta, accountIds } = req.body;
   if (!companyShareId || !appliedKitta || !Array.isArray(accountIds) || accountIds.length === 0) {
     return res.status(400).json({ success: false, error: 'Missing parameters: companyShareId, appliedKitta, and accountIds[] are required.' });

@@ -38,31 +38,14 @@ import {
   ListObjectsV2Command
 } from '@aws-sdk/client-s3';
 import { DAILY_FLOORSHEETS_DIR } from './dailyFloorsheetCollector.mjs';
-import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ─── GitHub Releases Configuration (100% Free Forever, No Credit Card) ───────
-let _cachedGitToken = null;
-
 export function getGitHubToken() {
-  const envToken = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
-  if (envToken) return envToken;
-  if (_cachedGitToken) return _cachedGitToken;
-  try {
-    const cred = execSync('git credential fill', {
-      input: 'protocol=https\nhost=github.com\n\n',
-      stdio: ['pipe', 'pipe', 'ignore'],
-      timeout: 3000
-    }).toString();
-    const match = cred.split('\n').find(l => l.startsWith('password='));
-    if (match) {
-      _cachedGitToken = match.replace('password=', '').trim();
-      return _cachedGitToken;
-    }
-  } catch (_) {}
-  return '';
+  // Strictly enforce environment variables; NEVER extract local developer OS credentials
+  return (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
 }
 
 export function getGitHubRepo() {
@@ -374,6 +357,22 @@ export async function uploadDailyFloorsheetToCloud(dateStr, contentOrPath = null
   return { success: false, reason: 'No cloud storage provider configured. Set GITHUB_TOKEN in Render.' };
 }
 
+const inFlightCloudDownloads = new Map();
+
+function atomicWriteFileSync(filePath, data, encoding) {
+  const tmpPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
+  try {
+    if (encoding) {
+      fs.writeFileSync(tmpPath, data, encoding);
+    } else {
+      fs.writeFileSync(tmpPath, data);
+    }
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
+  }
+}
+
 /**
  * Universal Cloud Fetch: Checks local disk cache first, then streams from GitHub Releases, Firebase, or R2
  */
@@ -381,6 +380,23 @@ export async function fetchFloorsheetFromCloud(dateStr) {
   const cleanDate = String(dateStr || '').trim();
   if (!cleanDate) return null;
 
+  if (inFlightCloudDownloads.has(cleanDate)) {
+    return inFlightCloudDownloads.get(cleanDate);
+  }
+
+  const downloadPromise = (async () => {
+    try {
+      return await _fetchFloorsheetFromCloudInternal(cleanDate);
+    } finally {
+      inFlightCloudDownloads.delete(cleanDate);
+    }
+  })();
+
+  inFlightCloudDownloads.set(cleanDate, downloadPromise);
+  return downloadPromise;
+}
+
+async function _fetchFloorsheetFromCloudInternal(cleanDate) {
   // 1. Check local cache
   const localGz = path.join(DAILY_FLOORSHEETS_DIR, `floorsheet-${cleanDate}.json.gz`);
   const localJson = path.join(DAILY_FLOORSHEETS_DIR, `floorsheet-${cleanDate}.json`);
@@ -414,11 +430,11 @@ export async function fetchFloorsheetFromCloud(dateStr) {
 
     if (res.data) {
       const gzBuffer = Buffer.from(res.data);
-      try { fs.writeFileSync(localGz, gzBuffer); } catch (_) {}
+      atomicWriteFileSync(localGz, gzBuffer);
       const unzipped = zlib.gunzipSync(gzBuffer);
       const trades = JSON.parse(unzipped.toString('utf8'));
       if (Array.isArray(trades) && trades.length > 0) {
-        try { fs.writeFileSync(localJson, JSON.stringify(trades), 'utf8'); } catch (_) {}
+        atomicWriteFileSync(localJson, JSON.stringify(trades), 'utf8');
         console.log(`[cloudFloorsheetVault] 📥 Streamed ${trades.length} contracts for ${cleanDate} from GitHub Releases.`);
         return trades;
       }
@@ -438,11 +454,11 @@ export async function fetchFloorsheetFromCloud(dateStr) {
       const [exists] = await file.exists();
       if (exists) {
         const [gzBuffer] = await file.download();
-        try { fs.writeFileSync(localGz, gzBuffer); } catch (_) {}
+        atomicWriteFileSync(localGz, gzBuffer);
         const unzipped = zlib.gunzipSync(gzBuffer);
         const trades = JSON.parse(unzipped.toString('utf8'));
         if (Array.isArray(trades) && trades.length > 0) {
-          try { fs.writeFileSync(localJson, JSON.stringify(trades), 'utf8'); } catch (_) {}
+          atomicWriteFileSync(localJson, JSON.stringify(trades), 'utf8');
           console.log(`[cloudFloorsheetVault] 📥 Streamed ${trades.length} contracts for ${cleanDate} from Firebase Storage.`);
           return trades;
         }
@@ -463,11 +479,11 @@ export async function fetchFloorsheetFromCloud(dateStr) {
       if (response.Body) {
         const byteArray = await response.Body.transformToByteArray();
         const gzBuffer = Buffer.from(byteArray);
-        try { fs.writeFileSync(localGz, gzBuffer); } catch (_) {}
+        atomicWriteFileSync(localGz, gzBuffer);
         const unzipped = zlib.gunzipSync(gzBuffer);
         const trades = JSON.parse(unzipped.toString('utf8'));
         if (Array.isArray(trades) && trades.length > 0) {
-          try { fs.writeFileSync(localJson, JSON.stringify(trades), 'utf8'); } catch (_) {}
+          atomicWriteFileSync(localJson, JSON.stringify(trades), 'utf8');
           console.log(`[cloudFloorsheetVault] 📥 Streamed ${trades.length} contracts for ${cleanDate} from Cloudflare R2.`);
           return trades;
         }
