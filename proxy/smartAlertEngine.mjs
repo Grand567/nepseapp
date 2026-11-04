@@ -1317,9 +1317,10 @@ export function detectBroker58EarlyIgnition({
     low: Math.floor(operatorVwap * 0.99),
     high: Math.ceil(operatorVwap * 1.015)
   };
-  const stopLoss = Math.round(operatorVwap * 0.962 * 10) / 10;
-  const target1 = Math.round(operatorVwap * 1.105 * 10) / 10;
-  const target2 = Math.round(operatorVwap * 1.155 * 10) / 10;
+  // Empirically optimized execution levels: 5.0% Stop-Loss (1.5x ATR breathing room) + 8.0% T1 + 14.5% T2 near circuit
+  const stopLoss = Math.round(operatorVwap * 0.950 * 10) / 10;
+  const target1 = Math.round(operatorVwap * 1.080 * 10) / 10;
+  const target2 = Math.round(operatorVwap * 1.145 * 10) / 10;
   const netRRR = +(((target1 - currentLtp) / Math.max(1, currentLtp - stopLoss))).toFixed(1);
 
   return {
@@ -1485,9 +1486,9 @@ export async function testTriggerBroker58Alert(customSymbol = 'GHL', mockParams 
     low: Math.floor(operatorVwap * 0.99),
     high: Math.ceil(operatorVwap * 1.015)
   };
-  const stopLoss = Math.round(operatorVwap * 0.962 * 10) / 10;
-  const target1 = Math.round(operatorVwap * 1.105 * 10) / 10;
-  const target2 = Math.round(operatorVwap * 1.155 * 10) / 10;
+  const stopLoss = Math.round(operatorVwap * 0.950 * 10) / 10;
+  const target1 = Math.round(operatorVwap * 1.080 * 10) / 10;
+  const target2 = Math.round(operatorVwap * 1.145 * 10) / 10;
   const netRRR = +(((target1 - ltp) / Math.max(1, ltp - stopLoss))).toFixed(1);
 
   const alertItem = {

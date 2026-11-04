@@ -419,13 +419,13 @@ export function formatEarlyIgnitionAlertHtml(alert) {
     low: Math.floor(operatorVwap * 0.99),
     high: Math.ceil(operatorVwap * 1.015)
   };
-  const sl = Number(alert.stopLoss || alert.sl || (operatorVwap * 0.962).toFixed(1));
-  const t1 = Number(alert.target1 || alert.t1 || (operatorVwap * 1.105).toFixed(1));
-  const t2 = Number(alert.target2 || alert.t2 || (operatorVwap * 1.155).toFixed(1));
+  const sl = Number(alert.stopLoss || alert.sl || (operatorVwap * 0.950).toFixed(1));
+  const t1 = Number(alert.target1 || alert.t1 || (operatorVwap * 1.080).toFixed(1));
+  const t2 = Number(alert.target2 || alert.t2 || (operatorVwap * 1.145).toFixed(1));
 
-  const slPct = operatorVwap > 0 ? (((operatorVwap - sl) / operatorVwap) * 100).toFixed(1) : '3.8';
-  const t1Pct = operatorVwap > 0 ? (((t1 - operatorVwap) / operatorVwap) * 100).toFixed(1) : '10.5';
-  const t2Pct = operatorVwap > 0 ? (((t2 - operatorVwap) / operatorVwap) * 100).toFixed(1) : '15.5';
+  const slPct = operatorVwap > 0 ? (((operatorVwap - sl) / operatorVwap) * 100).toFixed(1) : '5.0';
+  const t1Pct = operatorVwap > 0 ? (((t1 - operatorVwap) / operatorVwap) * 100).toFixed(1) : '8.0';
+  const t2Pct = operatorVwap > 0 ? (((t2 - operatorVwap) / operatorVwap) * 100).toFixed(1) : '14.5';
 
   const netRRR = alert.netRRR || (parseFloat(slPct) > 0 ? (parseFloat(t1Pct) / parseFloat(slPct)).toFixed(1) : '2.8');
   const timingSignature = alert.timingSignature || '⚡ Afternoon Stealth Accumulation (1:15 PM – 2:55 PM NPT)';
@@ -494,16 +494,16 @@ export function formatBroker58RadarHtml(setups = [], targetDate = '') {
     const vwap = Number(s.operator_vwap ?? s.operatorVwap ?? ltp).toFixed(1);
     const bLow = s.buyZone?.low || Math.floor(vwap * 0.99);
     const bHigh = s.buyZone?.high || Math.ceil(vwap * 1.015);
-    const sl = s.sl || s.stopLoss || (vwap * 0.962).toFixed(1);
-    const t1 = s.t1 || s.target1 || (vwap * 1.105).toFixed(1);
-    const t2 = s.t2 || s.target2 || (vwap * 1.155).toFixed(1);
+    const sl = s.sl || s.stopLoss || (vwap * 0.950).toFixed(1);
+    const t1 = s.t1 || s.target1 || (vwap * 1.080).toFixed(1);
+    const t2 = s.t2 || s.target2 || (vwap * 1.145).toFixed(1);
 
     return [
       `${idx + 1}. <b>$${sym}</b> (LTP: Rs. ${ltp} | ${pchgStr} Base)`,
       `• Footprint: <b>+${netKitta} Net Kitta</b> (${buyKitta} Bought | Rs. ${cr} Cr)`,
       `• Dominance: <b>${ratio}% Buy</b> | ${share}% Market Share | VWAP: Rs. ${vwap}`,
-      `• 🎯 <b>Buy Zone:</b> Rs. ${bLow} – Rs. ${bHigh} | 🛑 <b>SL:</b> Rs. ${sl}`,
-      `• 🏁 <b>Target 1:</b> Rs. ${t1} (+10.5%) | 🚀 <b>Target 2:</b> Rs. ${t2} (+15.5%)`
+      `• 🎯 <b>Buy Zone:</b> Rs. ${bLow} – Rs. ${bHigh} | 🛑 <b>SL:</b> Rs. ${sl} (-5.0%)`,
+      `• 🏁 <b>Target 1:</b> Rs. ${t1} (+8.0%) | 🚀 <b>Target 2:</b> Rs. ${t2} (+14.5%)`
     ].join('\n');
   });
 
