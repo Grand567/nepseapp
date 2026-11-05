@@ -11,6 +11,7 @@
     "dev": "concurrently \"vite\" \"npm run start --prefix proxy\"",
     "build": "vite build",
     "test": "node tests/runAll.mjs",
+    "test:parity": "node tests/auditDataParity.mjs",
     "audit:app": "node scripts/fullAppAudit.mjs",
     "audit:prod": "node scripts/fullAppAudit.mjs --prod",
     "audit:export": "node scripts/exportForGemini4Argon.mjs",
