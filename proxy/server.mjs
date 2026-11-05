@@ -108,6 +108,20 @@ import {
   HISTORICAL_4D_GZ,
   LIVE_TODAY_GZ
 } from './utils/rollingLedgerEngine.mjs';
+import {
+  readHistoricalSubfile,
+  readHistoricalSubfilesIndex,
+  getScrip4DayTrajectory,
+  compileHistoricalSubfiles,
+  SUBFILES_DIR
+} from './utils/historicalSubfilesEngine.mjs';
+import {
+  readTodayStaticAnalytics,
+  readTodayTickStream,
+  ingestLiveTick,
+  compileTodayStaticAnalytics,
+  tickEventEmitter
+} from './utils/todayDataEngine.mjs';
 import { generateEntryExitPlan } from '../src/utils/setupAnalyzer.js';
 import { 
   adToBs, 
@@ -3699,6 +3713,225 @@ app.get('/api/ledger/live-today', (req, res) => {
   try {
     const session = readLiveTodaySession();
     return res.json(session);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── 4 Historical Sub-Files API Routes (Precomputed, Compressed & Interpreted) ───────────
+app.get('/api/ledger/subfiles/index', (req, res) => {
+  try {
+    const acceptEncoding = req.headers['accept-encoding'] || '';
+    const gzPath = path.join(SUBFILES_DIR, 'historical_subfiles_index.json.gz');
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+    if (acceptEncoding.includes('gzip') && fs.existsSync(gzPath)) {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Encoding', 'gzip');
+      return fs.createReadStream(gzPath).pipe(res);
+    }
+    const index = readHistoricalSubfilesIndex();
+    return res.json(index);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/ledger/subfiles/day/:dayIndex', (req, res) => {
+  try {
+    const dayIndex = parseInt(req.params.dayIndex, 10);
+    if (isNaN(dayIndex) || dayIndex < 1 || dayIndex > 4) {
+      return res.status(400).json({ success: false, error: 'dayIndex must be between 1 and 4' });
+    }
+    const acceptEncoding = req.headers['accept-encoding'] || '';
+    const gzPath = path.join(SUBFILES_DIR, `historical_day_${dayIndex}.json.gz`);
+    res.setHeader('Cache-Control', 'public, max-age=1800, stale-while-revalidate=3600');
+    if (acceptEncoding.includes('gzip') && fs.existsSync(gzPath)) {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Encoding', 'gzip');
+      return fs.createReadStream(gzPath).pipe(res);
+    }
+    const subfile = readHistoricalSubfile(dayIndex);
+    if (!subfile) return res.status(404).json({ success: false, error: `Subfile day ${dayIndex} not found` });
+    return res.json(subfile);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/ledger/subfiles/date/:date', (req, res) => {
+  try {
+    const dateStr = String(req.params.date || '').trim();
+    const acceptEncoding = req.headers['accept-encoding'] || '';
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=86400');
+
+    // Fast-path: Check if pre-compressed gz exists in index
+    if (acceptEncoding.includes('gzip')) {
+      const index = readHistoricalSubfilesIndex();
+      const entry = index?.subfiles?.find(s => s.session_date === dateStr);
+      if (entry?.file_gz_path && fs.existsSync(entry.file_gz_path)) {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Encoding', 'gzip');
+        return fs.createReadStream(entry.file_gz_path).pipe(res);
+      }
+    }
+
+    const subfile = readHistoricalSubfile(dateStr);
+    if (!subfile) return res.status(404).json({ success: false, error: `Subfile for date ${dateStr} not found` });
+    return res.json(subfile);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/ledger/subfiles/trajectory/:symbol', (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').toUpperCase().trim();
+    res.setHeader('Cache-Control', 'public, max-age=1800, stale-while-revalidate=3600');
+    const trajectory = getScrip4DayTrajectory(symbol);
+    if (!trajectory) return res.status(404).json({ success: false, error: `Trajectory for ${symbol} not found` });
+    return res.json(trajectory);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/ledger/subfiles/compile', (req, res) => {
+  try {
+    const manifest = compileHistoricalSubfiles();
+    return res.json({ success: true, manifest });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Sub-File 1: Today's Short-Term & Long-Term Static Analytics ──
+app.get('/api/today/static-analytics', (req, res) => {
+  try {
+    const symbol = req.query.symbol ? String(req.query.symbol).toUpperCase().trim() : null;
+    const analytics = readTodayStaticAnalytics();
+    if (!analytics) {
+      return res.status(500).json({ success: false, error: 'Static analytics sub-file not ready' });
+    }
+
+    const etag = `W/"today-static-${analytics.session_date}-${analytics.compiled_at}"`;
+    res.setHeader('Cache-Control', 'public, max-age=1800, stale-while-revalidate=86400');
+    res.setHeader('ETag', etag);
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+
+    if (symbol) {
+      const scripData = analytics.scrips?.[symbol];
+      if (!scripData) {
+        return res.status(404).json({ success: false, error: `Scrip ${symbol} not found in static analytics sub-file` });
+      }
+      return res.json({
+        success: true,
+        session_date: analytics.session_date,
+        compiled_at: analytics.compiled_at,
+        data: scripData
+      });
+    }
+    return res.json({ success: true, ...analytics });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Sub-File 2: Today's Dynamic Live Feed Tick-by-Tick Stream (Poll & SSE) ──
+app.get('/api/today/ticks', (req, res) => {
+  try {
+    const symbol = req.query.symbol ? String(req.query.symbol).toUpperCase().trim() : null;
+    const tickStream = readTodayTickStream();
+    if (!tickStream) {
+      return res.status(500).json({ success: false, error: 'Tick stream sub-file not ready' });
+    }
+    if (symbol) {
+      const scripTick = tickStream.ticks?.[symbol];
+      if (!scripTick) {
+        return res.status(404).json({ success: false, error: `No live ticks found for ${symbol} today` });
+      }
+      return res.json({
+        success: true,
+        session_date: tickStream.session_date,
+        last_tick_timestamp_npt: tickStream.last_tick_timestamp_npt,
+        data: scripTick
+      });
+    }
+    return res.json({ success: true, ...tickStream });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Server-Sent Events (SSE) Live Feed Stream for Zero-Lag Tick Ingestion
+app.get('/api/today/ticks/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (req.flushHeaders) req.flushHeaders();
+
+  const filterSymbols = req.query.symbols
+    ? req.query.symbols.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+    : (req.query.symbol ? [req.query.symbol.trim().toUpperCase()] : null);
+
+  // Send initial snapshot
+  try {
+    const currentStream = readTodayTickStream();
+    let initialTicks = {};
+    if (filterSymbols && filterSymbols.length > 0) {
+      for (const s of filterSymbols) {
+        if (currentStream.ticks?.[s]) initialTicks[s] = currentStream.ticks[s];
+      }
+    } else {
+      initialTicks = currentStream.ticks || {};
+    }
+    res.write(`event: snapshot\ndata: ${JSON.stringify({ session_date: currentStream.session_date, ticks: initialTicks })}\n\n`);
+  } catch (_) {}
+
+  // Push live delta ticks
+  const onTick = (tickObj) => {
+    if (!tickObj || !tickObj.symbol) return;
+    if (filterSymbols && !filterSymbols.includes(tickObj.symbol)) return;
+    try {
+      res.write(`event: tick\ndata: ${JSON.stringify(tickObj)}\n\n`);
+    } catch (_) {}
+  };
+
+  tickEventEmitter.on('tick', onTick);
+
+  // 15-second keep-alive heartbeat
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(':heartbeat\n\n');
+    } catch (_) {
+      clearInterval(heartbeat);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    tickEventEmitter.off('tick', onTick);
+  });
+});
+
+app.post('/api/today/tick', (req, res) => {
+  try {
+    const { symbol, ...payload } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
+    ingestLiveTick(symbol, payload);
+    return res.json({ success: true, message: `Live tick ingested for ${symbol}` });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/today/compile-static', (req, res) => {
+  try {
+    const analytics = compileTodayStaticAnalytics();
+    return res.json({ success: true, total_scrips: analytics.total_scrips, session_date: analytics.session_date });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }

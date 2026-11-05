@@ -1328,10 +1328,20 @@ export default function ServicesHub({
   const [dateStocks, setDateStocks] = useState<any[]>([]);
   const [dateStocksLoading, setDateStocksLoading] = useState<boolean>(false);
 
+  const [dateSubfile, setDateSubfile] = useState<any>(null);
+
   useEffect(() => {
+    // 1. Fetch available trading sessions from subfiles index
+    fetch('/api/ledger/subfiles/index').then(res => res.json()).then(manifest => {
+      if (manifest?.available_sessions && Array.isArray(manifest.available_sessions) && manifest.available_sessions.length > 0) {
+        setAvailableTradingDates(manifest.available_sessions);
+      }
+    }).catch(() => {});
+
+    // 2. Also check available trading dates from legacy
     fetchAvailableTradingDates().then(dates => {
       if (Array.isArray(dates) && dates.length > 0) {
-        setAvailableTradingDates(dates);
+        setAvailableTradingDates(prev => Array.from(new Set([...(prev || []), ...dates])));
       }
     }).catch(() => {});
   }, []);
@@ -1339,18 +1349,75 @@ export default function ServicesHub({
   useEffect(() => {
     if (!selectedSessionDate) {
       setDateStocks([]);
+      setDateSubfile(null);
       return;
     }
     let active = true;
     setDateStocksLoading(true);
-    fetchLiveMarketData(selectedSessionDate).then(data => {
-      const stockArr = Array.isArray(data) ? data : (data?.stocks || data?.data || []);
-      if (active && Array.isArray(stockArr) && stockArr.length > 0) {
-        setDateStocks(stockArr);
+
+    // Fast Path: Check dedicated sub-file (< 2ms)
+    fetch(`/api/ledger/subfiles/date/${selectedSessionDate}`).then(async res => {
+      if (res.ok) {
+        const subfile = await res.json();
+        if (subfile && subfile.scrips) {
+          const mapped = Object.values(subfile.scrips).map((s: any) => ({
+            symbol: s.symbol,
+            companyName: s.company_name,
+            name: s.company_name,
+            sector: s.sector,
+            ltp: s.card_1_quote?.ltp,
+            closePrice: s.card_1_quote?.ltp,
+            pChange: s.card_1_quote?.p_change,
+            percentageChange: s.card_1_quote?.p_change,
+            open: s.card_1_quote?.open,
+            high: s.card_1_quote?.high,
+            low: s.card_1_quote?.low,
+            volume: s.card_1_quote?.volume,
+            totalTradedQuantity: s.card_1_quote?.volume,
+            turnover: s.card_1_quote?.turnover,
+            totalTurnover: s.card_1_quote?.turnover,
+            vwap: s.card_1_quote?.vwap,
+            pivots: s.card_2_pivot_points,
+            rsi: s.card_3_oscillators_risk?.rsi_14,
+            atr: s.card_3_oscillators_risk?.atr_14,
+            leadBroker: s.card_4_broker_smart_flow?.lead_accumulator,
+            topAccumulator: s.card_4_broker_smart_flow?.lead_accumulator?.broker_id,
+            bcr3BuyPct: s.card_4_broker_smart_flow?.concentration?.bcr3_buy_pct,
+            brokerAnalysis: s.card_4_broker_smart_flow,
+            stealthAccumulation: s.card_5_wyckoff_and_dump_guard?.wyckoff_phase,
+            isTrap: s.card_5_wyckoff_and_dump_guard?.is_trap,
+            trapAudit: s.card_5_wyckoff_and_dump_guard,
+            tacticalLevels: s.card_6_tactical_execution,
+            subfileScrip: s
+          }));
+          if (active && mapped.length > 0) {
+            setDateStocks(mapped);
+            setDateSubfile(subfile);
+            setDateStocksLoading(false);
+            return;
+          }
+        }
       }
-    }).catch(() => {}).finally(() => {
-      if (active) setDateStocksLoading(false);
+      // Fallback to fetchLiveMarketData
+      fetchLiveMarketData(selectedSessionDate).then(data => {
+        const stockArr = Array.isArray(data) ? data : (data?.stocks || data?.data || []);
+        if (active && Array.isArray(stockArr) && stockArr.length > 0) {
+          setDateStocks(stockArr);
+        }
+      }).catch(() => {}).finally(() => {
+        if (active) setDateStocksLoading(false);
+      });
+    }).catch(() => {
+      fetchLiveMarketData(selectedSessionDate).then(data => {
+        const stockArr = Array.isArray(data) ? data : (data?.stocks || data?.data || []);
+        if (active && Array.isArray(stockArr) && stockArr.length > 0) {
+          setDateStocks(stockArr);
+        }
+      }).catch(() => {}).finally(() => {
+        if (active) setDateStocksLoading(false);
+      });
     });
+
     return () => { active = false; };
   }, [selectedSessionDate]);
 

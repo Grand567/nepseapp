@@ -19,6 +19,8 @@ import { getOrFetchSymbolFloorsheet, getFullSessionFloorsheet } from './brokerVa
 import { ingestDailyStockPrices, getDailyCompletenessStatus, db } from './db/ledgerStore.js';
 import { downloadAndArchiveDailyFloorsheet } from './utils/dailyFloorsheetCollector.mjs';
 import { runCalendarGuardedDailyTransition } from './utils/rollingLedgerEngine.mjs';
+import { compileTodayStaticAnalytics, initTodayTickStream, tickEventEmitter } from './utils/todayDataEngine.mjs';
+import { compileHistoricalSubfiles } from './utils/historicalSubfilesEngine.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -418,6 +420,28 @@ export async function runPostMarketCloseAnalysis(force = false) {
     await runCalendarGuardedDailyTransition({ targetDate }).catch(e =>
       console.warn('[Post-Market Worker] Calendar-Guarded transition notice:', e.message)
     );
+    // Refresh Sub-File A1 Static Analytics with today's newly reconciled EOD session
+    try {
+      console.log(`[Post-Market Worker] 📊 Recompiling Sub-File A1 static analytics for closed session: ${targetDate}...`);
+      compileTodayStaticAnalytics({ targetDate });
+    } catch (e) {
+      console.warn('[Post-Market Worker] Static analytics recompile notice:', e.message);
+    }
+    // Recompile 4 Dedicated Historical Sub-Files (Day 1..4) with today's settled close
+    try {
+      console.log(`[Post-Market Worker] 📚 Recompiling 4 Historical Sub-Files (Days 1–4) for closed session: ${targetDate}...`);
+      const subfilesManifest = compileHistoricalSubfiles();
+      // Broadcast SSE rotation event to all connected clients
+      tickEventEmitter.emit('tick', {
+        event_type: 'SUBFILES_ROTATED',
+        timestamp: new Date().toISOString(),
+        available_sessions: subfilesManifest?.available_sessions || [],
+        latest_session: targetDate
+      });
+      console.log(`[Post-Market Worker] 🚀 Broadcast SUBFILES_ROTATED event for ${targetDate}`);
+    } catch (e) {
+      console.warn('[Post-Market Worker] Historical subfiles recompile notice:', e.message);
+    }
     lastPostMarketSessionAnalyzed = targetDate;
   } catch (err) {
     console.warn('[Post-Market Worker] Error in runPostMarketCloseAnalysis:', err?.message || err);
@@ -613,6 +637,14 @@ export function startWorkers() {
         // Phase 2: 10:45 AM - 10:55 AM Verified Single Prime Pick (Pruned noise - sends #1 Pick passing 5-Filters)
         if (nptMins >= 645 && nptMins < 655 && lastMorningDigestDispatchedDate !== status.targetSessionDate) {
           lastMorningDigestDispatchedDate = status.targetSessionDate;
+          // Pre-compile Today's Static Analytics & initialize Tick Stream for market open
+          try {
+            console.log(`[PremarketWorker] 🚀 Pre-compiling static analytics sub-file for ${status.targetSessionDate}...`);
+            compileTodayStaticAnalytics({ targetDate: status.targetSessionDate });
+            initTodayTickStream(status.targetSessionDate);
+          } catch (e) {
+            console.warn('[PremarketWorker] Static sub-file compilation notice:', e.message);
+          }
           run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(err => {
             console.warn('[PremarketWorker] Morning swing dispatch notice:', err.message);
           });

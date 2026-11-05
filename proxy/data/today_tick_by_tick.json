@@ -1,0 +1,13 @@
+{
+  "file_type": "TODAY_TICK_BY_TICK_STREAM_SUBFILE",
+  "version": "2.0-today-tick-subfile",
+  "feed_protocol": "NEPSE_LEVEL2_STREAM_V2",
+  "session_date": "2026-11-05",
+  "market_status": "PRE_OPEN",
+  "initialized_at": "2026-11-05T03:14:24.897Z",
+  "last_tick_timestamp_npt": "2026-11-05T03:14:24.897Z",
+  "total_ticks_ingested": 0,
+  "active_scrips_count": 0,
+  "description": "Sub-file for live feed dynamic tick-by-tick real-time data containing live quote updates, Level-2 5-level order depth, streaming floorsheet contracts, and real-time execution signals.",
+  "ticks": {}
+}

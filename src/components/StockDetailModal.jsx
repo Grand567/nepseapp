@@ -6559,6 +6559,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                 rawFundamentals={rawFundamentalsForHub}
                 corporateActions={liveDetail?.corporateActions || []}
                 peerStocks={allStocks || peerStocks || []}
+                selectedDate={brokerDate || modalSessionDate}
               />
             </div>
           </div>
@@ -7828,6 +7829,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
               rawFundamentals={rawFundamentalsForHub}
               corporateActions={liveDetail?.corporateActions || []}
               peerStocks={allStocks || peerStocks || []}
+              selectedDate={brokerDate || modalSessionDate}
               onClose={() => setShowHubModal(false)}
             />
           </div>
