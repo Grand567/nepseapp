@@ -19,6 +19,232 @@ const PUSH_REGISTERED_KEY = 'dravyashree_fcm_token_registered';
 const NOTIFICATIONS_CACHE_KEY = 'dravyashree_notifications_cache';
 const MAX_NOTIFICATION_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours max age for active feed
 
+// ── Stale Notification Filtering & Deduplication Rules ───────────────────────
+export const NOTIFICATION_TTL_MS = 30 * 60 * 1000; // 30 minutes max age for live notifications
+export const PROCESSED_NOTIFICATIONS_KEY = 'dravyashree_processed_notification_log_v2';
+export const MAX_PROCESSED_LOG_SIZE = 500;
+export const PROCESSED_LOG_RETENTION_MS = 48 * 60 * 60 * 1000; // 48 hours retention
+
+/**
+ * Fast string hashing utility for content-fingerprinting incoming alert broadcasts
+ */
+function hashString(str) {
+  let hash = 0;
+  if (!str) return hash;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+/**
+ * Extracts and verifies explicit creation timestamp from incoming FCM / background push payload.
+ * Supports ISO strings, numeric epoch milliseconds, and FCM sent-time headers.
+ */
+export const extractPayloadCreationTimestamp = (raw) => {
+  if (!raw) return { hasTimestamp: false, createdAtMs: 0, createdAtIso: '', sourceField: null };
+
+  const data = raw.data || raw;
+
+  // Candidates inspected in order of explicit intent
+  const candidates = [
+    { field: 'created_at', val: data.created_at ?? raw.created_at },
+    { field: 'created_at_ms', val: data.created_at_ms ?? raw.created_at_ms },
+    { field: 'createdAt', val: data.createdAt ?? raw.createdAt },
+    { field: 'triggeredAt', val: data.triggeredAt ?? raw.triggeredAt },
+    { field: 'timestamp', val: data.timestamp ?? raw.timestamp },
+    { field: 'sentTime', val: data.sentTime ?? raw.sentTime ?? data['google.sent_time'] ?? raw['google.sent_time'] }
+  ];
+
+  for (const c of candidates) {
+    if (c.val !== undefined && c.val !== null && c.val !== '') {
+      let timeMs = 0;
+      if (typeof c.val === 'number' && !isNaN(c.val) && c.val > 0) {
+        timeMs = c.val;
+      } else if (typeof c.val === 'string') {
+        const str = c.val.trim();
+        if (/^\d{10,13}$/.test(str)) {
+          timeMs = parseInt(str.length === 10 ? str + '000' : str, 10);
+        } else {
+          const parsed = Date.parse(str);
+          if (!isNaN(parsed) && parsed > 0) timeMs = parsed;
+        }
+      }
+
+      if (timeMs > 0) {
+        return {
+          hasTimestamp: true,
+          createdAtMs: timeMs,
+          createdAtIso: new Date(timeMs).toISOString(),
+          sourceField: c.field
+        };
+      }
+    }
+  }
+
+  return { hasTimestamp: false, createdAtMs: 0, createdAtIso: '', sourceField: null };
+};
+
+/**
+ * Retrieves the persistent log of already-processed notification IDs and fingerprints.
+ */
+export const getProcessedNotificationsLog = () => {
+  try {
+    const raw = localStorage.getItem(PROCESSED_NOTIFICATIONS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    // Prune entries older than retention window (48 hours)
+    const now = Date.now();
+    const fresh = parsed.filter(entry => {
+      if (!entry || !entry.processedAt) return false;
+      return (now - entry.processedAt) <= PROCESSED_LOG_RETENTION_MS;
+    });
+
+    if (fresh.length !== parsed.length) {
+      localStorage.setItem(PROCESSED_NOTIFICATIONS_KEY, JSON.stringify(fresh));
+    }
+    return fresh;
+  } catch (_) {
+    return [];
+  }
+};
+
+/**
+ * Checks whether an alert has already been processed or displayed.
+ */
+export const isNotificationAlreadyProcessed = (id, fingerprint) => {
+  if (!id && !fingerprint) return false;
+  const log = getProcessedNotificationsLog();
+  return log.some(entry => {
+    if (id && entry.id === id) return true;
+    if (fingerprint && entry.fingerprint === fingerprint) return true;
+    return false;
+  });
+};
+
+/**
+ * Marks a notification as processed in the persistent local history log.
+ */
+export const markNotificationAsProcessed = (id, fingerprint, metadata = {}) => {
+  try {
+    const log = getProcessedNotificationsLog();
+    const now = Date.now();
+
+    const existingIdx = log.findIndex(e => (id && e.id === id) || (fingerprint && e.fingerprint === fingerprint));
+    if (existingIdx >= 0) {
+      log[existingIdx].processedAt = now;
+    } else {
+      log.unshift({
+        id: id || '',
+        fingerprint: fingerprint || '',
+        processedAt: now,
+        createdAt: metadata.createdAt || null,
+        symbol: metadata.symbol || '',
+        type: metadata.type || ''
+      });
+    }
+
+    const capped = log.slice(0, MAX_PROCESSED_LOG_SIZE);
+    localStorage.setItem(PROCESSED_NOTIFICATIONS_KEY, JSON.stringify(capped));
+  } catch (_) {}
+};
+
+/**
+ * Core Validation & Stale-Filtering Pipeline:
+ * 1. Payload Timestamp Verification (explicit creation timestamp check)
+ * 2. TTL Expiration Rule (delta <= 30 minutes)
+ * 3. Queue Deduplication (persistent ID & fingerprint history check)
+ */
+export const validatePushNotificationPayload = (raw, options = {}) => {
+  const ttlMs = options.ttlMs || NOTIFICATION_TTL_MS;
+  const allowMissingTimestamp = options.allowMissingTimestamp === true;
+
+  if (!raw) {
+    return { valid: false, reason: 'EMPTY_PAYLOAD', error: 'Payload is null or empty' };
+  }
+
+  const data = raw.data || raw;
+  const id = String(data.id || raw.id || '').trim();
+  const title = String(raw.title || data.title || '').trim();
+  const body = String(raw.body || data.body || '').trim();
+  const symbol = String(data.symbol || raw.symbol || '').toUpperCase().trim();
+  const type = String(data.type || raw.type || '').trim();
+
+  // Content fingerprint to detect broadcast queues with altered or omitted IDs
+  const contentFingerprint = `fp_${symbol || 'GEN'}_${type || 'ALERT'}_${hashString(title + '_' + body)}`;
+
+  // 1. Queue Deduplication Check against persistent local client-side cache
+  if (isNotificationAlreadyProcessed(id, contentFingerprint)) {
+    return {
+      valid: false,
+      reason: 'DUPLICATE_ALERT',
+      id,
+      fingerprint: contentFingerprint,
+      error: `Notification already processed in client history (${id || contentFingerprint})`
+    };
+  }
+
+  // 2. Payload Timestamp Verification: inspect explicit creation timestamp
+  const tsInfo = extractPayloadCreationTimestamp(raw);
+  if (!tsInfo.hasTimestamp) {
+    if (!allowMissingTimestamp) {
+      return {
+        valid: false,
+        reason: 'MISSING_EXPLICIT_TIMESTAMP',
+        id,
+        fingerprint: contentFingerprint,
+        error: 'Push payload lacks explicit created_at / triggeredAt timestamp. Suppressed to prevent backlogged broadcasts.'
+      };
+    }
+  }
+
+  // 3. TTL Expiration Rule: Discard if generation-to-receipt delta > 30 minutes
+  const now = Date.now();
+  const createdAtMs = tsInfo.hasTimestamp ? tsInfo.createdAtMs : now;
+  const deltaMs = now - createdAtMs;
+
+  if (deltaMs > ttlMs) {
+    const ageMinutes = +(deltaMs / (60 * 1000)).toFixed(1);
+    return {
+      valid: false,
+      reason: 'TTL_EXPIRED',
+      id,
+      fingerprint: contentFingerprint,
+      ageMinutes,
+      deltaMs,
+      error: `Alert expired: generated ${ageMinutes}m ago (exceeds ${ttlMs / 60000}m TTL threshold). Discarded.`
+    };
+  }
+
+  // Clock-skew protection: Reject notifications claiming to be more than 5 minutes in the future
+  if (deltaMs < -5 * 60 * 1000) {
+    return {
+      valid: false,
+      reason: 'FUTURE_TIMESTAMP_ANOMALY',
+      id,
+      fingerprint: contentFingerprint,
+      deltaMs,
+      error: `Alert rejected: future timestamp anomaly (${deltaMs}ms in future).`
+    };
+  }
+
+  return {
+    valid: true,
+    id,
+    fingerprint: contentFingerprint,
+    createdAtMs,
+    createdAtIso: tsInfo.createdAtIso || new Date(now).toISOString(),
+    deltaMs,
+    symbol,
+    type,
+    title,
+    body
+  };
+};
+
 export const getCachedNotifications = (filterCategory = 'all') => {
   try {
     const raw = localStorage.getItem(NOTIFICATIONS_CACHE_KEY);
@@ -109,7 +335,11 @@ export const normalizeNotificationItem = (raw) => {
   const data = raw.data || raw;
   const isGeneral = data.category === 'general' || data.type === 'NEWS_ALERT' || data.type === 'IPO_ALERT' || data.type === 'NEPSE_MACRO';
   const category = data.category || (isGeneral ? 'general' : 'pro');
-  const id = data.id || `notif_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+  const id = data.id || raw.id || `notif_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+
+  const tsInfo = extractPayloadCreationTimestamp(raw);
+  const createdAtIso = tsInfo.hasTimestamp ? tsInfo.createdAtIso : (data.created_at || data.triggeredAt || data.timestamp || new Date().toISOString());
+  const createdAtMs = tsInfo.hasTimestamp ? tsInfo.createdAtMs : new Date(createdAtIso).getTime();
 
   return {
     id,
@@ -132,7 +362,9 @@ export const normalizeNotificationItem = (raw) => {
     stopLoss: Number(data.stopLoss || 0),
     action: data.action || (isGeneral ? 'OPEN_NEWS' : 'OPEN_RADAR'),
     url: data.url || '',
-    timestamp: data.triggeredAt || data.timestamp || new Date().toISOString(),
+    created_at: createdAtIso,
+    created_at_ms: createdAtMs,
+    timestamp: createdAtIso,
     read: false
   };
 };
@@ -142,9 +374,16 @@ const recentlyTriggeredAlerts = new Set();
 export function triggerNativeStatusBarNotification(normalized) {
   if (!normalized) return;
 
-  // Deduplicate on client to prevent multi-firing within 10 minutes
+  // Stale-notification validation layer: inspect timestamp and enforce 30m TTL
+  const validation = validatePushNotificationPayload(normalized, { ttlMs: NOTIFICATION_TTL_MS });
+  if (!validation.valid && validation.reason !== 'DUPLICATE_ALERT') {
+    console.warn(`[PushService] Suppressed status bar notification [${validation.reason}]:`, validation.error);
+    return;
+  }
+
+  // Deduplicate on client to prevent multi-firing within session
   const alertFingerprint = `${normalized.id || ''}_${normalized.title || ''}_${normalized.symbol || ''}`.trim();
-  if (alertFingerprint && recentlyTriggeredAlerts.has(alertFingerprint)) {
+  if (alertFingerprint && (recentlyTriggeredAlerts.has(alertFingerprint) || isNotificationAlreadyProcessed(normalized.id, alertFingerprint))) {
     console.debug('[PushService] Suppressed duplicate status bar notification:', alertFingerprint);
     return;
   }
@@ -153,15 +392,6 @@ export function triggerNativeStatusBarNotification(normalized) {
     const arr = Array.from(recentlyTriggeredAlerts).slice(-100);
     recentlyTriggeredAlerts.clear();
     arr.forEach(a => recentlyTriggeredAlerts.add(a));
-  }
-
-  // Suppress outdated alerts older than 20 minutes from triggering system status bar notification
-  if (normalized.timestamp) {
-    const timeMs = new Date(normalized.timestamp).getTime();
-    if (!isNaN(timeMs) && (Date.now() - timeMs > 20 * 60 * 1000)) {
-      console.debug('[PushService] Suppressed outdated status bar alert:', normalized.title);
-      return;
-    }
   }
 
   const isPro = normalized.category === 'pro' || normalized.tier === 'pro';
@@ -177,7 +407,8 @@ export function triggerNativeStatusBarNotification(normalized) {
         normalized.symbol || '',
         normalized.type || '',
         normalized.action || (normalized.symbol ? 'OPEN_STOCK' : 'OPEN_NEWS'),
-        normalized.url || ''
+        normalized.url || '',
+        normalized.created_at || normalized.timestamp || ''
       );
       return;
     } catch (e) {
@@ -320,11 +551,33 @@ export async function initPushNotifications() {
 
       // 5. Notification received while app is OPEN or MINIMIZED
       PushNotifications.addListener('pushNotificationReceived', (notification) => {
-        console.log('[PushService] Push notification received:', notification);
+        console.log('[PushService] Push notification received from FCM:', notification);
+
+        // Core Validation: Verify explicit created_at timestamp, 30m TTL, and deduplicate
+        const validation = validatePushNotificationPayload(notification, { ttlMs: NOTIFICATION_TTL_MS });
+        if (!validation.valid) {
+          console.warn(`[PushService] 🛑 Stale/Duplicate push notification discarded [${validation.reason}]:`, validation.error);
+          return;
+        }
+
+        // Record in persistent deduplication history log immediately
+        markNotificationAsProcessed(validation.id, validation.fingerprint, {
+          createdAt: validation.createdAtIso,
+          symbol: validation.symbol,
+          type: validation.type
+        });
+
+        // Trigger chime & vibration ONLY for verified, fresh notifications
         playBreakoutChime();
         triggerBreakoutVibration();
 
-        const normalized = normalizeNotificationItem(notification);
+        const normalized = normalizeNotificationItem({
+          ...notification,
+          created_at: validation.createdAtIso,
+          created_at_ms: validation.createdAtMs,
+          timestamp: validation.createdAtIso
+        });
+
         saveNotificationToCache(normalized);
         triggerNativeStatusBarNotification(normalized);
 
@@ -379,10 +632,30 @@ function initWebPushFallback() {
         if (!alertItem) return;
 
         console.log('[PushService] Live SSE Smart Alert received:', alertItem);
+
+        // Core Validation: Verify explicit created_at timestamp, 30m TTL, and deduplicate
+        const validation = validatePushNotificationPayload(alertItem, { ttlMs: NOTIFICATION_TTL_MS });
+        if (!validation.valid) {
+          console.debug(`[PushService] 🛑 Stale/Duplicate SSE alert discarded [${validation.reason}]:`, validation.error);
+          return;
+        }
+
+        markNotificationAsProcessed(validation.id, validation.fingerprint, {
+          createdAt: validation.createdAtIso,
+          symbol: validation.symbol,
+          type: validation.type
+        });
+
         playBreakoutChime();
         triggerBreakoutVibration();
 
-        const normalized = normalizeNotificationItem(alertItem);
+        const normalized = normalizeNotificationItem({
+          ...alertItem,
+          created_at: validation.createdAtIso,
+          created_at_ms: validation.createdAtMs,
+          timestamp: validation.createdAtIso
+        });
+
         saveNotificationToCache(normalized);
         triggerNativeStatusBarNotification(normalized);
 

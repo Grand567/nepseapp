@@ -184,6 +184,16 @@ export function broadcastAlert(alertPayload) {
   if (!alertPayload.triggeredAt) {
     alertPayload.triggeredAt = new Date().toISOString();
   }
+  if (!alertPayload.created_at) {
+    alertPayload.created_at = alertPayload.triggeredAt;
+  }
+  if (!alertPayload.created_at_ms) {
+    alertPayload.created_at_ms = new Date(alertPayload.created_at).getTime() || Date.now();
+  }
+  if (!alertPayload.timestamp) {
+    alertPayload.timestamp = alertPayload.triggeredAt;
+  }
+  alertPayload.ttl_ms = 30 * 60 * 1000; // 30 minutes TTL rule
 
   // Normalize category: pro vs general
   if (!alertPayload.category) {
@@ -376,6 +386,10 @@ export async function dispatchFcmNotification(alertItem) {
     else body = `LTP: NPR ${ltp.toFixed(2)} (Inside Buy Zone: ${buyZone.low || (ltp * 0.99).toFixed(0)} - ${buyZone.high || (ltp * 1.02).toFixed(0)})\n${brokersText} absorbing ${concentration}% morning float.`;
   }
 
+  const nowMs = Date.now();
+  const createdAtIso = alertItem.created_at || alertItem.triggeredAt || new Date(nowMs).toISOString();
+  const createdAtMs = alertItem.created_at_ms || new Date(createdAtIso).getTime() || nowMs;
+
   const fcmPayload = {
     notification: {
       title,
@@ -386,22 +400,32 @@ export async function dispatchFcmNotification(alertItem) {
       symbol: String(symbol),
       type: String(type),
       category: String(isPro ? 'pro' : 'general'),
-      id: String(alertItem.id || `alert_${Date.now()}`),
+      id: String(alertItem.id || `alert_${nowMs}`),
       ltp: String(ltp),
       target1: String(alertItem.target1 || ''),
       target2: String(alertItem.target2 || ''),
       stopLoss: String(alertItem.stopLoss || ''),
-      timestamp: String(Date.now()),
+      timestamp: String(nowMs),
+      created_at: String(createdAtIso),
+      created_at_ms: String(createdAtMs),
+      ttl_seconds: '1800',
+      ttl_ms: '1800000',
       ...(alertItem.data || {})
     },
     android: {
       priority: 'high',
+      ttl: 1800 * 1000, // 30 minutes in milliseconds (Google FCM drops queued messages if phone was offline > 30m)
       notification: {
         sound: 'default',
         channelId,
         clickAction: alertItem.action || (isPro ? 'OPEN_ACCUMULATION_CARD' : 'OPEN_NEWS'),
         icon: 'ic_stat_notification',
         color: isPro ? '#8b5cf6' : '#10b981',
+      }
+    },
+    webpush: {
+      headers: {
+        TTL: '1800'
       }
     }
   };
