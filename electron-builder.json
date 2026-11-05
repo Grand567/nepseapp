@@ -36,6 +36,8 @@
         "data/drabyashree_ledger.db*",
         "data/broker_matrix_latest.json",
         "data/nepse-1year-market-history.json.gz",
+        "data/subfiles/**/*",
+        "data/today_*.json*",
         "!proxy/**/*",
         "!data/sync_vaults/**/*",
         "!data/sync_vaults*.*",
