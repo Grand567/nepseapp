@@ -638,7 +638,7 @@ export function BrokerFlowDominanceService({
 
       if (histList.length > 0) {
         setHeatmapData({ ...histSeed, matrix: histList });
-      } else if (!targetDate && latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
+      } else if (latestBrokerMatrix && ((latestBrokerMatrix as any)?.businessDate === effDate || !targetDate) && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         setHeatmapData(latestBrokerMatrix);
       }
 
@@ -669,6 +669,31 @@ export function BrokerFlowDominanceService({
 
       if (hmList.length > 0) {
         setHeatmapData({ ...hmData, matrix: hmList });
+        // Live-sync modal if currently open!
+        setSelectedBrokerModal(prev => {
+          if (!prev) return null;
+          const prevId = String(prev.brokerId || '').replace(/^0+/, '');
+          const found = hmList.find((b: any) => String(b.broker || b.brokerId || '').replace(/^0+/, '') === prevId);
+          if (!found) return prev;
+          return {
+            ...prev,
+            buyAmount: Math.round(Number(found.totalBuy || 0)),
+            sellAmount: Math.round(Number(found.totalSell || 0)),
+            netFlow: Math.round(Number(found.netFlow != null ? found.netFlow : ((found.totalBuy || 0) - (found.totalSell || 0)))),
+            totalTrades: Number(found.totalTrades || prev.totalTrades),
+            topStock: found.topStock || prev.topStock,
+            bias: found.bias || prev.bias,
+            topAccumulation: found.topAccumulation || prev.topAccumulation,
+            topDistribution: found.topDistribution || prev.topDistribution,
+            topByNetQty: found.topByNetQty || prev.topByNetQty,
+            topByGrossBuyAmt: found.topByGrossBuyAmt || prev.topByGrossBuyAmt,
+            topByGrossBuyQty: found.topByGrossBuyQty || prev.topByGrossBuyQty,
+            topDistByNetQty: found.topDistByNetQty || prev.topDistByNetQty,
+            topDistByGrossSellAmt: found.topDistByGrossSellAmt || prev.topDistByGrossSellAmt,
+            topDistByGrossSellQty: found.topDistByGrossSellQty || prev.topDistByGrossSellQty,
+            scrips: found.scrips || prev.scrips
+          };
+        });
       } else if (histList.length > 0) {
         setHeatmapData({ ...histSeed, matrix: histList });
       } else if (!targetDate && latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
@@ -707,7 +732,7 @@ export function BrokerFlowDominanceService({
     loadData(timeframe, sessionDateFilter, fromDate, toDate);
   }, [timeframe, sessionDateFilter, fromDate, toDate]);
 
-  // ── Intraday Auto-Refresh (10 min during NEPSE market hours 11:00 AM – 3:00 PM NPT) ──
+  // ── Intraday Auto-Refresh (2 min during NEPSE market hours 11:00 AM – 3:00 PM NPT) ──
   useEffect(() => {
     const isNepseMarketOpen = () => {
       const now = new Date();
@@ -720,7 +745,7 @@ export function BrokerFlowDominanceService({
       if (isNepseMarketOpen()) {
         loadData(timeframe, sessionDateFilter, fromDate, toDate);
       }
-    }, 10 * 60 * 1000); // every 10 minutes
+    }, 2 * 60 * 1000); // every 2 minutes for fast dynamic updates
     return () => clearInterval(intervalId);
   }, [timeframe, sessionDateFilter, fromDate, toDate]); // re-register if timeframe or date changes
 

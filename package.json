@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node --max-old-space-size=2048 proxy/server.mjs",
     "dev": "concurrently \"vite\" \"npm run start --prefix proxy\"",
+    "sync:today": "node scripts/syncTodayFloorsheet.mjs",
     "build": "vite build",
     "test": "node tests/runAll.mjs",
     "test:parity": "node tests/auditDataParity.mjs",

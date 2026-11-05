@@ -76,5 +76,83 @@
     "source": "nepse-api",
     "fetchedAt": "2026-10-16T07:23:11.063Z",
     "savedAt": "2026-10-16T07:23:11.063Z"
+  },
+  "SAHAS": {
+    "symbol": "SAHAS",
+    "bids": [
+      {
+        "price": 714.6,
+        "quantity": 200,
+        "qty": 200,
+        "orders": 1
+      },
+      {
+        "price": 714.5,
+        "quantity": 120,
+        "qty": 120,
+        "orders": 2
+      },
+      {
+        "price": 714.1,
+        "quantity": 46,
+        "qty": 46,
+        "orders": 1
+      },
+      {
+        "price": 714,
+        "quantity": 594,
+        "qty": 594,
+        "orders": 4
+      },
+      {
+        "price": 713.5,
+        "quantity": 20,
+        "qty": 20,
+        "orders": 1
+      }
+    ],
+    "asks": [
+      {
+        "price": 715,
+        "quantity": 503,
+        "qty": 503,
+        "orders": 2
+      },
+      {
+        "price": 716,
+        "quantity": 140,
+        "qty": 140,
+        "orders": 1
+      },
+      {
+        "price": 716.2,
+        "quantity": 10,
+        "qty": 10,
+        "orders": 1
+      },
+      {
+        "price": 717.9,
+        "quantity": 10,
+        "qty": 10,
+        "orders": 1
+      },
+      {
+        "price": 718,
+        "quantity": 13,
+        "qty": 13,
+        "orders": 1
+      }
+    ],
+    "totalBidQty": 56719,
+    "totalAskQty": 64717,
+    "obir": -0.0659,
+    "spread": 0.4,
+    "spreadPct": 0.06,
+    "isOffMarket": false,
+    "sessionLabel": "Live NEPSE NOTS Order Book",
+    "demandStatus": "Balanced Flow",
+    "source": "nepse-api",
+    "fetchedAt": "2026-11-05T06:17:42.123Z",
+    "savedAt": "2026-11-05T06:17:42.123Z"
   }
 }

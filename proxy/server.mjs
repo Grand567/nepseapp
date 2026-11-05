@@ -3918,6 +3918,59 @@ app.get('/api/today/ticks/stream', (req, res) => {
   });
 });
 
+// ── Universal Live Realtime SSE Stream (Market Ticks & Broker Matrix) ───────────
+app.get('/api/realtime/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (req.flushHeaders) req.flushHeaders();
+
+  // Send initial snapshot
+  try {
+    const cachedMarket = getCache('internal-mero-market-summary');
+    let latestMatrix = null;
+    const srcLatest = path.join(process.cwd(), 'src', 'data', 'broker_matrix_latest.json');
+    if (fs.existsSync(srcLatest)) {
+      try { latestMatrix = JSON.parse(fs.readFileSync(srcLatest, 'utf8')); } catch (_) {}
+    }
+    res.write(`event: snapshot\ndata: ${JSON.stringify({
+      timestamp: new Date().toISOString(),
+      stocks: cachedMarket?.stocks || [],
+      brokerMatrix: latestMatrix || null
+    })}\n\n`);
+  } catch (_) {}
+
+  const onMarketUpdate = (payload) => {
+    try {
+      res.write(`event: market_update\ndata: ${JSON.stringify(payload)}\n\n`);
+    } catch (_) {}
+  };
+
+  const onBrokerMatrixUpdate = (payload) => {
+    try {
+      res.write(`event: broker_matrix_update\ndata: ${JSON.stringify(payload)}\n\n`);
+    } catch (_) {}
+  };
+
+  tickEventEmitter.on('market_update', onMarketUpdate);
+  tickEventEmitter.on('broker_matrix_update', onBrokerMatrixUpdate);
+
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(':heartbeat\n\n');
+    } catch (_) {
+      clearInterval(heartbeat);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    tickEventEmitter.off('market_update', onMarketUpdate);
+    tickEventEmitter.off('broker_matrix_update', onBrokerMatrixUpdate);
+  });
+});
+
 app.post('/api/today/tick', (req, res) => {
   try {
     const { symbol, ...payload } = req.body || {};
@@ -6233,7 +6286,18 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
     // 1. Primary for 1D Session: Aggregate from 100% authentic market floorsheet transactions
     if (days === 1 && !fromDate && !toDate && !symbolsParam && (!sector || sector.toUpperCase() === 'ALL')) {
       try {
-        const fullTrades = await getFullSessionFloorsheet(businessDate);
+        let fullTrades = await getFullSessionFloorsheet(businessDate);
+        if (!Array.isArray(fullTrades) || fullTrades.length === 0) {
+          try {
+            console.log(`[broker-heatmap] ⚡ Triggering on-demand floorsheet fetch for ${businessDate || 'today'}...`);
+            const archiveRes = await downloadAndArchiveDailyFloorsheet(businessDate);
+            if (archiveRes?.tradeCount > 0) {
+              fullTrades = await getFullSessionFloorsheet(businessDate);
+            }
+          } catch (autoErr) {
+            console.warn(`[broker-heatmap] On-demand archive notice for ${businessDate}:`, autoErr.message);
+          }
+        }
         if (Array.isArray(fullTrades) && fullTrades.length > 0) {
           const aggData = aggregateMarketFloorsheet(fullTrades, businessDate || fullTrades[0]?.businessDate);
           let availableDates = [];
@@ -6245,7 +6309,22 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
           setCache(cacheKey, aggData, 5 * 60 * 1000);
           try {
             const outPath = path.join(__dirname, 'data', 'broker_matrix_latest.json');
-            fs.writeFileSync(outPath, JSON.stringify(aggData), 'utf8');
+            fs.writeFileSync(outPath, JSON.stringify(aggData, null, 2), 'utf8');
+            const srcPath = path.join(process.cwd(), 'src', 'data', 'broker_matrix_latest.json');
+            if (fs.existsSync(path.dirname(srcPath))) {
+              fs.writeFileSync(srcPath, JSON.stringify(aggData, null, 2), 'utf8');
+            }
+            const srcHistPath = path.join(process.cwd(), 'src', 'data', 'broker_matrices_historical.json');
+            if (fs.existsSync(srcHistPath) && aggData.businessDate) {
+              const histSeed = JSON.parse(fs.readFileSync(srcHistPath, 'utf8'));
+              const lightMatrix = (aggData.matrix || []).map(({ scrips, ...rest }) => rest);
+              histSeed[aggData.businessDate] = { ...aggData, matrix: lightMatrix };
+              // Keep only the 5 most recent dates
+              const recentDates = Object.keys(histSeed).sort().reverse().slice(0, 5);
+              const prunedSeed = {};
+              for (const rd of recentDates) prunedSeed[rd] = histSeed[rd];
+              fs.writeFileSync(srcHistPath, JSON.stringify(prunedSeed), 'utf8');
+            }
           } catch (_) {}
           return res.json({ success: true, data: aggData, source: 'full_session_floorsheet_authentic' });
         }
@@ -13479,6 +13558,34 @@ app.listen(PORT, '0.0.0.0', async () => {
             console.log(`[auto-archiver] Post-market 3:05 PM triggered: archiving full floorsheet for ${todayIso}...`);
             const res = await downloadAndArchiveDailyFloorsheet(todayIso);
             console.log(`[auto-archiver] Finished floorsheet archive for ${todayIso}:`, res?.tradeCount, 'trades');
+            try {
+              const fullTrades = await getFullSessionFloorsheet(todayIso);
+              if (Array.isArray(fullTrades) && fullTrades.length > 0) {
+                const aggData = aggregateMarketFloorsheet(fullTrades, todayIso);
+                const outPath = path.join(__dirname, 'data', 'broker_matrix_latest.json');
+                fs.writeFileSync(outPath, JSON.stringify(aggData, null, 2), 'utf8');
+                const srcPath = path.join(process.cwd(), 'src', 'data', 'broker_matrix_latest.json');
+                if (fs.existsSync(path.dirname(srcPath))) {
+                  fs.writeFileSync(srcPath, JSON.stringify(aggData, null, 2), 'utf8');
+                }
+                const srcHistPath = path.join(process.cwd(), 'src', 'data', 'broker_matrices_historical.json');
+                if (fs.existsSync(srcHistPath)) {
+                  const histSeed = JSON.parse(fs.readFileSync(srcHistPath, 'utf8'));
+                  const lightMatrix = (aggData.matrix || []).map(({ scrips, ...rest }) => rest);
+                  histSeed[todayIso] = { ...aggData, matrix: lightMatrix };
+                  const recentDates = Object.keys(histSeed).sort().reverse().slice(0, 5);
+                  const prunedSeed = {};
+                  for (const rd of recentDates) prunedSeed[rd] = histSeed[rd];
+                  fs.writeFileSync(srcHistPath, JSON.stringify(prunedSeed), 'utf8');
+                }
+                console.log(`[auto-archiver] ✅ Dual-written broker matrix for ${todayIso} to proxy & src`);
+              }
+              compileHistoricalSubfiles();
+              compileTodayStaticAnalytics();
+              console.log(`[auto-archiver] ✅ Recompiled 4 historical subfiles & today static analytics for ${todayIso}`);
+            } catch (postErr) {
+              console.warn('[auto-archiver] Post-compile notice:', postErr.message);
+            }
           }
         }
       } catch (err) {

@@ -1,6 +1,6 @@
 # Drabyashree NEPSE: Walk-Forward Parameter Optimization Report
 
-**Generated At:** 2026-11-05T05:58:20.321Z  
+**Generated At:** 2026-11-05T14:55:30.951Z  
 **Historical Horizon:** 40 NEPSE Trading Sessions  
 **Validation Methodology:** Rolling 60% In-Sample Training / 40% Out-of-Sample Forward Testing  
 **Frictional Deductions:** 5-Tier SEBON Brokerage, 0.015% SEBON fee, Rs. 25 DP fee, 7.5% CGT, Slippage, and T+2 Demat Lock.
@@ -34,10 +34,10 @@
 
 | Preset Candidate | Weight Breakdown (B/T/F/M) | Buy Score | Trades (OOS) | Win Rate % | Profit Factor | Net PnL (NPR) | WFE % | Verdict |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Preset C: Technical Momentum Follower** | 25/45/15/15 | 68 | 64 | 60.9% | **1.23** | Rs. 26,226 | -39.4% | ⚠️ Sensitive |
-| **Preset D: High-Safety Value Conservative** | 30/20/30/20 | 75 | 43 | 48.8% | **0.89** | Rs. -25,474 | -134.8% | ⚠️ Sensitive |
-| **Preset A: Current Baseline Balanced** | 35/25/20/20 | 70 | 44 | 47.7% | **0.88** | Rs. -29,608 | -156.9% | ⚠️ Sensitive |
-| **Preset B: Institutional Flow Dominant** | 45/20/15/20 | 72 | 49 | 44.9% | **0.75** | Rs. -52,130 | -280.7% | ⚠️ Sensitive |
+| **Preset C: Technical Momentum Follower** | 25/45/15/15 | 68 | 64 | 60.9% | **1.23** | Rs. 22,776 | -39.4% | ⚠️ Sensitive |
+| **Preset D: High-Safety Value Conservative** | 30/20/30/20 | 75 | 43 | 48.8% | **0.89** | Rs. -26,099 | -134.8% | ⚠️ Sensitive |
+| **Preset A: Current Baseline Balanced** | 35/25/20/20 | 70 | 45 | 46.7% | **0.84** | Rs. -32,865 | -178.3% | ⚠️ Sensitive |
+| **Preset B: Institutional Flow Dominant** | 45/20/15/20 | 72 | 49 | 44.9% | **0.75** | Rs. -52,794 | -280.7% | ⚠️ Sensitive |
 
 ---
 
