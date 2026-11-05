@@ -10,7 +10,7 @@ import {
   fetchAllSecurities, fetchPriceHistory,
   loadNepseData, fetchIndices, fetchFloorSheet, ENDPOINT_REGISTRY, getCachedStocks, getCachedIndices,
   getCachedRealPriceHistory, getCachedRealBrokerAnalysis, setCachedRealBrokerAnalysis,
-  fetchRealBrokerAnalysis,
+  fetchRealBrokerAnalysis, fetchAvailableTradingDates,
   type EnrichedStock,
 } from '../utils/liveData';
 import {

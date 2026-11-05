@@ -2624,6 +2624,7 @@ export async function fetchAvailableTradingDates() {
   const calendarDates = generateTradingDaysSequence(60).map(d => formatNptDateIso(d));
   const baseTradingDays = [
     todayIso,
+    '2026-11-04',
     '2026-11-03',
     '2026-11-02',
     '2026-10-30',
