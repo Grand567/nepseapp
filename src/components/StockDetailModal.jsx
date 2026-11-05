@@ -1530,9 +1530,11 @@ export default function StockDetailModal({
       }
     }).catch(() => {});
 
+    let liveTickCount = 0;
     // Clock and active quote ticker
     const tickInterval = setInterval(() => {
       if (!isMounted) return;
+      liveTickCount++;
       const ms = getDetailedMarketStatus();
       setClockTime(ms.nptTime);
 
@@ -1548,6 +1550,13 @@ export default function StockDetailModal({
           fetchMarketDepth(sym, modalSessionDate).then(depth => {
             if (isMounted && depth) setRealMarketDepth(depth);
           }).catch(() => {});
+
+          // Refresh live intraday broker execution data every 10 seconds during active session
+          if (liveTickCount % 4 === 0) {
+            fetchRealBrokerAnalysis(sym, 1, { refresh: true }).then(ba => {
+              if (isMounted && ba) setRealBrokerAnalysis(ba);
+            }).catch(() => {});
+          }
         }
       }
     }, 2500);
@@ -5011,11 +5020,410 @@ export default function StockDetailModal({
           </div>
         )}
 
-        {/* ════ TAB 2: MARKET DEPTH (Share Hub Parity) ════ */}
-        {(activeTab === 'market_depth' || activeTab === 'depth_broker') && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: activeTab === 'depth_broker' ? 16 : 0 }}>
-            {/* Market Depth Level 2 Order Book */}
-            <div style={{ background: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 16, padding: '16px 18px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
+        {/* ════ TAB 2: MARKET DEPTH (Share Hub Parity & Live Order Flow Intelligence) ════ */}
+        {(activeTab === 'market_depth' || activeTab === 'depth_broker') && (() => {
+          // --- Unified Intraday & Live Order Flow Analytics ---
+          const liveBa = realBrokerAnalysis || brokerAccumData;
+          const liveBc = brokerConcentration;
+
+          // Top Accumulators (Net Buyers) for Live / 1D session
+          const liveAccums = (
+            (Array.isArray(liveBa?.topNetBuyers) && liveBa.topNetBuyers.length > 0) ? liveBa.topNetBuyers :
+            (Array.isArray(liveBc?.topNetAccumulators) && liveBc.topNetAccumulators.length > 0) ? liveBc.topNetAccumulators :
+            (Array.isArray(liveBa?.topNetAccumulators) && liveBa.topNetAccumulators.length > 0) ? liveBa.topNetAccumulators :
+            (Array.isArray(liveBa?.brokers) && liveBa.brokers.length > 0) ? liveBa.brokers.filter(b => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) > 0).sort((a, b) => (b.netQty || (b.buyQty - b.sellQty)) - (a.netQty || (a.buyQty - a.sellQty))) :
+            (Array.isArray(liveBa?.topBuyers) && liveBa.topBuyers.length > 0) ? liveBa.topBuyers :
+            (Array.isArray(liveBc?.topBuyerBrokers) && liveBc.topBuyerBrokers.length > 0) ? liveBc.topBuyerBrokers : []
+          );
+
+          // Top Distributors (Net Sellers) for Live / 1D session
+          const liveDists = (
+            (Array.isArray(liveBa?.topNetSellers) && liveBa.topNetSellers.length > 0) ? liveBa.topNetSellers :
+            (Array.isArray(liveBc?.topNetDistributors) && liveBc.topNetDistributors.length > 0) ? liveBc.topNetDistributors :
+            (Array.isArray(liveBa?.topNetDistributors) && liveBa.topNetDistributors.length > 0) ? liveBa.topNetDistributors :
+            (Array.isArray(liveBa?.brokers) && liveBa.brokers.length > 0) ? liveBa.brokers.filter(b => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) < 0).sort((a, b) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - a.sellQty))) :
+            (Array.isArray(liveBa?.topSellers) && liveBa.topSellers.length > 0) ? liveBa.topSellers :
+            (Array.isArray(liveBc?.topSellerBrokers) && liveBc.topSellerBrokers.length > 0) ? liveBc.topSellerBrokers : []
+          );
+
+          // Net volume calculations
+          const liveNetBuyShares = liveAccums.reduce((s, b) => s + Math.max(0, Number(b.netQty !== undefined ? b.netQty : ((b.buyQty || b.volume || 0) - (b.sellQty || 0)))), 0);
+          const liveNetSellShares = liveDists.reduce((s, b) => s + Math.abs(Math.min(0, Number(b.netQty !== undefined ? b.netQty : ((b.buyQty || 0) - (b.sellQty || b.volume || 0))))), 0);
+          const liveTotFlow = liveNetBuyShares + liveNetSellShares;
+          const liveBuyPct = liveTotFlow > 0 ? Math.round((liveNetBuyShares / liveTotFlow) * 100) : (liveBa?.smartMoneyNetFlowPct != null ? Math.max(10, Math.min(90, Math.round(50 + (liveBa.smartMoneyNetFlowPct / 2)))) : 50);
+          const liveSellPct = 100 - liveBuyPct;
+
+          // Institutional Whale VWAP: SUM(buyAmt) / SUM(buyQty) across top 5 net accumulating institutional brokers
+          const liveWhaleVwap = (() => {
+            const topB = liveAccums.slice(0, 5);
+            let totAmt = 0;
+            let totQty = 0;
+            topB.forEach(b => {
+              const grossBuyQty = Number(b.buyQty || b.volume || b.netQty || 0);
+              const rate = Number(b.avgBuyRate || 0);
+              const grossBuyAmt = Number(b.buyAmt || (rate > 0 ? (grossBuyQty * rate) : 0));
+              if (grossBuyQty > 0 && grossBuyAmt > 0) {
+                totQty += grossBuyQty;
+                totAmt += grossBuyAmt;
+              }
+            });
+            if (totQty > 0) return +(totAmt / totQty).toFixed(2);
+            return Number(d?.vwap || d?.ltp || 0);
+          })();
+
+          const currentLtp = Number(d?.ltp || 0);
+          const diffFromVwap = (liveWhaleVwap > 0 && currentLtp > 0) ? +(((currentLtp - liveWhaleVwap) / liveWhaleVwap) * 100).toFixed(1) : 0;
+          const liveBcr3Buy = Number(liveBa?.bcr3BuyPct ?? liveBc?.bcr3BuyPct ?? 0);
+          const liveBcr3Sell = Number(liveBa?.bcr3SellPct ?? liveBc?.bcr3SellPct ?? 0);
+
+          const isLiveAccum = (liveBuyPct >= 55) || (liveBa?.adSignal === 'Accumulation') || (liveBcr3Buy > liveBcr3Sell + 5);
+          const isLiveDist = (liveSellPct >= 55) || (liveBa?.adSignal === 'Distribution') || (liveBcr3Sell > liveBcr3Buy + 5);
+
+          // Order Book (Level 2) Metrics
+          const bookBuyQty = Number(marketDepth?.totalBuyQty || 0);
+          const bookSellQty = Number(marketDepth?.totalSellQty || 0);
+          const bookTot = bookBuyQty + bookSellQty;
+          const bookBuyPct = bookTot > 0 ? Math.round((bookBuyQty / bookTot) * 100) : 50;
+          const bookSellPct = 100 - bookBuyPct;
+
+          // Actionable Investment Verdict
+          let investVerdict = {
+            badge: '⚪ Neutral Chop Flow',
+            badgeBg: 'rgba(148, 163, 184, 0.15)',
+            badgeColor: '#94a3b8',
+            badgeBorder: 'rgba(148, 163, 184, 0.3)',
+            cardBg: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8))',
+            cardBorder: 'rgba(148, 163, 184, 0.25)',
+            verdictTitle: 'WAIT / NEUTRAL — AWAIT INSTITUTIONAL CONFLUENCE',
+            verdictColor: '#cbd5e1',
+            glow: '0 4px 18px rgba(0, 0, 0, 0.3)',
+            reason: `Order flow is evenly balanced (${liveBuyPct}% Bought vs ${liveSellPct}% Sold) with no single institutional broker taking directional control. Pending book depth is ${bookBuyPct}% bids vs ${bookSellPct}% asks.`,
+            tacticalTip: `Wait for price to establish decisive volume breakout above Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}) before allocating new capital.`
+          };
+
+          if (isLiveAccum) {
+            if (diffFromVwap <= 2.5) {
+              investVerdict = {
+                badge: '🟢 Institutional Accumulation Active',
+                badgeBg: 'rgba(16, 185, 129, 0.15)',
+                badgeColor: '#10b981',
+                badgeBorder: 'rgba(16, 185, 129, 0.4)',
+                cardBg: 'linear-gradient(135deg, rgba(6, 78, 59, 0.45), rgba(15, 23, 42, 0.9))',
+                cardBorder: 'rgba(16, 185, 129, 0.45)',
+                verdictTitle: 'INVEST RIGHT NOW — FAVORABLE ENTRY / BUY ZONE',
+                verdictColor: '#34d399',
+                glow: '0 4px 22px rgba(16, 185, 129, 0.25)',
+                reason: `Smart money brokers (${liveAccums.slice(0, 2).map(b => '#' + (b.broker || b.brokerId)).join(', ') || 'Institutional Desks'}) are aggressively absorbing shares (${liveBuyPct}% live buy flow). Current market price (Rs. ${currentLtp}) is trading right at Whale VWAP base (Rs. ${liveWhaleVwap.toFixed(1)}) [${diffFromVwap >= 0 ? '+' : ''}${diffFromVwap}%], providing high confluence and optimal risk-to-reward.`,
+                tacticalTip: `High-probability entry point. Suggested protective stop-loss below today's VWAP support.`
+              };
+            } else {
+              investVerdict = {
+                badge: '🟡 Accumulation Active (Extended)',
+                badgeBg: 'rgba(245, 158, 11, 0.15)',
+                badgeColor: '#f59e0b',
+                badgeBorder: 'rgba(245, 158, 11, 0.4)',
+                cardBg: 'linear-gradient(135deg, rgba(120, 53, 15, 0.35), rgba(15, 23, 42, 0.9))',
+                cardBorder: 'rgba(245, 158, 11, 0.45)',
+                verdictTitle: 'ACCUMULATION PRESENT — WAIT FOR PULLBACK TO VWAP',
+                verdictColor: '#fbbf24',
+                glow: '0 4px 22px rgba(245, 158, 11, 0.25)',
+                reason: `Institutional buyers are accumulating (${liveBuyPct}% buy flow), BUT current market price (Rs. ${currentLtp}) is already extended +${diffFromVwap}% above the institutional Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}). Chasing at this level carries short-term drawdown risk.`,
+                tacticalTip: `Do not chase market orders. Place limit orders on pullbacks closer to Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}).`
+              };
+            }
+          } else if (isLiveDist) {
+            investVerdict = {
+              badge: '🔴 Institutional Distribution Active',
+              badgeBg: 'rgba(244, 63, 94, 0.15)',
+              badgeColor: '#f43f5e',
+              badgeBorder: 'rgba(244, 63, 94, 0.4)',
+              cardBg: 'linear-gradient(135deg, rgba(136, 19, 55, 0.4), rgba(15, 23, 42, 0.9))',
+              cardBorder: 'rgba(244, 63, 94, 0.45)',
+              verdictTitle: 'DO NOT INVEST RIGHT NOW — ACTIVE DISTRIBUTION',
+              verdictColor: '#fb7185',
+              glow: '0 4px 22px rgba(244, 63, 94, 0.25)',
+              reason: `Dominant broker desks (${liveDists.slice(0, 2).map(s => '#' + (s.broker || s.brokerId)).join(', ') || 'Major Sellers'}) are actively liquidating inventory (${liveSellPct}% live sell flow). Passive retail limit bids are being hit heavily. Downward momentum is prevalent.`,
+              tacticalTip: `Avoid buying right now. Wait for institutional selling volume to subside and base to form.`
+            };
+          }
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: activeTab === 'depth_broker' ? 16 : 0 }}>
+              
+              {/* ════ CARD 1: LIVE ORDER FLOW & INVESTMENT DECISION ENGINE ════ */}
+              <div style={{
+                background: investVerdict.cardBg,
+                border: `1px solid ${investVerdict.cardBorder}`,
+                borderRadius: 16,
+                padding: '16px 18px',
+                boxShadow: investVerdict.glow,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 14,
+                position: 'relative',
+                overflow: 'hidden'
+              }}>
+                {/* Header Row */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 16 }}>⚡</span>
+                    <span style={{ fontSize: 15, fontWeight: 900, color: '#ffffff' }}>
+                      Live Market Depth & Investment Verdict
+                    </span>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: '3px 9px',
+                      borderRadius: 6,
+                      background: investVerdict.badgeBg,
+                      color: investVerdict.badgeColor,
+                      border: `1px solid ${investVerdict.badgeBorder}`
+                    }}>
+                      {investVerdict.badge}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                      {marketDepth?.isOffMarket ? '🌙 Session Snapshot' : '🟢 Live NOTS Feed'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fetchMarketDepth(d.symbol);
+                        fetchBrokerAnalysisData(1, '', { refresh: true });
+                      }}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: 6,
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        background: 'rgba(255,255,255,0.06)',
+                        color: '#cbd5e1',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}
+                      title="Refresh live order flow & depth analysis"
+                    >
+                      🔄 Live Refresh
+                    </button>
+                  </div>
+                </div>
+
+                {/* Verdict Callout Banner */}
+                <div style={{
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  border: `1px solid ${investVerdict.cardBorder}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6
+                }}>
+                  <div style={{
+                    fontSize: 14.5,
+                    fontWeight: 900,
+                    color: investVerdict.verdictColor,
+                    letterSpacing: '0.2px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}>
+                    <span>{investVerdict.verdictTitle}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#e2e8f0', lineHeight: 1.5 }}>
+                    {investVerdict.reason}
+                  </div>
+                  <div style={{
+                    fontSize: 11.5,
+                    color: '#cbd5e1',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    borderLeft: `3px solid ${investVerdict.badgeColor}`,
+                    marginTop: 2
+                  }}>
+                    💡 <strong style={{ color: '#ffffff' }}>Tactical Action:</strong> {investVerdict.tacticalTip}
+                  </div>
+                </div>
+
+                {/* 4-Box Key Benchmark Metrics Strip */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                  gap: 8
+                }}>
+                  {/* Metric 1: Current Price */}
+                  <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase' }}>Current LTP</div>
+                    <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                      Rs. {currentLtp > 0 ? currentLtp.toFixed(1) : '--'}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: (d?.pChange || 0) >= 0 ? '#10b981' : '#f43f5e', marginTop: 1 }}>
+                      {(d?.pChange || 0) >= 0 ? '+' : ''}{Number(d?.pChange || 0).toFixed(2)}%
+                    </div>
+                  </div>
+
+                  {/* Metric 2: Institutional Whale VWAP */}
+                  <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase' }}>Whale Buy VWAP</div>
+                    <div style={{ fontSize: 16, fontWeight: 900, color: '#38bdf8', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                      Rs. {liveWhaleVwap > 0 ? liveWhaleVwap.toFixed(1) : '--'}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 1 }}>
+                      Top 5 Accumulators
+                    </div>
+                  </div>
+
+                  {/* Metric 3: Price vs VWAP % */}
+                  <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase' }}>LTP vs. VWAP</div>
+                    <div style={{
+                      fontSize: 16,
+                      fontWeight: 900,
+                      color: diffFromVwap <= 2.5 && diffFromVwap >= -3 ? '#10b981' : diffFromVwap > 2.5 ? '#f59e0b' : '#38bdf8',
+                      fontFamily: 'var(--font-mono)',
+                      marginTop: 2
+                    }}>
+                      {diffFromVwap >= 0 ? '+' : ''}{diffFromVwap}%
+                    </div>
+                    <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 1 }}>
+                      {diffFromVwap <= 2.5 && diffFromVwap >= -2 ? '🎯 At Cost Base' : diffFromVwap > 2.5 ? '⚠️ Extended' : '🏷️ Discount'}
+                    </div>
+                  </div>
+
+                  {/* Metric 4: Live Order Flow Balance */}
+                  <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase' }}>Live Flow Balance</div>
+                    <div style={{
+                      fontSize: 16,
+                      fontWeight: 900,
+                      color: liveBuyPct >= 55 ? '#10b981' : liveSellPct >= 55 ? '#f43f5e' : '#cbd5e1',
+                      fontFamily: 'var(--font-mono)',
+                      marginTop: 2
+                    }}>
+                      {liveBuyPct}% Buy
+                    </div>
+                    <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 1 }}>
+                      {liveSellPct}% Sell Flow
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live Bought vs Sold Volume Flow Bar */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
+                    <span style={{ color: '#10b981' }}>
+                      🟢 Live Bought: {liveNetBuyShares > 0 ? liveNetBuyShares.toLocaleString() : 'Active'} shs ({liveBuyPct}%)
+                    </span>
+                    <span style={{ color: '#f43f5e' }}>
+                      🔴 Live Sold: {liveNetSellShares > 0 ? liveNetSellShares.toLocaleString() : 'Active'} shs ({liveSellPct}%)
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', height: 10, borderRadius: 6, overflow: 'hidden', background: 'rgba(255,255,255,0.06)' }}>
+                    <div style={{ width: `${liveBuyPct}%`, background: '#10b981', transition: 'width 0.3s ease' }} />
+                    <div style={{ width: `${liveSellPct}%`, background: '#f43f5e', transition: 'width 0.3s ease' }} />
+                  </div>
+                </div>
+
+                {/* Identified Live Participating Brokers Grid (Top Accumulators vs Top Distributors) */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                  {/* Top Live Accumulators */}
+                  <div style={{
+                    background: 'rgba(16, 185, 129, 0.04)',
+                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                    borderRadius: 12,
+                    padding: 12
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: '#10b981', marginBottom: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>🟢 TOP ACCUMULATING BROKERS</span>
+                      <span style={{ fontSize: 10.5, color: '#6ee7b7' }}>NET INFLOW</span>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: '#94a3b8', marginBottom: 8, fontStyle: 'italic' }}>
+                      Institutions absorbing shares with Buy VWAP
+                    </div>
+                    {liveAccums.slice(0, 3).length === 0 ? (
+                      <div style={{ color: '#64748b', fontSize: 11.5, textAlign: 'center', padding: '10px 0' }}>
+                        No buyer broker records yet for this session
+                      </div>
+                    ) : liveAccums.slice(0, 3).map((b, idx) => {
+                      const id = b.broker || b.brokerId || b.id || (idx + 1);
+                      const bName = b.brokerName || b.name || getBrokerName(id);
+                      const buyQty = Number(b.buyQty || b.volume || 0);
+                      const netKitta = Number(b.netQty !== undefined ? b.netQty : (buyQty - (b.sellQty || 0)));
+                      const avgRate = Number(b.avgBuyRate || (b.buyAmt && buyQty ? (b.buyAmt / buyQty) : 0));
+                      return (
+                        <div key={idx} style={{ padding: '6px 0', borderBottom: idx < 2 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                            <span style={{ fontWeight: 800, color: '#e2e8f0', maxWidth: '65%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`#${id} ${bName}`}>
+                              <strong style={{ color: '#10b981', marginRight: 4 }}>#{id}</strong> {bName}
+                            </span>
+                            <span style={{ color: '#10b981', fontWeight: 900, fontFamily: 'var(--font-mono)' }}>
+                              +{netKitta.toLocaleString()} sh
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#94a3b8', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+                            <span>Gross: {buyQty.toLocaleString()} sh</span>
+                            <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+                              Buy VWAP: Rs. {avgRate > 0 ? avgRate.toFixed(1) : (d?.ltp ? Number(d.ltp).toFixed(1) : '--')}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Top Live Distributors */}
+                  <div style={{
+                    background: 'rgba(244, 63, 94, 0.04)',
+                    border: '1px solid rgba(244, 63, 94, 0.2)',
+                    borderRadius: 12,
+                    padding: 12
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: '#f43f5e', marginBottom: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>🔴 TOP DISTRIBUTING BROKERS</span>
+                      <span style={{ fontSize: 10.5, color: '#fda4af' }}>NET OUTFLOW</span>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: '#94a3b8', marginBottom: 8, fontStyle: 'italic' }}>
+                      Brokers liquidating shares with Sell VWAP
+                    </div>
+                    {liveDists.slice(0, 3).length === 0 ? (
+                      <div style={{ color: '#64748b', fontSize: 11.5, textAlign: 'center', padding: '10px 0' }}>
+                        No seller broker records yet for this session
+                      </div>
+                    ) : liveDists.slice(0, 3).map((s, idx) => {
+                      const id = s.broker || s.brokerId || s.id || (idx + 1);
+                      const bName = s.brokerName || s.name || getBrokerName(id);
+                      const sellQty = Number(s.sellQty || s.volume || 0);
+                      const netKitta = Math.abs(Number(s.netQty !== undefined ? s.netQty : (sellQty - (s.buyQty || 0))));
+                      const avgRate = Number(s.avgSellRate || (s.sellAmt && sellQty ? (s.sellAmt / sellQty) : 0));
+                      return (
+                        <div key={idx} style={{ padding: '6px 0', borderBottom: idx < 2 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                            <span style={{ fontWeight: 800, color: '#e2e8f0', maxWidth: '65%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`#${id} ${bName}`}>
+                              <strong style={{ color: '#f43f5e', marginRight: 4 }}>#{id}</strong> {bName}
+                            </span>
+                            <span style={{ color: '#f43f5e', fontWeight: 900, fontFamily: 'var(--font-mono)' }}>
+                              -{netKitta.toLocaleString()} sh
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#94a3b8', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+                            <span>Gross: {sellQty.toLocaleString()} sh</span>
+                            <span style={{ color: '#fb7185', fontWeight: 700 }}>
+                              Sell VWAP: Rs. {avgRate > 0 ? avgRate.toFixed(1) : (d?.ltp ? Number(d.ltp).toFixed(1) : '--')}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* ════ CARD 2: LEVEL-2 MARKET DEPTH ORDER BOOK ════ */}
+              <div style={{ background: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 16, padding: '16px 18px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -5623,8 +6031,9 @@ export default function StockDetailModal({
               );
             })()}
 
-          </div>
-        )}
+            </div>
+          );
+        })()}
 
         {/* ════ TAB 3: FLOORSHEET (Share Hub APK Video Parity: Date Picker, Buyer/Seller Filter, Bulk Txns, Price vs Volume) ════ */}
         {(activeTab === 'floorsheet' || activeTab === 'depth_broker') && (() => {
