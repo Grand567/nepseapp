@@ -170,10 +170,13 @@ export const HISTORICAL_SESSION_SERVICE_IDS = new Set([
   // Core Floor Sheet & Order Tape
   'floor-sheet',
   'zero-sum-floorsheet',
+  'floorsheet-hub',
   'unusual-trades',
+  'whale-scanner',
   // Smart Money & Broker Intelligence
   'broker-flow',
   'broker-smart-flow',
+  'broker-analysis',
   'broker-dominance',
   'broker-top10',
   'broker-heatmap',
@@ -185,6 +188,7 @@ export const HISTORICAL_SESSION_SERVICE_IDS = new Set([
   'aggressive-holdings',
   'distribution-leaders',
   'slow-accumulation',
+  'stealth-accumulation',
   'stealth-accumulation-tracker',
   'sector-wise-ad',
   // Market Session Summaries & Leaderboards
@@ -787,16 +791,16 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Best trades have both price and volume confirmation." />
   ),
   'zero-sum-floorsheet': (props: any) => (
-    <FloorsheetServiceTab onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
+    <FloorsheetServiceTab {...props} onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
   ),
   'floor-sheet': (props: any) => (
-    <FloorsheetServiceTab onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
+    <FloorsheetServiceTab {...props} onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
   ),
   'floorsheet-hub': (props: any) => (
-    <FloorsheetServiceTab onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
+    <FloorsheetServiceTab {...props} onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
   ),
   'whale-scanner': (props: any) => (
-    <FloorsheetServiceTab onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
+    <FloorsheetServiceTab {...props} onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
   ),
   'pe-ranking': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe > 0 && s.sector !== 'Mutual Funds'} sortFn={(a, b) => a.pe - b.pe}
@@ -1649,6 +1653,18 @@ export default function ServicesHub({
               const effDate = isHistorical ? selectedSessionDate : '';
               const effStocks = (isHistorical && selectedSessionDate && dateStocks.length > 0) ? dateStocks : stocks;
               const effAvailDates = isHistorical ? availableTradingDates : [];
+              const handleStockSelect = (stk: any) => {
+                if (!onSelectStock) return;
+                if (typeof stk === 'object' && stk) {
+                  onSelectStock({
+                    ...stk,
+                    sessionDate: effDate || selectedSessionDate || stk.sessionDate,
+                    date: effDate || selectedSessionDate || stk.date,
+                  });
+                } else {
+                  onSelectStock(stk);
+                }
+              };
 
               return (
                 <ErrorBoundary moduleName={s.name} resetKey={s.id}>
@@ -1663,7 +1679,7 @@ export default function ServicesHub({
                           selectedDate: effDate,
                           date: effDate,
                           availableDates: effAvailDates,
-                          onSelectStock,
+                          onSelectStock: handleStockSelect,
                           indices,
                           apiStatus,
                           userId,
@@ -1683,7 +1699,7 @@ export default function ServicesHub({
                         selectedDate: effDate,
                         date: effDate,
                         availableDates: effAvailDates,
-                        onSelectStock,
+                        onSelectStock: handleStockSelect,
                         indices,
                         apiStatus,
                         userId,

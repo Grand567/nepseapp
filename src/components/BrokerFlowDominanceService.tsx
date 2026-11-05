@@ -644,7 +644,7 @@ export function BrokerFlowDominanceService({
 
       // Fetch lightweight broker heatmap and market live data first (ultra-fast, <200ms)
       const [liveDataRes, hmRes, summaryMapRes] = await Promise.allSettled([
-        loadNepseData(),
+        loadNepseData(effDate),
         fetchBrokerHeatmap({ days, date: effDate, fromDate: targetFrom, toDate: targetTo }),
         fetchMarketWideBrokerSummaryMap(days, { date: effDate })
       ]);
@@ -1940,13 +1940,20 @@ export function BrokerFlowDominanceService({
               📅 Historical Session:
             </span>
             <SessionDateDropdown
+              selectedSessionDate={sessionDateFilter}
               value={sessionDateFilter}
+              onSelectDate={(newDate: string) => {
+                setSessionDateFilter(newDate);
+                setFromDate('');
+                setToDate('');
+              }}
               onChange={(newDate: string) => {
                 setSessionDateFilter(newDate);
                 setFromDate('');
                 setToDate('');
               }}
               availableDates={availableDates}
+              latestLabel={`Latest Session (${sessionDate})`}
               placeholder={`Latest Session (${sessionDate})`}
               label=""
             />
@@ -1956,17 +1963,23 @@ export function BrokerFlowDominanceService({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-slate-400 font-bold">Range:</span>
             <SessionDateDropdown
+              selectedSessionDate={fromDate}
               value={fromDate}
+              onSelectDate={(val: string) => setFromDate(val)}
               onChange={(val: string) => setFromDate(val)}
               availableDates={availableDates}
+              latestLabel="From Date"
               placeholder="From Date"
               label=""
             />
             <span className="text-slate-500">→</span>
             <SessionDateDropdown
+              selectedSessionDate={toDate}
               value={toDate}
+              onSelectDate={(val: string) => setToDate(val)}
               onChange={(val: string) => setToDate(val)}
               availableDates={availableDates}
+              latestLabel="To Date"
               placeholder="To Date"
               label=""
             />
@@ -2537,11 +2550,16 @@ export function BrokerFlowDominanceService({
                 <div className="flex items-center gap-1.5">
                   <label className="text-[11px] font-semibold text-slate-400 shrink-0">📅 Session:</label>
                   <SessionDateDropdown
+                    selectedSessionDate={sessionDateFilter}
                     value={sessionDateFilter}
+                    onSelectDate={(newDate: string) => {
+                      setSessionDateFilter(newDate);
+                    }}
                     onChange={(newDate: string) => {
                       setSessionDateFilter(newDate);
                     }}
                     availableDates={availableDates}
+                    latestLabel={`Latest Session (${sessionDate})`}
                     placeholder={`Latest Session (${sessionDate})`}
                     label=""
                   />
@@ -4522,7 +4540,7 @@ export function BrokerFlowDominanceService({
                     {selectedBrokerModal.brokerName}
                   </h3>
                   <p className="text-[11px] text-slate-400">
-                    Top 10 Stocks Bought Breakdown • {timeframe} Timeframe
+                    Top 10 Stocks {modalTab === 'accumulation' ? 'Accumulated' : modalTab === 'distribution' ? 'Distributed' : 'Net Held'} Breakdown • {timeframe} Timeframe • Session: <span className="text-emerald-400 font-mono font-bold">{sessionDate}</span>
                   </p>
                 </div>
               </div>
@@ -4670,7 +4688,9 @@ export function BrokerFlowDominanceService({
                           <th className="p-2.5">Stock</th>
                           <th className="p-2.5 text-right">Buy (Kitta & Avg)</th>
                           <th className="p-2.5 text-right">Sell (Kitta & Avg)</th>
-                          <th className="p-2.5 text-right">Day Net Kitta</th>
+                          <th className="p-2.5 text-right" style={{ color: rankingMetric === 'net_amount' || rankingMetric === 'net_qty' ? '#38bdf8' : undefined }}>
+                            {rankingMetric === 'net_amount' ? 'Day Net Inflow (Rs. & Kitta)' : rankingMetric === 'net_qty' ? 'Day Net Kitta (Shares)' : 'Day Net Flow'}
+                          </th>
                           <th className="p-2.5 text-right text-sky-400">Till Today Holding</th>
                           <th className="p-2.5 text-center">Bias</th>
                         </tr>

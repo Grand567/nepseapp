@@ -231,7 +231,8 @@ const KNOWN_MUTUAL_FUNDS_AND_DEBT = new Set([
 
 const KNOWN_PURE_EQUITIES_ENDING_P_OR_D = new Set([
   'UPPER', 'SHPC', 'NHPC', 'CHCL', 'AHPC', 'RHPL', 'UNHPL', 'MHNL', 'DHPL',
-  'PMHPL', 'KPCL', 'BPCL', 'AKPL', 'SPDL', 'SMD', 'NFD', 'HIDCL', 'RADHI'
+  'PMHPL', 'KPCL', 'BPCL', 'AKPL', 'SPDL', 'SMD', 'NFD', 'HIDCL', 'RADHI',
+  'NADEP', 'SWMF', 'NMBMF'
 ]);
 
 /**

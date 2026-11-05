@@ -51,6 +51,7 @@ import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 import { exportStockFloorsheet, exportStockPriceHistory } from '../utils/floorsheetExport';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
 import { useBackHandler, useNavigation } from '../context/NavigationContext';
+import { ErrorBoundary } from './ErrorBoundary';
 import { DividendHistoryPanel } from './DividendHistoryPanel';
 import { toggleWatchlist, isWatched } from '../utils/watchlist';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
@@ -1331,7 +1332,17 @@ function BeginnerConfidenceCard({
   );
 }
 
-export default function StockDetailModal({ stock, allStocks = [], onClose, marketStatus: propMarketStatus, initialTab }) {
+export default function StockDetailModal({
+  stock,
+  allStocks = [],
+  onClose,
+  marketStatus: propMarketStatus,
+  initialTab,
+  selectedDate: propSelectedDate = '',
+  sessionDate: propSessionDate = '',
+  date: propDate = '',
+}) {
+  const initialEffectiveDate = propSelectedDate || propSessionDate || propDate || (typeof stock === 'object' ? (stock?.sessionDate || stock?.businessDate || stock?.date) : '') || '';
   const marketStatus = useMemo(() => propMarketStatus || getDetailedMarketStatus(), [propMarketStatus]);
   const { setActiveTab: setGlobalActiveTab } = useNavigation();
   const [activeTab, setActiveTab] = useState(() => (typeof stock === 'object' && stock?.initialTab) || initialTab || 'overview');
@@ -1388,14 +1399,14 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     const cached = getCachedRealPriceHistory(initialSym);
     return !(Array.isArray(cached) && cached.length > 0);
   });
-  const [historyFilterDate, setHistoryFilterDate] = useState('');
+  const [historyFilterDate, setHistoryFilterDate] = useState(initialEffectiveDate);
   const [realFloorsheet, setRealFloorsheet] = useState(null);
   const [floorsheetLoading, setFloorsheetLoading] = useState(false);
   const [floorsheetPage, setFloorsheetPage] = useState(1);
   const [floorsheetPageSize, setFloorsheetPageSize] = useState(50);
   const [availableTradingDates, setAvailableTradingDates] = useState([]);
-  const [modalSessionDate, setModalSessionDate] = useState('');
-  const [floorsheetDate, setFloorsheetDate] = useState('');
+  const [modalSessionDate, setModalSessionDate] = useState(initialEffectiveDate);
+  const [floorsheetDate, setFloorsheetDate] = useState(initialEffectiveDate);
   const [floorsheetBuyerInput, setFloorsheetBuyerInput] = useState('');
   const [floorsheetSellerInput, setFloorsheetSellerInput] = useState('');
   const [floorsheetAppliedBuyer, setFloorsheetAppliedBuyer] = useState('');
@@ -1422,7 +1433,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     return !cached;
   });
   const [brokerDays, setBrokerDays] = useState(1);
-  const [brokerDate, setBrokerDate] = useState('');
+  const [brokerDate, setBrokerDate] = useState(initialEffectiveDate);
   const [realMarketDepth, setRealMarketDepth] = useState(null);
   const [marketDepthLoading, setMarketDepthLoading] = useState(false);
   const [brokerAccumPeriod, setBrokerAccumPeriod] = useState('5D');
@@ -2207,6 +2218,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   const handleBrokerDateChange = useCallback((newDate) => {
     handleModalSessionDateChange(newDate);
   }, [handleModalSessionDateChange]);
+
+  useEffect(() => {
+    const nextDate = propSelectedDate || propSessionDate || propDate || (typeof stock === 'object' ? (stock?.sessionDate || stock?.businessDate || stock?.date) : '') || '';
+    if (nextDate && nextDate !== modalSessionDate) {
+      handleModalSessionDateChange(nextDate);
+    }
+  }, [propSelectedDate, propSessionDate, propDate, stock, modalSessionDate, handleModalSessionDateChange]);
 
   const handleFetchSmartMoney = useCallback(async (sym, tf, days) => {
     try {
@@ -3425,6 +3443,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           WebkitOverflowScrolling: 'touch'
         }}
       >
+        <ErrorBoundary moduleName={`Stock Details: ${d?.symbol || ''} (${activeTab})`} activeTab={activeTab} resetKey={`${d?.symbol || ''}-${activeTab}`}>
         {/* ════ TAB 1: STOCK INFORMATION (OVERVIEW) — ZERODHA KITE & GROWW REFERENCE ════ */}
         {activeTab === 'overview' && (() => {
           const prevClose = Number(d.prevClose || (d.ltp - (d.change || 0)));
@@ -5504,9 +5523,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
                       {/* Top Net Buyers (Accumulators) */}
                       <div style={{ background: 'rgba(16,185,129,0.04)', border: '1px solid rgba(16,185,129,0.18)', borderRadius: 12, padding: 12 }}>
-                        <div style={{ fontSize: 12, fontWeight: 900, color: '#10b981', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: 12, fontWeight: 900, color: '#10b981', marginBottom: 2, display: 'flex', justifyContent: 'space-between' }}>
                           <span>🟢 TOP CUMULATIVE ACCUMULATORS</span>
                           <span style={{ fontSize: 11, color: '#6ee7b7' }}>VAULT HELD</span>
+                        </div>
+                        <div style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginBottom: 8 }}>
+                          Ranked by Net Shares (Kitta Inflow)
                         </div>
                         {netAccums.slice(0, 5).length === 0 ? (
                           <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '12px 0' }}>No buyer records</div>
@@ -5548,9 +5570,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
 
                       {/* Top Net Sellers (Distributors) */}
                       <div style={{ background: 'rgba(244,63,94,0.04)', border: '1px solid rgba(244,63,94,0.18)', borderRadius: 12, padding: 12 }}>
-                        <div style={{ fontSize: 12, fontWeight: 900, color: '#f43f5e', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: 12, fontWeight: 900, color: '#f43f5e', marginBottom: 2, display: 'flex', justifyContent: 'space-between' }}>
                           <span>🔴 TOP CUMULATIVE DISTRIBUTORS</span>
                           <span style={{ fontSize: 11, color: '#fda4af' }}>OFFLOADED</span>
+                        </div>
+                        <div style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginBottom: 8 }}>
+                          Ranked by Net Shares (Kitta Outflow)
                         </div>
                         {netDists.slice(0, 5).length === 0 ? (
                           <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '12px 0' }}>No seller records</div>
@@ -7787,6 +7812,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
             </div>
           </div>
         )}
+        </ErrorBoundary>
       </div>
 
       {/* ── Fullscreen Advanced Technical Chart Modal ── */}

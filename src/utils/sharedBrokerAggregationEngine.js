@@ -873,6 +873,7 @@ export function aggregateBrokerMicrostructure(params = {}) {
   let smartMoneyBias = "Neutral";
   let adSignal = "Neutral";
   let orderFlowVeto = { isVetoed: false, reason: null, severity: 'NONE' };
+  let operatorOffloadWarning = null;
 
   if (isPureCrossTrade || isMatchedCrossTrade) {
     phase = "NEUTRAL_RETAIL";
@@ -916,7 +917,7 @@ export function aggregateBrokerMicrostructure(params = {}) {
       smartMoneyNetFlowPct: bcr3NetPct - scr3NetPct
     }, stockSummary);
 
-    const operatorOffloadWarning = evaluateOperatorOffloadWarning(stockSummary?.symbol, {
+    operatorOffloadWarning = evaluateOperatorOffloadWarning(stockSummary?.symbol, {
       topSellers: sortedSellers,
       brokers: allBrokers,
       scr3SellPct: scr3GrossSellPct

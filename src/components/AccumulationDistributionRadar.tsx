@@ -565,6 +565,10 @@ interface AccumulationDistributionRadarProps {
   initialTab?: 'radar' | 'archive' | 'diagnostic' | 'playbook' | 'smart-flow' | 'portfolio-shield';
   onSelectStock?: (stock: any) => void;
   onAskGuruAi?: (stock: any) => void;
+  selectedDate?: string;
+  date?: string;
+  availableDates?: string[];
+  stocks?: any[];
 }
 
 export function AccumulationDistributionRadar({
@@ -572,8 +576,13 @@ export function AccumulationDistributionRadar({
   initialStage,
   initialTab,
   onSelectStock,
-  onAskGuruAi
+  onAskGuruAi,
+  selectedDate: propSelectedDate,
+  date: propDate,
+  availableDates: propAvailableDates,
+  stocks: propStocks,
 }: AccumulationDistributionRadarProps) {
+  const incomingDate = propSelectedDate || propDate || '';
   const [activeTab, setActiveTab] = useState<'radar' | 'archive' | 'diagnostic' | 'playbook' | 'smart-flow' | 'portfolio-shield'>(initialTab || 'radar');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [selectedStage, setSelectedStage] = useState<string>(initialStage || 'ALL');
@@ -584,9 +593,13 @@ export function AccumulationDistributionRadar({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStockSymbol, setSelectedStockSymbol] = useState(initialSymbol || 'NABIL');
   const [loading, setLoading] = useState(false);
-  const [stocks, setStocks] = useState<any[]>(() => getCachedStocks());
+  const [stocks, setStocks] = useState<any[]>(() => (Array.isArray(propStocks) && propStocks.length > 0 ? propStocks : getCachedStocks()));
   const [floorsheet, setFloorsheet] = useState<any[]>([]);
-  const [availableSessionDates, setAvailableSessionDates] = useState<string[]>([BUNDLED_BROKER_DATE]);
+  const [availableSessionDates, setAvailableSessionDates] = useState<string[]>(() => {
+    const list = Array.isArray(propAvailableDates) && propAvailableDates.length > 0 ? propAvailableDates : [BUNDLED_BROKER_DATE];
+    if (incomingDate && !list.includes(incomingDate)) list.unshift(incomingDate);
+    return list;
+  });
   const [stockBrokerDataMap, setStockBrokerDataMap] = useState<Record<string, any>>(() => {
     const pre = bundledBrokerMap || {};
     const keyed: Record<string, any> = {};
@@ -598,12 +611,32 @@ export function AccumulationDistributionRadar({
     return keyed;
   });
   const [whaleArchive, setWhaleArchive] = useState<any[]>(() => getStoredWhaleArchive());
-  const [selectedArchiveDate, setSelectedArchiveDate] = useState<string>('');
+  const [selectedArchiveDate, setSelectedArchiveDate] = useState<string>(incomingDate || '');
   const [modalStock, setModalStock] = useState<any>(null);
   const [sortBy, setSortBy] = useState<'qai' | 'stealth' | 'dumpRisk' | 'pChange' | 'turnover' | 'cmf'>('qai');
   const [brokerLedgerMetric, setBrokerLedgerMetric] = useState<'netFlow' | 'turnover' | 'kitta'>('netFlow');
   const [radarDays, setRadarDays] = useState<number>(1);
-  const [radarDate, setRadarDate] = useState<string>(BUNDLED_BROKER_DATE);
+  const [radarDate, setRadarDate] = useState<string>(incomingDate || BUNDLED_BROKER_DATE);
+
+  // Sync date when incoming props from ServicesHub or App change
+  useEffect(() => {
+    const nextDate = propSelectedDate || propDate || '';
+    if (nextDate && nextDate !== radarDate) {
+      handleRadarDateChange(nextDate);
+    }
+  }, [propSelectedDate, propDate]);
+
+  useEffect(() => {
+    if (Array.isArray(propStocks) && propStocks.length > 0) {
+      setStocks(propStocks);
+    }
+  }, [propStocks]);
+
+  useEffect(() => {
+    if (Array.isArray(propAvailableDates) && propAvailableDates.length > 0) {
+      setAvailableSessionDates(prev => Array.from(new Set([...propAvailableDates, ...prev])).filter(Boolean).sort().reverse());
+    }
+  }, [propAvailableDates]);
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
   const [isRecalculatingTimeframe, setIsRecalculatingTimeframe] = useState<boolean>(false);
   const [diagnosticDays, setDiagnosticDays] = useState<number>(1);
@@ -825,10 +858,11 @@ export function AccumulationDistributionRadar({
     async function init() {
       setLoading(true);
       try {
+        const effInitialDate = radarDate || incomingDate || '';
         const [liveRes, datesRes, brokerMapRes] = await Promise.allSettled([
-          loadNepseData(),
+          loadNepseData(effInitialDate),
           fetchAvailableTradingDates(),
-          fetchMarketWideBrokerSummaryMap(1)
+          fetchMarketWideBrokerSummaryMap(1, { date: effInitialDate })
         ]);
         if (!isMounted) return;
         if (datesRes.status === 'fulfilled' && Array.isArray(datesRes.value)) {
@@ -940,7 +974,12 @@ export function AccumulationDistributionRadar({
           .catch(() => {});
       }
     }
-    const fullStock = (sym && liveStocksMap[sym]) ? { ...liveStocksMap[sym], ...stock } : stock;
+    const baseStock = (sym && liveStocksMap[sym]) ? { ...liveStocksMap[sym], ...stock } : stock;
+    const fullStock = {
+      ...baseStock,
+      sessionDate: radarDate || selectedArchiveDate || incomingDate || '',
+      date: radarDate || selectedArchiveDate || incomingDate || '',
+    };
     if (onSelectStock) {
       onSelectStock(fullStock);
     } else {
@@ -4029,7 +4068,7 @@ export function AccumulationDistributionRadar({
                               <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'kitta' ? 'text-indigo-400 font-black' : ''}`}>Buy Kitta</th>
                               <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'turnover' ? 'text-indigo-400 font-black' : ''}`}>Turnover</th>
                               <th className="pb-2 text-right font-bold">% Vol</th>
-                              <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'netFlow' ? 'text-indigo-400 font-black' : ''}`}>Net Flow</th>
+                              <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'netFlow' ? 'text-indigo-400 font-black' : ''}`}>Net Flow (Kitta & Rs.)</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/40">
@@ -4058,9 +4097,14 @@ export function AccumulationDistributionRadar({
                                   {b.pct}%
                                 </td>
                                 <td className={`py-2.5 text-right font-extrabold text-[11px] ${brokerLedgerMetric === 'netFlow' ? 'underline' : ''}`}>
-                                  <span className={(Number(b.netQty) || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                                    {(Number(b.netQty) || 0) >= 0 ? '+' : ''}{(Number(b.netQty) || 0).toLocaleString()}
-                                  </span>
+                                  <div className={(Number(b.netQty) || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                    {(Number(b.netQty) || 0) >= 0 ? '+' : ''}{(Number(b.netQty) || 0).toLocaleString()} <span className="text-[9.5px] opacity-70 font-normal">kitta</span>
+                                  </div>
+                                  {b.netAmount != null && (
+                                    <div className="text-[9.5px] text-slate-400 font-normal">
+                                      {formatBrokerAmount(b.netAmount)}
+                                    </div>
+                                  )}
                                 </td>
                               </tr>
                             ))}
@@ -4100,7 +4144,7 @@ export function AccumulationDistributionRadar({
                               <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'kitta' ? 'text-indigo-400 font-black' : ''}`}>Sell Kitta</th>
                               <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'turnover' ? 'text-indigo-400 font-black' : ''}`}>Turnover</th>
                               <th className="pb-2 text-right font-bold">% Vol</th>
-                              <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'netFlow' ? 'text-indigo-400 font-black' : ''}`}>Net Flow</th>
+                              <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'netFlow' ? 'text-indigo-400 font-black' : ''}`}>Net Flow (Kitta & Rs.)</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/40">
@@ -4129,9 +4173,14 @@ export function AccumulationDistributionRadar({
                                   {s.pct}%
                                 </td>
                                 <td className={`py-2.5 text-right font-extrabold text-[11px] ${brokerLedgerMetric === 'netFlow' ? 'underline' : ''}`}>
-                                  <span className={(Number(s.netQty) || 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}>
-                                    {(Number(s.netQty) || 0) > 0 ? '+' : ''}{(Number(s.netQty) || 0).toLocaleString()}
-                                  </span>
+                                  <div className={(Number(s.netQty) || 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}>
+                                    {(Number(s.netQty) || 0) > 0 ? '+' : ''}{(Number(s.netQty) || 0).toLocaleString()} <span className="text-[9.5px] opacity-70 font-normal">kitta</span>
+                                  </div>
+                                  {s.netAmount != null && (
+                                    <div className="text-[9.5px] text-slate-400 font-normal">
+                                      {formatBrokerAmount(s.netAmount)}
+                                    </div>
+                                  )}
                                 </td>
                               </tr>
                             ))}
@@ -4374,11 +4423,15 @@ export function AccumulationDistributionRadar({
         const sym = String(modalStock.symbol || '').toUpperCase().trim();
         const latestAnalyzed = analyzedStocks.find(s => String(s.symbol || '').toUpperCase().trim() === sym);
         const latestLive = sym ? liveStocksMap[sym] : null;
-        const syncedModalStock = { ...modalStock, ...(latestLive || {}), ...(latestAnalyzed || {}) };
+        const activeEffDate = radarDate || selectedArchiveDate || incomingDate || '';
+        const syncedModalStock = { ...modalStock, ...(latestLive || {}), ...(latestAnalyzed || {}), sessionDate: activeEffDate, date: activeEffDate };
         return (
           <StockDetailModal
             stock={syncedModalStock}
             allStocks={stocks}
+            selectedDate={activeEffDate}
+            sessionDate={activeEffDate}
+            date={activeEffDate}
             onClose={() => setModalStock(null)}
           />
         );

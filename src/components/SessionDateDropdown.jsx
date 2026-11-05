@@ -8,16 +8,22 @@ import { Calendar, ChevronDown, Check } from 'lucide-react';
  * Completely immune to Android native white alert dialogs and system light-mode overrides.
  */
 export function SessionDateDropdown({
-  selectedSessionDate = '',
+  selectedSessionDate: propSelectedSessionDate,
+  value,
   onSelectDate,
+  onChange,
   availableDates = [],
   label = '',
-  latestLabel = 'Latest Session',
+  latestLabel: propLatestLabel,
+  placeholder,
   align = 'right',
   style = {},
   buttonStyle = {},
   compact = false,
 }) {
+  const selectedSessionDate = propSelectedSessionDate !== undefined ? propSelectedSessionDate : (value || '');
+  const handleSelect = onSelectDate || onChange;
+  const latestLabel = propLatestLabel || placeholder || 'Latest Session';
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -80,7 +86,7 @@ export function SessionDateDropdown({
       {selectedSessionDate && (
         <button
           type="button"
-          onClick={() => onSelectDate?.('')}
+          onClick={() => handleSelect?.('')}
           style={{
             background: 'none',
             border: 'none',
@@ -122,7 +128,7 @@ export function SessionDateDropdown({
           </div>
           <button
             type="button"
-            onClick={() => { onSelectDate?.(''); setIsOpen(false); }}
+            onClick={() => { handleSelect?.(''); setIsOpen(false); }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -148,7 +154,7 @@ export function SessionDateDropdown({
               <button
                 key={dt}
                 type="button"
-                onClick={() => { onSelectDate?.(dt); setIsOpen(false); }}
+                onClick={() => { handleSelect?.(dt); setIsOpen(false); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

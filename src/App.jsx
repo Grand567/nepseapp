@@ -1919,6 +1919,8 @@ function AppInner() {
                   <StockDetailModal
                     stock={synchronizedSelectedStock}
                     allStocks={stocks}
+                    selectedDate={synchronizedSelectedStock?.sessionDate || synchronizedSelectedStock?.date || ''}
+                    sessionDate={synchronizedSelectedStock?.sessionDate || synchronizedSelectedStock?.date || ''}
                     onClose={closeStockDetail}
                     marketStatus={marketStatus}
                   />

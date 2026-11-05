@@ -305,11 +305,16 @@ interface ErrorBoundaryState {
   errorMessage: string;
 }
 
+interface BrokerSmartMoneyErrorBoundaryProps {
+  children: ReactNode;
+  onReset: () => void;
+}
+
 class BrokerSmartMoneyErrorBoundary extends Component<
-  { children: ReactNode; onReset: () => void },
+  BrokerSmartMoneyErrorBoundaryProps,
   ErrorBoundaryState
 > {
-  constructor(props: { children: ReactNode; onReset: () => void }) {
+  constructor(props: BrokerSmartMoneyErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, errorMessage: '' };
   }

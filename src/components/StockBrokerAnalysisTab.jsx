@@ -2022,7 +2022,9 @@ function StockBrokerAnalysisTabInner({
                       <th style={{ padding: '8px 6px', textAlign: 'right' }}>BUY QTY</th>
                       <th style={{ padding: '8px 6px', textAlign: 'right' }}>SELL QTY</th>
                       <th style={{ padding: '8px 6px', textAlign: 'right' }}>MATCHED</th>
-                      <th style={{ padding: '8px 6px', textAlign: 'right' }}>SESSION HOLD</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right', color: rankingMetric === 'netFlow' || rankingMetric === 'netQty' ? '#38bdf8' : undefined }} title="Session Net Flow in Kitta and Rupee Turnover">
+                        SESSION NET HOLD ({rankingMetric === 'netFlow' ? 'RS. & KITTA' : 'KITTA'})
+                      </th>
                       <th style={{ padding: '8px 6px', textAlign: 'right', color: '#38bdf8' }} title="Authentic cumulative shares held across all historical sessions till today">TOTAL HELD TILL TODAY</th>
                       <th style={{ padding: '8px 6px', textAlign: 'right' }} title="Average purchase rate during this session">AVG BUY</th>
                       <th style={{ padding: '8px 6px', textAlign: 'right' }} title="Average selling rate during this session">AVG SELL</th>
@@ -2107,13 +2109,18 @@ function StockBrokerAnalysisTabInner({
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>
                             {safeFmtInt(b.matchedQty)}
                           </td>
-                          <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: isNetPos ? '#38bdf8' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                            {safeFmtInt(b.signedHoldQty)}
+                          <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                            <div style={{ fontWeight: 800, color: isNetPos ? '#38bdf8' : '#f43f5e' }}>
+                              {isNetPos ? '+' : ''}{safeFmtInt(b.signedHoldQty)} <span style={{ fontSize: 10, opacity: 0.7 }}>kitta</span>
+                            </div>
+                            <div style={{ fontSize: 10, color: isNetPos ? '#34d399' : '#fb7185' }}>
+                              {formatShareHubCurrency(b.netAmt)}
+                            </div>
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
                             {b.cumHoldQty !== undefined && b.cumHoldQty > 0
                               ? `+${safeFmtInt(b.cumHoldQty)}`
-                              : (b.cumHoldQty === 0 ? '—' : (hasCumData ? '—' : '...'))}
+                              : (b.cumHoldQty === 0 ? '—' : (cumulativeHoldingMap && Object.keys(cumulativeHoldingMap).length > 0 ? '—' : '...'))}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
                             {safeNum(b.avgBuy) > 0 ? safeNum(b.avgBuy).toFixed(2) : '0.00'}
@@ -2645,7 +2652,7 @@ export class StockBrokerAnalysisErrorBoundary extends React.Component {
   }
 
   componentDidUpdate(prevProps) {
-    if (this.state.hasError && (prevProps.symbol !== this.props.symbol || prevProps.selectedDays !== this.props.selectedDays)) {
+    if (this.state.hasError && (prevProps.symbol !== this.props.symbol || prevProps.selectedDays !== this.props.selectedDays || prevProps.selectedDate !== this.props.selectedDate)) {
       this.setState({ hasError: false, error: null });
     }
   }
@@ -2692,7 +2699,7 @@ export class StockBrokerAnalysisErrorBoundary extends React.Component {
 
 export default function StockBrokerAnalysisTab(props) {
   return (
-    <StockBrokerAnalysisErrorBoundary symbol={props.symbol} selectedDays={props.selectedDays}>
+    <StockBrokerAnalysisErrorBoundary symbol={props.symbol} selectedDays={props.selectedDays} selectedDate={props.selectedDate}>
       <StockBrokerAnalysisTabInner {...props} />
     </StockBrokerAnalysisErrorBoundary>
   );

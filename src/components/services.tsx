@@ -11,8 +11,10 @@ import {
   loadNepseData, fetchIndices, fetchFloorSheet, ENDPOINT_REGISTRY, getCachedStocks, getCachedIndices,
   getCachedRealPriceHistory, getCachedRealBrokerAnalysis, setCachedRealBrokerAnalysis,
   fetchRealBrokerAnalysis, fetchAvailableTradingDates,
-  type EnrichedStock,
 } from '../utils/liveData';
+import { getWatchlist, addToWatchlist, removeFromWatchlist } from '../utils/watchlist';
+
+export type EnrichedStock = Record<string, any>;
 import {
   fetchBrokersDirectory, fetchIPOPipeline, fetchMutualFunds,
   fetchBrokerAnalysis, fetchIPOListings, fetchMarketNews,
@@ -2486,7 +2488,7 @@ export function SectorHeatmapService() {
     setLoading(false);
   };
 
-  useEffect(() => { loadData(timeframe); }, [timeframe]);
+  useEffect(() => { loadData(timeframe); }, [timeframe, activeDate]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -2615,7 +2617,14 @@ export function SectorHeatmapService() {
 export const SectorHeatmap = SectorHeatmapService;
 
 // ── Live Floorsheet & Zero-Sum Broker Balance Service (Wired to /api/floorsheet) ──
-export function LiveFloorsheetService() {
+export function LiveFloorsheetService({
+  selectedDate: propSelectedDate,
+  date: propDate,
+}: {
+  selectedDate?: string;
+  date?: string;
+} = {}) {
+  const activeDate = propSelectedDate || propDate || '';
   const [data, setData] = useState<any[]>([]);
   const [multiDayLedger, setMultiDayLedger] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2642,8 +2651,8 @@ export function LiveFloorsheetService() {
     try {
       // Parallel fetch: Real floorsheet raw contracts + multi-horizon broker aggregation heatmap
       const [fsRes, hmRes] = await Promise.allSettled([
-        fetchServicesFloorsheet(null, days, 2500),
-        fetchBrokerHeatmap({ days })
+        fetchServicesFloorsheet(null, 1, 2500, activeDate, days),
+        fetchBrokerHeatmap({ days, date: activeDate })
       ]);
 
       let rawRows: any[] = [];
@@ -2738,7 +2747,7 @@ export function LiveFloorsheetService() {
     setLoading(false);
   };
 
-  useEffect(() => { loadData(timeframe); }, [timeframe]);
+  useEffect(() => { loadData(timeframe); }, [timeframe, activeDate]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -3920,11 +3929,16 @@ export function BrokerHeatmapService({ selectedDate: propSelectedDate, date: pro
 // ── Dedicated Broker Favourites Service (Tracks Broker Accumulation by Horizon) ──
 export function BrokerFavouritesService({
   stocks: propStocks = [],
-  onSelectStock
+  onSelectStock,
+  selectedDate: propSelectedDate,
+  date: propDate,
 }: {
   stocks?: any[];
   onSelectStock?: (stk: any) => void;
+  selectedDate?: string;
+  date?: string;
 } = {}) {
+  const activeDate = propSelectedDate || propDate || '';
   const [activeSubTab, setActiveSubTab] = useState<'smart-flow' | 'classic'>('smart-flow');
   const [timeframe, setTimeframe] = useState('1D');
   const [loading, setLoading] = useState(true);
@@ -3937,7 +3951,7 @@ export function BrokerFavouritesService({
     try {
       let stockList = propStocks;
       if (!stockList || stockList.length === 0) {
-        const nepseRes = await loadNepseData().catch(() => null);
+        const nepseRes = await loadNepseData(activeDate).catch(() => null);
         stockList = nepseRes?.stocks || [];
       }
 
@@ -3953,7 +3967,7 @@ export function BrokerFavouritesService({
         'ALL': 500,
       };
       const tfDays = daysMap[tf] || 1;
-      const heatmapRes = await fetchBrokerHeatmap(tfDays).catch(() => null);
+      const heatmapRes = await fetchBrokerHeatmap({ days: tfDays, date: activeDate }).catch(() => null);
       let heatmapData = heatmapRes?.data || heatmapRes;
       if (!Array.isArray(heatmapData?.matrix) || heatmapData.matrix.length === 0) {
         if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
@@ -4091,7 +4105,7 @@ export function BrokerFavouritesService({
     setLoading(false);
   };
 
-  useEffect(() => { loadData(timeframe); }, [timeframe]);
+  useEffect(() => { loadData(timeframe); }, [timeframe, activeDate]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -4268,18 +4282,29 @@ const deriveSmartMoneyPhase = (adSignal: string, adStrength: number, adRatio: nu
 export function BrokerAnalysisService({
   initialSymbol = 'NABIL',
   stocks = [],
-  onSelectStock
+  onSelectStock,
+  selectedDate: propSelectedDate,
+  date: propDate,
 }: {
   initialSymbol?: string;
   stocks?: any[];
   onSelectStock?: (stk: any) => void;
+  selectedDate?: string;
+  date?: string;
 } = {}) {
   const [selectedSymbol, setSelectedSymbol] = useState(initialSymbol || 'NABIL');
   const [timeframe, setTimeframe] = useState('1M');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [brokerData, setBrokerData] = useState<any>(null);
-  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState<string>(propSelectedDate || propDate || '');
+
+  useEffect(() => {
+    const nextDate = propSelectedDate || propDate || '';
+    if (nextDate !== selectedDate) {
+      setSelectedDate(nextDate);
+    }
+  }, [propSelectedDate, propDate]);
 
   const daysMap: Record<string, number | string> = {
     '1D': 1,
@@ -4601,7 +4626,7 @@ export function BrokerAnalysisService({
             {/* Top Buying Brokers */}
             <div className="rounded-xl border border-slate-800/60 bg-slate-950/40 p-3.5 shadow-inner">
               <div className="mb-2.5 flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">🟢 Top 5 Buying Brokers (Accumulators)</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">🟢 Top 5 Buying Brokers (Accumulators — Gross Volume)</span>
                 <span className="text-[11px] font-mono text-slate-400">{timeframe} Period</span>
               </div>
               <div className="overflow-x-auto">
@@ -4640,7 +4665,7 @@ export function BrokerAnalysisService({
             {/* Top Selling Brokers */}
             <div className="rounded-xl border border-slate-800/60 bg-slate-950/40 p-3.5 shadow-inner">
               <div className="mb-2.5 flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-rose-400">🔴 Top 5 Selling Brokers (Distributors)</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-rose-400">🔴 Top 5 Selling Brokers (Distributors — Gross Volume)</span>
                 <span className="text-[11px] font-mono text-slate-400">{timeframe} Period</span>
               </div>
               <div className="overflow-x-auto">

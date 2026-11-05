@@ -107,6 +107,7 @@ export function WatchlistScreener({ onSelectScrip, lang = 'ne', stocks = [] }) {
     return stocks.map(stock => {
       const ltp = Number(stock.ltp || stock.close || 0);
       const chg = Number(stock.pointChange || stock.change || 0);
+      const pct = stock.pChange != null ? Number(stock.pChange) : (ltp > 0 && chg ? (chg / (ltp - chg)) * 100 : 0);
       const dayLow = stock.low != null ? Number(Number(stock.low).toFixed(2)) : (ltp > 0 ? Number(ltp.toFixed(2)) : 0);
       const dayHigh = stock.high != null ? Number(Number(stock.high).toFixed(2)) : (ltp > 0 ? Number(ltp.toFixed(2)) : 0);
       const volNum = Number(stock.volume || stock.totalTradedQuantity || 0);
