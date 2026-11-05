@@ -1260,9 +1260,10 @@ export async function getMarketIndicesInternal(targetDate = '') {
   // Fast Provider 2: Direct Live Feed via NepaliPaisa (real-time exchange quotes)
   try {
     const npCtrl = new AbortController();
-    const npTimer = setTimeout(() => npCtrl.abort(), 6000);
-    const npRes = await fetch('https://www.nepalipaisa.com/api/GetIndexLive', {
+    const npTimer = setTimeout(() => npCtrl.abort(), 4000);
+    const npRes = await fetch('https://nepalipaisa.com/api/GetIndexLive', {
       signal: npCtrl.signal,
+      redirect: 'follow',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         Accept: 'application/json'
@@ -8337,11 +8338,12 @@ app.get('/api/nepalipaisa/index-live', async (req, res) => {
     'Expires': '0'
   });
   try {
-    if (_npIndexCache.body && Date.now() - _npIndexCache.at < 3000) return res.json(_npIndexCache.body);
+    if (_npIndexCache.body && Date.now() - _npIndexCache.at < 1000) return res.json(_npIndexCache.body);
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 6000);
-    const r = await fetch('https://www.nepalipaisa.com/api/GetIndexLive', {
+    const t = setTimeout(() => ctrl.abort(), 4000);
+    const r = await fetch('https://nepalipaisa.com/api/GetIndexLive', {
       signal: ctrl.signal,
+      redirect: 'follow',
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', Accept: 'application/json' }
     });
     clearTimeout(t);

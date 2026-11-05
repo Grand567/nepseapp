@@ -878,14 +878,13 @@ function AppInner() {
       }
 
       if (!isMounted) return;
-      // Responsive refresh: 3.5s during market, 5.0s pre-open, 6.0s off-market
-      // Exponential backoff up to 15s prevents Cloudflare 429 Bot Challenges
-      const baseInterval = status.isOpen ? 3500 : (status.isPreOpen ? 5000 : 6000);
-      const interval = consecutiveErrors > 0 ? Math.min(baseInterval * Math.pow(1.3, Math.min(consecutiveErrors, 3)), 15000) : baseInterval;
+      // High-speed 1.5s refresh during active market (1-2s response window), 3.0s pre-open, 5.0s off-market
+      const baseInterval = status.isOpen ? 1500 : (status.isPreOpen ? 3000 : 5000);
+      const interval = consecutiveErrors > 0 ? Math.min(baseInterval * Math.pow(1.2, Math.min(consecutiveErrors, 3)), 6000) : baseInterval;
       tickerTimer = setTimeout(tickFastIndex, interval);
     };
 
-    tickerTimer = setTimeout(tickFastIndex, 300);
+    tickerTimer = setTimeout(tickFastIndex, 100);
 
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {

@@ -2338,7 +2338,8 @@ export async function fetchMarketIndices(targetDate) {
   const isLive = !targetDate;
   const now = Date.now();
 
-  if (isLive && _lastIndicesFetchResult && (now - _lastIndicesFetchTime < 1500)) {
+  // Ultra-fast 1-second throttle during live market (allows rapid 1-2s ticker updates)
+  if (isLive && _lastIndicesFetchResult && (now - _lastIndicesFetchTime < 1000)) {
     return _lastIndicesFetchResult;
   }
   if (isLive && _inFlightMarketIndicesPromise) {
@@ -2485,12 +2486,17 @@ export async function fetchMarketIndices(targetDate) {
       try {
         const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
         const nonce = Date.now();
+        // Use bare domain (nepalipaisa.com) to prevent 301 Moved Permanently HTML redirect failures
         const primaryUrl = isNative
-          ? `https://www.nepalipaisa.com/api/GetIndexLive?_t=${nonce}`
+          ? `https://nepalipaisa.com/api/GetIndexLive?_t=${nonce}`
           : `${getProxyBase()}/api/nepalipaisa/index-live?_t=${nonce}`;
-        let j = await tryFetchJSON(primaryUrl, 8000);
+        let j = await tryFetchJSON(primaryUrl, 3000);
         if (!j && isNative) {
-          j = await tryFetchJSON(`${getProxyBase()}/api/nepalipaisa/index-live?_t=${nonce}`, 8000);
+          j = await tryFetchJSON(`${getProxyBase()}/api/nepalipaisa/index-live?_t=${nonce}`, 3000);
+        }
+        if (!j) {
+          // Direct fallback if proxy is offline or busy
+          j = await tryFetchJSON(`https://nepalipaisa.com/api/GetIndexLive?_t=${nonce}`, 3000);
         }
         const list = Array.isArray(j?.result) ? j.result : (Array.isArray(j) ? j : null);
         if (!list) return null;
