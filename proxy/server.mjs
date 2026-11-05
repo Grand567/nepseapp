@@ -7792,143 +7792,172 @@ app.get('/api/securities/all', async (req, res) => {
 // ============================================================
 // 5: TODAY PRICE FOR ALL STOCKS (Live Market)
 // ============================================================
+let inFlightMarketLivePromise = null;
+
 app.get('/api/market/live', async (req, res) => {
   try {
-    const currentStatus = getProxyMarketStatus();
-    const isMarketOpen = Boolean(currentStatus?.isOpen);
-    const mStatus = isMarketOpen ? 'OPEN' : 'CLOSED';
-
-    // 1. If official NOTS client is working and returns fresh data (not a stale previous-day snapshot)
-    let marketPayload = null;
-    try {
-      marketPayload = await nepseManager.getLiveOrClosingMarket();
-    } catch (e) {
-      console.warn('[proxy] nepseManager.getLiveOrClosingMarket error:', e.message);
+    const force = req.query.force === 'true';
+    const cacheKey = 'market-live-fast';
+    if (!force) {
+      const cachedLive = getCache(cacheKey);
+      if (cachedLive) {
+        return res.json(cachedLive);
+      }
+      if (inFlightMarketLivePromise) {
+        const joined = await inFlightMarketLivePromise;
+        if (joined) return res.json(joined);
+      }
     }
 
-    const isPayloadFresh = marketPayload && Array.isArray(marketPayload.data) && marketPayload.data.length > 0 &&
-      !marketPayload.isStale && marketPayload.source !== 'LAST_KNOWN_OFFICIAL_SNAPSHOT' && marketPayload.source !== 'LAST_KNOWN_SNAPSHOT_FALLBACK';
+    const computeLiveMarket = (async () => {
+      const currentStatus = getProxyMarketStatus();
+      const isMarketOpen = Boolean(currentStatus?.isOpen);
+      const mStatus = isMarketOpen ? 'OPEN' : 'CLOSED';
 
-    if (isPayloadFresh && (!isMarketOpen || marketPayload.isOpen)) {
-      const enrichedData = marketPayload.data.map(item => {
-        const ltp = Number(item.lastTradedPrice || item.closePrice || item.ltp || item.lastUpdatedPrice || 0);
-        const prevClose = Number(item.previousClose || item.previousDayClosePrice || item.prevClose || ltp) || ltp;
-        const change = Number(item.pointChange != null ? item.pointChange : (item.change != null ? item.change : +(ltp - prevClose).toFixed(2)));
-        const pChange = Number(item.percentageChange != null ? item.percentageChange : (item.pChange != null ? item.pChange : (prevClose > 0 ? +(((ltp - prevClose) / prevClose) * 100).toFixed(2) : 0)));
-        const vol = Number(item.totalTradeQuantity || item.totalTradedQuantity || item.volume || item.totalVolume || 0);
-        const turnover = Number(item.totalTradeValue || item.totalTradedValue || item.turnover || (ltp * vol));
-        const trades = Number(item.totalTrades || item.totalTransactions || item.transactions || 0);
+      // 1. If official NOTS client is working and returns fresh data (not a stale previous-day snapshot)
+      let marketPayload = null;
+      try {
+        marketPayload = await nepseManager.getLiveOrClosingMarket();
+      } catch (e) {
+        console.warn('[proxy] nepseManager.getLiveOrClosingMarket error:', e.message);
+      }
 
-        return {
-          ...item,
-          ltp,
-          lastTradedPrice: ltp,
-          closePrice: ltp,
-          previousClose: prevClose,
-          previousDayClosePrice: prevClose,
-          prevClose,
-          pointChange: change,
-          change,
-          percentageChange: pChange,
-          pChange,
-          totalTradeQuantity: vol,
-          totalTradedQuantity: vol,
-          volume: vol,
-          totalTradeValue: turnover,
-          totalTradedValue: turnover,
-          turnover,
-          totalTrades: trades,
-          totalTransactions: trades,
-          transactions: trades
+      const isPayloadFresh = marketPayload && Array.isArray(marketPayload.data) && marketPayload.data.length > 0 &&
+        !marketPayload.isStale && marketPayload.source !== 'LAST_KNOWN_OFFICIAL_SNAPSHOT' && marketPayload.source !== 'LAST_KNOWN_SNAPSHOT_FALLBACK';
+
+      if (isPayloadFresh && (!isMarketOpen || marketPayload.isOpen)) {
+        const enrichedData = marketPayload.data.map(item => {
+          const ltp = Number(item.lastTradedPrice || item.closePrice || item.ltp || item.lastUpdatedPrice || 0);
+          const prevClose = Number(item.previousClose || item.previousDayClosePrice || item.prevClose || ltp) || ltp;
+          const change = Number(item.pointChange != null ? item.pointChange : (item.change != null ? item.change : +(ltp - prevClose).toFixed(2)));
+          const pChange = Number(item.percentageChange != null ? item.percentageChange : (item.pChange != null ? item.pChange : (prevClose > 0 ? +(((ltp - prevClose) / prevClose) * 100).toFixed(2) : 0)));
+          const vol = Number(item.totalTradeQuantity || item.totalTradedQuantity || item.volume || item.totalVolume || 0);
+          const turnover = Number(item.totalTradeValue || item.totalTradedValue || item.turnover || (ltp * vol));
+          const trades = Number(item.totalTrades || item.totalTransactions || item.transactions || 0);
+
+          return {
+            ...item,
+            ltp,
+            lastTradedPrice: ltp,
+            closePrice: ltp,
+            previousClose: prevClose,
+            previousDayClosePrice: prevClose,
+            prevClose,
+            pointChange: change,
+            change,
+            percentageChange: pChange,
+            pChange,
+            totalTradeQuantity: vol,
+            totalTradedQuantity: vol,
+            volume: vol,
+            totalTradeValue: turnover,
+            totalTradedValue: turnover,
+            turnover,
+            totalTrades: trades,
+            totalTransactions: trades,
+            transactions: trades
+          };
+        });
+
+        const withBroker = await enrichStocksWithBrokerSummary(enrichedData);
+        const result = {
+          success: true,
+          isMockData: false,
+          source: marketPayload.source || 'LIVE - NEPSE NOTS API',
+          marketOpen: marketPayload.isOpen,
+          marketStatus: marketPayload.marketStatus,
+          count: withBroker.length,
+          asOf: marketPayload.asOf || new Date().toISOString(),
+          message: marketPayload.message,
+          data: withBroker
         };
-      });
+        setCache(cacheKey, result, isMarketOpen ? 3000 : 15000);
+        return result;
+      }
 
-      const withBroker = await enrichStocksWithBrokerSummary(enrichedData);
-      return res.json({
+      // 2. High-reliability Live Feed from MeroLagani handler (always accessible, ultra-fast)
+      const summary = await fetchInternalMeroMarketSummary();
+      if (summary && Array.isArray(summary.stocks) && summary.stocks.length > 0) {
+        const rawStocks = summary.stocks.map(s => ({
+          symbol: s.symbol,
+          securityName: s.name || stockMap[s.symbol]?.name || s.symbol,
+          openPrice: s.open,
+          highPrice: s.high,
+          lowPrice: s.low,
+          closePrice: s.ltp,
+          lastTradedPrice: s.ltp,
+          lastUpdatedPrice: s.ltp,
+          ltp: s.ltp,
+          previousClose: s.prevClose,
+          previousDayClosePrice: s.prevClose,
+          percentageChange: s.pChange,
+          pChange: s.pChange,
+          pointChange: s.change,
+          change: s.change,
+          totalTradedQuantity: s.volume,
+          volume: s.volume,
+          totalTradedValue: s.turnover,
+          turnover: s.turnover,
+          sector: s.sector || stockMap[s.symbol]?.sector || 'Others',
+          businessDate: new Date().toISOString().split('T')[0]
+        }));
+        const withBroker = await enrichStocksWithBrokerSummary(rawStocks);
+        const result = {
+          success: true,
+          isMockData: false,
+          source: isMarketOpen ? 'LIVE - MEROLAGANI REAL-TIME' : 'REAL CLOSING - NEPSE',
+          marketOpen: isMarketOpen,
+          marketStatus: mStatus,
+          count: withBroker.length,
+          asOf: new Date().toISOString(),
+          data: withBroker
+        };
+        setCache(cacheKey, result, isMarketOpen ? 3000 : 15000);
+        return result;
+      }
+
+      // 3. Fallback: Last known verified persistent snapshot (when off-session or both live sources unavailable)
+      const snapshot = nepseManager.lastKnownSnapshot;
+      const snapData = marketPayload?.data || snapshot?.todayPrices;
+      if (snapData && snapData.length > 0) {
+        const withBroker = await enrichStocksWithBrokerSummary(snapData);
+        const result = {
+          success: true,
+          isMockData: false,
+          source: 'LAST_KNOWN_OFFICIAL_SNAPSHOT',
+          marketOpen: isMarketOpen,
+          marketStatus: mStatus,
+          isStale: true,
+          count: withBroker.length,
+          asOf: new Date().toISOString(),
+          message: 'Serving last verified market snapshot.',
+          data: withBroker
+        };
+        setCache(cacheKey, result, 10000);
+        return result;
+      }
+
+      return {
         success: true,
         isMockData: false,
-        source: marketPayload.source || 'LIVE - NEPSE NOTS API',
-        marketOpen: marketPayload.isOpen,
-        marketStatus: marketPayload.marketStatus,
-        count: withBroker.length,
-        asOf: marketPayload.asOf || new Date().toISOString(),
-        message: marketPayload.message,
-        data: withBroker
-      });
-    }
-
-    // 2. High-reliability Live Feed from MeroLagani handler (always accessible, ultra-fast)
-    const summary = await fetchInternalMeroMarketSummary();
-    if (summary && Array.isArray(summary.stocks) && summary.stocks.length > 0) {
-      const rawStocks = summary.stocks.map(s => ({
-        symbol: s.symbol,
-        securityName: s.name || stockMap[s.symbol]?.name || s.symbol,
-        openPrice: s.open,
-        highPrice: s.high,
-        lowPrice: s.low,
-        closePrice: s.ltp,
-        lastTradedPrice: s.ltp,
-        lastUpdatedPrice: s.ltp,
-        ltp: s.ltp,
-        previousClose: s.prevClose,
-        previousDayClosePrice: s.prevClose,
-        percentageChange: s.pChange,
-        pChange: s.pChange,
-        pointChange: s.change,
-        change: s.change,
-        totalTradedQuantity: s.volume,
-        volume: s.volume,
-        totalTradedValue: s.turnover,
-        turnover: s.turnover,
-        sector: s.sector || stockMap[s.symbol]?.sector || 'Others',
-        businessDate: new Date().toISOString().split('T')[0]
-      }));
-      const withBroker = await enrichStocksWithBrokerSummary(rawStocks);
-      return res.json({
-        success: true,
-        isMockData: false,
-        source: isMarketOpen ? 'LIVE - MEROLAGANI REAL-TIME' : 'REAL CLOSING - NEPSE',
         marketOpen: isMarketOpen,
         marketStatus: mStatus,
-        count: withBroker.length,
+        source: 'EMPTY_OFFSESSION',
+        count: 0,
         asOf: new Date().toISOString(),
-        data: withBroker
-      });
-    }
+        message: isMarketOpen
+          ? 'NEPSE market open, awaiting initial tick stream.'
+          : 'NEPSE market currently closed. Awaiting opening bell or session sync.',
+        data: []
+      };
+    })();
 
-    // 3. Fallback: Last known verified persistent snapshot (when off-session or both live sources unavailable)
-    const snapshot = nepseManager.lastKnownSnapshot;
-    const snapData = marketPayload?.data || snapshot?.todayPrices;
-    if (snapData && snapData.length > 0) {
-      const withBroker = await enrichStocksWithBrokerSummary(snapData);
-      return res.json({
-        success: true,
-        isMockData: false,
-        source: 'LAST_KNOWN_OFFICIAL_SNAPSHOT',
-        marketOpen: isMarketOpen,
-        marketStatus: mStatus,
-        isStale: true,
-        count: withBroker.length,
-        asOf: new Date().toISOString(),
-        message: 'Serving last verified market snapshot.',
-        data: withBroker
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      isMockData: false,
-      marketOpen: isMarketOpen,
-      marketStatus: mStatus,
-      source: 'EMPTY_OFFSESSION',
-      count: 0,
-      asOf: new Date().toISOString(),
-      message: isMarketOpen
-        ? 'NEPSE market open, awaiting initial tick stream.'
-        : 'NEPSE market currently closed. Awaiting opening bell or session sync.',
-      data: []
-    });
+    inFlightMarketLivePromise = computeLiveMarket;
+    const finalPayload = await computeLiveMarket;
+    inFlightMarketLivePromise = null;
+    return res.json(finalPayload);
   } catch (err) {
+    inFlightMarketLivePromise = null;
     res.status(500).json({ success: false, error: err.message, isMockData: false });
   }
 });

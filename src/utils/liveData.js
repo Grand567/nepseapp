@@ -169,18 +169,38 @@ function nowNptFormatted() {
   } catch (_) { return new Date().toISOString(); }
 }
 
+let _lastLocalStorageSave = 0;
+const LS_THROTTLE_MS = 25000; // Throttle 450KB JSON write to localStorage to max once every 25s
+
 function persistStocks(s) {
   MEM_STOCKS = s;
   const nowIso = new Date().toISOString();
   const nowNpt = nowNptFormatted();
+  const now = Date.now();
   try {
-    localStorage.setItem(LS_STOCKS, JSON.stringify(s));
     localStorage.setItem('nepse_stocks_saved_at', nowIso);
     // C4: Human-readable NPT timestamp — shown in "Last updated" UI labels
     localStorage.setItem('nepse_stocks_saved_at_npt', nowNpt);
     localStorage.setItem('nepse_stocks_session_date', getLatestTradingDateStr());
+    if (now - _lastLocalStorageSave >= LS_THROTTLE_MS) {
+      _lastLocalStorageSave = now;
+      localStorage.setItem(LS_STOCKS, JSON.stringify(s));
+    }
   } catch { /* quota */ }
   idbSet(LS_STOCKS, s).catch(() => {});
+}
+
+// Flush immediately when tab closes or hides so latest snapshot is never lost
+if (typeof window !== 'undefined') {
+  const flushStocksToStorage = () => {
+    if (MEM_STOCKS && MEM_STOCKS.length > 0) {
+      try {
+        localStorage.setItem(LS_STOCKS, JSON.stringify(MEM_STOCKS));
+      } catch (_) {}
+    }
+  };
+  window.addEventListener('beforeunload', flushStocksToStorage);
+  window.addEventListener('pagehide', flushStocksToStorage);
 }
 
 /**
@@ -1307,39 +1327,71 @@ export async function prefetchFundamentalsForUniverse() {
 }
 
 // PUBLIC API
+let _inFlightLiveMarketPromise = null;
+let _lastLiveMarketResult = null;
+let _lastLiveMarketTime = 0;
+
 export async function fetchLiveMarket(date = '') {
   ensureSnapshot();
   const reqDate = String(date || '').trim();
   const todayIso = formatNptDateIso(new Date());
+  const isLive = !reqDate || reqDate === todayIso;
+  const now = Date.now();
 
-  if (reqDate && reqDate !== todayIso) {
-    try {
-      const res = await fetchFromBackend(`/api/today-prices?date=${encodeURIComponent(reqDate)}`, 10000);
-      const arr = res?.data || (Array.isArray(res) ? res : []);
-      if (Array.isArray(arr) && arr.length > 20) {
-        return { data: arr, source: 'historical', marketStatus: getDetailedMarketStatus(), isFreshFeed: false, date: reqDate };
-      }
-    } catch (_) {}
+  if (isLive && _lastLiveMarketResult && (now - _lastLiveMarketTime < 2000)) {
+    return _lastLiveMarketResult;
+  }
+  if (isLive && _inFlightLiveMarketPromise) {
+    return _inFlightLiveMarketPromise;
   }
 
-  const live = await attemptLiveMarket();
-  if (live && live.length) {
-    persistStocks(live);
-    // Background: prefetch fundamentals for top stocks so screener filters work
-    prefetchFundamentalsForUniverse().catch(() => {});
-    clearDynamicMarketHalt();
+  const runTask = (async () => {
+    if (reqDate && reqDate !== todayIso) {
+      try {
+        const res = await fetchFromBackend(`/api/today-prices?date=${encodeURIComponent(reqDate)}`, 10000);
+        const arr = res?.data || (Array.isArray(res) ? res : []);
+        if (Array.isArray(arr) && arr.length > 20) {
+          return { data: arr, source: 'historical', marketStatus: getDetailedMarketStatus(), isFreshFeed: false, date: reqDate };
+        }
+      } catch (_) {}
+    }
+
+    const live = await attemptLiveMarket();
+    if (live && live.length) {
+      persistStocks(live);
+      // Background: prefetch fundamentals for top stocks so screener filters work
+      prefetchFundamentalsForUniverse().catch(() => {});
+      clearDynamicMarketHalt();
+      const marketStatus = getDetailedMarketStatus();
+      LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'live' : 'closing');
+      return { data: live, source: LAST_SOURCE, marketStatus, isFreshFeed: true };
+    }
     const marketStatus = getDetailedMarketStatus();
-    LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'live' : 'closing');
-    return { data: live, source: LAST_SOURCE, marketStatus, isFreshFeed: true };
+    const lastSavedDate = typeof window !== 'undefined' ? localStorage.getItem('nepse_stocks_session_date') : null;
+    const isTodaySession = lastSavedDate && lastSavedDate === getLatestTradingDateStr();
+    // Detect if MEM_STOCKS is from buildEnrichedSnapshot (all volumes=0, all changes=0) → cold-start simulation
+    const isSimulated = !MEM_STOCKS || MEM_STOCKS.length === 0 ||
+      (MEM_STOCKS.slice(0, 10).every(s => (s.volume || 0) === 0 && (s.pChange || 0) === 0));
+    LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (isTodaySession ? (marketStatus.isOpen ? 'live' : 'closing') : 'yesterday');
+    return { data: MEM_STOCKS, source: LAST_SOURCE, marketStatus, isFreshFeed: false, isSimulatedData: isSimulated };
+  })();
+
+  if (isLive) {
+    _inFlightLiveMarketPromise = runTask;
   }
-  const marketStatus = getDetailedMarketStatus();
-  const lastSavedDate = typeof window !== 'undefined' ? localStorage.getItem('nepse_stocks_session_date') : null;
-  const isTodaySession = lastSavedDate && lastSavedDate === getLatestTradingDateStr();
-  // Detect if MEM_STOCKS is from buildEnrichedSnapshot (all volumes=0, all changes=0) → cold-start simulation
-  const isSimulated = !MEM_STOCKS || MEM_STOCKS.length === 0 ||
-    (MEM_STOCKS.slice(0, 10).every(s => (s.volume || 0) === 0 && (s.pChange || 0) === 0));
-  LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (isTodaySession ? (marketStatus.isOpen ? 'live' : 'closing') : 'yesterday');
-  return { data: MEM_STOCKS, source: LAST_SOURCE, marketStatus, isFreshFeed: false, isSimulatedData: isSimulated };
+
+  try {
+    const res = await runTask;
+    if (isLive && res && Array.isArray(res.data) && res.data.length > 20) {
+      _lastLiveMarketResult = res;
+      _lastLiveMarketTime = Date.now();
+    }
+    return res;
+  } finally {
+    if (isLive) {
+      _inFlightLiveMarketPromise = null;
+    }
+  }
 }
 
 export async function fetchMarketSummary(targetDate) {
@@ -2030,8 +2082,15 @@ export function getConnectionInfo() {
 let _lastSync = Date.now();
 export function getLastMarketSyncTime() { return new Date(_lastSync).toISOString(); }
 export function saveCachedStocks(stocks) { 
-  try { localStorage.setItem(LS_STOCKS, JSON.stringify(stocks || [])); } catch (e) {} 
   if (Array.isArray(stocks) && stocks.length > 0) {
+    MEM_STOCKS = stocks;
+    const now = Date.now();
+    try {
+      if (now - _lastLocalStorageSave >= LS_THROTTLE_MS) {
+        _lastLocalStorageSave = now;
+        localStorage.setItem(LS_STOCKS, JSON.stringify(stocks));
+      }
+    } catch (e) {} 
     idbSet(LS_STOCKS, stocks).catch(() => {});
   }
   return true; 
@@ -2271,13 +2330,28 @@ export function parseNotsIndicesArray(rawList, existingTurnover = 0) {
   };
 }
 
-export async function fetchMarketIndices(targetDate) {
-  try {
-    let indicesData = null;
+let _inFlightMarketIndicesPromise = null;
+let _lastIndicesFetchResult = null;
+let _lastIndicesFetchTime = 0;
 
-    const calStatus = getDetailedMarketStatus();
-    const isTradingSession = calStatus.isOpen || calStatus.isPreOpen || (calStatus.nptTotalMinutes >= 11 * 60);
-    const todayIso = formatNptDateIso(new Date());
+export async function fetchMarketIndices(targetDate) {
+  const isLive = !targetDate;
+  const now = Date.now();
+
+  if (isLive && _lastIndicesFetchResult && (now - _lastIndicesFetchTime < 1500)) {
+    return _lastIndicesFetchResult;
+  }
+  if (isLive && _inFlightMarketIndicesPromise) {
+    return _inFlightMarketIndicesPromise;
+  }
+
+  const runTask = (async () => {
+    try {
+      let indicesData = null;
+
+      const calStatus = getDetailedMarketStatus();
+      const isTradingSession = calStatus.isOpen || calStatus.isPreOpen || (calStatus.nptTotalMinutes >= 11 * 60);
+      const todayIso = formatNptDateIso(new Date());
 
     // 1. Fast Parallel Race: Prioritize live backend NOTS exchange data (/api/indices, /api/market-indices & /api/market/summary)
     const tryFastBackend = async () => {
@@ -2586,6 +2660,10 @@ export async function fetchMarketIndices(targetDate) {
         }
       }
       saveCachedIndices(indicesData);
+      if (isLive) {
+        _lastIndicesFetchResult = indicesData;
+        _lastIndicesFetchTime = Date.now();
+      }
       return indicesData;
     }
   } catch (err) {
@@ -2595,9 +2673,31 @@ export async function fetchMarketIndices(targetDate) {
   // Fallback to cached or authentic defaults
   const cached = getCachedIndices();
   if (cached && cached.nepse && Number(cached.nepse.value) > 0) {
+    if (isLive) {
+      _lastIndicesFetchResult = cached;
+      _lastIndicesFetchTime = Date.now();
+    }
     return cached;
   }
-  return calculateIndices();
+  const computed = calculateIndices();
+  if (isLive && computed && computed.nepse) {
+    _lastIndicesFetchResult = computed;
+    _lastIndicesFetchTime = Date.now();
+  }
+  return computed;
+  })();
+
+  if (isLive) {
+    _inFlightMarketIndicesPromise = runTask;
+  }
+
+  try {
+    return await runTask;
+  } finally {
+    if (isLive) {
+      _inFlightMarketIndicesPromise = null;
+    }
+  }
 }
 
 let _cachedTradingDatesList = [];

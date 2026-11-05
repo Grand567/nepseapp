@@ -2445,7 +2445,8 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
 }
 
 // ── Sector Heatmap & Rotation (Wired to /api/sector-heatmap) ──
-export function SectorHeatmapService() {
+export function SectorHeatmapService({ selectedDate: propSelectedDate, date: propDate }: { selectedDate?: string; date?: string } = {}) {
+  const activeDate = propSelectedDate || propDate || '';
   const [sectors, setSectors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState('1D');
@@ -2454,7 +2455,7 @@ export function SectorHeatmapService() {
   const loadData = async (activeTf = timeframe) => {
     setLoading(true);
     try {
-      const { stocks } = await loadNepseData();
+      const { stocks } = await loadNepseData(activeDate);
 
       // Pre-warm anchor stocks from each sector to ensure authentic multi-timeframe sector rotation
       if (activeTf !== '1D' && stocks?.length) {
