@@ -47,6 +47,11 @@ import {
   useHistoricalSubfile,
   useScrip4DayTrajectory,
 } from "@/utils/localLedgerManager";
+import {
+  getDetailedMarketStatus,
+  formatNptDateIso,
+  getLastValidTradingDay,
+} from "@/utils/nepseCalendar";
 import type {
   CorporateActionRow,
   RawFundamentalRecord,
@@ -1016,6 +1021,67 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     };
   }, [telemetry.marketDepth, ltp]);
 
+  // ── Authoritative Session Date & Live Intraday Status ──
+  const sessionStatus = useMemo(() => {
+    let marketStatus: any = { isOpen: false, isTradingDay: false, nptTimeStr: '15:00' };
+    try {
+      marketStatus = getDetailedMarketStatus(new Date());
+    } catch (_) {}
+
+    const isLive = Boolean(marketStatus?.isOpen);
+    const todayIso = formatNptDateIso ? formatNptDateIso(new Date()) : new Date().toISOString().slice(0, 10);
+    const lastValidDay = getLastValidTradingDay ? String(getLastValidTradingDay(new Date(), true)).slice(0, 10) : todayIso;
+
+    // Check dates from available payload fields
+    const rawDate = 
+      liveBrokerPayload?.businessDate ||
+      liveBrokerPayload?.date ||
+      liveBrokerPayload?.tradeDate ||
+      liveBrokerPayload?.toDate ||
+      activeSubfileDate ||
+      subfileData?.session_date ||
+      telemetry.floorsheetTape?.[0]?.tradeDate ||
+      null;
+
+    const isLiveToday = (isLive && Boolean(liveBrokerPayload)) || (rawDate === todayIso && isLive);
+    const isTodayClosed = (rawDate === todayIso && !isLive) || (marketStatus?.isTradingDay && !isLive && rawDate === todayIso);
+    const activeDateStr = (isLiveToday || isTodayClosed) ? todayIso : (rawDate || lastValidDay);
+    const timeStr = marketStatus?.nptTimeStr || new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu', hour12: false });
+
+    let displayBadge = '';
+    let badgeColor = '';
+
+    if (isLiveToday) {
+      displayBadge = `🟢 LIVE INTRADAY SESSION: ${activeDateStr} (Today) • ${timeStr} NPT`;
+      badgeColor = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40';
+    } else if (isTodayClosed) {
+      displayBadge = `🌙 TODAY'S CLOSED SESSION: ${activeDateStr} (Today) • Settled 15:00 NPT`;
+      badgeColor = 'bg-sky-500/15 text-sky-300 border-sky-500/40';
+    } else {
+      displayBadge = `🌙 LAST TRADING DAY: ${activeDateStr} (Settled Close)`;
+      badgeColor = 'bg-slate-800 text-slate-300 border-slate-700';
+    }
+
+    const shortDateLabel = isLiveToday 
+      ? `${activeDateStr} (Today Live)` 
+      : isTodayClosed 
+      ? `${activeDateStr} (Today Closed)` 
+      : `${activeDateStr} (Last Session)`;
+
+    return {
+      isLive,
+      isLiveToday,
+      isTodayClosed,
+      activeDateStr,
+      timeStr,
+      todayIso,
+      lastValidDay,
+      displayBadge,
+      badgeColor,
+      shortDateLabel,
+    };
+  }, [liveBrokerPayload, activeSubfileDate, subfileData, telemetry.floorsheetTape]);
+
     // Bonus & Right Adjustment Formulas: P_adj_bonus = P_close / (1 + Bonus%/100), P_adj_right = (P_close + Right*100) / (1 + Right)
   const priceAdjustments = useMemo(() => {
     const bonusAdjustedPrice = Number((ltp / (1 + Math.max(0, adjBonusPct) / 100)).toFixed(2));
@@ -1289,17 +1355,13 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                     <Activity className="w-4 h-4 text-emerald-400" />
                     ⚡ 1D Live Intraday Broker Accumulation &amp; Distribution (Ongoing Tape)
                   </span>
-                  {isLiveBrokerUpdating ? (
+                  <span className={`text-[10px] px-2.5 py-1 rounded font-bold font-mono border flex items-center gap-1.5 ${sessionStatus.badgeColor}`}>
+                    <Calendar className="w-3 h-3 shrink-0" />
+                    {sessionStatus.displayBadge}
+                  </span>
+                  {isLiveBrokerUpdating && (
                     <span className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono font-bold animate-pulse">
                       🟢 Syncing Live Tape…
-                    </span>
-                  ) : liveBrokerPayload ? (
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono font-bold">
-                      🟢 Live Ongoing Session
-                    </span>
-                  ) : (
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
-                      🌙 Closed Session Snapshot
                     </span>
                   )}
                 </div>
@@ -1998,17 +2060,13 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                   <span className="font-bold text-slate-100 text-sm">
                     4-5 Day Trajectory &amp; Live Intraday Synergy Verdict
                   </span>
-                  {isLiveBrokerUpdating ? (
+                  <span className={`text-[10px] px-2.5 py-1 rounded font-bold font-mono border flex items-center gap-1.5 ${sessionStatus.badgeColor}`}>
+                    <Calendar className="w-3 h-3 shrink-0" />
+                    {sessionStatus.displayBadge}
+                  </span>
+                  {isLiveBrokerUpdating && (
                     <span className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono font-bold animate-pulse">
-                      🟢 Syncing Live Tape…
-                    </span>
-                  ) : liveBrokerPayload ? (
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono font-bold">
-                      🟢 Live Intraday Polling
-                    </span>
-                  ) : (
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
-                      🌙 Closed Session Reconciled
+                      🟢 Syncing…
                     </span>
                   )}
                 </div>
@@ -2172,20 +2230,16 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
                       <Award className="w-3.5 h-3.5 text-emerald-400" />
-                      Today's Live Intraday Broker Flow &amp; Concentration
+                      Broker Smart Flow &amp; Concentration — {sessionStatus.shortDateLabel}
                     </span>
                     <div className="flex items-center gap-2">
-                      {isLiveBrokerUpdating ? (
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border flex items-center gap-1 ${sessionStatus.badgeColor}`}>
+                        <Calendar className="w-3 h-3 shrink-0" />
+                        {sessionStatus.shortDateLabel}
+                      </span>
+                      {isLiveBrokerUpdating && (
                         <span className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono font-bold animate-pulse">
-                          🟢 Syncing Live Tape…
-                        </span>
-                      ) : liveBrokerPayload ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono font-bold">
-                          🟢 Live Intraday Feed
-                        </span>
-                      ) : (
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
-                          🌙 Closed Session
+                          🟢 Syncing…
                         </span>
                       )}
                       <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono font-bold">
@@ -2425,8 +2479,9 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                   <span className="font-bold text-slate-100 text-sm">
                     Order Book Microstructure &amp; Live Execution Verdict
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                    {telemetry.marketDepth.source === 'LIVE_L2_ORDERBOOK' ? '🟢 Live L2 Exchange Book' : '📊 Reconstructed Depth'}
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border flex items-center gap-1 ${sessionStatus.badgeColor}`}>
+                    <Calendar className="w-3 h-3 shrink-0" />
+                    {sessionStatus.shortDateLabel} • {sessionStatus.timeStr} NPT
                   </span>
                 </div>
 
@@ -2565,15 +2620,10 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                   <Activity className="w-4 h-4 text-emerald-400" />
                   Live Floorsheet Exchange Tape
                 </span>
-                {isLiveFloorsheetUpdating ? (
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono font-bold animate-pulse">
-                    🟢 Syncing Live Tape…
-                  </span>
-                ) : (
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono font-bold">
-                    🟢 Streaming ({telemetry.floorsheetTape.length} Contracts)
-                  </span>
-                )}
+                <span className={`text-[10px] px-2.5 py-1 rounded font-mono font-bold border flex items-center gap-1.5 ${sessionStatus.badgeColor}`}>
+                  <Calendar className="w-3 h-3 shrink-0" />
+                  Session: {sessionStatus.shortDateLabel} ({telemetry.floorsheetTape.length} Contracts)
+                </span>
               </div>
 
               <div className="flex items-center gap-2">

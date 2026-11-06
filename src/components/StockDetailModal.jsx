@@ -4475,7 +4475,11 @@ export default function StockDetailModal({
                           cursor: 'pointer'
                         }}
                       >
-                        🟢 1D LIVE / ONGOING
+                        {(() => {
+                          const ms = getDetailedMarketStatus();
+                          const dateStr = realBrokerAnalysis?.businessDate || realBrokerAnalysis?.date || modalSessionDate;
+                          return ms.isOpen ? `🟢 LIVE SESSION (${dateStr || 'Today'})` : `🌙 LAST TRADING DAY (${dateStr || 'Settled'})`;
+                        })()}
                       </button>
                       <button
                         type="button"
