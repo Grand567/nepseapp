@@ -5929,6 +5929,59 @@ export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { i
     }
   }
 
+  // ── Live Investment Timing & Smart Money Verdict ──
+  const liveVerdict = useMemo(() => {
+    if (!brokerAccumData && !hasOrders) {
+      return {
+        action: 'INITIALIZING TELEMETRY',
+        badge: 'GATHERING FLOW',
+        color: '#94a3b8',
+        bg: 'rgba(148, 163, 184, 0.08)',
+        border: 'rgba(148, 163, 184, 0.25)',
+        reason: 'Awaiting market session depth queue or executed broker tape initialization.'
+      };
+    }
+
+    const isNearWhale = diffFromWhale !== null && diffFromWhale >= -3 && diffFromWhale <= 4;
+    const isExtended = diffFromWhale !== null && diffFromWhale > 10;
+    const topBuyerBrokers = netAccums.slice(0, 3).map((b: any) => `#${b.broker || b.brokerId || b.id}`).join(', ');
+    const topSellerBrokers = netDists.slice(0, 3).map((s: any) => `#${s.broker || s.brokerId || s.id}`).join(', ');
+
+    // 1. Strong Accumulation & Institutional Backing
+    if (isFlowAccum && (bcr3Buy > bcr3Sell || nbarVal >= 1.15) && !isExtended) {
+      return {
+        action: isNearWhale ? '🟢 OPTIMAL ENTRY (ACCUMULATING AT BASE)' : '🟢 ACCUMULATION IN PROGRESS',
+        badge: 'FAVORABLE TO INVEST',
+        color: '#10b981',
+        bg: 'rgba(16, 185, 129, 0.12)',
+        border: 'rgba(16, 185, 129, 0.35)',
+        reason: `Institutional desks (${topBuyerBrokers || 'Smart Money'}) are actively accumulating (${brokerFlowBuyPct}% buy flow). ${isNearWhale ? `Current price is near institutional cost basis (Rs. ${whaleVwap}). Asymmetric risk/reward ratio.` : 'Consistent institutional buy pressure absorbing overhead supply.'}`
+      };
+    }
+
+    // 2. High Risk / Distribution / Operator Dump
+    if (isFlowDist || (bcr3Sell > bcr3Buy && nbarVal < 0.85) || (isExtended && isFlowDist)) {
+      return {
+        action: '🔴 HIGH RISK / DO NOT INVEST NOW',
+        badge: 'DISTRIBUTION DETECTED',
+        color: '#f43f5e',
+        bg: 'rgba(244, 63, 94, 0.12)',
+        border: 'rgba(244, 63, 94, 0.35)',
+        reason: `Major desks (${topSellerBrokers || 'Operators'}) are net offloading inventory (${100 - brokerFlowBuyPct}% sell flow). ${isExtended ? `Stock is +${diffFromWhale}% above Whale cost basis (extended profit booking trap).` : 'High probability of further downside or shakeout.'}`
+      };
+    }
+
+    // 3. Choppy / Neutral
+    return {
+      action: '🟡 WAIT & MONITOR (NEUTRAL FLOW)',
+      badge: 'BALANCED FLOW',
+      color: '#eab308',
+      bg: 'rgba(234, 179, 8, 0.1)',
+      border: 'rgba(234, 179, 8, 0.3)',
+      reason: `Order book and broker flow are in equilibrium (${brokerFlowBuyPct}% buy vs ${100 - brokerFlowBuyPct}% sell). Wait for an institutional volume surge or clear breakout before initiating a new position.`
+    };
+  }, [brokerAccumData, hasOrders, isFlowAccum, isFlowDist, bcr3Buy, bcr3Sell, nbarVal, diffFromWhale, whaleVwap, brokerFlowBuyPct, netAccums, netDists]);
+
   const HORIZONS: Array<{ id: HorizonType; label: string }> = [
     { id: '1D', label: '1D' },
     { id: '5D', label: '5D' },
@@ -6180,6 +6233,40 @@ export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { i
             <p className="text-xs text-slate-300 leading-relaxed">
               {divergenceAlert.desc}
             </p>
+          </div>
+        )}
+
+        {/* ⚡ Live Investment Decision & Timing Verdict Card */}
+        {liveVerdict && (
+          <div
+            className="p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md transition"
+            style={{
+              backgroundColor: liveVerdict.bg,
+              borderColor: liveVerdict.border,
+            }}
+          >
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md" style={{ color: liveVerdict.color, backgroundColor: 'rgba(0,0,0,0.3)' }}>
+                  {liveVerdict.badge}
+                </span>
+                <span className="text-xs sm:text-sm font-black text-white">
+                  {liveVerdict.action}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                {liveVerdict.reason}
+              </p>
+            </div>
+            {whaleVwap && (
+              <div className="shrink-0 text-left sm:text-right border-t sm:border-t-0 sm:border-l border-slate-700/50 pt-2 sm:pt-0 sm:pl-4 font-mono">
+                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Institutional Cost Basis</div>
+                <div className="text-sm font-black text-white">Rs. {whaleVwap}</div>
+                <div className={`text-[11px] font-bold ${diffFromWhale != null && diffFromWhale <= 3 && diffFromWhale >= -3 ? 'text-emerald-400' : diffFromWhale != null && diffFromWhale > 8 ? 'text-amber-400' : 'text-slate-300'}`}>
+                  {diffFromWhale != null ? (diffFromWhale >= 0 ? `+${diffFromWhale}% from cost` : `${diffFromWhale}% from cost`) : ''}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
