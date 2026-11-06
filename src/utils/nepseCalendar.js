@@ -126,7 +126,8 @@ export const NEPSE_PUBLIC_HOLIDAYS = {
   '2026-11-10': 'Tihar (Gobardhan Puja / Mha Puja)',
   '2026-11-11': 'Tihar (Bhai Tika / Kija Puja)',
   '2026-11-12': 'Tihar Holiday (Day after Bhai Tika / Kartik 26)',
-  '2026-11-15': 'Chhath Parva',
+  '2026-11-13': 'Tihar-Chhath Bridge Holiday (Kartik 27)',
+  '2026-11-15': 'Chhath Parva (Kartik 29)',
   '2026-12-25': 'Christmas Day',
   '2026-12-30': 'Tamu Lhosar',
 
