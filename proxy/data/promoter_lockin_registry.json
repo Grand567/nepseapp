@@ -1,0 +1,344 @@
+[
+  {
+    "symbol": "MEN",
+    "name": "Mountain Energy Nepal Limited",
+    "sector": "Hydropower",
+    "promoterRatio": 80.0,
+    "publicRatio": 20.0,
+    "totalShares": "19,680,270",
+    "promoterShares": 15744216,
+    "publicShares": 3936054,
+    "lockinExpiry": "2026-11-20",
+    "lockinType": "Promoter & Local Share Lock-in (3 Years)",
+    "fundamentals": {
+      "eps": 14.85,
+      "bookValue": 138.40,
+      "pe": 34.2,
+      "roe": 10.7,
+      "paidUpCapitalCr": 196.80
+    }
+  },
+  {
+    "symbol": "MSL",
+    "name": "Mid Solu Hydropower Limited",
+    "sector": "Hydropower",
+    "promoterRatio": 74.8,
+    "publicRatio": 25.2,
+    "totalShares": "7,000,000",
+    "promoterShares": 5236000,
+    "publicShares": 1764000,
+    "lockinExpiry": "2026-11-25",
+    "lockinType": "3-Year IPO Promoter & Project Affected Lock-in",
+    "fundamentals": {
+      "eps": 11.20,
+      "bookValue": 112.50,
+      "pe": 38.4,
+      "roe": 9.9,
+      "paidUpCapitalCr": 70.00
+    }
+  },
+  {
+    "symbol": "CKHL",
+    "name": "Chirkhwa Hydro Power Limited",
+    "sector": "Hydropower",
+    "promoterRatio": 70.0,
+    "publicRatio": 30.0,
+    "totalShares": "4,000,000",
+    "promoterShares": 2800000,
+    "publicShares": 1200000,
+    "lockinExpiry": "2026-12-05",
+    "lockinType": "3-Year Promoter & Local Lock-in",
+    "fundamentals": {
+      "eps": 8.40,
+      "bookValue": 105.20,
+      "pe": 44.5,
+      "roe": 7.9,
+      "paidUpCapitalCr": 40.00
+    }
+  },
+  {
+    "symbol": "MKCL",
+    "name": "Muktinath Krishi Company Limited",
+    "sector": "Others",
+    "promoterRatio": 70.0,
+    "publicRatio": 30.0,
+    "totalShares": "7,000,000",
+    "promoterShares": 4900000,
+    "publicShares": 2100000,
+    "lockinExpiry": "2026-12-15",
+    "lockinType": "3-Year Statutory Promoter Lock-in",
+    "fundamentals": {
+      "eps": 6.80,
+      "bookValue": 118.00,
+      "pe": 55.2,
+      "roe": 5.8,
+      "paidUpCapitalCr": 70.00
+    }
+  },
+  {
+    "symbol": "NWCL",
+    "name": "Nepal Warehousing Company Limited",
+    "sector": "Others",
+    "promoterRatio": 80.0,
+    "publicRatio": 20.0,
+    "totalShares": "7,000,000",
+    "promoterShares": 5600000,
+    "publicShares": 1400000,
+    "lockinExpiry": "2026-12-20",
+    "lockinType": "3-Year Promoter Lock-in Expiry",
+    "fundamentals": {
+      "eps": 7.50,
+      "bookValue": 110.30,
+      "pe": 48.0,
+      "roe": 6.8,
+      "paidUpCapitalCr": 70.00
+    }
+  },
+  {
+    "symbol": "HRL",
+    "name": "Himalayan Reinsurance Limited",
+    "sector": "Others",
+    "promoterRatio": 70.0,
+    "publicRatio": 30.0,
+    "totalShares": "100,000,000",
+    "promoterShares": 70000000,
+    "publicShares": 30000000,
+    "lockinExpiry": "2026-12-25",
+    "lockinType": "3-Year Promoter Share Statutory Lock-in",
+    "fundamentals": {
+      "eps": 18.25,
+      "bookValue": 164.20,
+      "pe": 32.5,
+      "roe": 11.1,
+      "paidUpCapitalCr": 1000.00
+    }
+  },
+  {
+    "symbol": "VLUCL",
+    "name": "Vision Lumbini Urja Company Limited",
+    "sector": "Hydropower",
+    "promoterRatio": 70.0,
+    "publicRatio": 30.0,
+    "totalShares": "19,100,000",
+    "promoterShares": 13370000,
+    "publicShares": 5730000,
+    "lockinExpiry": "2027-01-10",
+    "lockinType": "3-Year Promoter & Project Affected Lock-in",
+    "fundamentals": {
+      "eps": 10.50,
+      "bookValue": 115.80,
+      "pe": 39.8,
+      "roe": 9.1,
+      "paidUpCapitalCr": 191.00
+    }
+  },
+  {
+    "symbol": "UHEWA",
+    "name": "Upper Hewakhola Hydropower Company",
+    "sector": "Hydropower",
+    "promoterRatio": 70.0,
+    "publicRatio": 30.0,
+    "totalShares": "5,000,000",
+    "promoterShares": 3500000,
+    "publicShares": 1500000,
+    "lockinExpiry": "2027-02-15",
+    "lockinType": "3-Year Promoter Lock-in",
+    "fundamentals": {
+      "eps": 9.20,
+      "bookValue": 108.40,
+      "pe": 41.2,
+      "roe": 8.5,
+      "paidUpCapitalCr": 50.00
+    }
+  },
+  {
+    "symbol": "ULHC",
+    "name": "Upper Lohore Khola Hydropower",
+    "sector": "Hydropower",
+    "promoterRatio": 70.0,
+    "publicRatio": 30.0,
+    "totalShares": "5,080,000",
+    "promoterShares": 3556000,
+    "publicShares": 1524000,
+    "lockinExpiry": "2027-03-20",
+    "lockinType": "3-Year Promoter Lock-in",
+    "fundamentals": {
+      "eps": 7.80,
+      "bookValue": 104.50,
+      "pe": 45.0,
+      "roe": 7.4,
+      "paidUpCapitalCr": 50.80
+    }
+  },
+  {
+    "symbol": "AKJCL",
+    "name": "Ankhu Khola Jalvidhyut Company Limited",
+    "sector": "Hydropower",
+    "promoterRatio": 60.0,
+    "publicRatio": 40.0,
+    "totalShares": "8,000,000",
+    "promoterShares": 4800000,
+    "publicShares": 3200000,
+    "lockinExpiry": "Unlocked",
+    "lockinType": "Fully Unlocked Free-Float (Lock-in Expired)",
+    "fundamentals": {
+      "eps": 5.40,
+      "bookValue": 102.80,
+      "pe": 64.0,
+      "roe": 5.2,
+      "paidUpCapitalCr": 80.00
+    }
+  },
+  {
+    "symbol": "SHEL",
+    "name": "Singati Hydro Energy Limited",
+    "sector": "Hydropower",
+    "promoterRatio": 70.0,
+    "publicRatio": 30.0,
+    "totalShares": "14,500,000",
+    "promoterShares": 10150000,
+    "publicShares": 4350000,
+    "lockinExpiry": "Unlocked",
+    "lockinType": "Fully Unlocked Free-Float (Lock-in Expired)",
+    "fundamentals": {
+      "eps": 8.90,
+      "bookValue": 114.20,
+      "pe": 34.6,
+      "roe": 7.8,
+      "paidUpCapitalCr": 145.00
+    }
+  },
+  {
+    "symbol": "SMJC",
+    "name": "Sagarmatha Jalvidhyut Company",
+    "sector": "Hydropower",
+    "promoterRatio": 70.0,
+    "publicRatio": 30.0,
+    "totalShares": "11,200,000",
+    "promoterShares": 7840000,
+    "publicShares": 3360000,
+    "lockinExpiry": "Unlocked",
+    "lockinType": "Fully Unlocked Free-Float",
+    "fundamentals": {
+      "eps": 12.40,
+      "bookValue": 122.10,
+      "pe": 31.5,
+      "roe": 10.1,
+      "paidUpCapitalCr": 112.00
+    }
+  },
+  {
+    "symbol": "MKHL",
+    "name": "Mai Khola Hydropower Limited",
+    "sector": "Hydropower",
+    "promoterRatio": 74.0,
+    "publicRatio": 26.0,
+    "totalShares": "3,921,568",
+    "promoterShares": 2901960,
+    "publicShares": 1019608,
+    "lockinExpiry": "Unlocked",
+    "lockinType": "Fully Unlocked Free-Float",
+    "fundamentals": {
+      "eps": 9.80,
+      "bookValue": 109.50,
+      "pe": 36.2,
+      "roe": 8.9,
+      "paidUpCapitalCr": 39.21
+    }
+  },
+  {
+    "symbol": "BHCL",
+    "name": "Bhugol Energy Development Company",
+    "sector": "Hydropower",
+    "promoterRatio": 70.0,
+    "publicRatio": 30.0,
+    "totalShares": "5,440,534",
+    "promoterShares": 3808374,
+    "publicShares": 1632160,
+    "lockinExpiry": "Unlocked",
+    "lockinType": "Fully Unlocked Free-Float",
+    "fundamentals": {
+      "eps": 7.10,
+      "bookValue": 106.30,
+      "pe": 43.1,
+      "roe": 6.7,
+      "paidUpCapitalCr": 54.40
+    }
+  },
+  {
+    "symbol": "CITY",
+    "name": "City Hotel Limited",
+    "sector": "Hotels",
+    "promoterRatio": 83.3,
+    "publicRatio": 16.7,
+    "totalShares": "16,740,000",
+    "promoterShares": 13944420,
+    "publicShares": 2795580,
+    "lockinExpiry": "Unlocked",
+    "lockinType": "Fully Unlocked Free-Float",
+    "fundamentals": {
+      "eps": -2.40,
+      "bookValue": 94.20,
+      "pe": -120.0,
+      "roe": -2.5,
+      "paidUpCapitalCr": 167.40
+    }
+  },
+  {
+    "symbol": "SONA",
+    "name": "Sonapur Minerals and Oil Ltd",
+    "sector": "Manufacturing",
+    "promoterRatio": 85.0,
+    "publicRatio": 15.0,
+    "totalShares": "30,750,500",
+    "promoterShares": 26137925,
+    "publicShares": 4612575,
+    "lockinExpiry": "Unlocked",
+    "lockinType": "Fully Unlocked Free-Float",
+    "fundamentals": {
+      "eps": 15.60,
+      "bookValue": 172.50,
+      "pe": 28.5,
+      "roe": 9.0,
+      "paidUpCapitalCr": 307.50
+    }
+  },
+  {
+    "symbol": "SHIVM",
+    "name": "Shivam Cements Limited",
+    "sector": "Manufacturing",
+    "promoterRatio": 88.0,
+    "publicRatio": 12.0,
+    "totalShares": "52,800,000",
+    "promoterShares": 46464000,
+    "publicShares": 6336000,
+    "lockinExpiry": "Unlocked",
+    "lockinType": "Fully Unlocked Free-Float",
+    "fundamentals": {
+      "eps": 12.80,
+      "bookValue": 184.50,
+      "pe": 44.2,
+      "roe": 6.9,
+      "paidUpCapitalCr": 528.00
+    }
+  },
+  {
+    "symbol": "NABIL",
+    "name": "Nabil Bank Limited",
+    "sector": "Commercial Banks",
+    "promoterRatio": 60.0,
+    "publicRatio": 40.0,
+    "totalShares": "270,569,973",
+    "promoterShares": 162341984,
+    "publicShares": 108227989,
+    "lockinExpiry": "Unlocked",
+    "lockinType": "Fully Unlocked Free-Float",
+    "fundamentals": {
+      "eps": 24.50,
+      "bookValue": 218.40,
+      "pe": 22.4,
+      "roe": 11.2,
+      "paidUpCapitalCr": 2705.70
+    }
+  }
+]

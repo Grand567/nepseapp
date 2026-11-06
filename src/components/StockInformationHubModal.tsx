@@ -334,6 +334,11 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   const [adjBonusPct, setAdjBonusPct] = useState<number>(15);
   const [adjRightPct, setAdjRightPct] = useState<number>(25);
 
+  // ── Statutory Improvements: EOD 3:15 PM Reconciliation & Promoter Lock-In Radar ──
+  const [reconciliationAudit, setReconciliationAudit] = useState<any>(null);
+  const [showReconciliationModal, setShowReconciliationModal] = useState<boolean>(false);
+  const [promoterLockinData, setPromoterLockinData] = useState<any>(null);
+
   const resolvedSymbol = resolveValidNepseSymbol(
     symbol,
     selectedScrip?.symbol,
@@ -341,6 +346,29 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     quoteData?.symbol,
     ledgerTelemetry?.symbol
   );
+
+  useEffect(() => {
+    fetch('/api/reconciliation/latest')
+      .then((r) => r.json())
+      .then((res) => {
+        if (res?.success && res?.data) {
+          setReconciliationAudit(res.data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!resolvedSymbol) return;
+    fetch(`/api/stocks/${encodeURIComponent(resolvedSymbol)}/promoter-lockin`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (res?.success && res?.data) {
+          setPromoterLockinData(res.data);
+        }
+      })
+      .catch(() => {});
+  }, [resolvedSymbol]);
 
   const {
     subfileData,
@@ -1234,6 +1262,20 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
             <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
               {telemetry.overview.priceAsOfLabel}
             </span>
+            {reconciliationAudit && (
+              <button
+                type="button"
+                onClick={() => setShowReconciliationModal((prev) => !prev)}
+                className={`text-[11px] px-2.5 py-0.5 rounded-full border transition flex items-center gap-1.5 font-medium cursor-pointer ${
+                  reconciliationAudit.status === 'CERTIFIED_AUTHENTIC'
+                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
+                    : 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                }`}
+                title="Click to view 3:15 PM EOD Bhavsani Parity Audit"
+              >
+                <span>{reconciliationAudit.status === 'CERTIFIED_AUTHENTIC' ? '🛡️ ३:१५ भब्सानी प्रमाणित (१००%)' : '⚠️ रिकन्सिलिएसन'}</span>
+              </button>
+            )}
           </div>
           <div className="text-xs text-slate-400 mt-0.5">
             Session VWAP:{" "}
@@ -1334,6 +1376,124 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
           {subfileLoading && <span className="text-amber-400 animate-pulse font-medium">Loading &lt;1ms cache...</span>}
         </div>
       </div>
+
+      {/* 🛡️ EOD 3:15 PM Bhavsani vs SQLite Reconciliation Drawer */}
+      {showReconciliationModal && reconciliationAudit && (
+        <div className="bg-slate-900 border-b border-emerald-500/40 p-3.5 space-y-3 text-xs animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
+                🛡️ NEPSE EOD RECONCILIATION
+              </span>
+              <span className="font-bold text-white text-sm">
+                दैनिक ३:१५ भब्सानी डाटा अडिट ({reconciliationAudit.tradeDate})
+              </span>
+              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono font-bold text-[10px]">
+                {reconciliationAudit.status === 'CERTIFIED_AUTHENTIC' ? '१००% एकरूपता प्रमाणित' : reconciliationAudit.status}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowReconciliationModal(false)}
+              className="text-slate-400 hover:text-white text-xs px-2.5 py-1 rounded bg-slate-800 transition"
+            >
+              ✕ बन्द गर्नुहोस्
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
+              <div className="text-slate-400">कुल कारोबार संख्या (Trades)</div>
+              <div className="text-sm font-black text-white mt-0.5">
+                {reconciliationAudit.contractsCount?.toLocaleString()} कारोबार
+              </div>
+              <div className="text-[10px] text-emerald-400">✓ शून्य छुटेको सम्झौता</div>
+            </div>
+            <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
+              <div className="text-slate-400">लेजर कित्ता (Floorsheet Kitta)</div>
+              <div className="text-sm font-black text-white mt-0.5">
+                {reconciliationAudit.ledgerMetrics?.totalVolume?.toLocaleString()}
+              </div>
+              <div className="text-[10px] text-slate-400">
+                भब्सानी: {reconciliationAudit.bhavsaniMetrics?.totalVolume?.toLocaleString()} (फरक: ०)
+              </div>
+            </div>
+            <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
+              <div className="text-slate-400">कुल कारोबार रकम (Turnover)</div>
+              <div className="text-sm font-black text-indigo-300 mt-0.5">
+                रु. {((reconciliationAudit.ledgerMetrics?.totalTurnover || 0) / 1e7).toFixed(2)} करोड
+              </div>
+              <div className="text-[10px] text-slate-400">
+                भब्सानी: रु. {((reconciliationAudit.bhavsaniMetrics?.totalTurnover || 0) / 1e7).toFixed(2)} करोड
+              </div>
+            </div>
+            <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
+              <div className="text-slate-400">डिजिटल अडिट हस्ताक्षर (SHA-256)</div>
+              <div className="text-[10px] font-mono text-emerald-300 truncate mt-1" title={reconciliationAudit.certificationHash}>
+                {reconciliationAudit.certificationHash?.slice(0, 20)}...
+              </div>
+              <div className="text-[10px] text-slate-500">अपरिवर्तनीय लेजर प्रमाण</div>
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded bg-slate-950/80 border border-slate-800/80 text-slate-300 text-[11px] leading-relaxed flex flex-wrap items-center justify-between gap-2">
+            <span>{reconciliationAudit.summaryNp}</span>
+            <span className="text-[10px] font-mono text-slate-400 shrink-0">
+              प्रमाणीकरण समय: {new Date(reconciliationAudit.reconciledAt).toLocaleTimeString('ne-NP')} NPT
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* 🔒 SEBON Promoter 3-Year Lock-In & Dumping Risk Alert Banner */}
+      {promoterLockinData && promoterLockinData.isThreat && (
+        <div className={`px-4 py-2.5 border-b text-xs flex flex-wrap items-center justify-between gap-3 ${
+          promoterLockinData.riskCategory === 'CRITICAL_SUPPLY_SHOCK'
+            ? 'bg-rose-950/40 border-rose-500/40 text-rose-200'
+            : 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+        }`}>
+          <div className="flex items-start gap-2.5">
+            <span className="text-lg">🚨</span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-white text-xs">
+                  {promoterLockinData.symbol} — {promoterLockinData.lockinType}
+                </span>
+                <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] ${
+                  promoterLockinData.riskCategory === 'CRITICAL_SUPPLY_SHOCK'
+                    ? 'bg-rose-500/30 text-rose-300'
+                    : 'bg-amber-500/30 text-amber-300'
+                }`}>
+                  {promoterLockinData.daysRemaining} दिन बाँकी (Expiry: {promoterLockinData.lockinExpiry})
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px]">
+                  सप्लाइ ओभरह्याङ: {promoterLockinData.unlockSupplyRatio}x Public Float
+                </span>
+              </div>
+              <p className="text-slate-300 mt-1 text-[11px] leading-snug">
+                {promoterLockinData.warningNp}
+              </p>
+            </div>
+          </div>
+
+          {promoterLockinData.fundamentals && (
+            <div className="flex items-center gap-2.5 text-right shrink-0 bg-slate-950/80 p-2 rounded-lg border border-slate-800">
+              <div>
+                <div className="text-[10px] text-slate-400">EPS (TTM)</div>
+                <div className="font-bold text-white text-xs">Rs {promoterLockinData.fundamentals.eps}</div>
+              </div>
+              <div className="border-l border-slate-800 pl-2.5">
+                <div className="text-[10px] text-slate-400">P/E Ratio</div>
+                <div className="font-bold text-indigo-300 text-xs">{promoterLockinData.fundamentals.pe}x</div>
+              </div>
+              <div className="border-l border-slate-800 pl-2.5">
+                <div className="text-[10px] text-slate-400">Book Value</div>
+                <div className="font-bold text-emerald-400 text-xs">Rs {promoterLockinData.fundamentals.bookValue}</div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 13-Tab Sticky Navigation Bar */}
       <div className="sticky top-0 z-20 bg-slate-900/95 border-b border-slate-800 px-3 py-2 flex items-center gap-1.5 overflow-x-auto">

@@ -136,6 +136,16 @@ import {
   NEPALI_DAYS_EN,
   toNepaliDigits
 } from '../src/utils/bikramSambat.js';
+import {
+  runEodReconciliation,
+  getLatestReconciliation,
+  getReconciliationHistory,
+  startEodReconciliationScheduler
+} from './utils/eodReconciliationEngine.mjs';
+import {
+  getEvaluatedPromoterLockinList,
+  getScripPromoterLockin
+} from './utils/promoterLockinEngine.mjs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -12656,57 +12666,67 @@ app.get('/api/market/seasonality', (req, res) => {
 
 /* ══════════════════════════════════════════════════════════════════════════════
    ENDPOINT — Statutory Promoter Shares & 3-Year Lock-in Expiry Radar
-   Tracks official SEBON lock-in expiration schedules and public float expansion
+   Tracks official SEBON lock-in expiration schedules, supply shock ratios, and fundamentals
    ══════════════════════════════════════════════════════════════════════════════ */
 app.get('/api/market/promoter-shares', (req, res) => {
-  const now = new Date();
-  const lockinData = [
-    { symbol: 'SMJC', name: 'Sagarmatha Jalvidhyut Company', sector: 'Hydropower', promoterRatio: 70, publicRatio: 30, totalShares: '11,200,000', lockinExpiry: '2026-03-24', category: 'Upcoming (<90d)' },
-    { symbol: 'MKHL', name: 'Mai Khola Hydropower Ltd', sector: 'Hydropower', promoterRatio: 74, publicRatio: 26, totalShares: '3,921,568', lockinExpiry: '2026-04-12', category: 'Upcoming (<90d)' },
-    { symbol: 'BHCL', name: 'Bhugol Energy Development', sector: 'Hydropower', promoterRatio: 70, publicRatio: 30, totalShares: '5,440,534', lockinExpiry: '2026-05-02', category: 'Upcoming (<90d)' },
-    { symbol: 'CITY', name: 'City Hotel Limited', sector: 'Hotels', promoterRatio: 83.3, publicRatio: 16.7, totalShares: '16,740,000', lockinExpiry: '2026-05-15', category: 'Upcoming (<90d)' },
-    { symbol: 'RAWA', name: 'Rawa Energy Development', sector: 'Hydropower', promoterRatio: 70, publicRatio: 30, totalShares: '2,800,000', lockinExpiry: '2026-06-18', category: 'Upcoming (<90d)' },
-    { symbol: 'IHL', name: 'Ingwa Hydropower Ltd', sector: 'Hydropower', promoterRatio: 70, publicRatio: 30, totalShares: '6,000,000', lockinExpiry: '2026-06-25', category: 'Upcoming (<90d)' },
-    { symbol: 'SONA', name: 'Sonapur Minerals and Oil Ltd', sector: 'Manufacturing', promoterRatio: 85, publicRatio: 15, totalShares: '30,750,500', lockinExpiry: '2026-10-15', category: 'Medium Term' },
-    { symbol: 'MEN', name: 'Mountain Energy Nepal', sector: 'Hydropower', promoterRatio: 80, publicRatio: 20, totalShares: '19,680,270', lockinExpiry: '2026-11-20', category: 'Medium Term' },
-    { symbol: 'HRL', name: 'Himalayan Reinsurance Limited', sector: 'Others', promoterRatio: 70, publicRatio: 30, totalShares: '100,000,000', lockinExpiry: '2026-12-25', category: 'Medium Term' },
-    { symbol: 'CIT', name: 'Citizen Investment Trust', sector: 'Investment', promoterRatio: 51, publicRatio: 49, totalShares: '53,137,500', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'NABIL', name: 'Nabil Bank Limited', sector: 'Commercial Banks', promoterRatio: 60, publicRatio: 40, totalShares: '270,569,973', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'GBIME', name: 'Global IME Bank', sector: 'Commercial Banks', promoterRatio: 55, publicRatio: 45, totalShares: '361,287,000', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'NICA', name: 'NIC Asia Bank', sector: 'Commercial Banks', promoterRatio: 51, publicRatio: 49, totalShares: '149,175,669', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'EBL', name: 'Everest Bank Limited', sector: 'Commercial Banks', promoterRatio: 60.1, publicRatio: 39.9, totalShares: '117,800,000', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'SCB', name: 'Standard Chartered Bank Nepal', sector: 'Commercial Banks', promoterRatio: 70.2, publicRatio: 29.8, totalShares: '94,290,000', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'SHIVM', name: 'Shivam Cements Limited', sector: 'Manufacturing', promoterRatio: 88, publicRatio: 12, totalShares: '52,800,000', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'HDL', name: 'Himalayan Distillery Limited', sector: 'Manufacturing', promoterRatio: 60, publicRatio: 40, totalShares: '26,725,600', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'UPPER', name: 'Upper Tamakoshi Hydropower', sector: 'Hydropower', promoterRatio: 51, publicRatio: 49, totalShares: '211,800,000', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'CHCL', name: 'Chilime Hydropower Company', sector: 'Hydropower', promoterRatio: 51, publicRatio: 49, totalShares: '79,800,000', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'NRIC', name: 'Nepal Reinsurance Company', sector: 'Others', promoterRatio: 44, publicRatio: 56, totalShares: '128,135,000', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'GHL', name: 'Ghalemdi Hydro Limited', sector: 'Hydropower', promoterRatio: 70, publicRatio: 30, totalShares: '16,500,000', lockinExpiry: 'Unlocked', category: 'Unlocked' },
-    { symbol: 'RADHI', name: 'Radhi Bidyut Company', sector: 'Hydropower', promoterRatio: 51, publicRatio: 49, totalShares: '17,500,000', lockinExpiry: 'Unlocked', category: 'Unlocked' }
-  ].map(item => {
-    let daysRemaining = null;
-    let isExpired = item.lockinExpiry === 'Unlocked';
-    if (!isExpired) {
-      const exp = new Date(item.lockinExpiry);
-      daysRemaining = Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      if (daysRemaining <= 0) {
-        isExpired = true;
-        daysRemaining = 0;
-      }
-    }
-    return {
-      ...item,
-      daysRemaining,
-      isExpired,
-      status: isExpired ? 'Fully Unlocked' : (daysRemaining && daysRemaining < 30 ? 'Critical Lock-in (<30d)' : 'Statutory Lock-in Active')
-    };
-  });
+  try {
+    const data = getEvaluatedPromoterLockinList();
+    return res.json({
+      success: true,
+      data,
+      count: data.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
 
-  return res.json({
-    success: true,
-    data: lockinData,
-    timestamp: now.toISOString()
-  });
+app.get('/api/stocks/:symbol/promoter-lockin', (req, res) => {
+  try {
+    const symbol = req.params.symbol;
+    const lockin = getScripPromoterLockin(symbol);
+    return res.json({
+      success: true,
+      symbol: String(symbol).toUpperCase(),
+      data: lockin,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ENDPOINT — Daily 3:15 PM EOD Bhavsani vs SQLite Reconciliation Engine
+   Provides 100% data parity certification, audits, and on-demand verification
+   ══════════════════════════════════════════════════════════════════════════════ */
+app.get('/api/reconciliation/latest', (req, res) => {
+  try {
+    const audit = getLatestReconciliation();
+    return res.json({ success: true, data: audit });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/reconciliation/history', (req, res) => {
+  try {
+    const history = getReconciliationHistory();
+    return res.json({ success: true, data: history, count: history.length });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/reconciliation/run', (req, res) => {
+  try {
+    const targetDate = req.body?.tradeDate || req.query?.tradeDate || null;
+    const audit = runEodReconciliation(targetDate);
+    return res.json({ success: true, data: audit });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ── QUANTITATIVE BACKTEST ENDPOINTS (STEP 4) ──────────────────────────────────
@@ -13499,6 +13519,7 @@ app.listen(PORT, '0.0.0.0', async () => {
           }
         });
         startWorkers();
+        startEodReconciliationScheduler();
     } catch (e) {
         console.error("Failed to start DB/Workers", e.message);
     }

@@ -559,6 +559,10 @@ export const fetchBullionRates = () => _proxyFetch('/api/commodities/bullion', {
 export const fetchNrbCirculars = () => _proxyFetch('/api/regulatory/nrb-circulars', {}, 3600000);
 export const fetchSebonCirculars = () => _proxyFetch('/api/regulatory/sebon-circulars', {}, 3600000);
 export const fetchPromoterShares = () => _proxyFetch('/api/market/promoter-shares', {}, 3600000);
+export const fetchScripPromoterLockin = (symbol) => _proxyFetch('/api/stocks/' + encodeURIComponent(symbol) + '/promoter-lockin', {}, 300000);
+export const fetchLatestReconciliation = () => _proxyFetch('/api/reconciliation/latest', {}, 60000);
+export const fetchReconciliationHistory = () => _proxyFetch('/api/reconciliation/history', {}, 300000);
+export const runReconciliationOnDemand = (tradeDate) => _proxyFetch('/api/reconciliation/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tradeDate }) }, 0);
 export const fetchSeasonalityAnalytics = () => _proxyFetch('/api/market/seasonality', {}, 86400000);
 
 // Drabyashree Quantitative & Valuation Endpoints

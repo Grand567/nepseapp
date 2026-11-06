@@ -33,6 +33,7 @@ import {
   sendTelegramEarlyIgnitionAlert 
 } from './telegramNotifier.mjs';
 import { sendDiscordSmartAlert } from './discordNotifier.mjs';
+import { getScripPromoterLockin } from './utils/promoterLockinEngine.mjs';
 import {
   evaluateInstitutionalAlert,
   getMacroRegime,
@@ -1386,6 +1387,10 @@ export function detectBroker58EarlyIgnition({
   const target2 = Math.round(operatorVwap * 1.145 * 10) / 10;
   const netRRR = +(((target1 - currentLtp) / Math.max(1, currentLtp - stopLoss))).toFixed(1);
 
+  // SEBON 3-Year Promoter Lock-in Expiry & Dumping Threat Assessment
+  const promoterLockin = getScripPromoterLockin(sym, date || sessionDate);
+  const isLockInThreat = Boolean(promoterLockin?.isThreat);
+
   return {
     qualified,
     symbol: sym,
@@ -1410,6 +1415,9 @@ export function detectBroker58EarlyIgnition({
     target1,
     target2,
     netRRR: netRRR > 0 ? netRRR : 2.8,
+    promoterLockin,
+    isLockInThreat,
+    lockInWarning: promoterLockin?.warningNp || null,
     reasons: { isVolQualified, isNetBuyer, isPriceCompressed, isDistOk }
   };
 }
@@ -1439,8 +1447,10 @@ export async function processBroker58AlertTrigger(b58Eval) {
     category: 'pro',
     tier: 'pro',
     isPro: true,
-    title: `🚨 Early Operator Ignition: ${sym}`,
-    body: `Broker #58 (Naasa) net bought +${b58Eval.netVol.toLocaleString()} kitta (${b58Eval.marketSharePct}% share) at Rs. ${b58Eval.operatorVwap} basis before breakout!`,
+    title: b58Eval.isLockInThreat && b58Eval.promoterLockin?.daysRemaining <= 30
+      ? `⚠️ Operator Accumulation w/ Promoter Dump Risk: ${sym}`
+      : `🚨 Early Operator Ignition: ${sym}`,
+    body: `Broker #58 (Naasa) net bought +${b58Eval.netVol.toLocaleString()} kitta (${b58Eval.marketSharePct}% share) at Rs. ${b58Eval.operatorVwap} basis before breakout!${b58Eval.isLockInThreat ? `\n[चेतावनी: प्रमोटर लकिङ ${b58Eval.promoterLockin?.daysRemaining} दिनमा सकिँदैछ]` : ''}`,
     action: 'OPEN_STOCK_DETAIL',
     ltp: b58Eval.ltp,
     pChange: b58Eval.pChange,
@@ -1462,6 +1472,9 @@ export async function processBroker58AlertTrigger(b58Eval) {
     target1: b58Eval.target1,
     target2: b58Eval.target2,
     netRRR: b58Eval.netRRR,
+    isLockInThreat: b58Eval.isLockInThreat,
+    promoterLockin: b58Eval.promoterLockin,
+    lockInWarning: b58Eval.lockInWarning,
     status: 'ACTIVE'
   };
 
