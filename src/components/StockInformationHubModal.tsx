@@ -52,6 +52,7 @@ import {
   formatNptDateIso,
   getLastValidTradingDay,
 } from "@/utils/nepseCalendar";
+import { getNepaliDate } from "@/utils/bikramSambat";
 import type {
   CorporateActionRow,
   RawFundamentalRecord,
@@ -390,6 +391,30 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
       setLiveFloorsheetContracts(rawFloorsheetContracts);
     }
   }, [rawFloorsheetContracts]);
+
+  // ── Auto-fetch Floorsheet & Broker Data upon Past Session Date Selection ──
+  useEffect(() => {
+    if (activeSubfileDate && activeSubfileDate !== "ALL" && resolvedSymbol && resolvedSymbol !== 'UNSELECTED') {
+      setIsLiveFloorsheetUpdating(true);
+      fetchRealFloorsheet(resolvedSymbol, activeSubfileDate, 1, 1000)
+        .then((res: any) => {
+          const rows = res?.rows || res?.data || res?.contracts || [];
+          if (Array.isArray(rows) && rows.length > 0) {
+            setLiveFloorsheetContracts(rows);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setIsLiveFloorsheetUpdating(false));
+
+      fetchRealBrokerAnalysis(resolvedSymbol, 1, { date: activeSubfileDate })
+        .then((bRes: any) => {
+          if (bRes && (bRes.brokers || bRes.topBuyers)) {
+            setLiveBrokerPayload(bRes);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [activeSubfileDate, resolvedSymbol]);
 
   useEffect(() => {
     const sym = resolvedSymbol;
@@ -1082,14 +1107,21 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     let displayBadge = '';
     let badgeColor = '';
 
+    let bsFormatted = '';
+    try {
+      const dt = activeDateStr ? new Date(activeDateStr + 'T12:00:00Z') : new Date();
+      const nep = getNepaliDate(dt);
+      bsFormatted = nep?.formattedNp || '';
+    } catch (_) {}
+
     if (isLiveToday) {
-      displayBadge = `🟢 LIVE INTRADAY SESSION: ${activeDateStr} (Today) • ${timeStr} NPT`;
+      displayBadge = `🟢 LIVE TRADING SESSION: ${bsFormatted ? `${bsFormatted} • ` : ''}${activeDateStr} (Today) • ${timeStr} NPT`;
       badgeColor = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40';
     } else if (isTodayClosed) {
-      displayBadge = `🌙 TODAY'S CLOSED SESSION: ${activeDateStr} (Today) • Settled 15:00 NPT`;
+      displayBadge = `🌙 TODAY'S CLOSED SESSION: ${bsFormatted ? `${bsFormatted} • ` : ''}${activeDateStr} (Today) • Settled 15:00 NPT`;
       badgeColor = 'bg-sky-500/15 text-sky-300 border-sky-500/40';
     } else {
-      displayBadge = `🌙 LAST TRADING DAY: ${activeDateStr} (Settled Close)`;
+      displayBadge = `⚪ LAST COMPLETED SESSION: ${bsFormatted ? `${bsFormatted} • ` : ''}${activeDateStr} (Settled Close)`;
       badgeColor = 'bg-slate-800 text-slate-300 border-slate-700';
     }
 
@@ -2687,7 +2719,22 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
             <div className="flex flex-wrap items-center gap-3 bg-slate-900 p-2.5 rounded-lg border border-slate-800">
               <select
                 value={selectedTradeDate}
-                onChange={(e) => setSelectedTradeDate(e.target.value)}
+                onChange={(e) => {
+                  const targetDate = e.target.value;
+                  setSelectedTradeDate(targetDate);
+                  if (targetDate && targetDate !== "ALL" && resolvedSymbol && resolvedSymbol !== 'UNSELECTED') {
+                    setIsLiveFloorsheetUpdating(true);
+                    fetchRealFloorsheet(resolvedSymbol, targetDate, 1, 1000, { refresh: true })
+                      .then((res: any) => {
+                        const rows = res?.rows || res?.data || res?.contracts || [];
+                        if (Array.isArray(rows) && rows.length > 0) {
+                          setLiveFloorsheetContracts(rows);
+                        }
+                      })
+                      .catch(() => {})
+                      .finally(() => setIsLiveFloorsheetUpdating(false));
+                  }
+                }}
                 className="px-2.5 py-1 rounded bg-slate-950 border border-slate-700 text-slate-200"
               >
                 <option value="ALL">All Synced Dates</option>

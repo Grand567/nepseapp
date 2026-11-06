@@ -610,10 +610,11 @@ export async function initPushNotifications() {
     } catch (err) {
       console.warn('[PushService] Native push notifications initialization warning:', err.message);
     }
-  } else {
-    // ── Web / Desktop Browser Fallback (EventSource SSE + Web Notification) ──
-    initWebPushFallback();
   }
+
+  // ── Resilient Real-Time EventSource SSE Fallback (Active on both Native APK & Web/PWA) ──
+  // Guarantees zero-latency push delivery while app is open or minimized, even if FCM credentials are unconfigured
+  initWebPushFallback();
 }
 
 /**
