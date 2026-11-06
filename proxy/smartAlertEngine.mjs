@@ -206,7 +206,9 @@ export function broadcastAlert(alertPayload) {
   const cleanBody = String(alertPayload.body || '').trim().toLowerCase();
   const nowMs = Date.now();
 
-  const isDuplicate = alertHistory.some(a => {
+  const isDuplicate = alertHistory.some((a, idx) => {
+    // Current payload being broadcasted: ignore self
+    if (a === alertPayload || (idx === 0 && a.id === alertPayload.id)) return false;
     if (a.id === alertPayload.id) return true;
     const aTitle = String(a.title || '').trim().toLowerCase();
     const aBody = String(a.body || '').trim().toLowerCase();
@@ -226,13 +228,15 @@ export function broadcastAlert(alertPayload) {
     return false;
   });
 
-  if (isDuplicate) {
+  if (!alertPayload.isTest && !alertPayload.forceDispatch && isDuplicate) {
     console.debug(`[SmartAlertEngine] ℹ️ Suppressed duplicate alert: "${alertPayload.title}" (${alertPayload.symbol || alertPayload.type})`);
     return false; // MUST RETURN IMMEDIATELY — do not dispatch duplicate push/SSE/Telegram/Discord!
   }
 
-  alertHistory.unshift(alertPayload);
-  if (alertHistory.length > 200) alertHistory.pop();
+  if (!alertHistory.includes(alertPayload)) {
+    alertHistory.unshift(alertPayload);
+    if (alertHistory.length > 200) alertHistory.pop();
+  }
   saveJson(HISTORY_FILE, alertHistory);
 
   // 1. Dispatch to in-memory web/app listeners (SSE)
@@ -822,6 +826,8 @@ export async function processStockTickEvaluation(evaluationData) {
       regime: inst?.macro?.regime || 'Neutral',
       ticketPayload: inst?.ticketPayload,
       vwap: evaluationData.vwap,
+      isTest: Boolean(evaluationData.isTest),
+      forceDispatch: Boolean(evaluationData.forceDispatch),
       status: 'ACTIVE'
     };
 
@@ -1159,7 +1165,9 @@ export async function testTriggerAlert(customSymbol = 'GHL', mockParams = {}) {
       condition3_sellerVolumeDry: true,
       conditionsMetCount: 3,
       allMet: true
-    }
+    },
+    isTest: true,
+    forceDispatch: true
   };
 
   const ticketPayload = formatInstitutionalExecutionTicket({
@@ -1602,12 +1610,10 @@ export async function testTriggerBroker58Alert(customSymbol = 'GHL', mockParams 
     target1,
     target2,
     netRRR: netRRR > 0 ? netRRR : 2.8,
+    isTest: true,
+    forceDispatch: true,
     status: 'ACTIVE'
   };
-
-  alertHistory.unshift(alertItem);
-  if (alertHistory.length > 100) alertHistory.pop();
-  saveJson(HISTORY_FILE, alertHistory);
 
   broadcastAlert(alertItem);
   return { triggered: true, alert: alertItem };
