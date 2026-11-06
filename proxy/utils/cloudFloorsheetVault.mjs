@@ -42,6 +42,31 @@ import { DAILY_FLOORSHEETS_DIR } from './dailyFloorsheetCollector.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Automatically load environment files if not already populated (e.g. CLI scripts)
+function loadEnvFile(envPath) {
+  if (fs.existsSync(envPath)) {
+    try {
+      const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          const k = trimmed.slice(0, eqIdx).trim();
+          const v = trimmed.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+          if (!process.env[k]) {
+            process.env[k] = v;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+}
+
+loadEnvFile(path.join(__dirname, '..', '.env'));
+loadEnvFile(path.join(process.cwd(), 'proxy', '.env'));
+loadEnvFile(path.join(process.cwd(), '.env'));
+
 // ─── GitHub Releases Configuration (100% Free Forever, No Credit Card) ───────
 export function getGitHubToken() {
   // Strictly enforce environment variables; NEVER extract local developer OS credentials
@@ -195,16 +220,20 @@ export function isFirebaseConfigured() {
 }
 
 // ─── Cloudflare R2 Configuration ─────────────────────────────────────────────
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID || process.env.CLOUDFLARE_R2_ACCOUNT_ID || '';
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '';
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '';
-const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_R2_BUCKET || 'drabyashree-floorsheets';
-const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || process.env.CLOUDFLARE_R2_PUBLIC_URL || '').replace(/\/+$/, '');
+export function getR2Config() {
+  const accountId = (process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID || process.env.CLOUDFLARE_R2_ACCOUNT_ID || '').trim();
+  const accessKeyId = (process.env.R2_ACCESS_KEY_ID || process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '').trim();
+  const secretAccessKey = (process.env.R2_SECRET_ACCESS_KEY || process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '').trim();
+  const bucketName = (process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_R2_BUCKET || 'drabyashree-floorsheets').trim();
+  const publicUrl = (process.env.R2_PUBLIC_URL || process.env.CLOUDFLARE_R2_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+  return { accountId, accessKeyId, secretAccessKey, bucketName, publicUrl };
+}
 
 let s3ClientInstance = null;
 
 export function isR2Configured() {
-  return Boolean(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+  const { accountId, accessKeyId, secretAccessKey } = getR2Config();
+  return Boolean(accountId && accessKeyId && secretAccessKey);
 }
 
 export function getR2Client() {
@@ -212,17 +241,18 @@ export function getR2Client() {
     return null;
   }
 
+  const { accountId, accessKeyId, secretAccessKey, bucketName } = getR2Config();
   if (!s3ClientInstance) {
-    const endpoint = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+    const endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
     s3ClientInstance = new S3Client({
       region: 'auto',
       endpoint,
       credentials: {
-        accessKeyId: R2_ACCESS_KEY_ID,
-        secretAccessKey: R2_SECRET_ACCESS_KEY
+        accessKeyId,
+        secretAccessKey
       }
     });
-    console.log(`[cloudFloorsheetVault] ✅ Connected to Cloudflare R2 bucket: ${R2_BUCKET_NAME}`);
+    console.log(`[cloudFloorsheetVault] ✅ Connected to Cloudflare R2 bucket: ${bucketName}`);
   }
 
   return s3ClientInstance;
@@ -282,9 +312,10 @@ export async function uploadDailyFloorsheetToCloud(dateStr, contentOrPath = null
   const r2Client = getR2Client();
   if (r2Client) {
     try {
+      const { bucketName } = getR2Config();
       const objectKey = `daily_floorsheets/${fileName}`;
       const command = new PutObjectCommand({
-        Bucket: R2_BUCKET_NAME,
+        Bucket: bucketName,
         Key: objectKey,
         Body: bufferToUpload,
         ContentType: 'application/gzip',
@@ -293,7 +324,7 @@ export async function uploadDailyFloorsheetToCloud(dateStr, contentOrPath = null
       });
       await r2Client.send(command);
       console.log(`[cloudFloorsheetVault] 🚀 Uploaded floorsheet for ${cleanDate} to Cloudflare R2 (${sizeKb} KB) -> ${objectKey}`);
-      uploadResults.push({ provider: 'R2', bucket: R2_BUCKET_NAME, key: objectKey, sizeKb });
+      uploadResults.push({ provider: 'R2', bucket: bucketName, key: objectKey, sizeKb });
     } catch (err) {
       console.error(`[cloudFloorsheetVault] Cloudflare R2 upload error for ${cleanDate}:`, err.message);
     }
@@ -426,9 +457,10 @@ async function _fetchFloorsheetFromCloudInternal(cleanDate) {
   const repo = getGitHubRepo();
 
   // 2. Stream from Cloudflare R2 / CDN (Ultra-low latency, <30ms edge caching)
-  if (R2_PUBLIC_URL) {
+  const { bucketName: r2Bucket, publicUrl: r2CdnUrl } = getR2Config();
+  if (r2CdnUrl) {
     try {
-      const publicUrl = `${R2_PUBLIC_URL}/daily_floorsheets/${fileName}`;
+      const publicUrl = `${r2CdnUrl}/daily_floorsheets/${fileName}`;
       const res = await axios.get(publicUrl, {
         responseType: 'arraybuffer',
         timeout: 8000,
@@ -453,7 +485,7 @@ async function _fetchFloorsheetFromCloudInternal(cleanDate) {
     try {
       const objectKey = `daily_floorsheets/${fileName}`;
       const command = new GetObjectCommand({
-        Bucket: R2_BUCKET_NAME,
+        Bucket: r2Bucket,
         Key: objectKey
       });
       const response = await r2Client.send(command);
@@ -570,8 +602,9 @@ export async function listAvailableCloudFloorsheetDates() {
   const r2Client = getR2Client();
   if (r2Client) {
     try {
+      const { bucketName } = getR2Config();
       const command = new ListObjectsV2Command({
-        Bucket: R2_BUCKET_NAME,
+        Bucket: bucketName,
         Prefix: 'daily_floorsheets/floorsheet-'
       });
       const response = await r2Client.send(command);
