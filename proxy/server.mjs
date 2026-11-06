@@ -24,7 +24,7 @@ import syncRouter from './syncRouter.mjs';
 import { requireAdminSecret } from './middleware/requireAdminSecret.mjs';
 import radarRouter from './routes/radarRoutes.js';
 import aiGuruRouter from './routes/aiGuruRoutes.mjs';
-import floorsheetHubRouter from './routes/floorsheetHubRoutes.mjs';
+import floorsheetHubRouter, { broadcastSseContracts } from './routes/floorsheetHubRoutes.mjs';
 import stockTelemetryRouter from './routes/stockTelemetryRoutes.mjs';
 import signalTrackRecordRouter from './routes/signalTrackRecordRoutes.mjs';
 import {
@@ -273,6 +273,10 @@ app.use(express.json({ limit: '25mb' }));
 app.use('/api/sync', syncRouter);
 app.use('/api/ai-guru', aiGuruRouter);
 app.use('/api/floorsheet/hub', floorsheetHubRouter);
+app.get(['/api/floorsheet/stream', '/floorsheet/stream'], (req, res, next) => {
+  req.url = '/stream';
+  floorsheetHubRouter(req, res, next);
+});
 app.use(['/api/stocks', '/api/stock', '/api/stock-telemetry'], stockTelemetryRouter);
 app.use('/api/signals', signalTrackRecordRouter);
 app.use('/api', radarRouter);

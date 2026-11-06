@@ -4081,6 +4081,42 @@ export async function fetchEarlyIgnition(params = {}) {
   return null;
 }
 
+// ── Real-Time Server-Sent Events (SSE) Live Feed Subscriber ──
+export function subscribeToFloorsheetStream(symbol = '', onContracts = null, onError = null) {
+  if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
+    return () => {};
+  }
+  const base = getProxyBase();
+  const sym = String(symbol || '').toUpperCase().trim();
+  const url = `${base.replace(/\/$/, '')}/api/floorsheet/stream${sym ? `?symbol=${encodeURIComponent(sym)}` : ''}`;
+  let es = null;
+  try {
+    es = new EventSource(url);
+    es.addEventListener('contracts', (event) => {
+      try {
+        const parsed = JSON.parse(event.data);
+        const rows = parsed.contracts || parsed.rows || (Array.isArray(parsed) ? parsed : []);
+        if (Array.isArray(rows) && rows.length > 0 && typeof onContracts === 'function') {
+          onContracts(rows);
+        }
+      } catch (err) {
+        if (typeof onError === 'function') onError(err);
+      }
+    });
+    es.onerror = (err) => {
+      if (typeof onError === 'function') onError(err);
+    };
+  } catch (err) {
+    if (typeof onError === 'function') onError(err);
+  }
+  return () => {
+    if (es) {
+      es.close();
+      es = null;
+    }
+  };
+}
+
 // ── C2+C3: Re-export from priceAdjustment.js so components only need one import ──
 export { aggregateToWeeklyCandles, classifyLiquidity, adjustPricesForCorporateActions };
 

@@ -16,7 +16,7 @@ import {
 import { AiGuruQuantitativeCard } from "@/components/AiGuruQuantitativeCard";
 import { StockFundamentalsAndLockInTab } from "@/components/StockFundamentalsAndLockInTab";
 import { DividendHistoryPanel } from "./DividendHistoryPanel";
-import { fetchFromBackend, fetchRealBrokerAnalysis, fetchRealFloorsheet } from "@/utils/liveData";
+import { fetchFromBackend, fetchRealBrokerAnalysis, fetchRealFloorsheet, subscribeToFloorsheetStream } from "@/utils/liveData";
 import { getBrokerName } from "@/utils/accumulationDistributionEngine";
 import { calculateMACD } from "@/utils/indicators";
 import {
@@ -463,7 +463,19 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
       // Initial immediate trigger
       pollLiveData();
 
-      // Intraday 3s continuous delta ticker when market is open
+      // Real-time Server-Sent Events (SSE) Live Feed Stream
+      const unsubscribeSse = subscribeToFloorsheetStream(sym, (freshRows) => {
+        if (!isMounted || !Array.isArray(freshRows) || freshRows.length === 0) return;
+        setLiveFloorsheetContracts(prev => {
+          if (!prev || prev.length === 0) return freshRows;
+          const seen = new Set(prev.map(c => String(c.contractNo || c.contractId)));
+          const uniqueFresh = freshRows.filter(r => !seen.has(String(r.contractNo || r.contractId)));
+          if (uniqueFresh.length === 0) return prev;
+          return [...uniqueFresh, ...prev];
+        });
+      });
+
+      // Intraday 3s continuous delta ticker when market is open (fallback poller)
       const timer = setInterval(() => {
         if (isMarketOpen()) pollLiveData();
       }, 3000);
@@ -471,6 +483,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
       return () => {
         isMounted = false;
         clearInterval(timer);
+        if (typeof unsubscribeSse === 'function') unsubscribeSse();
       };
     }
   }, [activeTab, resolvedSymbol]);

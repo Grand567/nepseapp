@@ -24,6 +24,7 @@ import SubscriptionModal from './components/SubscriptionModal';
 import { RiskDisclaimer } from './components/DataQualityBanner'; // A1: Global disclaimer
 import { InstitutionalAlertCardModal } from './components/InstitutionalAlertCardModal';
 import { InAppNewsReaderModal } from './components/InAppNewsReaderModal';
+import { BatteryOptimizationModal } from './components/BatteryOptimizationModal';
 import { SmartAlertBanner } from './components/SmartAlertBanner';
 import { NotificationCenterDrawer } from './components/NotificationCenterDrawer';
 import { initPushNotifications, fetchActiveSmartAlerts, triggerTestAlert, getUnreadNotificationCount } from './utils/pushNotificationService';
@@ -133,6 +134,7 @@ function AppInner() {
   // ── Accessibility & Font Scale State for Weak Eyesight ──
   const [fontScale, setFontScale] = useState(() => localStorage.getItem('nepse_font_scale') || 'normal');
   const [showFontModal, setShowFontModal] = useState(false);
+  const [showBatteryModal, setShowBatteryModal] = useState(false);
 
   // ── Global Offline Network Resilience ──
   const [isOffline, setIsOffline] = useState(() => (typeof navigator !== 'undefined' ? !navigator.onLine : false));
@@ -1628,6 +1630,29 @@ function AppInner() {
                     </span>
                   </button>
 
+                  {/* Battery Whitelist / Background Alerts Guide */}
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setShowBatteryModal(true);
+                    }}
+                    style={{
+                      width: '100%', padding: '10px 16px',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      color: 'var(--text-primary)', fontSize: 13, fontWeight: 700,
+                      textAlign: 'left',
+                      borderBottom: '1px solid var(--border)'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                  >
+                    <span>🔋 Alert Whitelist (ब्याट्री सेटिङ)</span>
+                    <span style={{ fontSize: 11, padding: '2px 6px', background: 'rgba(245,158,11,0.2)', color: '#f59e0b', borderRadius: 4, fontWeight: 800 }}>
+                      ALERTS
+                    </span>
+                  </button>
+
                   {/* System Diagnostics */}
                   <button
                     id="btn-diagnostics"
@@ -1771,6 +1796,12 @@ function AppInner() {
           </div>
         </div>
       )}
+
+      {/* ── Background Battery Whitelist Modal ── */}
+      <BatteryOptimizationModal
+        isOpen={showBatteryModal}
+        onClose={() => setShowBatteryModal(false)}
+      />
 
       {/* ── Global Offline Banner ── */}
       {isOffline && (

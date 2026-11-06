@@ -19,6 +19,58 @@ async function getCachedR2Dates() {
 
 const router = express.Router();
 
+// ── Server-Sent Events (SSE) Live Feed Clients Set ──
+const sseClients = new Set();
+
+export function broadcastSseContracts(contracts) {
+  if (!contracts || contracts.length === 0 || sseClients.size === 0) return;
+  const list = Array.isArray(contracts) ? contracts : [contracts];
+  for (const client of sseClients) {
+    try {
+      if (client.symbolFilter && client.symbolFilter !== 'ALL') {
+        const filtered = list.filter(c => (c.symbol || c.stockSymbol || '').toUpperCase() === client.symbolFilter);
+        if (filtered.length > 0) {
+          client.res.write(`event: contracts\ndata: ${JSON.stringify({ type: 'delta', contracts: filtered, timestamp: new Date().toISOString() })}\n\n`);
+        }
+      } else {
+        client.res.write(`event: contracts\ndata: ${JSON.stringify({ type: 'delta', contracts: list, timestamp: new Date().toISOString() })}\n\n`);
+      }
+    } catch (_) {
+      sseClients.delete(client);
+    }
+  }
+}
+
+router.get('/stream', (req, res) => {
+  const symbolFilter = String(req.query.symbol || '').toUpperCase().trim();
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+    'Access-Control-Allow-Origin': '*'
+  });
+
+  const client = { res, symbolFilter };
+  sseClients.add(client);
+
+  res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', clientsCount: sseClients.size, timestamp: new Date().toISOString() })}\n\n`);
+
+  const keepAliveInterval = setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch (_) {
+      clearInterval(keepAliveInterval);
+      sseClients.delete(client);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(keepAliveInterval);
+    sseClients.delete(client);
+  });
+});
+
 function tableExists(database, name) {
   try {
     const row = database
