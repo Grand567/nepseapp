@@ -7451,8 +7451,6 @@ app.get([
     const distributors = enriched.filter(b => b.netQty < 0).sort((a, b) => a.netQty - b.netQty);
     const totalSharesHeld = accumulators.reduce((sum, b) => sum + b.netQty, 0);
 
-    const marketDates = await getMarketTradingDates().catch(() => []);
-    const latestDate = marketDates[0] || formatNptDateIso(new Date());
     return res.json({
       success: true,
       symbol,
