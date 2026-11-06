@@ -1566,10 +1566,28 @@ export default function StockDetailModal({
             }).catch(() => {});
           }
 
-          // Refresh live intraday floorsheet tape every 6-8 seconds during active session
-          if (liveTickCount % 3 === 0 && (activeTab === 'floorsheet' || showHubModal)) {
-            fetchRealFloorsheet(sym, '', 1, 500, { refresh: true }).then(fs => {
-              if (isMounted && fs && fs.rows?.length > 0) setRealFloorsheet(fs);
+          // Refresh live intraday floorsheet tape every 5 seconds during active session with incremental delta
+          if (liveTickCount % 2 === 0 && (activeTab === 'floorsheet' || showHubModal)) {
+            const lastSeenId = realFloorsheet?.rows?.[0]?.contractId || realFloorsheet?.rows?.[0]?.contractNo || '';
+            fetchRealFloorsheet(sym, '', 1, 500, { refresh: true, sinceContractId: lastSeenId }).then(fs => {
+              if (isMounted && fs && Array.isArray(fs.rows) && fs.rows.length > 0) {
+                if (!lastSeenId) {
+                  setRealFloorsheet(fs);
+                } else {
+                  setRealFloorsheet(prev => {
+                    const existing = prev?.rows || [];
+                    const seen = new Set(existing.map(r => String(r.contractId || r.contractNo)));
+                    const fresh = fs.rows.filter(r => !seen.has(String(r.contractId || r.contractNo)));
+                    if (fresh.length === 0) return prev;
+                    return {
+                      ...prev,
+                      ...fs,
+                      rows: [...fresh, ...existing],
+                      totalElements: (prev?.totalElements || existing.length) + fresh.length
+                    };
+                  });
+                }
+              }
             }).catch(() => {});
           }
         }

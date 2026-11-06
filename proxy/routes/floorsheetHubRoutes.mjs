@@ -120,6 +120,7 @@ export async function handleFloorsheetHub(req, res) {
     const minAmount = safeNum(req.query.minAmount, 0);
     const whaleOnly = req.query.whaleOnly === 'true';
     const excludeCross = req.query.excludeCross === 'true';
+    const sinceContractId = String(req.query.sinceContractId || req.query.afterContractNo || '').trim();
     const limit = Math.min(1000, Math.max(50, Math.round(safeNum(req.query.limit, 350))));
 
     let rawContracts = [];
@@ -190,6 +191,10 @@ export async function handleFloorsheetHub(req, res) {
         if (excludeCross) {
           clauses.push(`buyer_broker != seller_broker`);
         }
+        if (sinceContractId) {
+          clauses.push(`(CAST(contract_no AS INTEGER) > CAST(? AS INTEGER) OR contract_no > ?)`);
+          params.push(sinceContractId, sinceContractId);
+        }
 
         const sql = `
           SELECT
@@ -243,6 +248,14 @@ export async function handleFloorsheetHub(req, res) {
           }
           if (excludeCross) {
             filtered = filtered.filter(t => String(t.buyerMemberId || t.buyerBroker) !== String(t.sellerMemberId || t.sellerBroker));
+          }
+          if (sinceContractId) {
+            filtered = filtered.filter(t => {
+              const cNo = String(t.contractId || t.contract_no || '');
+              const numA = Number(cNo.replace(/\D/g, '')) || 0;
+              const numB = Number(sinceContractId.replace(/\D/g, '')) || 0;
+              return (numA > 0 && numB > 0) ? numA > numB : cNo > sinceContractId;
+            });
           }
           if (filtered.length > 0) {
             rawContracts = filtered.slice(0, 100000).map((t, idx) => ({
@@ -473,6 +486,9 @@ export async function handleFloorsheetHub(req, res) {
       asOfDate,
       availableDates,
       source,
+      isDelta: Boolean(sinceContractId),
+      sinceContractId: sinceContractId || null,
+      newContractsCount: allEnriched.length,
       summary: {
         totalContracts: allEnriched.length,
         totalKitta,

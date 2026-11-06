@@ -4108,8 +4108,9 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
   const minAmount = Number(req.query.minAmount || 0) || 0;
   const selfMatchedOnly = req.query.selfMatchedOnly === 'true';
   const refresh = req.query.refresh === 'true';
+  const sinceContractId = String(req.query.sinceContractId || req.query.afterContractNo || '').trim();
   const cacheKey = `floorsheet-${symbol || 'market'}-${businessDate}-d${days}-${fromDate}-${toDate}-b${buyer}-s${seller}-br${broker}-mq${minQty}-ma${minAmount}-sm${selfMatchedOnly}-p${page}-s${size}`;
-  if (!refresh) {
+  if (!refresh && !sinceContractId) {
     const cached = getCache(cacheKey);
     if (cached) return res.json({ success: true, data: cached, cached: true });
   }
@@ -4136,6 +4137,14 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
             if (minQty > 0) filtered = filtered.filter(t => Number(t.contractQuantity || t.quantity || t.qty || 0) >= minQty);
             if (minAmount > 0) filtered = filtered.filter(t => Number(t.contractAmount || t.amount || 0) >= minAmount);
             if (selfMatchedOnly) filtered = filtered.filter(t => String(t.buyerMemberId || t.buyerBroker) === String(t.sellerMemberId || t.sellerBroker));
+            if (sinceContractId) {
+              filtered = filtered.filter(t => {
+                const cNo = String(t.contractId || t.contract_no || '');
+                const numA = Number(cNo.replace(/\D/g, '')) || 0;
+                const numB = Number(sinceContractId.replace(/\D/g, '')) || 0;
+                return (numA > 0 && numB > 0) ? numA > numB : cNo > sinceContractId;
+              });
+            }
 
             const totalElements = filtered.length;
             const totalPages = Math.max(1, Math.ceil(totalElements / size));

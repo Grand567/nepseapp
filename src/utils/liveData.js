@@ -2899,11 +2899,12 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
   const minAmount = Number(options?.minAmount || 0) || 0;
   const selfMatchedOnly = Boolean(options?.selfMatchedOnly);
   const refresh = Boolean(options?.refresh);
+  const sinceContractId = String(options?.sinceContractId || options?.afterContractNo || '').trim();
   const isShowAll = size === 'all' || Number(size) >= 5000;
-  const hasFilter = Boolean(buyer || seller || broker || days > 1 || fromDate || toDate || minQty > 0 || minAmount > 0 || selfMatchedOnly || isShowAll);
+  const hasFilter = Boolean(buyer || seller || broker || days > 1 || fromDate || toDate || minQty > 0 || minAmount > 0 || selfMatchedOnly || isShowAll || sinceContractId);
 
-  // Fast-path: check in-memory full session trades cache
-  if (sym && sym !== 'ALL' && !refresh && days === 1 && !fromDate && !toDate) {
+  // Fast-path: check in-memory full session trades cache (bypassed if delta sinceContractId requested)
+  if (sym && sym !== 'ALL' && !refresh && !sinceContractId && days === 1 && !fromDate && !toDate) {
     const cachedFull = _fsFullTradesCache.get(sym);
     if (cachedFull && Array.isArray(cachedFull.list) && cachedFull.list.length > 0 && (!date || date === cachedFull.date) && (Date.now() - cachedFull.ts < 300000)) {
       return buildFloorsheetResult(cachedFull.list, {
@@ -2984,6 +2985,7 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
     if (minAmount > 0) params.set('minAmount', String(minAmount));
     if (selfMatchedOnly) params.set('selfMatchedOnly', 'true');
     if (refresh) params.set('refresh', 'true');
+    if (sinceContractId) params.set('sinceContractId', sinceContractId);
 
     const url = `/api/floorsheet${sym ? `/${encodeURIComponent(sym)}` : ''}?${params.toString()}`;
     const timeoutMs = (size > 200 || days > 1 || fromDate || toDate) ? 25000 : 12000;

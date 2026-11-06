@@ -375,6 +375,11 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   // ── Intraday Live Floorsheet Telemetry ──
   const [liveFloorsheetContracts, setLiveFloorsheetContracts] = useState<any[]>(rawFloorsheetContracts || []);
   const [isLiveFloorsheetUpdating, setIsLiveFloorsheetUpdating] = useState(false);
+  const liveFloorsheetRef = useRef<any[]>(rawFloorsheetContracts || []);
+
+  useEffect(() => {
+    liveFloorsheetRef.current = liveFloorsheetContracts;
+  }, [liveFloorsheetContracts]);
 
   useEffect(() => {
     if (broker5DPayload) setLiveBrokerPayload(broker5DPayload);
@@ -424,15 +429,28 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
             });
         }
 
-        // 2. Poll Floorsheet Tape (Active during session or when current buffer is empty)
+        // 2. Poll Floorsheet Tape with Incremental Delta (Active during session or when current buffer is empty)
         if (open || activeTab === 'FLOORSHEET' || liveFloorsheetContracts.length === 0) {
           setIsLiveFloorsheetUpdating(true);
-          fetchRealFloorsheet(sym, '', 1, 500, { refresh: open })
+          const lastSeenId = liveFloorsheetRef.current.length > 0
+            ? String(liveFloorsheetRef.current[0]?.contractNo || liveFloorsheetRef.current[0]?.contractId || '')
+            : '';
+          fetchRealFloorsheet(sym, '', 1, 500, { refresh: open, sinceContractId: lastSeenId })
             .then(res => {
               if (!isMounted || !res) return;
               const rows = res.rows || res.data || res.contracts || [];
               if (Array.isArray(rows) && rows.length > 0) {
-                setLiveFloorsheetContracts(rows);
+                if (!lastSeenId) {
+                  setLiveFloorsheetContracts(rows);
+                } else {
+                  setLiveFloorsheetContracts(prev => {
+                    if (!prev || prev.length === 0) return rows;
+                    const seen = new Set(prev.map(c => String(c.contractNo || c.contractId)));
+                    const fresh = rows.filter(r => !seen.has(String(r.contractNo || r.contractId)));
+                    if (fresh.length === 0) return prev;
+                    return [...fresh, ...prev];
+                  });
+                }
               }
             })
             .catch(() => {})
@@ -445,10 +463,10 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
       // Initial immediate trigger
       pollLiveData();
 
-      // Intraday 6s continuous ticker when market is open
+      // Intraday 3s continuous delta ticker when market is open
       const timer = setInterval(() => {
         if (isMarketOpen()) pollLiveData();
-      }, 6000);
+      }, 3000);
 
       return () => {
         isMounted = false;
