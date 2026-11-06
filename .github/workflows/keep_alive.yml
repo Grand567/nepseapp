@@ -1,0 +1,23 @@
+name: Render Keep-Alive Heartbeat
+
+on:
+  schedule:
+    # Pings the backend every 10 minutes to prevent Render free-tier containers from spinning down
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Keep Render Container Active
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send Uptime Heartbeat to Render Proxy
+        run: |
+          echo "Pinging https://nepseapp.onrender.com/api/ping..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "https://nepseapp.onrender.com/api/ping" || echo "000")
+          echo "Render Ping Response HTTP Status: $HTTP_STATUS"
+          
+          echo "Pinging https://nepseapp.onrender.com/api/health..."
+          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "https://nepseapp.onrender.com/api/health" || echo "000")
+          echo "Render Health Response HTTP Status: $HEALTH_STATUS"
