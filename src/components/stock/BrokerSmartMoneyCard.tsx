@@ -421,6 +421,11 @@ function BrokerSmartMoneyCardInner({
   }, [selectedDays]);
 
   const handleSelectTimeframe = (tf: SmartMoneyTimeframe) => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(25);
+      }
+    } catch (_) {}
     setTimeframe(tf);
     const dVal = tf === 'ALL' ? 'all' : (tf === '5D' ? 5 : tf === '1M' ? 30 : 1);
     if (onTimeframeChange) {
@@ -637,7 +642,11 @@ function BrokerSmartMoneyCardInner({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3.5">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-base md:text-lg font-bold text-white tracking-tight">
+            <h3 className="text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
               Broker Smart Money Flow ({cleanSymbol || 'NEPSE'})
             </h3>
             <span className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
@@ -647,7 +656,8 @@ function BrokerSmartMoneyCardInner({
               const pDate = (rawPayload as any)?.date || (rawPayload as any)?.businessDate || (rawPayload as any)?.startDate || (rawPayload as any)?.toDate || (initialData as any)?.date || (initialData as any)?.startDate || '';
               if (!pDate) return null;
               return (
-                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-800/90 text-cyan-300 border border-cyan-800/40">
+                <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-800/90 text-cyan-300 border border-cyan-800/40 flex items-center gap-1.5 shadow-inner">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
                   Session: {pDate}
                 </span>
               );
@@ -680,6 +690,13 @@ function BrokerSmartMoneyCardInner({
           })}
         </div>
       </div>
+
+      {/* High-speed millisecond sync progress line */}
+      {loading && (
+        <div className="h-0.5 w-full bg-slate-900 rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-emerald-400 animate-pulse w-full"></div>
+        </div>
+      )}
 
       {/* Optional Warning Banner when 5D/1M falls back gracefully */}
       {warningBanner && (
