@@ -16,7 +16,7 @@ import {
 import { AiGuruQuantitativeCard } from "@/components/AiGuruQuantitativeCard";
 import { StockFundamentalsAndLockInTab } from "@/components/StockFundamentalsAndLockInTab";
 import { DividendHistoryPanel } from "./DividendHistoryPanel";
-import { fetchFromBackend, fetchRealBrokerAnalysis } from "@/utils/liveData";
+import { fetchFromBackend, fetchRealBrokerAnalysis, fetchRealFloorsheet } from "@/utils/liveData";
 import { getBrokerName } from "@/utils/accumulationDistributionEngine";
 import { calculateMACD } from "@/utils/indicators";
 import {
@@ -37,7 +37,9 @@ import {
   Sparkles,
   Layers,
   Activity,
-  ArrowRight
+  ArrowRight,
+  Target,
+  Zap
 } from "lucide-react";
 import StockReportsAnnouncementsCard from "./StockReportsAnnouncementsCard";
 import { evaluateStockSelection } from "../utils/signals/stockScoringEngine.js";
@@ -365,9 +367,19 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   const [liveBrokerPayload, setLiveBrokerPayload] = useState<any>(broker5DPayload);
   const [isLiveBrokerUpdating, setIsLiveBrokerUpdating] = useState(false);
 
+  // ── Intraday Live Floorsheet Telemetry ──
+  const [liveFloorsheetContracts, setLiveFloorsheetContracts] = useState<any[]>(rawFloorsheetContracts || []);
+  const [isLiveFloorsheetUpdating, setIsLiveFloorsheetUpdating] = useState(false);
+
   useEffect(() => {
     if (broker5DPayload) setLiveBrokerPayload(broker5DPayload);
   }, [broker5DPayload]);
+
+  useEffect(() => {
+    if (rawFloorsheetContracts && rawFloorsheetContracts.length > 0) {
+      setLiveFloorsheetContracts(rawFloorsheetContracts);
+    }
+  }, [rawFloorsheetContracts]);
 
   useEffect(() => {
     const sym = resolvedSymbol;
@@ -381,12 +393,21 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
       return nptMins >= 660 && nptMins <= 900; // Continuous session: 11:00 AM – 3:00 PM NPT
     };
 
-    if (activeTab === 'BROKER_FLOW' || activeTab === 'OVERVIEW' || activeTab === 'MARKET_DEPTH') {
-      const pollLiveBroker = () => {
+    const isRelevantTab =
+      activeTab === 'BROKER_FLOW' ||
+      activeTab === 'OVERVIEW' ||
+      activeTab === 'MARKET_DEPTH' ||
+      activeTab === 'FLOORSHEET';
+
+    if (isRelevantTab) {
+      const pollLiveData = () => {
         if (!isMounted) return;
-        if (isMarketOpen()) {
+        const open = isMarketOpen();
+
+        // 1. Poll Broker Intelligence
+        if (open || !liveBrokerPayload) {
           setIsLiveBrokerUpdating(true);
-          fetchRealBrokerAnalysis(sym, 1, { refresh: true })
+          fetchRealBrokerAnalysis(sym, 1, { refresh: open })
             .then(fresh => {
               if (isMounted && fresh && (fresh.brokers?.length > 0 || fresh.topNetBuyers?.length > 0)) {
                 setLiveBrokerPayload(fresh);
@@ -397,13 +418,33 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
               if (isMounted) setIsLiveBrokerUpdating(false);
             });
         }
+
+        // 2. Poll Floorsheet Tape (Active during session or when current buffer is empty)
+        if (open || activeTab === 'FLOORSHEET' || liveFloorsheetContracts.length === 0) {
+          setIsLiveFloorsheetUpdating(true);
+          fetchRealFloorsheet(sym, '', 1, 500, { refresh: open })
+            .then(res => {
+              if (!isMounted || !res) return;
+              const rows = res.rows || res.data || res.contracts || [];
+              if (Array.isArray(rows) && rows.length > 0) {
+                setLiveFloorsheetContracts(rows);
+              }
+            })
+            .catch(() => {})
+            .finally(() => {
+              if (isMounted) setIsLiveFloorsheetUpdating(false);
+            });
+        }
       };
 
-      if (!liveBrokerPayload && isMarketOpen()) {
-        pollLiveBroker();
-      }
+      // Initial immediate trigger
+      pollLiveData();
 
-      const timer = setInterval(pollLiveBroker, 10000);
+      // Intraday 6s continuous ticker when market is open
+      const timer = setInterval(() => {
+        if (isMarketOpen()) pollLiveData();
+      }, 6000);
+
       return () => {
         isMounted = false;
         clearInterval(timer);
@@ -418,7 +459,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
         quote: quoteData,
         candles: historicalCandles,
         ledgerTelemetry,
-        rawContracts: rawFloorsheetContracts,
+        rawContracts: liveFloorsheetContracts.length > 0 ? liveFloorsheetContracts : rawFloorsheetContracts,
         liveDepth,
         broker5DRawPayload: liveBrokerPayload || broker5DPayload,
       }),
@@ -427,6 +468,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
       quoteData,
       historicalCandles,
       ledgerTelemetry,
+      liveFloorsheetContracts,
       rawFloorsheetContracts,
       liveDepth,
       liveBrokerPayload,
@@ -687,6 +729,292 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
 
     return list;
   }, [allHoldingsList, allDistributorsList, brokerViewMode, brokerHoldingSearch, brokerHoldingFilter, brokerHoldingSort]);
+
+  // ── Multi-Day 4-5 Day Broker Trajectory & Synergy Engine + Actionable Entry Verdict ──
+  const multiDayBrokerSynergy = useMemo(() => {
+    const historyDays = Array.isArray(scripTrajectory?.history) ? scripTrajectory.history : [];
+    
+    const brokerAggMap: Record<number | string, {
+      brokerId: number | string;
+      totalBuyKitta: number;
+      totalSellKitta: number;
+      netKitta: number;
+      sessionsActive: number;
+      accumDays: number;
+      distDays: number;
+      weightedCostSum: number;
+      avgPrice: number;
+    }> = {};
+
+    historyDays.forEach((h: any) => {
+      const sm = h.smart_money;
+      const q = h.quote;
+      const ltpVal = Number(q?.ltp || q?.close || 0);
+
+      const leadAcc = sm?.lead_accumulator;
+      if (leadAcc) {
+        const bId = leadAcc.broker_id || leadAcc.brokerId || leadAcc.broker;
+        if (bId) {
+          if (!brokerAggMap[bId]) {
+            brokerAggMap[bId] = {
+              brokerId: bId,
+              totalBuyKitta: 0,
+              totalSellKitta: 0,
+              netKitta: 0,
+              sessionsActive: 0,
+              accumDays: 0,
+              distDays: 0,
+              weightedCostSum: 0,
+              avgPrice: 0,
+            };
+          }
+          const net = Number(leadAcc.net_kitta || leadAcc.netQty || 0);
+          brokerAggMap[bId].totalBuyKitta += Math.max(0, net);
+          brokerAggMap[bId].netKitta += net;
+          brokerAggMap[bId].sessionsActive += 1;
+          if (net > 0) brokerAggMap[bId].accumDays += 1;
+          if (ltpVal > 0) brokerAggMap[bId].weightedCostSum += Math.max(0, net) * ltpVal;
+        }
+      }
+
+      const leadDist = sm?.lead_seller;
+      if (leadDist) {
+        const bId = leadDist.broker_id || leadDist.brokerId || leadDist.broker;
+        if (bId) {
+          if (!brokerAggMap[bId]) {
+            brokerAggMap[bId] = {
+              brokerId: bId,
+              totalBuyKitta: 0,
+              totalSellKitta: 0,
+              netKitta: 0,
+              sessionsActive: 0,
+              accumDays: 0,
+              distDays: 0,
+              weightedCostSum: 0,
+              avgPrice: 0,
+            };
+          }
+          const net = Number(leadDist.net_kitta || leadDist.netQty || 0);
+          brokerAggMap[bId].totalSellKitta += Math.abs(net);
+          brokerAggMap[bId].netKitta -= Math.abs(net);
+          brokerAggMap[bId].sessionsActive += 1;
+          brokerAggMap[bId].distDays += 1;
+        }
+      }
+    });
+
+    // Fold in vault holdings
+    const vaultHoldings = broker5DPayload?.allHoldings || broker5DPayload?.topHoldings || [];
+    vaultHoldings.forEach((vh: any) => {
+      const bId = vh.broker || vh.id || vh.brokerId;
+      if (bId) {
+        const net = Number(vh.netQty || vh.holdQty || 0);
+        if (!brokerAggMap[bId]) {
+          brokerAggMap[bId] = {
+            brokerId: bId,
+            totalBuyKitta: Math.max(0, net),
+            totalSellKitta: 0,
+            netKitta: net,
+            sessionsActive: 3,
+            accumDays: 2,
+            distDays: 0,
+            weightedCostSum: net * Number(vh.avgBuyPrice || vh.avgBuyRate || ltp),
+            avgPrice: Number(vh.avgBuyPrice || vh.avgBuyRate || ltp),
+          };
+        } else if (net > brokerAggMap[bId].netKitta) {
+          brokerAggMap[bId].netKitta = net;
+        }
+      }
+    });
+
+    Object.values(brokerAggMap).forEach((b) => {
+      b.avgPrice = b.totalBuyKitta > 0 && b.weightedCostSum > 0
+        ? Math.round(b.weightedCostSum / b.totalBuyKitta)
+        : Math.round(ltp);
+    });
+
+    const persistentAccumulators = Object.values(brokerAggMap)
+      .filter((b) => b.netKitta > 0)
+      .sort((a, b) => b.netKitta - a.netKitta);
+
+    const persistentDistributors = Object.values(brokerAggMap)
+      .filter((b) => b.netKitta < 0)
+      .sort((a, b) => a.netKitta - b.netKitta);
+
+    const topLeadAccumulator = persistentAccumulators[0] || null;
+    const topLeadDistributor = persistentDistributors[0] || null;
+
+    const totalAccKitta = persistentAccumulators.slice(0, 3).reduce((sum, b) => sum + b.netKitta, 0);
+    const totalAccCost = persistentAccumulators.slice(0, 3).reduce((sum, b) => sum + (b.netKitta * b.avgPrice), 0);
+    const multiDayWhaleVwap = totalAccKitta > 0 ? Math.round(totalAccCost / totalAccKitta) : Math.round(ltp);
+
+    const todayBrokers = liveBrokerPayload?.brokers || liveBrokerPayload?.allHoldings || [];
+    const leadTodayMatch = topLeadAccumulator 
+      ? todayBrokers.find((b: any) => String(b.brokerId || b.id || b.broker) === String(topLeadAccumulator.brokerId))
+      : null;
+
+    const leadTodayNet = leadTodayMatch ? Number(leadTodayMatch.netQty || 0) : 0;
+    const leadTodayAction: 'BUYING_MORE' | 'HOLDING_SILENT' | 'DUMPING_TODAY' = 
+      leadTodayNet > 0 
+        ? 'BUYING_MORE' 
+        : leadTodayNet < 0 
+        ? 'DUMPING_TODAY' 
+        : 'HOLDING_SILENT';
+
+    const priceVsWhaleSpreadPct = multiDayWhaleVwap > 0 
+      ? Number((((ltp - multiDayWhaleVwap) / multiDayWhaleVwap) * 100).toFixed(1))
+      : 0;
+
+    const todayBcr3 = Number(liveBrokerPayload?.bcr3BuyPct ?? activeSmartMoney?.concentration?.bcr3_buy_pct ?? 0);
+    const todayScr3 = Number(liveBrokerPayload?.bcr3SellPct ?? liveBrokerPayload?.scr3SellPct ?? activeSmartMoney?.concentration?.scr3_sell_pct ?? 0);
+    const todayAdSignal = liveBrokerPayload?.adSignal || (todayBcr3 >= 40 ? 'Accumulation' : todayScr3 >= 40 ? 'Distribution' : 'Neutral');
+
+    let verdictKey: 'ENTER_CONVICTION' | 'WAIT_PULLBACK' | 'DO_NOT_ENTER' | 'NEUTRAL';
+    let verdictTitle: string;
+    let verdictBadgeColor: string;
+    let verdictBgColor: string;
+    let verdictActionAdvice: string;
+    let nepaliAdvice: string;
+    let confidenceScore: number;
+
+    const hasMultiDayAccum = topLeadAccumulator && topLeadAccumulator.netKitta > 1000;
+    const isDumpAlert = leadTodayAction === 'DUMPING_TODAY' || todayScr3 >= 45 || todayAdSignal === 'Distribution';
+
+    if (isDumpAlert) {
+      verdictKey = 'DO_NOT_ENTER';
+      verdictTitle = '🚨 HIGH RISK / DO NOT ENTER (DISTRIBUTION ALERT)';
+      verdictBadgeColor = 'text-rose-400 border-rose-500/40 bg-rose-500/15';
+      verdictBgColor = 'bg-rose-950/20 border-rose-500/30';
+      verdictActionAdvice = `DO NOT BUY. Smart money or major sellers are offloading inventory today (SCR3: ${todayScr3}%). ${
+        leadTodayAction === 'DUMPING_TODAY' 
+          ? `Warning: Lead 4-5D Accumulator (Broker #${topLeadAccumulator?.brokerId}) is dumping shares in today's live tape!` 
+          : 'Heavy seller dominance overrides multi-day accumulation.'
+      }`;
+      nepaliAdvice = 'अहिले शेयर नकिन्नुहोस्। ठूला खेलाडी वा मुख्य ब्रोकरहरूले आज नाफा बुक वा शेयर बिक्री (Distribution) गरिरहेका छन्। नयाँ खरिद गर्दा बुल ट्रयापमा पर्ने उच्च जोखिम छ।';
+      confidenceScore = 18;
+    } else if (hasMultiDayAccum && (leadTodayAction === 'BUYING_MORE' || todayBcr3 >= 40) && priceVsWhaleSpreadPct <= 3.5) {
+      verdictKey = 'ENTER_CONVICTION';
+      verdictTitle = '🟢 CONVICTION BUY / OPTIMAL ENTRY (ACCUMULATION CONFIRMED)';
+      verdictBadgeColor = 'text-emerald-400 border-emerald-500/40 bg-emerald-500/15';
+      verdictBgColor = 'bg-emerald-950/25 border-emerald-500/35';
+      verdictActionAdvice = `FAVORABLE ENTRY. Strong 4-5 day accumulation (${topLeadAccumulator.totalBuyKitta.toLocaleString()} kitta by Broker #${topLeadAccumulator.brokerId}) and continuing smart money buying today. Price is within safe range of Whale Base (Rs ${multiDayWhaleVwap}, spread ${priceVsWhaleSpreadPct > 0 ? '+' : ''}${priceVsWhaleSpreadPct}%).`;
+      nepaliAdvice = `उत्कृष्ट खरिद अवसर (Safe Entry Zone)। विगत ४-५ दिनदेखि मुख्य ब्रोकर #${topLeadAccumulator.brokerId} ले लगातार शेयर सञ्चय गरिरहेको छ र आज पनि सक्रिय खरिद गरिरहेको छ। ह्वेल बेस (Rs ${multiDayWhaleVwap}) नजिकै खरिद गर्दा नाफाको सम्भावना उच्च छ।`;
+      confidenceScore = 92;
+    } else if (hasMultiDayAccum && priceVsWhaleSpreadPct > 3.5) {
+      verdictKey = 'WAIT_PULLBACK';
+      verdictTitle = '🟡 ACCUMULATION STRONG — WAIT FOR PULLBACK (DO NOT CHASE)';
+      verdictBadgeColor = 'text-amber-400 border-amber-500/40 bg-amber-500/15';
+      verdictBgColor = 'bg-amber-950/20 border-amber-500/30';
+      verdictActionAdvice = `DO NOT CHASE AT CURRENT LTP. Whales accumulated ${topLeadAccumulator.totalBuyKitta.toLocaleString()} kitta at an average of Rs ${multiDayWhaleVwap}, but current price is +${priceVsWhaleSpreadPct}% above their base. Place limit orders near Rs ${multiDayWhaleVwap} – Rs ${Math.round(multiDayWhaleVwap * 1.02)} on dips.`;
+      nepaliAdvice = `अहिले तत्काल बजार मूल्यमा नकिन्नुहोस् (Chase नगर्नुहोस्)। ठूला ब्रोकरले Rs ${multiDayWhaleVwap} को दरमा शेयर उठाएका छन् तर मूल्य अहिले +${priceVsWhaleSpreadPct}% माथि पुगेको छ। मूल्य घटेर Rs ${multiDayWhaleVwap} तिर आउँदा मात्र लिमिट अर्डर राख्नुहोस्।`;
+      confidenceScore = 65;
+    } else {
+      verdictKey = 'NEUTRAL';
+      verdictTitle = '⚪ NEUTRAL FLOW / EQUILIBRIUM (MONITOR FOR BREAKOUT)';
+      verdictBadgeColor = 'text-slate-300 border-slate-700 bg-slate-800';
+      verdictBgColor = 'bg-slate-900 border-slate-800';
+      verdictActionAdvice = `Balanced retail flow without strong single-broker accumulation cornering. Wait for institutional volume spike or clear direction before entering.`;
+      nepaliAdvice = 'कुनै पनि एकल ब्रोकरको ठूलो कर्नरिङ देखिएको छैन। साधारण रिटेल कारोबार भइरहेकोले भोल्युम ब्रेकआउटको प्रतीक्षा गर्नुहोस्।';
+      confidenceScore = 50;
+    }
+
+    return {
+      persistentAccumulators: persistentAccumulators.slice(0, 5),
+      persistentDistributors: persistentDistributors.slice(0, 5),
+      topLeadAccumulator,
+      topLeadDistributor,
+      multiDayWhaleVwap,
+      priceVsWhaleSpreadPct,
+      leadTodayAction,
+      leadTodayNet,
+      todayBcr3,
+      todayScr3,
+      todayAdSignal,
+      verdictKey,
+      verdictTitle,
+      verdictBadgeColor,
+      verdictBgColor,
+      verdictActionAdvice,
+      nepaliAdvice,
+      confidenceScore,
+      historyDays,
+    };
+  }, [scripTrajectory, liveBrokerPayload, broker5DPayload, activeSmartMoney, ltp]);
+
+  // ── Live Level-2 Market Depth Accumulation & Execution Timing Engine ──
+  const marketDepthAnalysis = useMemo(() => {
+    const depth = telemetry.marketDepth;
+    const totalBids = depth.totalBidKitta || 0;
+    const totalAsks = depth.totalAskKitta || 0;
+    const obir = depth.obir || (totalAsks > 0 ? Number((totalBids / totalAsks).toFixed(2)) : 1.0);
+    const bidRatio = depth.bidRatioPct || (totalBids + totalAsks > 0 ? Math.round((totalBids / (totalBids + totalAsks)) * 100) : 50);
+    const askRatio = 100 - bidRatio;
+
+    const top3BidKitta = (depth.bids || []).slice(0, 3).reduce((s, b) => s + (b.kitta || 0), 0);
+    const top3AskKitta = (depth.asks || []).slice(0, 3).reduce((s, a) => s + (a.kitta || 0), 0);
+    const bidConcentrationPct = totalBids > 0 ? Math.round((top3BidKitta / totalBids) * 100) : 0;
+    const askConcentrationPct = totalAsks > 0 ? Math.round((top3AskKitta / totalAsks) * 100) : 0;
+
+    const hasIcebergBuyWall = top3BidKitta >= 5000 && bidConcentrationPct >= 55;
+    const hasSellWall = top3AskKitta >= 5000 && askConcentrationPct >= 55;
+
+    const bestBid = depth.bids?.[0]?.price ?? ltp;
+    const bestAsk = depth.asks?.[0]?.price ?? ltp;
+    const spreadRs = Number(Math.max(0, bestAsk - bestBid).toFixed(2));
+    const spreadPct = ltp > 0 ? Number(((spreadRs / ltp) * 100).toFixed(2)) : 0;
+
+    let timingVerdict: 'OPTIMAL_ENTRY' | 'PATIENT_LIMIT' | 'DO_NOT_BUY_MARKET';
+    let timingTitle: string;
+    let timingColor: string;
+    let timingBg: string;
+    let timingDesc: string;
+    let timingNepali: string;
+
+    if (obir >= 1.35 || (bidRatio >= 58 && !hasSellWall)) {
+      timingVerdict = 'OPTIMAL_ENTRY';
+      timingTitle = '🟢 FAVORABLE EXECUTION (STRONG BID ABSORPTION)';
+      timingColor = 'text-emerald-400 border-emerald-500/40 bg-emerald-500/15';
+      timingBg = 'bg-emerald-950/25 border-emerald-500/30';
+      timingDesc = `Buy queue outweighs sell queue (${bidRatio}% vs ${askRatio}%, OBIR ${obir}x). Whales are stationing bids to absorb liquidity without price slippage.`;
+      timingNepali = `बजार गहिराइ (Market Depth) मा खरिदकर्ताको उच्च चाप छ (OBIR ${obir}x)। तत्काल खरिद गर्दा मूल्य तल झर्ने जोखिम न्यून छ।`;
+    } else if (obir <= 0.75 || hasSellWall || askRatio >= 58) {
+      timingVerdict = 'DO_NOT_BUY_MARKET';
+      timingTitle = '🔴 SUPPLY OVERHANG / SELL WALL (POOR EXECUTION TIMING)';
+      timingColor = 'text-rose-400 border-rose-500/40 bg-rose-500/15';
+      timingBg = 'bg-rose-950/20 border-rose-500/30';
+      timingDesc = `Heavy ask queue resistance (${askRatio}% asks vs ${bidRatio}% bids, OBIR ${obir}x). Big sell wall stacked at Rs ${bestAsk}. Buying at market risks immediate downside pressure.`;
+      timingNepali = 'बिक्री अर्डरको ठूलो पर्खाल (Sell Wall) छ। अहिले बजार मूल्यमा शेयर किन्दा घाटा हुने जोखिम छ। पर्खिनुहोस् वा तलको लिमिट अर्डर राख्नुहोस्।';
+    } else {
+      timingVerdict = 'PATIENT_LIMIT';
+      timingTitle = '🟡 BALANCED ORDER BOOK (LIMIT ORDER PREFERRED)';
+      timingColor = 'text-amber-400 border-amber-500/40 bg-amber-500/15';
+      timingBg = 'bg-amber-950/20 border-amber-500/30';
+      timingDesc = `Order book is in equilibrium (OBIR ${obir}x, Spread Rs ${spreadRs}). Avoid paying spread; place limit order at best bid (Rs ${bestBid}).`;
+      timingNepali = `माग र आपूर्ति सन्तुलित छ। बजार मूल्यमा भन्दा Best Bid (Rs ${bestBid}) मा लिमिट अर्डर राख्नु उपयुक्त हुन्छ।`;
+    }
+
+    return {
+      obir,
+      bidRatio,
+      askRatio,
+      totalBids,
+      totalAsks,
+      top3BidKitta,
+      top3AskKitta,
+      hasIcebergBuyWall,
+      hasSellWall,
+      bestBid,
+      bestAsk,
+      spreadRs,
+      spreadPct,
+      timingVerdict,
+      timingTitle,
+      timingColor,
+      timingBg,
+      timingDesc,
+      timingNepali,
+    };
+  }, [telemetry.marketDepth, ltp]);
 
     // Bonus & Right Adjustment Formulas: P_adj_bonus = P_close / (1 + Bonus%/100), P_adj_right = (P_close + Right*100) / (1 + Right)
   const priceAdjustments = useMemo(() => {
@@ -950,6 +1278,104 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                     : "N/A"}
                 </div>
                 <div className="text-[11px] text-slate-400">5D Max Liquidity Node</div>
+              </div>
+            </div>
+
+            {/* ⚡ 1D Live Intraday Broker Accumulation & Distribution (Ongoing Tape) */}
+            <div className="p-3.5 rounded-xl bg-slate-900 border border-indigo-500/30 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-100 text-sm flex items-center gap-1.5">
+                    <Activity className="w-4 h-4 text-emerald-400" />
+                    ⚡ 1D Live Intraday Broker Accumulation &amp; Distribution (Ongoing Tape)
+                  </span>
+                  {isLiveBrokerUpdating ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono font-bold animate-pulse">
+                      🟢 Syncing Live Tape…
+                    </span>
+                  ) : liveBrokerPayload ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono font-bold">
+                      🟢 Live Ongoing Session
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                      🌙 Closed Session Snapshot
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] px-2.5 py-1 rounded font-bold font-mono border ${
+                    multiDayBrokerSynergy.todayAdSignal === 'Accumulation'
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                      : multiDayBrokerSynergy.todayAdSignal === 'Distribution'
+                      ? 'bg-rose-500/15 text-rose-300 border-rose-500/40'
+                      : 'bg-slate-800 text-slate-300 border-slate-700'
+                  }`}>
+                    Flow: {multiDayBrokerSynergy.todayAdSignal.toUpperCase()}
+                  </span>
+                  <span className="text-[10px] px-2 py-1 rounded bg-indigo-500/20 text-indigo-300 font-mono font-bold">
+                    BCR3: {multiDayBrokerSynergy.todayBcr3}%
+                  </span>
+                </div>
+              </div>
+
+              {/* 3-Column Intraday Metrics */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                {/* Lead Accumulator */}
+                <div className="p-2.5 rounded-lg bg-emerald-950/20 border border-emerald-500/25">
+                  <div className="text-slate-400 text-[10px] uppercase font-semibold">Today's Lead Accumulator</div>
+                  <div className="font-bold text-white text-sm mt-0.5">
+                    Broker #{liveBrokerPayload?.leadAccumulator?.brokerId || liveBrokerPayload?.topNetBuyers?.[0]?.broker || activeSmartMoney?.lead_accumulator?.broker_id || 'N/A'}
+                  </div>
+                  <div className="text-[11px] text-emerald-400 font-semibold mt-0.5">
+                    +{Number(liveBrokerPayload?.leadAccumulator?.netQty || liveBrokerPayload?.topNetBuyers?.[0]?.netQty || activeSmartMoney?.lead_accumulator?.net_kitta || 0).toLocaleString()} kitta
+                    {liveBrokerPayload?.leadAccumulator?.retentionPct ? ` (${liveBrokerPayload.leadAccumulator.retentionPct}% retention)` : ''}
+                  </div>
+                </div>
+
+                {/* Lead Distributor */}
+                <div className="p-2.5 rounded-lg bg-rose-950/20 border border-rose-500/25">
+                  <div className="text-slate-400 text-[10px] uppercase font-semibold">Today's Lead Distributor</div>
+                  <div className="font-bold text-white text-sm mt-0.5">
+                    Broker #{liveBrokerPayload?.leadDistributor?.brokerId || liveBrokerPayload?.topNetSellers?.[0]?.broker || activeSmartMoney?.lead_seller?.broker_id || 'N/A'}
+                  </div>
+                  <div className="text-[11px] text-rose-400 font-semibold mt-0.5">
+                    -{Math.abs(Number(liveBrokerPayload?.leadDistributor?.netQty || liveBrokerPayload?.topNetSellers?.[0]?.netQty || activeSmartMoney?.lead_seller?.net_kitta || 0)).toLocaleString()} kitta
+                  </div>
+                </div>
+
+                {/* Whale VWAP vs LTP */}
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="text-slate-400 text-[10px] uppercase font-semibold">Whale Base Execution</div>
+                  <div className="font-bold text-indigo-300 text-sm mt-0.5">
+                    Rs {liveBrokerPayload?.bigBrokerVWAP ? Number(liveBrokerPayload.bigBrokerVWAP).toFixed(1) : (telemetry.overview.sessionVwap || ltp)}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    Current LTP: Rs {ltp} ({telemetry.overview.vwapSpreadPct >= 0 ? '+' : ''}{telemetry.overview.vwapSpreadPct}% vs VWAP)
+                  </div>
+                </div>
+              </div>
+
+              {/* Plain-Language Live Interpretation */}
+              <div className="p-2.5 rounded-lg bg-indigo-950/20 border border-indigo-500/30 text-indigo-200 text-[11px] leading-relaxed flex items-start gap-2">
+                <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-indigo-300 block mb-0.5 font-medium">📋 Live 1D Tape Interpretation:</strong>
+                  {multiDayBrokerSynergy.todayAdSignal === 'Accumulation' ? (
+                    <span>
+                      संकेत: <strong>सक्रिय सञ्चय (Ongoing Intraday Accumulation)</strong>। ठूला खेलाडीहरूले बजार मूल्य वरिपरि शेयर संकलन गरिरहेका छन् (BCR3: {multiDayBrokerSynergy.todayBcr3}%)। संस्थागत क्रेताहरू बजारमा हाबी छन्।
+                    </span>
+                  ) : multiDayBrokerSynergy.todayAdSignal === 'Distribution' ? (
+                    <span className="text-rose-300">
+                      चेतावनी: <strong>बिक्री चाप / वितरण (Ongoing Intraday Distribution)</strong>। मुख्य बिक्रेता ब्रोकरहरूले आज बजारमा शेयर फालिरहेका छन् (SCR3: {multiDayBrokerSynergy.todayScr3}%)। नयाँ खरिद गर्दा सावधानी अपनाउनुहोस्।
+                    </span>
+                  ) : (
+                    <span>
+                      संकेत: <strong>सन्तुलित दुई-तर्फी कारोबार (Two-Way Inventory Rotation)</strong>। खरिद र बिक्री सामान्य रिटेल स्तरमा भइरहेको छ, कुनै पनि एकल ब्रोकरले असामान्य कर्नरिङ गरेको छैन।
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1564,6 +1990,172 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
         {/* TAB 3: BROKER FLOW & SMART MONEY */}
         {activeTab === "BROKER_FLOW" && (
           <div className="space-y-4">
+            {/* 1. 🏛️ 4-5 Day Broker Trajectory & Synergy Engine + Actionable Enter/Do Not Buy Verdict */}
+            <div className={`p-4 rounded-xl border ${multiDayBrokerSynergy.verdictBgColor} space-y-3`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Target className="w-4 h-4 text-indigo-400" />
+                  <span className="font-bold text-slate-100 text-sm">
+                    4-5 Day Trajectory &amp; Live Intraday Synergy Verdict
+                  </span>
+                  {isLiveBrokerUpdating ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono font-bold animate-pulse">
+                      🟢 Syncing Live Tape…
+                    </span>
+                  ) : liveBrokerPayload ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono font-bold">
+                      🟢 Live Intraday Polling
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                      🌙 Closed Session Reconciled
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-1 rounded text-xs font-black border ${multiDayBrokerSynergy.verdictBadgeColor}`}>
+                    {multiDayBrokerSynergy.verdictTitle}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-xs font-bold">
+                    Score: {multiDayBrokerSynergy.confidenceScore}/100
+                  </span>
+                </div>
+              </div>
+
+              {/* 4-Stat Metric Bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
+                  <div className="text-slate-400 text-[10px] uppercase font-semibold">4-5D Whale Base VWAP</div>
+                  <div className="text-base font-bold text-white mt-0.5">
+                    Rs {multiDayBrokerSynergy.multiDayWhaleVwap}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    Spread: <strong className={multiDayBrokerSynergy.priceVsWhaleSpreadPct <= 3.5 ? 'text-emerald-400' : 'text-amber-400'}>
+                      {multiDayBrokerSynergy.priceVsWhaleSpreadPct > 0 ? '+' : ''}{multiDayBrokerSynergy.priceVsWhaleSpreadPct}%
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
+                  <div className="text-slate-400 text-[10px] uppercase font-semibold">Lead 4-5D Accumulator</div>
+                  <div className="text-base font-bold text-emerald-300 mt-0.5">
+                    Broker #{multiDayBrokerSynergy.topLeadAccumulator?.brokerId || 'N/A'}
+                  </div>
+                  <div className="text-[10px] text-emerald-400 mt-0.5 font-medium">
+                    +{Number(multiDayBrokerSynergy.topLeadAccumulator?.totalBuyKitta || 0).toLocaleString()} kitta
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
+                  <div className="text-slate-400 text-[10px] uppercase font-semibold">Lead Broker Today</div>
+                  <div className="text-base font-bold text-indigo-300 mt-0.5">
+                    {multiDayBrokerSynergy.leadTodayAction === 'BUYING_MORE' ? '🟢 Adding Shares' : multiDayBrokerSynergy.leadTodayAction === 'DUMPING_TODAY' ? '🚨 Dumping Today' : '⚪ Holding Firm'}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    {multiDayBrokerSynergy.leadTodayNet !== 0 ? `${multiDayBrokerSynergy.leadTodayNet > 0 ? '+' : ''}${multiDayBrokerSynergy.leadTodayNet.toLocaleString()} kitta today` : 'No dump detected'}
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
+                  <div className="text-slate-400 text-[10px] uppercase font-semibold">Live Intraday BCR3</div>
+                  <div className="text-base font-bold text-sky-300 mt-0.5">
+                    {multiDayBrokerSynergy.todayBcr3}%
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    Top 3 Desk Dominance
+                  </div>
+                </div>
+              </div>
+
+              {/* Actionable Trade Execution Guidance (English + Nepali) */}
+              <div className="p-3 rounded-lg bg-slate-950/80 border border-indigo-500/25 space-y-2 text-xs">
+                <div className="flex items-start gap-2">
+                  <Award className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    <strong className="text-slate-200">Execution Advice: </strong>
+                    <span className="text-slate-300">{multiDayBrokerSynergy.verdictActionAdvice}</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 pt-1 border-t border-slate-800/80">
+                  <Info className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed text-[11px] text-sky-200">
+                    <strong className="text-sky-300">नेपाली विश्लेषण: </strong>
+                    {multiDayBrokerSynergy.nepaliAdvice}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Persistent 4-5 Day Accumulator Brokers vs. Today's Action Table */}
+            {multiDayBrokerSynergy.persistentAccumulators.length > 0 && (
+              <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 flex items-center gap-1.5 text-xs">
+                    <Layers className="w-3.5 h-3.5 text-emerald-400" />
+                    Last 4-5 Trading Sessions: Top Accumulating Brokers vs Today's Live Tape
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    Cross-referenced with live exchange trades
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="text-slate-400 border-b border-slate-800">
+                        <th className="pb-1.5">Broker</th>
+                        <th className="pb-1.5 text-right">4-5D Net Kitta</th>
+                        <th className="pb-1.5 text-right">Whale Base Cost</th>
+                        <th className="pb-1.5 text-right">Active Sessions</th>
+                        <th className="pb-1.5 text-center">Today's Live Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {multiDayBrokerSynergy.persistentAccumulators.map((b) => {
+                        const todayMatch = (liveBrokerPayload?.brokers || []).find((tb: any) => String(tb.brokerId || tb.broker || tb.id) === String(b.brokerId));
+                        const todayNet = todayMatch ? Number(todayMatch.netQty || 0) : 0;
+                        const todayTag = todayNet > 0 ? 'BUYING_MORE' : todayNet < 0 ? 'DUMPING' : 'HOLDING';
+
+                        return (
+                          <tr key={b.brokerId} className="hover:bg-slate-950/40">
+                            <td className="py-2 font-medium text-white">
+                              <span className="text-indigo-400 font-bold mr-1.5">#{b.brokerId}</span>
+                              {getBrokerName(String(b.brokerId))}
+                            </td>
+                            <td className="py-2 text-right font-bold text-emerald-400">
+                              +{b.netKitta.toLocaleString()} kitta
+                            </td>
+                            <td className="py-2 text-right text-slate-200 font-mono">
+                              Rs {b.avgPrice}
+                            </td>
+                            <td className="py-2 text-right text-slate-400">
+                              {b.accumDays} / {multiDayBrokerSynergy.historyDays.length || 4} days
+                            </td>
+                            <td className="py-2 text-center">
+                              {todayTag === 'BUYING_MORE' ? (
+                                <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-semibold text-[10px]">
+                                  🟢 Buying More (+{todayNet.toLocaleString()})
+                                </span>
+                              ) : todayTag === 'DUMPING' ? (
+                                <span className="px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 font-semibold text-[10px]">
+                                  🚨 Selling ({todayNet.toLocaleString()})
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px]">
+                                  ⚪ Holding Firm
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Card 4: Broker Smart Money & Concentration Intelligence */}
             {(() => {
               const leadAcc = liveBrokerPayload?.leadAccumulator || liveBrokerPayload?.topNetBuyers?.[0] || activeSmartMoney?.lead_accumulator;
@@ -1580,7 +2172,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
                       <Award className="w-3.5 h-3.5 text-emerald-400" />
-                      Broker Smart Flow &amp; Concentration
+                      Today's Live Intraday Broker Flow &amp; Concentration
                     </span>
                     <div className="flex items-center gap-2">
                       {isLiveBrokerUpdating ? (
@@ -1825,29 +2417,89 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
         {/* TAB 4: MARKET DEPTH (Live L2 + OBIR + Floorsheet VAP Fallback) */}
         {activeTab === "MARKET_DEPTH" && (
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs bg-slate-900 px-3 py-2.5 rounded-lg border border-slate-800">
-              <span className="text-slate-300 font-medium">
-                {telemetry.marketDepth.asOfLabel}
-              </span>
-              <div className="flex items-center gap-3">
-                <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold">
-                  OBIR: {telemetry.marketDepth.obir}x ({telemetry.marketDepth.obirSignal.replace(/_/g, " ")})
+            {/* 1. Live Execution Timing & Imbalance Verdict Card */}
+            <div className={`p-3.5 rounded-xl border ${marketDepthAnalysis.timingBg} space-y-2.5`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-sky-400" />
+                  <span className="font-bold text-slate-100 text-sm">
+                    Order Book Microstructure &amp; Live Execution Verdict
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                    {telemetry.marketDepth.source === 'LIVE_L2_ORDERBOOK' ? '🟢 Live L2 Exchange Book' : '📊 Reconstructed Depth'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-1 rounded text-xs font-bold border ${marketDepthAnalysis.timingColor}`}>
+                    {marketDepthAnalysis.timingTitle}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-xs font-bold">
+                    OBIR: {marketDepthAnalysis.obir}x
+                  </span>
+                </div>
+              </div>
+
+              {/* Demand vs Supply Visual Imbalance Bar */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px] font-semibold">
+                  <span className="text-emerald-400 flex items-center gap-1">
+                    🟢 Demand: {marketDepthAnalysis.bidRatio}% ({marketDepthAnalysis.totalBids.toLocaleString()} kitta)
+                  </span>
+                  <span className="text-slate-400 text-[10px]">
+                    Spread: Rs {marketDepthAnalysis.spreadRs} ({marketDepthAnalysis.spreadPct}%)
+                  </span>
+                  <span className="text-rose-400 flex items-center gap-1">
+                    Supply: {marketDepthAnalysis.askRatio}% ({marketDepthAnalysis.totalAsks.toLocaleString()} kitta) 🔴
+                  </span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-slate-950 overflow-hidden flex border border-slate-800">
+                  <div
+                    style={{ width: `${marketDepthAnalysis.bidRatio}%` }}
+                    className="bg-emerald-500 h-full transition-all duration-300"
+                  />
+                  <div
+                    style={{ width: `${marketDepthAnalysis.askRatio}%` }}
+                    className="bg-rose-500 h-full transition-all duration-300"
+                  />
+                </div>
+              </div>
+
+              {/* Depth Microstructure Badges */}
+              <div className="flex flex-wrap items-center gap-2 text-xs pt-0.5">
+                {marketDepthAnalysis.hasIcebergBuyWall && (
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold">
+                    🛡️ Iceberg Buy Wall Detected (Whales absorbing supply at bid)
+                  </span>
+                )}
+                {marketDepthAnalysis.hasSellWall && (
+                  <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-semibold">
+                    ⚠️ Sell Wall Resistance Active (Distribution capping price)
+                  </span>
+                )}
+                <span className="text-[10px] text-slate-400">
+                  Best Bid: <strong className="text-emerald-400">Rs {marketDepthAnalysis.bestBid}</strong> • Best Ask: <strong className="text-rose-400">Rs {marketDepthAnalysis.bestAsk}</strong>
                 </span>
-                <span className="text-slate-400">
-                  Bid Share:{" "}
-                  <strong className="text-emerald-400">
-                    {telemetry.marketDepth.bidRatioPct}%
-                  </strong>{" "}
-                  ({telemetry.marketDepth.totalBidKitta.toLocaleString()} vs{" "}
-                  {telemetry.marketDepth.totalAskKitta.toLocaleString()} kitta)
-                </span>
+              </div>
+
+              {/* Actionable Interpretation */}
+              <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1 text-xs">
+                <div className="text-slate-300 leading-relaxed">
+                  <strong className="text-slate-200">Execution Advice: </strong>
+                  {marketDepthAnalysis.timingDesc}
+                </div>
+                <div className="text-[11px] text-sky-200 leading-relaxed pt-1 border-t border-slate-800/80">
+                  <strong className="text-sky-300">नेपाली सल्लाह: </strong>
+                  {marketDepthAnalysis.timingNepali}
+                </div>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
               <div className="rounded-lg border border-emerald-500/20 bg-slate-900/70 p-3">
-                <div className="font-semibold text-emerald-300 mb-2">
-                  Demand / Buy Queue (Top 5)
+                <div className="font-semibold text-emerald-300 mb-2 flex items-center justify-between">
+                  <span>Demand / Buy Queue (Top 5)</span>
+                  <span className="text-[10px] text-slate-400">{marketDepthAnalysis.totalBids.toLocaleString()} kitta</span>
                 </div>
                 <table className="w-full text-left">
                   <thead>
@@ -1874,8 +2526,9 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
               </div>
 
               <div className="rounded-lg border border-rose-500/20 bg-slate-900/70 p-3">
-                <div className="font-semibold text-rose-300 mb-2">
-                  Supply / Sell Queue (Top 5)
+                <div className="font-semibold text-rose-300 mb-2 flex items-center justify-between">
+                  <span>Supply / Sell Queue (Top 5)</span>
+                  <span className="text-[10px] text-slate-400">{marketDepthAnalysis.totalAsks.toLocaleString()} kitta</span>
                 </div>
                 <table className="w-full text-left">
                   <thead>
@@ -1902,9 +2555,54 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
           </div>
         )}
 
-        {/* TAB 5: FLOORSHEET TAPE (Date Picker, Broker Filter, Whale >= Rs 100k / 200k) */}
+        {/* TAB 5: FLOORSHEET TAPE (Live Tape Streaming + Date Picker + Whale >= Rs 100k / 200k) */}
         {activeTab === "FLOORSHEET" && (
           <div className="space-y-3 text-xs">
+            {/* Live Tape Streaming Telemetry Header */}
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-100 text-sm flex items-center gap-1.5">
+                  <Activity className="w-4 h-4 text-emerald-400" />
+                  Live Floorsheet Exchange Tape
+                </span>
+                {isLiveFloorsheetUpdating ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono font-bold animate-pulse">
+                    🟢 Syncing Live Tape…
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono font-bold">
+                    🟢 Streaming ({telemetry.floorsheetTape.length} Contracts)
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-300 bg-slate-950 px-2.5 py-1 rounded border border-slate-800">
+                  Vol: <strong className="text-white">{telemetry.overview.totalSessionKitta.toLocaleString()}</strong> kitta
+                </span>
+                <span className="text-[11px] text-slate-300 bg-slate-950 px-2.5 py-1 rounded border border-slate-800">
+                  Turnover: <strong className="text-indigo-300">Rs {telemetry.overview.totalSessionTurnover.toLocaleString()}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (resolvedSymbol) {
+                      setIsLiveFloorsheetUpdating(true);
+                      fetchRealFloorsheet(resolvedSymbol, '', 1, 500, { refresh: true })
+                        .then((res: any) => {
+                          const rows = res?.rows || res?.data || res?.contracts || [];
+                          if (Array.isArray(rows) && rows.length > 0) setLiveFloorsheetContracts(rows);
+                        })
+                        .catch(() => {})
+                        .finally(() => setIsLiveFloorsheetUpdating(false));
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded bg-sky-500/20 text-sky-300 hover:bg-sky-500/30 border border-sky-500/40 text-xs font-semibold flex items-center gap-1"
+                >
+                  <Sparkles className="w-3 h-3" /> Sync Tape
+                </button>
+              </div>
+            </div>
             <div className="flex flex-wrap items-center gap-3 bg-slate-900 p-2.5 rounded-lg border border-slate-800">
               <select
                 value={selectedTradeDate}

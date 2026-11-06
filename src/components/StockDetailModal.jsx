@@ -1147,7 +1147,7 @@ function BeginnerConfidenceCard({
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', whiteSpace: 'nowrap' }}>
                 {brokerDays === 1 
-                  ? 'Last 1 Day Floorsheet' 
+                  ? (realBrokerAnalysis ? '🟢 1D Live Intraday Tape' : 'Last 1 Day Floorsheet') 
                   : diag?.timeframeDays && diag.timeframeDays < brokerDays
                   ? `Showing ${diag.timeframeDays} Real Trading Days Loaded (${diag.timeframeDays}/${brokerDays}d)`
                   : `Last ${brokerDays} Trading Days Cumulative`}
@@ -1428,6 +1428,7 @@ export default function StockDetailModal({
   const [allTimeBrokerAnalysis, setAllTimeBrokerAnalysis] = useState(() => {
     return getCachedRealBrokerAnalysis(initialSym, 'all') || null;
   });
+  const [overviewBrokerTapeMode, setOverviewBrokerTapeMode] = useState('1D_LIVE'); // '1D_LIVE' | 'ALL_TIME'
   const [brokerAnalysisLoading, setBrokerAnalysisLoading] = useState(() => {
     const cached = getCachedRealBrokerAnalysis(initialSym, 1) || stock?.brokerAnalysis || stock?.realBrokerAnalysis;
     return !cached;
@@ -1545,12 +1546,13 @@ export default function StockDetailModal({
           }
         }).catch(() => {});
 
-        // Proactively refresh market depth and broker analysis if viewing broker/depth tabs or hub modal
+        // Proactively refresh market depth, broker flow, and live floorsheet if viewing relevant tabs or hub modal
         if (
           activeTab === 'depth_broker' || 
           activeTab === 'market_depth' || 
           activeTab === 'broker_analysis' || 
           activeTab === 'floorsheet' ||
+          activeTab === 'overview' ||
           showHubModal
         ) {
           fetchMarketDepth(sym, modalSessionDate).then(depth => {
@@ -1561,6 +1563,13 @@ export default function StockDetailModal({
           if (liveTickCount % 4 === 0) {
             fetchRealBrokerAnalysis(sym, 1, { refresh: true }).then(ba => {
               if (isMounted && ba) setRealBrokerAnalysis(ba);
+            }).catch(() => {});
+          }
+
+          // Refresh live intraday floorsheet tape every 6-8 seconds during active session
+          if (liveTickCount % 3 === 0 && (activeTab === 'floorsheet' || showHubModal)) {
+            fetchRealFloorsheet(sym, '', 1, 500, { refresh: true }).then(fs => {
+              if (isMounted && fs && fs.rows?.length > 0) setRealFloorsheet(fs);
             }).catch(() => {});
           }
         }
@@ -4448,21 +4457,43 @@ export default function StockDetailModal({
                 boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, color: '#f8fafc' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, color: '#f8fafc', flexWrap: 'wrap' }}>
                     <Layers style={{ width: 17, height: 17, color: '#6366f1' }} />
                     Broker Footprint Ledger
-                    <span style={{
-                      fontSize: 10,
-                      fontWeight: 800,
-                      letterSpacing: '0.04em',
-                      padding: '2px 8px',
-                      borderRadius: 6,
-                      background: 'rgba(99, 102, 241, 0.18)',
-                      color: '#a5b4fc',
-                      border: '1px solid rgba(99, 102, 241, 0.35)'
-                    }}>
-                      ALL-TIME CUMULATIVE
-                    </span>
+                    <div style={{ display: 'inline-flex', gap: 3, background: 'rgba(0,0,0,0.4)', padding: 2, borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <button
+                        type="button"
+                        onClick={() => setOverviewBrokerTapeMode('1D_LIVE')}
+                        style={{
+                          fontSize: 9.5,
+                          fontWeight: 800,
+                          padding: '2px 7px',
+                          borderRadius: 6,
+                          background: overviewBrokerTapeMode === '1D_LIVE' ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
+                          color: overviewBrokerTapeMode === '1D_LIVE' ? '#34d399' : '#94a3b8',
+                          border: overviewBrokerTapeMode === '1D_LIVE' ? '1px solid rgba(16, 185, 129, 0.4)' : 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        🟢 1D LIVE / ONGOING
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOverviewBrokerTapeMode('ALL_TIME')}
+                        style={{
+                          fontSize: 9.5,
+                          fontWeight: 800,
+                          padding: '2px 7px',
+                          borderRadius: 6,
+                          background: overviewBrokerTapeMode === 'ALL_TIME' ? 'rgba(99, 102, 241, 0.25)' : 'transparent',
+                          color: overviewBrokerTapeMode === 'ALL_TIME' ? '#a5b4fc' : '#94a3b8',
+                          border: overviewBrokerTapeMode === 'ALL_TIME' ? '1px solid rgba(99, 102, 241, 0.4)' : 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ALL-TIME CUMULATIVE
+                      </button>
+                    </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{
@@ -4470,10 +4501,10 @@ export default function StockDetailModal({
                       fontWeight: 800,
                       padding: '3px 10px',
                       borderRadius: 8,
-                      background: brokerConcentration.smartMoneyBias.includes('Cornering') ? 'rgba(16, 185, 129, 0.15)' : brokerConcentration.smartMoneyBias.includes('Offloading') ? 'rgba(244, 63, 94, 0.15)' : 'rgba(56, 189, 248, 0.15)',
-                      color: brokerConcentration.smartMoneyBias.includes('Cornering') ? '#34d399' : brokerConcentration.smartMoneyBias.includes('Offloading') ? '#f87171' : '#38bdf8'
+                      background: (overviewBrokerTapeMode === '1D_LIVE' ? (realBrokerAnalysis?.adSignal === 'Accumulation') : brokerConcentration.smartMoneyBias.includes('Cornering')) ? 'rgba(16, 185, 129, 0.15)' : (overviewBrokerTapeMode === '1D_LIVE' ? (realBrokerAnalysis?.adSignal === 'Distribution') : brokerConcentration.smartMoneyBias.includes('Offloading')) ? 'rgba(244, 63, 94, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                      color: (overviewBrokerTapeMode === '1D_LIVE' ? (realBrokerAnalysis?.adSignal === 'Accumulation') : brokerConcentration.smartMoneyBias.includes('Cornering')) ? '#34d399' : (overviewBrokerTapeMode === '1D_LIVE' ? (realBrokerAnalysis?.adSignal === 'Distribution') : brokerConcentration.smartMoneyBias.includes('Offloading')) ? '#f87171' : '#38bdf8'
                     }}>
-                      {brokerConcentration.smartMoneyBias}
+                      {overviewBrokerTapeMode === '1D_LIVE' ? (realBrokerAnalysis?.adSignal ? `Live: ${realBrokerAnalysis.adSignal}` : 'Live: Syncing...') : brokerConcentration.smartMoneyBias}
                     </span>
                     <button
                       type="button"
@@ -4498,9 +4529,19 @@ export default function StockDetailModal({
                 {/* 4-Stat Metric Summary Bar (Top Holder, Held Shares, Avg Buy, Avg Sell) */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 12 }}>
                   <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
-                    <div style={{ fontSize: 10, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>Top Holding Broker</div>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>
+                      {overviewBrokerTapeMode === '1D_LIVE' ? "Today's Top Accumulator" : "Top Holding Broker"}
+                    </div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
                       {(() => {
+                        if (overviewBrokerTapeMode === '1D_LIVE') {
+                          const top1D = realBrokerAnalysis?.leadAccumulator || realBrokerAnalysis?.topNetBuyers?.[0] || realBrokerAnalysis?.topBuyers?.[0];
+                          if (top1D) {
+                            const qty = Number(top1D.netQty ?? top1D.holdQty ?? top1D.buyVolume ?? top1D.netKitta ?? 0);
+                            const bId = top1D.brokerId || top1D.broker || top1D.id;
+                            return `#${bId} (${qty.toLocaleString()} sh)`;
+                          }
+                        }
                         const topHolderAllTime = allTimeBrokerAnalysis?.topHoldingBroker || (allTimeBrokerAnalysis?.topHoldings || [])[0];
                         if (topHolderAllTime) {
                           const qty = Number(topHolderAllTime.netQty ?? topHolderAllTime.holdQty ?? topHolderAllTime.totalHeldQty ?? 0);
@@ -4550,7 +4591,9 @@ export default function StockDetailModal({
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {(() => {
-                        const accList = (allTimeBrokerAnalysis?.topHoldings?.length ? allTimeBrokerAnalysis.topHoldings : (brokerConcentration.topNetAccumulators?.length ? brokerConcentration.topNetAccumulators : (brokerConcentration.topBuyerBrokers || [])));
+                        const accList = overviewBrokerTapeMode === '1D_LIVE'
+                          ? (realBrokerAnalysis?.topNetBuyers?.length ? realBrokerAnalysis.topNetBuyers : (realBrokerAnalysis?.topBuyers?.length ? realBrokerAnalysis.topBuyers : (brokerConcentration.topNetAccumulators || [])))
+                          : (allTimeBrokerAnalysis?.topHoldings?.length ? allTimeBrokerAnalysis.topHoldings : (brokerConcentration.topNetAccumulators?.length ? brokerConcentration.topNetAccumulators : (brokerConcentration.topBuyerBrokers || [])));
                         if (!accList || accList.length === 0) {
                           return <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '8px 0' }}>No buyer records</div>;
                         }
@@ -4585,7 +4628,10 @@ export default function StockDetailModal({
                       <span>BCR₃: {brokerConcentration.bcr3SellPct || 0}%</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {(brokerConcentration.topNetDistributors?.length ? brokerConcentration.topNetDistributors : (brokerConcentration.topSellerBrokers || [])).slice(0, 3).map((s, idx) => {
+                      {((overviewBrokerTapeMode === '1D_LIVE'
+                        ? (realBrokerAnalysis?.topNetSellers?.length ? realBrokerAnalysis.topNetSellers : (realBrokerAnalysis?.topSellers?.length ? realBrokerAnalysis.topSellers : (brokerConcentration.topNetDistributors || [])))
+                        : (brokerConcentration.topNetDistributors?.length ? brokerConcentration.topNetDistributors : (brokerConcentration.topSellerBrokers || []))
+                      ) || []).slice(0, 3).map((s, idx) => {
                         const qtyVal = Math.abs(s.netQty !== undefined ? s.netQty : s.volume);
                         const sellAmtVal = Math.abs(s.netAmt != null && s.netAmt !== 0 ? s.netAmt : (s.sellAmt || s.sellAmount || s.amount || 0));
                         return (
