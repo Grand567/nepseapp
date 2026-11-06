@@ -16,7 +16,7 @@ import {
 import { AiGuruQuantitativeCard } from "@/components/AiGuruQuantitativeCard";
 import { StockFundamentalsAndLockInTab } from "@/components/StockFundamentalsAndLockInTab";
 import { DividendHistoryPanel } from "./DividendHistoryPanel";
-import { fetchFromBackend } from "@/utils/liveData";
+import { fetchFromBackend, fetchRealBrokerAnalysis } from "@/utils/liveData";
 import { getBrokerName } from "@/utils/accumulationDistributionEngine";
 import { calculateMACD } from "@/utils/indicators";
 import {
@@ -361,6 +361,56 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   const activeWyckoff = subfileWyckoff || activeScrip?.card_5_wyckoff_and_dump_guard || null;
   const activeTactical = subfileTactical || activeScrip?.card_6_tactical_execution || null;
 
+  // ── Intraday Live Broker Smart Money Telemetry ──
+  const [liveBrokerPayload, setLiveBrokerPayload] = useState<any>(broker5DPayload);
+  const [isLiveBrokerUpdating, setIsLiveBrokerUpdating] = useState(false);
+
+  useEffect(() => {
+    if (broker5DPayload) setLiveBrokerPayload(broker5DPayload);
+  }, [broker5DPayload]);
+
+  useEffect(() => {
+    const sym = resolvedSymbol;
+    if (!sym || sym === 'UNSELECTED') return;
+
+    let isMounted = true;
+    const isMarketOpen = () => {
+      const now = new Date();
+      const utcMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+      const nptMins = (utcMins + 5 * 60 + 45) % (24 * 60);
+      return nptMins >= 660 && nptMins <= 900; // Continuous session: 11:00 AM – 3:00 PM NPT
+    };
+
+    if (activeTab === 'BROKER_FLOW' || activeTab === 'OVERVIEW' || activeTab === 'MARKET_DEPTH') {
+      const pollLiveBroker = () => {
+        if (!isMounted) return;
+        if (isMarketOpen()) {
+          setIsLiveBrokerUpdating(true);
+          fetchRealBrokerAnalysis(sym, 1, { refresh: true })
+            .then(fresh => {
+              if (isMounted && fresh && (fresh.brokers?.length > 0 || fresh.topNetBuyers?.length > 0)) {
+                setLiveBrokerPayload(fresh);
+              }
+            })
+            .catch(() => {})
+            .finally(() => {
+              if (isMounted) setIsLiveBrokerUpdating(false);
+            });
+        }
+      };
+
+      if (!liveBrokerPayload && isMarketOpen()) {
+        pollLiveBroker();
+      }
+
+      const timer = setInterval(pollLiveBroker, 10000);
+      return () => {
+        isMounted = false;
+        clearInterval(timer);
+      };
+    }
+  }, [activeTab, resolvedSymbol]);
+
   const telemetry = useMemo(
     () =>
       buildUnifiedStockTabTelemetry({
@@ -370,7 +420,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
         ledgerTelemetry,
         rawContracts: rawFloorsheetContracts,
         liveDepth,
-        broker5DRawPayload: broker5DPayload,
+        broker5DRawPayload: liveBrokerPayload || broker5DPayload,
       }),
     [
       resolvedSymbol,
@@ -379,6 +429,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
       ledgerTelemetry,
       rawFloorsheetContracts,
       liveDepth,
+      liveBrokerPayload,
       broker5DPayload,
     ]
   );
@@ -1514,56 +1565,84 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
         {activeTab === "BROKER_FLOW" && (
           <div className="space-y-4">
             {/* Card 4: Broker Smart Money & Concentration Intelligence */}
-            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
-                  <Award className="w-3.5 h-3.5 text-emerald-400" />
-                  Card 4: Sub-File Broker Smart Flow &amp; Concentration (Instant &lt;1ms)
-                </span>
-                {activeSmartMoney?.concentration?.bcr3_buy_pct !== undefined && (
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono font-bold">
-                    BCR3 Buy: {activeSmartMoney.concentration.bcr3_buy_pct}%
-                  </span>
-                )}
-              </div>
+            {(() => {
+              const leadAcc = liveBrokerPayload?.leadAccumulator || liveBrokerPayload?.topNetBuyers?.[0] || activeSmartMoney?.lead_accumulator;
+              const leadDist = liveBrokerPayload?.leadDistributor || liveBrokerPayload?.topNetSellers?.[0] || activeSmartMoney?.lead_seller;
+              const bcr3 = liveBrokerPayload?.bcr3BuyPct ?? activeSmartMoney?.concentration?.bcr3_buy_pct ?? 0;
+              const leadAccId = leadAcc?.brokerId || leadAcc?.broker || leadAcc?.id || leadAcc?.broker_id;
+              const leadAccQty = Math.abs(Number(leadAcc?.netQty ?? leadAcc?.net_kitta ?? 0));
+              const leadDistId = leadDist?.brokerId || leadDist?.broker || leadDist?.id || leadDist?.broker_id;
+              const leadDistQty = Math.abs(Number(leadDist?.netQty ?? leadDist?.net_kitta ?? 0));
+              const leadAccRet = leadAcc?.retentionPct ?? leadAcc?.retention_pct ?? (leadAcc?.buyQty ? Math.round((leadAccQty / leadAcc.buyQty) * 100) : 100);
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                <div className="p-2.5 rounded bg-emerald-950/20 border border-emerald-500/20">
-                  <div className="text-slate-400 text-[10px]">Lead Accumulator (Broker)</div>
-                  <div className="font-bold text-white mt-0.5">
-                    Broker #{activeSmartMoney?.lead_accumulator?.broker_id ?? 'N/A'}
+              return (
+                <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
+                      <Award className="w-3.5 h-3.5 text-emerald-400" />
+                      Broker Smart Flow &amp; Concentration
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {isLiveBrokerUpdating ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono font-bold animate-pulse">
+                          🟢 Syncing Live Tape…
+                        </span>
+                      ) : liveBrokerPayload ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono font-bold">
+                          🟢 Live Intraday Feed
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                          🌙 Closed Session
+                        </span>
+                      )}
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono font-bold">
+                        BCR3 Buy: {bcr3}%
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-[11px] text-emerald-400 font-semibold mt-0.5">
-                    +{Number(activeSmartMoney?.lead_accumulator?.net_kitta || 0).toLocaleString()} kitta ({activeSmartMoney?.lead_accumulator?.retention_pct || 0}% retention)
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <div className="p-2.5 rounded bg-emerald-950/20 border border-emerald-500/20">
+                      <div className="text-slate-400 text-[10px]">Lead Accumulator (Broker)</div>
+                      <div className="font-bold text-white mt-0.5">
+                        Broker #{leadAccId ?? 'N/A'}
+                      </div>
+                      <div className="text-[11px] text-emerald-400 font-semibold mt-0.5">
+                        +{Number(leadAccQty).toLocaleString()} kitta ({leadAccRet}% retention)
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded bg-rose-950/20 border border-rose-500/20">
+                      <div className="text-slate-400 text-[10px]">Lead Distributor (Broker)</div>
+                      <div className="font-bold text-white mt-0.5">
+                        Broker #{leadDistId ?? 'N/A'}
+                      </div>
+                      <div className="text-[11px] text-rose-400 font-semibold mt-0.5">
+                        -{Number(leadDistQty).toLocaleString()} kitta
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
+                      <div className="text-slate-400 text-[10px]">Top-3 Concentration (BCR3)</div>
+                      <div className="font-bold text-indigo-300 mt-0.5">
+                        {bcr3}% of Session Buys
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        {Number(bcr3) >= 45 ? "High Smart Accumulation" : "Diffused Retail Flow"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-emerald-950/20 border border-emerald-500/30 text-emerald-200 text-[11px] leading-relaxed">
+                    <strong className="text-emerald-300 block mb-0.5 font-medium">💼 Broker Smart Money Interpretation:</strong>
+                    {liveBrokerPayload?.adSignal 
+                      ? `Desk signals indicate ${liveBrokerPayload.adSignal} flow with ${bcr3}% top-3 buyer dominance.`
+                      : (activeSmartMoney?.interpretation || "Institutional broker telemetry matches historical subfile records.")}
                   </div>
                 </div>
-
-                <div className="p-2.5 rounded bg-rose-950/20 border border-rose-500/20">
-                  <div className="text-slate-400 text-[10px]">Lead Distributor (Broker)</div>
-                  <div className="font-bold text-white mt-0.5">
-                    Broker #{activeSmartMoney?.lead_seller?.broker_id ?? 'N/A'}
-                  </div>
-                  <div className="text-[11px] text-rose-400 font-semibold mt-0.5">
-                    -{Number(activeSmartMoney?.lead_seller?.net_kitta || 0).toLocaleString()} kitta
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
-                  <div className="text-slate-400 text-[10px]">Top-3 Concentration (BCR3)</div>
-                  <div className="font-bold text-indigo-300 mt-0.5">
-                    {activeSmartMoney?.concentration?.bcr3_buy_pct ?? 0}% of Session Buys
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">
-                    {Number(activeSmartMoney?.concentration?.bcr3_buy_pct || 0) >= 45 ? "High Smart Accumulation" : "Diffused Retail Flow"}
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-emerald-950/20 border border-emerald-500/30 text-emerald-200 text-[11px] leading-relaxed">
-                <strong className="text-emerald-300 block mb-0.5 font-medium">💼 Broker Smart Money Interpretation:</strong>
-                {activeSmartMoney?.interpretation || "Institutional broker telemetry matches historical subfile records."}
-              </div>
-            </div>
+              );
+            })()}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
             <div className="rounded-lg border border-emerald-500/20 bg-slate-900 p-3">

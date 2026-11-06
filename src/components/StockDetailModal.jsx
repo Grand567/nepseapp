@@ -1545,8 +1545,14 @@ export default function StockDetailModal({
           }
         }).catch(() => {});
 
-        // Proactively refresh market depth if user is viewing depth tab
-        if (activeTab === 'depth_broker' || activeTab === 'market_depth') {
+        // Proactively refresh market depth and broker analysis if viewing broker/depth tabs or hub modal
+        if (
+          activeTab === 'depth_broker' || 
+          activeTab === 'market_depth' || 
+          activeTab === 'broker_analysis' || 
+          activeTab === 'floorsheet' ||
+          showHubModal
+        ) {
           fetchMarketDepth(sym, modalSessionDate).then(depth => {
             if (isMounted && depth) setRealMarketDepth(depth);
           }).catch(() => {});
