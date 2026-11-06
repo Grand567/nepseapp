@@ -156,12 +156,12 @@ it('runComprehensiveBacktest: enforces mandatory T+2 settlement lock (no day-T o
 
 // 2B. Statutory Trading Calendar T+2 Holding Sequence: Thursday -> Sunday -> Monday
 it('runComprehensiveBacktest: enforces calendar-accurate Thursday -> Friday (T+1 lock) -> Monday (T+2 unlock)', () => {
-  // 1. Assert session counts across weekend
-  assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-09'), 0, 'Day T (Thu entry) must have 0 elapsed hold sessions');
-  assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-10'), 1, 'Friday is Day T+1 (holdSessions = 1, locked in Demat settlement)');
-  assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-11'), 1, 'Saturday weekend must not advance trading sessions');
-  assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-12'), 1, 'Sunday weekend must not advance trading sessions');
-  assert.strictEqual(countNepseTradingSessionsBetween('2025-01-09', '2025-01-13'), 2, 'Monday is Day T+2 (holdSessions = 2, unlocked for exit eligibility)');
+  // 1. Assert session counts across weekend under statutory post-April 2026 Mon-Fri regime
+  assert.strictEqual(countNepseTradingSessionsBetween('2026-05-07', '2026-05-07'), 0, 'Day T (Thu entry) must have 0 elapsed hold sessions');
+  assert.strictEqual(countNepseTradingSessionsBetween('2026-05-07', '2026-05-08'), 1, 'Friday is Day T+1 (holdSessions = 1, locked in Demat settlement)');
+  assert.strictEqual(countNepseTradingSessionsBetween('2026-05-07', '2026-05-09'), 1, 'Saturday weekend must not advance trading sessions');
+  assert.strictEqual(countNepseTradingSessionsBetween('2026-05-07', '2026-05-10'), 1, 'Sunday weekend must not advance trading sessions');
+  assert.strictEqual(countNepseTradingSessionsBetween('2026-05-07', '2026-05-11'), 2, 'Monday is Day T+2 (holdSessions = 2, unlocked for exit eligibility)');
 
   // 2. Assert that backtest execution strictly locks exit on Sunday T+1 even under severe price moves
   const candles = [];

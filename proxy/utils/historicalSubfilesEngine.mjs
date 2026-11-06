@@ -132,7 +132,8 @@ function calculateEMA(candles, period, targetIndex) {
  */
 export function compileHistoricalSubfiles(options = {}) {
   const t0 = Date.now();
-  const db = options.db || new Database(DB_PATH, { readonly: true });
+  const db = options.db || new Database(DB_PATH, { readonly: true, timeout: 10000 });
+  try { db.pragma('busy_timeout = 10000'); } catch (_) {}
   const stockmap = loadStockmap();
 
   // 1. Query the 4 most recent completed trading sessions

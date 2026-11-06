@@ -79,11 +79,12 @@ if (!fs.existsSync(dbPath) || fs.statSync(dbPath).size < 100000) {
   }
 }
 
-export const db = new Database(dbPath);
+export const db = new Database(dbPath, { timeout: 10000 });
 
 // Enable WAL mode & low-memory settings for Render 512MB RAM environment
 db.pragma("journal_mode = WAL");
 db.pragma("synchronous = NORMAL");
+db.pragma("busy_timeout = 10000"); // Wait up to 10 seconds on concurrent locks before SQLITE_BUSY
 db.pragma("cache_size = -8000"); // 8MB SQLite page cache ceiling for Render 512MB RAM limit
 db.pragma("temp_store = FILE");
 db.pragma("mmap_size = 0"); // Disable memory mapping to preserve container RAM

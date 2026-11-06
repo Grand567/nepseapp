@@ -13683,4 +13683,20 @@ app.listen(PORT, '0.0.0.0', async () => {
       }
     };
     setTimeout(autoWarmupCloudLedger, 3000);
+
+    // Keep-Alive Heartbeat for Render Free-Tier Container (prevents cold-start sleep)
+    const KEEP_ALIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+    const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || `http://127.0.0.1:${PORT}`;
+    const keepAliveTimer = setInterval(async () => {
+      try {
+        const pingRes = await axios.get(`${keepAliveUrl}/api/health`, { timeout: 8000 });
+        if (pingRes.status === 200) {
+          console.log(`[KeepAlive] Heartbeat ping successful: uptime ${pingRes.data.uptimeSec || Math.floor(process.uptime())}s`);
+        }
+      } catch (pingErr) {
+        // Fallback internal self-ping if external URL not reachable from within container
+        console.log(`[KeepAlive] Heartbeat ping notice: ${pingErr.message}`);
+      }
+    }, KEEP_ALIVE_INTERVAL_MS);
+    keepAliveTimer.unref();
 });

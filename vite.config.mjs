@@ -100,6 +100,12 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           // Firebase — its own chunk (448 kB)
+          if (id.includes('broker_matrices_historical') || 
+              id.includes('broker_matrix_latest') || 
+              id.includes('broker_holdings_alltime') ||
+              id.includes('nepse_cumulative_broker_ledger')) {
+            return 'broker-matrix-data';
+          }
           if (id.includes('firebase')) return 'firebase';
           // React + UI libs — vendor chunk (364 kB)
           if (id.includes('node_modules/react') ||

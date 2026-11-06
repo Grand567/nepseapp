@@ -227,7 +227,7 @@ async function runAll() {
   console.log('\n[TEST 6] Bikram Sambat Month Days Grid Classification');
 
   await test('fetchLiveCalendarMonth classifies Saturday & Sunday as weekend, Friday as trading day', async () => {
-    const monthData = await fetchLiveCalendarMonth(2081, 1); // Baisakh 2081
+    const monthData = await fetchLiveCalendarMonth(2083, 1); // Baisakh 2083 (Post-Shift Statutory Regime)
     assert.ok(monthData.days.length > 0, 'Month days generated');
     
     for (const day of monthData.days) {

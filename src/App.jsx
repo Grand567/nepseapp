@@ -133,6 +133,19 @@ function AppInner() {
   // ── Accessibility & Font Scale State for Weak Eyesight ──
   const [fontScale, setFontScale] = useState(() => localStorage.getItem('nepse_font_scale') || 'normal');
   const [showFontModal, setShowFontModal] = useState(false);
+
+  // ── Global Offline Network Resilience ──
+  const [isOffline, setIsOffline] = useState(() => (typeof navigator !== 'undefined' ? !navigator.onLine : false));
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [upcomingHolidaysList, setUpcomingHolidaysList] = useState([]);
   const [loadingHolidays, setLoadingHolidays] = useState(false);
@@ -1756,6 +1769,26 @@ function AppInner() {
               Apply & Save Preference ✓
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── Global Offline Banner ── */}
+      {isOffline && (
+        <div style={{
+          background: 'linear-gradient(90deg, #991b1b, #7f1d1d)',
+          color: '#ffffff',
+          padding: '8px 16px',
+          fontSize: 13,
+          fontWeight: 700,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10,
+          borderBottom: '1px solid rgba(239,68,68,0.4)',
+          zIndex: 999
+        }}>
+          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: '#f87171' }} />
+          <span>तपाईं अफलाइन हुनुहुन्छ — सुरक्षित क्यास डाटा देखाइँदै छ (Offline Mode - Displaying Cached Data)</span>
         </div>
       )}
 

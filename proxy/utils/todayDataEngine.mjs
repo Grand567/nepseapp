@@ -96,7 +96,8 @@ export const STATUTORY_RULES = {
  */
 export function compileTodayStaticAnalytics(options = {}) {
   const t0 = Date.now();
-  const db = options.db || new Database(DB_PATH, { readonly: true });
+  const db = options.db || new Database(DB_PATH, { readonly: true, timeout: 10000 });
+  try { db.pragma('busy_timeout = 10000'); } catch (_) {}
 
   // Get distinct trade dates to determine latest and historical window
   const dateRows = db

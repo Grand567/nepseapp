@@ -82,10 +82,10 @@ assert(plain[0].rawClose === plain[0].close, 'No actions → rawClose=close');
 // ── C2: Weekly Candle Aggregation ────────────────────────────────────────────
 console.log('\n[C2] Weekly Candle Aggregation (Mon–Fri)');
 
-// Build 10 trading days (Mon 2026-01-05 to Fri 2026-01-16, skipping weekend)
+// Build 10 trading days (Mon 2026-05-04 to Fri 2026-05-15, post April 2026 regime shift)
 const tradingDays = [
-  '2026-01-05','2026-01-06','2026-01-07','2026-01-08','2026-01-09', // Week 1
-  '2026-01-12','2026-01-13','2026-01-14','2026-01-15','2026-01-16', // Week 2
+  '2026-05-04','2026-05-05','2026-05-06','2026-05-07','2026-05-08', // Week 1
+  '2026-05-11','2026-05-12','2026-05-13','2026-05-14','2026-05-15', // Week 2
 ];
 const dailyCandles = tradingDays.map((date, i) => ({
   date, open: 100 + i, high: 105 + i, low: 95 + i,
@@ -94,8 +94,8 @@ const dailyCandles = tradingDays.map((date, i) => ({
 
 const weekly = aggregateToWeeklyCandles(dailyCandles);
 assert(weekly.length === 2, `Produces 2 weeks from 10 trading days: got ${weekly.length}`);
-assert(weekly[0].weekStart === '2026-01-05', `Week 1 starts on Monday 2026-01-05`);
-assert(weekly[0].weekEnd   === '2026-01-09', `Week 1 ends on Friday 2026-01-09`);
+assert(weekly[0].weekStart === '2026-05-04', `Week 1 starts on Monday 2026-05-04`);
+assert(weekly[0].weekEnd   === '2026-05-08', `Week 1 ends on Friday 2026-05-08`);
 assert(weekly[0].open === 100, 'Week 1 open = first day open (100)');
 assert(weekly[0].close === 104, 'Week 1 close = last day close (104)');
 assert(weekly[0].high === 109,  'Week 1 high = max of all days (109)');  // 105+4
@@ -103,7 +103,7 @@ assert(weekly[0].low  === 95,   'Week 1 low = min of all days (95)');
 assert(weekly[0].volume === 50000, 'Week 1 volume = sum of 5 days');
 assert(weekly[0].daysCount === 5, 'Week 1 has 5 trading days');
 assert(weekly[0].isWeekly === true, 'isWeekly flag set');
-assert(weekly[1].weekStart === '2026-01-12', `Week 2 starts 2026-01-12`);
+assert(weekly[1].weekStart === '2026-05-11', `Week 2 starts 2026-05-11`);
 assert(weekly[1].daysCount === 5, 'Week 2 has 5 trading days');
 
 // Empty input
