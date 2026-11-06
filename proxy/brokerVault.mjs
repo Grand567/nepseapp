@@ -271,6 +271,17 @@ export async function fetchSymbolTradingDates(symbol) {
 
   const dateSet = new Set();
 
+  // 0. Primary Ground Truth: Discover all dates for symbol directly from SQLite ledger
+  try {
+    const { db } = await import('./db/ledgerStore.js');
+    if (db) {
+      const dbDates = db.prepare('SELECT DISTINCT trade_date FROM floorsheet_contracts WHERE symbol = ? ORDER BY trade_date DESC').all(sym);
+      dbDates.forEach(r => r.trade_date && dateSet.add(r.trade_date));
+      const summaryDates = db.prepare('SELECT DISTINCT trade_date FROM daily_stock_summary WHERE symbol = ? ORDER BY trade_date DESC').all(sym);
+      summaryDates.forEach(r => r.trade_date && dateSet.add(r.trade_date));
+    }
+  } catch (_) {}
+
   // 1. Chukul UDF multi-year historydata API (discovers up to 1,800+ historical sessions back to 2018)
   try {
     const udfRes = await axios.get(`https://chukul.com/api/data/historydata/data/?symbol=${encodeURIComponent(sym)}&resolution=1D&from=1400000000&to=1900000000`, {

@@ -173,34 +173,32 @@ export function normalizeAndAggregateBrokerData(
       sellTrades: number;
       buyTurnover: number;
       sellTurnover: number;
+      fallbackBuyPx: number;
+      fallbackSellPx: number;
     }
   >();
 
   for (const item of rawList) {
     if (!item || typeof item !== 'object') continue;
-    const brokerId = safeNum(item.brokerId ?? item.broker_id ?? item.brokerNo, 0);
+    const brokerId = safeNum(item.brokerId ?? item.broker_id ?? item.brokerNo ?? item.broker ?? item.id, 0);
     if (brokerId <= 0) continue;
 
-    // BUG FIX (Discrepancy #4): realBrokerAnalysis uses `buyQty`/`sellQty`/`buyAmt`/`avgBuyRate`
-    // instead of floor-sheet canonical names. Add fallbacks so 1D Overview summary shows non-zero kitta.
-    const buyVol = Math.max(0, safeNum(item.buyVolume ?? item.buy_volume ?? item.buyKitta ?? item.buyQty, 0));
+    // Support canonical and alternative field names from both live floorsheet and historical backend
+    const buyVol = Math.max(0, safeNum(item.buyVolume ?? item.buy_volume ?? item.buyKitta ?? item.buyQty ?? item.volume, 0));
     const sellVol = Math.max(0, safeNum(item.sellVolume ?? item.sell_volume ?? item.sellKitta ?? item.sellQty, 0));
 
-    const avgBuyPx = Math.max(0, safeNum(item.avgBuyPrice ?? item.avgBuyRate, 0));
-    const avgSellPx = Math.max(0, safeNum(item.avgSellPrice ?? item.avgSellRate, 0));
+    const avgBuyPx = Math.max(0, safeNum(item.avgBuyPrice ?? item.avgBuyRate ?? item.buyVwap ?? item.vwap ?? item.rate ?? item.price, 0));
+    const avgSellPx = Math.max(0, safeNum(item.avgSellPrice ?? item.avgSellRate ?? item.sellVwap ?? item.vwap ?? item.rate ?? item.price, 0));
 
-    const buyTurnover = Math.max(
-      0,
-      safeNum(item.buyAmount ?? item.buy_turnover_npr ?? item.buyAmt, buyVol * avgBuyPx)
-    );
-    const sellTurnover = Math.max(
-      0,
-      safeNum(item.sellAmount ?? item.sell_turnover_npr ?? item.sellAmt, sellVol * avgSellPx)
-    );
+    const rawBuyAmt = safeNum(item.buyAmount ?? item.buy_turnover_npr ?? item.buyAmt, 0);
+    const buyTurnover = rawBuyAmt > 0 ? rawBuyAmt : (buyVol * avgBuyPx);
+
+    const rawSellAmt = safeNum(item.sellAmount ?? item.sell_turnover_npr ?? item.sellAmt, 0);
+    const sellTurnover = rawSellAmt > 0 ? rawSellAmt : (sellVol * avgSellPx);
 
     // Estimate trade tickets if backend omitted transaction count
     const rawBuyTrades = safeNum(
-      item.buyTrades ?? item.buy_trades_count ?? item.buyTransactions,
+      item.buyTrades ?? item.buy_trades_count ?? item.buyTransactions ?? item.trades,
       0
     );
     const rawSellTrades = safeNum(item.sellTrades ?? item.sell_trades_count, 0);
@@ -215,6 +213,8 @@ export function normalizeAndAggregateBrokerData(
       sellTrades: 0,
       buyTurnover: 0,
       sellTurnover: 0,
+      fallbackBuyPx: 0,
+      fallbackSellPx: 0,
     };
 
     existing.buyVol += buyVol;
@@ -223,6 +223,8 @@ export function normalizeAndAggregateBrokerData(
     existing.sellTrades += sellTrades;
     existing.buyTurnover += buyTurnover;
     existing.sellTurnover += sellTurnover;
+    if (avgBuyPx > 0) existing.fallbackBuyPx = avgBuyPx;
+    if (avgSellPx > 0) existing.fallbackSellPx = avgSellPx;
 
     rollupMap.set(brokerId, existing);
   }
@@ -244,8 +246,12 @@ export function normalizeAndAggregateBrokerData(
     const totalVolume = agg.buyVol + agg.sellVol;
     if (totalVolume <= 0) continue;
 
-    const buyVwap = agg.buyVol > 0 && agg.buyTurnover > 0 ? agg.buyTurnover / agg.buyVol : 0;
-    const sellVwap = agg.sellVol > 0 && agg.sellTurnover > 0 ? agg.sellTurnover / agg.sellVol : 0;
+    const buyVwap = agg.buyVol > 0 && agg.buyTurnover > 0
+      ? agg.buyTurnover / agg.buyVol
+      : (agg.fallbackBuyPx > 0 ? agg.fallbackBuyPx : 0);
+    const sellVwap = agg.sellVol > 0 && agg.sellTurnover > 0
+      ? agg.sellTurnover / agg.sellVol
+      : (agg.fallbackSellPx > 0 ? agg.fallbackSellPx : 0);
     const avgBuyTicketKitta =
       agg.buyVol > 0 ? agg.buyVol / Math.max(1, agg.buyTrades) : 0;
 

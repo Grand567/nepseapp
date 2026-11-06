@@ -7393,12 +7393,17 @@ app.get([
   const sessionLimit = isAll ? 9999 : (req.query.days ? Math.max(1, parseInt(req.query.days, 10) || 1) : (tf === '5D' ? 5 : tf === '1M' ? 20 : 1));
 
   try {
+    const marketDates = await getMarketTradingDates().catch(() => []);
+    const latestDate = marketDates[0] || formatNptDateIso(new Date());
+
     if (isAll) {
       const allTimeResult = await getOrFetchAllTimeBrokerHoldings(symbol);
       if (allTimeResult && (allTimeResult.brokers?.length > 0 || allTimeResult.totalSharesHeldTillNow > 0)) {
         return res.json({
           success: true,
           symbol,
+          date: latestDate,
+          businessDate: latestDate,
           timeframe: 'ALL',
           sessionsIncluded: allTimeResult.sessionsCount || 9999,
           totalSharesHeldTillNow: allTimeResult.totalSharesHeldTillNow,
@@ -7408,7 +7413,7 @@ app.get([
           allDistributors: allTimeResult.allDistributors,
           topHoldings: allTimeResult.topHoldings,
           dailyFlow: allTimeResult.dailyFlow || [],
-          availableDates: allTimeResult.availableDates || []
+          availableDates: allTimeResult.availableDates || marketDates
         });
       }
     }
@@ -7447,9 +7452,12 @@ app.get([
     const totalSharesHeld = accumulators.reduce((sum, b) => sum + b.netQty, 0);
 
     const marketDates = await getMarketTradingDates().catch(() => []);
+    const latestDate = marketDates[0] || formatNptDateIso(new Date());
     return res.json({
       success: true,
       symbol,
+      date: latestDate,
+      businessDate: latestDate,
       timeframe: tf,
       sessionsIncluded: sessionLimit,
       totalSharesHeldTillNow: totalSharesHeld,
