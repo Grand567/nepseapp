@@ -242,7 +242,7 @@ export function startEodReconciliationScheduler() {
 
   console.log('[EodReconciliationEngine] ⏰ Initializing 3:15 PM Automated EOD Bhavsani Reconciliation Scheduler...');
 
-  _reconciliationInterval = setInterval(() => {
+  const checkAndRunEod = () => {
     try {
       const now = new Date();
       // Compute NPT time (UTC + 5:45)
@@ -255,16 +255,26 @@ export function startEodReconciliationScheduler() {
       // Check if trading day (Monday–Friday)
       if (!isNepseTradingDay(now)) return;
 
-      // 3:15 PM is 15:15 NPT
-      if (hours === 15 && minutes >= 15 && minutes <= 30) {
-        if (_lastReconciledDate !== todayIso) {
-          console.log(`[EodReconciliationEngine] 🔔 3:15 PM NPT Reached on ${todayIso}. Triggering automated EOD reconciliation...`);
+      // Anytime from 3:15 PM (15:15 NPT) onwards until midnight
+      const isPostMarketReconcileWindow = (hours > 15) || (hours === 15 && minutes >= 15);
+
+      if (isPostMarketReconcileWindow && _lastReconciledDate !== todayIso) {
+        const history = getReconciliationHistory();
+        const alreadyReconciledToday = history.some(h => h.tradeDate === todayIso && h.status === 'CERTIFIED_AUTHENTIC');
+        if (!alreadyReconciledToday) {
+          console.log(`[EodReconciliationEngine] 🔔 3:15 PM NPT Reconcile triggered on ${todayIso}. Executing automated EOD parity check...`);
           _lastReconciledDate = todayIso;
           runEodReconciliation(todayIso);
+        } else {
+          _lastReconciledDate = todayIso;
         }
       }
     } catch (err) {
       console.warn('[EodReconciliationEngine] Scheduler check error:', err.message);
     }
-  }, 60000);
+  };
+
+  _reconciliationInterval = setInterval(checkAndRunEod, 60000);
+  // Immediate check on startup
+  setTimeout(checkAndRunEod, 5000);
 }

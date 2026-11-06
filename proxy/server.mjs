@@ -82,7 +82,7 @@ import {
   sendDiscordPrimePickAlert
 } from './discordNotifier.mjs';
 import { assembleScripDossier, buildAgentAnalysisPrompt } from './agentTools.mjs';
-import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseTradingDay, formatNptDateIso, setLiveMarketOverride, generateTradingDaysSequence } from '../src/utils/nepseCalendar.js';
+import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseTradingDay, formatNptDateIso, setLiveMarketOverride, generateTradingDaysSequence, getLastValidTradingDay } from '../src/utils/nepseCalendar.js';
 import { 
   getArchiveIndex, 
   downloadAndArchiveDailyFloorsheet, 
@@ -13575,27 +13575,35 @@ app.listen(PORT, '0.0.0.0', async () => {
     // ── Automated Daily Post-Market Floorsheet Archiver (3:05 PM NPT) ─────────
     // Automatically runs after 3:00 PM NPT on trading days to download and archive the
     // full day floorsheet into proxy/data/daily_floorsheets/ and ingest into SQLite ledger.
+    // Also auto-recovers on startup or late evening whenever a completed trading session is missing.
     const runPostMarketFloorsheetCollector = async () => {
       try {
         const todayNptDate = new Date();
         const todayIso = formatNptDateIso(todayNptDate);
-        if (!isNepseTradingDay(todayNptDate)) return;
-
         const status = getDetailedMarketStatus(todayNptDate);
         const nptMins = status.nptTotalMinutes || 0;
-        // Run between 15:05 NPT (15*60 + 5 = 905) and 18:00 NPT (18*60 = 1080)
-        // Strictly archive today's completed trading session (never tomorrow)
-        if (nptMins >= 905 && nptMins <= 1080) {
+
+        // Target session date that must be completed and archived:
+        // 1. If today is a trading day and market has closed (>= 15:05 NPT / 905 mins), target is today.
+        // 2. If today is a weekend, holiday, or pre-market, target is the last completed trading day (e.g. Friday).
+        let targetDate = null;
+        if (status.isTradingDay && nptMins >= 905) {
+          targetDate = todayIso;
+        } else if (!status.isTradingDay || nptMins < 660) {
+          targetDate = typeof getLastValidTradingDay === 'function' ? getLastValidTradingDay(todayNptDate, true) : null;
+        }
+
+        if (targetDate) {
           const archives = getArchiveIndex();
-          const alreadyArchived = archives.some(a => a.date === todayIso && a.tradeCount > 0);
+          const alreadyArchived = archives.some(a => a.date === targetDate && a.tradeCount > 0);
           if (!alreadyArchived) {
-            console.log(`[auto-archiver] Post-market 3:05 PM triggered: archiving full floorsheet for ${todayIso}...`);
-            const res = await downloadAndArchiveDailyFloorsheet(todayIso);
-            console.log(`[auto-archiver] Finished floorsheet archive for ${todayIso}:`, res?.tradeCount, 'trades');
+            console.log(`[auto-archiver] Post-market sync triggered for ${targetDate}...`);
+            const res = await downloadAndArchiveDailyFloorsheet(targetDate);
+            console.log(`[auto-archiver] Finished floorsheet archive for ${targetDate}:`, res?.tradeCount, 'trades');
             try {
-              const fullTrades = await getFullSessionFloorsheet(todayIso);
+              const fullTrades = await getFullSessionFloorsheet(targetDate);
               if (Array.isArray(fullTrades) && fullTrades.length > 0) {
-                const aggData = aggregateMarketFloorsheet(fullTrades, todayIso);
+                const aggData = aggregateMarketFloorsheet(fullTrades, targetDate);
                 const outPath = path.join(__dirname, 'data', 'broker_matrix_latest.json');
                 fs.writeFileSync(outPath, JSON.stringify(aggData, null, 2), 'utf8');
                 const srcPath = path.join(process.cwd(), 'src', 'data', 'broker_matrix_latest.json');
@@ -13606,17 +13614,17 @@ app.listen(PORT, '0.0.0.0', async () => {
                 if (fs.existsSync(srcHistPath)) {
                   const histSeed = JSON.parse(fs.readFileSync(srcHistPath, 'utf8'));
                   const lightMatrix = (aggData.matrix || []).map(({ scrips, ...rest }) => rest);
-                  histSeed[todayIso] = { ...aggData, matrix: lightMatrix };
+                  histSeed[targetDate] = { ...aggData, matrix: lightMatrix };
                   const recentDates = Object.keys(histSeed).sort().reverse().slice(0, 5);
                   const prunedSeed = {};
                   for (const rd of recentDates) prunedSeed[rd] = histSeed[rd];
                   fs.writeFileSync(srcHistPath, JSON.stringify(prunedSeed), 'utf8');
                 }
-                console.log(`[auto-archiver] ✅ Dual-written broker matrix for ${todayIso} to proxy & src`);
+                console.log(`[auto-archiver] ✅ Dual-written broker matrix for ${targetDate} to proxy & src`);
               }
               compileHistoricalSubfiles();
               compileTodayStaticAnalytics();
-              console.log(`[auto-archiver] ✅ Recompiled 4 historical subfiles & today static analytics for ${todayIso}`);
+              console.log(`[auto-archiver] ✅ Recompiled 4 historical subfiles & today static analytics for ${targetDate}`);
             } catch (postErr) {
               console.warn('[auto-archiver] Post-compile notice:', postErr.message);
             }
