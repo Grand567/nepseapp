@@ -2960,6 +2960,8 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
         dailyFlow: agg.dailyFlow || [],
         topAccumulator: agg.topNetBuyers?.[0] || null,
         topDistributor: agg.topNetSellers?.[0] || null,
+        topAccumulators: agg.topAccumulators || agg.topNetBuyers || [],
+        topDistributors: agg.topDistributors || agg.topNetSellers || [],
         isReal: true,
         isRealFloorsheet: true,
         updatedAt: agg.updatedAt || new Date().toISOString()
@@ -3055,6 +3057,8 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
                 dailyFlow: agg.dailyFlow || [],
                 topAccumulator: agg.topNetBuyers?.[0] || null,
                 topDistributor: agg.topNetSellers?.[0] || null,
+                topAccumulators: agg.topAccumulators || agg.topNetBuyers || [],
+                topDistributors: agg.topDistributors || agg.topNetSellers || [],
                 isReal: true,
                 isRealFloorsheet: true,
                 updatedAt: agg.updatedAt || new Date().toISOString()

@@ -2325,6 +2325,7 @@ export default function StockDetailModal({
   }, [d, liveDetail]);
 
   // Broker Accumulation History: fetch when depth tab active or period selector changes
+  // Note: Only updates brokerAccumData for the multi-day history card; does NOT mutate realBrokerAnalysis (1D live state)
   useEffect(() => {
     if ((activeTab !== 'market_depth' && activeTab !== 'depth_broker') || !d?.symbol) return;
     const daysMap = {
@@ -2340,7 +2341,6 @@ export default function StockDetailModal({
         .then(data => {
           if (data) {
             setBrokerAccumData(data);
-            setRealBrokerAnalysis(data);
           }
         })
         .catch(() => {})
@@ -2358,8 +2358,13 @@ export default function StockDetailModal({
           .catch(() => {})
           .finally(() => setMarketDepthLoading(false));
       }
-      if (!realBrokerAnalysis && !brokerAnalysisLoading) {
-        fetchBrokerAnalysisData(brokerDays, brokerDate);
+      // Ensure 1D live broker analysis is always loaded for today's live session
+      if ((!realBrokerAnalysis || realBrokerAnalysis.tradingDays !== 1) && !brokerAnalysisLoading) {
+        fetchBrokerAnalysisData(1, brokerDate || modalSessionDate || '');
+      }
+      // Ensure 1D live floorsheet is loaded so intraday contract microstructure is available
+      if ((!realFloorsheet || !realFloorsheet.rows || realFloorsheet.rows.length === 0) && !floorsheetLoading) {
+        fetchFloorsheetData(1, { date: brokerDate || modalSessionDate || '' });
       }
     }
     if ((activeTab === 'floorsheet' || activeTab === 'depth_broker' || activeTab === 'volume_profile') && d?.symbol) {
@@ -5117,34 +5122,46 @@ export default function StockDetailModal({
         {/* ════ TAB 2: MARKET DEPTH (Share Hub Parity & Live Order Flow Intelligence) ════ */}
         {(activeTab === 'market_depth' || activeTab === 'depth_broker') && (() => {
           // --- Unified Intraday & Live Order Flow Analytics ---
-          const liveBa = realBrokerAnalysis || brokerAccumData;
+          // Strict Guard: Live intraday order flow must strictly use 1D session data. Never poison with multi-day rollups!
+          const pure1DBa = (realBrokerAnalysis && (realBrokerAnalysis.tradingDays === 1 || !realBrokerAnalysis.tradingDays)) ? realBrokerAnalysis : null;
           const liveBc = brokerConcentration;
 
           // Top Accumulators (Net Buyers) for Live / 1D session
           const liveAccums = (
-            (Array.isArray(liveBa?.topNetBuyers) && liveBa.topNetBuyers.length > 0) ? liveBa.topNetBuyers :
+            (Array.isArray(pure1DBa?.topAccumulators) && pure1DBa.topAccumulators.length > 0) ? pure1DBa.topAccumulators :
+            (Array.isArray(pure1DBa?.topNetBuyers) && pure1DBa.topNetBuyers.length > 0) ? pure1DBa.topNetBuyers :
             (Array.isArray(liveBc?.topNetAccumulators) && liveBc.topNetAccumulators.length > 0) ? liveBc.topNetAccumulators :
-            (Array.isArray(liveBa?.topNetAccumulators) && liveBa.topNetAccumulators.length > 0) ? liveBa.topNetAccumulators :
-            (Array.isArray(liveBa?.brokers) && liveBa.brokers.length > 0) ? liveBa.brokers.filter(b => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) > 0).sort((a, b) => (b.netQty || (b.buyQty - b.sellQty)) - (a.netQty || (a.buyQty - a.sellQty))) :
-            (Array.isArray(liveBa?.topBuyers) && liveBa.topBuyers.length > 0) ? liveBa.topBuyers :
-            (Array.isArray(liveBc?.topBuyerBrokers) && liveBc.topBuyerBrokers.length > 0) ? liveBc.topBuyerBrokers : []
+            (Array.isArray(pure1DBa?.topNetAccumulators) && pure1DBa.topNetAccumulators.length > 0) ? pure1DBa.topNetAccumulators :
+            (Array.isArray(pure1DBa?.brokers) && pure1DBa.brokers.length > 0) ? pure1DBa.brokers.filter(b => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) > 0).sort((a, b) => (b.netQty || (b.buyQty - b.sellQty)) - (a.netQty || (a.buyQty - a.sellQty))) :
+            (Array.isArray(liveBc?.topBuyerBrokers) && liveBc.topBuyerBrokers.length > 0) ? liveBc.topBuyerBrokers :
+            (Array.isArray(pure1DBa?.topBuyers) && pure1DBa.topBuyers.length > 0) ? pure1DBa.topBuyers : []
           );
 
           // Top Distributors (Net Sellers) for Live / 1D session
           const liveDists = (
-            (Array.isArray(liveBa?.topNetSellers) && liveBa.topNetSellers.length > 0) ? liveBa.topNetSellers :
+            (Array.isArray(pure1DBa?.topDistributors) && pure1DBa.topDistributors.length > 0) ? pure1DBa.topDistributors :
+            (Array.isArray(pure1DBa?.topNetSellers) && pure1DBa.topNetSellers.length > 0) ? pure1DBa.topNetSellers :
             (Array.isArray(liveBc?.topNetDistributors) && liveBc.topNetDistributors.length > 0) ? liveBc.topNetDistributors :
-            (Array.isArray(liveBa?.topNetDistributors) && liveBa.topNetDistributors.length > 0) ? liveBa.topNetDistributors :
-            (Array.isArray(liveBa?.brokers) && liveBa.brokers.length > 0) ? liveBa.brokers.filter(b => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) < 0).sort((a, b) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - a.sellQty))) :
-            (Array.isArray(liveBa?.topSellers) && liveBa.topSellers.length > 0) ? liveBa.topSellers :
-            (Array.isArray(liveBc?.topSellerBrokers) && liveBc.topSellerBrokers.length > 0) ? liveBc.topSellerBrokers : []
+            (Array.isArray(pure1DBa?.topNetDistributors) && pure1DBa.topNetDistributors.length > 0) ? pure1DBa.topNetDistributors :
+            (Array.isArray(pure1DBa?.brokers) && pure1DBa.brokers.length > 0) ? pure1DBa.brokers.filter(b => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) < 0).sort((a, b) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - a.sellQty))) :
+            (Array.isArray(liveBc?.topSellerBrokers) && liveBc.topSellerBrokers.length > 0) ? liveBc.topSellerBrokers :
+            (Array.isArray(pure1DBa?.topSellers) && pure1DBa.topSellers.length > 0) ? pure1DBa.topSellers : []
+          );
+
+          // Total session volume
+          const sessionTradedVol = Number(
+            d?.volume ||
+            pure1DBa?.totalVolume ||
+            liveBc?.totalBuyVolume ||
+            floorsheet.reduce((s, r) => s + (r.qty || 0), 0) ||
+            0
           );
 
           // Net volume calculations
           const liveNetBuyShares = liveAccums.reduce((s, b) => s + Math.max(0, Number(b.netQty !== undefined ? b.netQty : ((b.buyQty || b.volume || 0) - (b.sellQty || 0)))), 0);
           const liveNetSellShares = liveDists.reduce((s, b) => s + Math.abs(Math.min(0, Number(b.netQty !== undefined ? b.netQty : ((b.buyQty || 0) - (b.sellQty || b.volume || 0))))), 0);
           const liveTotFlow = liveNetBuyShares + liveNetSellShares;
-          const liveBuyPct = liveTotFlow > 0 ? Math.round((liveNetBuyShares / liveTotFlow) * 100) : (liveBa?.smartMoneyNetFlowPct != null ? Math.max(10, Math.min(90, Math.round(50 + (liveBa.smartMoneyNetFlowPct / 2)))) : 50);
+          const liveBuyPct = liveTotFlow > 0 ? Math.round((liveNetBuyShares / liveTotFlow) * 100) : (pure1DBa?.smartMoneyNetFlowPct != null ? Math.max(10, Math.min(90, Math.round(50 + (pure1DBa.smartMoneyNetFlowPct / 2)))) : 50);
           const liveSellPct = 100 - liveBuyPct;
 
           // Institutional Whale VWAP: SUM(buyAmt) / SUM(buyQty) across top 5 net accumulating institutional brokers
@@ -5167,11 +5184,26 @@ export default function StockDetailModal({
 
           const currentLtp = Number(d?.ltp || 0);
           const diffFromVwap = (liveWhaleVwap > 0 && currentLtp > 0) ? +(((currentLtp - liveWhaleVwap) / liveWhaleVwap) * 100).toFixed(1) : 0;
-          const liveBcr3Buy = Number(liveBa?.bcr3BuyPct ?? liveBc?.bcr3BuyPct ?? 0);
-          const liveBcr3Sell = Number(liveBa?.bcr3SellPct ?? liveBc?.bcr3SellPct ?? 0);
+          const liveBcr3Buy = Number(pure1DBa?.bcr3BuyPct ?? liveBc?.bcr3BuyPct ?? 0);
+          const liveBcr3Sell = Number(pure1DBa?.bcr3SellPct ?? liveBc?.bcr3SellPct ?? liveBc?.scr3SellPct ?? 0);
 
-          const isLiveAccum = (liveBuyPct >= 55) || (liveBa?.adSignal === 'Accumulation') || (liveBcr3Buy > liveBcr3Sell + 5);
-          const isLiveDist = (liveSellPct >= 55) || (liveBa?.adSignal === 'Distribution') || (liveBcr3Sell > liveBcr3Buy + 5);
+          // Order Flow Veto & Whale Dumping Radar
+          const orderFlowVeto = evaluateOrderFlowVeto(pure1DBa || {
+            totalVolume: sessionTradedVol,
+            bcr3BuyPct: liveBcr3Buy,
+            bcr3SellPct: liveBcr3Sell,
+            scr3SellPct: liveBcr3Sell,
+            topSellers: liveDists
+          }, d);
+
+          const topDist = liveDists[0] || null;
+          const topDistNetShares = topDist ? Math.abs(Number(topDist.netQty !== undefined ? topDist.netQty : ((topDist.sellQty || topDist.volume || 0) - (topDist.buyQty || 0)))) : 0;
+          const topDistShareOfVol = sessionTradedVol > 0 ? +((topDistNetShares / sessionTradedVol) * 100).toFixed(1) : 0;
+
+          // Rigorous institutional classifications
+          const isWhaleDump = orderFlowVeto.isVetoed || topDistShareOfVol >= 15.0 || (liveBcr3Sell >= 45 && liveBcr3Sell > liveBcr3Buy + 10);
+          const isLiveDist = !isWhaleDump && ((liveSellPct >= 55) || (pure1DBa?.adSignal === 'Distribution') || (liveBcr3Sell > liveBcr3Buy + 5));
+          const isLiveAccum = !isWhaleDump && !isLiveDist && ((liveBuyPct >= 55) || (pure1DBa?.adSignal === 'Accumulation') || (liveBcr3Buy > liveBcr3Sell + 5));
 
           // Order Book (Level 2) Metrics
           const bookBuyQty = Number(marketDepth?.totalBuyQty || 0);
@@ -5195,8 +5227,39 @@ export default function StockDetailModal({
             tacticalTip: `Wait for price to establish decisive volume breakout above Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}) before allocating new capital.`
           };
 
-          if (isLiveAccum) {
-            if (diffFromVwap <= 2.5) {
+          if (isWhaleDump) {
+            const brokerId = topDist?.broker || topDist?.brokerId || topDist?.id || '?';
+            const brokerName = topDist?.brokerName || topDist?.name || getBrokerName(brokerId);
+            const dumpPct = topDistShareOfVol > 0 ? topDistShareOfVol : (liveBcr3Sell > 0 ? liveBcr3Sell : 30);
+            investVerdict = {
+              badge: '🚨 Whale Dumping In Progress',
+              badgeBg: 'rgba(239, 68, 68, 0.18)',
+              badgeColor: '#ef4444',
+              badgeBorder: 'rgba(239, 68, 68, 0.45)',
+              cardBg: 'linear-gradient(135deg, rgba(153, 27, 27, 0.5), rgba(15, 23, 42, 0.95))',
+              cardBorder: 'rgba(239, 68, 68, 0.5)',
+              verdictTitle: 'DO NOT BUY RIGHT NOW — ACTIVE INSTITUTIONAL DUMPING',
+              verdictColor: '#fca5a5',
+              glow: '0 4px 24px rgba(239, 68, 68, 0.35)',
+              reason: `CRITICAL SELLER OVERHANG: Dominant broker #${brokerId} (${brokerName}) is aggressively dumping inventory (${topDistNetShares.toLocaleString()} shares, ${dumpPct}% of total volume) with heavy net selling. Top sellers control ${liveBcr3Sell > 0 ? liveBcr3Sell : liveSellPct}% of order flow. Passive retail limit bids are being hit as exit liquidity.`,
+              tacticalTip: `STRICT DO NOT BUY: Stand completely aside. Do not attempt to catch falling knives or average down until dominant selling pressure subsides and institutional net absorption flips positive.`
+            };
+          } else if (isLiveDist) {
+            investVerdict = {
+              badge: '🔴 Institutional Distribution Active',
+              badgeBg: 'rgba(244, 63, 94, 0.15)',
+              badgeColor: '#f43f5e',
+              badgeBorder: 'rgba(244, 63, 94, 0.4)',
+              cardBg: 'linear-gradient(135deg, rgba(136, 19, 55, 0.4), rgba(15, 23, 42, 0.9))',
+              cardBorder: 'rgba(244, 63, 94, 0.45)',
+              verdictTitle: 'CAUTION / DO NOT BUY — SUPPLY EXCEEDS DEMAND',
+              verdictColor: '#fb7185',
+              glow: '0 4px 22px rgba(244, 63, 94, 0.25)',
+              reason: `Active selling pressure outweighs buying (${liveSellPct}% sell flow vs ${liveBuyPct}% buy flow). Top distributing brokers (${liveDists.slice(0, 2).map(s => '#' + (s.broker || s.brokerId)).join(', ') || 'Major Sellers'}) are liquidating inventory into the market. Downward momentum is prevalent.`,
+              tacticalTip: `Avoid fresh long positions. Wait for institutional selling volume to subside and an authentic consolidation base to form.`
+            };
+          } else if (isLiveAccum) {
+            if (diffFromVwap <= 2.5 && diffFromVwap >= -3.0) {
               investVerdict = {
                 badge: '🟢 Institutional Accumulation Active',
                 badgeBg: 'rgba(16, 185, 129, 0.15)',
@@ -5204,13 +5267,13 @@ export default function StockDetailModal({
                 badgeBorder: 'rgba(16, 185, 129, 0.4)',
                 cardBg: 'linear-gradient(135deg, rgba(6, 78, 59, 0.45), rgba(15, 23, 42, 0.9))',
                 cardBorder: 'rgba(16, 185, 129, 0.45)',
-                verdictTitle: 'INVEST RIGHT NOW — FAVORABLE ENTRY / BUY ZONE',
+                verdictTitle: 'FAVORABLE ACCUMULATION ZONE — HIGH CONFLUENCE ENTRY',
                 verdictColor: '#34d399',
                 glow: '0 4px 22px rgba(16, 185, 129, 0.25)',
-                reason: `Smart money brokers (${liveAccums.slice(0, 2).map(b => '#' + (b.broker || b.brokerId)).join(', ') || 'Institutional Desks'}) are aggressively absorbing shares (${liveBuyPct}% live buy flow). Current market price (Rs. ${currentLtp}) is trading right at Whale VWAP base (Rs. ${liveWhaleVwap.toFixed(1)}) [${diffFromVwap >= 0 ? '+' : ''}${diffFromVwap}%], providing high confluence and optimal risk-to-reward.`,
-                tacticalTip: `High-probability entry point. Suggested protective stop-loss below today's VWAP support.`
+                reason: `Smart money brokers (${liveAccums.slice(0, 2).map(b => '#' + (b.broker || b.brokerId)).join(', ') || 'Institutional Desks'}) are absorbing shares (${liveBuyPct}% live buy flow, BCR₃ ${liveBcr3Buy}%). Current market price (Rs. ${currentLtp}) is anchored at the institutional Whale VWAP base (Rs. ${liveWhaleVwap.toFixed(1)}) [${diffFromVwap >= 0 ? '+' : ''}${diffFromVwap}%], providing favorable risk-to-reward.`,
+                tacticalTip: `Favorable accumulation zone. Suggested protective stop-loss below today's VWAP support (Rs. ${(liveWhaleVwap * 0.97).toFixed(1)}).`
               };
-            } else {
+            } else if (diffFromVwap > 2.5) {
               investVerdict = {
                 badge: '🟡 Accumulation Active (Extended)',
                 badgeBg: 'rgba(245, 158, 11, 0.15)',
@@ -5221,24 +5284,24 @@ export default function StockDetailModal({
                 verdictTitle: 'ACCUMULATION PRESENT — WAIT FOR PULLBACK TO VWAP',
                 verdictColor: '#fbbf24',
                 glow: '0 4px 22px rgba(245, 158, 11, 0.25)',
-                reason: `Institutional buyers are accumulating (${liveBuyPct}% buy flow), BUT current market price (Rs. ${currentLtp}) is already extended +${diffFromVwap}% above the institutional Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}). Chasing at this level carries short-term drawdown risk.`,
+                reason: `Institutional buyers are accumulating (${liveBuyPct}% buy flow), BUT current market price (Rs. ${currentLtp}) is already extended +${diffFromVwap}% above the institutional Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}). Chasing carries short-term drawdown risk.`,
                 tacticalTip: `Do not chase market orders. Place limit orders on pullbacks closer to Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}).`
               };
+            } else {
+              investVerdict = {
+                badge: '🔵 Discounted Accumulation Zone',
+                badgeBg: 'rgba(56, 189, 248, 0.15)',
+                badgeColor: '#38bdf8',
+                badgeBorder: 'rgba(56, 189, 248, 0.4)',
+                cardBg: 'linear-gradient(135deg, rgba(12, 74, 110, 0.4), rgba(15, 23, 42, 0.9))',
+                cardBorder: 'rgba(56, 189, 248, 0.45)',
+                verdictTitle: 'ACCUMULATION AT DISCOUNT — HIGH VALUE ZONE',
+                verdictColor: '#7dd3fc',
+                glow: '0 4px 22px rgba(56, 189, 248, 0.25)',
+                reason: `Institutional brokers are absorbing shares while price is trading at a ${Math.abs(diffFromVwap)}% discount below institutional VWAP (Rs. ${liveWhaleVwap.toFixed(1)}).`,
+                tacticalTip: `Scale in prudently with strict stop-loss.`
+              };
             }
-          } else if (isLiveDist) {
-            investVerdict = {
-              badge: '🔴 Institutional Distribution Active',
-              badgeBg: 'rgba(244, 63, 94, 0.15)',
-              badgeColor: '#f43f5e',
-              badgeBorder: 'rgba(244, 63, 94, 0.4)',
-              cardBg: 'linear-gradient(135deg, rgba(136, 19, 55, 0.4), rgba(15, 23, 42, 0.9))',
-              cardBorder: 'rgba(244, 63, 94, 0.45)',
-              verdictTitle: 'DO NOT INVEST RIGHT NOW — ACTIVE DISTRIBUTION',
-              verdictColor: '#fb7185',
-              glow: '0 4px 22px rgba(244, 63, 94, 0.25)',
-              reason: `Dominant broker desks (${liveDists.slice(0, 2).map(s => '#' + (s.broker || s.brokerId)).join(', ') || 'Major Sellers'}) are actively liquidating inventory (${liveSellPct}% live sell flow). Passive retail limit bids are being hit heavily. Downward momentum is prevalent.`,
-              tacticalTip: `Avoid buying right now. Wait for institutional selling volume to subside and base to form.`
-            };
           }
 
           return (
@@ -5285,6 +5348,7 @@ export default function StockDetailModal({
                       onClick={() => {
                         fetchMarketDepth(d.symbol);
                         fetchBrokerAnalysisData(1, '', { refresh: true });
+                        fetchFloorsheetData(1, { refresh: true });
                       }}
                       style={{
                         padding: '4px 10px',
@@ -5679,11 +5743,12 @@ export default function StockDetailModal({
 
             {/* ══ Broker Accumulation / Distribution History Panel ══ */}
             {(() => {
-              const ba = brokerAccumData || realBrokerAnalysis;
-              const bc = (brokerAccumData ? calculateBrokerConcentration(floorsheet, d?.symbol, { ...d, realBrokerAnalysis: brokerAccumData }) : brokerConcentration) || brokerConcentration;
+              const ba = brokerAccumData || (realBrokerAnalysis?.tradingDays === (brokerAccumPeriod === '1D' ? 1 : 5) ? realBrokerAnalysis : null);
+              const bc = (ba ? calculateBrokerConcentration(floorsheet, d?.symbol, { ...d, realBrokerAnalysis: ba }) : brokerConcentration) || brokerConcentration;
 
               // Robust resolver cascading through all authentic data structures
               const netAccums = (
+                (Array.isArray(ba?.topAccumulators) && ba.topAccumulators.length > 0) ? ba.topAccumulators :
                 (Array.isArray(ba?.topNetBuyers) && ba.topNetBuyers.length > 0) ? ba.topNetBuyers :
                 (Array.isArray(bc?.topNetAccumulators) && bc.topNetAccumulators.length > 0) ? bc.topNetAccumulators :
                 (Array.isArray(ba?.topNetAccumulators) && ba.topNetAccumulators.length > 0) ? ba.topNetAccumulators :
@@ -5693,6 +5758,7 @@ export default function StockDetailModal({
               );
 
               const netDists = (
+                (Array.isArray(ba?.topDistributors) && ba.topDistributors.length > 0) ? ba.topDistributors :
                 (Array.isArray(ba?.topNetSellers) && ba.topNetSellers.length > 0) ? ba.topNetSellers :
                 (Array.isArray(bc?.topNetDistributors) && bc.topNetDistributors.length > 0) ? bc.topNetDistributors :
                 (Array.isArray(ba?.topNetDistributors) && ba.topNetDistributors.length > 0) ? ba.topNetDistributors :
@@ -5808,7 +5874,7 @@ export default function StockDetailModal({
                       <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                         <span>📊 Cumulative Broker Accumulation vs Distribution</span>
                         <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 6, background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
-                          Cumulative Executed Broker Inventory ({brokerDays}D Horizon)
+                          Cumulative Executed Broker Inventory ({ba?.tradingDays || brokerAccumPeriod} Horizon)
                         </span>
                         {brokerAccumLoading && <span style={{ fontSize: 11, color: '#94a3b8' }}>Loading…</span>}
                         {bias && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 8, background: biasColor + '22', color: biasColor, border: `1px solid ${biasColor}44` }}>{bias}</span>}
@@ -5829,21 +5895,19 @@ export default function StockDetailModal({
                         fontSize: 11.5,
                         fontWeight: 700
                       }}>
-                        <span>Sessions Analyzed: {(realBrokerAnalysis || ba)?.tradingDays || 1} Trading Days ({(realBrokerAnalysis || ba)?.fromDate || 'Latest'} → {(realBrokerAnalysis || ba)?.toDate || 'Latest'}) • Total Volume: {((realBrokerAnalysis || ba)?.totalVolume || 0).toLocaleString()} Shares</span>
+                        <span>Sessions Analyzed: {ba?.tradingDays || 1} Trading Days ({ba?.fromDate || 'Latest'} → {ba?.toDate || 'Latest'}) • Total Volume: {(ba?.totalVolume || 0).toLocaleString()} Shares</span>
                       </div>
                     </div>
                     {/* Horizon Selector Pills & Date Session Selector */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
                       <div style={{ display: 'flex', gap: 3, background: '#0f172a', borderRadius: 8, padding: 3, border: '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' }}>
                         {PERIOD_ITEMS.map(p => {
-                          const daysMap = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60, '90D': 90, '180D': 180, '260D': 260, '500D': 500 };
                           return (
                             <button
                               key={p.id}
                               type="button"
                               onClick={() => {
                                 setBrokerAccumPeriod(p.id);
-                                if (daysMap[p.id]) handleBrokerDaysChange(daysMap[p.id]);
                               }}
                               style={{
                                 padding: '5px 9px',
