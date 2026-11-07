@@ -482,11 +482,18 @@
     "lastEvaluatedAt": 1793089965806,
     "historyCount": 0
   },
+  "NABIL": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1793972464808,
+    "lastEvaluatedAt": 1793972464808,
+    "historyCount": 1
+  },
   "GHL": {
     "state": "COOLDOWN",
     "pendingScans": 1,
-    "lastTriggeredAt": 1793890191914,
-    "lastEvaluatedAt": 1793890191914,
+    "lastTriggeredAt": 1794063270105,
+    "lastEvaluatedAt": 1794063270105,
     "historyCount": 1
   }
 }

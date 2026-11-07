@@ -26,6 +26,9 @@ android/
 
 .vercel
 .agents/
+.agent/
+.gemini/
+.playwright-mcp/
 launch-claude-code.*
 proxy/data/sync_vaults/
 proxy/data/sync_vaults*.json
@@ -62,3 +65,5 @@ proxy/data/*.db
 !proxy/data/drabyashree_ledger.db.gz
 
 proxy/proxy/
+agent-audit.jsonl
+

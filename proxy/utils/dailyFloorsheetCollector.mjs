@@ -15,28 +15,13 @@ import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { db } from '../db/ledgerStore.js';
-import { getFullSessionFloorsheet } from '../brokerVault.mjs';
+import { getFullSessionFloorsheet, setContractsIngestor } from '../brokerVault.mjs';
 import { uploadDailyFloorsheetToR2, fetchFloorsheetFromR2 } from './cloudFloorsheetVault.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-function resolveDailyFloorsheetDir() {
-  const candidates = [
-    path.resolve(__dirname, '..', 'data', 'daily_floorsheets'),
-    path.join(process.cwd(), 'data', 'daily_floorsheets')
-  ];
-
-  for (const dir of candidates) {
-    if (!fs.existsSync(dir)) {
-      try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
-    }
-    if (fs.existsSync(dir)) return dir;
-  }
-  return candidates[0];
-}
-
-export const DAILY_FLOORSHEETS_DIR = resolveDailyFloorsheetDir();
+import { DAILY_FLOORSHEETS_DIR } from './floorsheetPaths.mjs';
 
 // Index metadata file path
 const INDEX_FILE = path.join(DAILY_FLOORSHEETS_DIR, 'archive_index.json');
@@ -345,6 +330,10 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
     return 0;
   }
 }
+
+try {
+  setContractsIngestor(ingestContractsToLedger);
+} catch (_) {}
 
 /**
  * Downloads and archives the floorsheet locally into DAILY_FLOORSHEETS_DIR

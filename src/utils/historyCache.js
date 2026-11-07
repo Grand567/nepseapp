@@ -11,6 +11,7 @@ import { idbGet, idbSet } from './indexedDb.js';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json' with { type: 'json' };
 import latestFundamentals from '../data/nepse_fundamentals_latest.json' with { type: 'json' };
 import cumulativeBrokerLedger from '../data/nepse_cumulative_broker_ledger.json' with { type: 'json' };
+import nepseIndexBaseline from '../data/nepse_index_baseline.json' with { type: 'json' };
 
 // Universal in-memory cache maps
 const memHistCache = new Map();
@@ -19,6 +20,12 @@ const memBrokerCache = new Map();
 const memFloorsheetCache = new Map();
 const memCumulativeBrokerCache = new Map();
 export const brokerDataCache = new Map();
+
+// Pre-seed in-memory NEPSE Index baseline candles synchronously (681 authentic sessions)
+if (Array.isArray(nepseIndexBaseline) && nepseIndexBaseline.length > 0) {
+  memHistCache.set('NEPSE', nepseIndexBaseline);
+  memHistCache.set('NEPSE INDEX', nepseIndexBaseline);
+}
 
 // Pre-seed in-memory fundamentals cache synchronously from verified baseline
 if (latestFundamentals && typeof latestFundamentals === 'object') {
@@ -257,13 +264,21 @@ if (typeof window !== 'undefined' && window.addEventListener) {
  * @returns {Array|null} Array of historical candle objects or null if unavailable
  */
 export function getCachedRealPriceHistory(sym) {
-  if (!sym || typeof window === 'undefined') return null;
+  if (!sym) return null;
   const key = String(sym).toUpperCase().trim();
   if (!key) return null;
 
   if (memHistCache.has(key)) {
     return memHistCache.get(key);
   }
+
+  // Baseline fallback for NEPSE index
+  if ((key === 'NEPSE' || key === 'NEPSE INDEX') && Array.isArray(nepseIndexBaseline) && nepseIndexBaseline.length > 0) {
+    memHistCache.set(key, nepseIndexBaseline);
+    return nepseIndexBaseline;
+  }
+
+  if (typeof window === 'undefined') return null;
 
   try {
     if (typeof localStorage !== 'undefined') {
@@ -289,13 +304,15 @@ export function getCachedRealPriceHistory(sym) {
  * @returns {Promise<Array|null>}
  */
 export async function getCachedRealPriceHistoryAsync(sym) {
-  if (!sym || typeof window === 'undefined') return null;
+  if (!sym) return null;
   const key = String(sym).toUpperCase().trim();
   if (!key) return null;
 
   // 1. Try fast in-memory / localStorage
   const sync = getCachedRealPriceHistory(key);
   if (sync) return sync;
+
+  if (typeof window === 'undefined') return null;
 
   // 2. Fall back to IndexedDB (unlimited quota, persistent)
   try {

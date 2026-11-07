@@ -3522,7 +3522,7 @@ export default function StockDetailModal({
       </div>
 
       {/* ── Sub-Millisecond Progress Bar Shimmer Line for StockDetailModal ── */}
-      <LoadingShimmerBar active={Boolean(chartLoading || brokerAnalysisLoading || floorsheetLoading || loadingDetail || compareLoading || marketDepthLoading || brokerAccumLoading)} />
+      <LoadingShimmerBar active={Boolean(realHistoryLoading || brokerAnalysisLoading || floorsheetLoading || compareLoading || marketDepthLoading || brokerAccumLoading || aiLoading)} />
 
       {/* ── Scrollable Body with smooth scrollTop=0 on open ── */}
       <div

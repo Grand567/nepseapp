@@ -5,7 +5,7 @@
  */
 
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
-import { getProxyBase } from '../utils/liveData.js';
+import { getProxyBase } from '../utils/proxyBase.js';
 import { setDynamicMarketHalt, clearDynamicMarketHalt, getDynamicMarketHalt, getIsoDateInNPT } from '../utils/nepseCalendar.js';
 
 let cachedNews = null;
@@ -315,14 +315,18 @@ export function resolveSymbolFromText(text) {
 }
 
 /**
- * Scans breaking headlines for corporate actions (dividends declared, zero-dividend decisions, AGMs).
+ * Scans breaking headlines for corporate actions (dividends declared, zero-dividend decisions, AGMs, right shares).
  */
 export function detectCorporateActionAlerts(newsArticles = []) {
   const zeroDivAlerts = [];
   const dividendDeclarations = [];
+  const rightShareAlerts = [];
+  const bookClosureAlerts = [];
 
   const zeroDivTerms = ['लाभांश वितरण नगर्ने', 'लाभांश नदिने', 'लाभांश नबाँड्ने', 'शून्य लाभांश', 'no dividend', 'zero dividend'];
   const divDeclTerms = ['प्रतिशत नगद लाभांश', 'प्रतिशत बोनस', 'प्रतिशत लाभांश', 'लाभांश प्रस्ताव', 'लाभांश पारित'];
+  const rightTerms = ['हकप्रद', 'right share', 'right issue', 'rights issue', 'हकप्रद सेयर', 'अनुपात हकप्रद'];
+  const bookCloseTerms = ['बुक क्लोज', 'बुकक्लोज', 'साधारण सभा', 'book closure', 'agm', 'annual general meeting', 'दर्ता किताब बन्द'];
 
   for (const article of (newsArticles || [])) {
     const text = (article.title || article.headline || '').trim();
@@ -356,9 +360,97 @@ export function detectCorporateActionAlerts(newsArticles = []) {
         source: article.source || 'Breaking Financial News'
       });
     }
+
+    // Detect Right Share Issue
+    const hasRight = rightTerms.some(term => text.includes(term));
+    if (hasRight) {
+      const ratioMatch = text.match(/([०-९0-9]+)\s*[:：]\s*([०-९0-9.]+)/) || text.match(/([०-९0-9.]+)\s*प्रतिशत/);
+      rightShareAlerts.push({
+        type: 'RIGHT_SHARE_DECLARED',
+        symbol: detectedSym,
+        ratio: ratioMatch ? ratioMatch[0] : null,
+        title: text,
+        url: article.url || article.link,
+        source: article.source || 'Breaking Financial News'
+      });
+    }
+
+    // Detect Book Closure / AGM Notice
+    const hasBookClose = bookCloseTerms.some(term => text.includes(term));
+    if (hasBookClose) {
+      bookClosureAlerts.push({
+        type: 'BOOK_CLOSURE_ALERT',
+        symbol: detectedSym,
+        title: text,
+        url: article.url || article.link,
+        source: article.source || 'Breaking Financial News'
+      });
+    }
   }
 
-  return { zeroDivAlerts, dividendDeclarations };
+  return { zeroDivAlerts, dividendDeclarations, rightShareAlerts, bookClosureAlerts };
+}
+
+/**
+ * Classifies an article into corporate action types for stock-specific news presentation
+ */
+export function classifyCorporateArticle(article) {
+  const text = `${article.title || article.headline || ''} ${article.summary || article.description || article.body || ''}`.toLowerCase();
+
+  const isDividend = ['लाभांश', 'बोनस', 'नगद लाभांश', 'प्रतिशत लाभांश', 'dividend', 'bonus share', 'cash dividend', 'शून्य लाभांश'].some(kw => text.includes(kw));
+  const isRightShare = ['हकप्रद', 'right share', 'right issue', 'rights issue', 'हकप्रद सेयर', 'अनुपात हकप्रद'].some(kw => text.includes(kw));
+  const isBookClosure = ['बुक क्लोज', 'बुकक्लोज', 'साधारण सभा', 'book closure', 'agm', 'annual general meeting', 'दर्ता किताब बन्द'].some(kw => text.includes(kw));
+  const isFinancial = ['वित्तीय विवरण', 'त्रैमासिक', 'quarterly report', 'financial report', 'earnings', 'खुद नाफा', 'प्रतिसेयर आम्दानी', 'अपरिष्कृत वित्तीय'].some(kw => text.includes(kw));
+
+  if (isDividend) {
+    return {
+      type: 'DIVIDEND',
+      badgeNp: '💰 लाभांश / बोनस',
+      badgeEn: 'Dividend / Bonus',
+      color: '#10b981',
+      bg: 'rgba(16, 185, 129, 0.15)',
+      border: 'rgba(16, 185, 129, 0.35)'
+    };
+  }
+  if (isRightShare) {
+    return {
+      type: 'RIGHT_SHARE',
+      badgeNp: '📈 हकप्रद सेयर',
+      badgeEn: 'Right Share',
+      color: '#a855f7',
+      bg: 'rgba(168, 85, 247, 0.15)',
+      border: 'rgba(168, 85, 247, 0.35)'
+    };
+  }
+  if (isBookClosure) {
+    return {
+      type: 'BOOK_CLOSURE',
+      badgeNp: '📅 बुक क्लोज / साधारण सभा',
+      badgeEn: 'Book Closure / AGM',
+      color: '#f59e0b',
+      bg: 'rgba(245, 158, 11, 0.15)',
+      border: 'rgba(245, 158, 11, 0.35)'
+    };
+  }
+  if (isFinancial) {
+    return {
+      type: 'FINANCIAL',
+      badgeNp: '📊 वित्तीय विवरण',
+      badgeEn: 'Financial Report',
+      color: '#38bdf8',
+      bg: 'rgba(56, 189, 248, 0.15)',
+      border: 'rgba(56, 189, 248, 0.35)'
+    };
+  }
+
+  return {
+    type: 'GENERAL',
+    badgeNp: '📰 कम्पनी समाचार',
+    badgeEn: 'Company News',
+    color: '#94a3b8',
+    bg: 'rgba(148, 163, 184, 0.12)',
+    border: 'rgba(148, 163, 184, 0.25)'
+  };
 }
 
 /**
@@ -382,6 +474,20 @@ export function getCorporateAlertForSymbol(symbol, newsArticles = []) {
     (a.title && (a.title.includes(sym) || Object.entries(NEPALI_NAME_TO_SYMBOL).some(([np, s]) => s === sym && a.title.includes(np))))
   );
   if (divDecl) return divDecl;
+
+  // Check right share declared
+  const rightDecl = (alerts.rightShareAlerts || []).find(a =>
+    a.symbol === sym ||
+    (a.title && (a.title.includes(sym) || Object.entries(NEPALI_NAME_TO_SYMBOL).some(([np, s]) => s === sym && a.title.includes(np))))
+  );
+  if (rightDecl) return rightDecl;
+
+  // Check book closure
+  const bcAlert = (alerts.bookClosureAlerts || []).find(a =>
+    a.symbol === sym ||
+    (a.title && (a.title.includes(sym) || Object.entries(NEPALI_NAME_TO_SYMBOL).some(([np, s]) => s === sym && a.title.includes(np))))
+  );
+  if (bcAlert) return bcAlert;
 
   return null;
 }

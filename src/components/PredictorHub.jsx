@@ -39,6 +39,7 @@ import {
   Crown,
   Lock
 } from 'lucide-react';
+import { STRATEGY_PRESETS } from '../utils/signals/scoringConfig';
 import { getProxyBase, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap, fetchPriceHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick } from '../utils/liveData';
 import { calculateEMA } from '../utils/indicators';
 import { fetchNewsArticle, fetchDividendHistory } from '../utils/servicesApi';
@@ -156,6 +157,13 @@ export default function PredictorHub({
   const [macroData, setMacroData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [stockFilter, setStockFilter] = useState('all'); // 'all', 'momentum', 'volume', 'low_float', 'catalyst'
+  const [activeStrategyPreset, setActiveStrategyPreset] = useState(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('nepse_active_strategy_preset') : null;
+      if (saved && STRATEGY_PRESETS.some(p => p.id === saved)) return saved;
+    } catch (_) {}
+    return 'PRESET_A_BASELINE';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const searchDebounceRef = useRef(null);
@@ -247,6 +255,11 @@ export default function PredictorHub({
 
   const fallbackStockScoring = React.useCallback(() => {
     if (!Array.isArray(stocks) || stocks.length === 0) return;
+    const activePreset = STRATEGY_PRESETS.find(p => p.id === activeStrategyPreset) || STRATEGY_PRESETS[0];
+    const techMult = Number((activePreset.weights.technical / 0.25).toFixed(2));
+    const flowMult = Number((activePreset.weights.brokerFloorsheet / 0.35).toFixed(2));
+    const fundMult = Number((activePreset.weights.fundamental / 0.20).toFixed(2));
+
     const computed = stocks.slice(0, 250).map(s => {
       const sym = String(s.symbol || '').toUpperCase().trim();
       const uInfo = UNIVERSE_MAP.get(sym);
@@ -307,29 +320,29 @@ export default function PredictorHub({
 
       let score = 50;
 
-      // Momentum contribution
+      // Momentum contribution scaled by strategy preset
       if (momentum5d != null) {
-        score += Math.max(-12, Math.min(12, momentum5d * 1.5));
+        score += Math.max(-12, Math.min(12, momentum5d * 1.5)) * techMult;
       }
 
       // Volume surge: can add max 10 pts
-      score += vsr >= 1.8 ? 10 : vsr >= 1.3 ? 6 : vsr < 0.7 ? -8 : 0;
+      score += (vsr >= 1.8 ? 10 : vsr >= 1.3 ? 6 : vsr < 0.7 ? -8 : 0) * techMult;
 
       // RSI: only add score if RSI comes from real data; penalize -5 if RSI is unavailable (GAP-7)
       if (rsiIsReal) {
-        score += rsi >= 52 && rsi <= 68 ? 10 : rsi > 78 ? -10 : rsi < 35 ? 8 : 0;
+        score += (rsi >= 52 && rsi <= 68 ? 10 : rsi > 78 ? -10 : rsi < 35 ? 8 : 0) * techMult;
       } else {
         score -= 5; // GAP-7: conservative penalty for missing RSI — prevents overbought stocks from scoring high
       }
 
-      score += macdSignal === 'bullish' ? 8 : macdSignal === 'bearish' ? -8 : 0;
-      score += obvTrend === 'rising' ? 6 : obvTrend === 'falling' ? -6 : 0;
+      score += (macdSignal === 'bullish' ? 8 : macdSignal === 'bearish' ? -8 : 0) * techMult;
+      score += (obvTrend === 'rising' ? 6 : obvTrend === 'falling' ? -6 : 0) * techMult;
 
       // EMA structural bonus/penalty (when real data is available)
-      if (isAbove50EMA === true) score += 8;
-      if (isAbove50EMA === false) score -= 12;
-      if (isAbove200EMA === true) score += 5;
-      if (isAbove200EMA === false) score -= 8;
+      if (isAbove50EMA === true) score += 8 * techMult;
+      if (isAbove50EMA === false) score -= 12 * techMult;
+      if (isAbove200EMA === true) score += 5 * techMult;
+      if (isAbove200EMA === false) score -= 8 * techMult;
 
       // ── Order Flow Veto Guard ───────────────────────────────────────────
       const sBrokerData = s.brokerAnalysis || s.realBrokerAnalysis || s.brokerData || s;
@@ -341,10 +354,10 @@ export default function PredictorHub({
       } else {
         // ── Institutional Broker Flow (Cornering vs Offloading) ─────────────
         if (vol >= 200 && bcr3Buy >= 40 && bcr3Buy > bcr3Sell) {
-          score += 6; // Institutional Cornering bonus
+          score += 6 * flowMult; // Institutional Cornering bonus
         }
         if (vol >= 200 && bcr3Sell >= 42 && bcr3Sell > bcr3Buy) {
-          score -= 10; // Operator Offloading penalty
+          score -= 10 * flowMult; // Operator Offloading penalty
         }
       }
 
@@ -379,13 +392,13 @@ export default function PredictorHub({
 
       if (pe > 0) {
         if (pe >= 40 && eps < 15) {
-          score -= 8; // Penalize speculative FOMO crowding
+          score -= 8 * fundMult; // Penalize speculative FOMO crowding
         } else if (pe < medianPE * 0.85 && eps > 12) {
-          score += 6; // Sector value discount
+          score += 6 * fundMult; // Sector value discount
         } else if (pe <= medianPE * 1.15) {
-          score += 3;
+          score += 3 * fundMult;
         } else if (pe > medianPE * 1.8) {
-          score -= 5;
+          score -= 5 * fundMult;
         }
       }
 
@@ -469,6 +482,9 @@ export default function PredictorHub({
         corporate_action_flag: hasCatalyst ? 'corporate_catalyst' : null,
         catalystLabel: hasCatalyst ? catalystLabel : null,
         composite_score: compositeScore,
+        signal: compositeScore >= (activePreset.thresholds?.buyScore || 70) ? 'BUY' : compositeScore >= (activePreset.thresholds?.watchScore || 50) ? 'WATCH' : 'AVOID',
+        activePreset: activePreset.id,
+        presetName: activePreset.shortName,
         bcr3BuyPct: bcr3Buy,
         bcr3SellPct: bcr3Sell,
         adSignal: brokerInfo?.adSignal || 'Neutral',
@@ -477,7 +493,7 @@ export default function PredictorHub({
     });
 
     setScoredStocks(computed.sort((a, b) => b.composite_score - a.composite_score));
-  }, [stocks]);
+  }, [stocks, activeStrategyPreset]);
 
 
   // Fetch prediction data from backend or generate instant deterministic fallback
@@ -1253,7 +1269,7 @@ export default function PredictorHub({
       </div>
 
       {/* ── Sub-Millisecond Progress Bar Shimmer Line for Predictor Hub ── */}
-      <LoadingShimmerBar active={Boolean(loading || isPredicting)} />
+      <LoadingShimmerBar active={Boolean(loading || primePlanLoading)} />
 
       {/* ── Tab Content Container ── */}
       <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 flex-1 predictor-tab-content" style={{ minWidth: 0, boxSizing: 'border-box' }}>
@@ -2670,6 +2686,63 @@ export default function PredictorHub({
                     ✕
                   </button>
                 )}
+              </div>
+
+              {/* Quantitative Strategy Calibration Preset Selector */}
+              <div style={{
+                marginBottom: 8,
+                padding: '10px 14px',
+                borderRadius: 12,
+                background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.45), rgba(15, 23, 42, 0.65))',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: '#f8fafc' }}>
+                    <SlidersHorizontal size={14} style={{ color: '#38bdf8' }} />
+                    <span>Strategy Calibration:</span>
+                    <span style={{ fontSize: 11, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.12)', padding: '2px 8px', borderRadius: 6, border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+                      {STRATEGY_PRESETS.find(p => p.id === activeStrategyPreset)?.shortName || 'Balanced'}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {STRATEGY_PRESETS.find(p => p.id === activeStrategyPreset)?.badge}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 2 }}>
+                  {STRATEGY_PRESETS.map(preset => {
+                    const isSelected = activeStrategyPreset === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic(20);
+                          setActiveStrategyPreset(preset.id);
+                          try {
+                            localStorage.setItem('nepse_active_strategy_preset', preset.id);
+                          } catch (_) {}
+                        }}
+                        style={{
+                          padding: '6px 11px',
+                          borderRadius: 8,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          border: `1px solid ${isSelected ? '#38bdf8' : 'rgba(255, 255, 255, 0.08)'}`,
+                          background: isSelected ? 'rgba(56, 189, 248, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                          color: isSelected ? '#38bdf8' : 'var(--text-secondary)',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {preset.shortName}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 4 }}>

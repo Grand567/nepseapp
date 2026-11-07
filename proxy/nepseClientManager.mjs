@@ -40,9 +40,8 @@ import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Disable strict TLS verification for NEPSE's misconfigured SSL certificates
-process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0";
-
+// Dedicated HTTPS agent with rejectUnauthorized: false handles NEPSE's legacy SSL certificates
+// without globally compromising process TLS security (OWASP compliance).
 const customHttpsAgent = new https.Agent({
   rejectUnauthorized: false,
   keepAlive: true,

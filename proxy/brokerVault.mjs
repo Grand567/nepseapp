@@ -7,7 +7,7 @@ import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import nepseClient from './nepseClientManager.mjs';
-import { db, ingestDailyFloorsheetTransaction, rebuildHotCache, getStoredDates, getSymbolHistoryFromDb, recordDailyCompleteness, backupRawFloorsheet, hasTradeDate } from './db/ledgerStore.js';
+import { db, ingestDailyFloorsheetTransaction, rebuildHotCache, getStoredDates, getSymbolHistoryFromDb, recordDailyCompleteness, backupRawFloorsheet, hasTradeDate, setBrokerVaultProvider } from './db/ledgerStore.js';
 import { fetchWithRetryBackoff } from './utils/retryHelper.mjs';
 import { deduplicateFloorsheetContracts } from './utils/floorsheetDeduplicator.mjs';
 import { recordScraperMetric } from './utils/monitoringService.mjs';
@@ -16,7 +16,11 @@ import {
   fetchFloorsheetFromCloud, 
   listAvailableCloudFloorsheetDates 
 } from './utils/cloudFloorsheetVault.mjs';
-import { ingestContractsToLedger } from './utils/dailyFloorsheetCollector.mjs';
+
+let _contractsIngestor = null;
+export function setContractsIngestor(fn) {
+  _contractsIngestor = fn;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2452,7 +2456,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
       if (Array.isArray(cloudContracts) && cloudContracts.length > 0) {
         try {
           ingestDailyFloorsheetTransaction(cleanDate, cloudContracts);
-          ingestContractsToLedger(cleanDate, cloudContracts);
+          if (typeof _contractsIngestor === 'function') _contractsIngestor(cleanDate, cloudContracts);
         } catch (_) {}
         return cloudContracts;
       }
@@ -2523,7 +2527,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
         if (Array.isArray(cloudContracts) && cloudContracts.length > 0) {
           try {
             ingestDailyFloorsheetTransaction(latestCloudDate, cloudContracts);
-            ingestContractsToLedger(latestCloudDate, cloudContracts);
+            if (typeof _contractsIngestor === 'function') _contractsIngestor(latestCloudDate, cloudContracts);
           } catch (_) {}
           return cloudContracts;
         }
@@ -2831,7 +2835,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
       if (Array.isArray(cloudContracts) && cloudContracts.length > 0) {
         try {
           ingestDailyFloorsheetTransaction(targetCloudDate, cloudContracts);
-          ingestContractsToLedger(targetCloudDate, cloudContracts);
+          if (typeof _contractsIngestor === 'function') _contractsIngestor(targetCloudDate, cloudContracts);
         } catch (_) {}
         return cloudContracts;
       }
@@ -3252,3 +3256,8 @@ export function getBrokerAllTimeTopHoldings(brokerId, dateStr = '') {
     return { brokerId: bId, brokerName: getBrokerName(bId), topHoldings: [] };
   }
 }
+
+// Register brokerVault methods with ledgerStore to avoid circular imports
+try {
+  setBrokerVaultProvider({ fetchSymbolTradingDates, getFullSessionFloorsheet });
+} catch (_) {}

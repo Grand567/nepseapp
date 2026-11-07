@@ -50,7 +50,7 @@
  */
 
 import { calculateRSI, calculateEMA } from './indicators.js';
-import { runBacktest, quantMultiFactorStrategy } from './backtest.js';
+import { runBacktest, quantMultiFactorStrategy } from './backtestCore.js';
 import { calculateNetRiskRewardRatio, calculateStatutoryBreakevenPrice } from './calculations.js';
 import { getCumulativeBrokerData } from './historyCache.js';
 import {

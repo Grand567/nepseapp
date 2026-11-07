@@ -1732,6 +1732,11 @@ export function getBackfillStatus(targetTradingDays = 30) {
   };
 }
 
+let _brokerVaultProvider = null;
+export function setBrokerVaultProvider(provider) {
+  _brokerVaultProvider = provider;
+}
+
 /**
  * 100% Real Historical NEPSE Floorsheet Backfill & Sync Engine:
  * Strictly authentic market data (Zero mock/synthetic/dummy data).
@@ -1753,7 +1758,7 @@ export async function backfillRealHistoricalFloorsheets(targetTradingDays = 30, 
   backfillStatusState.error = null;
 
   try {
-    const brokerVault = await import("../brokerVault.mjs");
+    const brokerVault = _brokerVaultProvider || {};
     let candidateDates = [];
     if (typeof brokerVault.fetchSymbolTradingDates === "function") {
       candidateDates = await brokerVault.fetchSymbolTradingDates("NABIL").catch(() => []);

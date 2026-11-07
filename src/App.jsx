@@ -35,7 +35,7 @@ import { getUpcomingHolidays, toNepaliDigits } from './utils/bikramSambat.js';
 
 import { initLocalLedger } from './utils/localLedgerManager';
 import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices, warmUpServer } from './utils/liveData';
-import { getDetailedMarketStatus, clearDynamicMarketHalt, setLiveMarketOverride } from './utils/nepseCalendar';
+import { getDetailedMarketStatus, clearDynamicMarketHalt, setLiveMarketOverride, clearLiveMarketOverride } from './utils/nepseCalendar';
 // MOCK_DATA_DISABLED — mock data is permanently disabled; import removed.
 import { onAuthChange, signOut, checkRedirectResult, fetchUserDataFromCloud, syncUserDataToCloud, getLocalSession } from './utils/firebase';
 import { safeStorageSetItem, purgeDispensableStorageCaches } from './utils/calculations';

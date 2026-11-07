@@ -1824,8 +1824,8 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
 
         const isPortfolioTracked = foundSym && userTrackedSymbolsSet.has(foundSym);
 
-        // Only alert if keyword matches OR it's a corporate announcement for a portfolio holding
-        if (hasImpact || isPortfolioTracked) {
+        // Alert if high-impact keyword matches, or any specific scrip is mentioned, or portfolio tracked
+        if (hasImpact || foundSym || isPortfolioTracked) {
           seenNewsKeys.add(itemKey);
           saveSeenNewsKeys();
 

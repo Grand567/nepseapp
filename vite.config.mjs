@@ -88,7 +88,15 @@ export default defineConfig({
       },
       '/api': {
         target: 'http://127.0.0.1:5000',
-        changeOrigin: true
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', (err, req, res) => {
+            if (!res.headersSent) {
+              res.writeHead(503, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, offline: true, error: 'Local backend proxy offline' }));
+            }
+          });
+        }
       }
     }
   },
@@ -100,12 +108,11 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           // Firebase — its own chunk (448 kB)
-          if (id.includes('broker_matrices_historical') || 
-              id.includes('broker_matrix_latest') || 
-              id.includes('broker_holdings_alltime') ||
-              id.includes('nepse_cumulative_broker_ledger')) {
-            return 'broker-matrix-data';
-          }
+                    // Split broker datasets into granular chunks to avoid 14MB monolith on mobile
+          if (id.includes('broker_matrices_historical')) return 'broker-matrices-historical';
+          if (id.includes('broker_holdings_alltime')) return 'broker-holdings-alltime';
+          if (id.includes('broker_matrix_latest')) return 'broker-matrix-latest';
+          if (id.includes('nepse_cumulative_broker_ledger')) return 'broker-cumulative-ledger';
           if (id.includes('firebase')) return 'firebase';
           // React + UI libs — vendor chunk (364 kB)
           if (id.includes('node_modules/react') ||

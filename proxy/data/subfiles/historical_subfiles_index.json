@@ -1,74 +1,74 @@
 {
   "file_type": "HISTORICAL_SUBFILES_INDEX",
   "version": "1.0",
-  "compiled_at": "2026-11-06T02:25:37.306Z",
+  "compiled_at": "2026-11-06T13:44:25.185Z",
   "total_subfiles": 4,
   "calendar_regime": "Monday–Friday Trading Week (Saturday & Sunday Closed)",
   "available_sessions": [
+    "2026-11-06",
     "2026-11-05",
     "2026-11-04",
-    "2026-11-03",
-    "2026-11-02"
+    "2026-11-03"
   ],
   "subfiles": [
     {
       "day_offset": 1,
-      "session_date": "2026-11-05",
-      "bs_date": "2083-07-19",
-      "day_of_week": "Thursday",
-      "total_scrips": 349,
-      "file_raw_kb": 1319.7,
-      "file_gz_kb": 169.1,
+      "session_date": "2026-11-06",
+      "bs_date": "2083-07-20",
+      "day_of_week": "Friday",
+      "total_scrips": 336,
+      "file_raw_kb": 1265.2,
+      "file_gz_kb": 163.4,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_1.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_1.json.gz"
     },
     {
       "day_offset": 2,
-      "session_date": "2026-11-04",
-      "bs_date": "2083-07-18",
-      "day_of_week": "Wednesday",
-      "total_scrips": 358,
-      "file_raw_kb": 1353,
-      "file_gz_kb": 173.8,
+      "session_date": "2026-11-05",
+      "bs_date": "2083-07-19",
+      "day_of_week": "Thursday",
+      "total_scrips": 349,
+      "file_raw_kb": 1313.9,
+      "file_gz_kb": 168.9,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_2.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_2.json.gz"
     },
     {
       "day_offset": 3,
-      "session_date": "2026-11-03",
-      "bs_date": "2083-07-17",
-      "day_of_week": "Tuesday",
-      "total_scrips": 349,
-      "file_raw_kb": 1322.8,
-      "file_gz_kb": 169.8,
+      "session_date": "2026-11-04",
+      "bs_date": "2083-07-18",
+      "day_of_week": "Wednesday",
+      "total_scrips": 358,
+      "file_raw_kb": 1347.5,
+      "file_gz_kb": 172.9,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_3.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_3.json.gz"
     },
     {
       "day_offset": 4,
-      "session_date": "2026-11-02",
-      "bs_date": "2083-07-16",
-      "day_of_week": "Monday",
-      "total_scrips": 291,
-      "file_raw_kb": 1125.4,
-      "file_gz_kb": 149.6,
+      "session_date": "2026-11-03",
+      "bs_date": "2083-07-17",
+      "day_of_week": "Tuesday",
+      "total_scrips": 349,
+      "file_raw_kb": 1317.4,
+      "file_gz_kb": 169.4,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_4.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_4.json.gz"
     }
   ],
   "days_quick_map": {
-    "1D": "2026-11-05",
-    "2D": "2026-11-04",
-    "3D": "2026-11-03",
-    "4D": "2026-11-02",
+    "1D": "2026-11-06",
+    "2D": "2026-11-05",
+    "3D": "2026-11-04",
+    "4D": "2026-11-03",
     "5D_cumulative_context": {
-      "start_date": "2026-11-02",
-      "end_date": "2026-11-05",
+      "start_date": "2026-11-03",
+      "end_date": "2026-11-06",
       "sessions": [
+        "2026-11-06",
         "2026-11-05",
         "2026-11-04",
-        "2026-11-03",
-        "2026-11-02"
+        "2026-11-03"
       ]
     }
   }

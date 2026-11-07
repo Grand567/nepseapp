@@ -20,7 +20,7 @@ const NOTIFICATIONS_CACHE_KEY = 'dravyashree_notifications_cache';
 const MAX_NOTIFICATION_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours max age for active feed
 
 // ── Stale Notification Filtering & Deduplication Rules ───────────────────────
-export const NOTIFICATION_TTL_MS = 30 * 60 * 1000; // 30 minutes max age for live notifications
+export const NOTIFICATION_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours retention so news & stock alerts are not discarded
 export const PROCESSED_NOTIFICATIONS_KEY = 'dravyashree_processed_notification_log_v2';
 export const MAX_PROCESSED_LOG_SIZE = 500;
 export const PROCESSED_LOG_RETENTION_MS = 48 * 60 * 60 * 1000; // 48 hours retention

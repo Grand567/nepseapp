@@ -37,7 +37,7 @@ import {
   GetObjectCommand,
   ListObjectsV2Command
 } from '@aws-sdk/client-s3';
-import { DAILY_FLOORSHEETS_DIR } from './dailyFloorsheetCollector.mjs';
+import { DAILY_FLOORSHEETS_DIR } from './floorsheetPaths.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
