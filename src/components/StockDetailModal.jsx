@@ -1453,6 +1453,10 @@ export default function StockDetailModal({
   const [brokerAccumPeriod, setBrokerAccumPeriod] = useState('5D');
   const [brokerAccumData, setBrokerAccumData] = useState(null);
   const [brokerAccumLoading, setBrokerAccumLoading] = useState(false);
+  const [broker5DData, setBroker5DData] = useState(() => {
+    return getCachedRealBrokerAnalysis(initialSym, 5) || null;
+  });
+  const [broker5DLoading, setBroker5DLoading] = useState(false);
   const [dividendHistory, setDividendHistory] = useState(null);
   const [dividendLoading, setDividendLoading] = useState(false);
   const [compareSymbol, setCompareSymbol] = useState('');
@@ -1580,7 +1584,7 @@ export default function StockDetailModal({
           }
 
           // Refresh live intraday floorsheet tape every 5 seconds during active session with incremental delta
-          if (liveTickCount % 2 === 0 && (activeTab === 'floorsheet' || showHubModal)) {
+          if (liveTickCount % 2 === 0 && (activeTab === 'floorsheet' || activeTab === 'market_depth' || activeTab === 'depth_broker' || showHubModal)) {
             const lastSeenId = realFloorsheet?.rows?.[0]?.contractId || realFloorsheet?.rows?.[0]?.contractNo || '';
             fetchRealFloorsheet(sym, '', 1, 500, { refresh: true, sinceContractId: lastSeenId }).then(fs => {
               if (isMounted && fs && Array.isArray(fs.rows) && fs.rows.length > 0) {
@@ -2365,6 +2369,14 @@ export default function StockDetailModal({
       // Ensure 1D live floorsheet is loaded so intraday contract microstructure is available
       if ((!realFloorsheet || !realFloorsheet.rows || realFloorsheet.rows.length === 0) && !floorsheetLoading) {
         fetchFloorsheetData(1, { date: brokerDate || modalSessionDate || '' });
+      }
+      // Ensure dedicated 5D swing broker analysis is loaded for the 5-day judgment card
+      if (!broker5DData && !broker5DLoading) {
+        setBroker5DLoading(true);
+        fetchRealBrokerAnalysis(d.symbol, 5, { refresh: false })
+          .then(b5 => { if (b5) setBroker5DData(b5); })
+          .catch(() => {})
+          .finally(() => setBroker5DLoading(false));
       }
     }
     if ((activeTab === 'floorsheet' || activeTab === 'depth_broker' || activeTab === 'volume_profile') && d?.symbol) {
@@ -5349,6 +5361,7 @@ export default function StockDetailModal({
                         fetchMarketDepth(d.symbol);
                         fetchBrokerAnalysisData(1, '', { refresh: true });
                         fetchFloorsheetData(1, { refresh: true });
+                        fetchRealBrokerAnalysis(d.symbol, 5, { refresh: true }).then(b5 => { if (b5) setBroker5DData(b5); });
                       }}
                       style={{
                         padding: '4px 10px',
@@ -5579,6 +5592,313 @@ export default function StockDetailModal({
                   </div>
                 </div>
               </div>
+
+              {/* ════ CARD 1B: 5-DAY INSTITUTIONAL SWING JUDGMENT & TIMING RADAR ════ */}
+              {(() => {
+                const b5 = broker5DData || (brokerAccumData?.tradingDays === 5 ? brokerAccumData : null);
+
+                const b5Accums = (
+                  (Array.isArray(b5?.topAccumulators) && b5.topAccumulators.length > 0) ? b5.topAccumulators :
+                  (Array.isArray(b5?.topNetBuyers) && b5.topNetBuyers.length > 0) ? b5.topNetBuyers :
+                  (Array.isArray(b5?.brokers) && b5.brokers.length > 0) ? b5.brokers.filter(b => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) > 0).sort((a, b) => (b.netQty || (b.buyQty - b.sellQty)) - (a.netQty || (a.buyQty - a.sellQty))) : []
+                );
+
+                const b5Dists = (
+                  (Array.isArray(b5?.topDistributors) && b5.topDistributors.length > 0) ? b5.topDistributors :
+                  (Array.isArray(b5?.topNetSellers) && b5.topNetSellers.length > 0) ? b5.topNetSellers :
+                  (Array.isArray(b5?.brokers) && b5.brokers.length > 0) ? b5.brokers.filter(b => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) < 0).sort((a, b) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - a.sellQty))) : []
+                );
+
+                const b5TopAccum = b5Accums[0] || null;
+                const b5TopDist = b5Dists[0] || null;
+
+                // 5D Whale Buy VWAP
+                const b5WhaleVwap = (() => {
+                  let totAmt = 0;
+                  let totQty = 0;
+                  b5Accums.slice(0, 5).forEach(b => {
+                    const q = Number(b.buyQty || b.volume || b.netQty || 0);
+                    const r = Number(b.avgBuyRate || 0);
+                    const amt = Number(b.buyAmt || (r > 0 ? q * r : 0));
+                    if (q > 0 && amt > 0) {
+                      totQty += q;
+                      totAmt += amt;
+                    }
+                  });
+                  if (totQty > 0) return +(totAmt / totQty).toFixed(1);
+                  return Number(b5?.bigBrokerVWAP || b5?.vwap || d?.ltp || 0);
+                })();
+
+                const b5Bcr3Buy = Number(b5?.bcr3BuyPct || 0);
+                const b5Bcr3Sell = Number(b5?.bcr3SellPct || b5?.scr3SellPct || 0);
+                const b5NetFlowPct = Number(b5?.smartMoneyNetFlowPct ?? (b5Bcr3Buy - b5Bcr3Sell));
+                const is5DAccum = (b5?.adSignal === 'Accumulation') || (b5Bcr3Buy >= b5Bcr3Sell + 5) || (b5NetFlowPct >= 10);
+                const is5DDist = (b5?.adSignal === 'Distribution') || (b5Bcr3Sell >= b5Bcr3Buy + 5) || (b5NetFlowPct <= -10);
+
+                const diff5DVwap = (b5WhaleVwap > 0 && currentLtp > 0) ? +(((currentLtp - b5WhaleVwap) / b5WhaleVwap) * 100).toFixed(1) : 0;
+
+                // 5-Day Swing Judgment Synthesis & Timing Engine
+                let swingJudgment = {
+                  badge: '⚪ Neutral Swing Chop',
+                  badgeBg: 'rgba(148, 163, 184, 0.15)',
+                  badgeColor: '#94a3b8',
+                  badgeBorder: 'rgba(148, 163, 184, 0.3)',
+                  cardBg: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8))',
+                  cardBorder: 'rgba(148, 163, 184, 0.25)',
+                  glow: '0 4px 18px rgba(0, 0, 0, 0.3)',
+                  title: '5-DAY NEUTRAL / BALANCED SWING REGIME',
+                  titleColor: '#cbd5e1',
+                  actionBadge: 'WAIT / CONSERVE CASH',
+                  actionColor: '#94a3b8',
+                  explanation: `Multi-day broker participation is balanced over the 5-session window (BCR₃ ${b5Bcr3Buy}% vs SCR₃ ${b5Bcr3Sell}%). No single institutional syndicate has established directional control.`,
+                  timingAction: `AWAIT CLEAR CONFLUENCE: Conserve capital until either institutional buyers break price above 5D Whale VWAP (Rs. ${b5WhaleVwap > 0 ? b5WhaleVwap : '--'}) or sellers break support.`
+                };
+
+                if (isWhaleDump) {
+                  swingJudgment = {
+                    badge: '🚨 1D Whale Dumping Override',
+                    badgeBg: 'rgba(239, 68, 68, 0.2)',
+                    badgeColor: '#ef4444',
+                    badgeBorder: 'rgba(239, 68, 68, 0.45)',
+                    cardBg: 'linear-gradient(135deg, rgba(127, 29, 29, 0.45), rgba(15, 23, 42, 0.95))',
+                    cardBorder: 'rgba(239, 68, 68, 0.45)',
+                    glow: '0 4px 24px rgba(239, 68, 68, 0.35)',
+                    title: '⚠️ SWING PAUSE / DO NOT BUY TODAY — INTRADAY DUMPING OVERHANG',
+                    titleColor: '#fca5a5',
+                    actionBadge: 'DO NOT ENTER TODAY',
+                    actionColor: '#ef4444',
+                    explanation: is5DAccum
+                      ? `Conflict of Horizons: Even though the 5-day cumulative shows prior institutional holdings (${b5TopAccum ? '#' + (b5TopAccum.broker || b5TopAccum.brokerId) + ' ' + (b5TopAccum.brokerName || b5TopAccum.name || getBrokerName(b5TopAccum.broker || b5TopAccum.brokerId)) : 'Institutions'} held shares from earlier sessions), TODAY is experiencing aggressive single-session dumping (${topDist ? '#' + (topDist.broker || topDist.brokerId) : 'Whale'} dumped ${topDistShareOfVol}% of volume). Today's massive sell overhang invalidates safe immediate entry.`
+                      : `Coordinated Distribution: Both 5-day multi-session trend and today's tape confirm aggressive institutional distribution. Top sellers are offloading inventory into market bids.`,
+                    timingAction: `RIGHT TIME TO PAUSE: Do NOT buy or average down today. Let today's supply exhaustion occur. Re-evaluate only when price reclaims the 5D Whale VWAP base (Rs. ${b5WhaleVwap > 0 ? b5WhaleVwap : '--'}) with positive live broker absorption.`
+                  };
+                } else if (is5DAccum && isLiveAccum) {
+                  swingJudgment = {
+                    badge: '🟢 Full 5D + 1D Confluence',
+                    badgeBg: 'rgba(16, 185, 129, 0.18)',
+                    badgeColor: '#10b981',
+                    badgeBorder: 'rgba(16, 185, 129, 0.45)',
+                    cardBg: 'linear-gradient(135deg, rgba(6, 78, 59, 0.45), rgba(15, 23, 42, 0.95))',
+                    cardBorder: 'rgba(16, 185, 129, 0.45)',
+                    glow: '0 4px 22px rgba(16, 185, 129, 0.25)',
+                    title: '🟢 HIGH CONFLUENCE SWING ENTRY — RIGHT TIME TO ACCUMULATE',
+                    titleColor: '#34d399',
+                    actionBadge: 'PRIME SWING ENTRY',
+                    actionColor: '#10b981',
+                    explanation: `Multi-day institutional accumulation is confirmed by today's live order flow. Institutional brokers (${b5TopAccum ? '#' + (b5TopAccum.broker || b5TopAccum.brokerId) + ' ' + (b5TopAccum.brokerName || b5TopAccum.name || getBrokerName(b5TopAccum.broker || b5TopAccum.brokerId)) : 'Big Desks'}) have systematically absorbed supply over the last 5 trading days (BCR₃ ${b5Bcr3Buy}% vs SCR₃ ${b5Bcr3Sell}%), and today's session continues to show positive net absorption.`,
+                    timingAction: `RIGHT TIME TO ENTER: High-probability swing entry. Current price (Rs. ${currentLtp}) is anchored at the 5-day Whale VWAP (Rs. ${b5WhaleVwap}) [${diff5DVwap >= 0 ? '+' : ''}${diff5DVwap}%]. Suggested protective stop-loss at Rs. ${(b5WhaleVwap * 0.965).toFixed(1)}.`
+                  };
+                } else if (is5DAccum && !isLiveAccum) {
+                  swingJudgment = {
+                    badge: '🟡 5D Base Active (Intraday Pullback)',
+                    badgeBg: 'rgba(245, 158, 11, 0.18)',
+                    badgeColor: '#f59e0b',
+                    badgeBorder: 'rgba(245, 158, 11, 0.45)',
+                    cardBg: 'linear-gradient(135deg, rgba(120, 53, 15, 0.35), rgba(15, 23, 42, 0.95))',
+                    cardBorder: 'rgba(245, 158, 11, 0.45)',
+                    glow: '0 4px 22px rgba(245, 158, 11, 0.25)',
+                    title: '🟡 MULTI-DAY ACCUMULATION IN PLAY — WAIT FOR INTRADAY STABILIZATION',
+                    titleColor: '#fbbf24',
+                    actionBadge: 'WAIT FOR PULLBACK TO SETTLE',
+                    actionColor: '#f59e0b',
+                    explanation: `5-day swing trend shows institutional accumulation (${b5NetFlowPct > 0 ? '+' + b5NetFlowPct.toFixed(1) + '%' : 'Net Inflow'}), but today's intraday tape is undergoing profit-taking or mild consolidation. Institutional cost basis is Rs. ${b5WhaleVwap}.`,
+                    timingAction: `RIGHT TIME TO WAIT: Do not chase today's intraday moves. Place limit buy orders closer to 5D Whale VWAP (Rs. ${b5WhaleVwap}) as price pulls back to institutional support.`
+                  };
+                } else if (is5DDist && isLiveDist) {
+                  swingJudgment = {
+                    badge: '🔴 Sustained Multi-Day Liquidation',
+                    badgeBg: 'rgba(239, 68, 68, 0.18)',
+                    badgeColor: '#ef4444',
+                    badgeBorder: 'rgba(239, 68, 68, 0.45)',
+                    cardBg: 'linear-gradient(135deg, rgba(127, 29, 29, 0.4), rgba(15, 23, 42, 0.95))',
+                    cardBorder: 'rgba(239, 68, 68, 0.45)',
+                    glow: '0 4px 22px rgba(239, 68, 68, 0.25)',
+                    title: '🔴 SUSTAINED INSTITUTIONAL DUMPING — RIGHT TIME TO EXIT / LIQUIDATE',
+                    titleColor: '#fca5a5',
+                    actionBadge: 'STRICT EXIT / AVOID ALL BUYS',
+                    actionColor: '#ef4444',
+                    explanation: `Heavy institutional supply overhang across all timeframes. Major desks (${b5TopDist ? '#' + (b5TopDist.broker || b5TopDist.brokerId) + ' ' + (b5TopDist.brokerName || b5TopDist.name || getBrokerName(b5TopDist.broker || b5TopDist.brokerId)) : 'Major Sellers'}) have offloaded inventory consistently over 5 sessions (SCR₃ ${b5Bcr3Sell}% exceeds BCR₃ ${b5Bcr3Buy}%), backed by active selling today.`,
+                    timingAction: `RIGHT TIME TO EXIT / CUT LOSS: Severe downside risk. Sell into any minor bounces or stay away until selling pressure halts completely. Capital preservation is priority.`
+                  };
+                } else if (is5DDist && isLiveAccum) {
+                  swingJudgment = {
+                    badge: '🚨 Dead Cat Bounce / Trap Risk',
+                    badgeBg: 'rgba(249, 115, 22, 0.18)',
+                    badgeColor: '#f97316',
+                    badgeBorder: 'rgba(249, 115, 22, 0.45)',
+                    cardBg: 'linear-gradient(135deg, rgba(124, 45, 18, 0.4), rgba(15, 23, 42, 0.95))',
+                    cardBorder: 'rgba(249, 115, 22, 0.45)',
+                    glow: '0 4px 22px rgba(249, 115, 22, 0.25)',
+                    title: '🚨 COUNTER-TREND BOUNCE — RIGHT TIME TO SELL RALLIES (TRAP RISK)',
+                    titleColor: '#fdba74',
+                    actionBadge: 'SELL INTO STRENGTH / EXIT TRAP',
+                    actionColor: '#f97316',
+                    explanation: `The 5-day institutional trend is heavily distributing (-${Math.abs(b5NetFlowPct).toFixed(1)}% net outflow). Today's minor green uptick lacks multi-day backing and is likely exit liquidity engineered by operators to offload remaining inventory into retail FOMO.`,
+                    timingAction: `RIGHT TIME TO SELL RALLIES: Do NOT buy. Use today's temporary strength to trim positions or execute protective stop-loss exits before institutional selling resumes.`
+                  };
+                }
+
+                const b5BuyPct = (b5Bcr3Buy + b5Bcr3Sell) > 0 ? Math.round((b5Bcr3Buy / (b5Bcr3Buy + b5Bcr3Sell)) * 100) : 50;
+                const b5SellPct = 100 - b5BuyPct;
+
+                return (
+                  <div style={{
+                    background: swingJudgment.cardBg,
+                    border: `1px solid ${swingJudgment.cardBorder}`,
+                    borderRadius: 16,
+                    padding: '16px 18px',
+                    boxShadow: swingJudgment.glow,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 14,
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}>
+                    {/* Header Row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 16 }}>🗓️</span>
+                        <span style={{ fontSize: 15, fontWeight: 900, color: '#ffffff' }}>
+                          5-Day Institutional Swing Radar & Action Timing
+                        </span>
+                        <span style={{
+                          fontSize: 11,
+                          fontWeight: 800,
+                          padding: '3px 9px',
+                          borderRadius: 6,
+                          background: swingJudgment.badgeBg,
+                          color: swingJudgment.badgeColor,
+                          border: `1px solid ${swingJudgment.badgeBorder}`
+                        }}>
+                          {swingJudgment.badge}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{
+                          fontSize: 11,
+                          fontWeight: 800,
+                          padding: '3px 9px',
+                          borderRadius: 6,
+                          background: 'rgba(255,255,255,0.06)',
+                          color: swingJudgment.actionColor,
+                          border: `1px solid ${swingJudgment.badgeBorder}`
+                        }}>
+                          🎯 {swingJudgment.actionBadge}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Verdict Callout Banner */}
+                    <div style={{
+                      padding: '12px 14px',
+                      borderRadius: 12,
+                      background: 'rgba(0, 0, 0, 0.35)',
+                      border: `1px solid ${swingJudgment.cardBorder}`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6
+                    }}>
+                      <div style={{
+                        fontSize: 14.5,
+                        fontWeight: 900,
+                        color: swingJudgment.titleColor,
+                        letterSpacing: '0.2px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8
+                      }}>
+                        <span>{swingJudgment.title}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: '#e2e8f0', lineHeight: 1.5 }}>
+                        {swingJudgment.explanation}
+                      </div>
+                      <div style={{
+                        fontSize: 11.5,
+                        color: '#cbd5e1',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        borderLeft: `3px solid ${swingJudgment.badgeColor}`,
+                        marginTop: 2
+                      }}>
+                        💡 <strong style={{ color: '#ffffff' }}>Tactical Timing:</strong> {swingJudgment.timingAction}
+                      </div>
+                    </div>
+
+                    {/* 4-Box Key Benchmark Metrics Strip for 5D */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                      gap: 8
+                    }}>
+                      {/* Metric 1: 5D Stance */}
+                      <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase' }}>5D Stance</div>
+                        <div style={{
+                          fontSize: 15,
+                          fontWeight: 900,
+                          color: is5DAccum ? '#10b981' : is5DDist ? '#f43f5e' : '#cbd5e1',
+                          marginTop: 2
+                        }}>
+                          {is5DAccum ? 'Accumulation' : is5DDist ? 'Distribution' : 'Neutral Chop'}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 1, fontFamily: 'var(--font-mono)' }}>
+                          Flow: {b5NetFlowPct > 0 ? '+' : ''}{b5NetFlowPct.toFixed(1)}%
+                        </div>
+                      </div>
+
+                      {/* Metric 2: 5D Whale Buy VWAP */}
+                      <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase' }}>5D Whale VWAP</div>
+                        <div style={{ fontSize: 15, fontWeight: 900, color: '#38bdf8', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                          Rs. {b5WhaleVwap > 0 ? b5WhaleVwap : '--'}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 1 }}>
+                          LTP vs VWAP: <strong style={{ color: diff5DVwap <= 2.5 && diff5DVwap >= -3 ? '#10b981' : diff5DVwap > 2.5 ? '#f59e0b' : '#38bdf8' }}>{diff5DVwap >= 0 ? '+' : ''}{diff5DVwap}%</strong>
+                        </div>
+                      </div>
+
+                      {/* Metric 3: Top 5D Accumulator */}
+                      <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase' }}>Top 5D Buyer</div>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: '#10b981', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b5TopAccum ? `#${b5TopAccum.broker || b5TopAccum.brokerId} ${b5TopAccum.brokerName || b5TopAccum.name || ''}` : 'None'}>
+                          {b5TopAccum ? `#${b5TopAccum.broker || b5TopAccum.brokerId} ${b5TopAccum.brokerName || b5TopAccum.name || ''}` : '—'}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: '#10b981', marginTop: 1, fontFamily: 'var(--font-mono)', fontWeight: 800 }}>
+                          {b5TopAccum ? `+${Number(b5TopAccum.netQty !== undefined ? b5TopAccum.netQty : ((b5TopAccum.buyQty || 0) - (b5TopAccum.sellQty || 0))).toLocaleString()} sh` : 'No net buys'}
+                        </div>
+                      </div>
+
+                      {/* Metric 4: Top 5D Distributor */}
+                      <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase' }}>Top 5D Seller</div>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: '#f43f5e', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b5TopDist ? `#${b5TopDist.broker || b5TopDist.brokerId} ${b5TopDist.brokerName || b5TopDist.name || ''}` : 'None'}>
+                          {b5TopDist ? `#${b5TopDist.broker || b5TopDist.brokerId} ${b5TopDist.brokerName || b5TopDist.name || ''}` : '—'}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: '#f43f5e', marginTop: 1, fontFamily: 'var(--font-mono)', fontWeight: 800 }}>
+                          {b5TopDist ? `-${Math.abs(Number(b5TopDist.netQty !== undefined ? b5TopDist.netQty : ((b5TopDist.sellQty || 0) - (b5TopDist.buyQty || 0)))).toLocaleString()} sh` : 'No net sells'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 5-Day Concentration Volume Flow Bar */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, fontWeight: 800, marginBottom: 5 }}>
+                        <span style={{ color: '#10b981' }}>
+                          🟢 5D Top 3 Buyers (BCR₃): {b5Bcr3Buy > 0 ? b5Bcr3Buy.toFixed(1) + '%' : `${b5BuyPct}%`}
+                        </span>
+                        <span style={{ color: '#f43f5e' }}>
+                          🔴 5D Top 3 Sellers (SCR₃): {b5Bcr3Sell > 0 ? b5Bcr3Sell.toFixed(1) + '%' : `${b5SellPct}%`}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', height: 8, borderRadius: 5, overflow: 'hidden', background: 'rgba(255,255,255,0.06)' }}>
+                        <div style={{ width: `${b5BuyPct}%`, background: '#10b981', transition: 'width 0.3s ease' }} />
+                        <div style={{ width: `${b5SellPct}%`, background: '#f43f5e', transition: 'width 0.3s ease' }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ════ CARD 2: LEVEL-2 MARKET DEPTH ORDER BOOK ════ */}
               <div style={{ background: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 16, padding: '16px 18px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
