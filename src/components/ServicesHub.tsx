@@ -1236,9 +1236,10 @@ function SessionDateDropdown({
           style={{
             position: 'absolute',
             top: 'calc(100% + 6px)',
-            right: 0,
+            left: 0,
             zIndex: 9999,
-            minWidth: 230,
+            minWidth: 220,
+            maxWidth: 'calc(100vw - 24px)',
             maxHeight: 280,
             overflowY: 'auto',
             background: '#0B0E14',

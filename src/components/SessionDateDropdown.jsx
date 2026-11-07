@@ -16,7 +16,7 @@ export function SessionDateDropdown({
   label = '',
   latestLabel: propLatestLabel,
   placeholder,
-  align = 'right',
+  align = 'left',
   style = {},
   buttonStyle = {},
   compact = false,
@@ -25,7 +25,25 @@ export function SessionDateDropdown({
   const handleSelect = onSelectDate || onChange;
   const latestLabel = propLatestLabel || placeholder || 'Latest Session';
   const [isOpen, setIsOpen] = useState(false);
+  const [placement, setPlacement] = useState(align || 'left');
   const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    if (isOpen && dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+
+      // If button's left edge is less than 240px from viewport left, right:0 will push it off-screen to the left!
+      if (rect.left < 240) {
+        setPlacement('left');
+      } else if (viewportWidth - rect.right < 240) {
+        // If button is close to viewport right edge, left:0 will push it off-screen to the right!
+        setPlacement('right');
+      } else {
+        setPlacement(align || 'left');
+      }
+    }
+  }, [isOpen, align]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -108,9 +126,10 @@ export function SessionDateDropdown({
           style={{
             position: 'absolute',
             top: 'calc(100% + 6px)',
-            [align === 'left' ? 'left' : 'right']: 0,
+            ...(placement === 'right' ? { right: 0 } : { left: 0 }),
             zIndex: 99999,
-            minWidth: 230,
+            minWidth: 220,
+            maxWidth: 'calc(100vw - 24px)',
             maxHeight: 280,
             overflowY: 'auto',
             background: '#0B0E14',
