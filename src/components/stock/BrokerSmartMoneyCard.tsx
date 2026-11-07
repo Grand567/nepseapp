@@ -434,11 +434,24 @@ function BrokerSmartMoneyCardInner({
   };
 
   useEffect(() => {
+    const isMultiDay = Boolean(
+      (initialData as any)?.tradingDays > 1 || 
+      (initialData as any)?.timeframeDays > 1 || 
+      (initialData as any)?.timeframe === '30D' || 
+      (initialData as any)?.timeframe === '15D' ||
+      (initialData as any)?.timeframe === '5D' ||
+      (initialData as any)?.timeframe === 'ALL'
+    );
+
     if (initialData && !cached1DPayload && timeframe === '1D') {
-      setCached1DPayload(initialData);
+      if (!isMultiDay) {
+        setCached1DPayload(initialData);
+      }
     }
     if (initialData && !rawPayload) {
-      setRawPayload(initialData);
+      if (!isMultiDay || timeframe !== '1D') {
+        setRawPayload(initialData);
+      }
     }
   }, [initialData, timeframe]);
 
@@ -447,6 +460,11 @@ function BrokerSmartMoneyCardInner({
     let isMounted = true;
 
     async function loadTimeframeData() {
+      // If returning to 1D and we have cached authentic 1D data, immediately present it to prevent flickering/confusion
+      if (timeframe === '1D' && cached1DPayload) {
+        setRawPayload(cached1DPayload);
+      }
+
       // If initialData already contains the requested timeframe key, use it immediately
       const tfUpper = timeframe.toUpperCase();
       const tfLower = timeframe.toLowerCase();
@@ -495,7 +513,11 @@ function BrokerSmartMoneyCardInner({
         );
 
         if (normalizedCheck.length === 0) {
-          const fallbackPayload = cached1DPayload || initialData || null;
+          const isInitialMultiDay = Boolean(
+            (initialData as any)?.tradingDays > 1 || (initialData as any)?.timeframeDays > 1
+          );
+          const validInitial = (timeframe === '1D' && isInitialMultiDay) ? null : initialData;
+          const fallbackPayload = cached1DPayload || validInitial || null;
           if (timeframe !== '1D') {
             setWarningBanner(
               `${timeframe} multi-day floor-sheet rollup is compiling for ${cleanSymbol}. Displaying verified session telemetry.`
@@ -512,7 +534,11 @@ function BrokerSmartMoneyCardInner({
         }
       } catch (err) {
         if (!isMounted) return;
-        const fallbackPayload = cached1DPayload || initialData || null;
+        const isInitialMultiDay = Boolean(
+          (initialData as any)?.tradingDays > 1 || (initialData as any)?.timeframeDays > 1
+        );
+        const validInitial = (timeframe === '1D' && isInitialMultiDay) ? null : initialData;
+        const fallbackPayload = cached1DPayload || validInitial || null;
         if (fallbackPayload) {
           if (timeframe !== '1D') {
             setWarningBanner(

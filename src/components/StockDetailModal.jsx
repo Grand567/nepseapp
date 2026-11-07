@@ -1423,15 +1423,28 @@ export default function StockDetailModal({
   const [fsExporting, setFsExporting] = useState(false);
   const [fsExportNotice, setFsExportNotice] = useState('');
   const [realBrokerAnalysis, setRealBrokerAnalysis] = useState(() => {
-    return getCachedRealBrokerAnalysis(initialSym, 1) || stock?.brokerAnalysis || stock?.realBrokerAnalysis || null;
+    const cached1D = getCachedRealBrokerAnalysis(initialSym, 1);
+    if (cached1D) return cached1D;
+    const parentBa = stock?.brokerAnalysis || stock?.realBrokerAnalysis;
+    // Guard: only accept parent brokerAnalysis if strictly for 1 session!
+    // Stocks passed from multi-day scanners or 30D radars have multi-day timeframes which poison 1D state
+    if (parentBa && (parentBa.tradingDays === 1 || parentBa.timeframeDays === 1 || parentBa.timeframe === '1D' || parentBa.days === 1)) {
+      return parentBa;
+    }
+    return null;
   });
   const [allTimeBrokerAnalysis, setAllTimeBrokerAnalysis] = useState(() => {
     return getCachedRealBrokerAnalysis(initialSym, 'all') || null;
   });
   const [overviewBrokerTapeMode, setOverviewBrokerTapeMode] = useState('1D_LIVE'); // '1D_LIVE' | 'ALL_TIME'
   const [brokerAnalysisLoading, setBrokerAnalysisLoading] = useState(() => {
-    const cached = getCachedRealBrokerAnalysis(initialSym, 1) || stock?.brokerAnalysis || stock?.realBrokerAnalysis;
-    return !cached;
+    const cached = getCachedRealBrokerAnalysis(initialSym, 1);
+    if (cached) return false;
+    const parentBa = stock?.brokerAnalysis || stock?.realBrokerAnalysis;
+    if (parentBa && (parentBa.tradingDays === 1 || parentBa.timeframeDays === 1 || parentBa.timeframe === '1D' || parentBa.days === 1)) {
+      return false;
+    }
+    return true;
   });
   const [brokerDays, setBrokerDays] = useState(1);
   const [brokerDate, setBrokerDate] = useState(initialEffectiveDate);
@@ -2021,7 +2034,7 @@ export default function StockDetailModal({
       setRealFloorsheet(null);
     }
 
-    const cachedBroker = getCachedRealBrokerAnalysis(d.symbol);
+    const cachedBroker = getCachedRealBrokerAnalysis(d.symbol, brokerDays || 1);
     if (cachedBroker) setRealBrokerAnalysis(cachedBroker);
     else setRealBrokerAnalysis(null);
 
