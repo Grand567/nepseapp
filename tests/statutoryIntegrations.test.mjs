@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import test from 'node:test';
 import { runEodReconciliation, getLatestReconciliation } from '../proxy/utils/eodReconciliationEngine.mjs';
 import { getEvaluatedPromoterLockinList, getScripPromoterLockin } from '../proxy/utils/promoterLockinEngine.mjs';
+import { isNepseTradingDay, isNepsePublicHoliday, getNextValidTradingDay, NEPSE_PUBLIC_HOLIDAYS } from '../src/utils/nepseCalendar.js';
 
 test('1. Automated EOD 3:15 PM Bhavsani vs SQLite Reconciliation Engine', () => {
   const audit = runEodReconciliation('2026-11-06');
@@ -51,4 +52,32 @@ test('2. SEBON Promoter 3-Year Lock-In & Dumping Risk Radar', () => {
   assert.strictEqual(akjcl.isExpired, true);
   assert.strictEqual(akjcl.status, 'Fully Unlocked');
   assert.strictEqual(akjcl.isThreat, false);
+});
+
+test('3. Official Statutory Trading Calendar: 2083 Tihar & Chhath Holidays', () => {
+  // Verify Nepal Rajpatra Statutory Public Holidays
+  assert.strictEqual(NEPSE_PUBLIC_HOLIDAYS['2026-11-08'], 'Tihar (Laxmi Puja)');
+  assert.strictEqual(NEPSE_PUBLIC_HOLIDAYS['2026-11-09'], 'Tihar (Gai Puja)');
+  assert.strictEqual(NEPSE_PUBLIC_HOLIDAYS['2026-11-10'], 'Tihar (Gobardhan Puja / Mha Puja)');
+  assert.strictEqual(NEPSE_PUBLIC_HOLIDAYS['2026-11-11'], 'Tihar (Bhai Tika / Kija Puja)');
+  assert.strictEqual(NEPSE_PUBLIC_HOLIDAYS['2026-11-12'], 'Tihar Holiday (Day after Bhai Tika / Kartik 26)');
+  assert.strictEqual(NEPSE_PUBLIC_HOLIDAYS['2026-11-13'], 'Tihar-Chhath Bridge Holiday (Kartik 27)');
+  assert.strictEqual(NEPSE_PUBLIC_HOLIDAYS['2026-11-15'], 'Chhath Parva (Kartik 29)');
+
+  // Verify that all days between 2026-11-07 and 2026-11-15 are non-trading sessions
+  for (let d = 7; d <= 15; d++) {
+    const iso = `2026-11-${String(d).padStart(2, '0')}`;
+    const dateObj = new Date(`${iso}T12:00:00+05:45`);
+    assert.strictEqual(isNepseTradingDay(dateObj), false, `${iso} must NOT be a trading day`);
+  }
+
+  // Verify market resumption on Monday, Kartik 30 (2026-11-16)
+  const resumptionDate = new Date('2026-11-16T12:00:00+05:45');
+  assert.strictEqual(isNepseTradingDay(resumptionDate), true, '2026-11-16 (Monday, Kartik 30) must be an active trading day');
+
+  // Verify getNextValidTradingDay from Friday 2026-11-06 lands accurately on Monday 2026-11-16
+  const nov6 = new Date('2026-11-06T12:00:00+05:45');
+  const nextTradingDay = getNextValidTradingDay(nov6);
+  const nextIso = nextTradingDay.toISOString().slice(0, 10);
+  assert.strictEqual(nextIso, '2026-11-16', `Next trading day after 2026-11-06 must be 2026-11-16 (actual: ${nextIso})`);
 });
