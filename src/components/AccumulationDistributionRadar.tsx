@@ -39,6 +39,8 @@ import { calculateMultiDayDiagnostics, buildDailyHistoryFromStockData, PHASE_DEF
 import StockDetailModal from './StockDetailModal';
 import BrokerSmartFlowTracker from './BrokerSmartFlowTracker';
 import PortfolioBrokerShield from './PortfolioBrokerShield';
+import { triggerHaptic } from '../utils/haptics';
+import LoadingShimmerBar from './LoadingShimmerBar';
 
 // ── Pure-Equity Guard: Excludes Mutual Funds (e.g., NIBLPF), Debentures, and Promoter Shares ──
 export function isPureNepseEquity(stockOrSym: any, sectorStr?: string): boolean {
@@ -1664,7 +1666,10 @@ export function AccumulationDistributionRadar({
           {/* Quick Tab Selector */}
           <div className="flex items-center gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800 w-full overflow-x-auto scrollbar-none self-start md:self-auto">
             <button
-              onClick={() => setActiveTab('radar')}
+              onClick={() => {
+                triggerHaptic(25);
+                setActiveTab('radar');
+              }}
               className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'radar'
                   ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
@@ -1674,7 +1679,10 @@ export function AccumulationDistributionRadar({
               <Crosshair className="w-3.5 h-3.5" /> Live Radar
             </button>
             <button
-              onClick={() => setActiveTab('smart-flow')}
+              onClick={() => {
+                triggerHaptic(25);
+                setActiveTab('smart-flow');
+              }}
               className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'smart-flow'
                   ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
@@ -1684,7 +1692,10 @@ export function AccumulationDistributionRadar({
               <Users className="w-3.5 h-3.5" /> Slow Flow & Dump Tracker
             </button>
             <button
-              onClick={() => setActiveTab('portfolio-shield')}
+              onClick={() => {
+                triggerHaptic(25);
+                setActiveTab('portfolio-shield');
+              }}
               className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'portfolio-shield'
                   ? 'bg-indigo-600 text-white shadow-md font-black'
@@ -1694,7 +1705,10 @@ export function AccumulationDistributionRadar({
               <Shield className="w-3.5 h-3.5" /> 🛡️ Portfolio Shield
             </button>
             <button
-              onClick={() => setActiveTab('archive')}
+              onClick={() => {
+                triggerHaptic(25);
+                setActiveTab('archive');
+              }}
               className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'archive'
                   ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
@@ -1704,7 +1718,10 @@ export function AccumulationDistributionRadar({
               <Calendar className="w-3.5 h-3.5" /> Daily Whale Archive
             </button>
             <button
-              onClick={() => setActiveTab('diagnostic')}
+              onClick={() => {
+                triggerHaptic(25);
+                setActiveTab('diagnostic');
+              }}
               className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'diagnostic'
                   ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
@@ -1714,7 +1731,10 @@ export function AccumulationDistributionRadar({
               <BarChart3 className="w-3.5 h-3.5" /> Deep Diagnostic
             </button>
             <button
-              onClick={() => setActiveTab('playbook')}
+              onClick={() => {
+                triggerHaptic(25);
+                setActiveTab('playbook');
+              }}
               className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'playbook'
                   ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
@@ -1725,6 +1745,9 @@ export function AccumulationDistributionRadar({
             </button>
           </div>
         </div>
+
+        {/* ── Sub-Millisecond Progress Bar Shimmer Line for Acc/Dist Radar ── */}
+        <LoadingShimmerBar active={Boolean(radarDate ? false : isBackfilling)} />
 
         {/* ── LIVE NOTIFICATION STATUS BAR (RADAR REAL-TIME TELEMETRY STREAM) ── */}
         <div className="mt-4 p-2.5 sm:p-3 rounded-xl bg-slate-950/90 border border-emerald-500/40 shadow-inner flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
@@ -1851,7 +1874,10 @@ export function AccumulationDistributionRadar({
             ].map(pill => (
               <button
                 key={pill.label}
-                onClick={() => handleRadarTimeframeChange(pill.days)}
+                onClick={() => {
+                  triggerHaptic(25);
+                  handleRadarTimeframeChange(pill.days);
+                }}
                 className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all shrink-0 ${
                   radarDays === pill.days && !radarDate
                     ? 'bg-emerald-500 text-slate-950 shadow-sm font-black'
@@ -3404,7 +3430,10 @@ export function AccumulationDistributionRadar({
                     type="button"
                     title={pill.title}
                     disabled={diagnosticLoading}
-                    onClick={() => handleDiagnosticDaysChange(pill.days)}
+                    onClick={() => {
+                      triggerHaptic(25);
+                      handleDiagnosticDaysChange(pill.days);
+                    }}
                     className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                       diagnosticDays === pill.days
                         ? 'bg-emerald-500 text-slate-950 font-black shadow-sm'

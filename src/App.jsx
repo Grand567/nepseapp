@@ -40,6 +40,7 @@ import { getDetailedMarketStatus, clearDynamicMarketHalt, setLiveMarketOverride 
 import { onAuthChange, signOut, checkRedirectResult, fetchUserDataFromCloud, syncUserDataToCloud, getLocalSession } from './utils/firebase';
 import { safeStorageSetItem, purgeDispensableStorageCaches } from './utils/calculations';
 import LoadingShimmerBar from './components/LoadingShimmerBar';
+import { triggerHaptic } from './utils/haptics';
 
 // Automatically purge stale transient caches if localStorage is congested to prevent QuotaExceededError
 try { purgeDispensableStorageCaches(); } catch (_) {}
@@ -2042,7 +2043,10 @@ function AppInner() {
             <button
               key={id}
               className={`nav-btn ${isActive ? 'active' : ''}`}
-              onClick={() => setActiveTab(id)}
+              onClick={() => {
+                triggerHaptic(25);
+                setActiveTab(id);
+              }}
             >
               <Icon style={{ width: 20, height: 20, strokeWidth: 2.2 }} />
               <span className="nav-label">{label}</span>

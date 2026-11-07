@@ -25,6 +25,7 @@ import NepseAgentDashboard from './NepseAgentDashboard';
 import { AlgorithmicSignalTrackRecord } from './AlgorithmicSignalTrackRecord';
 import { FloorsheetServiceTab } from './FloorsheetServiceTab';
 import type { LucideIcon } from 'lucide-react';
+import { triggerHaptic } from '../utils/haptics';
 import {
   UniversalScreener, StockMomentumAnalyzer, MarketSummaryService, TopPerformersService,
   IPOTracker, NewsService, SectorHeatmap, FloorSheetService, CompareStocks,
@@ -1819,7 +1820,11 @@ export default function ServicesHub({
               return (
                 <button
                   key={tab.id}
-                  onClick={() => { setActiveFilter(tab.id); scrollToTop(); }}
+                  onClick={() => {
+                    triggerHaptic(25);
+                    setActiveFilter(tab.id);
+                    scrollToTop();
+                  }}
                   className={`services-tab-pill ${isActive ? 'active' : ''}`}
                 >
                   {Icon && <Icon size={13} color={isActive ? '#ffffff' : '#94a3b8'} />}
@@ -1998,7 +2003,11 @@ export default function ServicesHub({
                   return (
                     <div
                       key={qs.id}
-                      onClick={() => { setSelectedService(qs); scrollToTop(); }}
+                      onClick={() => {
+                        triggerHaptic(25);
+                        setSelectedService(qs);
+                        scrollToTop();
+                      }}
                       className="services-featured-card"
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -2081,7 +2090,11 @@ export default function ServicesHub({
                       return (
                         <div
                           key={s.id}
-                          onClick={() => { setSelectedService(s); scrollToTop(); }}
+                          onClick={() => {
+                            triggerHaptic(25);
+                            setSelectedService(s);
+                            scrollToTop();
+                          }}
                           className="services-graceful-card"
                         >
                           <div

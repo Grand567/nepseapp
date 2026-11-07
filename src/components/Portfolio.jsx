@@ -13,6 +13,7 @@ import { pullMeroShareLivePortfolio, authenticateMeroShare, MEROSHARE_DP_LIST, p
 import { Capacitor } from '@capacitor/core';
 import { DEFAULT_AI_KEY, callGlmAi, generateNepseAiContent } from '../services/aiService';
 import { syncCapitalWithPortfolio } from '../utils/dynamicCapitalEngine';
+import { triggerHaptic } from '../utils/haptics';
 
 /**
  * Safe markdown renderer — only handles **bold** and newlines.
@@ -2367,7 +2368,10 @@ Based on this data, provide a robust analysis using this exact markdown structur
           return (
             <button
               key={t.id}
-              onClick={() => setActiveView(t.id)}
+              onClick={() => {
+                triggerHaptic(25);
+                setActiveView(t.id);
+              }}
               style={{
                 background: isActive ? 'var(--primary)' : 'rgba(255,255,255,0.03)',
                 color: isActive ? '#fff' : 'var(--text-secondary)',
@@ -2554,7 +2558,10 @@ Based on this data, provide a robust analysis using this exact markdown structur
               <button
                 key={m.id}
                 type="button"
-                onClick={() => setValuationMode(m.id)}
+                onClick={() => {
+                  triggerHaptic(25);
+                  setValuationMode(m.id);
+                }}
                 style={{
                   flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 800, borderRadius: 8, cursor: 'pointer',
                   background: isActive ? (m.id === 'prevClose' ? 'rgba(16,185,129,0.2)' : m.id === 'ltp' ? 'rgba(56,189,248,0.2)' : 'rgba(91,94,244,0.25)') : 'transparent',
@@ -2618,7 +2625,10 @@ Based on this data, provide a robust analysis using this exact markdown structur
           <button
             key={chip.id}
             type="button"
-            onClick={() => setFilterPnl(chip.id)}
+            onClick={() => {
+              triggerHaptic(25);
+              setFilterPnl(chip.id);
+            }}
             style={{
               background: filterPnl === chip.id ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.03)',
               border: `1px solid ${filterPnl === chip.id ? chip.color : 'var(--border)'}`,

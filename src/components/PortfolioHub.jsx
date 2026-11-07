@@ -7,6 +7,7 @@ import { Wallet, Layers, Sparkles, TrendingUp, Sliders } from 'lucide-react';
 import Portfolio from './Portfolio';
 import MeroShareHub from './MeroShareHub';
 import CapitalRiskSimulatorView from './CapitalRiskSimulatorView';
+import { triggerHaptic } from '../utils/haptics';
 
 export default function PortfolioHub({
   marketStocks = [],
@@ -46,7 +47,10 @@ export default function PortfolioHub({
       }}>
         <div className="segmented-bar" style={{ width: '100%', maxWidth: 500 }}>
           <button
-            onClick={() => setSubTab('portfolio')}
+            onClick={() => {
+              triggerHaptic(25);
+              setSubTab('portfolio');
+            }}
             className={`segmented-pill ${subTab === 'portfolio' ? 'active' : ''}`}
             title="Consolidated Demat & Manual Portfolio"
           >
@@ -55,7 +59,10 @@ export default function PortfolioHub({
           </button>
 
           <button
-            onClick={() => setSubTab('bulk_ipo')}
+            onClick={() => {
+              triggerHaptic(25);
+              setSubTab('bulk_ipo');
+            }}
             className={`segmented-pill ${subTab === 'bulk_ipo' ? 'active' : ''}`}
             title="Bulk Apply and Verify Allotment Results"
           >
@@ -64,7 +71,10 @@ export default function PortfolioHub({
           </button>
 
           <button
-            onClick={() => setSubTab('accounts')}
+            onClick={() => {
+              triggerHaptic(25);
+              setSubTab('accounts');
+            }}
             className={`segmented-pill ${subTab === 'accounts' ? 'active' : ''}`}
             title="Manage MeroShare BOID Credentials & DP Profiles"
           >
@@ -73,7 +83,10 @@ export default function PortfolioHub({
           </button>
 
           <button
-            onClick={() => setSubTab('simulator')}
+            onClick={() => {
+              triggerHaptic(25);
+              setSubTab('simulator');
+            }}
             className={`segmented-pill ${subTab === 'simulator' ? 'active' : ''}`}
             title="Dynamic Capital & Risk Simulator"
           >

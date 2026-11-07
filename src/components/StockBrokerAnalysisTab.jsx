@@ -9,6 +9,8 @@ import { exportBrokerAnalysisReport, exportStockFloorsheet } from '../utils/floo
 import { fetchRealBrokerAnalysis, fetchFromBackend, fetchAvailableTradingDates } from '../utils/liveData';
 import { formatNptDateIso } from '../utils/nepseCalendar';
 import { SessionDateDropdown } from './SessionDateDropdown';
+import { triggerHaptic } from '../utils/haptics';
+import LoadingShimmerBar from './LoadingShimmerBar';
 
 function safeNum(val, fallback = 0) {
   const n = Number(val);
@@ -1070,7 +1072,10 @@ function StockBrokerAnalysisTabInner({
       }}>
         <button
           type="button"
-          onClick={() => setActiveSubTab('brokers')}
+          onClick={() => {
+            triggerHaptic(25);
+            setActiveSubTab('brokers');
+          }}
           style={{
             flex: 1,
             padding: '9px 12px',
@@ -1088,7 +1093,10 @@ function StockBrokerAnalysisTabInner({
         </button>
         <button
           type="button"
-          onClick={() => setActiveSubTab('acc_dist')}
+          onClick={() => {
+            triggerHaptic(25);
+            setActiveSubTab('acc_dist');
+          }}
           style={{
             flex: 1,
             padding: '9px 12px',
@@ -1106,7 +1114,10 @@ function StockBrokerAnalysisTabInner({
         </button>
         <button
           type="button"
-          onClick={() => setActiveSubTab('zero_sum')}
+          onClick={() => {
+            triggerHaptic(25);
+            setActiveSubTab('zero_sum');
+          }}
           style={{
             flex: 1,
             padding: '9px 12px',
@@ -1123,6 +1134,9 @@ function StockBrokerAnalysisTabInner({
           Zero Sum Floorsheet
         </button>
       </div>
+
+      {/* ── Sub-Millisecond Progress Bar Shimmer Line for Broker Flow ── */}
+      <LoadingShimmerBar active={Boolean(loading)} />
 
       {/* ── Date-Wise & Multi-Day Timeframe Filter Bar (Share Hub Parity) ── */}
       <div style={{
@@ -1159,7 +1173,10 @@ function StockBrokerAnalysisTabInner({
               <button
                 key={item.days}
                 type="button"
-                onClick={() => handleDaysSelect(item.days)}
+                onClick={() => {
+                  triggerHaptic(25);
+                  handleDaysSelect(item.days);
+                }}
                 style={{
                   padding: '6px 11px',
                   borderRadius: 8,

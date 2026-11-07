@@ -43,6 +43,8 @@ import { getProxyBase, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, f
 import { calculateEMA } from '../utils/indicators';
 import { fetchNewsArticle, fetchDividendHistory } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
+import { triggerHaptic } from '../utils/haptics';
+import LoadingShimmerBar from './LoadingShimmerBar';
 import ShortTermProfitPlan from './ShortTermProfitPlan';
 import { Master100ProfitWorkstation } from './Master100ProfitWorkstation';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -1185,6 +1187,7 @@ export default function PredictorHub({
               <button
                 key={tab.id}
                 onClick={() => {
+                  triggerHaptic(25);
                   if (tab.id === 'entry_exit' && !selectedForAnalysis) {
                     const saved = (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '';
                     const pickSym = saved || (primeDailyPick?.symbol ? String(primeDailyPick.symbol).toUpperCase().trim() : '') || 'NABIL';
@@ -1248,6 +1251,9 @@ export default function PredictorHub({
           })}
         </div>
       </div>
+
+      {/* ── Sub-Millisecond Progress Bar Shimmer Line for Predictor Hub ── */}
+      <LoadingShimmerBar active={Boolean(loading || isPredicting)} />
 
       {/* ── Tab Content Container ── */}
       <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 flex-1 predictor-tab-content" style={{ minWidth: 0, boxSizing: 'border-box' }}>

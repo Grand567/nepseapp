@@ -13,6 +13,8 @@ import {
 import { fetchBrokerTracker, fetchEarlyIgnition, fetchPrecomputedDiagnostic } from '../utils/liveData';
 import { TOP_NEPSE_BROKERS } from '../utils/microstructureEngine';
 import PortfolioBrokerShield from './PortfolioBrokerShield';
+import { triggerHaptic } from '../utils/haptics';
+import LoadingShimmerBar from './LoadingShimmerBar';
 
 export interface DailyTapePoint {
   date: string;
@@ -984,7 +986,10 @@ export default function BrokerSmartFlowTracker({
             ].map((tf) => (
               <button
                 key={tf.val}
-                onClick={() => setDays(tf.val)}
+                onClick={() => {
+                  triggerHaptic(25);
+                  setDays(tf.val);
+                }}
                 className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
                   days === tf.val
                     ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
@@ -999,7 +1004,10 @@ export default function BrokerSmartFlowTracker({
           {/* Mode Selector */}
           <div className="flex items-center gap-1 p-1 bg-slate-950/80 rounded-xl border border-slate-800">
             <button
-              onClick={() => setMode('ACCUMULATING')}
+              onClick={() => {
+                triggerHaptic(25);
+                setMode('ACCUMULATING');
+              }}
               className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
                 mode === 'ACCUMULATING'
                   ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
@@ -1009,7 +1017,10 @@ export default function BrokerSmartFlowTracker({
               <TrendingUp className="w-3.5 h-3.5" /> Slowly Accumulating
             </button>
             <button
-              onClick={() => setMode('DUMPING')}
+              onClick={() => {
+                triggerHaptic(25);
+                setMode('DUMPING');
+              }}
               className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
                 mode === 'DUMPING'
                   ? 'bg-rose-500 text-white shadow-md font-black'
@@ -1019,7 +1030,10 @@ export default function BrokerSmartFlowTracker({
               <TrendingDown className="w-3.5 h-3.5" /> Slowly Dumping
             </button>
             <button
-              onClick={() => setMode('ALL')}
+              onClick={() => {
+                triggerHaptic(25);
+                setMode('ALL');
+              }}
               className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
                 mode === 'ALL'
                   ? 'bg-slate-700 text-white shadow-md font-black'
@@ -1313,6 +1327,9 @@ export default function BrokerSmartFlowTracker({
           )}
         </div>
       </div>
+
+      {/* ── Sub-Millisecond Progress Bar Shimmer Line for Broker Smart Flow ── */}
+      <LoadingShimmerBar active={Boolean(loading)} />
 
       {/* ── DATA TABLE ── */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">

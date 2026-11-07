@@ -4,6 +4,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import type { FloorsheetHubApiResponse } from "@/app/api/floorsheet/hub/route";
 import { getProxyBase } from "../utils/liveData";
+import { triggerHaptic } from "../utils/haptics";
+import LoadingShimmerBar from "./LoadingShimmerBar";
 
 interface FloorsheetServiceTabProps {
   /** Optional callback when a user clicks a scrip row to inspect Stock Information Modal */
@@ -100,7 +102,11 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
               ⚡ NEPSE Market-Wide Floorsheet &amp; Whale Tape Scanner
             </h2>
             {data?.asOfDate && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 font-bold">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]" />
+                </span>
                 Session: {data.asOfDate}
               </span>
             )}
@@ -112,8 +118,11 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
 
         <button
           type="button"
-          onClick={() => fetchFloorsheetHub()}
-          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition"
+          onClick={() => {
+            triggerHaptic(25);
+            fetchFloorsheetHub();
+          }}
+          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition cursor-pointer"
         >
           {loading ? "Syncing Tape..." : "↻ Refresh Tape"}
         </button>
@@ -123,7 +132,10 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
       <div className="sticky top-0 z-20 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center gap-2.5 text-xs">
         <select
           value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
+          onChange={(e) => {
+            triggerHaptic(25);
+            setSelectedDate(e.target.value);
+          }}
           className="px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-indigo-300 font-medium cursor-pointer"
         >
           <option value="">Latest Session ({data?.asOfDate || "Today"})</option>
@@ -200,6 +212,9 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
           </button>
         )}
       </div>
+
+      {/* ── Sub-Millisecond Progress Bar Shimmer Line for Floorsheet Hub ── */}
+      <LoadingShimmerBar active={Boolean(loading)} />
 
       {/* Main Content Container */}
       <div className="p-4 space-y-4">

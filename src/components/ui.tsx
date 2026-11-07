@@ -1,5 +1,7 @@
 import { useState, useMemo, useRef, useEffect, type ReactNode, type SyntheticEvent } from 'react';
 import { Activity, Info, RefreshCw, Search, SearchX, WifiOff } from 'lucide-react';
+import { triggerHaptic } from '../utils/haptics';
+import LoadingShimmerBar from './LoadingShimmerBar';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import stockmapData from '../utils/stockmap.json';
 
@@ -722,53 +724,67 @@ export function TimeframeFilterBar({
   title?: string;
 }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-slate-800 bg-slate-900/80 p-2.5 backdrop-blur">
-      <div className="flex items-center gap-2">
-        <span className={`flex h-2.5 w-2.5 items-center justify-center rounded-full ${isLive ? 'bg-emerald-500' : 'bg-amber-500'}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${isLive ? 'animate-ping bg-emerald-400' : 'bg-amber-300'}`} />
-        </span>
-        <div className="flex flex-col">
-          {title && <span className="text-xs font-bold text-white">{title}</span>}
-          <span className="text-[11px] font-mono text-slate-400">
-            {asOf ? `As of: ${asOf}` : `As of: ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
-            {isLive ? ' (Live Session)' : ' (Session Closed)'}
-          </span>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-1.5">
-        <div className="flex items-center rounded-lg border border-slate-800 bg-slate-950/70 p-0.5">
-          {timeframes.map((tf) => {
-            const active = timeframe === tf;
-            return (
-              <button
-                key={tf}
-                type="button"
-                onClick={() => onSelectTimeframe(tf)}
-                className={`cursor-pointer rounded-md px-2.5 py-1 text-xs font-bold transition-all ${
-                  active
-                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                }`}
-              >
-                {tf}
-              </button>
-            );
-          })}
+    <div className="mb-4 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 backdrop-blur">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 p-2.5">
+        <div className="flex items-center gap-2">
+          {isLive ? (
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]" />
+            </span>
+          ) : (
+            <span className="h-2 w-2 rounded-full bg-amber-400" />
+          )}
+          <div className="flex flex-col">
+            {title && <span className="text-xs font-bold text-white">{title}</span>}
+            <span className="text-[11px] font-mono text-slate-400">
+              {asOf ? `As of: ${asOf}` : `As of: ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
+              {isLive ? ' (Live Session)' : ' (Session Closed)'}
+            </span>
+          </div>
         </div>
 
-        {onRefresh && (
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={isRefreshing}
-            className="flex cursor-pointer items-center gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed"
-            title="Refresh Data"
-          >
-            <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-blue-400' : ''} />
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center rounded-lg border border-slate-800 bg-slate-950/70 p-0.5">
+            {timeframes.map((tf) => {
+              const active = timeframe === tf;
+              return (
+                <button
+                  key={tf}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(25);
+                    onSelectTimeframe(tf);
+                  }}
+                  className={`cursor-pointer rounded-md px-2.5 py-1 text-xs font-bold transition-all ${
+                    active
+                      ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  {tf}
+                </button>
+              );
+            })}
+          </div>
+
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(25);
+                onRefresh();
+              }}
+              disabled={isRefreshing}
+              className="flex cursor-pointer items-center gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed"
+              title="Refresh Data"
+            >
+              <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-blue-400' : ''} />
+            </button>
+          )}
+        </div>
       </div>
+      <LoadingShimmerBar active={Boolean(isRefreshing)} />
     </div>
   );
 }
