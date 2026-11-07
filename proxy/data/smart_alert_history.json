@@ -1,5 +1,37 @@
 [
   {
+    "id": "holding_GHL_1794065892187",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-11-07T15:38:12.187Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-11-07T15:38:12.198Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1794065885737",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-11-07T15:38:05.737Z",
+    "stopLoss": 516.4,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-11-07T15:38:05.761Z",
+    "runnerKitta": 50,
+    "target2Hit": true,
+    "closedAt": "2026-11-07T15:38:10.492Z",
+    "exitPrice": 645
+  },
+  {
     "id": "holding_GHL_1794063277464",
     "symbol": "GHL",
     "ltp": 270,
@@ -2351,113 +2383,5 @@
     "target2Hit": true,
     "closedAt": "2026-10-27T09:03:49.548Z",
     "exitPrice": 645
-  },
-  {
-    "id": "alert_PCBL_1793090514002",
-    "symbol": "PCBL",
-    "ltp": 273,
-    "triggeredAt": "2026-10-27T08:41:54.002Z",
-    "buyZone": {
-      "low": 272,
-      "high": 280,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 272 - 280"
-    },
-    "dominantBrokersText": "Sundhara Securities (#52) & Vision Securities (#34)",
-    "concentrationPct": 67,
-    "topBuyerBrokers": [
-      {
-        "broker": "52",
-        "name": "Sundhara Securities",
-        "buyQty": 47589,
-        "buyAmt": 13059021.100000001
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 37247,
-        "buyAmt": 10188908.9
-      },
-      {
-        "broker": "54",
-        "name": "Sewa Securities",
-        "buyQty": 20040,
-        "buyAmt": 5484235.1
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.83x of 20-day avg)",
-    "target1": 314,
-    "target2": 341,
-    "stopLoss": 256.3,
-    "riskRewardRatio": 1.82,
-    "netRRR": 1.82,
-    "qtyPer1Lakh": 50,
-    "capitalDeployed": 19207,
-    "turnoverLakhs": 430.5,
-    "safeOrderLakhs": 21.5,
-    "score": 50,
-    "vduRatio": 0.72,
-    "retentionPct": 82,
-    "atsr": 1,
-    "sector": "Commercial Banks",
-    "sectorRank": 2,
-    "regime": "NEUTRAL",
-    "ticketPayload": null,
-    "vwap": 273.69,
-    "status": "ACTIVE"
-  },
-  {
-    "id": "alert_PCBL_1793004510497",
-    "symbol": "PCBL",
-    "ltp": 271.7,
-    "triggeredAt": "2026-10-26T08:48:30.497Z",
-    "buyZone": {
-      "low": 269,
-      "high": 277,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 277"
-    },
-    "dominantBrokersText": "Sharepro Securities (#65) & Opal Securities Investment (#4)",
-    "concentrationPct": 53,
-    "topBuyerBrokers": [
-      {
-        "broker": "65",
-        "name": "Sharepro Securities",
-        "buyQty": 41000,
-        "buyAmt": 11111277.7
-      },
-      {
-        "broker": "4",
-        "name": "Opal Securities Investment",
-        "buyQty": 25200,
-        "buyAmt": 6835992.7
-      },
-      {
-        "broker": "52",
-        "name": "Sundhara Securities",
-        "buyQty": 18204,
-        "buyAmt": 4923816
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.84x of 20-day avg)",
-    "target1": 312,
-    "target2": 340,
-    "stopLoss": 255.1,
-    "riskRewardRatio": 1.79,
-    "netRRR": 1.79,
-    "qtyPer1Lakh": 50,
-    "capitalDeployed": 19115,
-    "turnoverLakhs": 441.5,
-    "safeOrderLakhs": 22.1,
-    "score": 50,
-    "vduRatio": 0.76,
-    "retentionPct": 82,
-    "atsr": 1,
-    "sector": "Commercial Banks",
-    "sectorRank": 2,
-    "regime": "NEUTRAL",
-    "ticketPayload": null,
-    "vwap": 270.78,
-    "status": "ACTIVE"
   }
 ]

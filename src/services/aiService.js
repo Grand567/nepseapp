@@ -300,3 +300,64 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
 • **Graham Intrinsic Value**: Rs. ${graham.intrinsicValue ? graham.intrinsicValue.toFixed(2) : 'N/A'} (Margin of Safety: ${graham.marginOfSafetyPct != null ? (graham.marginOfSafetyPct >= 0 ? '+' : '') + graham.marginOfSafetyPct.toFixed(1) + '%' : 'N/A'})
 • **Targets**: Target 1: Rs. ${targets.target1?.price ?? 'N/A'} (+${targets.target1?.pct ?? '—'}%) | Target 2: Rs. ${targets.target2?.price ?? 'N/A'} (+${targets.target2?.pct ?? '—'}%) | Stop-Loss: Rs. ${targets.stopLoss?.price ?? 'N/A'} (-${targets.stopLoss?.pct ?? '—'}%)`;
 }
+
+
+/**
+ * Deterministic Context Builder Selector for Guru AI
+ * Synthesizes live market breadth, selected stock metrics, and portfolio summary
+ * from the unified store into a structured context block to eliminate hallucinations.
+ */
+export function getGuruAiLiveContext({
+  marketStocks = [],
+  selectedStock = null,
+  userPortfolio = null,
+  activeTab = null
+} = {}) {
+  const stocks = Array.isArray(marketStocks) ? marketStocks : [];
+  const totalScrips = stocks.length;
+
+  let advances = 0;
+  let declines = 0;
+  let unchanged = 0;
+  let totalTurnover = 0;
+
+  for (const s of stocks) {
+    const chg = Number(s.pChange || s.pointChange || 0);
+    if (chg > 0) advances++;
+    else if (chg < 0) declines++;
+    else unchanged++;
+    totalTurnover += Number(s.turnover || 0);
+  }
+
+  const topGainers = stocks.slice().sort((a, b) => Number(b.pChange || 0) - Number(a.pChange || 0)).slice(0, 3).map(s => `${s.symbol} (+${Number(s.pChange || 0).toFixed(1)}%)`);
+  const topLosers = stocks.slice().sort((a, b) => Number(a.pChange || 0) - Number(b.pChange || 0)).slice(0, 3).map(s => `${s.symbol} (${Number(s.pChange || 0).toFixed(1)}%)`);
+
+  let context = `[LIVE NEPSE CONTEXT - VERIFIED DATA]\n`;
+  context += `• Traded Universe: ${totalScrips} Scrips | Advances: ${advances} | Declines: ${declines} | Unchanged: ${unchanged}\n`;
+  if (totalTurnover > 0) {
+    context += `• Total Market Turnover: Rs. ${(totalTurnover / 10000000).toFixed(2)} Crore\n`;
+  }
+  if (topGainers.length) context += `• Top Gainers: ${topGainers.join(', ')}\n`;
+  if (topLosers.length) context += `• Top Losers: ${topLosers.join(', ')}\n`;
+
+  if (activeTab) {
+    context += `• User Active Tab: ${activeTab}\n`;
+  }
+
+  if (selectedStock && (selectedStock.symbol || selectedStock.scrip)) {
+    const sym = String(selectedStock.symbol || selectedStock.scrip).toUpperCase();
+    const ltp = Number(selectedStock.ltp || selectedStock.close || selectedStock.price || 0);
+    const pChg = Number(selectedStock.pChange || 0);
+    context += `• Inspected Scrip: ${sym} (LTP: Rs. ${ltp.toFixed(1)}, Change: ${pChg >= 0 ? '+' : ''}${pChg.toFixed(2)}%)\n`;
+  }
+
+  if (userPortfolio && typeof userPortfolio === 'object') {
+    const holdingsCount = Array.isArray(userPortfolio.holdings) ? userPortfolio.holdings.length : 0;
+    const totalVal = Number(userPortfolio.totalValue || userPortfolio.totalCurrentValue || 0);
+    if (holdingsCount > 0) {
+      context += `• User Portfolio: ${holdingsCount} active holdings | Value: Rs. ${totalVal.toLocaleString()}\n`;
+    }
+  }
+
+  return context.trim();
+}

@@ -391,6 +391,16 @@ export function evaluateOperatorOffloadWarning(symbol, brokerAnalysis = {}, stoc
   };
 }
 
+/**
+ * Helper to identify NEPSE odd-lot trades (< 10 kitta or explicit ODD_LOT board)
+ */
+export function isOddLotContract(t) {
+  if (!t) return false;
+  const qty = Math.round(Number(t.quantity || t.qty || t.kitta || t.contractQuantity || 0));
+  const board = String(t.board || t.tradeType || t.type || '').toUpperCase();
+  return (qty > 0 && qty < 10) || board.includes('ODD');
+}
+
 export function aggregateBrokerMicrostructure(params = {}) {
   const p = params || {};
   const normSym = String(p.symbol || p.targetSymbol || '').toUpperCase().trim();
@@ -409,6 +419,9 @@ export function aggregateBrokerMicrostructure(params = {}) {
   let crossTradesCount = 0;
   let crossVolume = 0;
   let crossTurnover = 0;
+  let oddLotTradesCount = 0;
+  let oddLotVolume = 0;
+  let oddLotTurnover = 0;
 
   // Check if rawTrades is an incomplete partial sample (e.g. from 100-trade paginated floorsheet)
   const rbaCandidate = p.realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis;
@@ -460,6 +473,16 @@ export function aggregateBrokerMicrostructure(params = {}) {
       const isCross = Boolean(bId && sId && bId === sId);
 
       if (qty <= 0) continue;
+
+      const isOddLot = isOddLotContract(t);
+      if (isOddLot) {
+        oddLotTradesCount++;
+        oddLotVolume += qty;
+        oddLotTurnover += amt;
+        if (p.excludeOddLot) {
+          continue; // Guard: skip odd lot from standard continuous auction price discovery
+        }
+      }
 
       totalVolume += qty;
       totalTurnover += amt;
@@ -1045,6 +1068,9 @@ export function aggregateBrokerMicrostructure(params = {}) {
     totalSellVolume: totalVolume,
     crossVolume,
     crossTurnover,
+    oddLotTradesCount,
+    oddLotVolume,
+    oddLotTurnover,
     totalNonCrossBuyVol,
     totalNonCrossSellVol,
     netVolume: smartMoneyNetVolume,

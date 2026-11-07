@@ -40,11 +40,12 @@ const testFiles = [
   'aaBatchWalkForwardOptimization.test.mjs',
   'abBatchTelegramMorningDigest.test.mjs',
   'acItem1LookAheadFix.test.mjs',
-  'adBrokerFloorsheetAudit.test.mjs'
+  'adBrokerFloorsheetAudit.test.mjs',
+  'aeBatchCrossTabInvariants.test.mjs'
 ];
 
 console.log('====================================================');
-console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (36 SUITES)  ');
+console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (37 SUITES)  ');
 console.log('====================================================\n');
 
 let totalFailures = 0;
