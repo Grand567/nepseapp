@@ -2903,10 +2903,20 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
   const isShowAll = size === 'all' || Number(size) >= 5000;
   const hasFilter = Boolean(buyer || seller || broker || days > 1 || fromDate || toDate || minQty > 0 || minAmount > 0 || selfMatchedOnly || isShowAll || sinceContractId);
 
-  // Fast-path: check in-memory full session trades cache (bypassed if delta sinceContractId requested)
+  const mkt = getDetailedMarketStatus();
+  const todayIso = formatNptDateIso(new Date());
+  const availableTradingDates = await fetchAvailableTradingDates().catch(() => []);
+  const uniqueDates = date
+    ? [date]
+    : Array.from(new Set(mkt.isOpen ? [todayIso, ...availableTradingDates] : availableTradingDates)).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a)));
+  const targetDate = date || (mkt.isOpen ? todayIso : uniqueDates[0]) || todayIso;
+
+  // Fast-path: check in-memory full session trades cache (bypassed if delta sinceContractId requested or refresh requested)
+  // When market is OPEN, allow cache only for 8 seconds to enable smooth UI while streaming live ticks
   if (sym && sym !== 'ALL' && !refresh && !sinceContractId && days === 1 && !fromDate && !toDate) {
     const cachedFull = _fsFullTradesCache.get(sym);
-    if (cachedFull && Array.isArray(cachedFull.list) && cachedFull.list.length > 0 && (!date || date === cachedFull.date) && (Date.now() - cachedFull.ts < 300000)) {
+    const maxCacheAge = mkt.isOpen ? 8000 : 300000;
+    if (cachedFull && Array.isArray(cachedFull.list) && cachedFull.list.length > 0 && cachedFull.date === targetDate && (Date.now() - cachedFull.ts < maxCacheAge)) {
       return buildFloorsheetResult(cachedFull.list, {
         sym,
         date: cachedFull.date,
@@ -2918,63 +2928,26 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
         minQty,
         minAmount,
         selfMatchedOnly,
-        availableDates: [cachedFull.date],
+        availableDates: uniqueDates,
         source: 'in_memory_session_vault'
       });
     }
   }
 
-  const rawCached = (page === 1 && !hasFilter && !date && !refresh) ? getCachedRealFloorsheet(sym) : null;
-  // Guard against stale truncated fragments (< 15 rows) cached from previous partial snapshots
-  const cached = (rawCached && (rawCached.totalElements >= 15 || rawCached.rows?.length >= 15)) ? rawCached : null;
-  if (cached) return cached;
-
-  const mkt = getDetailedMarketStatus();
-  const todayIso = formatNptDateIso(new Date());
-  const lastTradingIso = mkt.lastTradingDay ? formatNptDateIso(mkt.lastTradingDay) : getLatestTradingDateStr();
-  const availableTradingDates = await fetchAvailableTradingDates().catch(() => []);
-  const uniqueDates = date
-    ? [date]
-    : Array.from(new Set(mkt.isOpen ? [todayIso, ...availableTradingDates] : availableTradingDates)).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a)));
-
-  // Direct authentic Chukul exchange floorsheet fallback for individual equities
-  if (sym && sym !== 'ALL' && days === 1 && !fromDate && !toDate) {
-    for (const dStr of uniqueDates) {
-      try {
-        const chukulUrl = `https://chukul.com/api/data/floorsheet/?symbol=${encodeURIComponent(sym)}&date=${encodeURIComponent(dStr)}`;
-        const rawList = await tryFetchJSON(chukulUrl, 8000);
-        if (Array.isArray(rawList) && rawList.length > 0) {
-          _fsFullTradesCache.set(sym, { list: rawList, date: dStr, ts: Date.now() });
-          const result = buildFloorsheetResult(rawList, {
-            sym,
-            date: dStr,
-            page,
-            size,
-            buyer,
-            seller,
-            broker,
-            minQty,
-            minAmount,
-            selfMatchedOnly,
-            availableDates: uniqueDates,
-            source: 'authentic_chukul_direct_floorsheet'
-          });
-
-          if (page === 1 && !hasFilter && !date && result.totalElements >= 15) {
-            setCachedRealFloorsheet(sym, result);
-          }
-          return result;
-        }
-      } catch (_) {}
-    }
+  // Persistent storage cache check with strict targetDate verification
+  let cached = null;
+  if (page === 1 && !hasFilter && !date && !refresh && !mkt.isOpen) {
+    const rawCached = getCachedRealFloorsheet(sym, targetDate);
+    cached = (rawCached && (rawCached.totalElements >= 15 || rawCached.rows?.length >= 15) && rawCached.businessDate === targetDate) ? rawCached : null;
+    if (cached) return cached;
   }
 
+  // PRIORITY 1: Query Local Backend Proxy (backed by SQLite `drabyashree_ledger.db`, live NOTS, and local vaults)
   try {
     const params = new URLSearchParams();
     params.set('page', String(page));
     params.set('size', String(size));
-    if (date) params.set('date', date);
-    else if (uniqueDates[0]) params.set('date', uniqueDates[0]);
+    if (targetDate) params.set('date', targetDate);
     if (days > 1) params.set('days', String(days));
     if (fromDate) params.set('fromDate', fromDate);
     if (toDate) params.set('toDate', toDate);
@@ -2990,19 +2963,19 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
     const url = `/api/floorsheet${sym ? `/${encodeURIComponent(sym)}` : ''}?${params.toString()}`;
     const timeoutMs = (size > 200 || days > 1 || fromDate || toDate) ? 25000 : 12000;
     const res = await fetchFromBackend(url, timeoutMs);
-    const hasValidRowsWithBrokers = res && res.success && res.data && Array.isArray(res.data.rows) && res.data.rows.length > 0;
+    const hasValidRows = res && res.success && res.data && Array.isArray(res.data.rows) && res.data.rows.length > 0;
 
-    if (hasValidRowsWithBrokers) {
-      if (page === 1 && !hasFilter && !date && (res.data.totalElements >= 15 || res.data.rows?.length >= 15)) {
-        setCachedRealFloorsheet(sym, res.data);
+    if (hasValidRows) {
+      if (page === 1 && !hasFilter && (res.data.totalElements >= 15 || res.data.rows?.length >= 15)) {
+        setCachedRealFloorsheet(sym, { ...res.data, isLiveSession: Boolean(mkt.isOpen) });
       }
       const combinedAvail = Array.from(new Set([...(res.data.availableDates || []), ...availableTradingDates])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a)));
       return { ...res.data, availableDates: combinedAvail, isReal: true };
     }
 
-    // If date was explicitly requested and returned empty (or 0 rows), return authoritative empty response for THAT date!
-    // NEVER substitute another date's data when the user explicitly selected a date!
-    if (date) {
+    // If an explicit date was requested OR if market is currently OPEN, return authoritative empty response for targetDate!
+    // NEVER substitute another date's data when viewing today's live market or a specific historical date!
+    if (date || mkt.isOpen) {
       return {
         rows: [],
         page,
@@ -3011,26 +2984,49 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
         totalElements: 0,
         totalAmount: 0,
         totalQty: 0,
-        businessDate: date,
-        availableDates: availableTradingDates,
+        businessDate: targetDate,
+        availableDates: uniqueDates,
         priceVolumeBreakdown: [],
         bulkTransactions: [],
         isReal: true
       };
     }
+  } catch (backendErr) {
+    console.warn(`[fetchRealFloorsheet] Local proxy notice:`, backendErr.message);
+  }
 
-    // Only if NO specific date was requested and today's session is empty/closed, fallback to latest closed session
-    if (!buyer && !seller && (!res || !res.data?.rows || res.data.rows.length === 0)) {
-      const fallbackRes = await fetchFromBackend(`/api/floorsheet${sym ? `/${encodeURIComponent(sym)}` : ''}?page=${page}&size=${size}`, 10000);
-      if (fallbackRes && fallbackRes.success && fallbackRes.data?.rows?.length > 0) {
-        if (page === 1) setCachedRealFloorsheet(sym, fallbackRes.data);
-        return { ...fallbackRes.data, isReal: true };
+  // PRIORITY 2: Direct Chukul exchange fallback ONLY for targetDate when market is closed (NEVER loop over historical dates!)
+  if (sym && sym !== 'ALL' && days === 1 && !fromDate && !toDate && !mkt.isOpen) {
+    try {
+      const chukulUrl = `https://chukul.com/api/data/floorsheet/?symbol=${encodeURIComponent(sym)}&date=${encodeURIComponent(targetDate)}`;
+      const rawList = await tryFetchJSON(chukulUrl, 8000);
+      if (Array.isArray(rawList) && rawList.length > 0) {
+        _fsFullTradesCache.set(sym, { list: rawList, date: targetDate, ts: Date.now() });
+        const result = buildFloorsheetResult(rawList, {
+          sym,
+          date: targetDate,
+          page,
+          size,
+          buyer,
+          seller,
+          broker,
+          minQty,
+          minAmount,
+          selfMatchedOnly,
+          availableDates: uniqueDates,
+          source: 'authentic_chukul_direct_floorsheet'
+        });
+
+        if (page === 1 && !hasFilter && !date && result.totalElements >= 15) {
+          setCachedRealFloorsheet(sym, result);
+        }
+        return result;
       }
-    }
-  } catch (_) {}
+    } catch (_) {}
+  }
 
-  // Return cached real historical floorsheet if available and not filtering
-  if (cached && cached.rows?.length > 0) {
+  // Return cached real historical floorsheet if available and matches targetDate
+  if (cached && cached.rows?.length > 0 && cached.businessDate === targetDate) {
     return cached;
   }
 

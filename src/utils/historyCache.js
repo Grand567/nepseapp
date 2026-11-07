@@ -589,13 +589,31 @@ export function bulkSetCachedBrokerData(brokerMap) {
  * @param {string} sym - Stock ticker symbol
  * @returns {Object|null}
  */
-export function getCachedRealFloorsheet(sym) {
+export function getCachedRealFloorsheet(sym, targetDate = '') {
   if (!sym || typeof window === 'undefined') return null;
   const key = String(sym).toUpperCase().trim();
   if (!key) return null;
 
+  const validate = (parsed) => {
+    if (!parsed || !parsed.rows || parsed.rows.length === 0) return null;
+    const reqDate = String(targetDate || '').trim();
+    if (reqDate && parsed.businessDate && parsed.businessDate !== reqDate) {
+      return null;
+    }
+    if (parsed.cachedAt && typeof parsed.cachedAt === 'number') {
+      const maxAge = parsed.isLiveSession ? (30 * 1000) : (15 * 60 * 1000);
+      if (Date.now() - parsed.cachedAt > maxAge) {
+        return null;
+      }
+    }
+    return parsed;
+  };
+
   if (memFloorsheetCache.has(key)) {
-    return memFloorsheetCache.get(key);
+    const mem = memFloorsheetCache.get(key);
+    const valid = validate(mem);
+    if (valid) return valid;
+    memFloorsheetCache.delete(key);
   }
 
   try {
@@ -603,9 +621,12 @@ export function getCachedRealFloorsheet(sym) {
       const raw = localStorage.getItem(FLOORSHEET_LS_PREFIX + key);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.rows && parsed.rows.length > 0) {
-          memFloorsheetCache.set(key, parsed);
-          return parsed;
+        const valid = validate(parsed);
+        if (valid) {
+          memFloorsheetCache.set(key, valid);
+          return valid;
+        } else {
+          try { localStorage.removeItem(FLOORSHEET_LS_PREFIX + key); } catch (_) {}
         }
       }
     }
@@ -625,11 +646,16 @@ export function setCachedRealFloorsheet(sym, data) {
   const key = String(sym).toUpperCase().trim();
   if (!key) return;
 
-  memFloorsheetCache.set(key, data);
+  const payload = {
+    ...data,
+    cachedAt: Date.now()
+  };
+
+  memFloorsheetCache.set(key, payload);
   // Only persist to localStorage if it's a solid dataset (not an end-of-day fragment)
   if ((data.totalElements || data.rows.length) >= 15) {
     try {
-      localStorage.setItem(FLOORSHEET_LS_PREFIX + key, JSON.stringify(data));
+      localStorage.setItem(FLOORSHEET_LS_PREFIX + key, JSON.stringify(payload));
     } catch (_) {}
   }
 }

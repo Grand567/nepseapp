@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Zap, RefreshCw, Search, Filter, Clock, ArrowRight, ShieldCheck, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Zap, RefreshCw, Search, Filter, Clock, ArrowRight, ShieldCheck, ChevronLeft, ChevronRight, X, Calendar } from 'lucide-react';
 import { fetchRealFloorsheet, fetchAvailableTradingDates } from '../utils/liveData';
 import { getBrokerName } from '../utils/accumulationDistributionEngine';
+import { getDetailedMarketStatus, formatNptDateIso } from '../utils/nepseCalendar';
 
 function formatNprCurrency(val, isNe = false) {
   const n = Number(val) || 0;
@@ -34,7 +35,9 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
   const [size] = useState(50);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [isAutoRefresh, setIsAutoRefresh] = useState(false);
+  const mkt = getDetailedMarketStatus();
+  const todayIso = formatNptDateIso(new Date());
+  const [isAutoRefresh, setIsAutoRefresh] = useState(() => Boolean(mkt?.isOpen));
   const [lastSyncTime, setLastSyncTime] = useState(new Date().toLocaleTimeString('en-US', { hour12: false }));
 
   const daysMap = {
@@ -121,12 +124,12 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
     loadFloorsheet(1);
   }, [loadFloorsheet]);
 
-  // Auto-refresh interval (every 12 seconds when enabled)
+  // Auto-refresh interval (every 8 seconds when enabled or live)
   useEffect(() => {
     if (!isAutoRefresh) return;
     const interval = setInterval(() => {
       loadFloorsheet(page, true);
-    }, 12000);
+    }, 8000);
     return () => clearInterval(interval);
   }, [isAutoRefresh, page, loadFloorsheet]);
 
@@ -153,7 +156,16 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
             </span>
             {isNe ? 'फ्लोरशिट प्रत्यक्ष कारोबार (Live Floorsheet Tape)' : 'Floor Sheet Live Tape'}
           </span>
-          <div className="flex items-center gap-2 text-[11px] font-mono">
+          <div className="flex items-center gap-2 text-[11px] font-mono flex-wrap">
+            {floorsheetData.businessDate && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-300 border border-sky-500/30 flex items-center gap-1">
+                <Calendar size={11} className="text-sky-400" />
+                <span>{floorsheetData.businessDate}</span>
+                {mkt?.isOpen && floorsheetData.businessDate === todayIso && (
+                  <span className="text-[9px] text-emerald-400 font-black uppercase tracking-wider ml-0.5">• LIVE</span>
+                )}
+              </span>
+            )}
             <span className="text-sky-400 font-bold">((•)) Sync: {lastSyncTime}</span>
             <button
               onClick={() => setIsAutoRefresh(v => !v)}

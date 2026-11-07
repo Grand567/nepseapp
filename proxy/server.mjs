@@ -4365,14 +4365,15 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
         const lastTradingDayStr = mktStatus?.lastTradingDay ? (typeof mktStatus.lastTradingDay === 'string' ? mktStatus.lastTradingDay.split('T')[0] : mktStatus.lastTradingDay.toISOString().split('T')[0]) : '2026-10-14';
         const targetDt = businessDate || (mktStatus?.isOpen ? todayIso : lastTradingDayStr);
         let directRows = await fetchChukulDateFloorsheet(cleanSym, targetDt);
-        // If NO businessDate was specified, we can fall back to lastTradingDayStr or recent dates
+        // If NO businessDate was specified and market is CLOSED, we can fall back to lastTradingDayStr or recent dates
+        // Strictly forbid falling back to previous dates during an OPEN market session
         if (!directRows || directRows.length === 0) {
-          if (!businessDate) {
+          if (!businessDate && !mktStatus?.isOpen) {
             directRows = await fetchChukulDateFloorsheet(cleanSym, lastTradingDayStr);
           }
         }
         if (!directRows || directRows.length === 0) {
-          if (!businessDate) {
+          if (!businessDate && !mktStatus?.isOpen) {
             const allDates = await fetchSymbolTradingDates(cleanSym).catch(() => []);
             for (const d of allDates.slice(0, 3)) {
               if (d !== targetDt && d !== lastTradingDayStr) {
