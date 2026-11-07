@@ -2250,11 +2250,15 @@ export default function StockDetailModal({
     setFloorsheetDate(newDate);
     setBrokerDate(newDate);
     setHistoryFilterDate(newDate);
+    if (newDate) {
+      setBrokerDays(1);
+    }
 
     const sym = d?.symbol;
     if (sym) {
-      fetchFloorsheetData(1, { date: newDate, refresh: true });
-      fetchBrokerAnalysisData(brokerDays, newDate, { refresh: true });
+      const targetDays = newDate ? 1 : brokerDays;
+      fetchFloorsheetData(1, { date: newDate, refresh: false });
+      fetchBrokerAnalysisData(targetDays, newDate, { refresh: false });
       setMarketDepthLoading(true);
       fetchMarketDepth(sym, newDate)
         .then(depth => { if (depth) setRealMarketDepth(depth); })
@@ -2267,19 +2271,22 @@ export default function StockDetailModal({
     setBrokerDays(newDays);
     setBrokerDate('');
     setBrokerAnalysisLoading(true);
-    fetchBrokerAnalysisData(newDays, '', { refresh: true });
+    fetchBrokerAnalysisData(newDays, '', { refresh: false });
   }, [fetchBrokerAnalysisData]);
 
   const handleBrokerDateChange = useCallback((newDate) => {
     handleModalSessionDateChange(newDate);
   }, [handleModalSessionDateChange]);
 
+  const propEffectiveDate = propSelectedDate || propSessionDate || propDate || (typeof stock === 'object' ? (stock?.sessionDate || stock?.businessDate || stock?.date) : '') || '';
+  const prevPropDateRef = useRef(propEffectiveDate);
+
   useEffect(() => {
-    const nextDate = propSelectedDate || propSessionDate || propDate || (typeof stock === 'object' ? (stock?.sessionDate || stock?.businessDate || stock?.date) : '') || '';
-    if (nextDate && nextDate !== modalSessionDate) {
-      handleModalSessionDateChange(nextDate);
+    if (propEffectiveDate && propEffectiveDate !== prevPropDateRef.current) {
+      prevPropDateRef.current = propEffectiveDate;
+      handleModalSessionDateChange(propEffectiveDate);
     }
-  }, [propSelectedDate, propSessionDate, propDate, stock, modalSessionDate, handleModalSessionDateChange]);
+  }, [propEffectiveDate, handleModalSessionDateChange]);
 
   const handleFetchSmartMoney = useCallback(async (sym, tf, days) => {
     try {
@@ -5870,30 +5877,34 @@ export default function StockDetailModal({
                   </div>
 
                   {/* Date Notice Banner if selected date has no compiled records */}
-                  {brokerDate && !Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).includes(brokerDate) && (
-                    <div style={{
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      background: 'rgba(245, 158, 11, 0.1)',
-                      border: '1px solid rgba(245, 158, 11, 0.3)',
-                      color: '#fbbf24',
-                      fontSize: 11,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 8,
-                      marginBottom: 10
-                    }}>
-                      <span>⚠️ No floorsheet records compiled yet for <strong>{brokerDate}</strong>. Showing latest completed session: <strong>{(Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))))[0] || '2026-10-27'}</strong>.</span>
-                      <button
-                        type="button"
-                        onClick={() => handleBrokerDateChange('')}
-                        style={{ padding: '2px 8px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.25)', border: 'none', color: '#fef3c7', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
-                      >
-                        Reset
-                      </button>
-                    </div>
-                  )}
+                  {(() => {
+                    const allKnownDates = Array.from(new Set([...availableTradingDates, ...((realBrokerAnalysis || ba)?.availableDates || [])])).filter(Boolean);
+                    if (!brokerDate || allKnownDates.includes(brokerDate)) return null;
+                    return (
+                      <div style={{
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        background: 'rgba(245, 158, 11, 0.1)',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                        color: '#fbbf24',
+                        fontSize: 11,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        marginBottom: 10
+                      }}>
+                        <span>⚠️ No floorsheet records compiled yet for <strong>{brokerDate}</strong>. Showing latest completed session: <strong>{allKnownDates[0] || 'Latest'}</strong>.</span>
+                        <button
+                          type="button"
+                          onClick={() => handleBrokerDateChange('')}
+                          style={{ padding: '2px 8px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.25)', border: 'none', color: '#fef3c7', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    );
+                  })()}
 
                   {/* Plain-English Guide Banner */}
                   <div style={{

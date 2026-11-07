@@ -267,17 +267,28 @@ function StockBrokerAnalysisTabInner({
   useEffect(() => {
     let active = true;
     if (!symbol) return;
+
+    // Check if brokerData prop already matches requested timeframe and date
     const propMatchesTimeframe = brokerData && (
       (brokerData.timeframeDays === effectiveDays || (!brokerData.timeframeDays && effectiveDays === 1)) &&
       (Array.isArray(brokerData.brokers) && brokerData.brokers.length > 0)
     );
-    if (propMatchesTimeframe && !effectiveDate) {
+    const propMatchesDate = !effectiveDate || (
+      brokerData && (brokerData.businessDate === effectiveDate || brokerData.date === effectiveDate)
+    );
+
+    if (propMatchesTimeframe && propMatchesDate) {
       setInternalBrokerData(null);
       return;
     }
 
+    // When parent provides onDateChange or onDaysChange, parent manages primary state synchronization
+    if (loading || onDateChange || onDaysChange) {
+      return;
+    }
+
     setInternalLoading(true);
-    fetchRealBrokerAnalysis(symbol, effectiveDays, { date: effectiveDate, refresh: true })
+    fetchRealBrokerAnalysis(symbol, effectiveDays, { date: effectiveDate, refresh: false })
       .then(res => {
         if (active && res && (res.brokers?.length > 0 || res.topBuyers?.length > 0 || res.dailyFlow?.length > 0)) {
           setInternalBrokerData(res);
@@ -289,44 +300,109 @@ function StockBrokerAnalysisTabInner({
       });
 
     return () => { active = false; };
-  }, [symbol, effectiveDays, effectiveDate, brokerData]);
+  }, [symbol, effectiveDays, effectiveDate, brokerData, loading, onDateChange, onDaysChange]);
 
-  const activeBrokerData = (internalBrokerData && (
-    (Array.isArray(internalBrokerData.brokers) && internalBrokerData.brokers.length > 0) ||
-    (Array.isArray(internalBrokerData.dailyFlow) && internalBrokerData.dailyFlow.length > 0)
-  )) ? internalBrokerData : (brokerData || null);
+  const activeBrokerData = useMemo(() => {
+    // If effectiveDate is selected, ensure we strictly resolve data for this date
+    if (effectiveDate) {
+      if (internalBrokerData && (internalBrokerData.businessDate === effectiveDate || internalBrokerData.date === effectiveDate)) {
+        return internalBrokerData;
+      }
+      if (brokerData && (brokerData.businessDate === effectiveDate || brokerData.date === effectiveDate)) {
+        return brokerData;
+      }
+      // If dailyFlow in either dataset contains this session, extract that single session in 0ms
+      const dayFromInternal = internalBrokerData?.dailyFlow?.find(df => df.date === effectiveDate);
+      if (dayFromInternal && Array.isArray(dayFromInternal.brokers) && dayFromInternal.brokers.length > 0) {
+        return {
+          ...internalBrokerData,
+          businessDate: effectiveDate,
+          date: effectiveDate,
+          tradingDays: 1,
+          timeframeDays: 1,
+          totalVolume: dayFromInternal.buyVol || dayFromInternal.totalVolume || 0,
+          totalAmount: dayFromInternal.turnover || dayFromInternal.amount || 0,
+          brokers: dayFromInternal.brokers,
+          topBuyers: dayFromInternal.brokers.filter(b => b.buyQty > 0).sort((a, b) => b.buyQty - a.buyQty),
+          topSellers: dayFromInternal.brokers.filter(b => b.sellQty > 0).sort((a, b) => b.sellQty - a.sellQty),
+          topAccumulators: dayFromInternal.brokers.filter(b => (b.netQty || (b.buyQty - b.sellQty)) > 0).sort((a, b) => (b.netQty || (b.buyQty - b.sellQty)) - (a.netQty || (a.buyQty - a.sellQty))),
+          topDistributors: dayFromInternal.brokers.filter(b => (b.netQty || (b.buyQty - b.sellQty)) < 0).sort((a, b) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - b.sellQty))),
+        };
+      }
+      const dayFromProp = brokerData?.dailyFlow?.find(df => df.date === effectiveDate);
+      if (dayFromProp && Array.isArray(dayFromProp.brokers) && dayFromProp.brokers.length > 0) {
+        return {
+          ...brokerData,
+          businessDate: effectiveDate,
+          date: effectiveDate,
+          tradingDays: 1,
+          timeframeDays: 1,
+          totalVolume: dayFromProp.buyVol || dayFromProp.totalVolume || 0,
+          totalAmount: dayFromProp.turnover || dayFromProp.amount || 0,
+          brokers: dayFromProp.brokers,
+          topBuyers: dayFromProp.brokers.filter(b => b.buyQty > 0).sort((a, b) => b.buyQty - a.buyQty),
+          topSellers: dayFromProp.brokers.filter(b => b.sellQty > 0).sort((a, b) => b.sellQty - a.sellQty),
+          topAccumulators: dayFromProp.brokers.filter(b => (b.netQty || (b.buyQty - b.sellQty)) > 0).sort((a, b) => (b.netQty || (b.buyQty - b.sellQty)) - (a.netQty || (a.buyQty - a.sellQty))),
+          topDistributors: dayFromProp.brokers.filter(b => (b.netQty || (b.buyQty - b.sellQty)) < 0).sort((a, b) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - b.sellQty))),
+        };
+      }
+    }
+
+    if (internalBrokerData && (
+      (Array.isArray(internalBrokerData.brokers) && internalBrokerData.brokers.length > 0) ||
+      (Array.isArray(internalBrokerData.dailyFlow) && internalBrokerData.dailyFlow.length > 0)
+    )) {
+      return internalBrokerData;
+    }
+    return brokerData || null;
+  }, [effectiveDate, internalBrokerData, brokerData]);
 
   const isTabLoading = Boolean(loading || internalLoading);
 
   const handleDaysSelect = (d) => {
     setLocalDays(d);
     setLocalDate('');
+    setLocalFromDate('');
+    setLocalToDate('');
+    setInternalBrokerData(null);
     if (onDateChange) onDateChange('');
-    if (onDaysChange) onDaysChange(d);
-    setInternalLoading(true);
-    fetchRealBrokerAnalysis(symbol, d, { date: '', refresh: true })
-      .then(res => { if (res) setInternalBrokerData(res); })
-      .catch(() => {})
-      .finally(() => setInternalLoading(false));
+    if (onDaysChange) {
+      onDaysChange(d);
+    } else {
+      setInternalLoading(true);
+      fetchRealBrokerAnalysis(symbol, d, { date: '', refresh: false })
+        .then(res => { if (res) setInternalBrokerData(res); })
+        .catch(() => {})
+        .finally(() => setInternalLoading(false));
+    }
   };
 
   const handleDateSelect = (dt) => {
     setLocalDate(dt);
     setLocalFromDate('');
     setLocalToDate('');
-    if (onDateChange) onDateChange(dt);
-    setInternalLoading(true);
-    fetchRealBrokerAnalysis(symbol, effectiveDays, { date: dt, refresh: true })
-      .then(res => { if (res) setInternalBrokerData(res); })
-      .catch(() => {})
-      .finally(() => setInternalLoading(false));
+    if (dt) {
+      setLocalDays(1);
+      if (onDaysChange) onDaysChange(1);
+    }
+    setInternalBrokerData(null);
+    if (onDateChange) {
+      onDateChange(dt);
+    } else {
+      setInternalLoading(true);
+      fetchRealBrokerAnalysis(symbol, 1, { date: dt, refresh: false })
+        .then(res => { if (res) setInternalBrokerData(res); })
+        .catch(() => {})
+        .finally(() => setInternalLoading(false));
+    }
   };
 
   const handleRangeApply = (fromVal = localFromDate, toVal = localToDate) => {
     if (!fromVal && !toVal) return;
     setLocalDate('');
+    setInternalBrokerData(null);
     setInternalLoading(true);
-    fetchRealBrokerAnalysis(symbol, 500, { fromDate: fromVal, toDate: toVal, refresh: true })
+    fetchRealBrokerAnalysis(symbol, 500, { fromDate: fromVal, toDate: toVal, refresh: false })
       .then(res => { if (res) setInternalBrokerData(res); })
       .catch(() => {})
       .finally(() => setInternalLoading(false));
@@ -338,13 +414,8 @@ function StockBrokerAnalysisTabInner({
     handleDaysSelect(1);
   };
 
-  // Extract available trading dates from activeBrokerData or floorsheetData (excluding incomplete ongoing intraday session)
+  // Extract available trading dates from activeBrokerData or floorsheetData
   const availableDates = useMemo(() => {
-    const now = new Date();
-    const todayNpt = formatNptDateIso(now);
-    const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
-    const isOngoingMarketSession = (nptMins % 1440) >= (11 * 60) && (nptMins % 1440) < (15 * 60 + 5);
-
     const set = new Set();
     if (Array.isArray(propAvailableDates)) {
       propAvailableDates.forEach(d => d && set.add(String(d)));
@@ -358,6 +429,7 @@ function StockBrokerAnalysisTabInner({
       bd.dailyFlow.forEach(df => df?.date && set.add(String(df.date)));
     }
     if (bd?.businessDate) set.add(String(bd.businessDate));
+    if (bd?.date) set.add(String(bd.date));
     const fsRows = Array.isArray(floorsheetData)
       ? floorsheetData
       : (Array.isArray(floorsheetData?.rows) ? floorsheetData.rows : []);
@@ -366,26 +438,22 @@ function StockBrokerAnalysisTabInner({
       floorsheetData.availableDates.forEach(d => d && set.add(String(d)));
     }
     return Array.from(set)
-      .filter(d => !isOngoingMarketSession || d !== todayNpt)
+      .filter(Boolean)
       .sort()
       .reverse();
-  }, [activeBrokerData, floorsheetData, allStoredDates]);
+  }, [activeBrokerData, floorsheetData, allStoredDates, propAvailableDates]);
 
   // Active display date / range string
   const activeDateDisplay = useMemo(() => {
-    const now = new Date();
-    const todayNpt = formatNptDateIso(now);
-    const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
-    const isOngoingMarketSession = (nptMins % 1440) >= (11 * 60) && (nptMins % 1440) < (15 * 60 + 5);
-
-    if (effectiveDate && (!isOngoingMarketSession || effectiveDate !== todayNpt)) return effectiveDate;
+    if (effectiveDate) return effectiveDate;
     const bd = activeBrokerData;
     if (bd?.fromDate && bd?.toDate && bd.fromDate !== bd.toDate) {
       return `${bd.fromDate} → ${bd.toDate}`;
     }
-    if (bd?.businessDate && (!isOngoingMarketSession || bd.businessDate !== todayNpt)) return bd.businessDate;
+    if (bd?.businessDate) return bd.businessDate;
+    if (bd?.date) return bd.date;
     if (availableDates.length > 0) return availableDates[0];
-    return todayNpt;
+    return formatNptDateIso(new Date());
   }, [effectiveDate, activeBrokerData, availableDates]);
 
   // Process broker flows from activeBrokerData or floorsheetData
@@ -1342,7 +1410,7 @@ function StockBrokerAnalysisTabInner({
           gap: 10
         }}>
           <div>
-            ⚠️ No floorsheet records compiled yet for <strong>{effectiveDate}</strong> (trading session in progress or settlement pending). Showing latest completed session: <strong>{availableDates[0] || '2026-10-27'}</strong>.
+            ⚠️ No floorsheet records compiled yet for <strong>{effectiveDate}</strong> (trading session in progress or settlement pending). Showing latest completed session: <strong>{availableDates[0] || 'Latest'}</strong>.
           </div>
           <button
             type="button"
@@ -2407,8 +2475,18 @@ function StockBrokerAnalysisTabInner({
           gap: 16
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#f8fafc' }}>
-              Institutional Accumulation vs Distribution Metrics
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: '#f8fafc' }}>
+                Institutional Accumulation vs Distribution
+              </div>
+              <SessionDateDropdown
+                selectedSessionDate={effectiveDate || ''}
+                onSelectDate={dt => handleDateSelect(dt)}
+                availableDates={availableDates}
+                label="Session:"
+                latestLabel={effectiveDays > 1 ? `Multi-Day (${effectiveDays}D)` : (availableDates[0] || 'Latest')}
+                compact={true}
+              />
             </div>
             {activeDateDisplay && (
               <span style={{ fontSize: 12, fontWeight: 700, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
@@ -2438,6 +2516,69 @@ function StockBrokerAnalysisTabInner({
             </div>
           </div>
 
+          {/* Top 5 Accumulators vs Top 5 Distributors */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+            {/* Accumulators Column */}
+            <div style={{
+              background: 'rgba(16, 185, 129, 0.05)',
+              border: '1px solid rgba(16, 185, 129, 0.2)',
+              borderRadius: 12,
+              padding: 12
+            }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: '#10b981', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+                <span>🟢 Top Accumulators (Net Buyers)</span>
+                <span>Net Shares</span>
+              </div>
+              {(() => {
+                const accs = (brokerRecords || []).filter(b => (b.holdQty || b.netQty) > 0).sort((a, b) => (b.holdQty || b.netQty) - (a.holdQty || a.netQty)).slice(0, 5);
+                if (accs.length === 0) return <div style={{ fontSize: 11.5, color: '#94a3b8', padding: '6px 0' }}>No net accumulators recorded for this period.</div>;
+                return accs.map((b, idx) => (
+                  <div key={b.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: idx < accs.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>#{b.id} {b.name}</span>
+                      <span style={{ fontSize: 10, color: '#94a3b8' }}>Turnover: {formatShareHubCurrency(b.buyAmt || 0)}</span>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
+                        +{Number(b.holdQty || b.netQty || 0).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* Distributors Column */}
+            <div style={{
+              background: 'rgba(244, 63, 94, 0.05)',
+              border: '1px solid rgba(244, 63, 94, 0.2)',
+              borderRadius: 12,
+              padding: 12
+            }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f43f5e', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+                <span>🔴 Top Distributors (Net Sellers)</span>
+                <span>Net Shares</span>
+              </div>
+              {(() => {
+                const dists = (brokerRecords || []).filter(b => (b.holdQty || b.netQty) < 0).sort((a, b) => (a.holdQty || a.netQty) - (b.holdQty || b.netQty)).slice(0, 5);
+                if (dists.length === 0) return <div style={{ fontSize: 11.5, color: '#94a3b8', padding: '6px 0' }}>No net distributors recorded for this period.</div>;
+                return dists.map((b, idx) => (
+                  <div key={b.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: idx < dists.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>#{b.id} {b.name}</span>
+                      <span style={{ fontSize: 10, color: '#94a3b8' }}>Turnover: {formatShareHubCurrency(b.sellAmt || 0)}</span>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 900, color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>
+                        -{Math.abs(Number(b.holdQty || b.netQty || 0)).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+
           {/* Date-Wise Buying & Selling Table inside Acc. & Dist. */}
           {dailyFlowList.length > 0 && (
             <div style={{ marginTop: 4 }}>
@@ -2459,17 +2600,22 @@ function StockBrokerAnalysisTabInner({
                   <tbody>
                     {dailyFlowList.map(df => {
                       const net = Number(df.netFlow || 0);
+                      const isSelectedSession = effectiveDate === df.date;
                       return (
                         <tr
                           key={df.date}
                           onClick={() => {
                             handleDateSelect(df.date);
-                            setActiveSubTab('brokers');
                           }}
-                          style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                          style={{
+                            borderBottom: '1px solid rgba(255,255,255,0.04)',
+                            cursor: 'pointer',
+                            background: isSelectedSession ? 'rgba(2, 132, 199, 0.2)' : 'transparent',
+                            transition: 'background 0.15s ease'
+                          }}
                         >
                           <td style={{ padding: '8px 6px', color: '#38bdf8', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-                            {df.date}
+                            {df.date} {isSelectedSession && '✓'}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
                             {Number(df.buyVol || 0).toLocaleString()}
@@ -2523,7 +2669,15 @@ function StockBrokerAnalysisTabInner({
                 Zero Sum Conservation Floorsheet
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <SessionDateDropdown
+                selectedSessionDate={effectiveDate || ''}
+                onSelectDate={dt => handleDateSelect(dt)}
+                availableDates={availableDates}
+                label="Session:"
+                latestLabel={effectiveDays > 1 ? `Multi-Day (${effectiveDays}D)` : (availableDates[0] || 'Latest')}
+                compact={true}
+              />
               {/* Unit Toggle: Amount vs Qty */}
               <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: 2 }}>
                 <button

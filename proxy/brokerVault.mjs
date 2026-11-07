@@ -1522,9 +1522,10 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return null;
 
-  const specificDate = String(options.date || '').trim();
-  const fromDate = String(options.fromDate || '').trim();
-  const toDate = String(options.toDate || '').trim();
+  const optObj = typeof options === 'string' ? { date: options } : (options || {});
+  const specificDate = String(optObj.date || '').trim();
+  const fromDate = String(optObj.fromDate || '').trim();
+  const toDate = String(optObj.toDate || '').trim();
   const numDays = Math.min(Math.max(parseInt(days || 1, 10) || 1, 1), 730);
 
   const cacheKey = `ba-${sym}-d${numDays}-${specificDate}-${fromDate}-${toDate}`;

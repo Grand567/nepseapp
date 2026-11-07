@@ -4629,6 +4629,8 @@ function enrichWithMicrostructure(symbol, days, vaultData, date = '') {
 
   return {
     ...enriched,
+    date: date || vaultData.date || vaultData.businessDate || '',
+    businessDate: date || vaultData.businessDate || vaultData.date || '',
     microstructure30d: diag,
     phase: date ? (diag.phase || enriched.phase) : (enriched.phase || diag.phase),
     phaseLabel: date ? (diag.phaseLabel || enriched.phaseLabel) : (enriched.phaseLabel || diag.phaseLabel),
@@ -4652,8 +4654,8 @@ function enrichWithMicrostructure(symbol, days, vaultData, date = '') {
     topDistributor: date ? (diag.topDistributors?.[0]?.brokerId || diag.topDistributors?.[0]?.broker || enriched.topDistributor) : (enriched.topDistributor || (diag.topDistributors?.[0] ? (diag.topDistributors[0].brokerId || diag.topDistributors[0].broker) : null)),
     dailyFlow: diag.dailyFlow || vaultData.dailyFlow || enriched.dailyFlow || [],
     dateWiseBrokers: diag.dailyFlow || vaultData.dailyFlow || enriched.dailyFlow || [],
-    timeframeDays: diag.timeframeDays || days,
-    tradingDays: diag.timeframeDays || days,
+    timeframeDays: date ? 1 : (diag.timeframeDays || days),
+    tradingDays: date ? 1 : (diag.timeframeDays || days),
     availableDates: (Array.isArray(vaultData?.availableDates) && vaultData.availableDates.length > 0)
       ? vaultData.availableDates
       : ((Array.isArray(diag?.availableDates) && diag.availableDates.length > 0)
