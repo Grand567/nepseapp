@@ -81,11 +81,12 @@ if (!fs.existsSync(dbPath) || fs.statSync(dbPath).size < 100000) {
 
 export const db = new Database(dbPath, { timeout: 10000 });
 
-// Enable WAL mode & low-memory settings for Render 512MB RAM environment
+// Enable WAL mode & high-performance 64MB page cache for sub-10ms queries
 db.pragma("journal_mode = WAL");
 db.pragma("synchronous = NORMAL");
 db.pragma("busy_timeout = 10000"); // Wait up to 10 seconds on concurrent locks before SQLITE_BUSY
-db.pragma("cache_size = -8000"); // 8MB SQLite page cache ceiling for Render 512MB RAM limit
+const sqliteCacheKb = parseInt(process.env.SQLITE_CACHE_KB || "-64000", 10);
+db.pragma(`cache_size = ${sqliteCacheKb}`); // 64MB SQLite in-memory page cache
 db.pragma("temp_store = FILE");
 db.pragma("mmap_size = 0"); // Disable memory mapping to preserve container RAM
 
@@ -150,6 +151,9 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_fs_contracts_symbol_date
     ON floorsheet_contracts (UPPER(symbol), trade_date DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_fs_contracts_sym_date
+    ON floorsheet_contracts (symbol, trade_date);
 
   CREATE INDEX IF NOT EXISTS idx_fs_contracts_date_amount
     ON floorsheet_contracts (trade_date DESC, amount DESC);

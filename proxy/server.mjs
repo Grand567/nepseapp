@@ -303,7 +303,7 @@ const apiLimiter = rateLimit({
   skip: (req) => {
     const ip = req.ip || req.connection?.remoteAddress || '';
     if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost') return true;
-    if (req.path === '/api/ping' || req.path === '/ping' || req.path === '/health') return true;
+    if (req.path === '/api/ping' || req.path === '/ping' || req.path === '/health' || req.path === '/api/health') return true;
     if (
       req.path.startsWith('/api/market-indices') ||
       req.path.startsWith('/api/indices') ||
