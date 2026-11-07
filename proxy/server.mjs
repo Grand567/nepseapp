@@ -13596,7 +13596,8 @@ app.listen(PORT, '0.0.0.0', async () => {
         if (status.isTradingDay && nptMins >= 905) {
           targetDate = todayIso;
         } else if (!status.isTradingDay || nptMins < 660) {
-          targetDate = typeof getLastValidTradingDay === 'function' ? getLastValidTradingDay(todayNptDate, true) : null;
+          const lDay = typeof getLastValidTradingDay === 'function' ? getLastValidTradingDay(todayNptDate, true) : null;
+          targetDate = lDay ? formatNptDateIso(lDay instanceof Date ? lDay : new Date(lDay)) : null;
         }
 
         if (targetDate) {

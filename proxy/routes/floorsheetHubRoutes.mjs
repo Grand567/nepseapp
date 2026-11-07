@@ -5,6 +5,7 @@ import { safeNum } from './aiGuruRoutes.mjs';
 import { getFullSessionFloorsheet } from '../brokerVault.mjs';
 import { isNepseTradingDay, formatNptDateIso } from '../../src/utils/nepseCalendar.js';
 import { listAvailableR2FloorsheetDates, fetchFloorsheetFromR2 } from '../utils/cloudFloorsheetVault.mjs';
+import { tickEventEmitter } from '../utils/todayDataEngine.mjs';
 
 let _cachedR2Dates = { timestamp: 0, dates: [] };
 async function getCachedR2Dates() {
@@ -39,6 +40,15 @@ export function broadcastSseContracts(contracts) {
       sseClients.delete(client);
     }
   }
+}
+
+// Auto-wire tickEventEmitter to SSE broadcast for live contract streams
+if (typeof tickEventEmitter !== 'undefined' && tickEventEmitter?.on) {
+  tickEventEmitter.on('tick', (tickObj) => {
+    if (tickObj && Array.isArray(tickObj.recent_contract_stream) && tickObj.recent_contract_stream.length > 0) {
+      broadcastSseContracts(tickObj.recent_contract_stream);
+    }
+  });
 }
 
 router.get('/stream', (req, res) => {
