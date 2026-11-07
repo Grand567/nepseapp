@@ -48,6 +48,8 @@ import { fetchStockSnapshot, getSnapshotCache } from '../services/stockSnapshot'
 import { fetchNepseIntradayGraph, fetchCompanyQuarterlyReports, fetchMarketNews } from '../utils/servicesApi';
 import { getCorporateAlertForSymbol } from '../services/merolaganiNewsService.js';
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
+import { triggerHaptic } from '../utils/haptics';
+import LoadingShimmerBar from './LoadingShimmerBar';
 import { exportStockFloorsheet, exportStockPriceHistory } from '../utils/floorsheetExport';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
 import { useBackHandler, useNavigation } from '../context/NavigationContext';
@@ -1158,7 +1160,10 @@ function BeginnerConfidenceCard({
                   <button
                     key={days}
                     type="button"
-                    onClick={() => onSelectBrokerDays && onSelectBrokerDays(days)}
+                    onClick={() => {
+                      triggerHaptic(25);
+                      onSelectBrokerDays && onSelectBrokerDays(days);
+                    }}
                     style={{
                       padding: '1px 5px',
                       borderRadius: 4,
@@ -2272,6 +2277,7 @@ export default function StockDetailModal({
   }, [brokerDays, d?.symbol, fetchBrokerAnalysisData, fetchFloorsheetData]);
 
   const handleBrokerDaysChange = useCallback((newDays) => {
+    triggerHaptic(25);
     setBrokerDays(newDays);
     setBrokerDate('');
     setBrokerAnalysisLoading(true);
@@ -2427,6 +2433,7 @@ export default function StockDetailModal({
   }, [chartTimeframe, d?.symbol]);
 
   const handleTimeframeChange = async (tf) => {
+    triggerHaptic(25);
     setChartTimeframe(tf);
     if (!d?.symbol) return;
 
@@ -3473,7 +3480,10 @@ export default function StockDetailModal({
             <button
               key={t.id}
               data-active={isActive ? "true" : "false"}
-              onClick={() => setActiveTab(t.id)}
+              onClick={() => {
+                triggerHaptic(25);
+                setActiveTab(t.id);
+              }}
               style={{
                 fontSize: 12,
                 padding: '7px 13px',
@@ -3510,6 +3520,9 @@ export default function StockDetailModal({
           );
         })}
       </div>
+
+      {/* ── Sub-Millisecond Progress Bar Shimmer Line for StockDetailModal ── */}
+      <LoadingShimmerBar active={Boolean(chartLoading || brokerAnalysisLoading || floorsheetLoading || loadingDetail || compareLoading || marketDepthLoading || brokerAccumLoading)} />
 
       {/* ── Scrollable Body with smooth scrollTop=0 on open ── */}
       <div
@@ -5352,12 +5365,23 @@ export default function StockDetailModal({
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 11, color: '#94a3b8' }}>
-                      {marketDepth?.isOffMarket ? '🌙 Session Snapshot' : '🟢 Live NOTS Feed'}
+                    <span style={{ fontSize: 11, color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      {marketDepth?.isOffMarket ? (
+                        '🌙 Session Snapshot'
+                      ) : (
+                        <>
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]" />
+                          </span>
+                          <span style={{ color: '#10b981', fontWeight: 800 }}>Live NOTS Feed</span>
+                        </>
+                      )}
                     </span>
                     <button
                       type="button"
                       onClick={() => {
+                        triggerHaptic(25);
                         fetchMarketDepth(d.symbol);
                         fetchBrokerAnalysisData(1, '', { refresh: true });
                         fetchFloorsheetData(1, { refresh: true });
@@ -5914,8 +5938,12 @@ export default function StockDetailModal({
                         🌙 {marketDepth?.sessionLabel || 'Closing Session Snapshot (3:00 PM NPT)'}
                       </span>
                     ) : (
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                        🟢 Live NOTS Order Book
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]" />
+                        </span>
+                        Live NOTS Order Book
                       </span>
                     )}
                   </div>
@@ -6227,6 +6255,7 @@ export default function StockDetailModal({
                               key={p.id}
                               type="button"
                               onClick={() => {
+                                triggerHaptic(25);
                                 setBrokerAccumPeriod(p.id);
                               }}
                               style={{

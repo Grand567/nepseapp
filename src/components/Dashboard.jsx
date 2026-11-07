@@ -28,6 +28,8 @@ import { selectMasterPrimePick, isActionableBuySignal } from '../utils/guruEngin
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { isLockInSupplyCliffTrap, selectPrimePickOfTheDay } from '../utils/scanners';
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
+import { triggerHaptic } from '../utils/haptics';
+import LoadingShimmerBar from './LoadingShimmerBar';
 import { runUnifiedFiveStepAlphaDesk } from '../utils/masterAlphaPipeline';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
 import ShareHubChart from './ShareHubChart';
@@ -1832,6 +1834,7 @@ function Dashboard({
   // Hero Chart State
   const [heroTimeframe, setHeroTimeframe] = useState('1D');
   const [heroChartMode, setHeroChartMode] = useState('line');
+  const [heroChartLoading, setHeroChartLoading] = useState(false);
   const [activeHeroIndex, setActiveHeroIndex] = useState(() => {
     const cached = getCachedIndices();
     const fallbackNepse = (cached?.nepse?.value > 0) ? cached.nepse : (DEFAULT_OFFICIAL_INDICES?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 });
@@ -1899,6 +1902,7 @@ function Dashboard({
   useEffect(() => {
     let active = true;
     async function loadHeroHistory() {
+      if (active) setHeroChartLoading(true);
       try {
         const sym = activeHeroIndex?.isStock
           ? (activeHeroIndex.symbol || activeHeroIndex.key)
@@ -1990,6 +1994,8 @@ function Dashboard({
       } catch (err) {
         console.warn('[Dashboard] Hero history fetch error:', err);
         if (active) setHeroHistory([]);
+      } finally {
+        if (active) setHeroChartLoading(false);
       }
     }
     loadHeroHistory();
@@ -1997,6 +2003,7 @@ function Dashboard({
   }, [activeHeroIndex.key, activeHeroIndex.name, heroTimeframe, lastSyncTime]);
 
   const handleHeroTimeframeChange = (tf) => {
+    triggerHaptic(25);
     setHeroTimeframe(tf);
   };
 
@@ -3593,6 +3600,9 @@ function Dashboard({
             </button>
           ))}
         </div>
+
+        {/* ── Sub-Millisecond Progress Bar Shimmer Line for NEPSE Chart ── */}
+        <LoadingShimmerBar active={Boolean(heroChartLoading)} />
 
         {/* Intraday Line/Candle Chart */}
         <ShareHubChart
@@ -5402,7 +5412,10 @@ function Dashboard({
             return (
               <button
                 key={t.id}
-                onClick={() => setMoversTab(prev => prev === t.id ? null : t.id)}
+                onClick={() => {
+                  triggerHaptic(25);
+                  setMoversTab(prev => prev === t.id ? null : t.id);
+                }}
                 style={{
                   background: isActive ? 'rgba(56, 117, 246, 0.12)' : 'rgba(255,255,255,0.02)',
                   color: isActive ? '#60a5fa' : 'var(--text-muted)',
@@ -5786,6 +5799,9 @@ function Dashboard({
                   border: 'none',
                   cursor: onOpenCalendar ? 'pointer' : 'default',
                   outline: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
                   background: marketStatus?.isEmergencyHalt
                     ? 'rgba(239,68,68,0.18)'
                     : marketStatus?.isOpen
@@ -5806,6 +5822,12 @@ function Dashboard({
                     : '#f87171'
                 }}
               >
+                {marketStatus?.isOpen && (
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]" />
+                  </span>
+                )}
                 {marketStatus?.isEmergencyHalt
                   ? 'Emergency Halt'
                   : marketStatus?.isOpen

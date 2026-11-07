@@ -39,6 +39,7 @@ import { getDetailedMarketStatus, clearDynamicMarketHalt, setLiveMarketOverride 
 // MOCK_DATA_DISABLED — mock data is permanently disabled; import removed.
 import { onAuthChange, signOut, checkRedirectResult, fetchUserDataFromCloud, syncUserDataToCloud, getLocalSession } from './utils/firebase';
 import { safeStorageSetItem, purgeDispensableStorageCaches } from './utils/calculations';
+import LoadingShimmerBar from './components/LoadingShimmerBar';
 
 // Automatically purge stale transient caches if localStorage is congested to prevent QuotaExceededError
 try { purgeDispensableStorageCaches(); } catch (_) {}
@@ -157,6 +158,25 @@ function AppInner() {
   const [activeNewsArticle, setActiveNewsArticle] = useState({ isOpen: false, article: null });
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [unreadAlertCount, setUnreadAlertCount] = useState(0);
+
+  // Auto-prompt on Android / mobile Capacitor on first session after 4s (if not dismissed)
+  useEffect(() => {
+    const handleOpenBattery = () => setShowBatteryModal(true);
+    window.addEventListener('dravyashree_open_battery_modal', handleOpenBattery);
+
+    const isDismissed = localStorage.getItem('battery_modal_dismissed') === 'true';
+    if (!isDismissed) {
+      const isNative = typeof window !== 'undefined' && Boolean((window).Capacitor?.isNativePlatform?.() || /android/i.test(navigator.userAgent));
+      if (isNative) {
+        const timer = setTimeout(() => setShowBatteryModal(true), 4000);
+        return () => {
+          clearTimeout(timer);
+          window.removeEventListener('dravyashree_open_battery_modal', handleOpenBattery);
+        };
+      }
+    }
+    return () => window.removeEventListener('dravyashree_open_battery_modal', handleOpenBattery);
+  }, []);
 
   // Initialize Push Notifications (Capacitor FCM on Android + Web SSE)
   useEffect(() => {
@@ -1193,9 +1213,16 @@ function AppInner() {
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                   : 'bg-slate-800/80 text-slate-400 border-slate-700/60'
               }`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${
-                  marketStatus?.isOpen ? 'bg-emerald-400' : marketStatus?.isPreOpen ? 'bg-amber-400' : marketStatus?.isHoliday ? 'bg-purple-400' : marketStatus?.isWeekend ? 'bg-amber-400' : 'bg-slate-500'
-                }`} />
+                {marketStatus?.isOpen ? (
+                  <span className="relative flex h-2 w-2 mr-0.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]" />
+                  </span>
+                ) : (
+                  <span className={`h-1.5 w-1.5 rounded-full ${
+                    marketStatus?.isPreOpen ? 'bg-amber-400' : marketStatus?.isHoliday ? 'bg-purple-400' : marketStatus?.isWeekend ? 'bg-amber-400' : 'bg-slate-500'
+                  }`} />
+                )}
                 {marketStatus?.isOpen ? 'Market Open' : marketStatus?.isPreOpen ? 'Pre-Open' : 'Market Closed'}
               </span>
               <span className="text-[10px] font-mono text-slate-400">
@@ -1719,6 +1746,9 @@ function AppInner() {
       </div>
     </header>
 
+    {/* ── Sub-Millisecond Progress Bar Shimmer Line ── */}
+    <LoadingShimmerBar active={Boolean(isRefreshing || apiStatus === 'connecting')} />
+
       {/* ── Font Size / Readability Accessibility Modal ── */}
       {showFontModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -2172,10 +2202,17 @@ function AppInner() {
                     color: marketStatus?.isEmergencyHalt ? '#f87171' : marketStatus?.isOpen ? 'var(--bull)' : marketStatus?.isHoliday ? '#c084fc' : marketStatus?.isWeekend ? '#fbbf24' : '#f87171',
                     fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6
                   }}>
-                    <span style={{
-                      width: 7, height: 7, borderRadius: '50%',
-                      background: marketStatus?.isEmergencyHalt ? '#ef4444' : marketStatus?.isOpen ? 'var(--bull)' : marketStatus?.isHoliday ? '#c084fc' : marketStatus?.isWeekend ? '#fbbf24' : '#f87171'
-                    }} />
+                    {marketStatus?.isOpen ? (
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]" />
+                      </span>
+                    ) : (
+                      <span style={{
+                        width: 7, height: 7, borderRadius: '50%',
+                        background: marketStatus?.isEmergencyHalt ? '#ef4444' : marketStatus?.isHoliday ? '#c084fc' : marketStatus?.isWeekend ? '#fbbf24' : '#f87171'
+                      }} />
+                    )}
                     {marketStatus?.isEmergencyHalt
                       ? `Emergency Halt: ${marketStatus.holidayName || 'आकस्मिक बजार बन्द'}`
                       : marketStatus?.isOpen

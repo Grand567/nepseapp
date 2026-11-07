@@ -14,6 +14,7 @@ import {
   getCapitalTierConfig 
 } from '../utils/dynamicCapitalEngine';
 import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
+import { triggerHaptic } from '../utils/haptics';
 
 interface Props {
   initialTab?: 'credentials' | 'preferences' | 'system-health';
@@ -81,6 +82,7 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
   }, []);
 
   const handleSetTf = (tf: string) => {
+    triggerHaptic(25);
     setDefaultTf(tf);
     localStorage.setItem('nepse_default_tf', tf);
   };
@@ -198,7 +200,10 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
       <div className="flex items-center gap-1.5 p-1 bg-slate-900/90 rounded-xl border border-slate-800">
         <button
           type="button"
-          onClick={() => setActiveTab('credentials')}
+          onClick={() => {
+            triggerHaptic(25);
+            setActiveTab('credentials');
+          }}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
             activeTab === 'credentials'
               ? 'bg-blue-600 text-white shadow'
@@ -212,7 +217,10 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
 
         <button
           type="button"
-          onClick={() => setActiveTab('preferences')}
+          onClick={() => {
+            triggerHaptic(25);
+            setActiveTab('preferences');
+          }}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
             activeTab === 'preferences'
               ? 'bg-blue-600 text-white shadow'
@@ -225,7 +233,10 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
 
         <button
           type="button"
-          onClick={() => setActiveTab('system-health')}
+          onClick={() => {
+            triggerHaptic(25);
+            setActiveTab('system-health');
+          }}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
             activeTab === 'system-health'
               ? 'bg-blue-600 text-white shadow'
@@ -473,6 +484,7 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
                     key={amt}
                     type="button"
                     onClick={() => {
+                      triggerHaptic(25);
                       setUserCapitalState(amt);
                       setUserConfiguredCapital(amt);
                     }}
@@ -536,7 +548,7 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
               </button>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
               <div>
                 <div className="text-xs font-bold text-white">Market Event Chime</div>
                 <div className="text-[11px] text-slate-400">Play a subtle audio tone when a target price alert is triggered.</div>
@@ -546,6 +558,31 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
                 className={`w-11 h-6 rounded-full transition-colors flex items-center px-0.5 cursor-pointer ${audioAlerts ? 'bg-blue-600' : 'bg-slate-700'}`}
               >
                 <div className={`w-5 h-5 rounded-full bg-white transition-transform ${audioAlerts ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+
+            {/* Android Battery Optimization Exemption */}
+            <div className="flex items-center justify-between pt-1">
+              <div>
+                <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>Android ब्याकग्राउन्ड अलर्ट सुरक्षा</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Battery Whitelist
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  ब्याट्री सेभरले स्क्रिन लक हुँदा पनि ह्वेल फ्लो र मूल्य अलर्ट बन्द हुन दिँदैन।
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(25);
+                  window.dispatchEvent(new CustomEvent('dravyashree_open_battery_modal'));
+                }}
+                className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition cursor-pointer shrink-0"
+              >
+                सेटअप खोल्नुहोस्
               </button>
             </div>
           </div>

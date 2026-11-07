@@ -3,6 +3,8 @@ import { Zap, RefreshCw, Search, Filter, Clock, ArrowRight, ShieldCheck, Chevron
 import { fetchRealFloorsheet, fetchAvailableTradingDates } from '../utils/liveData';
 import { getBrokerName } from '../utils/accumulationDistributionEngine';
 import { getDetailedMarketStatus, formatNptDateIso } from '../utils/nepseCalendar';
+import { triggerHaptic } from '../utils/haptics';
+import LoadingShimmerBar from '../components/LoadingShimmerBar';
 
 function formatNprCurrency(val, isNe = false) {
   const n = Number(val) || 0;
@@ -97,12 +99,14 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
   }, [filterScrip, searchQuery, buyerFilter, sellerFilter, size, timeframe, selectedDate]);
 
   const handleTimeframeChange = (tf) => {
+    triggerHaptic(25);
     setTimeframe(tf);
     setSelectedDate('');
     loadFloorsheet(1, false, tf, '');
   };
 
   const handleDateChange = (dt) => {
+    triggerHaptic(25);
     setSelectedDate(dt);
     loadFloorsheet(1, false, timeframe, dt);
   };
@@ -162,7 +166,13 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
                 <Calendar size={11} className="text-sky-400" />
                 <span>{floorsheetData.businessDate}</span>
                 {mkt?.isOpen && floorsheetData.businessDate === todayIso && (
-                  <span className="text-[9px] text-emerald-400 font-black uppercase tracking-wider ml-0.5">• LIVE</span>
+                  <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-black uppercase tracking-wider ml-1">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]" />
+                    </span>
+                    LIVE
+                  </span>
                 )}
               </span>
             )}
@@ -214,6 +224,9 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
           </div>
         </div>
       </div>
+
+      {/* ── Sub-Millisecond Progress Bar Shimmer Line for FloorSheetTape ── */}
+      <LoadingShimmerBar active={Boolean(loading || refreshing)} />
 
       {/* Institutional Block Trade Banner */}
       {topBlockTrade && (

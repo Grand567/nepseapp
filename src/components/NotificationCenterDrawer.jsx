@@ -27,6 +27,7 @@ import {
   clearNotificationCache,
   triggerTestAlert 
 } from '../utils/pushNotificationService';
+import { triggerHaptic } from '../utils/haptics';
 
 export function NotificationCenterDrawer({ 
   isOpen, 
@@ -223,6 +224,34 @@ export function NotificationCenterDrawer({
           </a>
         </div>
 
+        {/* ── ANDROID BATTERY OPTIMIZATION BANNER (Reliable Lockscreen Delivery) ── */}
+        <div className="mx-3 mt-2 p-2.5 rounded-xl bg-slate-900/60 border border-emerald-500/30 flex items-center justify-between gap-2 shadow-sm">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0 text-sm">
+              ⚡
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-white truncate">ब्याकग्राउन्ड अलर्ट सुरक्षा</span>
+                <span className="text-[9px] font-black uppercase px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">Android Battery</span>
+              </div>
+              <p className="text-[10px] text-slate-300 truncate">
+                Keep whale prints active when phone is locked
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic(25);
+              window.dispatchEvent(new CustomEvent('dravyashree_open_battery_modal'));
+            }}
+            className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1 transition-all"
+          >
+            सेटअप
+          </button>
+        </div>
+
         {/* ── TAB SELECTOR ── */}
         <div className="px-3 pt-3 flex items-center gap-1 border-b border-slate-800/80 bg-[#080d1a]/50">
           {[
@@ -235,7 +264,10 @@ export function NotificationCenterDrawer({
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  triggerHaptic(25);
+                  setActiveTab(tab.id);
+                }}
                 className={`flex-1 py-2 px-1.5 text-xs font-semibold rounded-t-lg flex items-center justify-center gap-1.5 transition-all border-b-2 ${
                   isActive
                     ? 'border-cyan-400 text-cyan-300 bg-slate-800/50'
