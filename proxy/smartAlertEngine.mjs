@@ -30,7 +30,9 @@ import {
   sendTelegramSmartAlert, 
   sendTelegramExitAlert, 
   sendTelegramMessage, 
-  sendTelegramEarlyIgnitionAlert 
+  sendTelegramEarlyIgnitionAlert,
+  sendTelegramNewsAlert,
+  sendTelegramIpoAlert
 } from './telegramNotifier.mjs';
 import { sendDiscordSmartAlert } from './discordNotifier.mjs';
 import { getScripPromoterLockin } from './utils/promoterLockinEngine.mjs';
@@ -255,12 +257,21 @@ export function broadcastAlert(alertPayload) {
     console.warn('[SmartAlertEngine] Push dispatch warning:', err.message);
   });
 
-  // 3. Dispatch Instant Alert to Telegram Bot (PRO Users: Breakouts, Prime Picks, Accumulation, Watchlist, Exits, Early Ignitions)
+  // 3. Dispatch Instant Alert to Telegram Bot (PRO Users: Breakouts, Prime Picks, Accumulation, Watchlist, Exits, News, IPO)
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
   if (!isTestEnv || process.env.TEST_LIVE_TELEGRAM === 'true') {
-    const isProAlert = alertPayload.category === 'pro' || ['INSTITUTIONAL_ENTRY', 'BREAKOUT', 'ACCUMULATION', 'HOT_STOCK', 'WATCHLIST_ALERT', 'PROFIT_BOOKING', 'STOP_LOSS_WARNING', 'BROKER_58_EARLY_IGNITION'].includes(alertPayload.type);
+    const isNews = alertPayload.type === 'NEWS_ALERT' || alertPayload.type === 'PORTFOLIO_NEWS_ALERT' || alertPayload.category === 'news';
+    const isIpo = alertPayload.type === 'IPO_ALERT' || alertPayload.category === 'ipo';
 
-    if (alertPayload.type === 'PROFIT_BOOKING' || alertPayload.type === 'STOP_LOSS_WARNING') {
+    if (isNews) {
+      sendTelegramNewsAlert(alertPayload).catch(err => {
+        console.warn('[SmartAlertEngine] Telegram news alert dispatch warning:', err.message);
+      });
+    } else if (isIpo) {
+      sendTelegramIpoAlert(alertPayload).catch(err => {
+        console.warn('[SmartAlertEngine] Telegram IPO alert dispatch warning:', err.message);
+      });
+    } else if (alertPayload.type === 'PROFIT_BOOKING' || alertPayload.type === 'STOP_LOSS_WARNING') {
       sendTelegramExitAlert({
         symbol: alertPayload.symbol,
         type: alertPayload.type === 'PROFIT_BOOKING' ? 'TARGET_REACHED' : 'STOP_LOSS_HIT',
@@ -283,7 +294,7 @@ export function broadcastAlert(alertPayload) {
       sendTelegramEarlyIgnitionAlert(alertPayload).catch(err => {
         console.warn('[SmartAlertEngine] Telegram early ignition alert dispatch warning:', err.message);
       });
-    } else if (isProAlert) {
+    } else {
       // Golden Entry Window: Suppress entry buy recommendations during 11:00-11:45 AM morning wash period
       const status = getDetailedMarketStatus();
       const nptMins = status.nptTotalMinutes;

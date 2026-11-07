@@ -188,7 +188,20 @@ async function callBotApi(token, method, payload = null) {
 }
 
 /**
- * Sends a raw HTML/Markdown message to Telegram
+ * HTML entity escaping utility to prevent Telegram 400 Bad Request parse errors
+ */
+export function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Sends a raw HTML/Markdown message to Telegram with automatic plain-text fallback
  */
 export async function sendTelegramMessage(text, parseMode = 'HTML') {
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
@@ -215,6 +228,31 @@ export async function sendTelegramMessage(text, parseMode = 'HTML') {
       return { success: true, messageId: data.result?.message_id };
     } else {
       console.warn('[TelegramNotifier] ❌ Telegram API returned error:', data.description);
+
+      // Resilient Fallback: If Telegram rejected due to bad HTML markup, strip tags and send plain text
+      if (parseMode === 'HTML' && (data.error_code === 400 || String(data.description || '').toLowerCase().includes('parse'))) {
+        console.log('[TelegramNotifier] Retrying message in plain-text mode to prevent dropped alert...');
+        const plainText = text
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'");
+
+        const fallbackData = await callBotApi(cfg.botToken, 'sendMessage', {
+          chat_id: cfg.chatId,
+          text: plainText,
+          disable_web_page_preview: true
+        });
+
+        if (fallbackData.ok) {
+          console.log('[TelegramNotifier] ✅ Plain-text fallback dispatched to Telegram.');
+          return { success: true, messageId: fallbackData.result?.message_id, fallbackPlain: true };
+        }
+      }
+
       return { success: false, error: data.description };
     }
   } catch (err) {
@@ -316,13 +354,25 @@ export async function autoDetectChatId(customToken) {
 export async function sendTelegramSmartAlert(alertItem) {
   if (!alertItem) return { success: false, reason: 'No alert payload provided' };
 
+  // Route News and IPO items to their dedicated clean layouts
+  if (alertItem.type === 'NEWS_ALERT' || alertItem.type === 'PORTFOLIO_NEWS_ALERT' || alertItem.category === 'news') {
+    return await sendTelegramNewsAlert(alertItem);
+  }
+  if (alertItem.type === 'IPO_ALERT' || alertItem.category === 'ipo') {
+    return await sendTelegramIpoAlert(alertItem);
+  }
+
   // If already formatted HTML payload is passed, dispatch directly
   if (alertItem.ticketPayload?.html) {
     return await sendTelegramMessage(alertItem.ticketPayload.html, 'HTML');
   }
 
-  const sym = String(alertItem.symbol || 'STOCK').toUpperCase();
+  const sym = escapeHtml(String(alertItem.symbol || 'STOCK').toUpperCase());
+  const companyName = escapeHtml(alertItem.companyName || stockUniverseMap[sym]?.name || '');
   const ltp = Number(alertItem.ltp || 0);
+  const pChange = Number(alertItem.pChange ?? alertItem.priceChangePct ?? 0);
+  const pChangeStr = `${pChange >= 0 ? '+' : ''}${pChange.toFixed(2)}%`;
+
   const buyZone = alertItem.buyZone || {};
   const bLow = buyZone.low || Math.floor(ltp * 0.995);
   const bHigh = buyZone.high || Math.ceil(ltp * 1.015);
@@ -347,45 +397,89 @@ export async function sendTelegramSmartAlert(alertItem) {
   const safeOrderLakhs = alertItem.safeOrderLakhs || +((medianTurnover * 0.05 / 100000).toFixed(1));
 
   const score = alertItem.score || alertItem.confluenceScore || 100;
-  const vduRatio = alertItem.vduRatio || 0.48;
-  const retentionPct = alertItem.retentionPct || alertItem.rolling5DRetentionPct || 84;
-  const atsr = alertItem.atsr || 2.6;
-  const t3VolRatio = alertItem.t3VolRatio || 0.8;
-  const dayGainPct = alertItem.dayGainPct ?? (alertItem.pChange ?? 1.8);
-  const circuitBufferPct = alertItem.circuitBufferPct ?? 8.2;
-  const sector = alertItem.sector || 'Hydro Power';
-  const sectorRank = alertItem.sectorRank || alertItem.sectorRank10D || 2;
-  const regime = alertItem.regime || 'Neutral';
+  const sector = escapeHtml(alertItem.sector || 'Commercial Banks');
+  const sectorRank = alertItem.sectorRank || alertItem.sectorRank10D || 1;
+  const regime = escapeHtml(alertItem.regime || 'Bullish Confirmation');
+  const dominantBrokers = escapeHtml(alertItem.dominantBrokersText || alertItem.topBuyerBrokers?.join(', ') || 'Smart Money Syndicate');
+  const timeNpt = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' });
 
   const ticketHtml = [
     `🟢 <b>INSTITUTIONAL ACCUMULATION CONFIRMED: $${sym}</b>`,
+    companyName ? `<i>${companyName}</i>` : '',
     `Sector: ${sector} (10D RS Rank: #${sectorRank}/13) | Regime: ${regime}`,
-    ``,
+    `Live Price: <b>Rs. ${ltp.toFixed(2)}</b> (${pChangeStr})`,
+    `──────────────────────────`,
     `🎯 <b>EXECUTION PLAN (T+2 &amp; ±15% Circuit Adjusted)</b>`,
     `• Limit Buy Zone: Rs. ${bLow} – Rs. ${bHigh} (Do NOT chase &gt; Rs. ${cCap})`,
     `• Hard Stop-Loss: Rs. ${sl} (-${slPct}% | 1.75x ATR)`,
     `• Target 1 (Conservative): Rs. ${t1} (+${t1Pct}%)`,
     `• Target 2 (Runner): Rs. ${t2} (+${t2Pct}%)`,
     `• Net Post-Tax/Fee RRR: <b>${netRRR} : 1</b> (Includes 7.5% CGT &amp; Broker Fees)`,
-    ``,
+    `──────────────────────────`,
     `🛡️ <b>POSITION SIZING &amp; LIQUIDITY GUARD</b>`,
-    `💼 <b>FOR YOUR RS. ${Number(alertItem.userCapital || 100000).toLocaleString()} PORTFOLIO:</b>`,
-    `• Order Size: <b>${alertItem.finalKitta || qtyPer1Lakh} Shares</b> (Deploy: Rs. ${Number(capitalDeployed).toLocaleString()})`,
-    `• Max Portfolio Risk: <b>Rs. ${Number(alertItem.actualRiskRupees || (qtyPer1Lakh * netLossPerShare)).toLocaleString()}</b>`,
-    ``,
-    `🌐 <b>UNIVERSAL SUBSCRIBER MULTIPLIER (PER RS. 1 LAKH CAPITAL):</b>`,
-    `• Exact Sizing Multiplier: <b>${qtyPer1Lakh} Shares</b> per Rs. 1 Lakh Capital`,
-    ``,
+    `• Model Portfolio Sizing: <b>${alertItem.finalKitta || qtyPer1Lakh} Shares</b> per Rs. 1 Lakh Capital`,
+    `• Capital Deployed: Rs. ${Number(capitalDeployed).toLocaleString()} | Max Risk: Rs. ${Number(alertItem.actualRiskRupees || (qtyPer1Lakh * netLossPerShare)).toLocaleString()}`,
     `• 20D Median Turnover: Rs. ${turnoverLakhs}L (Safe Total Order Cap: Rs. ${safeOrderLakhs}L)`,
-    ``,
-    `📊 <b>4-PILLAR CONFLUENCE SCORE: ${score}/100</b>`,
-    `✅ Wyckoff VDU Base: ${vduRatio}x of 20D Vol (Supply Exhausted)`,
-    `✅ Smart Money 5D Retention: ${retentionPct}% | Ticket Ratio (ATSR): ${atsr}x`,
-    `✅ T+3 Overhang Risk: LOW (t-3 Vol: ${t3VolRatio}x | Safe from settlement dump)`,
-    `✅ Circuit Distance: +${dayGainPct}% today (${circuitBufferPct}% below +15% circuit)`
-  ].join('\n');
+    `──────────────────────────`,
+    `📊 <b>CONFLUENCE SIGNALS &amp; OPERATORS:</b>`,
+    `• Lead Accumulators: <b>${dominantBrokers}</b>`,
+    `• Confluence Score: <b>${score}/100</b>`,
+    alertItem.body ? `• Analysis: ${escapeHtml(alertItem.body)}` : '',
+    `──────────────────────────`,
+    `⏱ <i>${timeNpt} NPT • Dravyashree NEPSE Smart Wealth</i>`
+  ].filter(Boolean).join('\n');
 
   return await sendTelegramMessage(ticketHtml, 'HTML');
+}
+
+/**
+ * Dispatches a formatted NEPSE Market News announcement to Telegram
+ */
+export async function sendTelegramNewsAlert(item) {
+  if (!item) return { success: false, reason: 'No news payload' };
+  const title = escapeHtml(item.title || item.headline || 'Market Announcement');
+  const body = escapeHtml(item.body || item.summary || item.description || '');
+  const source = escapeHtml(item.source || 'Financial News');
+  const sym = item.symbol && item.symbol !== 'NEPSE' ? escapeHtml(String(item.symbol).toUpperCase()) : null;
+  const timeNpt = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' });
+
+  const msg = [
+    `📰 <b>DRAVYASHREE MARKET NEWS</b>`,
+    `<b>Source:</b> ${source}`,
+    sym ? `<b>Scrip:</b> <code>#${sym}</code>` : '',
+    `──────────────────────────`,
+    `📌 <b>${title}</b>`,
+    body && body !== title ? `\n${body}` : '',
+    `──────────────────────────`,
+    item.url ? `🔗 <a href="${escapeHtml(item.url)}">Original Publisher Article</a>` : '',
+    `⏱ <i>${timeNpt} NPT • Dravyashree In-App Reader</i>`
+  ].filter(Boolean).join('\n');
+
+  return await sendTelegramMessage(msg, 'HTML');
+}
+
+/**
+ * Dispatches a formatted IPO / Corporate Action alert to Telegram
+ */
+export async function sendTelegramIpoAlert(item) {
+  if (!item) return { success: false, reason: 'No IPO payload' };
+  const title = escapeHtml(item.title || 'IPO Announcement');
+  const body = escapeHtml(item.body || '');
+  const sym = item.symbol ? escapeHtml(String(item.symbol).toUpperCase()) : 'IPO';
+  const timeNpt = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' });
+
+  const msg = [
+    `🔔 <b>DRAVYASHREE IPO &amp; CORPORATE ACTION</b>`,
+    `<b>Scrip:</b> <code>#${sym}</code>`,
+    `──────────────────────────`,
+    `📋 <b>${title}</b>`,
+    body && body !== title ? `\n${body}` : '',
+    `──────────────────────────`,
+    `👉 <i>Check issue details &amp; allotment status inside Dravyashree App</i>`,
+    `⏱ <i>${timeNpt} NPT</i>`
+  ].filter(Boolean).join('\n');
+
+  return await sendTelegramMessage(msg, 'HTML');
 }
 
 /**

@@ -1346,18 +1346,27 @@ export function NewsService() {
   const [selectedSource, setSelectedSource] = useState<NewsSourceKey>('all');
   const [sortMode, setSortMode] = useState<NewsSortMode>('latest');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
-  const [articleLoading, setArticleLoading] = useState(false);
-  const [articleDetail, setArticleDetail] = useState<any | null>(null);
 
-  // Dedicated back gesture handler for open news article
-  useBackHandler(() => {
-    if (selectedArticle) {
-      setSelectedArticle(null);
-      return true; // Handled, keeps user inside News tab
+  const handleOpenArticle = (item: any) => {
+    if (!item) return;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('dravyashree_open_news', {
+        detail: {
+          action: 'OPEN_NEWS',
+          title: item.title || item.headline,
+          body: item.body || item.summary || item.description,
+          summary: item.summary || item.description,
+          url: item.url || item.link,
+          link: item.url || item.link,
+          source: item.source || 'Financial News',
+          date: item.date || item.pubDate || 'Latest',
+          symbol: item.symbol || '',
+          image: item.image || null,
+          paragraphs: item.paragraphs
+        }
+      }));
     }
-    return false;
-  }, !!selectedArticle, 80);
+  };
 
   const loadData = async (force = false) => {
     try {
@@ -1373,57 +1382,6 @@ export function NewsService() {
   useEffect(() => {
     loadData(false);
   }, []);
-
-  // Fetch full article when an article card is selected
-  useEffect(() => {
-    if (!selectedArticle) {
-      setArticleDetail(null);
-      setArticleLoading(false);
-      return;
-    }
-    const targetUrl = selectedArticle.url || selectedArticle.link || '';
-    const initialParas = Array.isArray(selectedArticle.paragraphs) && selectedArticle.paragraphs.length > 0
-      ? selectedArticle.paragraphs
-      : (selectedArticle.description || selectedArticle.summary
-          ? [String(selectedArticle.description || selectedArticle.summary).replace(/<[^>]+>/g, '').trim()]
-          : [selectedArticle.title || 'Market story details loaded.']);
-
-    setArticleDetail({
-      title: selectedArticle.title || selectedArticle.headline || 'Market Announcement',
-      date: selectedArticle.date || selectedArticle.pubDate || 'Today',
-      source: selectedArticle.source || 'Financial News',
-      url: targetUrl,
-      paragraphs: initialParas
-    });
-
-    if (!targetUrl) {
-      setArticleLoading(false);
-      return;
-    }
-
-    let isMounted = true;
-    setArticleLoading(true);
-    fetchNewsArticle(targetUrl)
-      .then((res: any) => {
-        if (!isMounted) return;
-        const d = res?.data || res;
-        if (d && (d.paragraphs || d.content)) {
-          setArticleDetail((prev: any) => ({
-            ...prev,
-            ...d,
-            paragraphs: Array.isArray(d.paragraphs) && d.paragraphs.length > 0 ? d.paragraphs : prev?.paragraphs
-          }));
-        }
-      })
-      .catch((err) => {
-        console.warn('Full article fetch error:', err);
-      })
-      .finally(() => {
-        if (isMounted) setArticleLoading(false);
-      });
-
-    return () => { isMounted = false; };
-  }, [selectedArticle]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -1651,7 +1609,7 @@ export function NewsService() {
                   key={i}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setSelectedArticle(n)}
+                  onClick={() => handleOpenArticle(n)}
                   style={{
                     backgroundColor: 'rgba(15, 23, 42, 0.85)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -1752,16 +1710,16 @@ export function NewsService() {
                       <span
                         onClick={(e) => {
                           e.stopPropagation();
-                          window.open(articleUrl, '_blank', 'noopener,noreferrer');
+                          handleOpenArticle(n);
                         }}
                         style={{
-                          color: '#94a3b8',
+                          color: '#60a5fa',
                           fontSize: 12,
                           cursor: 'pointer',
-                          textDecoration: 'underline'
+                          fontWeight: 700
                         }}
                       >
-                        Direct link ↗
+                        Read Story ↗
                       </span>
                     )}
                   </div>
@@ -1792,7 +1750,7 @@ export function NewsService() {
                             tabIndex={0}
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedArticle(os);
+                              handleOpenArticle(os);
                             }}
                             title={`Read ${oMeta.label} version: "${os.title}"`}
                             style={{
@@ -1826,242 +1784,6 @@ export function NewsService() {
         </>
       )}
 
-      {/* ── In-App News Article Reader Modal (Portaled directly to document.body) ── */}
-      {selectedArticle && typeof document !== 'undefined' && createPortal(
-        <div
-          onClick={() => setSelectedArticle(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(0, 0, 0, 0.85)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            zIndex: 999999,
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            padding: 0,
-            animation: 'fadeIn 0.2s ease-out'
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              position: 'relative',
-              width: '100%',
-              maxWidth: 680,
-              maxHeight: '92vh',
-              backgroundColor: '#0f172a',
-              borderTop: '1.5px solid rgba(255, 255, 255, 0.15)',
-              borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRight: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '20px 20px 0 0',
-              padding: '18px 18px',
-              paddingBottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
-              overflowY: 'auto',
-              WebkitOverflowScrolling: 'touch',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 14,
-              boxShadow: '0 -10px 40px rgba(0, 0, 0, 0.85)',
-              zIndex: 1000000,
-              color: '#ffffff'
-            }}
-          >
-            {/* Modal Header Bar */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-              paddingBottom: 12,
-              position: 'sticky',
-              top: 0,
-              backgroundColor: '#0f172a',
-              zIndex: 10
-            }}>
-              <button
-                type="button"
-                onClick={() => setSelectedArticle(null)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  color: '#ffffff',
-                  fontSize: 12,
-                  fontWeight: 800,
-                  padding: '8px 14px',
-                  borderRadius: 10,
-                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.14)',
-                  cursor: 'pointer'
-                }}
-              >
-                <ChevronLeft size={16} />
-                <span>Back to News (पछाडि)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedArticle(null)}
-                style={{
-                  padding: 8,
-                  borderRadius: 10,
-                  color: '#94a3b8',
-                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.14)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                aria-label="Close"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Source & Date Badge */}
-            {(() => {
-              const modalMeta = getSourceMeta(articleDetail?.source || selectedArticle.source);
-              return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{
-                    fontSize: 12,
-                    fontWeight: 800,
-                    padding: '3px 10px',
-                    borderRadius: 99,
-                    backgroundColor: modalMeta.badgeBg,
-                    color: modalMeta.badgeColor,
-                    border: `1px solid ${modalMeta.badgeBorder}`
-                  }}>
-                    {modalMeta.label}
-                  </span>
-                  <span style={{ fontSize: 12, color: '#94a3b8' }}>
-                    {articleDetail?.date || selectedArticle.date || selectedArticle.pubDate || 'Latest Announcement'}
-                  </span>
-                </div>
-              );
-            })()}
-
-            {/* Article Headline */}
-            <h2 style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', lineHeight: 1.35, margin: '2px 0' }}>
-              {articleDetail?.title || selectedArticle.title}
-            </h2>
-
-            {/* Featured Image if present */}
-            {articleDetail?.image && (
-              <div style={{
-                borderRadius: 12,
-                overflow: 'hidden',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                maxHeight: 250,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#020617'
-              }}>
-                <img
-                  src={articleDetail.image}
-                  alt={selectedArticle.title}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
-                />
-              </div>
-            )}
-
-            {/* Article Body Content */}
-            {articleLoading && (!articleDetail?.paragraphs || articleDetail.paragraphs.length === 0) ? (
-              <div style={{ padding: '30px 0', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-                <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 12px', color: '#60a5fa' }} />
-                <p style={{ margin: 0, fontWeight: 600 }}>Fetching complete coverage from publisher…</p>
-              </div>
-            ) : (
-              <div style={{
-                backgroundColor: 'rgba(2, 6, 23, 0.6)',
-                padding: '16px',
-                borderRadius: 14,
-                border: '1px solid rgba(255, 255, 255, 0.07)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 12
-              }}>
-                {(articleDetail?.paragraphs && articleDetail.paragraphs.length > 0) ? (
-                  articleDetail.paragraphs.map((p: string, idx: number) => (
-                    <p key={idx} style={{ margin: 0, fontSize: 13.5, lineHeight: 1.68, color: '#e2e8f0' }}>
-                      {p}
-                    </p>
-                  ))
-                ) : (
-                  <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.68, color: '#e2e8f0' }}>
-                    {selectedArticle.description || selectedArticle.summary
-                      ? String(selectedArticle.description || selectedArticle.summary).replace(/<[^>]+>/g, '').trim()
-                      : 'Article synopsis loaded. You can read the complete full coverage directly on the publisher portal below.'}
-                  </p>
-                )}
-                {articleLoading && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#60a5fa', paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                    <RefreshCw size={12} className="animate-spin" />
-                    <span>Loading remaining paragraphs…</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: 10, paddingTop: 10, borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
-              <a
-                href={selectedArticle.url || selectedArticle.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                }}
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  backgroundColor: '#2563eb',
-                  color: '#ffffff',
-                  fontSize: 13,
-                  fontWeight: 800,
-                  padding: '12px 16px',
-                  borderRadius: 12,
-                  textDecoration: 'none',
-                  boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)'
-                }}
-              >
-                <span>Open on {getSourceMeta(selectedArticle.source).label}</span>
-                <ExternalLink size={15} />
-              </a>
-              <button
-                type="button"
-                onClick={() => setSelectedArticle(null)}
-                style={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                  color: '#cbd5e1',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  padding: '12px 18px',
-                  borderRadius: 12,
-                  cursor: 'pointer'
-                }}
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
     </div>
   );
 }

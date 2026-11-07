@@ -229,14 +229,16 @@ function AppInner() {
       setActiveNewsArticle({
         isOpen: true,
         article: {
-          title: item.title,
-          body: item.body,
-          url: item.url,
-          symbol: item.symbol,
+          title: item.title || item.headline || 'Market Announcement',
+          body: item.body || item.summary || item.description || '',
+          summary: item.summary || item.description || '',
+          url: item.url || item.link || '',
+          symbol: item.symbol || '',
           source: item.source || 'Financial News',
-          date: item.triggeredAt || item.timestamp || 'Recent',
-          type: item.type,
-          paragraphs: item.body ? [item.body] : []
+          date: item.date || item.pubDate || item.triggeredAt || item.timestamp || 'Recent',
+          type: item.type || 'NEWS_ALERT',
+          image: item.image || null,
+          paragraphs: Array.isArray(item.paragraphs) && item.paragraphs.length > 0 ? item.paragraphs : (item.body ? [item.body] : [])
         }
       });
       return;
@@ -294,6 +296,7 @@ function AppInner() {
     window.addEventListener('dravyashree_open_smart_alert', handleNotificationEvent);
     window.addEventListener('dravyashree_open_ipo', handleNotificationEvent);
     window.addEventListener('dravyashree_open_news', handleNotificationEvent);
+    window.addEventListener('dravyashree_open_news_reader', handleNotificationEvent);
 
     // Consume any pending deep link from Android native intent (cold start / closed app)
     if (typeof window !== 'undefined' && window.NepseNativeNotifier && typeof window.NepseNativeNotifier.getPendingNotification === 'function') {
@@ -315,6 +318,7 @@ function AppInner() {
       window.removeEventListener('dravyashree_open_smart_alert', handleNotificationEvent);
       window.removeEventListener('dravyashree_open_ipo', handleNotificationEvent);
       window.removeEventListener('dravyashree_open_news', handleNotificationEvent);
+      window.removeEventListener('dravyashree_open_news_reader', handleNotificationEvent);
     };
   }, [routeNotificationClick]);
 

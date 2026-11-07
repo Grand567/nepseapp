@@ -381,17 +381,19 @@ export function triggerNativeStatusBarNotification(normalized) {
     return;
   }
 
-  // Deduplicate on client to prevent multi-firing within session
+  // Deduplicate on client to prevent multi-firing within current active session
   const alertFingerprint = `${normalized.id || ''}_${normalized.title || ''}_${normalized.symbol || ''}`.trim();
-  if (alertFingerprint && (recentlyTriggeredAlerts.has(alertFingerprint) || isNotificationAlreadyProcessed(normalized.id, alertFingerprint))) {
-    console.debug('[PushService] Suppressed duplicate status bar notification:', alertFingerprint);
+  if (alertFingerprint && recentlyTriggeredAlerts.has(alertFingerprint)) {
+    console.debug('[PushService] Suppressed duplicate status bar notification in session:', alertFingerprint);
     return;
   }
-  recentlyTriggeredAlerts.add(alertFingerprint);
-  if (recentlyTriggeredAlerts.size > 200) {
-    const arr = Array.from(recentlyTriggeredAlerts).slice(-100);
-    recentlyTriggeredAlerts.clear();
-    arr.forEach(a => recentlyTriggeredAlerts.add(a));
+  if (alertFingerprint) {
+    recentlyTriggeredAlerts.add(alertFingerprint);
+    if (recentlyTriggeredAlerts.size > 200) {
+      const arr = Array.from(recentlyTriggeredAlerts).slice(-100);
+      recentlyTriggeredAlerts.clear();
+      arr.forEach(a => recentlyTriggeredAlerts.add(a));
+    }
   }
 
   const isPro = normalized.category === 'pro' || normalized.tier === 'pro';
@@ -400,6 +402,12 @@ export function triggerNativeStatusBarNotification(normalized) {
   // 1. Android Native Status Bar Bridge (Works on Android APK when foreground or minimized)
   if (typeof window !== 'undefined' && window.NepseNativeNotifier && typeof window.NepseNativeNotifier.postStatusBarNotification === 'function') {
     try {
+      if (typeof window.NepseNativeNotifier.hasNotificationPermission === 'function' && !window.NepseNativeNotifier.hasNotificationPermission()) {
+        if (typeof window.NepseNativeNotifier.requestNotificationPermission === 'function') {
+          window.NepseNativeNotifier.requestNotificationPermission();
+        }
+      }
+
       window.NepseNativeNotifier.postStatusBarNotification(
         normalized.title || '🔔 Dravyashree Alert',
         normalized.body || '',
@@ -408,7 +416,7 @@ export function triggerNativeStatusBarNotification(normalized) {
         normalized.type || '',
         normalized.action || (normalized.symbol ? 'OPEN_STOCK' : 'OPEN_NEWS'),
         normalized.url || '',
-        normalized.created_at || normalized.timestamp || ''
+        String(normalized.created_at_ms || Date.now())
       );
       return;
     } catch (e) {
@@ -767,7 +775,14 @@ export async function triggerTestAlert(symbol = 'GHL', ltp = 269.50) {
       const json = await res.json();
       const alert = json.result?.alert;
       if (alert) {
-        window.dispatchEvent(new CustomEvent('dravyashree_smart_alert_received', { detail: alert }));
+        const normalized = normalizeNotificationItem({
+          ...alert,
+          created_at: new Date().toISOString(),
+          created_at_ms: Date.now()
+        });
+        saveNotificationToCache(normalized);
+        triggerNativeStatusBarNotification(normalized);
+        window.dispatchEvent(new CustomEvent('dravyashree_smart_alert_received', { detail: normalized }));
       }
       return json;
     }

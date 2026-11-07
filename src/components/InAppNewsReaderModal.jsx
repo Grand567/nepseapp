@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ExternalLink, Calendar, Newspaper, Loader2, Share2 } from 'lucide-react';
-import { useBackHandler } from '../context/NavigationContext';
+import { ArrowLeft, ExternalLink, Calendar, Newspaper, Loader2, Share2, TrendingUp, Sparkles, BookOpen } from 'lucide-react';
+import { useBackHandler, useNavigation } from '../context/NavigationContext';
 import { fetchNewsArticle } from '../utils/servicesApi';
 
 const SOURCE_CONFIG = {
@@ -33,6 +33,10 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState(null);
 
+  const navigation = useNavigation ? useNavigation() : null;
+  const openStockDetail = navigation?.openStockDetail;
+  const setActiveTab = navigation?.setActiveTab;
+
   useBackHandler(() => {
     if (isOpen) {
       onClose();
@@ -48,19 +52,23 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
       return;
     }
 
+    const rawSummary = article.summary || article.description || '';
+    const cleanSummary = rawSummary ? String(rawSummary).replace(/<[^>]+>/g, '').trim() : '';
+
     const initialParas = Array.isArray(article.paragraphs) && article.paragraphs.length > 0
       ? article.paragraphs
-      : (article.body || article.summary || article.description
-          ? [String(article.body || article.summary || article.description).replace(/<[^>]+>/g, '').trim()]
+      : (article.body || cleanSummary
+          ? [String(article.body || cleanSummary).replace(/<[^>]+>/g, '').trim()]
           : []);
 
     setDetail({
       title: article.title || article.headline || 'Market Announcement',
-      date: article.date || article.pubDate || article.triggeredAt || 'Recent',
+      date: article.date || article.pubDate || article.triggeredAt || article.timestamp || 'Today',
       source: article.source || 'Financial News',
       url: article.url || article.link || '',
       image: article.image || null,
       symbol: article.symbol || '',
+      summary: cleanSummary,
       type: article.type || 'NEWS_ALERT',
       paragraphs: initialParas
     });
@@ -105,7 +113,7 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
   const meta = getSourceMeta(currentDetail.source);
   const paragraphs = Array.isArray(currentDetail.paragraphs) && currentDetail.paragraphs.length > 0
     ? currentDetail.paragraphs
-    : (currentDetail.body ? [currentDetail.body] : ['No extended story paragraphs available.']);
+    : (currentDetail.body ? [currentDetail.body] : ['विस्तृत समाचार उपलब्ध भएन। पूर्ण समाचार पढ्न तल दिइएको लिंक हेर्नुहोस्।']);
 
   const handleShare = async () => {
     try {
@@ -117,6 +125,13 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
         });
       }
     } catch (_) {}
+  };
+
+  const handleNavigateToStock = () => {
+    if (!currentDetail.symbol) return;
+    onClose();
+    if (setActiveTab) setActiveTab('market');
+    if (openStockDetail) openStockDetail(currentDetail.symbol);
   };
 
   return (
@@ -140,7 +155,7 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700/80 transition active:scale-95 cursor-pointer"
           >
             <ArrowLeft size={14} />
-            <span>बन्द गर्नुहोस् (Close)</span>
+            <span>बन्द गर्नुहोस् (Back)</span>
           </button>
 
           <div className="flex items-center gap-2">
@@ -161,7 +176,7 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 text-xs font-bold transition active:scale-95"
-                title="Open original website"
+                title="Open publisher portal"
               >
                 <span>Original Link</span>
                 <ExternalLink size={12} />
@@ -186,9 +201,15 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
             </span>
 
             {currentDetail.symbol && (
-              <span className="text-[11px] font-black px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                {currentDetail.symbol}
-              </span>
+              <button
+                type="button"
+                onClick={handleNavigateToStock}
+                className="inline-flex items-center gap-1.5 text-[11px] font-black px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 active:scale-95 transition cursor-pointer"
+                title={`Open ${currentDetail.symbol} market depth and radar`}
+              >
+                <TrendingUp size={11} />
+                <span>${currentDetail.symbol}</span>
+              </button>
             )}
 
             <span className="flex items-center gap-1 text-xs text-slate-400">
@@ -199,7 +220,7 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
             {loading && (
               <span className="flex items-center gap-1 text-[11px] font-medium text-cyan-400 animate-pulse ml-auto">
                 <Loader2 size={11} className="animate-spin" />
-                <span>Loading full text…</span>
+                <span>Loading full story…</span>
               </span>
             )}
           </div>
@@ -208,6 +229,19 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
           <h1 className="text-lg sm:text-xl font-black text-white leading-snug tracking-tight">
             {currentDetail.title}
           </h1>
+
+          {/* Key Summary Callout Box if present */}
+          {currentDetail.summary && (
+            <div className="p-3.5 rounded-xl bg-blue-950/40 border border-blue-800/50 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-blue-400 uppercase tracking-wide">
+                <Sparkles size={13} />
+                <span>मुख्य बुँदा (Key Summary)</span>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                {currentDetail.summary}
+              </p>
+            </div>
+          )}
 
           {/* Featured Image if available */}
           {currentDetail.image && (
@@ -246,11 +280,25 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
             })}
           </div>
 
+          {/* Quick Action Button to View Symbol if attached */}
+          {currentDetail.symbol && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleNavigateToStock}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/50 border border-emerald-400/30 transition active:scale-[0.98] cursor-pointer"
+              >
+                <TrendingUp size={15} />
+                <span>View ${currentDetail.symbol} Market Depth & Institutional Radar</span>
+              </button>
+            </div>
+          )}
+
           {/* ShareHub parity footer note */}
           <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
             <span className="flex items-center gap-1.5">
               <Newspaper size={13} />
-              <span>Dravyashree In-App Reader (ShareHub Parity)</span>
+              <span>Dravyashree In-App News Reader</span>
             </span>
             <span>NEPSE Market Desk</span>
           </div>
