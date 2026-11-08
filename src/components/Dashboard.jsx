@@ -1187,9 +1187,15 @@ function SubIndicesModal({ indices, selectedIndex, onSelectIndex, onClose }) {
                   <div style={{ fontSize: 13, fontWeight: 800, color: isSelected ? 'var(--primary-light)' : 'var(--text-primary)' }}>
                     {item.name}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                    Open: {fmt(data.open || data.value)} · High: {fmt(data.high || data.value)}
-                  </div>
+                  {data.open && data.high && (Number(data.open) !== Number(data.value) || Number(data.high) !== Number(data.value)) ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Open: {fmt(data.open)} · High: {fmt(data.high)}{data.low ? ` · Low: ${fmt(data.low)}` : ''}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Sector Sub-Index
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
