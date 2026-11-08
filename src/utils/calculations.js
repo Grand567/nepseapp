@@ -28,8 +28,11 @@ export function formatSouthAsian(number) {
  * @param {number} bonusPercent 
  */
 export function adjustForBonusShare(units, wacc, bonusPercent) {
-  const newUnits = units * (1 + (bonusPercent / 100));
-  const newWacc = (units * wacc) / newUnits;
+  const u = Number(units) || 0;
+  const w = Number(wacc) || 0;
+  const b = Number(bonusPercent) || 0;
+  const newUnits = u * (1 + (b / 100));
+  const newWacc = newUnits > 0 ? (u * w) / newUnits : w;
   return { newUnits: Number(newUnits.toFixed(2)), newWacc: Number(newWacc.toFixed(2)) };
 }
 
@@ -41,9 +44,13 @@ export function adjustForBonusShare(units, wacc, bonusPercent) {
  * @param {number} subscriptionPrice - Usually 100
  */
 export function adjustForRightShare(units, wacc, rightRatio, subscriptionPrice = 100) {
-  const addedUnits = units * rightRatio;
-  const newUnits = units + addedUnits;
-  const newWacc = ((units * wacc) + (addedUnits * subscriptionPrice)) / newUnits;
+  const u = Number(units) || 0;
+  const w = Number(wacc) || 0;
+  const r = Number(rightRatio) || 0;
+  const s = Number(subscriptionPrice) || 100;
+  const addedUnits = u * r;
+  const newUnits = u + addedUnits;
+  const newWacc = newUnits > 0 ? ((u * w) + (addedUnits * s)) / newUnits : w;
   return { newUnits: Number(newUnits.toFixed(2)), newWacc: Number(newWacc.toFixed(2)) };
 }
 
