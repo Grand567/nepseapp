@@ -1735,17 +1735,18 @@ Based on this data, provide a robust analysis using this exact markdown structur
     return acc + (p.holdings || []).reduce((sum, h) => sum + (h.valueAsOfLTP > 0 ? h.valueAsOfLTP : (h.units * (h.currentLtp || h.prevClose || guessScripBasePrice(h.symbol, h.wacc)))), 0);
   }, 0);
 
-  const totalMerosharePrevClose = meroshareProfiles.reduce((acc, p) => {
-    return acc + (p.holdings || []).reduce((sum, h) => sum + (h.valueAsOfPrevClose > 0 ? h.valueAsOfPrevClose : (h.units * (h.prevClose || h.currentLtp || guessScripBasePrice(h.symbol, h.wacc)))), 0);
+  const totalMerosharePrevClose = activeRaw.reduce((sum, h) => {
+    const safeSym = (h.symbol || '').trim().toUpperCase();
+    const marketStock = marketStocks.find(s => (s.symbol || '').trim().toUpperCase() === safeSym);
+    const prevPrice = h.valueAsOfPrevClose > 0 ? (h.valueAsOfPrevClose / (h.units || 1)) : (h.prevClose || marketStock?.previousClose || marketStock?.prevClose || h.currentLtp || guessScripBasePrice(safeSym, h.wacc));
+    return sum + (h.units * prevPrice);
   }, 0);
 
-  const totalLiveVal = meroshareProfiles.reduce((acc, p) => {
-    return acc + (p.holdings || []).reduce((sum, h) => {
-      const safeSym = (h.symbol || '').trim().toUpperCase();
-      const marketStock = marketStocks.find(s => (s.symbol || '').trim().toUpperCase() === safeSym);
-      const lp = (marketStock && marketStock.ltp > 0) ? marketStock.ltp : (h.currentLtp || h.prevClose || guessScripBasePrice(safeSym, h.wacc));
-      return sum + (h.units * lp);
-    }, 0);
+  const totalLiveVal = activeRaw.reduce((sum, h) => {
+    const safeSym = (h.symbol || '').trim().toUpperCase();
+    const marketStock = marketStocks.find(s => (s.symbol || '').trim().toUpperCase() === safeSym);
+    const lp = (marketStock && marketStock.ltp > 0) ? marketStock.ltp : (h.currentLtp || h.prevClose || guessScripBasePrice(safeSym, h.wacc));
+    return sum + (h.units * lp);
   }, 0);
 
   // Prepare allocation chart data
@@ -2559,7 +2560,8 @@ Based on this data, provide a robust analysis using this exact markdown structur
         {/* Mini Comparison Bar */}
         <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
           <span style={{ color: 'var(--text-muted)' }}>
-            MeroShare Prev Close: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatRs(totalMerosharePrevClose)}</strong>
+            {activeView === 'meroshare' ? 'MeroShare Prev Close: ' : activeView === 'manual' ? 'Manual Prev Close: ' : 'Portfolio Prev Close: '}
+            <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatRs(totalMerosharePrevClose)}</strong>
           </span>
           <span style={{ color: 'var(--text-muted)' }}>
             Live Market: <strong style={{ color: 'var(--primary-light)', fontFamily: 'var(--font-mono)' }}>{formatRs(totalLiveVal)}</strong>
