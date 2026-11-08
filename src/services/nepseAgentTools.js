@@ -360,10 +360,7 @@ export async function runAgentAnalysis({
   const t2 = tLbl(ep.targets?.[1]);
   const rr = (ep.riskPerShare > 0 && ep.rewardToTarget1 != null) ? `1 : ${(ep.rewardToTarget1 / ep.riskPerShare).toFixed(2)}` : NA;
 
-  // 2. Client-side Direct Gemini API Call if user key is available
-  if (clientKey) {
-    try {
-      const prompt = `You are the Drabyashree NEPSE Analysis Agent for NEPSE scrip ${dossier.symbol} (${dossier.companyName}).
+  const prompt = `You are the Drabyashree NEPSE Analysis Agent for NEPSE scrip ${dossier.symbol} (${dossier.companyName}).
 Use ONLY the data below. Values marked N/A are unavailable — do not estimate or invent them.
 Current LTP: Rs. ${fmt(q.ltp)} (Change: ${fmt(q.pChange, '%')}).
 RSI(14): ${fmt(tech.rsi14)}, MACD Histogram: ${fmt(tech.macd?.histogram)}, 20-EMA: ${fmt(tech.ema20)}, 50-EMA: ${fmt(tech.ema50)}.
@@ -376,13 +373,55 @@ User Query: "${query || 'Provide trade plan and scenarios.'}"
 Return valid JSON with keys:
 {"symbol":"${dossier.symbol}","verdict":"${ep.stance}","confidenceScore":${ep.setupScore ?? null},"executiveSummary":"...","technicalPosture":"...","smartMoneyFlow":"...","executionPlan":{"recommendedStrategy":"...","pullbackDipZone":"${pullLbl}","breakoutTrigger":"${boLbl}","stopLoss":"${slLbl}","target1":"${t1}","target2":"${t2}","riskRewardRatio":"${rr}"},"scenarios":{"bullishCase":"...","baseCase":"...","bearishInvalidation":"..."},"t2SettlementRisk":"...","nepaliSummary":"..."}`;
 
+  // 2. Route via backend proxy first (avoids exposing API keys in browser network traffic)
+  if (base) {
+    try {
+      const proxyRes = await fetch(`${base}/api/guru/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          analysisType: 'agent',
+          apiKey: clientKey || ''
+        }),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (proxyRes.ok) {
+        const pData = await proxyRes.json();
+        const rawText = pData?.text || pData?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText) {
+          let parsed = null;
+          try {
+            parsed = typeof rawText === 'string' ? JSON.parse(rawText) : rawText;
+          } catch (_) {
+            const jsonMatch = typeof rawText === 'string' ? rawText.match(/\{[\s\S]*\}/) : null;
+            if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+          }
+          if (parsed && typeof parsed === 'object') {
+            return {
+              ...parsed,
+              dossier,
+              meta: { modelUsed: pData.provider || 'proxy-gemini', isDirectClientGemini: false, timestamp: new Date().toISOString() }
+            };
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 3. Secure direct Gemini API fallback (uses x-goog-api-key header; NEVER passes key in URL query string)
+  if (clientKey) {
+    try {
       const modelsToTry = [model, 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash'];
       for (const m of modelsToTry) {
         try {
-          const directUrl = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${clientKey}`;
+          const directUrl = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`;
           const directRes = await fetch(directUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': clientKey
+            },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
               generationConfig: { temperature: 0.2, maxOutputTokens: 2000, responseMimeType: 'application/json' }

@@ -109,7 +109,7 @@ export function Master100ProfitWorkstation({
 
     try {
       const base = getProxyBase();
-      const res = await fetch(`${base}/api/telegram/config?botToken=${encodeURIComponent(token)}&chatId=${encodeURIComponent(chat)}&enabled=true`, {
+      const res = await fetch(`${base}/api/telegram/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ botToken: token, chatId: chat, enabled: true })
@@ -150,68 +150,10 @@ export function Master100ProfitWorkstation({
       return;
     }
 
-    const testText = `🔔 <b>Drabyashree NEPSE Alert System</b>\n\n✅ <b>Connection Test Successful!</b>\nYour smartphone is now configured to receive real-time institutional alerts and 3:45 PM Daily Post-Market Setups.\n\n<i>Time: ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' })} NPT</i>`;
-
-    // 1. Try Direct Telegram API First (bypasses proxy and Cloudflare)
-    try {
-      let res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chat,
-          text: testText,
-          parse_mode: 'HTML'
-        })
-      });
-      let text = await res.text();
-      let data: any = null;
-      try { data = JSON.parse(text); } catch {}
-
-      // If unauthorized on prod DC, auto-try Telegram Test DC
-      if (!data?.ok && (data?.error_code === 401 || data?.description?.toLowerCase().includes('unauthorized'))) {
-        try {
-          const testRes = await fetch(`https://api.telegram.org/bot${token}/test/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: chat,
-              text: testText,
-              parse_mode: 'HTML'
-            })
-          });
-          const testTextResp = await testRes.text();
-          try { data = JSON.parse(testTextResp); } catch {}
-        } catch (_) {}
-      }
-
-      if (data?.ok) {
-        setTelegramTestMsg({ type: 'success', text: '✅ Ping received on Telegram! Check your phone.' });
-        setTelegramTesting(false);
-        return;
-      } else if (data) {
-        if (data.error_code === 401) {
-          setTelegramTestMsg({
-            type: 'error',
-            text: '❌ Telegram "Unauthorized": Bot Token is invalid or expired. Please check your token in @BotFather.'
-          });
-          setTelegramTesting(false);
-          return;
-        }
-        if (data.description && (data.description.includes('chat not found') || data.description.includes('Forbidden'))) {
-          setTelegramTestMsg({
-            type: 'error',
-            text: '⚠️ Chat not found. Please open your bot on Telegram and tap START first so the bot can message you.'
-          });
-          setTelegramTesting(false);
-          return;
-        }
-      }
-    } catch (_) {}
-
-    // 2. Fallback to Proxy Server
+    // Route test ping through secure backend proxy (prevents bot token leakage in URLs or client network traces)
     try {
       const base = getProxyBase();
-      const res = await fetch(`${base}/api/telegram/test?botToken=${encodeURIComponent(token)}&chatId=${encodeURIComponent(chat)}`, {
+      const res = await fetch(`${base}/api/telegram/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ botToken: token, chatId: chat })
@@ -219,16 +161,33 @@ export function Master100ProfitWorkstation({
       const text = await res.text();
       let data: any = null;
       try { data = JSON.parse(text); } catch {}
+
       if (data && data.success) {
         setTelegramTestMsg({ type: 'success', text: '✅ Ping received on Telegram! Check your phone.' });
       } else {
-        setTelegramTestMsg({
-          type: 'error',
-          text: data?.error || 'Failed to dispatch ping. Please confirm your bot token and chat ID.'
-        });
+        const errMsg = data?.error || data?.message || '';
+        if (errMsg.toLowerCase().includes('unauthorized')) {
+          setTelegramTestMsg({
+            type: 'error',
+            text: '❌ Telegram "Unauthorized": Bot Token is invalid or expired. Please check your token in @BotFather.'
+          });
+        } else if (errMsg.toLowerCase().includes('chat not found') || errMsg.toLowerCase().includes('forbidden')) {
+          setTelegramTestMsg({
+            type: 'error',
+            text: '⚠️ Chat not found. Please open your bot on Telegram and tap START first so the bot can message you.'
+          });
+        } else {
+          setTelegramTestMsg({
+            type: 'error',
+            text: errMsg || 'Failed to dispatch ping. Please confirm your bot token and chat ID.'
+          });
+        }
       }
     } catch (err: any) {
-      setTelegramTestMsg({ type: 'error', text: err.message || 'Connection error sending test ping.' });
+      setTelegramTestMsg({
+        type: 'error',
+        text: `⚠️ Network error: ${err.message || 'Unable to reach backend proxy'}. Please ensure the server is active.`
+      });
     } finally {
       setTelegramTesting(false);
     }
@@ -306,71 +265,10 @@ export function Master100ProfitWorkstation({
       return;
     }
 
-    // Phase 1: Direct Telegram API (ultra-fast, zero proxy latency, native Capacitor bypasses CORS)
-    let directHandled = false;
-    try {
-      let tgRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, { method: 'GET' });
-      let tgText = await tgRes.text();
-      let tgData: any = null;
-      try { tgData = tgText ? JSON.parse(tgText) : null; } catch {}
-
-      if (!tgData?.ok && (tgData?.error_code === 401 || tgData?.description?.toLowerCase().includes('unauthorized'))) {
-        try {
-          const testTgRes = await fetch(`https://api.telegram.org/bot${token}/test/getUpdates`, { method: 'GET' });
-          const testTgText = await testTgRes.text();
-          try { tgData = testTgText ? JSON.parse(testTgText) : tgData; } catch {}
-        } catch (_) {}
-      }
-
-      if (tgData) {
-        try {
-          if (tgData.ok) {
-            const updates = Array.isArray(tgData.result) ? tgData.result : [];
-            const latestMsg = [...updates].reverse().find((u: any) =>
-              u.message?.chat?.id || u.my_chat_member?.chat?.id || u.channel_post?.chat?.id
-            );
-            const foundChatId = latestMsg?.message?.chat?.id || latestMsg?.my_chat_member?.chat?.id || latestMsg?.channel_post?.chat?.id;
-            if (foundChatId) {
-              const strId = String(foundChatId);
-              setTelegramChatId(strId);
-              try { localStorage.setItem('drabyashree_telegram_chat_id', strId); } catch {}
-              setTelegramTestMsg({
-                type: 'success',
-                text: `🎯 Successfully detected Chat ID: ${strId}! Tap "Save Settings" below.`
-              });
-              directHandled = true;
-              setTelegramDetecting(false);
-              return;
-            } else {
-              setTelegramTestMsg({
-                type: 'error',
-                text: '🤖 Connected to your bot! But no messages received yet. Please open your bot on Telegram, send "hello" or tap START, then tap Auto-Detect again!'
-              });
-              directHandled = true;
-              setTelegramDetecting(false);
-              return;
-            }
-          } else if (tgData.error_code === 401 || tgData.description?.toLowerCase().includes('unauthorized')) {
-            setTelegramTestMsg({
-              type: 'error',
-              text: '❌ Telegram returned "Unauthorized": Bot token is invalid or revoked. In Telegram, open @BotFather -> send /mybots -> select your bot -> API Token, and paste that token.'
-            });
-            directHandled = true;
-            setTelegramDetecting(false);
-            return;
-          }
-        } catch (_) {}
-      }
-    } catch (_) {
-      // Direct call network issue, proceed to backend proxy fallback
-    }
-
-    if (directHandled) return;
-
-    // Phase 2: Fallback via proxy server
+    // Route chat detection through backend proxy (prevents bot token leakage in URLs or client network traces)
     try {
       const base = getProxyBase();
-      const res = await fetch(`${base}/api/telegram/detect-chat-id?botToken=${encodeURIComponent(token)}`, {
+      const res = await fetch(`${base}/api/telegram/detect-chat-id`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ botToken: token })
