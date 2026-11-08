@@ -431,7 +431,10 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                 maxKitta: Number(i.maxKitta) || 10000,
                 amountPerShare: Number(i.issuePrice || i.amountPerShare) || 100,
                 openDate: i.openDate || '',
-                closeDate: i.closeDate || ''
+                closeDate: i.closeDate || '',
+                generalPublicUnits: Number(i.generalPublicUnits || i.units || i.issueUnits || i.kitta || 0) || 0,
+                totalApplicants: Number(i.totalApplicants || i.applicants || 0) || 0,
+                oversubscriptionTimes: Number(i.oversubscriptionTimes || i.oversubscription || i.times || 0) || 0
               }));
           }
         } catch (_) {}
@@ -2220,17 +2223,20 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                           </div>
 
                           {(() => {
+                            const minLot = Math.max(10, Number(activeIpo.minKitta || activeIpo.minUnits) || 10);
                             const allotment = calculateIpoAllotmentProbability({
                               generalPublicUnits: activeIpo.generalPublicUnits || activeIpo.units,
                               totalApplicants: activeIpo.totalApplicants || activeIpo.applicants,
                               oversubscriptionTimes: activeIpo.oversubscriptionTimes || activeIpo.times,
-                              appliedKitta: Number(customAppliedKitta) || 10
+                              appliedKitta: Number(customAppliedKitta) || 10,
+                              minKitta: minLot,
+                              minUnits: minLot
                             });
                             return (
                               <div style={{ background: 'rgba(59, 130, 246, 0.05)', border: '1.5px solid rgba(59, 130, 246, 0.2)', padding: 14, marginBottom: 16, borderRadius: 'var(--radius-md)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                   <h4 style={{ fontSize: 14, fontWeight: 800, color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
-                                    <ShieldCheck style={{ width: 16, height: 16 }} /> SEBON 10-Kitta Allotment Probability
+                                    <ShieldCheck style={{ width: 16, height: 16 }} /> {minLot > 10 ? `SEBON ${minLot}-Kitta Book-Building Allotment Probability` : 'SEBON 10-Kitta Allotment Probability'}
                                   </h4>
                                   <span style={{
                                     fontSize: 12,

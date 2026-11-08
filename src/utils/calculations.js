@@ -643,16 +643,19 @@ export function calculateIpoAllotmentProbability({
   generalPublicUnits = 0,
   totalApplicants = 0,
   oversubscriptionTimes = 0,
-  appliedKitta = 10
+  appliedKitta = 10,
+  minKitta = 10,
+  minUnits = 10
 }) {
   const units = Number(generalPublicUnits) || 0;
   let applicants = Number(totalApplicants) || 0;
   let times = Number(oversubscriptionTimes) || 0;
+  const minLot = Math.max(10, Number(minKitta || minUnits) || 10);
 
-  const eligibleAllottees = units > 0 ? Math.floor(units / 10) : 0;
+  const eligibleAllottees = units > 0 ? Math.floor(units / minLot) : 0;
 
   if (times <= 0 && applicants > 0 && units > 0) {
-    times = +((applicants * 10) / units).toFixed(2);
+    times = +((applicants * minLot) / units).toFixed(2);
   } else if (applicants <= 0 && times > 0 && eligibleAllottees > 0) {
     applicants = Math.round(eligibleAllottees * times);
   }
@@ -670,7 +673,7 @@ export function calculateIpoAllotmentProbability({
     };
   }
 
-  // Undersubscribed or fully subscribed: 100% guaranteed 10 kitta
+  // Undersubscribed or fully subscribed: 100% guaranteed allotment
   if (times > 0 && times <= 1.0) {
     return {
       probabilityPct: 100.0,
@@ -680,9 +683,9 @@ export function calculateIpoAllotmentProbability({
       isGuaranteed: true,
       status: 'guaranteed',
       allotmentType: 'guaranteed',
-      formula: '10-kitta allotment guaranteed (Oversubscription <= 1.0x)',
-      statusText: '100% Guaranteed Allotment (10+ Kitta)',
-      explanation: '100% Guaranteed Allotment (10+ Kitta under SEBON rules)'
+      formula: `${minLot}-kitta allotment guaranteed (Oversubscription <= 1.0x)`,
+      statusText: `100% Guaranteed Allotment (${minLot}+ Kitta)`,
+      explanation: `100% Guaranteed Allotment (${minLot}+ Kitta under ${minLot > 10 ? 'Book-Building' : 'SEBON'} rules)`
     };
   }
 
@@ -704,7 +707,7 @@ export function calculateIpoAllotmentProbability({
     allotmentType: prob >= 100.0 ? 'guaranteed' : 'lottery',
     formula: `Lottery: ${eligibleAllottees.toLocaleString()} winners among ${applicants ? applicants.toLocaleString() : (times + 'x')} applicants`,
     statusText: `${prob}% Mathematical Probability (${eligibleAllottees.toLocaleString()} Allottees / ${times}x Subscribed)`,
-    explanation: `${prob}% Mathematical Probability under SEBON 10-Kitta Lottery Rule`
+    explanation: `${prob}% Mathematical Probability under ${minLot > 10 ? `Book-Building ${minLot}-Kitta` : 'SEBON 10-Kitta'} Lottery Rule`
   };
 }
 

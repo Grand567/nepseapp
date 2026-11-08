@@ -1447,7 +1447,10 @@ export async function fetchOpenIpos(account = null) {
             amountPerShare: item.amountPerShare || item.pricePerShare || 100,
             openDate: item.issueOpenDate || '',
             closeDate: item.issueCloseDate || '',
-            shareId: String(item.companyShareId ?? item.id)
+            shareId: String(item.companyShareId ?? item.id),
+            generalPublicUnits: Number(item.generalPublicUnits || item.units || item.issueUnits || item.kitta || 0) || 0,
+            totalApplicants: Number(item.totalApplicants || item.applicants || 0) || 0,
+            oversubscriptionTimes: Number(item.oversubscriptionTimes || item.oversubscription || item.times || 0) || 0
           }));
         }
       }
@@ -1476,7 +1479,10 @@ export async function fetchOpenIpos(account = null) {
             amountPerShare: item.amountPerShare || item.pricePerShare || 100,
             openDate: item.issueOpenDate || '',
             closeDate: item.issueCloseDate || '',
-            shareId: String(item.companyShareId ?? item.id)
+            shareId: String(item.companyShareId ?? item.id),
+            generalPublicUnits: Number(item.generalPublicUnits || item.units || item.issueUnits || item.kitta || 0) || 0,
+            totalApplicants: Number(item.totalApplicants || item.applicants || 0) || 0,
+            oversubscriptionTimes: Number(item.oversubscriptionTimes || item.oversubscription || item.times || 0) || 0
           }));
         }
       }
@@ -1503,7 +1509,10 @@ export async function fetchOpenIpos(account = null) {
           maxKitta: Number(item.maxUnits || item.maxKitta) || 10000,
           amountPerShare: Number(item.issuePrice || item.pricePerUnit || item.amountPerShare || 100),
           openDate: item.openDate || item.openingDateAD || '',
-          closeDate: item.closeDate || item.closingDateAD || ''
+          closeDate: item.closeDate || item.closingDateAD || '',
+          generalPublicUnits: Number(item.generalPublicUnits || item.units || item.issueUnits || item.kitta || 0) || 0,
+          totalApplicants: Number(item.totalApplicants || item.applicants || 0) || 0,
+          oversubscriptionTimes: Number(item.oversubscriptionTimes || item.oversubscription || item.times || 0) || 0
         }));
       }
     }
@@ -1530,7 +1539,10 @@ export async function fetchOpenIpos(account = null) {
           maxKitta: Number(item.maxKitta) || 10000,
           amountPerShare: Number(item.amountPerShare || item.issuePrice || 100),
           openDate: item.openDate || '',
-          closeDate: item.closeDate || ''
+          closeDate: item.closeDate || '',
+          generalPublicUnits: Number(item.generalPublicUnits || item.units || item.issueUnits || item.kitta || 0) || 0,
+          totalApplicants: Number(item.totalApplicants || item.applicants || 0) || 0,
+          oversubscriptionTimes: Number(item.oversubscriptionTimes || item.oversubscription || item.times || 0) || 0
         }));
       }
     }
