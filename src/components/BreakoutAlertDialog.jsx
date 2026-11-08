@@ -391,7 +391,7 @@ export default function BreakoutAlertDialog({
               ))}
             </div>
             <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-              Filters out low-volume festival traps. Breakouts with RVOL &lt; 1.5x during pre-Dashain have a 36% win rate.
+              Filters out low-volume traps. Breakouts with RVOL &lt; 1.5x in NEPSE have a 36% historical win rate.
             </div>
           </div>
 
