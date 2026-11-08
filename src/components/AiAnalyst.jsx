@@ -610,7 +610,7 @@ const ThreePillarScores = ({ scores }) => {
 };
 
 // ── TRADE EXECUTION SETUP CARDS ──────────────────────────────────
-const TradeExecutionCards = ({ targets, stopLoss, entryZone, rrr }) => {
+const TradeExecutionCards = ({ targets, stopLoss, entryZone, rrr, currentPrice }) => {
   const t1 = targets?.oneMonth || targets?.target1;
   const t2 = targets?.threeMonths || targets?.target2;
 
@@ -621,9 +621,11 @@ const TradeExecutionCards = ({ targets, stopLoss, entryZone, rrr }) => {
       entryNum = Number(matches[0]);
     }
   }
-  const fallbackT1 = entryNum > 0 ? `Rs. ${(entryNum * 1.08).toFixed(1)}` : 'Rs. 268';
-  const fallbackT2 = entryNum > 0 ? `Rs. ${(entryNum * 1.15).toFixed(1)}` : 'Rs. 285';
-  const fallbackSL = entryNum > 0 ? `Rs. ${(entryNum * 0.95).toFixed(1)}` : 'Rs. 238';
+  const basePrice = entryNum > 0 ? entryNum : (Number(currentPrice) || 0);
+  const fallbackT1 = basePrice > 0 ? `Rs. ${(basePrice * 1.08).toFixed(1)}` : 'Rs. —';
+  const fallbackT2 = basePrice > 0 ? `Rs. ${(basePrice * 1.15).toFixed(1)}` : 'Rs. —';
+  const fallbackSL = basePrice > 0 ? `Rs. ${(basePrice * 0.95).toFixed(1)}` : 'Rs. —';
+  const fallbackEntry = basePrice > 0 ? `Rs. ${(basePrice * 0.98).toFixed(1)}–${(basePrice * 1.02).toFixed(1)}` : 'Rs. —';
 
   const t1Val = typeof t1 === 'number' ? `Rs. ${t1.toLocaleString()}` : (t1 || fallbackT1);
   const t2Val = typeof t2 === 'number' ? `Rs. ${t2.toLocaleString()}` : (t2 || fallbackT2);
@@ -644,7 +646,7 @@ const TradeExecutionCards = ({ targets, stopLoss, entryZone, rrr }) => {
         <div className="rounded-lg border border-slate-800/80 bg-slate-950/60 p-2.5 text-center">
           <div className="text-[10px] font-bold text-slate-400 uppercase">Entry Zone</div>
           <div className="text-xs sm:text-sm font-black font-mono text-white mt-0.5 tabular-nums truncate">
-            {entryZone || 'Rs. 248–254'}
+            {entryZone || fallbackEntry}
           </div>
         </div>
         <div className="rounded-lg border border-slate-800/80 bg-slate-950/60 p-2.5 text-center">
@@ -1029,6 +1031,7 @@ const GuruResponse = ({ data, type, onDeployPaperTrade }) => {
         stopLoss={parsed.stopLossLabel || (parsed.stopLoss ? `Rs. ${Number(parsed.stopLoss).toLocaleString()}` : undefined)}
         entryZone={parsed.entryZone}
         rrr={parsed.riskRewardRatio}
+        currentPrice={parsed.currentPrice || parsed.ltp}
       />
 
       {/* 5. NEPSE Circuit-Breaker & Liquidity Shield */}
