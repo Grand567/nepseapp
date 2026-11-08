@@ -1997,7 +1997,15 @@ export function calculateProbabilisticMatrix(stock = {}, history = [], macroPuls
 /**
  * 22. Wyckoff Accumulation / Distribution Phase Classifier
  */
-export function detectWyckoffPhase(history = [], currentVolume = 0) {
+export function detectWyckoffPhase(history = [], currentVolume = 0, brokerAnalysis = null) {
+  if (brokerAnalysis?.adSignal === 'Distribution' || brokerAnalysis?.isDistribution || brokerAnalysis?.orderFlowVeto?.isVetoed) {
+    return {
+      phase: 'Phase D: Distribution / UTAD',
+      action: 'Institutional Scale-Out',
+      description: 'Institutional brokers are distributing inventory into retail bids.'
+    };
+  }
+
   if (!Array.isArray(history) || history.length < 5) {
     return {
       phase: 'Phase B: Base Building & Range Testing',

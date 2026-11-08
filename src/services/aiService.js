@@ -253,7 +253,7 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
     ? (ltp >= sma200 ? 'Bullish (Above 200 SMA)' : 'Bearish (Below 200 SMA)')
     : 'Insufficient history for 200 SMA';
 
-  const wyckoff = detectWyckoffPhase(historyList, volume || 0);
+  const wyckoff = detectWyckoffPhase(historyList, volume || 0, realBrokerAnalysis || stock?.realBrokerAnalysis);
   const atrVal = calculateATR(historyList);
   const targets = (high12M != null && low12M != null && atrVal != null)
     ? calculateMultiHorizonTargets(ltp, high12M, low12M, atrVal, pChg)

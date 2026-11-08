@@ -550,9 +550,9 @@ export function detectCandlestickPatternsFromHistory(history = [], fallbackStock
 
   // Ensure today's live/session candle is evaluated if provided
   if (fallbackStock && (Number(fallbackStock.ltp || fallbackStock.close || 0) > 0)) {
-    const todayStr = fallbackStock.businessDate || fallbackStock.date || new Date().toISOString().slice(0, 10);
     const lastDate = clean.length > 0 ? clean[clean.length - 1].date : '';
-    if (lastDate !== todayStr) {
+    const todayStr = fallbackStock.businessDate || fallbackStock.date;
+    if (todayStr && todayStr !== lastDate && todayStr > lastDate) {
       const todayClose = Number(fallbackStock.ltp || fallbackStock.close || 0);
       const todayOpen = Number(fallbackStock.open || todayClose);
       const rawHigh = Number(fallbackStock.high || todayClose);

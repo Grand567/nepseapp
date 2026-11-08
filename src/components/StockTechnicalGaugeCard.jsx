@@ -19,7 +19,8 @@ export default function StockTechnicalGaugeCard({ stock = {}, history = [] }) {
     const fromHist = detectCandlestickPatternsFromHistory(history, stock);
     if (fromHist && fromHist.length > 0) return fromHist;
     const single = detectSingleStockPatterns(stock);
-    const todayStr = stock?.businessDate || stock?.date || new Date().toISOString().slice(0, 10);
+    const lastHistoryDate = Array.isArray(history) && history.length > 0 ? (history[history.length - 1]?.date || history[history.length - 1]?.businessDate) : null;
+    const todayStr = stock?.businessDate || stock?.date || lastHistoryDate || new Date().toISOString().slice(0, 10);
     return single.map(p => ({
       ...p,
       date: todayStr,

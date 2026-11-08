@@ -5041,9 +5041,10 @@ export default function StockDetailModal({
               }
               const rsi = rsiVal != null ? Number(Number(rsiVal).toFixed(1)) : 50;
               const rsiStatus = rsi < 30 ? { label: 'Oversold Dip (Rebound Zone)', color: '#34d399', bg: 'rgba(16, 185, 129, 0.15)' }
-                : rsi <= 45 ? { label: 'Mild Pullback', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)' }
-                : rsi <= 65 ? { label: 'Healthy Bullish Momentum', color: '#10B981', bg: 'rgba(16, 185, 129, 0.15)' }
-                : rsi <= 75 ? { label: 'Strong Expansion', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' }
+                : rsi < 45 ? { label: 'Bearish Pullback', color: '#f87171', bg: 'rgba(244, 63, 94, 0.15)' }
+                : rsi <= 55 ? { label: 'Neutral Midline (Chop)', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)' }
+                : rsi <= 68 ? { label: 'Healthy Bullish Momentum', color: '#10B981', bg: 'rgba(16, 185, 129, 0.15)' }
+                : rsi <= 78 ? { label: 'Strong Expansion', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' }
                 : { label: 'Overbought (Caution: Do Not Chase)', color: '#f87171', bg: 'rgba(244, 63, 94, 0.15)' };
 
               // MACD (12, 26, 9)
