@@ -9,6 +9,7 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import * as servicesApi from '../utils/servicesApi';
 import { checkSingleBoidAllotment, fetchUserApplicationReports } from '../services/meroShareService';
 import { calculateIpoAllotmentProbability } from '../utils/calculations';
+import { formatNptDateIso } from '../utils/nepseCalendar';
 import { decryptProfileCredentials } from '../utils/credentialCrypto';
 
 // Same key as AccountManager
@@ -418,7 +419,7 @@ export default function IPOList({ initialTab = 'apply' }) {
         appliedKitta: Number(kitta),
         allottedKitta: 0,
         amount: Number(kitta) * Number(activeIpo?.amountPerShare || 100),
-        appliedDate: new Date().toISOString().split('T')[0],
+        appliedDate: formatNptDateIso(new Date()),
         status: 'VERIFIED',
         accountName: acc.name,
         boid: acc.boid,

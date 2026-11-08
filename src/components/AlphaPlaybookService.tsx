@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { formatNptDateIso } from '../utils/nepseCalendar';
 import {
   BookOpen, Shield, ShieldCheck, ShieldAlert, Target, Flame, Activity,
   Clock, Calendar, ArrowRight, CheckCircle2, AlertTriangle, Download,
@@ -119,7 +120,7 @@ export function AlphaPlaybookService() {
   // Interactive Routine Checklist state
   const [checkedRoutine, setCheckedRoutine] = useState<Record<string, boolean>>(() => {
     try {
-      const todayKey = `nepse_routine_${new Date().toISOString().slice(0, 10)}`;
+      const todayKey = `nepse_routine_${formatNptDateIso(new Date())}`;
       const saved = localStorage.getItem(todayKey);
       return saved ? JSON.parse(saved) : {};
     } catch (_) {
@@ -128,7 +129,7 @@ export function AlphaPlaybookService() {
   });
 
   const toggleRoutineItem = (key: string) => {
-    const todayKey = `nepse_routine_${new Date().toISOString().slice(0, 10)}`;
+    const todayKey = `nepse_routine_${formatNptDateIso(new Date())}`;
     const updated = { ...checkedRoutine, [key]: !checkedRoutine[key] };
     setCheckedRoutine(updated);
     try {
@@ -731,7 +732,7 @@ export function AlphaPlaybookService() {
               </div>
               <button
                 onClick={() => {
-                  const todayKey = `nepse_routine_${new Date().toISOString().slice(0, 10)}`;
+                  const todayKey = `nepse_routine_${formatNptDateIso(new Date())}`;
                   localStorage.removeItem(todayKey);
                   setCheckedRoutine({});
                 }}

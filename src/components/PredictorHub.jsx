@@ -42,6 +42,7 @@ import {
 import { STRATEGY_PRESETS } from '../utils/signals/scoringConfig';
 import { getProxyBase, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap, fetchPriceHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick } from '../utils/liveData';
 import { calculateEMA } from '../utils/indicators';
+import { formatNptDateIso } from '../utils/nepseCalendar';
 import { fetchNewsArticle, fetchDividendHistory } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
 import { triggerHaptic } from '../utils/haptics';
@@ -613,7 +614,7 @@ export default function PredictorHub({
         const hard_ceiling_applied = is_above_50_ema === false;
 
         setIndexPrediction({
-          prediction_date: new Date().toISOString().slice(0, 10),
+          prediction_date: formatNptDateIso(new Date()),
           direction: dir,
           confidence: Math.round(55 + Math.abs(rawScore) * 40),
           raw_score: rawScore,

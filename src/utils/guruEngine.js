@@ -24,7 +24,7 @@ import {
   resolveDynamicStockEMAs
 } from './quantEngine.js';
 
-import { getDetailedMarketStatus } from './nepseCalendar.js';
+import { getDetailedMarketStatus, formatNptDateIso } from './nepseCalendar.js';
 
 import {
   runAnalogBacktest,
@@ -767,7 +767,7 @@ function isDisqualifiedNonEquityOrLossMaking(s) {
   };
 
   const marketStatus = getDetailedMarketStatus();
-  const targetSessionDate = marketStatus?.targetSessionDate || new Date().toISOString().slice(0, 10);
+  const targetSessionDate = marketStatus?.targetSessionDate || formatNptDateIso(new Date());
   const isPostMarket = marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen;
 
   let verifiedPrimePick = null;

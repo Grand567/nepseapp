@@ -15,6 +15,7 @@ import { Capacitor } from '@capacitor/core';
 import { DEFAULT_AI_KEY, callGlmAi, generateNepseAiContent } from '../services/aiService';
 import { syncCapitalWithPortfolio } from '../utils/dynamicCapitalEngine';
 import { triggerHaptic } from '../utils/haptics';
+import { formatNptDateIso } from '../utils/nepseCalendar';
 
 /**
  * Safe markdown renderer — only handles **bold** and newlines.
@@ -292,7 +293,7 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
   const [symbol, setSymbol] = useState('');
   const [quantity, setQuantity] = useState(10);
   const [price, setPrice] = useState(100);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => formatNptDateIso(new Date()));
 
   // AI Analyst state
   const [showAiModal, setShowAiModal] = useState(false);
@@ -891,7 +892,7 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
         symbol: item.symbol,
         quantity: item.units,
         price: item.rate,
-        date: new Date().toISOString().split('T')[0]
+        date: formatNptDateIso(new Date())
       }));
 
       saveTransactions([...newTransactions, ...transactions]);

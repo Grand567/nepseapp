@@ -13,6 +13,7 @@ import {
   setUserConfiguredCapital, 
   getCapitalTierConfig 
 } from '../utils/dynamicCapitalEngine';
+import { formatNptDateIso } from '../utils/nepseCalendar';
 import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -173,7 +174,7 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `nepse-personal-desk-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `nepse-personal-desk-backup-${formatNptDateIso(new Date())}.json`;
       a.click();
       URL.revokeObjectURL(url);
       setExportSuccess(true);

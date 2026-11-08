@@ -11,6 +11,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { getProxyBase } from '../utils/liveData';
+import { formatNptDateIso } from '../utils/nepseCalendar';
 
 const REGIME_META = {
   EASING:     { icon: '🟢', bg: 'rgba(52,211,153,0.08)',   border: 'rgba(52,211,153,0.30)',   text: '#34d399' },
@@ -80,7 +81,7 @@ export function buildBaselineNrbMacroData(overrides = {}) {
   return {
     liveDataAvailable: Boolean(overrides?.liveDataAvailable),
     source: overrides?.source || 'NRB Monetary Baseline Vault',
-    asOf: overrides?.asOf || new Date().toISOString().slice(0, 10),
+    asOf: overrides?.asOf || formatNptDateIso(new Date()),
     macroRegime: {
       ...normalizedRegime,
       ...rawRegime,

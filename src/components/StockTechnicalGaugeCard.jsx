@@ -5,6 +5,7 @@ import {
   detectSingleStockPatterns,
   calculateTechnicalSpeedometer
 } from '../utils/candlestickPatterns';
+import { formatNptDateIso } from '../utils/nepseCalendar';
 
 export default function StockTechnicalGaugeCard({ stock: rawStock = {}, history: rawHistory = [] }) {
   const stock = rawStock && typeof rawStock === 'object' ? rawStock : {};
@@ -22,7 +23,7 @@ export default function StockTechnicalGaugeCard({ stock: rawStock = {}, history:
     if (fromHist && fromHist.length > 0) return fromHist;
     const single = detectSingleStockPatterns(stock);
     const lastHistoryDate = Array.isArray(history) && history.length > 0 ? (history[history.length - 1]?.date || history[history.length - 1]?.businessDate) : null;
-    const todayStr = stock?.businessDate || stock?.date || lastHistoryDate || new Date().toISOString().slice(0, 10);
+    const todayStr = stock?.businessDate || stock?.date || lastHistoryDate || formatNptDateIso(new Date());
     return single.map(p => ({
       ...p,
       date: todayStr,

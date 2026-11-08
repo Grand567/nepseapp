@@ -7,6 +7,7 @@
  */
 
 import { getAccurateFestivalSeasonality } from './quantEngine.js';
+import { formatNptDateIso } from './nepseCalendar.js';
 
 const ALERTS_STORAGE_KEY = 'nepse_watchlist_alerts_v1';
 const ALERTS_HISTORY_KEY = 'nepse_watchlist_alerts_history_v1';
@@ -353,7 +354,7 @@ export function evaluateWatchlistAlerts(stocks = [], watchedSymbols = [], onTrig
     return [];
   }
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = formatNptDateIso(new Date());
   const results = [];
 
   for (const stock of stocks) {

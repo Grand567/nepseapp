@@ -6,6 +6,7 @@ import {
   calculateSebonFee,
   DP_CHARGE
 } from '../utils/calculations.js';
+import { formatNptDateIso } from '../utils/nepseCalendar.js';
 
 export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
   const isNe = lang === 'ne';
@@ -422,7 +423,7 @@ export function calculateFifoWaccAndSegregatedCgt(lots = [], sellOrder = null) {
     const qty = Number(lot.qty || lot.quantity || lot.units || 0);
     const price = Number(lot.price || lot.rate || 0);
     const type = String(lot.type || 'BUY').toUpperCase();
-    const date = lot.date || new Date().toISOString().slice(0, 10);
+    const date = lot.date || formatNptDateIso(new Date());
 
     let lotEconomicCost = 0;
     let lotCdscCost = 0;

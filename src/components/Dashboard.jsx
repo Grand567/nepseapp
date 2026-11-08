@@ -27,7 +27,7 @@ import { getHydroSeasonality, runAmalgamatedBreakoutPipeline, evaluateMarketBrea
 import { selectMasterPrimePick, isActionableBuySignal } from '../utils/guruEngine';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { isLockInSupplyCliffTrap, selectPrimePickOfTheDay } from '../utils/scanners';
-import { getDetailedMarketStatus } from '../utils/nepseCalendar';
+import { getDetailedMarketStatus, formatNptDateIso } from '../utils/nepseCalendar';
 import { triggerHaptic } from '../utils/haptics';
 import LoadingShimmerBar from './LoadingShimmerBar';
 import { runUnifiedFiveStepAlphaDesk } from '../utils/masterAlphaPipeline';
@@ -2248,7 +2248,7 @@ function Dashboard({
     });
     const priorityCandidates = Array.from(candidateMap.values()).slice(0, 25);
 
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = formatNptDateIso(new Date());
     const neededFetches = priorityCandidates.filter(s => {
       const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
       const h = getCachedRealPriceHistory(sym);

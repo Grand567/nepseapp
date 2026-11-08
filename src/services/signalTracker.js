@@ -1,5 +1,6 @@
 import { getCachedRealPriceHistory } from '../utils/historyCache.js';
 import { getNepseBrokerCommissionRate } from '../utils/calculations.js';
+import { formatNptDateIso } from '../utils/nepseCalendar.js';
 
 const STORAGE_KEY = 'drabyashree_signals';
 
@@ -117,7 +118,7 @@ export const calculateNetReturn = (entryPrice, exitPrice, holdingDays = 1, trade
 export const recordSignal = (signalInput) => {
   if (!signalInput || !signalInput.symbol) return null;
   const symbol = String(signalInput.symbol).toUpperCase().trim();
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatNptDateIso(new Date());
 
   const signals = getStoredSignals();
 
@@ -481,7 +482,7 @@ export const evaluateOpenSignals = (marketStocks, options = {}) => {
   let updatedCount = 0;
   let closedCount = 0;
   const now = Date.now();
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = formatNptDateIso(new Date());
 
   for (let i = 0; i < signals.length; i++) {
     const sig = signals[i];

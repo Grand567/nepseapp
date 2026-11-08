@@ -9,6 +9,7 @@ import {
   fetchForexRates, fetchMacroIndicators, fetchBullionRates,
   fetchNrbCirculars, fetchSebonCirculars,
 } from '../utils/servicesApi';
+import { formatNptDateIso } from '../utils/nepseCalendar';
 import { NRBMacroWidget } from './NRBMacroWidget';
 
 export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' | 'macro' | 'bullion' | 'circulars' } = {}) {
@@ -58,7 +59,7 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
         }));
         if (normalized.length > 0) {
           setForexData(normalized);
-          setForexDate(res?.date || res?.data?.date || new Date().toISOString().split('T')[0]);
+          setForexDate(res?.date || res?.data?.date || formatNptDateIso(new Date()));
         }
       }
     } catch (e) {
