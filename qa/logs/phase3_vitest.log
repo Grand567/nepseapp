@@ -1,0 +1,2390 @@
+﻿
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Hp/Desktop/Software/nepse app[39m
+
+ [31m❯[39m qa/tests/phase3_calculations.test.mjs [2m([22m[2m14 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[90m 64[2mms[22m[39m
+[31m   [31m×[31m Phase 3A — Financial Calculations & Statutory Fee Unit Tests (src/utils/calculations.js)[2m > [22m[BUG REPRO] adjustForBonusShare(0, 500, 20) and adjustForRightShare(0, 500, 0.5, 100) return NaN for newWacc due to unguarded division by zero (0 / 0)[90m 11[2mms[22m[31m[39m
+[31m     → expected true to be false // Object.is equality[39m
+[31m   [31m×[31m Phase 3A — Financial Calculations & Statutory Fee Unit Tests (src/utils/calculations.js)[2m > [22m[BUG REPRO] Statutory Buy Cost inconsistency: calculateBuyDetails sets buy dpFee=0 while calculateNepseStatutoryTrade and calculateNetProfit charge buyDp=25[90m 1[2mms[22m[31m[39m
+[31m     → expected 50187.5 to be 50212.5 // Object.is equality[39m
+[31m   [31m×[31m Phase 3B — Risk Management & EntryRiskCard CGT Bug Verification (src/utils/riskManagement.js)[2m > [22m[BUG REPRO] EntryRiskCard passes holdingDays:520 to calculateNetProfit, which ignores holdingDays and charges 7.5% short-term CGT instead of 5% long-term CGT[90m 1[2mms[22m[31m[39m
+[31m     → expected '7.5%' to be '5%' // Object.is equality[39m
+[90mstdout[2m | qa/tests/phase3_services125.test.jsx
+[22m[39m[warmUp] Proxy ready (http://localhost:5000) in 21ms
+[warmUp] Proxy ready (https://nepseapp.onrender.com) in 22ms
+
+[90mstdout[2m | qa/tests/phase3_cards_and_subcards.test.jsx[2m > [22m[2mPhase 3E — Inventory Card & Sub-Card Mount Matrix (Normal, Empty, Null & Error States)[2m > [22m[2mmounts every distinct component file from qa/app_inventory.json across normal, empty, and null props and logs coverage
+[22m[39m[warmUp] Proxy ready (http://localhost:5000) in 21ms
+[warmUp] Proxy ready (https://nepseapp.onrender.com) in 22ms
+
+qa\node_modules\.bin\vitest.cmd : [90mstderr[2m | qa/tests/phase3_cards_and_subcards.test.jsx[2m > [22m[2mPhase 
+3E — Inventory Card & Sub-Card Mount Matrix (Normal, Empty, Null & Error States)[2m > [22m[2mmounts every distinct 
+component file from qa/app_inventory.json across normal, empty, and null props and logs coverage
+At line:1 char:1
++ qa\node_modules\.bin\vitest.cmd run --config qa\vitest.config.mjs 2>& ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([90mstderr[2m...d logs coverage:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[22m[39mError: Uncaught [TypeError: Cannot read properties of null (reading 'filter')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'filter')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Dashboard.jsx:2019:31
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at Dashboard [90m(C:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Dashboard.jsx:2015:25[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19617:20[90m)[39m
+    at updateSimpleMemoComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19454:10[90m)[39m
+    at updateMemoComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19303:14[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21712:16[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'filter')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'filter')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Dashboard.jsx:2019:31
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at Dashboard [90m(C:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Dashboard.jsx:2015:25[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19617:20[90m)[39m
+    at updateSimpleMemoComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19454:10[90m)[39m
+    at updateMemoComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19303:14[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21712:16[90m)[39m
+The above error occurred in the <Dashboard> component:
+
+    at Dashboard (C:\Users\Hp\Desktop\Software\nepse app\src\components\Dashboard.jsx:2247:3)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/Dashboard.jsx] caught: TypeError: Cannot read properties of null (reading 'filter')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Dashboard.jsx:2019:31
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at Dashboard [90m(C:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Dashboard.jsx:2015:25[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19617:20[90m)[39m
+    at updateSimpleMemoComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19454:10[90m)[39m
+    at updateMemoComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19303:14[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21712:16[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Dashboard (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\Dashboard.jsx:2247:3)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'ltp')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'ltp')
+    at Module.calculateTechnicalSpeedometer [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\utils\candlestickPatterns.js:715:28[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\StockTechnicalGaugeCard.jsx:15:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at StockTechnicalGaugeCard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockTechnicalGaugeCard.jsx:14:23[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'ltp')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'ltp')
+    at Module.calculateTechnicalSpeedometer [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\utils\candlestickPatterns.js:715:28[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\StockTechnicalGaugeCard.jsx:15:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at StockTechnicalGaugeCard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockTechnicalGaugeCard.jsx:14:23[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+The above error occurred in the <StockTechnicalGaugeCard> component:
+
+    at StockTechnicalGaugeCard (C:\Users\Hp\Desktop\Software\nepse app\src\components\StockTechnicalGaugeCard.jsx:9:36)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/StockTechnicalGaugeCard.jsx] caught: TypeError: Cannot read properties of null 
+(reading 'ltp')
+    at Module.calculateTechnicalSpeedometer [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\utils\candlestickPatterns.js:715:28[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\StockTechnicalGaugeCard.jsx:15:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at StockTechnicalGaugeCard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockTechnicalGaugeCard.jsx:14:23[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at StockTechnicalGaugeCard (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\StockTechnicalGaugeCard.jsx:9:36)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'ltp')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'ltp')
+    at StockYanAnalyticsCard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockYanAnalyticsCard.jsx:34:28[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'ltp')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'ltp')
+    at StockYanAnalyticsCard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockYanAnalyticsCard.jsx:34:28[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+The above error occurred in the <StockYanAnalyticsCard> component:
+
+    at StockYanAnalyticsCard (C:\Users\Hp\Desktop\Software\nepse app\src\components\StockYanAnalyticsCard.jsx:21:3)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/StockYanAnalyticsCard.jsx] caught: TypeError: Cannot read properties of null (reading 
+'ltp')
+    at StockYanAnalyticsCard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockYanAnalyticsCard.jsx:34:28[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m
+    at workLoopSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26505:5[90m)[39m
+    at renderRootSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26473:7[90m)[39m
+    at recoverFromConcurrentError [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25889:20[90m)[39m
+    at performConcurrentWorkOnRoot [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25789:22[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at StockYanAnalyticsCard (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\StockYanAnalyticsCard.jsx:21:3)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'symbol')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'symbol')
+    at StockRightShareCard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockRightShareCard.jsx:5:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'symbol')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'symbol')
+    at StockRightShareCard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockRightShareCard.jsx:5:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+The above error occurred in the <StockRightShareCard> component:
+
+    at StockRightShareCard (C:\Users\Hp\Desktop\Software\nepse app\src\components\StockRightShareCard.jsx:7:32)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/StockRightShareCard.jsx] caught: TypeError: Cannot read properties of null (reading 
+'symbol')
+    at StockRightShareCard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockRightShareCard.jsx:5:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m
+    at workLoopSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26505:5[90m)[39m
+    at renderRootSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26473:7[90m)[39m
+    at recoverFromConcurrentError [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25889:20[90m)[39m
+    at performConcurrentWorkOnRoot [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25789:22[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at StockRightShareCard (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\StockRightShareCard.jsx:7:32)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+
+[90mstderr[2m | qa/tests/phase3_cards_and_subcards.test.jsx[2m > [22m[2mPhase 3E — Inventory Card & Sub-Card 
+Mount Matrix (Normal, Empty, Null & Error States)[2m > [22m[2mmounts every distinct component file from 
+qa/app_inventory.json across normal, empty, and null props and logs coverage
+[22m[39mError: Uncaught [TypeError: Cannot read properties of undefined (reading 'length')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at reportUncaughtErrorInDEV (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:22877:5)
+    at captureCommitPhaseError (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:27165:5) TypeError: Cannot read properties of undefined 
+(reading 'length')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Portfolio.jsx:460:22
+    at commitHookEffectListMount [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:23189:26[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24970:11[90m)[39m
+    at commitPassiveMountEffects_complete [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24930:9[90m)[39m
+    at commitPassiveMountEffects_begin [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24917:7[90m)[39m
+    at commitPassiveMountEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24905:3[90m)[39m
+    at flushPassiveEffectsImpl [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27078:3[90m)[39m
+    at flushPassiveEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27023:14[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26808:9
+    at flushActQueue [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:2667:24[90m)[39m
+The above error occurred in the <Portfolio> component:
+
+    at Portfolio (C:\Users\Hp\Desktop\Software\nepse app\src\components\Portfolio.jsx:120:22)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/Portfolio.jsx] caught: TypeError: Cannot read properties of undefined (reading 
+'length')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Portfolio.jsx:460:22
+    at commitHookEffectListMount [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:23189:26[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24970:11[90m)[39m
+    at commitPassiveMountEffects_complete [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24930:9[90m)[39m
+    at commitPassiveMountEffects_begin [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24917:7[90m)[39m
+    at commitPassiveMountEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24905:3[90m)[39m
+    at flushPassiveEffectsImpl [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27078:3[90m)[39m
+    at flushPassiveEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27023:14[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26808:9
+    at flushActQueue [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:2667:24[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Portfolio (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\Portfolio.jsx:120:22)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of undefined (reading 'length')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at reportUncaughtErrorInDEV (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:22877:5)
+    at captureCommitPhaseError (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:27165:5) TypeError: Cannot read properties of undefined 
+(reading 'length')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Portfolio.jsx:460:22
+    at commitHookEffectListMount [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:23189:26[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24970:11[90m)[39m
+    at commitPassiveMountEffects_complete [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24930:9[90m)[39m
+    at commitPassiveMountEffects_begin [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24917:7[90m)[39m
+    at commitPassiveMountEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24905:3[90m)[39m
+    at flushPassiveEffectsImpl [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27078:3[90m)[39m
+    at flushPassiveEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27023:14[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26808:9
+    at flushActQueue [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:2667:24[90m)[39m
+The above error occurred in the <Portfolio> component:
+
+    at Portfolio (C:\Users\Hp\Desktop\Software\nepse app\src\components\Portfolio.jsx:120:22)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/Portfolio.jsx] caught: TypeError: Cannot read properties of undefined (reading 
+'length')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Portfolio.jsx:460:22
+    at commitHookEffectListMount [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:23189:26[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24970:11[90m)[39m
+    at commitPassiveMountEffects_complete [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24930:9[90m)[39m
+    at commitPassiveMountEffects_begin [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24917:7[90m)[39m
+    at commitPassiveMountEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24905:3[90m)[39m
+    at flushPassiveEffectsImpl [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27078:3[90m)[39m
+    at flushPassiveEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27023:14[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26808:9
+    at flushActQueue [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:2667:24[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Portfolio (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\Portfolio.jsx:120:22)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of undefined (reading 'length')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at reportUncaughtErrorInDEV (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:22877:5)
+    at captureCommitPhaseError (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:27165:5) TypeError: Cannot read properties of undefined 
+(reading 'length')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Portfolio.jsx:460:22
+    at commitHookEffectListMount [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:23189:26[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24970:11[90m)[39m
+    at commitPassiveMountEffects_complete [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24930:9[90m)[39m
+    at commitPassiveMountEffects_begin [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24917:7[90m)[39m
+    at commitPassiveMountEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24905:3[90m)[39m
+    at flushPassiveEffectsImpl [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27078:3[90m)[39m
+    at flushPassiveEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27023:14[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26808:9
+    at flushActQueue [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:2667:24[90m)[39m
+The above error occurred in the <Portfolio> component:
+
+    at Portfolio (C:\Users\Hp\Desktop\Software\nepse app\src\components\Portfolio.jsx:120:22)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/Portfolio.jsx] caught: TypeError: Cannot read properties of undefined (reading 
+'length')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Portfolio.jsx:460:22
+    at commitHookEffectListMount [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:23189:26[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24970:11[90m)[39m
+    at commitPassiveMountEffects_complete [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24930:9[90m)[39m
+    at commitPassiveMountEffects_begin [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24917:7[90m)[39m
+    at commitPassiveMountEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:24905:3[90m)[39m
+    at flushPassiveEffectsImpl [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27078:3[90m)[39m
+    at flushPassiveEffects [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27023:14[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26808:9
+    at flushActQueue [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:2667:24[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Portfolio (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\Portfolio.jsx:120:22)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+
+[90mstderr[2m | qa/tests/phase3_cards_and_subcards.test.jsx[2m > [22m[2mPhase 3E — Inventory Card & Sub-Card 
+Mount Matrix (Normal, Empty, Null & Error States)[2m > [22m[2mmounts every distinct component file from 
+qa/app_inventory.json across normal, empty, and null props and logs coverage
+[22m[39mError: Uncaught [TypeError: Cannot read properties of null (reading 'filter')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'filter')
+    at Module.runMasterGuideAudit [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\utils\masterProfitEngine.ts:916:30[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Master100ProfitWorkstation.tsx:520:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at Master100ProfitWorkstation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\Master100ProfitWorkstation.tsx:519:42[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'filter')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'filter')
+    at Module.runMasterGuideAudit [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\utils\masterProfitEngine.ts:916:30[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Master100ProfitWorkstation.tsx:520:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at Master100ProfitWorkstation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\Master100ProfitWorkstation.tsx:519:42[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+The above error occurred in the <Master100ProfitWorkstation> component:
+
+    at Master100ProfitWorkstation (C:\Users\Hp\Desktop\Software\nepse 
+app\src\components\Master100ProfitWorkstation.tsx:15:3)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/Master100ProfitWorkstation.tsx] caught: TypeError: Cannot read properties of null 
+(reading 'filter')
+    at Module.runMasterGuideAudit [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\utils\masterProfitEngine.ts:916:30[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\Master100ProfitWorkstation.tsx:520:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at Master100ProfitWorkstation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\Master100ProfitWorkstation.tsx:519:42[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Master100ProfitWorkstation (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\Master100ProfitWorkstation.tsx:15:3)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'reduce')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'reduce')
+    at Module.runUnifiedFiveStepAlphaDesk [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\utils\masterAlphaPipeline.js:402:28[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\AlphaCommandCenter.tsx:63:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at AlphaCommandCenter [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\AlphaCommandCenter.tsx:62:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'reduce')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'reduce')
+    at Module.runUnifiedFiveStepAlphaDesk [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\utils\masterAlphaPipeline.js:402:28[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\AlphaCommandCenter.tsx:63:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at AlphaCommandCenter [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\AlphaCommandCenter.tsx:62:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+The above error occurred in the <AlphaCommandCenter> component:
+
+    at AlphaCommandCenter (C:\Users\Hp\Desktop\Software\nepse app\src\components\AlphaCommandCenter.tsx:18:3)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/AlphaCommandCenter.tsx] caught: TypeError: Cannot read properties of null (reading 
+'reduce')
+    at Module.runUnifiedFiveStepAlphaDesk [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\utils\masterAlphaPipeline.js:402:28[90m)[39m
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\AlphaCommandCenter.tsx:63:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at AlphaCommandCenter [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\AlphaCommandCenter.tsx:62:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at AlphaCommandCenter (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\AlphaCommandCenter.tsx:18:3)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+
+[90mstderr[2m | qa/tests/phase3_services125.test.jsx[2m > [22m[2mPhase 3D — Data-Driven Test Across All 125 
+Service Hub Services[2m > [22m[2mloops over all 125 services in ALL_SERVICES, mounts each service, and records 
+pass/fail telemetry
+[22m[39mError: Uncaught [TypeError: Cannot read properties of undefined (reading 'filter')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of undefined 
+(reading 'filter')
+    at BacktestReportScreen [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\BacktestReportScreen.tsx:209:49[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19617:20[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21640:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of undefined (reading 'filter')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of undefined 
+(reading 'filter')
+    at BacktestReportScreen [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\BacktestReportScreen.tsx:209:49[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19617:20[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21640:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+The above error occurred in the <BacktestReportScreen> component:
+
+    at BacktestReportScreen (C:\Users\Hp\Desktop\Software\nepse app\src\components\BacktestReportScreen.tsx:12:53)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at div
+    at div
+    at div
+    at ServicesHub (C:\Users\Hp\Desktop\Software\nepse app\src\components\ServicesHub.tsx:2205:65)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - Backtest Engine & Walk-Forward Report] caught: TypeError: Cannot read properties of undefined 
+(reading 'filter')
+    at BacktestReportScreen [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\BacktestReportScreen.tsx:209:49[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:19617:20[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21640:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m
+    at workLoopSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26505:5[90m)[39m
+    at renderRootSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26473:7[90m)[39m
+    at recoverFromConcurrentError [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25889:20[90m)[39m
+    at performSyncWorkOnRoot [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26135:20[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at BacktestReportScreen (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\BacktestReportScreen.tsx:12:53)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at div\n'[39m +
+    [32m'    at div\n'[39m +
+    [32m'    at div\n'[39m +
+    [32m'    at ServicesHub (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ServicesHub.tsx:2205:65)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+
+[90mstderr[2m | qa/tests/phase3_cards_and_subcards.test.jsx[2m > [22m[2mPhase 3E — Inventory Card & Sub-Card 
+Mount Matrix (Normal, Empty, Null & Error States)[2m > [22m[2mmounts every distinct component file from 
+qa/app_inventory.json across normal, empty, and null props and logs coverage
+[22m[39mError: Uncaught [TypeError: Cannot read properties of null (reading 'length')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'length')
+    at StitchHub [90m(C:\Users\Hp\Desktop\Software\nepse app\[39msrc\views\StitchHub.jsx:71:38[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'length')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'length')
+    at StitchHub [90m(C:\Users\Hp\Desktop\Software\nepse app\[39msrc\views\StitchHub.jsx:71:38[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+The above error occurred in the <StitchHub> component:
+
+    at StitchHub (C:\Users\Hp\Desktop\Software\nepse app\src\views\StitchHub.jsx:21:22)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/views/StitchHub.jsx] caught: TypeError: Cannot read properties of null (reading 'length')
+    at StitchHub [90m(C:\Users\Hp\Desktop\Software\nepse app\[39msrc\views\StitchHub.jsx:71:38[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m
+    at workLoopSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26505:5[90m)[39m
+    at renderRootSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26473:7[90m)[39m
+    at recoverFromConcurrentError [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25889:20[90m)[39m
+    at performConcurrentWorkOnRoot [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25789:22[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at StitchHub (C:\\Users\\Hp\\Desktop\\Software\\nepse app\\src\\views\\StitchHub.jsx:21:22)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'reduce')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'reduce')
+    at LiveMarketDashboard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\views\LiveMarketDashboard.jsx:34:58[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'reduce')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'reduce')
+    at LiveMarketDashboard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\views\LiveMarketDashboard.jsx:34:58[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+The above error occurred in the <LiveMarketDashboard> component:
+
+    at LiveMarketDashboard (C:\Users\Hp\Desktop\Software\nepse app\src\views\LiveMarketDashboard.jsx:8:3)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/views/LiveMarketDashboard.jsx] caught: TypeError: Cannot read properties of null (reading 
+'reduce')
+    at LiveMarketDashboard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\views\LiveMarketDashboard.jsx:34:58[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m
+    at workLoopSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26505:5[90m)[39m
+    at renderRootSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26473:7[90m)[39m
+    at recoverFromConcurrentError [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25889:20[90m)[39m
+    at performConcurrentWorkOnRoot [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25789:22[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at LiveMarketDashboard (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\views\\LiveMarketDashboard.jsx:8:3)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'find')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'find')
+    at StockDetails [90m(C:\Users\Hp\Desktop\Software\nepse app\[39msrc\views\StockDetails.jsx:17:28[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'find')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'find')
+    at StockDetails [90m(C:\Users\Hp\Desktop\Software\nepse app\[39msrc\views\StockDetails.jsx:17:28[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+The above error occurred in the <StockDetails> component:
+
+    at StockDetails (C:\Users\Hp\Desktop\Software\nepse app\src\views\StockDetails.jsx:8:3)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/views/StockDetails.jsx] caught: TypeError: Cannot read properties of null (reading 'find')
+    at StockDetails [90m(C:\Users\Hp\Desktop\Software\nepse app\[39msrc\views\StockDetails.jsx:17:28[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m
+    at workLoopSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26505:5[90m)[39m
+    at renderRootSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26473:7[90m)[39m
+    at recoverFromConcurrentError [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25889:20[90m)[39m
+    at performConcurrentWorkOnRoot [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25789:22[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at StockDetails (C:\\Users\\Hp\\Desktop\\Software\\nepse app\\src\\views\\StockDetails.jsx:8:3)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'find')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'find')
+    at PortfolioAnalytics [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\views\PortfolioAnalytics.jsx:8:29[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'find')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'find')
+    at PortfolioAnalytics [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\views\PortfolioAnalytics.jsx:8:29[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+The above error occurred in the <PortfolioAnalytics> component:
+
+    at PortfolioAnalytics (C:\Users\Hp\Desktop\Software\nepse app\src\views\PortfolioAnalytics.jsx:7:31)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/views/PortfolioAnalytics.jsx] caught: TypeError: Cannot read properties of null (reading 'find')
+    at PortfolioAnalytics [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\views\PortfolioAnalytics.jsx:8:29[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m
+    at workLoopSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26505:5[90m)[39m
+    at renderRootSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26473:7[90m)[39m
+    at recoverFromConcurrentError [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25889:20[90m)[39m
+    at performConcurrentWorkOnRoot [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25789:22[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at PortfolioAnalytics (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\views\\PortfolioAnalytics.jsx:7:31)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'filter')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'filter')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\MultibaggerHunterService.tsx:35:8
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at MultibaggerHunterService [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\MultibaggerHunterService.tsx:33:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'filter')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'filter')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\MultibaggerHunterService.tsx:35:8
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at MultibaggerHunterService [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\MultibaggerHunterService.tsx:33:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+The above error occurred in the <MultibaggerHunterService> component:
+
+    at MultibaggerHunterService (C:\Users\Hp\Desktop\Software\nepse 
+app\src\components\MultibaggerHunterService.tsx:14:37)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/MultibaggerHunterService.tsx] caught: TypeError: Cannot read properties of null 
+(reading 'filter')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\MultibaggerHunterService.tsx:35:8
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at MultibaggerHunterService [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\MultibaggerHunterService.tsx:33:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at MultibaggerHunterService (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\MultibaggerHunterService.tsx:14:37)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'filter')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'filter')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\MinerviniLeaderboard.tsx:133:8
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at MinerviniLeaderboard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\MinerviniLeaderboard.tsx:131:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'filter')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'filter')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\MinerviniLeaderboard.tsx:133:8
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at MinerviniLeaderboard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\MinerviniLeaderboard.tsx:131:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+The above error occurred in the <MinerviniLeaderboard> component:
+
+    at MinerviniLeaderboard (C:\Users\Hp\Desktop\Software\nepse app\src\components\MinerviniLeaderboard.tsx:68:33)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/MinerviniLeaderboard.tsx] caught: TypeError: Cannot read properties of null (reading 
+'filter')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\MinerviniLeaderboard.tsx:133:8
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at MinerviniLeaderboard [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\MinerviniLeaderboard.tsx:131:21[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at MinerviniLeaderboard (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\MinerviniLeaderboard.tsx:68:33)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'length')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'length')
+    at GrahamValuation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\calculators.tsx:159:29[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'length')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'length')
+    at GrahamValuation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\calculators.tsx:159:29[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+The above error occurred in the <GrahamValuation> component:
+
+    at GrahamValuation (C:\Users\Hp\Desktop\Software\nepse app\src\components\calculators.tsx:17:59)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/calculators.tsx] caught: TypeError: Cannot read properties of null (reading 'length')
+    at GrahamValuation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\calculators.tsx:159:29[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m
+    at workLoopSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26505:5[90m)[39m
+    at renderRootSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26473:7[90m)[39m
+    at recoverFromConcurrentError [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25889:20[90m)[39m
+    at performConcurrentWorkOnRoot [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25789:22[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at GrahamValuation (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\calculators.tsx:17:59)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'forEach')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'forEach')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\ShareHubScannersSuite.tsx:56:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at CandlestickPatternScannerService [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\ShareHubScannersSuite.tsx:39:31[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'forEach')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'forEach')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\ShareHubScannersSuite.tsx:56:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at CandlestickPatternScannerService [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\ShareHubScannersSuite.tsx:39:31[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+The above error occurred in the <CandlestickPatternScannerService> component:
+
+    at CandlestickPatternScannerService (C:\Users\Hp\Desktop\Software\nepse 
+app\src\components\ShareHubScannersSuite.tsx:13:45)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/ShareHubScannersSuite.tsx] caught: TypeError: Cannot read properties of null (reading 
+'forEach')
+    at [90mC:\Users\Hp\Desktop\Software\nepse app\[39msrc\components\ShareHubScannersSuite.tsx:56:12
+    at mountMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16406:19[90m)[39m
+    at Object.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:16851:16[90m)[39m
+    at Proxy.useMemo [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact[24m\cjs\react.development.js:1650:21[90m)[39m
+    at CandlestickPatternScannerService [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\ShareHubScannersSuite.tsx:39:31[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at CandlestickPatternScannerService (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ShareHubScannersSuite.tsx:13:45)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'length')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'length')
+    at StockSelectionScreener [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockSelectionScreener.tsx:23:62[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+Error: Uncaught [TypeError: Cannot read properties of null (reading 'length')]
+    at reportException (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\helpers\runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:353:9)
+    at invokeEventListeners (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (C:\Users\Hp\Desktop\Software\nepse 
+app\qa\node_modules\jsdom\lib\jsdom\living\generated\EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4213:16)
+    at invokeGuardedCallback (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:4277:31)
+    at beginWork$1 (C:\Users\Hp\Desktop\Software\nepse app\node_modules\react-dom\cjs\react-dom.development.js:27490:7)
+    at performUnitOfWork (C:\Users\Hp\Desktop\Software\nepse 
+app\node_modules\react-dom\cjs\react-dom.development.js:26599:12) TypeError: Cannot read properties of null (reading 
+'length')
+    at StockSelectionScreener [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockSelectionScreener.tsx:23:62[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at HTMLUnknownElement.callCallback [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:4164:14[90m)[39m
+    at HTMLUnknownElement.callTheUserObjectsOperation [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\generated\EventListener.js:26:30[90m)[39m
+    at innerInvokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:350:25[90m)[39m
+ [31m❯[39m qa/tests/phase3_cards_and_subcards.test.jsx [2m([22m[2m4 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 14805[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 3E — Inventory Card & Sub-Card Mount Matrix (Normal, Empty, Null & Error States)[2m > [22mmounts every distinct component file from qa/app_inventory.json across normal, empty, and null props and logs coverage [33m14760[2mms[22m[39m
+[31m   [31m×[31m Phase 3E — Inventory Card & Sub-Card Mount Matrix (Normal, Empty, Null & Error States)[2m > [22m[BUG REPRO] SetupScoreCard Statistical Edge (Δ) is permanently stuck on "—" / "Requires Setup History" because quantMetrics.expectancy.pWin does not exist[90m 9[2mms[22m[31m[39m
+[31m     → expected 'Technical Setup Score🟢 BULLISH SETUP…' not to contain 'Requires Setup History'[39m
+    at invokeEventListeners [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:286:3[90m)[39m
+    at HTMLUnknownElementImpl._dispatch [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:233:9[90m)[39m
+    at HTMLUnknownElementImpl.dispatchEvent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mqa\node_modules\[4mjsdom[24m\lib\jsdom\living\events\EventTarget-impl.js:104:17[90m)[39m
+The above error occurred in the <StockSelectionScreener> component:
+
+    at StockSelectionScreener (C:\Users\Hp\Desktop\Software\nepse app\src\components\StockSelectionScreener.tsx:16:11)
+    at ErrorBoundary (C:\Users\Hp\Desktop\Software\nepse app\src\components\ErrorBoundary.jsx:5:1)
+    at NavigationProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\NavigationContext.jsx:24:31)
+    at SubscriptionProvider (C:\Users\Hp\Desktop\Software\nepse app\src\context\SubscriptionContext.jsx:10:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+[ErrorBoundary - src/components/StockSelectionScreener.tsx] caught: TypeError: Cannot read properties of null (reading 
+'length')
+    at StockSelectionScreener [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39msrc\components\StockSelectionScreener.tsx:23:62[90m)[39m
+    at renderWithHooks [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:15486:18[90m)[39m
+    at mountIndeterminateComponent [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:20103:13[90m)[39m
+    at beginWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:21626:16[90m)[39m
+    at beginWork$1 [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:27465:14[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26599:12[90m)[39m
+    at workLoopSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26505:5[90m)[39m
+    at renderRootSync [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:26473:7[90m)[39m
+    at recoverFromConcurrentError [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25889:20[90m)[39m
+    at performConcurrentWorkOnRoot [90m(C:\Users\Hp\Desktop\Software\nepse 
+app\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom.development.js:25789:22[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at StockSelectionScreener (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\StockSelectionScreener.tsx:16:11)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\components\\ErrorBoundary.jsx:5:1)\n'[39m +
+    [32m'    at NavigationProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\NavigationContext.jsx:24:31)\n'[39m +
+    [32m'    at SubscriptionProvider (C:\\Users\\Hp\\Desktop\\Software\\nepse 
+app\\src\\context\\SubscriptionContext.jsx:10:33)'[39m
+}
+
+[90mstderr[2m | qa/tests/phase3_cards_and_subcards.test.jsx[2m > [22m[2mPhase 3E — Inventory Card & Sub-Card 
+Mount Matrix (Normal, Empty, Null & Error States)[2m > [22m[2m[BUG REPRO] BreakoutAlertDialog crashes with React 
+Rules-of-Hooks error when isOpen transitions from false to true
+[22m[39mWarning: Internal React error: Expected static flag was missing. Please notify the React team.
+    at BreakoutAlertDialog (C:\Users\Hp\Desktop\Software\nepse app\src\components\BreakoutAlertDialog.jsx:12:3)
+
+ [31m❯[39m qa/tests/phase3_services125.test.jsx [2m([22m[2m3 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 10164[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 3D — Data-Driven Test Across All 125 Service Hub Services[2m > [22mServicesHub shell renders with normal, empty, and null stock lists and supports search & category filtering [33m683[2mms[22m[39m
+[31m   [31m×[31m Phase 3D — Data-Driven Test Across All 125 Service Hub Services[2m > [22mloops over all 125 services in ALL_SERVICES, mounts each service, and records pass/fail telemetry[33m 9306[2mms[22m[31m[39m
+[31m     → expected [ { …(9) }, { …(9) } ] to deeply equal [][39m
+[31m   [31m×[31m Phase 3D — Data-Driven Test Across All 125 Service Hub Services[2m > [22m[BUG REPRO] Dispatching open_service for "alpha-playbook" or "distribution-leaders" (used by Dashboard.jsx & EntryExitAnalyzer.tsx) silently fails to open because 39 SERVICE_COMPONENTS keys are missing from ALL_SERVICES[90m 141[2mms[22m[31m[39m
+[31m     → expected null not to be null[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 6 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m qa/tests/phase3_calculations.test.mjs[2m > [22mPhase 3A — Financial Calculations 
+& Statutory Fee Unit Tests (src/utils/calculations.js)[2m > [22m[BUG REPRO] adjustForBonusShare(0, 500, 20) and 
+adjustForRightShare(0, 500, 0.5, 100) return NaN for newWacc due to unguarded division by zero (0 / 0)
+[31m[1mAssertionError[22m: expected true to be false // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- false[39m
+[31m+ true[39m
+
+[36m [2m❯[22m qa/tests/phase3_calculations.test.mjs:[2m106:50[22m[39m
+    [90m104| [39m    [35mconst[39m bonusZeroUnits [33m=[39m [34madjustForBonusShare[39m([34m0[39m[33m,[39m 
+[34m500[39m[33m,[39m [34m20[39m)[33m;[39m
+    [90m105| [39m    [35mconst[39m rightZeroUnits [33m=[39m [34madjustForRightShare[39m([34m0[39m[33m,[39m 
+[34m500[39m[33m,[39m [34m0.5[39m[33m,[39m [34m100[39m)[33m;[39m
+    [90m106| [39m    [34mexpect[39m([33mNumber[39m[33m.[39m[34misNaN[39m(bonusZeroUnits[33m.[39mnewWacc))[
+33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+    [90m   | [39m                                                 [31m^[39m
+    [90m107| [39m    [34mexpect[39m([33mNumber[39m[33m.[39m[34misNaN[39m(rightZeroUnits[33m.[39mnewWacc))[
+33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+    [90m108| [39m  })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m qa/tests/phase3_calculations.test.mjs[2m > [22mPhase 3A — Financial Calculations 
+& Statutory Fee Unit Tests (src/utils/calculations.js)[2m > [22m[BUG REPRO] Statutory Buy Cost inconsistency: 
+calculateBuyDetails sets buy dpFee=0 while calculateNepseStatutoryTrade and calculateNetProfit charge buyDp=25
+[31m[1mAssertionError[22m: expected 50187.5 to be 50212.5 // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 50212.5[39m
+[31m+ 50187.5[39m
+
+[36m [2m❯[22m qa/tests/phase3_calculations.test.mjs:[2m141:28[22m[39m
+    [90m139| [39m    [90m// Expected: identical totalBuyCost across all 3 statutory calcula[39m…
+    [90m140| [39m    [90m// Actual bug: b1.totalAmount = 50187.5 (dpFee=0) vs b2.totalBuyCo[39m…
+    [90m141| [39m    
+[34mexpect[39m(b1[33m.[39mtotalAmount)[33m.[39m[34mtoBe[39m(b2[33m.[39mtotalBuyCost)[33m;[39m
+    [90m   | [39m                           [31m^[39m
+    [90m142| [39m    
+[34mexpect[39m(b1[33m.[39mtotalAmount)[33m.[39m[34mtoBe[39m(b3[33m.[39mtotalBuyCost)[33m;[39m
+    [90m143| [39m  })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m qa/tests/phase3_calculations.test.mjs[2m > [22mPhase 3B — Risk Management & 
+EntryRiskCard CGT Bug Verification (src/utils/riskManagement.js)[2m > [22m[BUG REPRO] EntryRiskCard passes 
+holdingDays:520 to calculateNetProfit, which ignores holdingDays and charges 7.5% short-term CGT instead of 5% 
+long-term CGT
+[31m[1mAssertionError[22m: expected '7.5%' to be '5%' // Object.is equality[39m
+
+Expected: [32m"5%"[39m
+Received: [31m"[7m7.[27m5%"[39m
+
+[36m [2m❯[22m qa/tests/phase3_calculations.test.mjs:[2m170:46[22m[39m
+    [90m168| [39m    [90m// Expected for 520 days (>365d): holdingDays === 520 and cgtRate [39m…
+    [90m169| [39m    [90m// Actual bug: calculateNetProfit returns holdingDays: null, cgtRa[39m…
+    [90m170| [39m    
+[34mexpect[39m(resFromEntryRiskCardCall[33m.[39mcgtRate)[33m.[39m[34mtoBe[39m([32m'5%'[39m)[33m;[39m
+    [90m   | [39m                                             [31m^[39m
+    [90m171| [39m  })[33m;[39m
+    [90m172| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m qa/tests/phase3_cards_and_subcards.test.jsx[2m > [22mPhase 3E — Inventory Card & 
+Sub-Card Mount Matrix (Normal, Empty, Null & Error States)[2m > [22m[BUG REPRO] SetupScoreCard Statistical Edge (Δ) 
+is permanently stuck on "—" / "Requires Setup History" because quantMetrics.expectancy.pWin does not exist
+[31m[1mAssertionError[22m: expected 'Technical Setup Score🟢 BULLISH SETUP…' not to contain 'Requires Setup 
+History'[39m
+
+Expected: [32m"Requires Setup History"[39m
+Received: [31m"Technical Setup Score🟢 BULLISH SETUPSTRONG BUY82/ 100Evidence ConfidenceLOWSetup Structureneutral 
+setupSignal AgreementNormalData QualityHIGH (0 bars) Institutional Quant & Market Theory EdgeMath Expectancy (EV)+Rs. 
+4,250Profit Factor: 2.4xStatistical Edge (Δ)—Requires Setup HistoryVolume & Supply FlowOrderly VolumeNormal 
+ParticipationMansfield RS vs NEPSEIn-LineConsolidating Why this setup scores wellNo significant bullish confirmation 
+recorded. Warnings & ResistanceNo critical structural warning detected."[39m
+
+[36m [2m❯[22m qa/tests/phase3_cards_and_subcards.test.jsx:[2m237:22[22m[39m
+    [90m235| [39m    [34mcleanup[39m()[33m;[39m
+    [90m236| [39m    [90m// Expected: Statistical Edge renders numeric delta (+26.8%) inste[39m…
+    [90m237| [39m    [34mexpect[39m(text)[33m.[39mnot[33m.[39m[34mtoContain[39m([32m'Requires Setup 
+History'[39m)[33m;[39m
+    [90m   | [39m                     [31m^[39m
+    [90m238| [39m  })[33m;[39m
+    [90m239| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m qa/tests/phase3_services125.test.jsx[2m > [22mPhase 3D — Data-Driven Test Across 
+All 125 Service Hub Services[2m > [22mloops over all 125 services in ALL_SERVICES, mounts each service, and records 
+pass/fail telemetry
+[31m[1mAssertionError[22m: expected [ { …(9) }, { …(9) } ] to deeply equal [][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Array [][39m
+[31m+ Array [[39m
+[31m+   Object {[39m
+[31m+     "category": "flagship",[39m
+[31m+     "errorMsg": "ErrorBoundary fallback triggered on render: Backtest Engine & Walk-Forward ReportNEPSE 
+Feed•flagshipLatest Session⚠️Backtest Engine & Walk-Forward Report Telemetry NoticeAn unexpected render issue was 
+safely caught in Backtest Engine & Walk-Forward Report. Other t",[39m
+[31m+     "hasErrorFallback": true,[39m
+[31m+     "id": "tab.services.svc_backtest_report",[39m
+[31m+     "name": "Backtest Engine & Walk-Forward Report",[39m
+[31m+     "serviceId": "backtest-report",[39m
+[31m+     "sourceFile": "src/components/BacktestReportScreen.tsx",[39m
+[31m+     "status": "FAIL",[39m
+[31m+     "textLen": 344,[39m
+[31m+   },[39m
+[31m+   Object {[39m
+[31m+     "category": "calculators",[39m
+[31m+     "errorMsg": "Blank <InfoBanner>: StockSplitCalculator passes title/text props instead of children 
+(calculators.tsx:1253)",[39m
+[31m+     "hasErrorFallback": false,[39m
+[31m+     "id": "tab.services.svc_stock_split",[39m
+[31m+     "name": "✂️ Stock Split & Par Value Adjustment",[39m
+[31m+     "serviceId": "stock-split",[39m
+[31m+     "sourceFile": "src/components/calculators.tsx",[39m
+[31m+     "status": "FAIL",[39m
+[31m+     "textLen": 430,[39m
+[31m+   },[39m
+[31m+ ][39m
+
+[36m [2m❯[22m qa/tests/phase3_services125.test.jsx:[2m178:20[22m[39m
+    [90m176| [39m    [35mconst[39m failed [33m=[39m results[33m.[39m[34mfilter[39m((r) [33m=>[39m 
+r[33m.[39mstatus [33m===[39m [32m'FAIL'[39m)[33m;[39m
+    [90m177| [39m    [90m// Report any failed service clearly[39m
+    [90m178| [39m    [34mexpect[39m(failed)[33m.[39m[34mtoEqual[39m([])[33m;[39m
+    [90m   | [39m                   [31m^[39m
+    [90m179| [39m  })[33m;[39m
+    [90m180| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m qa/tests/phase3_services125.test.jsx[2m > [22mPhase 3D — Data-Driven Test Across 
+All 125 Service Hub Services[2m > [22m[BUG REPRO] Dispatching open_service for "alpha-playbook" or 
+"distribution-leaders" (used by Dashboard.jsx & EntryExitAnalyzer.tsx) silently fails to open because 39 
+SERVICE_COMPONENTS keys are missing from ALL_SERVICES
+[31m[1mAssertionError[22m: expected null not to be null[39m
+[36m [2m❯[22m qa/tests/phase3_services125.test.jsx:[2m198:26[22m[39m
+    [90m196| [39m    [90m// Expected: AlphaPlaybookService opens in detail view with a head[39m…
+    [90m197| [39m    [90m// Actual bug: headerH2 is null because 'alpha-playbook' is not in[39m…
+    [90m198| [39m    [34mexpect[39m(headerH2)[33m.[39mnot[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m   | [39m                         [31m^[39m
+    [90m199| [39m  })[33m;[39m
+    [90m200| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m3 failed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[31m6 failed[39m[22m[2m | [22m[1m[32m15 passed[39m[22m[90m (21)[39m
+[2m   Start at [22m 14:18:51
+[2m   Duration [22m 25.64s[2m (transform 13.50s, setup 20ms, collect 20.69s, tests 25.03s, environment 3.96s, prepare 481ms)[22m
+

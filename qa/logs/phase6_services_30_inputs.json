@@ -1,0 +1,279 @@
+{
+  "timestamp": "2026-11-08T12:00:22.751Z",
+  "total": 30,
+  "passed": 26,
+  "failed": 4,
+  "crashed": 0,
+  "results": [
+    {
+      "id": "SVC-IN-01",
+      "name": "Graham Intrinsic Value Model (Classical: EPS 28.5, BVPS 245)",
+      "category": "Flagship:GrahamValuation",
+      "status": "PASS",
+      "expected": "Intrinsic ~ Rs. 396.38, Margin of Safety ~ -31.19% (Overvalued)",
+      "actual": "Intrinsic = Rs. 396.37, MOS = -31.19%",
+      "details": "Verified Math.sqrt(22.5 * eps * bvps) formula parity with calculators.tsx:54."
+    },
+    {
+      "id": "SVC-IN-02",
+      "name": "Graham Liquidation Parity Floor for Loss-Making Scrip (EPS <= 0, BVPS 120)",
+      "category": "Flagship:GrahamValuation",
+      "status": "PASS",
+      "expected": "Intrinsic = Rs. 80.40 (2/3 BVPS floor), MOS = -18.16%",
+      "actual": "Intrinsic = Rs. 80.4, MOS = -18.16%",
+      "details": "Verified loss-making liquidation parity floor logic in calculators.tsx:40."
+    },
+    {
+      "id": "SVC-IN-03",
+      "name": "Interest-Adjusted Graham Valuation (FD Rate 7.5%, Growth 7.0%)",
+      "category": "Flagship:GrahamValuation",
+      "status": "PASS",
+      "expected": "Intrinsic ~ Rs. 376.20",
+      "actual": "Intrinsic = Rs. 376.2, MOS = -38.22%",
+      "details": "Verified interest-adjusted growth formula in calculators.tsx:84."
+    },
+    {
+      "id": "SVC-IN-04",
+      "name": "Decision Probability Index (DPI 0-100) Clamping & Verdict Assignment",
+      "category": "Flagship:DPI",
+      "status": "PASS",
+      "expected": "DPI values properly segmented into 4 institutional decision buckets (0-100)",
+      "actual": "All 4 buckets matched institutional criteria in ServicesHub.tsx:405-407",
+      "details": ""
+    },
+    {
+      "id": "SVC-IN-05",
+      "name": "Minervini Stage 2 Trend Template Validation (50 SMA > 150 SMA > 200 SMA)",
+      "category": "Flagship:Minervini",
+      "status": "PASS",
+      "expected": "Minervini Stage 2 criteria satisfied for trending scrip",
+      "actual": "Stage 2 status: true",
+      "details": "Verified 5-parameter Minervini Trend Template alignment."
+    },
+    {
+      "id": "SVC-IN-06",
+      "name": "8-Gate Multibagger Screener Criteria Gate Verification",
+      "category": "Flagship:Multibagger",
+      "status": "PASS",
+      "expected": "All 8 qualitative and quantitative institutional gates evaluated",
+      "actual": "8 / 8 Gates active in MultibaggerHunterService.tsx",
+      "details": ""
+    },
+    {
+      "id": "SVC-IN-07",
+      "name": "Broker Dominance & Cornering (BCR3 >= 60% flags aggressive institutional cornering)",
+      "category": "SmartMoney:BCR3",
+      "status": "PASS",
+      "expected": "BCR3 = 68.24% >= 60.0% (Institutional Cornering Alert)",
+      "actual": "BCR3 = 68.24% (Cornered: true)",
+      "details": "Verified BrokerFlowDominanceService algorithm."
+    },
+    {
+      "id": "SVC-IN-08",
+      "name": "Zero-Sum Floorsheet Invariant: Sum(Buy Turnover) === Sum(Sell Turnover)",
+      "category": "SmartMoney:ZeroSum",
+      "status": "PASS",
+      "expected": "Total Buy (Rs. 5.30 Cr) === Total Sell (Rs. 5.30 Cr), Net Imbalance = 0",
+      "actual": "Total Buy = Rs. 53000000, Total Sell = Rs. 53000000, Imbalance = 0",
+      "details": "Verified Zero-Sum Conservation Law in floorsheet analytics."
+    },
+    {
+      "id": "SVC-IN-09",
+      "name": "Unusual Block Deal Detection (Trade Value >= Rs. 10,000,000 flags Whale Trade)",
+      "category": "SmartMoney:UnusualTrades",
+      "status": "PASS",
+      "expected": "1 deal flagged >= Rs. 1 Cr threshold",
+      "actual": "1 deal flagged (Value: Rs. 13,000,000)",
+      "details": "Verified unusual-trades filter threshold in services.tsx:2880."
+    },
+    {
+      "id": "SVC-IN-10",
+      "name": "Accumulation / Distribution (A/D) Volume Ratio Formula",
+      "category": "SmartMoney:ADRadar",
+      "status": "PASS",
+      "expected": "A/D Ratio = 2.43, Status = Strong Accumulation",
+      "actual": "A/D Ratio = 2.43, Status = Strong Accumulation",
+      "details": "Verified AccumulationDistributionRadar algorithm."
+    },
+    {
+      "id": "SVC-IN-11",
+      "name": "Fibonacci Retracement & Extension Ratios (High Rs. 600, Low Rs. 400)",
+      "category": "Trading:Fibonacci",
+      "status": "PASS",
+      "expected": "23.6%: 552.80, 38.2%: 523.60, 50.0%: 500.00, 61.8%: 476.40, 78.6%: 442.80, Ext 161.8%: 723.60",
+      "actual": "Calculated: 23.6%=552.8, 38.2%=523.6, 50%=500, 61.8%=476.4, 78.6%=442.8, Ext=723.6",
+      "details": "Verified FibonacciCalculatorService.tsx mathematical levels."
+    },
+    {
+      "id": "SVC-IN-12",
+      "name": "Classic Floor Pivot Points (High 525, Low 504, Close 520)",
+      "category": "Trading:PivotPoints",
+      "status": "PASS",
+      "expected": "P=516.33, R1=528.66, S1=507.66, R2=537.33, S2=495.33",
+      "actual": "P=516.33, R1=528.66, S1=507.66, R2=537.33, S2=495.33",
+      "details": "Verified standard floor trader pivot calculation."
+    },
+    {
+      "id": "SVC-IN-13",
+      "name": "Candlestick Pattern Scanner: Bullish Engulfing Detection Logic",
+      "category": "Trading:CandlestickPatterns",
+      "status": "PASS",
+      "expected": "Bullish Engulfing pattern recognized",
+      "actual": "isEngulfing = true",
+      "details": "Verified ShareHubScannersSuite pattern recognition rule."
+    },
+    {
+      "id": "SVC-IN-14",
+      "name": "Technical Ratings Speedometer: 12-Indicator Weighting",
+      "category": "Trading:TechnicalRatings",
+      "status": "PASS",
+      "expected": "Score: 83.3%, Rating: STRONG BUY (10 Bullish / 2 Neutral / 0 Bearish)",
+      "actual": "Score: 83.3%, Rating: STRONG BUY",
+      "details": "Verified TechnicalRatingsGaugeService.tsx algorithm."
+    },
+    {
+      "id": "SVC-IN-15",
+      "name": "Peter Lynch GARP (PEG Ratio) Model (P/E 18.2, EPS Growth 22.5%)",
+      "category": "Valuation:LynchGarp",
+      "status": "PASS",
+      "expected": "PEG = 0.81 < 1.0 (Undervalued / Attractive Growth at Reasonable Price)",
+      "actual": "PEG = 0.81, Attractive: true",
+      "details": "Verified Peter Lynch GARP screener logic in services.tsx."
+    },
+    {
+      "id": "SVC-IN-16",
+      "name": "Equity Risk Premium vs Bank Fixed Deposit (Earnings Yield - FD Rate)",
+      "category": "Valuation:ERP",
+      "status": "PASS",
+      "expected": "Earnings Yield = 5.48%, ERP = -2.02% (Fixed Deposit Yield Advantage)",
+      "actual": "Earnings Yield = 5.48%, ERP = -2.02%",
+      "details": "Verified equity-risk-premium calculations in services.tsx:4320."
+    },
+    {
+      "id": "SVC-IN-17",
+      "name": "Public Free-Float Velocity Analysis (Traded Volume / Float Shares)",
+      "category": "Valuation:FloatVelocity",
+      "status": "PASS",
+      "expected": "Float = 28,00,000 kitta, Turnover Velocity = 5.50% of free float traded",
+      "actual": "Float = 2,800,000, Velocity = 5.5%",
+      "details": "Verified float-analytics calculation in services.tsx."
+    },
+    {
+      "id": "SVC-IN-18",
+      "name": "Promoter Share 3-Year Lock-in Expiry Countdown Calculation",
+      "category": "Valuation:PromoterLockin",
+      "status": "PASS",
+      "expected": "Expiry Date = 2026-11-15, Remaining Days = 7 (High Supply Shock Risk)",
+      "actual": "Expiry = 2026-11-15, Remaining Days = 7",
+      "details": "Verified PromoterSharesService.tsx countdown logic."
+    },
+    {
+      "id": "SVC-IN-19",
+      "name": "NRB Safety Shield Regulatory Bounds (CAR >= 11.5%, NPL <= 3.5%)",
+      "category": "Regulatory:SafetyShield",
+      "status": "PASS",
+      "expected": "Bank A passes safety shield; Bank B flags regulatory shortfall",
+      "actual": "Bank A compliant: true; Bank B compliant: false",
+      "details": "Verified NRB Directive 11 Capital Adequacy and NPL thresholds."
+    },
+    {
+      "id": "SVC-IN-20",
+      "name": "Live NRB Forex Rate Converter (100 USD to NPR)",
+      "category": "Regulatory:Forex",
+      "status": "PASS",
+      "expected": "100 USD = NPR 13,450.00 (Buy) / NPR 13,510.00 (Sell)",
+      "actual": "Buy: NPR 13450, Sell: NPR 13510",
+      "details": "Verified NRB Forex conversion math in services.tsx:4550."
+    },
+    {
+      "id": "SVC-IN-21",
+      "name": "Federation Bullion Benchmark (Fine Gold Tola to Gram Conversion: 11.664g)",
+      "category": "Regulatory:Bullion",
+      "status": "PASS",
+      "expected": "1 Tola (11.664g) @ Rs. 168,500 -> 10 Grams = Rs. 144,461.61",
+      "actual": "Calculated 10 Grams = Rs. 144461.59",
+      "details": "Verified Federation of Nepal Gold and Silver Dealers standard."
+    },
+    {
+      "id": "SVC-IN-22",
+      "name": "Stock Split & Par Value Adjustment Invariant (100 shares @ Rs. 800, Par 100 -> 50)",
+      "category": "Calculators:StockSplit",
+      "status": "PASS",
+      "expected": "New Shares = 200, New Price = Rs. 400, Total Portfolio Valuation Invariant = Rs. 80,000",
+      "actual": "Shares = 200, Price = Rs. 400, Pre-Val = Rs. 80000, Post-Val = Rs. 80000",
+      "details": "Verified StockSplitCalculator mathematical invariant in calculators.tsx:1235."
+    },
+    {
+      "id": "SVC-IN-23",
+      "name": "Multi-Lot Buy Averaging & Blended WACC with 10% Bonus Dilution",
+      "category": "Calculators:WaccAveraging",
+      "status": "PASS",
+      "expected": "Total Shares = 330, Total Outlay = Rs. 78,000, Blended WACC = Rs. 236.36/share",
+      "actual": "Diluted Shares = 330, Blended WACC = Rs. 236.36",
+      "details": "Verified WaccAveragingCalculator mathematical formula in calculators.tsx:1400."
+    },
+    {
+      "id": "SVC-IN-24",
+      "name": "Dividend Yield & Cash Tax on Bonus Share Par Value (5% tax on Rs. 100 par)",
+      "category": "Calculators:Dividend",
+      "status": "PASS",
+      "expected": "Bonus Units = 75, Bonus Tax = Rs. 375, Net Cash = Rs. 2,125",
+      "actual": "Bonus = 75, Tax on Bonus = Rs. 375, Net Cash = Rs. 2125",
+      "details": "Verified DividendCalculator statutory bonus tax deduction in calculators.tsx:880."
+    },
+    {
+      "id": "SVC-IN-25",
+      "name": "Position Sizing & Risk/Reward 1:2 Plan Solver",
+      "category": "Calculators:RiskReward",
+      "status": "PASS",
+      "expected": "Position Size = 500 kitta, Target = Rs. 380, Outlay = Rs. 160,000",
+      "actual": "Kitta = 500, Target = Rs. 380, Outlay = Rs. 160000",
+      "details": "Verified RiskRewardCalculator position sizing engine in calculators.tsx:1120."
+    },
+    {
+      "id": "SVC-IN-26",
+      "name": "SIP Wealth Compounding Simulator (Rs. 5,000/mo, 15 yrs, 12% annual)",
+      "category": "Calculators:SIP",
+      "status": "PASS",
+      "expected": "Invested = Rs. 9,00,000, Future Wealth ~ Rs. 25.22 Lakhs",
+      "actual": "Invested = Rs. 900000, FV = Rs. 2,522,880, Gains = Rs. 1,622,880",
+      "details": "Verified monthly annuity compounding formula in calculators.tsx:1020."
+    },
+    {
+      "id": "SVC-IN-27",
+      "name": "StockSplitCalculator passes title/text props to InfoBanner instead of children",
+      "category": "Calculators:StockSplit:InfoBanner",
+      "status": "FAIL",
+      "expected": "InfoBanner receives explanation string as children ({children})",
+      "actual": "FAIL (BUG-008): InfoBanner invoked with title=\"...\" text=\"...\" causing empty text node in UI",
+      "details": "Confirmed in Playwright screenshot 19_desktop_service_detail_stock_split.png."
+    },
+    {
+      "id": "SVC-IN-28",
+      "name": "WaccAveragingCalculator passes title/text props to InfoBanner instead of children",
+      "category": "Calculators:WaccAveraging:InfoBanner",
+      "status": "FAIL",
+      "expected": "InfoBanner receives explanation string as children ({children})",
+      "actual": "FAIL (BUG-079): InfoBanner invoked with title=\"...\" text=\"...\" causing empty text node in UI",
+      "details": "Confirmed in Playwright inspect and calculators.tsx:1423-1427."
+    },
+    {
+      "id": "SVC-IN-29",
+      "name": "Service Registry: 39 Mapped Services Missing from ALL_SERVICES Array",
+      "category": "ServicesHub:OrphanServices",
+      "status": "FAIL",
+      "expected": "All 39 mapped service components registered in ALL_SERVICES array",
+      "actual": "FAIL (BUG-003): alpha-playbook and 38 other services missing from ALL_SERVICES",
+      "details": "Verified via phase3_services125.test.jsx line 181."
+    },
+    {
+      "id": "SVC-IN-30",
+      "name": "BacktestReportScreen.tsx triggers ErrorBoundary fallback when backend is offline",
+      "category": "Flagship:BacktestReport",
+      "status": "FAIL",
+      "expected": "BacktestReportScreen implements deterministic client-side backtesting fallback when API is unreachable",
+      "actual": "FAIL (BUG-005): Zero client-side fallback; causes fetch failure or ErrorBoundary crash",
+      "details": "Confirmed in Playwright screenshot 20_desktop_service_detail_backtest_report.png and phase3_services125.test.jsx."
+    }
+  ]
+}

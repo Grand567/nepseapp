@@ -1,0 +1,2503 @@
+{
+  "summary": {
+    "list_key_array_index": 126,
+    "division_toFixed_no_zero_guard": 95,
+    "raw_fetch_without_timeout_signal": 94,
+    "storage_access_without_try": 85,
+    "date_UTC_slice_not_NPT": 55,
+    "JSON_parse_without_try": 37,
+    "console_log": 31,
+    "promise_then_without_catch_nearby": 31,
+    "effect_fetch_without_unmount_or_race_guard": 21,
+    "window_open_native_webview": 8,
+    "client_exposed_VITE_secret_env": 7,
+    "hardcoded_localhost_url": 7,
+    "xss_dangerouslySetInnerHTML": 5,
+    "listener_add_exceeds_remove": 3,
+    "possible_prop_or_state_mutation": 3,
+    "socket_subscription_without_close": 1
+  },
+  "servicesDetailWrappedInErrorBoundary": true,
+  "nextjsFilesInViteSrc": [
+    "src/app/api/ai-guru/assess/route.ts",
+    "src/app/api/floorsheet/hub/route.ts",
+    "src/app/api/signals/track-record/route.ts",
+    "src/app/api/stocks/[symbol]/telemetry/route.ts",
+    "src/app/api/system/audit-health/route.ts"
+  ],
+  "nodeOnlyModulesInSrc": [
+    "src/lib/db/drabyashreeDb.ts",
+    "src/services/signalTrackRecord/rebuildSignalTrackRecord.ts",
+    "src/utils/signals/backtestEngine.js"
+  ],
+  "findings": {
+    "raw_fetch_without_timeout_signal": [
+      {
+        "loc": "src/app/api/ai-guru/assess/route.ts:78",
+        "text": "const res = await fetch("
+      },
+      {
+        "loc": "src/app/api/ai-guru/assess/route.ts:108",
+        "text": "const res = await fetch(`${baseUrl}/chat/completions`, {"
+      },
+      {
+        "loc": "src/components/AccountManager.jsx:96",
+        "text": "const res = await fetch(`${proxyBase}/api/meroshare/dp-list`);"
+      },
+      {
+        "loc": "src/components/AccountManager.jsx:113",
+        "text": "const res = await fetch('https://webbackend.cdsc.com.np/api/meroShare/capital/');"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1829",
+        "text": "const res = await fetch(`${PROXY}/api/portfolio/calculate`, {"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1874",
+        "text": "fetch(`${PROXY}/api/market/top-gainers`).then(r => r.json()).catch(() => ({ data: [] })),"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1875",
+        "text": "fetch(`${PROXY}/api/market/top-losers`).then(r => r.json()).catch(() => ({ data: [] }))"
+      },
+      {
+        "loc": "src/components/AiGuruQuantitativeCard.tsx:57",
+        "text": "const response = await fetch(\"/api/ai-guru/assess\", {"
+      },
+      {
+        "loc": "src/components/analyzer/SignalTrackRecord.jsx:76",
+        "text": "const res = await fetch(`${base}/api/radar/signal-track-record`, { cache: 'no-store' });"
+      },
+      {
+        "loc": "src/components/BacktestReportScreen.tsx:67",
+        "text": "const res = await fetch(`${getProxyBase()}/api/backtest/run`, {"
+      },
+      {
+        "loc": "src/components/BacktestReportScreen.tsx:88",
+        "text": "fetch(`${getProxyBase()}/api/backtest/latest`)"
+      },
+      {
+        "loc": "src/components/Dashboard.jsx:1488",
+        "text": "fetch(`${base}/api/radar/signal-track-record`, { cache: 'no-store' })"
+      },
+      {
+        "loc": "src/components/FloorsheetServiceTab.tsx:56",
+        "text": "const res = await fetch(`${base}/api/floorsheet/hub?${params.toString()}`, {"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:48",
+        "text": "res = await fetch(url, options);"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:534",
+        "text": "const dpRes = await fetch(`${MEROSHARE_BASE}/capital/`);"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:548",
+        "text": "const loginRes = await fetch(`${MEROSHARE_BASE}/auth/`, {"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:562",
+        "text": "const detailRes = await fetch(`${MEROSHARE_BASE}/applicableIssue/applicable/detail/${selectedIpo}`, {"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:570",
+        "text": "const submitRes = await fetch(`${MEROSHARE_BASE}/applicantForm/`, {"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:617",
+        "text": "const dpRes = await fetch(`${proxyBase}/api/meroshare/dp-list`);"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:81",
+        "text": "const res = await fetch(`${base}/api/telegram/status`);"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:112",
+        "text": "const res = await fetch(`${base}/api/telegram/config?botToken=${encodeURIComponent(token)}&chatId=${encodeURIComponent(chat)}&enabled=true`, {"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:123",
+        "text": "const sRes = await fetch(`${base}/api/telegram/status`);"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:157",
+        "text": "let res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:173",
+        "text": "const testRes = await fetch(`https://api.telegram.org/bot${token}/test/sendMessage`, {"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:214",
+        "text": "const res = await fetch(`${base}/api/telegram/test?botToken=${encodeURIComponent(token)}&chatId=${encodeURIComponent(chat)}`, {"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:242",
+        "text": "const res = await fetch(`${base}/api/telegram/test-alert`, {"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:270",
+        "text": "const res = await fetch(`${base}/api/telegram/dispatch-morning-digest`, {"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:312",
+        "text": "let tgRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, { method: 'GET' });"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:319",
+        "text": "const testTgRes = await fetch(`https://api.telegram.org/bot${token}/test/getUpdates`, { method: 'GET' });"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:373",
+        "text": "const res = await fetch(`${base}/api/telegram/detect-chat-id?botToken=${encodeURIComponent(token)}`, {"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:420",
+        "text": "const res = await fetch(`${base}/api/discord/status`);"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:435",
+        "text": "const res = await fetch(`${base}/api/discord/config`, {"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:443",
+        "text": "const sRes = await fetch(`${base}/api/discord/status`);"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:461",
+        "text": "const res = await fetch(`${base}/api/discord/test`, {"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:484",
+        "text": "const res = await fetch(`${base}/api/discord/test-alert`, {"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:40",
+        "text": "res = await fetch(url, options);"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:416",
+        "text": "const res = await fetch(`${getProxyBase()}/api/ipo/live-listings?refresh=true`);"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:1122",
+        "text": "const response = await fetch(`${getProxyBase()}/api/meroshare/apply`, {"
+      },
+      {
+        "loc": "src/components/PaperTradingJournalScreen.tsx:88",
+        "text": "fetch('/api/paper-trading/state').then(r => r.json()).catch(() => null),"
+      },
+      {
+        "loc": "src/components/PaperTradingJournalScreen.tsx:89",
+        "text": "fetch('/api/paper-trading/attribution').then(r => r.json()).catch(() => null)"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:49",
+        "text": "res = await fetch(url, options);"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:95",
+        "text": "const res = await fetch('https://backend.cdsc.com.np/api/meroShare/capital/');"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:175",
+        "text": "const res = await fetch(`${proxyBase}/api/portfolio/tracked-holdings`);"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:212",
+        "text": "const res = await fetch(`${proxyBase}/api/portfolio/sync-holdings`, {"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:241",
+        "text": "const res = await fetch(`${proxyBase}/api/portfolio/untrack-holding`, {"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:262",
+        "text": "const res = await fetch(`${proxyBase}/api/portfolio/track-holding`, {"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:1381",
+        "text": "const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:1406",
+        "text": "const response = await fetch("
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:1420",
+        "text": "const response = await fetch('https://text.pollinations.ai/openai', {"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:509",
+        "text": "const predRes = await fetch(`${proxyBase}/api/predict/nepse`).catch(() => null);"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:690",
+        "text": "const stockRes = await fetch(`${proxyBase}/api/predict/stocks`).catch(() => null);"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:736",
+        "text": "const sentRes = await fetch(`${proxyBase}/api/predict/sentiment`).catch(() => null);"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:745",
+        "text": "const macroRes = await fetch(`${proxyBase}/api/predict/macro`).catch(() => null);"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:43",
+        "text": "const res = await fetch(`${base}/api/system/monitoring-health`);"
+      },
+      {
+        "loc": "src/components/services.tsx:6305",
+        "text": "const resp = await fetch('/api/health');"
+      },
+      {
+        "loc": "src/components/services.tsx:6315",
+        "text": "const resp = await fetch('/api/market-indices');"
+      },
+      {
+        "loc": "src/components/services.tsx:6326",
+        "text": "const resp = await fetch('/api/today-prices');"
+      },
+      {
+        "loc": "src/components/services.tsx:6338",
+        "text": "const brokerResp = await fetch('/api/broker-analysis/NABIL?days=1&refresh=true');"
+      },
+      {
+        "loc": "src/components/ServicesHub.tsx:1347",
+        "text": "const res = await fetch(p);"
+      },
+      {
+        "loc": "src/components/stock/BrokerSmartMoneyCard.tsx:494",
+        "text": "const res = await fetch("
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:3018",
+        "text": "const resp = await fetch(`/api/stocks/${encodeURIComponent(sym)}/ledger-telemetry`, {"
+      },
+      {
+        "loc": "src/components/StockInformationHubModal.tsx:313",
+        "text": "const r = await fetch(p);"
+      },
+      {
+        "loc": "src/components/StockInformationHubModal.tsx:362",
+        "text": "fetch('/api/reconciliation/latest')"
+      },
+      {
+        "loc": "src/components/StockInformationHubModal.tsx:374",
+        "text": "fetch(`/api/stocks/${encodeURIComponent(resolvedSymbol)}/promoter-lockin`)"
+      },
+      {
+        "loc": "src/components/TestSuite.jsx:150",
+        "text": "const iResp = await fetch('/api/market-indices');"
+      },
+      {
+        "loc": "src/hooks/useUnifiedStockTelemetry.ts:27",
+        "text": "const res = await fetch("
+      },
+      {
+        "loc": "src/services/aiGuru/runAiQuantitativeAssessment.ts:441",
+        "text": "const resp = await fetch(`/api/stocks/${encodeURIComponent(resolvedSymbol)}/ledger-telemetry`, {"
+      },
+      {
+        "loc": "src/services/meroShareService.js:112",
+        "text": "const fetchRes = await fetch(options.url, {"
+      },
+      {
+        "loc": "src/services/meroShareService.js:1102",
+        "text": "const pRes = await fetch(`${getProxyBase()}/api/ipo-result/companies${refreshQuery}`, {"
+      },
+      {
+        "loc": "src/services/meroShareService.js:1345",
+        "text": "const pRes = await fetch(`${getProxyBase()}/api/ipo-result/check`, {"
+      },
+      {
+        "loc": "src/services/meroShareService.js:1369",
+        "text": "const pRes = await fetch(`${getProxyBase()}/api/ipo-result/check`, {"
+      },
+      {
+        "loc": "src/services/meroShareService.js:1486",
+        "text": "const pRes = await fetch(`${getProxyBase()}/api/ipo/live-listings?refresh=true`);"
+      },
+      {
+        "loc": "src/services/meroShareService.js:1513",
+        "text": "const pRes2 = await fetch(`${getProxyBase()}/api/meroshare/ipos`);"
+      },
+      {
+        "loc": "src/services/nepseAgentTools.js:316",
+        "text": "const res = await fetch(`${base}/api/agent/analyze`, {"
+      },
+      {
+        "loc": "src/services/nepseAgentTools.js:383",
+        "text": "const directRes = await fetch(directUrl, {"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:129",
+        "text": "const res = await fetch(candidate);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:175",
+        "text": "const res = await fetch(`${base}/api/ledger/5day-history`);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:178",
+        "text": "const res2 = await fetch(`${base}/api/ledger/4day-history`);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:320",
+        "text": "const res = await fetch(`${base}/api/history/${sym}?days=${days}`);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:347",
+        "text": "const localRes = await fetch(candidate);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:409",
+        "text": "const localRes = await fetch(candidate);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:431",
+        "text": "const res = await fetch(`${base}/api/today/static-analytics?symbol=${cleanSym}`);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:714",
+        "text": "const localRes = await fetch(candidate);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:735",
+        "text": "const res = await fetch(url);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:1154",
+        "text": "const res = await fetch(`${base}/api/ledger/subfiles/trajectory/${cleanSym}`);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:1323",
+        "text": "const r = await fetch(p);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:1347",
+        "text": "const res = await fetch(cand);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:1362",
+        "text": "const res = await fetch(`${base}/api/ledger/subfiles/day/${day}`);"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:540",
+        "text": "await fetch(`${apiBase}/api/smart-alerts/register-token`, {"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:694",
+        "text": "const res = await fetch(`${apiBase}/api/notifications?category=${category}&limit=${limit}`);"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:735",
+        "text": "const res = await fetch(`${apiBase}/api/smart-alerts/active`);"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:752",
+        "text": "const res = await fetch(`${apiBase}/api/smart-alerts/history?limit=${limit}`);"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:769",
+        "text": "const res = await fetch(`${apiBase}/api/smart-alerts/test-trigger`, {"
+      },
+      {
+        "loc": "src/utils/servicesApi.js:125",
+        "text": "const resp = await fetch(url, {"
+      }
+    ],
+    "date_UTC_slice_not_NPT": [
+      {
+        "loc": "src/app/api/floorsheet/hub/route.ts:89",
+        "text": "let asOfDate = new Date().toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/app/api/floorsheet/hub/route.ts:439",
+        "text": "asOfDate: new Date().toISOString().slice(0, 10),"
+      },
+      {
+        "loc": "src/app/api/signals/track-record/route.ts:129",
+        "text": "const asOfDate = distinctSessions[0] || new Date().toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/app/api/signals/track-record/route.ts:624",
+        "text": "asOfDate: new Date().toISOString().slice(0, 10),"
+      },
+      {
+        "loc": "src/components/AccumulationDistributionRadar.tsx:850",
+        "text": "const todayNpt = nptDateObj.toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/components/AccumulationDistributionRadar.tsx:999",
+        "text": "a.download = `drabyashree_whale_archive_${new Date().toISOString().split('T')[0]}.json`;"
+      },
+      {
+        "loc": "src/components/AlphaCommandCenter.tsx:153",
+        "text": "t2SettlementDate: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),"
+      },
+      {
+        "loc": "src/components/AlphaPlaybookService.tsx:122",
+        "text": "const todayKey = `nepse_routine_${new Date().toISOString().slice(0, 10)}`;"
+      },
+      {
+        "loc": "src/components/AlphaPlaybookService.tsx:131",
+        "text": "const todayKey = `nepse_routine_${new Date().toISOString().slice(0, 10)}`;"
+      },
+      {
+        "loc": "src/components/AlphaPlaybookService.tsx:734",
+        "text": "const todayKey = `nepse_routine_${new Date().toISOString().slice(0, 10)}`;"
+      },
+      {
+        "loc": "src/components/charts/StockCandlestickChart.tsx:332",
+        "text": "dateStr = new Date(ts * 1000).toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/components/charts/StockCandlestickChart.tsx:339",
+        "text": "dateStr = d.toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/components/charts/StockCandlestickChart.tsx:577",
+        "text": "markerTime = new Date(ts * 1000).toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/components/charts/StockCandlestickChart.tsx:582",
+        "text": "markerTime = new Date(ts * 1000).toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/components/Dashboard.jsx:2249",
+        "text": "const todayStr = new Date().toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:421",
+        "text": "appliedDate: new Date().toISOString().split('T')[0],"
+      },
+      {
+        "loc": "src/components/NRBMacroWidget.jsx:83",
+        "text": "asOf: overrides?.asOf || new Date().toISOString().slice(0, 10),"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:293",
+        "text": "const [date, setDate] = useState(new Date().toISOString().split('T')[0]);"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:854",
+        "text": "date: new Date().toISOString().split('T')[0]"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:614",
+        "text": "prediction_date: new Date().toISOString().slice(0, 10),"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:176",
+        "text": "a.download = `nepse-personal-desk-backup-${new Date().toISOString().split('T')[0]}.json`;"
+      },
+      {
+        "loc": "src/components/RegulatoryHub.tsx:61",
+        "text": "setForexDate(res?.date || res?.data?.date || new Date().toISOString().split('T')[0]);"
+      },
+      {
+        "loc": "src/components/ShareHubChart.jsx:833",
+        "text": "time = new Date(ts * 1000).toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/components/ShareHubChart.jsx:838",
+        "text": "time = new Date(ts * 1000).toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/components/StockBrokerAnalysisTab.jsx:188",
+        "text": "const todayNpt = nptDateObj.toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/components/StockInformationHubModal.tsx:1127",
+        "text": "const todayIso = formatNptDateIso ? formatNptDateIso(new Date()) : new Date().toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/components/StockTechnicalGaugeCard.jsx:22",
+        "text": "const todayStr = stock?.businessDate || stock?.date || new Date().toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/services/floorsheet/floorsheetHubEngine.ts:185",
+        "text": "new Date().toISOString().slice(0, 10)"
+      },
+      {
+        "loc": "src/services/signalTracker.js:120",
+        "text": "const today = new Date().toISOString().split('T')[0];"
+      },
+      {
+        "loc": "src/services/signalTracker.js:484",
+        "text": "const todayStr = new Date().toISOString().split('T')[0];"
+      },
+      {
+        "loc": "src/services/whaleDailyArchive.js:115",
+        "text": "marketDate = new Date().toISOString().split('T')[0];"
+      },
+      {
+        "loc": "src/utils/analyzerValidation.js:113",
+        "text": "date: d.toISOString().slice(0, 10),"
+      },
+      {
+        "loc": "src/utils/bookClosureTracker.js:96",
+        "text": "const key = cd.toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/candlestickPatterns.js:507",
+        "text": "const todayStr = fallbackStock.businessDate || fallbackStock.date || new Date().toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/candlestickPatterns.js:527",
+        "text": "dateStr = new Date(ts * 1000).toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/candlestickPatterns.js:532",
+        "text": "dateStr = new Date(ts * 1000).toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/candlestickPatterns.js:553",
+        "text": "const todayStr = fallbackStock.businessDate || fallbackStock.date || new Date().toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/floorsheetExport.js:466",
+        "text": "|| new Date().toISOString().split('T')[0];"
+      },
+      {
+        "loc": "src/utils/floorsheetExport.js:1069",
+        "text": "const dtLabel = sessionDate || new Date().toISOString().split('T')[0];"
+      },
+      {
+        "loc": "src/utils/guruEngine.js:770",
+        "text": "const targetSessionDate = marketStatus?.targetSessionDate || new Date().toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/liveData.js:51",
+        "text": "return npt.toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/liveData.js:3882",
+        "text": "businessDate: d.businessDate || new Date().toISOString().split('T')[0],"
+      },
+      {
+        "loc": "src/utils/nepseAdapterLayer.js:49",
+        "text": "return parsed.toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/nepseAdapterLayer.js:163",
+        "text": "? (timestamp > 1e11 ? new Date(timestamp) : new Date(timestamp * 1000)).toISOString().slice(0, 10)"
+      },
+      {
+        "loc": "src/utils/nepseCalendar.js:405",
+        "text": "return new Date(date).toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/priceAdjustment.js:319",
+        "text": "const dateStr = d.date ? String(d.date).slice(0, 10) : dt.toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/priceAdjustment.js:330",
+        "text": "const weekKey = weekStartDt.toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/signals/backtestEngine.js:512",
+        "text": "const dateStr = new Date().toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/signals/marketContextSignals.js:263",
+        "text": "weaknesses.push(`🚨 DIVIDEND TRAP WARNING: Book closure is ${daysToClosure} session(s) away (${targetClosure.toISOString().slice(0, 10)}). High probability of institutional pre-clo"
+      },
+      {
+        "loc": "src/utils/signals/marketContextSignals.js:291",
+        "text": "bookClosureDate: targetClosure ? targetClosure.toISOString().slice(0, 10) : null,"
+      },
+      {
+        "loc": "src/utils/signals/paperTradingTracker.js:90",
+        "text": "date = new Date().toISOString().slice(0, 10),"
+      },
+      {
+        "loc": "src/utils/signals/paperTradingTracker.js:158",
+        "text": "export function processDailyPaperOutcomes(marketQuotes = {}, currentDate = new Date().toISOString().slice(0, 10)) {"
+      },
+      {
+        "loc": "src/utils/watchlistAlerts.js:356",
+        "text": "const todayStr = new Date().toISOString().slice(0, 10);"
+      },
+      {
+        "loc": "src/utils/watchlistAlerts.js:408",
+        "text": "const lastDate = config.lastTriggeredAt ? new Date(config.lastTriggeredAt).toISOString().slice(0, 10) : null;"
+      },
+      {
+        "loc": "src/views/WaccTaxCalculator.jsx:425",
+        "text": "const date = lot.date || new Date().toISOString().slice(0, 10);"
+      }
+    ],
+    "division_toFixed_no_zero_guard": [
+      {
+        "loc": "src/app/api/signals/track-record/route.ts:443",
+        "text": "bestAnomalyScore = Number(Math.min(5.0, Math.max(0.4, buyShare / baseline)).toFixed(2));"
+      },
+      {
+        "loc": "src/app/api/signals/track-record/route.ts:544",
+        "text": "Math.min(4.8, Math.max(0.5, actualShare / baseline)).toFixed(2)"
+      },
+      {
+        "loc": "src/components/analyzer/SignalTrackRecord.jsx:105",
+        "text": "? Number((closed.reduce((sum, s) => sum + (s.outcome?.returnPct ?? 0), 0) / closed.length).toFixed(2))"
+      },
+      {
+        "loc": "src/components/analyzer/SignalTrackRecord.jsx:108",
+        "text": "? Number((closed.reduce((sum, s) => sum + (s.outcome?.netReturnPct ?? 0), 0) / closed.length).toFixed(2))"
+      },
+      {
+        "loc": "src/components/BrokerAccumulationView.tsx:102",
+        "text": "if (to > 0 && vol > 0) return +(to / vol).toFixed(2);"
+      },
+      {
+        "loc": "src/components/charts/StockCandlestickChart.tsx:68",
+        "text": "result[period] = al === 0 ? 100 : +(100 - 100 / (1 + ag / al)).toFixed(2);"
+      },
+      {
+        "loc": "src/components/charts/StockCandlestickChart.tsx:73",
+        "text": "result[i] = al === 0 ? 100 : +(100 - 100 / (1 + ag / al)).toFixed(2);"
+      },
+      {
+        "loc": "src/components/charts/StockCandlestickChart.tsx:121",
+        "text": "result[i] = +(slice.reduce((a, b) => a + b, 0) / period).toFixed(0);"
+      },
+      {
+        "loc": "src/components/PromoterSharesService.tsx:178",
+        "text": "return (stocks.reduce((acc, s) => acc + s.promoterPct, 0) / stocks.length).toFixed(1);"
+      },
+      {
+        "loc": "src/components/services.tsx:2208",
+        "text": "const list = Object.values(map).map((s: any) => ({ ...s, pChange: +(s.totalChange / s.stockCount).toFixed(2) }));"
+      },
+      {
+        "loc": "src/components/services.tsx:4860",
+        "text": "return (sum / discountFunds.length).toFixed(1);"
+      },
+      {
+        "loc": "src/components/ShareHubChart.jsx:118",
+        "text": "result[period] = al === 0 ? 100 : +(100 - 100 / (1 + ag / al)).toFixed(2);"
+      },
+      {
+        "loc": "src/components/ShareHubChart.jsx:123",
+        "text": "result[i] = al === 0 ? 100 : +(100 - 100 / (1 + ag / al)).toFixed(2);"
+      },
+      {
+        "loc": "src/components/ShareHubChart.jsx:168",
+        "text": "result[i] = +(slice.reduce((a, b) => a + b, 0) / period).toFixed(0);"
+      },
+      {
+        "loc": "src/components/ShortTermProfitPlan.jsx:186",
+        "text": "const upperWickRatio = Number((upperWick / candleRange).toFixed(2));"
+      },
+      {
+        "loc": "src/components/StockBrokerAnalysisTab.jsx:2635",
+        "text": "Rs. {safeNum(activeBrokerData?.vwap || (activeBrokerData?.totalAmount && activeBrokerData?.totalVolume ? +(activeBrokerData.totalAmount / activeBrokerData.totalVolume).toFixed(2) :"
+      },
+      {
+        "loc": "src/components/StockBrokerAnalysisTab.jsx:2749",
+        "text": "const sessionVwap = df.vwap || (df.turnover && df.buyVol ? (df.turnover / df.buyVol).toFixed(2) : null);"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:2733",
+        "text": "cmfValue = +(sumMFV / sumVol).toFixed(2);"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:5354",
+        "text": "if (totQty > 0) return +(totAmt / totQty).toFixed(2);"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:5823",
+        "text": "if (totQty > 0) return +(totAmt / totQty).toFixed(1);"
+      },
+      {
+        "loc": "src/components/StockInformationHubModal.tsx:607",
+        "text": "? Number(((totalBuyCost + estSellFeesAtBreakeven.totalFee) / safeKitta).toFixed(2))"
+      },
+      {
+        "loc": "src/services/floorsheet/floorsheetHubEngine.ts:326",
+        "text": "? Number((totalBid / totalAsk).toFixed(2))"
+      },
+      {
+        "loc": "src/services/floorsheet/floorsheetHubEngine.ts:503",
+        "text": "? Number((totalSessionTurnover / totalSessionKitta).toFixed(2))"
+      },
+      {
+        "loc": "src/services/fundamentals/nepseRegulatoryEngine.ts:146",
+        "text": "price !== null && epsTtm !== 0 ? Number((price / epsTtm).toFixed(2)) : null;"
+      },
+      {
+        "loc": "src/services/fundamentals/nepseRegulatoryEngine.ts:149",
+        "text": "? Number((price / bookValuePerShare).toFixed(2))"
+      },
+      {
+        "loc": "src/services/meroShareService.js:2043",
+        "text": "const calculatedWacc = Number((totalVal / totalQty).toFixed(2));"
+      },
+      {
+        "loc": "src/services/nepseAgentTools.js:361",
+        "text": "const rr = (ep.riskPerShare > 0 && ep.rewardToTarget1 != null) ? `1 : ${(ep.rewardToTarget1 / ep.riskPerShare).toFixed(2)}` : NA;"
+      },
+      {
+        "loc": "src/services/signalTracker.js:395",
+        "text": "? +(totalWinsPct / totalLossesPct).toFixed(2)"
+      },
+      {
+        "loc": "src/services/whaleDailyArchive.js:168",
+        "text": "netAbsorptionRatio = Number((Math.max(0, buyerNetQty) / topBuyer.volume).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/accumulationDistributionEngine.ts:459",
+        "text": "const resultRatio = Number((body / range).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/accumulationDistributionEngine.ts:461",
+        "text": "const wickRatio = Number((upperWick / range).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/accumulationDistributionEngine.ts:896",
+        "text": "const asymmetryRatio = Number((bcr3Buy / effectiveSellConc).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/backtest.js:166",
+        "text": "bStats[`avgReturn_${hKey}`] = +(totalReturn / validH.length).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/backtest.js:167",
+        "text": "bStats[`avgMAE_${hKey}`] = +(totalMAE / validH.length).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/backtest.js:168",
+        "text": "bStats[`avgMFE_${hKey}`] = +(totalMFE / validH.length).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/backtest.js:200",
+        "text": "correlation = +((n * sumXY - sumX * sumY) / denom).toFixed(3);"
+      },
+      {
+        "loc": "src/utils/breakoutTrapEngine.ts:202",
+        "text": "const avgPrice = Number((cl.total / cl.count).toFixed(1));"
+      },
+      {
+        "loc": "src/utils/breakoutTrapEngine.ts:282",
+        "text": "const upperWickRatio = Number((upperWick / candleRange).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/breakoutTrapEngine.ts:284",
+        "text": "const bodyRatio = Number((body / candleRange).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/calculations.js:515",
+        "text": "const netProfitPerShareT1 = +(netProfitT1 / qty).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/calculations.js:520",
+        "text": "const netProfitPerShareT2 = +(netProfitT2 / qty).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/calculations.js:525",
+        "text": "const netLossPerShareSL = +(netLossSL / qty).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/calculations.js:645",
+        "text": "times = +((applicants * 10) / units).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/calculations.js:682",
+        "text": "prob = Math.min(100.0, Math.max(0.01, +(100 / times).toFixed(2)));"
+      },
+      {
+        "loc": "src/utils/calculations.js:1442",
+        "text": "const waccPerShare = Number((totalBuyCost / kitta).toFixed(4));"
+      },
+      {
+        "loc": "src/utils/candlestickPatterns.js:724",
+        "text": "return +(sl.reduce((a, b) => a + b, 0) / sl.length).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/dynamicCalculationEngine.js:304",
+        "text": "const pe = (norm.eps && norm.eps > 0 && price > 0) ? +(price / norm.eps).toFixed(2) : norm.pe;"
+      },
+      {
+        "loc": "src/utils/dynamicCalculationEngine.js:305",
+        "text": "const pbv = (norm.bookValue && norm.bookValue > 0 && price > 0) ? +(price / norm.bookValue).toFixed(2) : norm.pbv;"
+      },
+      {
+        "loc": "src/utils/dynamicCalculationEngine.js:526",
+        "text": "const rrr = +(reward1 / risk).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/guruEngine.js:87",
+        "text": "const upperWickRatio = cHigh > cLow ? +((cHigh - Math.max(cOpen, cClose)) / cRange).toFixed(2) : 0;"
+      },
+      {
+        "loc": "src/utils/indicators.js:203",
+        "text": "return +((currentVol - mean) / stdDev).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/liveData.js:700",
+        "text": "pe: (epsVal && epsVal > 0 && ltp > 0) ? Number((ltp / epsVal).toFixed(2)) : (f.pe ?? f.pe_ratio ?? 0),"
+      },
+      {
+        "loc": "src/utils/liveData.js:701",
+        "text": "pbv: (bvVal && bvVal > 0 && ltp > 0) ? Number((ltp / bvVal).toFixed(2)) : (f.pbv ?? 0),"
+      },
+      {
+        "loc": "src/utils/liveData.js:780",
+        "text": "detail.pe = +(ltp / detail.eps).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/liveData.js:783",
+        "text": "detail.pbv = +(ltp / detail.bookValue).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/liveData.js:1125",
+        "text": "volumeSurgeRatio = +(vol / avgVol).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:844",
+        "text": "vwap: quote?.vwap || (quote?.turnover && quote?.volume ? +(quote.turnover / quote.volume).toFixed(2) : 0),"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:900",
+        "text": "const dayVwap = q?.vwap || (q?.turnover && q?.volume ? +(q.turnover / q.volume).toFixed(2) : 0);"
+      },
+      {
+        "loc": "src/utils/masterAlphaPipeline.js:466",
+        "text": "const upperWickRatio = high > Math.max(open, ltp) ? +((high - Math.max(open, ltp)) / candleRange).toFixed(2) : 0;"
+      },
+      {
+        "loc": "src/utils/masterAlphaPipeline.js:785",
+        "text": "const upperWickRatio = high > Math.max(open, ltp) ? +((high - Math.max(open, ltp)) / candleRange).toFixed(2) : 0;"
+      },
+      {
+        "loc": "src/utils/masterProfitEngine.ts:225",
+        "text": "const statutoryBreakevenPrice = +((buyValue + totalExpenses) / shares).toFixed(1);"
+      },
+      {
+        "loc": "src/utils/masterProfitEngine.ts:670",
+        "text": "const netRRR = +(netRewardPerShare / riskPerShare).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/priceActionEngine.js:417",
+        "text": "const avgPrice = Number((cl.total / cl.count).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/priceAdjustment.js:103",
+        "text": "? +(((pCum - cashDeduction + (rRatio * subPrice)) / denominator).toFixed(2))"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:211",
+        "text": "const intrinsicValue = Number((numerator / y).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:414",
+        "text": "const zScore = Number(((v - mu) / sigma).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:416",
+        "text": "const surgeRatio = Number((v / mu).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:739",
+        "text": "const dominanceRatio = Number((totalBrokerVol / vol).toFixed(3));"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:1240",
+        "text": "const rrr = Number((reward / risk).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:1277",
+        "text": "const rrr = Number((potentialReward / potentialRisk).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:1382",
+        "text": "const bcr3 = Number((top3NetBuy / volume).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:1432",
+        "text": "const obir = Number(((bids - asks) / total).toFixed(3));"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:1692",
+        "text": "const supplyMultiple = Number((expiring / pubFloat).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:1876",
+        "text": "const rrr1 = Number((reward1 / risk).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:1877",
+        "text": "const rrr2 = Number((reward2 / risk).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:2688",
+        "text": "return +(recent.reduce((a, b) => a + b, 0) / recent.length).toFixed(1);"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:2926",
+        "text": "const upperWickRatio = +(upperWick / barRange).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:2927",
+        "text": "const closeLocationValue = +(((barClose - barLow) - (barHigh - barClose)) / barRange).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/quantEngine.js:3117",
+        "text": "const payoffRatio = Number((win / loss).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/setupAnalyzer.js:719",
+        "text": "avgWin  = winTrips.length  ? +(sumWins / winTrips.length).toFixed(2)  : null;"
+      },
+      {
+        "loc": "src/utils/setupAnalyzer.js:720",
+        "text": "avgLoss = lossTrips.length ? +(sumLosses / lossTrips.length).toFixed(2) : null;"
+      },
+      {
+        "loc": "src/utils/setupAnalyzer.js:723",
+        "text": "profitFactor = +(sumWins / sumLosses).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/setupAnalyzer.js:730",
+        "text": "averageDaysHeld = +(totalDays / roundTrips.length).toFixed(1);"
+      },
+      {
+        "loc": "src/utils/setupAnalyzer.js:1302",
+        "text": "const rrr1 = +((t1Cap.price - ltp) / finalRiskPerShare).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/setupAnalyzer.js:1303",
+        "text": "const rrr2 = +((t2Cap.price - ltp) / finalRiskPerShare).toFixed(2);"
+      },
+      {
+        "loc": "src/utils/setupAnalyzer.js:1981",
+        "text": "const upperWickRatio = barHigh > barLow ? +((barHigh - Math.max(barOpen, barClose)) / barRange).toFixed(2) : 0;"
+      },
+      {
+        "loc": "src/utils/signals/brokerFloorsheetSignals.js:286",
+        "text": "const consistencyRatio = Number((entry.netBuyingSessions / entry.sessionsActive).toFixed(3));"
+      },
+      {
+        "loc": "src/utils/signals/brokerFloorsheetSignals.js:404",
+        "text": "? Number(((buyAggressorQty - sellAggressorQty) / totalAggressor).toFixed(4))"
+      },
+      {
+        "loc": "src/utils/signals/brokerFloorsheetSignals.js:422",
+        "text": "? Number(((netBuyersCount - netSellersCount) / totalBrokersActive).toFixed(4))"
+      },
+      {
+        "loc": "src/utils/signals/fundamentalSignals.js:49",
+        "text": "? Number((calcPe / bench.medianPE).toFixed(2))"
+      },
+      {
+        "loc": "src/utils/signals/fundamentalSignals.js:53",
+        "text": "? Number((calcPbv / bench.medianPBV).toFixed(2))"
+      },
+      {
+        "loc": "src/utils/signals/paperTradingTracker.js:363",
+        "text": "? Number((rec.grossGains / rec.grossLosses).toFixed(2))"
+      },
+      {
+        "loc": "src/utils/signals/paperTradingTracker.js:365",
+        "text": "const avgReturnPct = Number((rec.totalReturnPct / rec.tradesCount).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/technicalAnalysisEngine.js:40",
+        "text": "result[i] = Number((sum / period).toFixed(2));"
+      },
+      {
+        "loc": "src/utils/watchlistAlerts.js:323",
+        "text": "if (avg > 0 && vol > 0) return +(vol / avg).toFixed(2);"
+      }
+    ],
+    "JSON_parse_without_try": [
+      {
+        "loc": "src/app/api/stocks/[symbol]/telemetry/route.ts:351",
+        "text": "const bids = JSON.parse(depthRow.bids_json || \"[]\");"
+      },
+      {
+        "loc": "src/app/api/stocks/[symbol]/telemetry/route.ts:352",
+        "text": "const asks = JSON.parse(depthRow.asks_json || \"[]\");"
+      },
+      {
+        "loc": "src/App.jsx:638",
+        "text": "const currentWatchlist = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:639",
+        "text": "const currentNotes = JSON.parse(localStorage.getItem('nepse_trade_notes') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:640",
+        "text": "const currentAlerts = JSON.parse(localStorage.getItem('nepse_stock_alerts') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:641",
+        "text": "const currentJournal = JSON.parse(localStorage.getItem('nepse_trade_journal') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:643",
+        "text": "const currentPaperPos = JSON.parse(localStorage.getItem('nepse_paper_positions') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:644",
+        "text": "const currentPaperOrd = JSON.parse(localStorage.getItem('nepse_paper_orders') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:645",
+        "text": "const currentCreds = JSON.parse(localStorage.getItem('nepse_credentials_vault') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:1578",
+        "text": "const localTxs = JSON.parse(localStorage.getItem(userTxKey) || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:1579",
+        "text": "const localProfs = JSON.parse(localStorage.getItem(userProfileKey) || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:1580",
+        "text": "const localBulk = JSON.parse(localStorage.getItem(bulkKey) || '[]');"
+      },
+      {
+        "loc": "src/components/AccountManager.jsx:256",
+        "text": "const existingProfiles = JSON.parse(saved);"
+      },
+      {
+        "loc": "src/components/AccountManager.jsx:298",
+        "text": "const existing = JSON.parse(saved);"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:86",
+        "text": "const dpData = typeof dpRes.data === 'string' ? JSON.parse(dpRes.data) : dpRes.data;"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:112",
+        "text": "const loginData = typeof loginRes.data === 'string' ? JSON.parse(loginRes.data) : loginRes.data;"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:134",
+        "text": "const issuesData = typeof issuesRes.data === 'string' ? JSON.parse(issuesRes.data) : issuesRes.data;"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:426",
+        "text": "const existing = JSON.parse(localStorage.getItem('nepse_hub_bulk_ipo_history') || '[]');"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:352",
+        "text": "const savedSyncedIds = JSON.parse(localStorage.getItem(syncKey) || '[]');"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:2824",
+        "text": "href=\"javascript:(function(){const t=sessionStorage.getItem('active-user-token')||localStorage.getItem('active-user-token')||JSON.parse(localStorage.getItem('user'))?.token;if(t){n"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:372",
+        "text": "const existingProfiles = savedProfiles ? JSON.parse(savedProfiles) : [];"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:164",
+        "text": "alerts: JSON.parse(localStorage.getItem('nepse_alerts_v1') || '[]'),"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:185",
+        "text": "const portfolioCount = (JSON.parse(localStorage.getItem('nepse_portfolio_v1') || '[]')).length;"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:186",
+        "text": "const notesCount = (JSON.parse(localStorage.getItem('nepse_notes_v1') || '[]')).length;"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:187",
+        "text": "const alertsCount = (JSON.parse(localStorage.getItem('nepse_alerts_v1') || '[]')).length;"
+      },
+      {
+        "loc": "src/components/TestSuite.jsx:114",
+        "text": "const loaded = JSON.parse(localStorage.getItem('nepse_app_test_profile'));"
+      },
+      {
+        "loc": "src/services/nepseAgentTools.js:395",
+        "text": "const parsed = JSON.parse(text);"
+      },
+      {
+        "loc": "src/utils/calculations.js:942",
+        "text": "return globalRaw ? (JSON.parse(globalRaw) || {}) : {};"
+      },
+      {
+        "loc": "src/utils/credentialCrypto.js:113",
+        "text": "return JSON.parse(decoder.decode(decryptedBuffer));"
+      },
+      {
+        "loc": "src/utils/firebase.js:420",
+        "text": "const notes = JSON.parse(localStorage.getItem('nepse_trade_notes') || '[]');"
+      },
+      {
+        "loc": "src/utils/firebase.js:421",
+        "text": "const alerts = JSON.parse(localStorage.getItem('nepse_stock_alerts') || '[]');"
+      },
+      {
+        "loc": "src/utils/firebase.js:422",
+        "text": "const journal = JSON.parse(localStorage.getItem('nepse_trade_journal') || '[]');"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:701",
+        "text": "const json = JSON.parse(fs.readFileSync(filePath, 'utf8'));"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:529",
+        "text": "const wl = JSON.parse(rawWl);"
+      },
+      {
+        "loc": "src/utils/servicesApi.js:141",
+        "text": "const json = JSON.parse(txt);"
+      },
+      {
+        "loc": "src/utils/servicesApi.js:460",
+        "text": "return typeof res.data === 'string' ? JSON.parse(res.data) : res.data;"
+      },
+      {
+        "loc": "src/utils/watchlist.js:26",
+        "text": "const list = JSON.parse(rawLegacy);"
+      }
+    ],
+    "storage_access_without_try": [
+      {
+        "loc": "src/App.jsx:137",
+        "text": "const [fontScale, setFontScale] = useState(() => localStorage.getItem('nepse_font_scale') || 'normal');"
+      },
+      {
+        "loc": "src/App.jsx:168",
+        "text": "const isDismissed = localStorage.getItem('battery_modal_dismissed') === 'true';"
+      },
+      {
+        "loc": "src/App.jsx:496",
+        "text": "const existingBulkRaw = localStorage.getItem(bulkAccountsKey);"
+      },
+      {
+        "loc": "src/App.jsx:522",
+        "text": "const existingProfilesRaw = localStorage.getItem(userProfileKey);"
+      },
+      {
+        "loc": "src/App.jsx:579",
+        "text": "const existingTxsRaw = localStorage.getItem(userTxKey);"
+      },
+      {
+        "loc": "src/App.jsx:638",
+        "text": "const currentWatchlist = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:639",
+        "text": "const currentNotes = JSON.parse(localStorage.getItem('nepse_trade_notes') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:640",
+        "text": "const currentAlerts = JSON.parse(localStorage.getItem('nepse_stock_alerts') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:641",
+        "text": "const currentJournal = JSON.parse(localStorage.getItem('nepse_trade_journal') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:642",
+        "text": "const currentPaperBal = parseFloat(localStorage.getItem('nepse_paper_balance') || '1000000');"
+      },
+      {
+        "loc": "src/App.jsx:643",
+        "text": "const currentPaperPos = JSON.parse(localStorage.getItem('nepse_paper_positions') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:644",
+        "text": "const currentPaperOrd = JSON.parse(localStorage.getItem('nepse_paper_orders') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:645",
+        "text": "const currentCreds = JSON.parse(localStorage.getItem('nepse_credentials_vault') || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:1097",
+        "text": "localStorage.removeItem('nepse_hub_local_session');"
+      },
+      {
+        "loc": "src/App.jsx:1578",
+        "text": "const localTxs = JSON.parse(localStorage.getItem(userTxKey) || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:1579",
+        "text": "const localProfs = JSON.parse(localStorage.getItem(userProfileKey) || '[]');"
+      },
+      {
+        "loc": "src/App.jsx:1580",
+        "text": "const localBulk = JSON.parse(localStorage.getItem(bulkKey) || '[]');"
+      },
+      {
+        "loc": "src/components/AccountManager.jsx:255",
+        "text": "const saved = localStorage.getItem(profileKey) || '[]';"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1388",
+        "text": "const [glmKey, setGlmKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || import.me"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1389",
+        "text": "const [geminiKey, setGeminiKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_gemini_api_key') || '') : ''));"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1392",
+        "text": "return localStorage.getItem('guru_auto_clear_chat') === 'true';"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1401",
+        "text": "localStorage.setItem('guru_auto_clear_chat', String(next));"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1455",
+        "text": "const saved = localStorage.getItem('nepse_portfolio');"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1685",
+        "text": "apiKey: (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || import.meta.env.VITE_GLM_API_KEY || g"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:2829",
+        "text": "localStorage.setItem('nepse_hub_glm_api_key', val);"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:2830",
+        "text": "localStorage.setItem('glm_api_key', val);"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:2863",
+        "text": "localStorage.setItem('nepse_hub_gemini_api_key', val);"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:2864",
+        "text": "localStorage.setItem('gemini_api_key', val);"
+      },
+      {
+        "loc": "src/components/AlphaCommandCenter.tsx:156",
+        "text": "localStorage.setItem('nepse_paper_trades', JSON.stringify([newOrder, ...existingSim.slice(0, 49)]));"
+      },
+      {
+        "loc": "src/components/AlphaPlaybookService.tsx:735",
+        "text": "localStorage.removeItem(todayKey);"
+      },
+      {
+        "loc": "src/components/BatteryOptimizationModal.tsx:85",
+        "text": "localStorage.setItem('battery_modal_dismissed', 'true');"
+      },
+      {
+        "loc": "src/components/calculators.tsx:20",
+        "text": "(typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') || '' : '')"
+      },
+      {
+        "loc": "src/components/Dashboard.jsx:2314",
+        "text": "localStorage.removeItem('prime_pick_plan_cache');"
+      },
+      {
+        "loc": "src/components/EntryExitAnalyzer.tsx:347",
+        "text": "const rawCached = localStorage.getItem('prime_pick_plan_cache');"
+      },
+      {
+        "loc": "src/components/EntryExitAnalyzer.tsx:444",
+        "text": "(typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') || '' : '')"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:426",
+        "text": "const existing = JSON.parse(localStorage.getItem('nepse_hub_bulk_ipo_history') || '[]');"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:427",
+        "text": "localStorage.setItem('nepse_hub_bulk_ipo_history', JSON.stringify([entry, ...existing].slice(0, 100)));"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:352",
+        "text": "const savedSyncedIds = JSON.parse(localStorage.getItem(syncKey) || '[]');"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:1986",
+        "text": "defaultValue={typeof localStorage !== 'undefined' ? (localStorage.getItem('custom_proxy_base') || '') : ''}"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:1993",
+        "text": "localStorage.removeItem('custom_proxy_base');"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:2004",
+        "text": "localStorage.removeItem('custom_proxy_base');"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:2824",
+        "text": "href=\"javascript:(function(){const t=sessionStorage.getItem('active-user-token')||localStorage.getItem('active-user-token')||JSON.parse(localStorage.getItem('user'))?.token;if(t){n"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:300",
+        "text": "const [glmKey, setGlmKey] = useState(() => localStorage.getItem('nepse_hub_glm_api_key') || import.meta.env.VITE_GLM_API_KEY || DEFAULT_AI_KEY);"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:301",
+        "text": "const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('nepse_hub_gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '');"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:302",
+        "text": "const [groqKey, setGroqKey] = useState(() => localStorage.getItem('nepse_hub_groq_api_key') || import.meta.env.VITE_GROQ_API_KEY || '');"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:303",
+        "text": "const [preferredEngine, setPreferredEngine] = useState(() => localStorage.getItem('nepse_hub_preferred_ai_engine') || 'auto');"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:339",
+        "text": "const savedTxs = localStorage.getItem(txKey);"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:347",
+        "text": "const savedProfiles = localStorage.getItem(profileKey);"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:371",
+        "text": "const savedProfiles = localStorage.getItem(profileKey);"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:1437",
+        "text": "const activeGlm = localStorage.getItem('nepse_hub_glm_api_key') || glmKey;"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:1438",
+        "text": "const activeGemini = localStorage.getItem('nepse_hub_gemini_api_key') || geminiKey;"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:1439",
+        "text": "const activeGroq = localStorage.getItem('nepse_hub_groq_api_key') || groqKey;"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:1440",
+        "text": "const activePref = localStorage.getItem('nepse_hub_preferred_ai_engine') || preferredEngine;"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:1453",
+        "text": "const activeGlm = localStorage.getItem('nepse_hub_glm_api_key') || glmKey;"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:1454",
+        "text": "const activeGemini = localStorage.getItem('nepse_hub_gemini_api_key') || geminiKey;"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:1455",
+        "text": "const activeGroq = localStorage.getItem('nepse_hub_groq_api_key') || groqKey;"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:1456",
+        "text": "const activePref = localStorage.getItem('nepse_hub_preferred_ai_engine') || preferredEngine;"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:3525",
+        "text": "localStorage.setItem('nepse_hub_preferred_ai_engine', engine.id);"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:3564",
+        "text": "localStorage.setItem('nepse_hub_glm_api_key', val.trim());"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:3578",
+        "text": "localStorage.setItem('nepse_hub_gemini_api_key', val.trim());"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:3592",
+        "text": "localStorage.setItem('nepse_hub_groq_api_key', val.trim());"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:1089",
+        "text": "localStorage.setItem('prime_pick_plan_cache', JSON.stringify({"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:1208",
+        "text": "const saved = (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '';"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:3117",
+        "text": "(typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') ||"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:28",
+        "text": "const [defaultTf, setDefaultTf] = useState(() => localStorage.getItem('nepse_default_tf') || '1M');"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:29",
+        "text": "const [dataSaver, setDataSaver] = useState(() => localStorage.getItem('nepse_data_saver') === 'true');"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:30",
+        "text": "const [audioAlerts, setAudioAlerts] = useState(() => localStorage.getItem('nepse_audio_alerts') === 'true');"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:87",
+        "text": "localStorage.setItem('nepse_default_tf', tf);"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:93",
+        "text": "localStorage.setItem('nepse_data_saver', String(next));"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:99",
+        "text": "localStorage.setItem('nepse_audio_alerts', String(next));"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:138",
+        "text": "localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(updatedEncrypted));"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:152",
+        "text": "localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(updatedEncrypted));"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:163",
+        "text": "notes: JSON.parse(localStorage.getItem('nepse_notes_v1') || '[]'),"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:164",
+        "text": "alerts: JSON.parse(localStorage.getItem('nepse_alerts_v1') || '[]'),"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:185",
+        "text": "const portfolioCount = (JSON.parse(localStorage.getItem('nepse_portfolio_v1') || '[]')).length;"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:186",
+        "text": "const notesCount = (JSON.parse(localStorage.getItem('nepse_notes_v1') || '[]')).length;"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:187",
+        "text": "const alertsCount = (JSON.parse(localStorage.getItem('nepse_alerts_v1') || '[]')).length;"
+      },
+      {
+        "loc": "src/components/ServicesHub.tsx:1448",
+        "text": "localStorage.removeItem('open_service_id');"
+      },
+      {
+        "loc": "src/components/ServicesHub.tsx:1470",
+        "text": "const sId = e?.detail?.serviceId || (typeof window !== 'undefined' ? localStorage.getItem('open_service_id') : null);"
+      },
+      {
+        "loc": "src/components/ServicesHub.tsx:1471",
+        "text": "const sym = e?.detail?.symbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '');"
+      },
+      {
+        "loc": "src/components/ServicesHub.tsx:1701",
+        "text": "initialSymbol: serviceInitialSymbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '',"
+      },
+      {
+        "loc": "src/components/ServicesHub.tsx:1721",
+        "text": "initialSymbol: serviceInitialSymbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '',"
+      },
+      {
+        "loc": "src/components/TestSuite.jsx:113",
+        "text": "localStorage.setItem('nepse_app_test_profile', JSON.stringify(testProfile));"
+      },
+      {
+        "loc": "src/components/TestSuite.jsx:114",
+        "text": "const loaded = JSON.parse(localStorage.getItem('nepse_app_test_profile'));"
+      },
+      {
+        "loc": "src/components/TestSuite.jsx:121",
+        "text": "localStorage.removeItem('nepse_app_test_profile');"
+      }
+    ],
+    "console_log": [
+      {
+        "loc": "src/App.jsx:202",
+        "text": "console.log('[App] Routing notification click action:', item);"
+      },
+      {
+        "loc": "src/App.jsx:462",
+        "text": "console.log(`[Firebase Sync] Active User (${email || uid}) logged in. Starting cloud restoration...`);"
+      },
+      {
+        "loc": "src/App.jsx:489",
+        "text": "console.log(`[Firebase Sync] Cloud data fetched for ${email || uid}.`);"
+      },
+      {
+        "loc": "src/App.jsx:674",
+        "text": "console.log(`[Firebase Sync] Cloud restoration & sync complete for account: ${email || uid}.`);"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:87",
+        "text": "console.log(`[getRealClientId] Resolved DP ID ${resolvedId} directly from BOID prefix.`);"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:94",
+        "text": "console.log(`[getRealClientId] Resolved DP ID ${resolvedId4} from 4-digit BOID prefix.`);"
+      },
+      {
+        "loc": "src/services/meroShareService.js:1300",
+        "text": "console.log('[checkSingleBoidAllotment] Not found in MeroShare ASBA reports, falling through to Issue Manager API...');"
+      },
+      {
+        "loc": "src/utils/analyzerValidation.js:46",
+        "text": "*   console.log(JSON.stringify(report, null, 2));"
+      },
+      {
+        "loc": "src/utils/analyzerValidation.js:51",
+        "text": "*   r.forEach(t => console.log(t.name, t.pass ? 'PASS' : 'FAIL', t.notes));"
+      },
+      {
+        "loc": "src/utils/firebase.js:352",
+        "text": "console.log(`[CloudSync] Data hydration complete for user ${uid}.`);"
+      },
+      {
+        "loc": "src/utils/firebase.js:651",
+        "text": "console.log('[CloudSync] Successfully backed up user data to Cloud Sync API.');"
+      },
+      {
+        "loc": "src/utils/firebase.js:670",
+        "text": "console.log('[Firestore Sync] Cloud backup successful for user data.');"
+      },
+      {
+        "loc": "src/utils/firebase.js:682",
+        "text": "console.log('[CloudSync] Using instantaneous cloud data from login response.');"
+      },
+      {
+        "loc": "src/utils/firebase.js:702",
+        "text": "console.log('[CloudSync] Successfully restored user data from Cloud Sync API.');"
+      },
+      {
+        "loc": "src/utils/firebase.js:717",
+        "text": "console.log('[Firestore Sync] Cloud data successfully fetched by UID.');"
+      },
+      {
+        "loc": "src/utils/firebase.js:726",
+        "text": "console.log('[Firestore Sync] Cloud data successfully restored by email fallback.');"
+      },
+      {
+        "loc": "src/utils/liveData.js:95",
+        "text": "console.log(`[warmUp] Proxy ready (${url}) in ${Date.now() - started}ms`);"
+      },
+      {
+        "loc": "src/utils/liveData.js:1158",
+        "text": "console.debug('[Stealth] Initial compute for ' + sym + ': ' + stealthAccumulation);"
+      },
+      {
+        "loc": "src/utils/liveSectorMedians.js:82",
+        "text": "console.log(`[liveSectorMedians] Computed for ${_liveMedians.size} sectors from ${allStocks.length} stocks`);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:117",
+        "text": "console.log(`[LocalLedger] ⚡ Instant boot from IndexedDB (${_hotHistoricalLedger.total_scrips} scrips, sessions: ${_hotHistoricalLedger.trading_sessions.join(', ')})`);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:134",
+        "text": "console.log(`[LocalLedger] 📦 Instant boot from Bundled 5-Day Ledger (${_hotHistoricalLedger.total_scrips} scrips, sessions: ${_hotHistoricalLedger.trading_sessions.join(', ')})`);"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:192",
+        "text": "console.log(`[LocalLedger] 🔄 Auto-replaced local 5-day ledger with new sessions: ${data.trading_sessions?.join(', ')}`);"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:387",
+        "text": "console.debug('[PushService] Suppressed duplicate status bar notification in session:', alertFingerprint);"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:513",
+        "text": "console.log('[PushService] Received native device push token:', token);"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:549",
+        "text": "console.log('[PushService] Device push token & tracked symbols successfully registered with Dravyashree backend.');"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:562",
+        "text": "console.log('[PushService] Push notification received from FCM:', notification);"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:600",
+        "text": "console.log('[PushService] User tapped lockscreen notification:', action);"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:643",
+        "text": "console.log('[PushService] Live SSE Smart Alert received:', alertItem);"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:648",
+        "text": "console.debug(`[PushService] 🛑 Stale/Duplicate SSE alert discarded [${validation.reason}]:`, validation.error);"
+      },
+      {
+        "loc": "src/utils/pushNotificationService.js:683",
+        "text": "console.debug('[PushService] Web SSE fallback notice:', err.message);"
+      },
+      {
+        "loc": "src/utils/watchlistAlerts.js:76",
+        "text": "console.debug('[AudioChime] AudioContext blocked or unsupported:', err);"
+      }
+    ],
+    "promise_then_without_catch_nearby": [
+      {
+        "loc": "src/App.jsx:736",
+        "text": "const pLiveMarket = fetchLiveMarketData().then(res => {"
+      },
+      {
+        "loc": "src/App.jsx:785",
+        "text": "const pIndices = fetchMarketIndices().then(liveIdx => {"
+      },
+      {
+        "loc": "src/App.jsx:968",
+        "text": "const pLiveMarket = fetchLiveMarketData().then(res => {"
+      },
+      {
+        "loc": "src/App.jsx:996",
+        "text": "const pIndices = fetchMarketIndices().then(liveIdx => {"
+      },
+      {
+        "loc": "src/components/AccumulationDistributionRadar.tsx:882",
+        "text": "fetchPrecomputedRadar(1).then(fastR => {"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1445",
+        "text": "fetchAllSecurities().then(r => {"
+      },
+      {
+        "loc": "src/components/BrokerFlowDominanceService.tsx:443",
+        "text": "navigator.clipboard.writeText(text).then(() => {"
+      },
+      {
+        "loc": "src/components/BrokerFlowDominanceService.tsx:572",
+        "text": "navigator.clipboard.writeText(text).then(() => {"
+      },
+      {
+        "loc": "src/components/BrokerFlowDominanceService.tsx:706",
+        "text": ".then((fs) => {"
+      },
+      {
+        "loc": "src/components/charts/StockCandlestickChart.tsx:244",
+        "text": "fetchPriceHistory(cleanSym, 500).then((hist: any) => {"
+      },
+      {
+        "loc": "src/components/Dashboard.jsx:1486",
+        "text": "import('../utils/liveData.js').then(({ getProxyBase }) => {"
+      },
+      {
+        "loc": "src/components/Dashboard.jsx:1489",
+        "text": ".then(r => r.ok ? r.json() : null)"
+      },
+      {
+        "loc": "src/components/Dashboard.jsx:1490",
+        "text": ".then(data => {"
+      },
+      {
+        "loc": "src/components/Dashboard.jsx:2281",
+        "text": ").then(() => {"
+      },
+      {
+        "loc": "src/components/EntryExitAnalyzer.tsx:125",
+        "text": "fetchAllSecurities().then((r) => {"
+      },
+      {
+        "loc": "src/components/FibonacciCalculatorService.tsx:16",
+        "text": "loadNepseData().then(({ stocks }) => {"
+      },
+      {
+        "loc": "src/components/InAppNewsReaderModal.jsx:86",
+        "text": ".then((res) => {"
+      },
+      {
+        "loc": "src/components/PromoterSharesService.tsx:35",
+        "text": "]).then(([apiLockin, { stocks: liveStocks }]) => {"
+      },
+      {
+        "loc": "src/components/services.tsx:545",
+        "text": "fetchAllSecurities().then((r) => {"
+      },
+      {
+        "loc": "src/components/services.tsx:5106",
+        "text": "useEffect(() => { loadNepseData().then(({ stocks }) => setStocks(stocks)); }, []);"
+      },
+      {
+        "loc": "src/components/services.tsx:6205",
+        "text": "useEffect(() => { loadNepseData().then(({ stocks }) => setStocks(stocks)); }, []);"
+      },
+      {
+        "loc": "src/components/ServicesHub.tsx:1378",
+        "text": "getHistoricalSubfileDirect(selectedSessionDate).then((subfile: any) => {"
+      },
+      {
+        "loc": "src/components/StockBrokerAnalysisTab.jsx:177",
+        "text": "Promise.all([p0, p1, p2]).then(([rawResAll, rawRes30, rawResSm]) => {"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:1603",
+        "text": "fetchRealFloorsheet(sym, '', 1, 500, { refresh: true, sinceContractId: lastSeenId }).then(fs => {"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:2077",
+        "text": "fetchRealPriceHistory(d.symbol, 500).then(data => {"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:2790",
+        "text": "fetchCompanyQuarterlyReports(d.symbol).then(res => {"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:5536",
+        "text": "fetchRealBrokerAnalysis(d.symbol, 5, { refresh: true }).then(b5 => { if (b5) setBroker5DData(b5); });"
+      },
+      {
+        "loc": "src/components/StockInformationHubModal.tsx:503",
+        "text": ".then(res => {"
+      },
+      {
+        "loc": "src/components/StrategyLabService.tsx:175",
+        "text": "loadNepseData().then(({ stocks }) => {"
+      },
+      {
+        "loc": "src/main.jsx:42",
+        "text": "caches.keys().then(names => {"
+      },
+      {
+        "loc": "src/utils/liveData.js:2507",
+        "text": "tryFetchJSON(`${getProxyBase()}/api/nepse/intraday-graph?_t=${nonce}`, 5000).then(r => r?.data || r),"
+      }
+    ],
+    "effect_fetch_without_unmount_or_race_guard": [
+      {
+        "loc": "src/components/AccountManager.jsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/AiGuruQuantitativeCard.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/analyzer/SignalTrackRecord.jsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/BacktestReportScreen.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/BrokerAccumulationView.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/BrokerFlowDominanceService.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/BrokerSmartFlowTracker.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/calculators.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/DividendHistoryPanel.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/NepseAgentDashboard.jsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/PortfolioBrokerShield.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/PromoterSharesService.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/SeasonalityAnalyticsService.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/ShareHubScannersSuite.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/StockFundamentalsTab.jsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/StockReportsAnnouncementsCard.jsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/StrategyLabService.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/components/TradingViewChartService.tsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      },
+      {
+        "loc": "src/views/FloorSheetTape.jsx:1",
+        "text": "useEffect + async fetch, no AbortController/cancelled/mounted guard found in file"
+      }
+    ],
+    "list_key_array_index": [
+      {
+        "loc": "src/components/AccumulationDistributionRadar.tsx:4105",
+        "text": "<tr key={idx} className=\"hover:bg-slate-800/30 transition-colors\">"
+      },
+      {
+        "loc": "src/components/AccumulationDistributionRadar.tsx:4181",
+        "text": "<tr key={idx} className=\"hover:bg-slate-800/30 transition-colors\">"
+      },
+      {
+        "loc": "src/components/AccumulationDistributionRadar.tsx:4239",
+        "text": "<span key={i} className=\"px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-bold text-[11px]\">"
+      },
+      {
+        "loc": "src/components/AccumulationDistributionRadar.tsx:4252",
+        "text": "<span key={i} className=\"px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 font-bold text-[11px]\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:693",
+        "text": "<div key={idx} className=\"flex items-center gap-1.5 text-[11px]\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:745",
+        "text": "<div key={idx} className=\"flex items-center gap-1.5 text-[11px]\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:792",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1017",
+        "text": "<div key={i} className=\"flex items-start gap-2 text-xs text-slate-200\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1024",
+        "text": "<div key={i} className=\"mt-2 flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/90 px-3 py-2 text-xs\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1049",
+        "text": "<div key={i} className=\"flex items-start gap-2 text-xs text-slate-200\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1077",
+        "text": "<span key={i} className=\"rounded-lg border border-blue-800/60 bg-blue-950/60 px-2.5 py-1 text-xs font-semibold text-blue-300\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1095",
+        "text": "return <strong key={i} className=\"font-bold text-white tracking-wide\">{part.slice(2, -2)}</strong>;"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1099",
+        "text": "<code key={i} className=\"px-1.5 py-0.5 rounded bg-blue-950/70 border border-blue-800/40 text-blue-300 font-mono text-[11.5px]\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1117",
+        "text": "return <div key={idx} className=\"h-1\" />;"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1120",
+        "text": "return <hr key={idx} className=\"my-2 border-slate-800\" />;"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1124",
+        "text": "<h5 key={idx} className=\"text-xs font-bold uppercase tracking-wider text-slate-400 mt-2 mb-1\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1131",
+        "text": "<h4 key={idx} className=\"text-sm font-extrabold text-blue-400 mt-2 mb-1 flex items-center gap-1.5\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1139",
+        "text": "<h3 key={idx} className=\"text-base font-black text-white mt-3 mb-1.5 border-b border-slate-800/80 pb-1\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1146",
+        "text": "<div key={idx} className=\"flex items-start gap-2 pl-1.5 py-0.5\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1158",
+        "text": "<div key={idx} className=\"flex items-start gap-2 pl-1.5 py-0.5\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1167",
+        "text": "<p key={idx} className=\"text-slate-200\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1221",
+        "text": "key={i}"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:2462",
+        "text": "<tr key={idx} className=\"hover:bg-slate-850/50\">"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:2559",
+        "text": "<ChatMessage key={i} msg={msg} onDeployPaperTrade={setPaperModalScrip} />"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:2571",
+        "text": "key={i}"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:2593",
+        "text": "key={i}"
+      },
+      {
+        "loc": "src/components/AlphaPlaybookService.tsx:875",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/AlphaPlaybookService.tsx:967",
+        "text": "<tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>"
+      },
+      {
+        "loc": "src/components/analyzer/EvidencePanel.tsx:36",
+        "text": "<li key={idx} className=\"flex items-start gap-2 leading-relaxed\">"
+      },
+      {
+        "loc": "src/components/analyzer/EvidencePanel.tsx:54",
+        "text": "<li key={idx} className=\"flex items-start gap-2 leading-relaxed\">"
+      },
+      {
+        "loc": "src/components/analyzer/FundamentalValuationCard.jsx:228",
+        "text": "<div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'flex-start' }}>"
+      },
+      {
+        "loc": "src/components/analyzer/GrahamSafetyCard.tsx:558",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/analyzer/HistoricalAnalogPanel.tsx:242",
+        "text": "<tr key={i} className=\"hover:bg-slate-800/30\">"
+      },
+      {
+        "loc": "src/components/analyzer/SetupScoreCard.tsx:351",
+        "text": "<li key={i} className=\"flex items-start gap-1.5\">"
+      },
+      {
+        "loc": "src/components/analyzer/SetupScoreCard.tsx:369",
+        "text": "<li key={i} className=\"flex items-start gap-1.5\">"
+      },
+      {
+        "loc": "src/components/analyzer/SetupScoreCard.tsx:375",
+        "text": "<li key={i} className=\"flex items-start gap-1.5\">"
+      },
+      {
+        "loc": "src/components/analyzer/SupportResistancePanel.tsx:52",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/analyzer/SupportResistancePanel.tsx:101",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/analyzer/WhatNextPanel.tsx:65",
+        "text": "<li key={i} className=\"flex items-start gap-2 leading-relaxed\">"
+      },
+      {
+        "loc": "src/components/analyzer/WhatNextPanel.tsx:83",
+        "text": "<li key={i} className=\"flex items-start gap-2 leading-relaxed\">"
+      },
+      {
+        "loc": "src/components/BacktestReportScreen.tsx:365",
+        "text": "<tr key={idx} className=\"hover:bg-slate-800/30\">"
+      },
+      {
+        "loc": "src/components/BrokerAccumulationView.tsx:394",
+        "text": "<li key={i}>{w}</li>"
+      },
+      {
+        "loc": "src/components/Calculator.jsx:632",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/charts/StockCandlestickChart.tsx:1477",
+        "text": "<span key={i} className=\"px-2 py-0.5 rounded border\""
+      },
+      {
+        "loc": "src/components/Dashboard.jsx:434",
+        "text": "<g key={idx}>"
+      },
+      {
+        "loc": "src/components/Dashboard.jsx:469",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/Dashboard.jsx:540",
+        "text": "<g key={i}>"
+      },
+      {
+        "loc": "src/components/DividendHistoryPanel.tsx:207",
+        "text": "key={i}"
+      },
+      {
+        "loc": "src/components/EntryExitAnalyzer.tsx:941",
+        "text": "<tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>"
+      },
+      {
+        "loc": "src/components/InAppNewsReaderModal.jsx:274",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/IPOList.jsx:1098",
+        "text": "<tr key={i} style={{ borderBottom: i === checkResults.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.03)', background: r.status === 'allotted' ? 'var(--bull-subtle)' : 'transp"
+      },
+      {
+        "loc": "src/components/MeroShareHub.jsx:2606",
+        "text": "key={i}"
+      },
+      {
+        "loc": "src/components/MinerviniLeaderboard.tsx:308",
+        "text": "<span key={i} title={MINERVINI_CHECKS[i].desc}"
+      },
+      {
+        "loc": "src/components/MultibaggerHunterService.tsx:171",
+        "text": "<div key={idx} className=\"text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded-full whitespace-nowrap\">"
+      },
+      {
+        "loc": "src/components/MultibaggerHunterService.tsx:229",
+        "text": "<div key={i} className={`h-2 flex-1 rounded-sm ${i < s.gatesPass ? (s.gatesPass >= 6 ? 'bg-emerald-400' : s.gatesPass >= 4 ? 'bg-yellow-400' : 'bg-red-400') : 'bg-slate-700'}`} />"
+      },
+      {
+        "loc": "src/components/MultibaggerHunterService.tsx:236",
+        "text": "<div key={i} className=\"text-xs\" title={GATE_LABELS[i]}>"
+      },
+      {
+        "loc": "src/components/NepseAgentDashboard.jsx:301",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/PaperTradingJournalScreen.tsx:265",
+        "text": "<tr key={idx} className=\"hover:bg-slate-800/30\">"
+      },
+      {
+        "loc": "src/components/PaperTradingJournalScreen.tsx:272",
+        "text": "<span key={i} className=\"rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300\">"
+      },
+      {
+        "loc": "src/components/PaperTradingJournalScreen.tsx:327",
+        "text": "<tr key={idx} className=\"hover:bg-slate-800/30\">"
+      },
+      {
+        "loc": "src/components/PaperTradingJournalScreen.tsx:406",
+        "text": "<tr key={idx} className=\"hover:bg-slate-800/30\">"
+      },
+      {
+        "loc": "src/components/PaperTradingJournalScreen.tsx:465",
+        "text": "<tr key={idx} className=\"hover:bg-slate-800/30\">"
+      },
+      {
+        "loc": "src/components/PaperTradingJournalScreen.tsx:494",
+        "text": "<span key={i} className=\"rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-300\">"
+      },
+      {
+        "loc": "src/components/PortfolioBrokerShield.tsx:587",
+        "text": "<div key={idx} className=\"text-xs text-rose-200/90 font-medium\">"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:1901",
+        "text": "<div key={idx} style={{"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:1971",
+        "text": "<tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:2539",
+        "text": "<div key={i} style={{ color: '#cbd5e1', lineHeight: 1.4 }}>"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:2554",
+        "text": "<div key={i} style={{ color: '#fca5a5', lineHeight: 1.4 }}>"
+      },
+      {
+        "loc": "src/components/PredictorHub.jsx:3179",
+        "text": "<div key={idx} style={{"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:711",
+        "text": "<div key={idx} className=\"bg-slate-950/70 border border-slate-800/80 rounded-xl p-3 flex items-center justify-between\">"
+      },
+      {
+        "loc": "src/components/PreferencesSettingsService.tsx:779",
+        "text": "<div key={idx} className=\"p-2 rounded-lg bg-rose-950/30 border border-rose-900/40 text-rose-300 flex items-start gap-2\">"
+      },
+      {
+        "loc": "src/components/ProGate.jsx:191",
+        "text": "key={i}"
+      },
+      {
+        "loc": "src/components/RegulatoryHub.tsx:659",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/services.tsx:1609",
+        "text": "key={i}"
+      },
+      {
+        "loc": "src/components/services.tsx:4309",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/services.tsx:4368",
+        "text": "<tr key={i} className=\"hover:bg-slate-900/40 transition-colors\">"
+      },
+      {
+        "loc": "src/components/services.tsx:4406",
+        "text": "<tr key={i} className=\"hover:bg-slate-900/40 transition-colors\">"
+      },
+      {
+        "loc": "src/components/services.tsx:5086",
+        "text": "<ul className=\"mb-0 ml-5 mt-2 text-[13px] leading-6 text-blue-300\">{tips.map((t, i) => <li key={i}>{t}</li>)}</ul>"
+      },
+      {
+        "loc": "src/components/services.tsx:5350",
+        "text": "<span key={i} title={LABELS[i]}"
+      },
+      {
+        "loc": "src/components/services.tsx:5805",
+        "text": "<tr key={idx} className=\"hover:bg-emerald-900/20 transition-colors\">"
+      },
+      {
+        "loc": "src/components/services.tsx:5831",
+        "text": "<tr key={idx} className=\"hover:bg-rose-900/20 transition-colors\">"
+      },
+      {
+        "loc": "src/components/services.tsx:6096",
+        "text": "<div key={idx} className=\"space-y-1 pb-1.5 border-b border-slate-800/50 last:border-b-0\">"
+      },
+      {
+        "loc": "src/components/services.tsx:6140",
+        "text": "<div key={idx} className=\"space-y-1 pb-1.5 border-b border-slate-800/50 last:border-b-0\">"
+      },
+      {
+        "loc": "src/components/services.tsx:6469",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/ShareHubChart.jsx:2293",
+        "text": "key={i}"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:4192",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:4806",
+        "text": "<div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:4854",
+        "text": "<div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:5701",
+        "text": "<div key={idx} style={{ padding: '6px 0', borderBottom: idx < 2 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:5746",
+        "text": "<div key={idx} style={{ padding: '6px 0', borderBottom: idx < 2 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:6182",
+        "text": "<tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:6212",
+        "text": "<tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:6643",
+        "text": "<div key={idx} style={{ marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.04)' }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:6690",
+        "text": "<div key={idx} style={{ marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.04)' }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:7451",
+        "text": "<tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: idx % 2 === 0 ? 'rgba(16, 185, 129, 0.04)' : 'transparent' }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:7493",
+        "text": "<div key={i} style={{ display: 'grid', gridTemplateColumns: '64px 1fr 74px', alignItems: 'center', gap: 8, fontSize: 11.5 }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:7527",
+        "text": "<tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: idx % 2 === 0 ? 'rgba(56, 189, 248, 0.03)' : 'transparent' }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:7745",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:8225",
+        "text": "<div key={idx} style={{"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:8265",
+        "text": "<tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:8303",
+        "text": "<div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: 'rgba(255,255,255,0.025)', borderRadius: 8, fontSiz"
+      },
+      {
+        "loc": "src/components/StockDetailModal.jsx:8341",
+        "text": "<div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', background: 'rgba(255,255,255,0.025)', borderRadius: 8, fontSize: 12"
+      },
+      {
+        "loc": "src/components/StockFundamentalsTab.jsx:425",
+        "text": "<g key={idx}>"
+      },
+      {
+        "loc": "src/components/StockFundamentalsTab.jsx:732",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/StockFundamentalsTab.jsx:957",
+        "text": "<tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>"
+      },
+      {
+        "loc": "src/components/StockFundamentalsTab.jsx:1020",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/StockInformationHubModal.tsx:2803",
+        "text": "<tr key={idx}>"
+      },
+      {
+        "loc": "src/components/StockInformationHubModal.tsx:2832",
+        "text": "<tr key={idx}>"
+      },
+      {
+        "loc": "src/components/StockReportsAnnouncementsCard.jsx:380",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/StockReportsAnnouncementsCard.jsx:464",
+        "text": "<div key={idx}>"
+      },
+      {
+        "loc": "src/components/StockReportsAnnouncementsCard.jsx:532",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/StockSeasonalityCard.jsx:55",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/StockSelectionScreener.tsx:429",
+        "text": "<tr key={idx} className=\"hover:bg-slate-800/30\">"
+      },
+      {
+        "loc": "src/components/StockSignalsCard.jsx:214",
+        "text": "key={idx}"
+      },
+      {
+        "loc": "src/components/StockTechnicalGaugeCard.jsx:275",
+        "text": "<tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>"
+      },
+      {
+        "loc": "src/components/StockYanAnalyticsCard.jsx:375",
+        "text": "<div key={idx} style={{"
+      },
+      {
+        "loc": "src/components/StockYanAnalyticsCard.jsx:432",
+        "text": "<div key={idx} style={{"
+      },
+      {
+        "loc": "src/components/StrategyLabService.tsx:470",
+        "text": "<div key={idx} className=\"grid grid-cols-4 py-1 border-b border-slate-900/60 text-slate-300\">"
+      },
+      {
+        "loc": "src/components/SubscriptionModal.jsx:645",
+        "text": "<div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'var(--text-secondary)' }}>"
+      },
+      {
+        "loc": "src/components/TestSuite.jsx:254",
+        "text": "<div key={index} className={`console-line ${log.type === 'error' ? 'console-err' : log.type === 'success' ? 'console-success' : 'console-warn'}`}>"
+      },
+      {
+        "loc": "src/components/ui.tsx:220",
+        "text": "<th key={i} className={`whitespace-nowrap px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 ${col.align === 'right' ? 'text-right font-mono tabular-nums' "
+      },
+      {
+        "loc": "src/components/ui.tsx:229",
+        "text": "key={i}"
+      },
+      {
+        "loc": "src/components/WatchlistEntryAlertModal.tsx:232",
+        "text": "<tr key={idx} className=\"hover:bg-slate-800/30\">"
+      },
+      {
+        "loc": "src/views/LiveMarketDashboard.jsx:316",
+        "text": "<div key={idx} className=\"min-w-[130px] rounded-2xl border border-white/[0.07] bg-[#111622] p-3 flex-shrink-0\">"
+      },
+      {
+        "loc": "src/views/StockDetails.jsx:311",
+        "text": "<div key={i} className=\"grid grid-cols-2 gap-3\">"
+      },
+      {
+        "loc": "src/views/StockDetails.jsx:345",
+        "text": "<div key={idx} className=\"rounded-xl bg-[#0B0F17] p-3 border border-white/[0.05] flex justify-between items-center\">"
+      }
+    ],
+    "window_open_native_webview": [
+      {
+        "loc": "src/components/AdvancedChartModal.jsx:231",
+        "text": "window.open(`https://nepsealpha.com/trading/chart?symbol=${encodeURIComponent(cleanSymbol)}`, '_blank', 'noopener,noreferrer');"
+      },
+      {
+        "loc": "src/components/Dashboard.jsx:3265",
+        "text": "if (item.url) window.open(item.url, '_blank');"
+      },
+      {
+        "loc": "src/components/Master100ProfitWorkstation.tsx:602",
+        "text": "window.open('/NEPSE_100_Percent_Profit_Master_Guide.pdf', '_blank');"
+      },
+      {
+        "loc": "src/components/StockReportsAnnouncementsCard.jsx:393",
+        "text": "if (isClickable) window.open(n.url || n.link, '_blank');"
+      },
+      {
+        "loc": "src/components/StockReportsAnnouncementsCard.jsx:495",
+        "text": "window.open(`https://nepalstock.com.np/company/detail/${sym}`, '_blank');"
+      },
+      {
+        "loc": "src/components/StockReportsAnnouncementsCard.jsx:544",
+        "text": "if (a.url) window.open(a.url, '_blank');"
+      },
+      {
+        "loc": "src/components/SubscriptionModal.jsx:139",
+        "text": "window.open(url, '_blank');"
+      },
+      {
+        "loc": "src/components/TradingViewChartService.tsx:138",
+        "text": "window.open(`https://nepsealpha.com/trading/chart?symbol=${encodeURIComponent(cleanSymbol)}`, '_blank', 'noopener,noreferrer');"
+      }
+    ],
+    "client_exposed_VITE_secret_env": [
+      {
+        "loc": "src/components/AiAnalyst.jsx:1388",
+        "text": "const [glmKey, setGlmKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || import.me"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1486",
+        "text": "const glmApiKey = (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || import.meta.env.VITE_GLM_AP"
+      },
+      {
+        "loc": "src/components/AiAnalyst.jsx:1685",
+        "text": "apiKey: (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || import.meta.env.VITE_GLM_API_KEY || g"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:300",
+        "text": "const [glmKey, setGlmKey] = useState(() => localStorage.getItem('nepse_hub_glm_api_key') || import.meta.env.VITE_GLM_API_KEY || DEFAULT_AI_KEY);"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:301",
+        "text": "const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('nepse_hub_gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '');"
+      },
+      {
+        "loc": "src/components/Portfolio.jsx:302",
+        "text": "const [groqKey, setGroqKey] = useState(() => localStorage.getItem('nepse_hub_groq_api_key') || import.meta.env.VITE_GROQ_API_KEY || '');"
+      },
+      {
+        "loc": "src/utils/firebase.js:15",
+        "text": "apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,"
+      }
+    ],
+    "xss_dangerouslySetInnerHTML": [
+      {
+        "loc": "src/components/Portfolio.jsx:20",
+        "text": "* Avoids dangerouslySetInnerHTML to prevent XSS from AI output."
+      },
+      {
+        "loc": "src/components/ShareHubScannersSuite.tsx:184",
+        "text": "dangerouslySetInnerHTML={{ __html: p.svg }}"
+      },
+      {
+        "loc": "src/components/ShareHubScannersSuite.tsx:218",
+        "text": "dangerouslySetInnerHTML={{ __html: activePattern.svg }}"
+      },
+      {
+        "loc": "src/components/StockTechnicalGaugeCard.jsx:376",
+        "text": "dangerouslySetInnerHTML={{ __html: primaryPattern.svg }}"
+      },
+      {
+        "loc": "src/components/StockTechnicalGaugeCard.jsx:437",
+        "text": "dangerouslySetInnerHTML={{"
+      }
+    ],
+    "hardcoded_localhost_url": [
+      {
+        "loc": "src/utils/firebase.js:196",
+        "text": "endpoints.push('http://localhost:5000/api/sync');"
+      },
+      {
+        "loc": "src/utils/firebase.js:216",
+        "text": "if (!endpoints.includes('http://localhost:5000/api/sync')) {"
+      },
+      {
+        "loc": "src/utils/firebase.js:217",
+        "text": "endpoints.push('http://localhost:5000/api/sync');"
+      },
+      {
+        "loc": "src/utils/liveData.js:105",
+        "text": "ping('http://localhost:5000', 2000).then(ok => {"
+      },
+      {
+        "loc": "src/utils/proxyBase.js:39",
+        "text": "return 'http://localhost:5000';"
+      },
+      {
+        "loc": "src/utils/proxyBase.js:46",
+        "text": "return 'http://localhost:5000';"
+      },
+      {
+        "loc": "src/utils/servicesApi.js:12",
+        "text": "return 'http://localhost:5000';"
+      }
+    ],
+    "listener_add_exceeds_remove": [
+      {
+        "loc": "src/utils/historyCache.js:1",
+        "text": "addEventListener x1 vs removeEventListener x0"
+      },
+      {
+        "loc": "src/utils/liveData.js:1",
+        "text": "addEventListener x3 vs removeEventListener x0"
+      },
+      {
+        "loc": "src/utils/localLedgerManager.ts:1",
+        "text": "addEventListener x2 vs removeEventListener x0"
+      }
+    ],
+    "possible_prop_or_state_mutation": [
+      {
+        "loc": "src/utils/paperTrading.js:213",
+        "text": "state.positions.push(newPosition);"
+      },
+      {
+        "loc": "src/utils/paperTrading.js:265",
+        "text": "state.positions.splice(idx, 1);"
+      },
+      {
+        "loc": "src/utils/signals/paperTradingTracker.js:133",
+        "text": "state.openPositions.push({"
+      }
+    ],
+    "socket_subscription_without_close": [
+      {
+        "loc": "src/utils/pushNotificationService.js:1",
+        "text": "socket/subscription x1, no close/unsubscribe"
+      }
+    ]
+  }
+}

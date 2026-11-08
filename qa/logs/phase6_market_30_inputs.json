@@ -1,0 +1,263 @@
+{
+  "phase": "Phase 6 - Market Tab (Dashboard, 8 Movers Sub-Tabs, Scanners, Watchlist & Modals) Quantitative & Edge-Case Audit",
+  "timestamp": "2026-11-08T16:10:00+05:45",
+  "targetComponent": "src/components/Dashboard.jsx + src/App.jsx + src/components/NRBMacroWidget.jsx + src/components/AlgorithmicSignalTrackRecord.tsx + src/components/BreakoutAlertDialog.jsx + src/components/NotificationCenterDrawer.jsx + src/utils/masterAlphaPipeline.js",
+  "totalInputsTested": 30,
+  "summary": {
+    "crashesOrUncaughtExceptions": 0,
+    "passed": 13,
+    "failedOrFlagged": 17,
+    "criticalFindings": [
+      "MKT-TEST-01: TopSearchBar dropdown (zIndex: 10000) overlays the Spotlight Card ('LIVE QUOTE') directly below it, blocking clicks on 'Open Full Stock Detail & Analysis' and 'Hero Chart' until the user manually clicks 'Close ✕'. Additionally, TopSearchBar (zIndex: 1000) bleeds over the SubIndicesModal drawer header (BUG-054).",
+      "MKT-TEST-10: Watchlist & Breakout Alerts header badge renders watchedOrAlertSymbols.length (total watched count) instead of watchedStocks.length (filtered count when topSearch is active), showing badge '2' when 1 or 0 rows are displayed (BUG-058).",
+      "MKT-TEST-11: Hero Index Card recalculates NEPSE 1D percentage change as ((2.64 / 2652.58) * 100).toFixed(2) = '+0.10%', contradicting the Top Header Bar, SubIndicesModal, and Fullscreen Index Modal which all show raw indices.nepse.pChange = '+0.09%'. ShareHubChart also prefixes NEPSE Index points with 'Rs. 2,655.22' (BUG-050).",
+      "MKT-TEST-12..17: Hero Index Chart timeframes 1W, 1M, 3M, 6M, 1Y, and ALL all fetch fetchPriceHistory(sym, 500) without slicing the returned array to the selected timeframe window, displaying the exact same 500-session change '▲ +801.74 pts (+43.26%)' across all 6 buttons (BUG-051).",
+      "MKT-TEST-19: SubIndicesModal displays Open === High === Close for all 13 sector sub-indices (e.g., Microfinance Open: 4,502.51 · High: 4,502.51 | 4,502.51) and omits Low price (BUG-053).",
+      "MKT-TEST-21..22: Four-way Market Breadth & Unchanged count contradiction across the same screen: Breadth chip says 'Flat 21 (6%)' (336 traded scrips), clicking it or ChangeSummaryModal -> Unchanged shows '228 Scrips' (includes 207 untraded zero-volume scrips), Breadth bar says 'Advances 194 (58%)', and 5-Step Institutional Alpha Desk says 'Breadth: 62%' (omits unchanged from denominator) (BUG-052).",
+      "MKT-TEST-23..24 & 27..28: Movers '🔥 Breakouts' renders unrounded IEEE-754 float 'Pivot Rs. 856.8000000000001' on BENH; 'Top Gainers'/'Top Losers' are polluted by 10–50 share illiquid corporate debentures (CCBD88, GBILD86/87, SBLD89, GWFD83); 'Volume Surge' sorts by raw share volume (Rs. 10 mutual funds SEF2 1.32M, PSF 1.17M) instead of RVOL surge (BUG-055).",
+      "MKT-TEST-26 & 29..30: Orphan service shortcuts ('alpha-playbook', 'distribution-leaders') drop users onto the generic Services Hub (BUG-060); AlgorithmicSignalTrackRecord shows 0 signals when local radar API is offline and hardcodes outdated '+10% lockouts excluded' copy (BUG-057); NEPSE Calendar Modal badge shows generic 'Holiday: Public Holiday' instead of 'Holiday: तिहार (लक्ष्मी पूजा)' (BUG-061)."
+    ]
+  },
+  "testInputs": [
+    {
+      "id": "MKT-TEST-01",
+      "category": "TopSearchBar & Spotlight Card (Exact Ticker)",
+      "input": { "query": "NABIL" },
+      "expected": "Matching Securities dropdown and Live Quote Spotlight Card render NABIL (Rs. 1,500 / LTP), and Spotlight action buttons ('Open Full Stock Detail & Analysis', 'Hero Chart') are clickable.",
+      "actual": "Spotlight Card renders underneath the 'MATCHING SECURITIES' dropdown (zIndex: 10000), which intercepts pointer events on 'Hero Chart' and 'Open Full Stock Detail & Analysis' until 'Close ✕' is clicked.",
+      "status": "FAIL (BUG-054)"
+    },
+    {
+      "id": "MKT-TEST-02",
+      "category": "TopSearchBar & Spotlight Card (Case-Insensitive Lowercase Ticker)",
+      "input": { "query": "akjcl" },
+      "expected": "Matches AKJCL (Ankhu Khola Jalvidhyut Company Ltd) with LTP Rs. 343.90 (+6.14%) and Volume 1,626,869.",
+      "actual": "Matched AKJCL in both dropdown and Live Quote Spotlight Card with exact LTP Rs. 343.90 (+6.14%).",
+      "status": "PASS"
+    },
+    {
+      "id": "MKT-TEST-03",
+      "category": "TopSearchBar (Partial Company Name Match)",
+      "input": { "query": "Himalayan" },
+      "expected": "Lists up to 8 matching Himalayan securities (HBL, HDL,HRL, HPPL, etc.) sorted by relevance.",
+      "actual": "Dropdown rendered 8 matching Himalayan securities with sector badges, LTP, and % change pills.",
+      "status": "PASS"
+    },
+    {
+      "id": "MKT-TEST-04",
+      "category": "TopSearchBar & Spotlight (Untraded / Zero-Volume Scrip)",
+      "input": { "query": "GLBSL" },
+      "expected": "Renders Gurans Laghubitta (GLBSL) with 0 volume and 0.00% change without NaN or division-by-zero errors.",
+      "actual": "Rendered GLBSL cleanly with 0.00% change and zero console/runtime errors.",
+      "status": "PASS"
+    },
+    {
+      "id": "MKT-TEST-05",
+      "category": "TopSearchBar & Spotlight (Corporate Debenture Symbol)",
+      "input": { "query": "CCBD88" },
+      "expected": "Matches Corporate Debenture CCBD88 and displays its price and change.",
+      "actual": "Matched CCBD88 (Rs. 1,158.10, +7.23%, 50 shares) in dropdown and Spotlight Card.",
+      "status": "PASS"
+    },
+    {
+      "id": "MKT-TEST-06",
+      "category": "TopSearchBar (Nepali Devanagari Script Query)",
+      "input": { "query": "नबिल बैंक" },
+      "expected": "Displays clean 'No matching stocks found' empty state without crashing.",
+      "actual": "Displayed 'No matching stocks found for \"नबिल बैंक\"' with zero errors.",
+      "status": "PASS"
+    },
+    {
+      "id": "MKT-TEST-07",
+      "category": "TopSearchBar Security (XSS Payload Injection)",
+      "input": { "query": "<script>alert(1)</script><img src=x onerror=alert(1)>" },
+      "expected": "Escapes payload in React JSX with zero script execution or DOM injection.",
+      "actual": "Rendered literal escaped text in 'No matching stocks found' banner; zero XSS execution.",
+      "status": "PASS"
+    },
+    {
+      "id": "MKT-TEST-08",
+      "category": "TopSearchBar Security (SQL Injection & Regex Metacharacters)",
+      "input": { "query": "' OR 1=1-- .*+?^${}()|[]\\" },
+      "expected": "Uses safe .toLowerCase().includes() string matching without throwing RegExp SyntaxError.",
+      "actual": "Handled cleanly via substring match with zero console errors.",
+      "status": "PASS"
+    },
+    {
+      "id": "MKT-TEST-09",
+      "category": "TopSearchBar Stress (510-Character Long Query)",
+      "input": { "query": "NABIL_ repeated 85 times (510 chars)" },
+      "expected": "Debounces input (180ms) and renders empty state without layout overflow or main-thread freeze.",
+      "actual": "Debounced and rendered empty state cleanly in <250ms.",
+      "status": "PASS"
+    },
+    {
+      "id": "MKT-TEST-10",
+      "category": "Watchlist & Breakout Alerts Search Filter Synchronization",
+      "input": { "topSearch": "NABIL (while watched stocks = [AKJCL, NABIL]) or ZZZZ_NOMATCH" },
+      "expected": "Watchlist card header count badge matches the number of displayed watched rows, or TopSearchBar does not silently filter the bottom Watchlist card.",
+      "actual": "Dashboard.jsx:5222 renders {watchedOrAlertSymbols.length} ('2') in the badge while watchedStocks filters rows by topSearch, showing badge '2' with only 1 or 0 rows rendered.",
+      "status": "FAIL (BUG-058)"
+    },
+    {
+      "id": "MKT-TEST-11",
+      "category": "Hero Index Card & Chart (1D Timeframe & Currency Prefix)",
+      "input": { "index": "nepse", "heroTimeframe": "1D" },
+      "expected": "NEPSE Index 1D % change matches Top Header Bar (+0.09%), chart header shows dimensionless index points ('2,655.22'), and 1D chart shows intraday session.",
+      "actual": "Hero card shows '+0.10%' while Top Header Bar right above it shows '+0.09%'; ShareHubChart prefixes index with 'Rs. 2,655.22'; 1D chart plots 5 daily points (Nov 2..Nov 6) with H: 2655.2 • L: 2655.2.",
+      "status": "FAIL (BUG-050, BUG-051)"
+    },
+    {
+      "id": "MKT-TEST-12",
+      "category": "Hero Index Chart Timeframe (1W)",
+      "input": { "index": "nepse", "heroTimeframe": "1W" },
+      "expected": "Slices history to 1 week (~5 trading sessions) and computes 1W point and % change.",
+      "actual": "Calls fetchPriceHistory('NEPSE', 500) without slicing and displays full 500-day change: '▲ +801.74 pts (+43.26%) · 1W'.",
+      "status": "FAIL (BUG-051)"
+    },
+    {
+      "id": "MKT-TEST-13",
+      "category": "Hero Index Chart Timeframe (1M)",
+      "input": { "index": "nepse", "heroTimeframe": "1M" },
+      "expected": "Slices history to 1 month (~22 trading sessions) and computes 1M point and % change.",
+      "actual": "Displays unsliced 500-day change: '▲ +801.74 pts (+43.26%) · 1M' (identical to 1W).",
+      "status": "FAIL (BUG-051)"
+    },
+    {
+      "id": "MKT-TEST-14",
+      "category": "Hero Index Chart Timeframe (3M)",
+      "input": { "index": "nepse", "heroTimeframe": "3M" },
+      "expected": "Slices history to 3 months (~65 trading sessions) and computes 3M point and % change.",
+      "actual": "Displays unsliced 500-day change: '▲ +801.74 pts (+43.26%) · 3M' (identical to 1W and 1M).",
+      "status": "FAIL (BUG-051)"
+    },
+    {
+      "id": "MKT-TEST-15",
+      "category": "Hero Index Chart Timeframe (6M)",
+      "input": { "index": "nepse", "heroTimeframe": "6M" },
+      "expected": "Slices history to 6 months (~130 trading sessions) and computes 6M point and % change.",
+      "actual": "Displays unsliced 500-day change: '▲ +801.74 pts (+43.26%) · 6M' (identical to 1W, 1M, 3M).",
+      "status": "FAIL (BUG-051)"
+    },
+    {
+      "id": "MKT-TEST-16",
+      "category": "Hero Index Chart Timeframe (1Y)",
+      "input": { "index": "nepse", "heroTimeframe": "1Y" },
+      "expected": "Slices history to 1 year (~240 trading sessions) and computes 1Y point and % change.",
+      "actual": "Displays unsliced 500-day change: '▲ +801.74 pts (+43.26%) · 1Y' (identical to 1W..6M).",
+      "status": "FAIL (BUG-051)"
+    },
+    {
+      "id": "MKT-TEST-17",
+      "category": "Hero Index Chart Timeframe (ALL)",
+      "input": { "index": "nepse", "heroTimeframe": "ALL" },
+      "expected": "Displays full multi-year available history change.",
+      "actual": "Displays '▲ +801.74 pts (+43.26%) · ALL' (identical to 1W, 1M, 3M, 6M, 1Y).",
+      "status": "FAIL (BUG-051)"
+    },
+    {
+      "id": "MKT-TEST-18",
+      "category": "SubIndicesModal (4 Main Market Indices Inspection)",
+      "input": { "modal": "SubIndicesModal", "section": "Main Market Indices" },
+      "expected": "Renders NEPSE, Sensitive, Float, and Sensitive Float indices with consistent % change and proper z-index layering above background page elements.",
+      "actual": "Renders all 4 main indices, but NEPSE Index shows '+0.09%' (vs '+0.10%' on Hero Card) and TopSearchBar (zIndex: 1000) bleeds on top of the modal backdrop.",
+      "status": "FAIL (BUG-050, BUG-054)"
+    },
+    {
+      "id": "MKT-TEST-19",
+      "category": "SubIndicesModal (13 Sector Sub-Indices Open/High Metadata)",
+      "input": { "modal": "SubIndicesModal", "section": "Sector Sub-Indices (13)" },
+      "expected": "Displays true session Open, High, and Low values for each sector sub-index, or hides Open/High when unavailable.",
+      "actual": "All 13 sector sub-indices fall back to data.open || data.value, rendering bogus Open === High === Close (e.g., Microfinance Open: 4,502.51 · High: 4,502.51 | 4,502.51).",
+      "status": "FAIL (BUG-053)"
+    },
+    {
+      "id": "MKT-TEST-20",
+      "category": "SubIndicesModal (Select Sector Index -> Hero Card Switch)",
+      "input": { "selectedIndex": "hydropower" },
+      "expected": "Clicking HydroPower Index closes SubIndicesModal and updates the Hero Index Card to HydroPower Index (3,590.51, +0.34%).",
+      "actual": "Hero Index Card updated to HydroPower Index (3,590.51, +12.16 pts, +0.34%) and loaded sector history.",
+      "status": "PASS"
+    },
+    {
+      "id": "MKT-TEST-21",
+      "category": "Market Breadth & Circuits Card vs Alpha Desk & Inline Drawer",
+      "input": { "action": "Click '◼ Flat 21 (6%)' chip on Market Breadth & Circuits card" },
+      "expected": "Inline drawer and ChangeSummaryModal show the exact 21 traded unchanged scrips, and Breadth % matches across cards.",
+      "actual": "Breadth chip says 'Flat 21 (6%)' (336 traded scrips), clicking it opens inline list showing 'Showing: Unchanged 228 Scrips' (includes 207 untraded zero-volume scrips), while Alpha Desk says 'Breadth: 62%' vs '58%'.",
+      "status": "FAIL (BUG-052)"
+    },
+    {
+      "id": "MKT-TEST-22",
+      "category": "ChangeSummaryModal (5 Tabs & 6 Sort Columns)",
+      "input": { "tabs": ["advanced (194)", "declined (121)", "unchanged (228)", "circuit_pos (3)", "circuit_neg (1)"], "sort": ["symbol", "ltp", "high", "low", "change", "pChange"] },
+      "expected": "All 5 tabs and 6 sort columns sort ascending/descending accurately and match Market Breadth card counts.",
+      "actual": "Sorting works across all 6 columns, but 'Unchanged' tab lists 228 scrips (including 207 zero-volume untraded debentures/mutual funds) instead of the 21 traded unchanged scrips shown on the Breadth card.",
+      "status": "FAIL (BUG-052)"
+    },
+    {
+      "id": "MKT-TEST-23",
+      "category": "Movers Card Sub-Tab 1: Top Gainers",
+      "input": { "moverTab": "gainers" },
+      "expected": "Displays top equity gainers without illiquid 10-share corporate bond trades distorting the leaderboard.",
+      "actual": "Half of the Top Gainers list is occupied by illiquid corporate debentures with 10 to 85 shares traded (CCBD88 +7.23% 50 sh, GBILD86/87 +5.41% 85 sh, SBLD89 +3.93% 10 sh, NIFRAUR85/86 +3.60% 35 sh).",
+      "status": "FAIL (BUG-055)"
+    },
+    {
+      "id": "MKT-TEST-24",
+      "category": "Movers Card Sub-Tab 2: Top Losers",
+      "input": { "moverTab": "losers" },
+      "expected": "Displays top equity losers cleanly.",
+      "actual": "Includes illiquid debenture GWFD83 (-9.47%, Rs. 291.60) alongside equity losers (HPPL -7.35%,DHPL -4.64%).",
+      "status": "FAIL (BUG-055)"
+    },
+    {
+      "id": "MKT-TEST-25",
+      "category": "Movers Card Sub-Tabs 3 & 4: Accumulation & Smart Flow",
+      "input": { "moverTab": ["accumulation", "smartflow"] },
+      "expected": "Renders top institutional accumulation (SYPNL Score 74, RADHI Score 73) and composite smart flow (RADHI Score 96, SYPNL Score 94) with RVOL and 3D Return badges.",
+      "actual": "Both tabs rendered 10 ranked institutional flow leaders with valid scores, RVOL multipliers, and 3D returns.",
+      "status": "PASS"
+    },
+    {
+      "id": "MKT-TEST-26",
+      "category": "Movers Card Sub-Tab 5: Distribution Trap & 'View Radar →' CTA",
+      "input": { "moverTab": "distribution", "action": "Click 'View Radar →'" },
+      "expected": "Renders distribution trap warnings and 'View Radar →' opens a valid Distribution Radar service.",
+      "actual": "Renders 10 distribution warnings (HDHPC, HURJA, CHDC...), but clicking 'View Radar →' dispatches serviceId: 'distribution-leaders' which does not exist in SERVICES_CONFIG, dropping the user on the generic Services Hub grid.",
+      "status": "FAIL (BUG-060)"
+    },
+    {
+      "id": "MKT-TEST-27",
+      "category": "Movers Card Sub-Tab 6: Breakouts (Pivot Price Float Formatting)",
+      "input": { "moverTab": "breakouts" },
+      "expected": "Pivot levels and RVOL values are formatted to 2 decimal places.",
+      "actual": "Dashboard.jsx:5548 interpolates raw s.pivotLevel without fmt() or .toFixed(2), rendering 'BENH Pivot Rs. 856.8000000000001 · RVOL 2.09x'.",
+      "status": "FAIL (BUG-055)"
+    },
+    {
+      "id": "MKT-TEST-28",
+      "category": "Movers Card Sub-Tabs 7 & 8: Turnover & Volume Surge",
+      "input": { "moverTab": ["turnover", "volume"] },
+      "expected": "Turnover ranks by Rs. Cr turnover; Volume Surge ranks by abnormal Relative Volume (RVOL) surge excluding Rs. 10 mutual fund units.",
+      "actual": "Turnover tab accurately ranks RADHI (Rs. 62.66 Cr) and AKJCL (Rs. 54.68 Cr), but 'Volume Surge' simply sorts by raw share count ([...stocks].sort((a,b)=>b.volume-a.volume)), placing Rs. 10 mutual funds SEF2 (1.32M units) and PSF (1.17M units) at #2 and #3.",
+      "status": "FAIL (BUG-055)"
+    },
+    {
+      "id": "MKT-TEST-29",
+      "category": "AlgorithmicSignalTrackRecord Modal & BreakoutAlertDialog",
+      "input": { "modals": ["AlgorithmicSignalTrackRecord", "BreakoutAlertDialog (AKJCL)"] },
+      "expected": "Track Record falls back to local historical signals when radar API is offline and reflects ±15% circuit regime; BreakoutAlertDialog follows Rules of Hooks and current season.",
+      "actual": "Track Record modal shows 'Signal Ledger (0)', 'PROFIT FACTOR 0.00x' and outdated 'Unfillable +10% lockouts excluded'; BreakoutAlertDialog places early return before 6 useState/useEffect hooks and hardcodes 'pre-Dashain' during Tihar/Kartik.",
+      "status": "FAIL (BUG-057, BUG-059)"
+    },
+    {
+      "id": "MKT-TEST-30",
+      "category": "NRB Macro Widget, Notification Center Drawer & NEPSE Calendar Modal",
+      "input": { "widgets": ["NRBMacroWidget", "NotificationCenterDrawer", "NEPSECalendarModal"] },
+      "expected": "NRB Macro indicators render with sources; Notification drawer filters All/Unread; Calendar modal holiday badge matches the Market Schedule card.",
+      "actual": "NRB Macro Widget and Notification Drawer work cleanly, but Calendar modal checks marketStatus.holidayName || 'Public Holiday' instead of festivalName/statusLabel, displaying generic 'Holiday: Public Holiday' instead of 'Holiday: तिहार (लक्ष्मी पूजा)'.",
+      "status": "FAIL (BUG-061)"
+    }
+  ]
+}

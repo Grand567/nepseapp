@@ -1,0 +1,272 @@
+[
+  {
+    "id": "UTIL-IN-01",
+    "name": "Normal Buy Share Calculation (100 shares @ Rs. 250)",
+    "category": "Calculator:Buy",
+    "status": "PASS",
+    "expected": "Payable = Rs. 25,093.75, Cost/Share = Rs. 250.94",
+    "actual": "Payable = Rs. 25093.75, Cost/Share = Rs. 250.94",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-02",
+    "name": "High-Tier Buy Order (5,000 shares @ Rs. 600 = Rs. 30 Lakhs)",
+    "category": "Calculator:Buy",
+    "status": "PASS",
+    "expected": "Commission = Rs. 8,100 (0.27%), Total = Rs. 3,008,550.00",
+    "actual": "Commission = Rs. 8100, Total = Rs. 3008550",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-03",
+    "name": "Minimum Broker Commission Clamping (1 share @ Rs. 100)",
+    "category": "Calculator:Buy",
+    "status": "PASS",
+    "expected": "Commission clamped to min Rs. 10.00",
+    "actual": "Commission = Rs. 10",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-04",
+    "name": "Normal Short-Term Individual Sell (100 shares @ Rs. 300, WACC 250, 7.5% CGT)",
+    "category": "Calculator:Sell",
+    "status": "PASS",
+    "expected": "CGT = Rs. 364.69, Net Receivable = Rs. 29,497.81",
+    "actual": "CGT = Rs. 364.69, Net Receivable = Rs. 29497.81",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-05",
+    "name": "Long-Term Individual Sell (100 shares @ Rs. 300, WACC 250, 5.0% CGT)",
+    "category": "Calculator:Sell",
+    "status": "PASS",
+    "expected": "CGT Rate = 5%, CGT = Rs. 243.13",
+    "actual": "CGT Rate = 5%, CGT = Rs. 243.13",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-06",
+    "name": "Institutional / Corporate Sell (100 shares @ Rs. 300, WACC 250, 10.0% CGT)",
+    "category": "Calculator:Sell",
+    "status": "PASS",
+    "expected": "CGT Rate = 10%, CGT = Rs. 486.25",
+    "actual": "CGT Rate = 10%, CGT = Rs. 486.25",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-07",
+    "name": "Capital Loss Sell (100 shares @ Rs. 180, WACC 250)",
+    "category": "Calculator:Sell",
+    "status": "PASS",
+    "expected": "CGT = Rs. 0.00 (No capital gains tax on loss), Net Loss < 0",
+    "actual": "CGT = Rs. 0, Net Loss = Rs. -7092.50",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-08",
+    "name": "Exact Cost Basis Sell (100 shares @ Rs. 250, WACC 250)",
+    "category": "Calculator:Sell",
+    "status": "PASS",
+    "expected": "CGT = Rs. 0.00, Net Loss equals transaction fees",
+    "actual": "CGT = Rs. 0, Net Loss = Rs. -118.75",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-09",
+    "name": "Statutory Breakeven Price Iterative Solver (100 shares @ Rs. 250)",
+    "category": "Calculator:Breakeven",
+    "status": "PASS",
+    "expected": "Breakeven Price ~Rs. 252.10",
+    "actual": "Breakeven Price = Rs. 252.20",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-10",
+    "name": "Ex-Date Bonus Adjustment (LTP Rs. 450, 10% Bonus)",
+    "category": "Calculator:Adjustment",
+    "status": "PASS",
+    "expected": "Adjusted Price = Rs. 409.09, Bonus Units = 10",
+    "actual": "Adjusted Price = Rs. 409.09, Bonus Units = 10",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-11",
+    "name": "Ex-Date Right Adjustment (LTP Rs. 450, 50% Right @ Rs. 100)",
+    "category": "Calculator:Adjustment",
+    "status": "PASS",
+    "expected": "Adjusted Price = Rs. 333.33, Right Units = 50",
+    "actual": "Adjusted Price = Rs. 333.33, Right Units = 50",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-12",
+    "name": "Simultaneous Bonus & Right Adjustment (LTP Rs. 450, 10% Bonus + 50% Right @ Rs. 100)",
+    "category": "Calculator:Adjustment",
+    "status": "PASS",
+    "expected": "Adjusted Price = Rs. 312.50",
+    "actual": "Adjusted Price = Rs. 312.5",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-13",
+    "name": "Zero Bonus and Zero Right Adjustment",
+    "category": "Calculator:Adjustment",
+    "status": "PASS",
+    "expected": "Adjusted Price = Rs. 450.00, Units = 100",
+    "actual": "Adjusted Price = Rs. 450, Units = 100",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-14",
+    "name": "Bonus Share Statutory 5% Par Dividend Tax",
+    "category": "Calculator:Adjustment",
+    "status": "PASS",
+    "expected": "Bonus Dividend Tax = Rs. 50.00",
+    "actual": "Bonus Dividend Tax = Rs. 50.00",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-15",
+    "name": "Monthly SIP Wealth Compounder (Rs. 10,000/mo, 15% CAGR, 10 Years)",
+    "category": "Calculator:SIP",
+    "status": "PASS",
+    "expected": "Invested = Rs. 12 Lakhs, Maturity ~Rs. 27.86 Lakhs",
+    "actual": "Invested = Rs. 1,200,000, Maturity = Rs. 2,786,573",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-16",
+    "name": "SIP with 0% Return Rate (Capital Preservation Boundary)",
+    "category": "Calculator:SIP",
+    "status": "PASS",
+    "expected": "Maturity = Total Invested = Rs. 300,000",
+    "actual": "Maturity = Rs. 300000",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-17",
+    "name": "SIP 1-Year Short Horizon (Rs. 10,000/mo, 12% CAGR, 1 Year)",
+    "category": "Calculator:SIP",
+    "status": "PASS",
+    "expected": "Maturity = Rs. 128,093",
+    "actual": "Maturity = Rs. 128093",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-18",
+    "name": "Normal NRB Margin Loan (1,000 units, LTP Rs. 600, 180-Day Avg Rs. 550, 70% LTV)",
+    "category": "Calculator:MarginLoan",
+    "status": "PASS",
+    "expected": "Approved Loan = Rs. 385,000.00",
+    "actual": "Approved Loan = Rs. 385000.00",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-19",
+    "name": "NRB Margin Loan Inverted Valuation (LTP Rs. 500, 180-Day Avg Rs. 550)",
+    "category": "Calculator:MarginLoan",
+    "status": "PASS",
+    "expected": "Valuation base = Rs. 500.00, Loan = Rs. 350,000.00",
+    "actual": "Valuation base = Rs. 500, Loan = Rs. 350000",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-20",
+    "name": "NRB Margin Call Trigger Price at 130% Maintenance Margin",
+    "category": "Calculator:MarginLoan",
+    "status": "PASS",
+    "expected": "Margin Call Trigger = Rs. 500.50",
+    "actual": "Margin Call Trigger = Rs. 500.50",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-21",
+    "name": "Optimal Trade Lot Sizing (Capital Rs. 100k, 2% Risk, Entry 480, Stop 455)",
+    "category": "Calculator:Risk",
+    "status": "PASS",
+    "expected": "80 units (8 lots of 10 shares)",
+    "actual": "80 units",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-22",
+    "name": "Position Sizing Division by Zero Guard (Entry == Stop Loss)",
+    "category": "Calculator:Risk",
+    "status": "PASS",
+    "expected": "0 lots when Stop Loss equals Entry Price",
+    "actual": "0 lots",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-23",
+    "name": "Position Sizing Negative Risk Guard (Stop Loss > Entry Price)",
+    "category": "Calculator:Risk",
+    "status": "PASS",
+    "expected": "0 lots when Stop Loss is above Entry",
+    "actual": "0 lots",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-24",
+    "name": "Capital Risk Simulator Tier Allocation (Capital Rs. 500,000)",
+    "category": "Calculator:CapitalBar",
+    "status": "PASS",
+    "expected": "Max Risk = Rs. 6,250 (1.25%), Max Slot = Rs. 125,000 (25%), Slots = 5",
+    "actual": "Max Risk = Rs. 6250, Max Slot = Rs. 125000, Slots = 5",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-25",
+    "name": "Resources Broker TMS Search by Number (\"58\")",
+    "category": "Resources:Search",
+    "status": "PASS",
+    "expected": "Matches 1 broker (Naasa #58)",
+    "actual": "Matches 1 broker (Naasa Securities Co. Ltd.)",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-26",
+    "name": "Resources Broker TMS Search Case-Insensitive (\"naasa\")",
+    "category": "Resources:Search",
+    "status": "PASS",
+    "expected": "Matches 1 broker (Naasa Securities)",
+    "actual": "Matches 1 broker",
+    "details": ""
+  },
+  {
+    "id": "UTIL-IN-27",
+    "name": "Resources Broker TMS Link Domain Validity (BUG-076 Audit)",
+    "category": "Resources:TMSUrl",
+    "status": "FAIL",
+    "expected": "https://tms{id}.nepalstock.com.np/",
+    "actual": "https://tms{id}.nepse.com.np/",
+    "details": "BUG-076: Broken domain nepse.com.np causes NXDOMAIN on all broker TMS portal links."
+  },
+  {
+    "id": "UTIL-IN-28",
+    "name": "Stitch Hub Header Button Mobile Reachability (BUG-077 Audit)",
+    "category": "Stitch:Reachability",
+    "status": "FAIL",
+    "expected": "Stitch button or drawer link visible on mobile viewports (< 520px)",
+    "actual": ".header-stitch-btn { display: none !important; } at max-width 520px",
+    "details": "BUG-077: Stitch Hub is completely unreachable on all mobile devices."
+  },
+  {
+    "id": "UTIL-IN-29",
+    "name": "Stitch Portfolio Number Formatting (BUG-078 Audit)",
+    "category": "Stitch:NumberFormat",
+    "status": "FAIL",
+    "expected": "NPR 1,519,430.00 in English mode",
+    "actual": "NPR 1,519,430.००",
+    "details": "BUG-078: Mixed numeral representation (.०० Devanagari in English UI)."
+  },
+  {
+    "id": "UTIL-IN-30",
+    "name": "Stitch WACC FIFO Segregated Engine NABIL Multi-Tranche Cost",
+    "category": "Stitch:WACC",
+    "status": "PASS",
+    "expected": "Verified WACC = Rs. 374.51",
+    "actual": "Calculated WACC = Rs. 374.51",
+    "details": ""
+  }
+]

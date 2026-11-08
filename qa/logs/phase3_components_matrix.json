@@ -1,0 +1,787 @@
+{
+  "totalFilesTested": 95,
+  "normalPassed": 94,
+  "emptyPassed": 94,
+  "nullPassed": 79,
+  "failures": [
+    {
+      "file": "src/components/Dashboard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/Dashboard.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/Dashboard.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of null (r"
+    },
+    {
+      "file": "src/components/StockTechnicalGaugeCard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/StockTechnicalGaugeCard.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/StockTechnicalGaugeCard.jsx. Other tabs and live market feeds remain unaffected.TypeError: Canno"
+    },
+    {
+      "file": "src/components/StockYanAnalyticsCard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/StockYanAnalyticsCard.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/StockYanAnalyticsCard.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot re"
+    },
+    {
+      "file": "src/components/StockRightShareCard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/StockRightShareCard.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/StockRightShareCard.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read p"
+    },
+    {
+      "file": "src/components/Portfolio.jsx",
+      "normal": "ERROR_BOUNDARY",
+      "empty": "ERROR_BOUNDARY",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/Portfolio.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/Portfolio.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of undefin"
+    },
+    {
+      "file": "src/components/Master100ProfitWorkstation.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/Master100ProfitWorkstation.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/Master100ProfitWorkstation.tsx. Other tabs and live market feeds remain unaffected.TypeError:"
+    },
+    {
+      "file": "src/components/AlphaCommandCenter.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/AlphaCommandCenter.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/AlphaCommandCenter.tsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read pro"
+    },
+    {
+      "file": "src/views/StitchHub.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/views/StitchHub.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/views/StitchHub.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of null (reading 'le"
+    },
+    {
+      "file": "src/views/LiveMarketDashboard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/views/LiveMarketDashboard.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/views/LiveMarketDashboard.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties "
+    },
+    {
+      "file": "src/views/StockDetails.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/views/StockDetails.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/views/StockDetails.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of null (readi"
+    },
+    {
+      "file": "src/views/PortfolioAnalytics.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/views/PortfolioAnalytics.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/views/PortfolioAnalytics.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of"
+    },
+    {
+      "file": "src/components/MultibaggerHunterService.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/MultibaggerHunterService.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/MultibaggerHunterService.tsx. Other tabs and live market feeds remain unaffected.TypeError: Can"
+    },
+    {
+      "file": "src/components/MinerviniLeaderboard.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/MinerviniLeaderboard.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/MinerviniLeaderboard.tsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read"
+    },
+    {
+      "file": "src/components/calculators.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/calculators.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/calculators.tsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of nul"
+    },
+    {
+      "file": "src/components/ShareHubScannersSuite.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/ShareHubScannersSuite.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/ShareHubScannersSuite.tsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot re"
+    },
+    {
+      "file": "src/components/StockSelectionScreener.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/StockSelectionScreener.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/StockSelectionScreener.tsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot "
+    }
+  ],
+  "fileResults": [
+    {
+      "file": "src/components/Dashboard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/Dashboard.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/Dashboard.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of null (r"
+    },
+    {
+      "file": "src/components/DataQualityBanner.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/NRBMacroWidget.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/LoadingShimmerBar.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/ShareHubChart.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/ProGate.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockDetailModal.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/ErrorBoundary.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/stock/BrokerSmartMoneyCard.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockSignalsCard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockTechnicalGaugeCard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/StockTechnicalGaugeCard.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/StockTechnicalGaugeCard.jsx. Other tabs and live market feeds remain unaffected.TypeError: Canno"
+    },
+    {
+      "file": "src/components/BookClosureAlert.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/SignalTrackRecord.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockYanAnalyticsCard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/StockYanAnalyticsCard.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/StockYanAnalyticsCard.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot re"
+    },
+    {
+      "file": "src/components/analyzer/FundamentalValuationCard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/SessionDateDropdown.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockInformationHubModal.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockBrokerAnalysisTab.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/BrokerFootprintCard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockFundamentalsTab.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockRightShareCard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/StockRightShareCard.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/StockRightShareCard.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read p"
+    },
+    {
+      "file": "src/components/DividendHistoryPanel.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockSeasonalityCard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockReportsAnnouncementsCard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/AiGuruQuantitativeCard.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/AdvancedChartModal.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/BreakoutAlertDialog.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/AlgorithmicSignalTrackRecord.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/charts/StockCandlestickChart.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/PortfolioHub.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/Portfolio.jsx",
+      "normal": "ERROR_BOUNDARY",
+      "empty": "ERROR_BOUNDARY",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/Portfolio.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/Portfolio.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of undefin"
+    },
+    {
+      "file": "src/components/CapitalRiskSimulatorView.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/CapitalRiskSimulatorBar.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/MeroShareHub.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/PredictorHub.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/NepseAgentDashboard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/ui.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/Master100ProfitWorkstation.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/Master100ProfitWorkstation.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/Master100ProfitWorkstation.tsx. Other tabs and live market feeds remain unaffected.TypeError:"
+    },
+    {
+      "file": "src/components/AlphaCommandCenter.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/AlphaCommandCenter.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/AlphaCommandCenter.tsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read pro"
+    },
+    {
+      "file": "src/components/ShortTermProfitPlan.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/EntryExitAnalyzer.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/SetupScoreCard.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/SmartMoneyBrokerFlowCard.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/FestivalSeasonalityCard.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/GrahamSafetyCard.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/EntryRiskCard.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/WhatNextPanel.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/SupportResistancePanel.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/BreakoutPanel.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/TechnicalDashboard.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/SignalAgreement.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/EvidencePanel.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/HistoricalAnalogPanel.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/StrategyTrackRecord.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/DataQualityPanel.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/InvestorDecisionGuideModal.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/ServicesHub.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/AiAnalyst.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/analyzer/GlobalSignalTrackerModal.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockFundamentalsAndLockInTab.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/Calculator.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/Resources.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/views/StitchHub.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/views/StitchHub.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/views/StitchHub.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of null (reading 'le"
+    },
+    {
+      "file": "src/views/LiveMarketDashboard.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/views/LiveMarketDashboard.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/views/LiveMarketDashboard.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties "
+    },
+    {
+      "file": "src/views/WatchlistScreener.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/views/FloorSheetTape.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/views/StockDetails.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/views/StockDetails.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/views/StockDetails.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of null (readi"
+    },
+    {
+      "file": "src/views/PortfolioAnalytics.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/views/PortfolioAnalytics.jsx Telemetry NoticeAn unexpected render issue was safely caught in src/views/PortfolioAnalytics.jsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of"
+    },
+    {
+      "file": "src/views/WaccTaxCalculator.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/views/OrderExecution.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/MultibaggerHunterService.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/MultibaggerHunterService.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/MultibaggerHunterService.tsx. Other tabs and live market feeds remain unaffected.TypeError: Can"
+    },
+    {
+      "file": "src/components/MinerviniLeaderboard.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/MinerviniLeaderboard.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/MinerviniLeaderboard.tsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read"
+    },
+    {
+      "file": "src/components/services.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/AccumulationDistributionRadar.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/BrokerSmartFlowTracker.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/PortfolioBrokerShield.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/calculators.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/calculators.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/calculators.tsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot read properties of nul"
+    },
+    {
+      "file": "src/components/ShareHubScannersSuite.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/ShareHubScannersSuite.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/ShareHubScannersSuite.tsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot re"
+    },
+    {
+      "file": "src/components/SeasonalityAnalyticsService.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StrategyLabService.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/BacktestReportScreen.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/PaperTradingJournalScreen.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/StockSelectionScreener.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "ERROR_BOUNDARY",
+      "error": "⚠️src/components/StockSelectionScreener.tsx Telemetry NoticeAn unexpected render issue was safely caught in src/components/StockSelectionScreener.tsx. Other tabs and live market feeds remain unaffected.TypeError: Cannot "
+    },
+    {
+      "file": "src/components/BrokerAccumulationView.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/WatchlistEntryAlertModal.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/BrokerFlowDominanceService.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/BreakoutTrapRadar.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/FibonacciCalculatorService.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/TradingViewChartService.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/PromoterSharesService.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/RegulatoryHub.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/FloorsheetServiceTab.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/IPOList.jsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/GlossaryGuideService.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    },
+    {
+      "file": "src/components/PreferencesSettingsService.tsx",
+      "normal": "PASS",
+      "empty": "PASS",
+      "nullState": "PASS",
+      "error": null
+    }
+  ]
+}

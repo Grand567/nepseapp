@@ -1,0 +1,305 @@
+{
+  "phase": "Phase 6 - IPO Tab (Bulk IPO Portal, Demat Accounts, C-ASBA Validation, SEBON 10-Kitta Lottery & Right/Bonus Share Calculators)",
+  "executedAt": "2026-11-08T15:05:30+05:45",
+  "totalFixedInputs": 30,
+  "passedCount": 22,
+  "failedOrFlaggedCount": 8,
+  "bugsUncovered": [
+    "BUG-030",
+    "BUG-031",
+    "BUG-032",
+    "BUG-033",
+    "BUG-034",
+    "BUG-035",
+    "BUG-036",
+    "BUG-037"
+  ],
+  "testCases": [
+    {
+      "id": "IPO-TEST-01",
+      "category": "Normal Oversubscribed Ordinary IPO (5.0x)",
+      "targetFunction": "calculateIpoAllotmentProbability(ipo, 10)",
+      "input": { "generalPublicUnits": 3000000, "totalApplicants": 1500000, "oversubscriptionTimes": 5.0, "appliedKitta": 10 },
+      "expected": "20.00% lottery probability (300,000 allottees / 1,500,000 applicants)",
+      "actual": { "probabilityPct": 20, "label": "Moderate Chance (Lottery)", "eligibleAllottees": 300000, "totalApplicants": 1500000, "oversubscriptionTimes": 5, "guaranteedKitta": 0, "isLottery": true },
+      "status": "PASS",
+      "notes": "Matches SEBON 10-kitta Securities Issue and Allotment Directive, 2074 in IPOList.jsx; however MeroShareHub.jsx omits generalPublicUnits/totalApplicants when normalizing fetchOpenIpos() (BUG-034)."
+    },
+    {
+      "id": "IPO-TEST-02",
+      "category": "Heavily Oversubscribed Hydropower IPO (18.5x)",
+      "targetFunction": "calculateIpoAllotmentProbability(ipo, 10)",
+      "input": { "generalPublicUnits": 1000000, "totalApplicants": 1850000, "oversubscriptionTimes": 18.5, "appliedKitta": 10 },
+      "expected": "5.41% lottery probability (100,000 allottees / 1,850,000 applicants)",
+      "actual": { "probabilityPct": 5.41, "label": "Very Low (High Competition)", "eligibleAllottees": 100000, "totalApplicants": 1850000, "oversubscriptionTimes": 18.5, "guaranteedKitta": 0, "isLottery": true },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-03",
+      "category": "Undersubscribed IPO (0.5x)",
+      "targetFunction": "calculateIpoAllotmentProbability(ipo, 10)",
+      "input": { "generalPublicUnits": 3000000, "totalApplicants": 150000, "oversubscriptionTimes": 0.5, "appliedKitta": 10 },
+      "expected": "100% Guaranteed (Under-subscribed)",
+      "actual": { "probabilityPct": 100, "label": "Guaranteed (Under-subscribed)", "eligibleAllottees": 300000, "totalApplicants": 150000, "oversubscriptionTimes": 0.5, "guaranteedKitta": 20, "isLottery": false },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-04",
+      "category": "Book Building IPO (50 Kitta Minimum Lot — e.g. Reliance Spinning Mills Ltd.)",
+      "targetFunction": "calculateIpoAllotmentProbability(ipo, 50) & MeroShareHub fetchOpenIpos()",
+      "input": { "generalPublicUnits": 1000000, "totalApplicants": 100000, "oversubscriptionTimes": 5.0, "minKitta": 50, "appliedKitta": 50 },
+      "expected": "20,000 eligible allottees (1,000,000 / 50) -> 20.00% lottery probability; MeroShareHub displays 20% probability.",
+      "actual": { "probabilityPct": 100, "eligibleAllottees": 100000, "meroShareHubDisplay": "Subscription Pending" },
+      "status": "FAIL (BUG-034)",
+      "notes": "Two bugs: (1) MeroShareHub.jsx:623-638 drops generalPublicUnits, totalApplicants, and oversubscriptionTimes when normalizing fetchOpenIpos(), permanently showing 'Subscription Pending'; (2) calculateIpoAllotmentProbability hardcodes Math.floor(units / 10) instead of Math.floor(units / minKitta), overstating Book Building allottees by 5x."
+    },
+    {
+      "id": "IPO-TEST-05",
+      "category": "Subscription Pending (0 Units / 0 Applicants)",
+      "targetFunction": "calculateIpoAllotmentProbability(ipo, 10)",
+      "input": { "generalPublicUnits": 0, "totalApplicants": 0, "oversubscriptionTimes": 0, "appliedKitta": 10 },
+      "expected": "probabilityPct: null, label: 'Subscription Pending', no Division-by-Zero NaN",
+      "actual": { "probabilityPct": null, "label": "Subscription Pending", "eligibleAllottees": 0, "totalApplicants": 0, "oversubscriptionTimes": 0, "guaranteedKitta": 0, "isLottery": true },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-06",
+      "category": "Null / Undefined IPO Object",
+      "targetFunction": "calculateIpoAllotmentProbability(null, 10)",
+      "input": null,
+      "expected": "Graceful fallback without TypeError",
+      "actual": { "probabilityPct": null, "label": "N/A", "eligibleAllottees": 0, "totalApplicants": 0, "oversubscriptionTimes": 0, "guaranteedKitta": 0, "isLottery": true },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-07",
+      "category": "Valid Standard 10-Kitta C-ASBA Payload",
+      "targetFunction": "validateCasbaApplicationPayload(payload)",
+      "input": { "appliedKitta": 10, "minUnits": 10, "maxUnits": 5000, "boid": "1301040000123456", "crnNumber": "CRN-987654", "transactionPin": "1234", "bankId": 12, "companyShareId": 701 },
+      "expected": "{ valid: true, errors: [] }",
+      "actual": { "valid": true, "errors": [], "sanitized": { "appliedKitta": 10, "boid": "1301040000123456", "crnNumber": "CRN-987654", "transactionPin": "1234", "bankId": "12", "companyShareId": "701" } },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-08",
+      "category": "High-Volume 6,000 Kitta Application (Allowed in MeroShareHub UI up to 10,000 Kitta)",
+      "targetFunction": "applyIpoDirect -> validateCasbaApplicationPayload",
+      "input": { "appliedKitta": 6000, "minUnits": 10, "boid": "1301040000123456", "crnNumber": "CRN-987654", "transactionPin": "1234", "bankId": 12, "companyShareId": 701 },
+      "expected": "Valid (since MeroShareHub UI allows 10 - 10,000 kitta)",
+      "actual": { "valid": false, "errors": ["Applied kitta (6000) must be an integer between 10 and 5000."] },
+      "status": "FAIL (BUG-032)",
+      "notes": "applyIpoDirect() does not pass maxUnits to validateCasbaApplicationPayload(), defaulting maxUnits to 5000 while MeroShareHub UI allows up to 10,000 kitta."
+    },
+    {
+      "id": "IPO-TEST-09",
+      "category": "Non-Multiple-of-10 Kitta (15 Kitta)",
+      "targetFunction": "validateCasbaApplicationPayload(payload) & MeroShareHub onBlur",
+      "input": { "appliedKitta": 15, "minUnits": 10, "maxUnits": 5000, "boid": "1301040000123456", "crnNumber": "CRN-987654", "transactionPin": "1234", "bankId": 12, "companyShareId": 701 },
+      "expected": "UI rounds 15 -> 20 on blur; validator rejects 15 as not divisible by 10",
+      "actual": { "uiRoundedTo": 20, "validatorValid": false, "errors": ["Applied kitta (15) must be a multiple of 10 shares per SEBON C-ASBA rules."] },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-10",
+      "category": "Below Minimum Lot (5 Kitta)",
+      "targetFunction": "validateCasbaApplicationPayload(payload)",
+      "input": { "appliedKitta": 5, "minUnits": 10, "maxUnits": 5000, "boid": "1301040000123456", "crnNumber": "CRN-987654", "transactionPin": "1234", "bankId": 12, "companyShareId": 701 },
+      "expected": "Rejected (< 10 kitta)",
+      "actual": { "valid": false, "errors": ["Applied kitta (5) must be an integer between 10 and 5000.", "Applied kitta (5) must be a multiple of 10 shares per SEBON C-ASBA rules."] },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-11",
+      "category": "Negative Kitta (-10 Kitta)",
+      "targetFunction": "validateCasbaApplicationPayload(payload)",
+      "input": { "appliedKitta": -10, "minUnits": 10, "maxUnits": 5000, "boid": "1301040000123456", "crnNumber": "CRN-987654", "transactionPin": "1234", "bankId": 12, "companyShareId": 701 },
+      "expected": "Rejected (< 10 kitta)",
+      "actual": { "valid": false, "errors": ["Applied kitta (-10) must be an integer between 10 and 5000."] },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-12",
+      "category": "BOID Starting with 120 (Matches UI Placeholder '120106000...')",
+      "targetFunction": "validateAccountFields vs validateCasbaApplicationPayload",
+      "input": { "appliedKitta": 10, "boid": "1201060000123456", "crnNumber": "CRN-987654", "transactionPin": "1234", "bankId": 12, "companyShareId": 701 },
+      "expected": "Consistent validation between Demat Accounts registration and Bulk Apply submission",
+      "actual": { "accountRegistrationAccepted": true, "casbaSubmissionAccepted": false, "errors": ["BOID must be a valid 16-digit CDSC number starting with 130."] },
+      "status": "FAIL (BUG-033)",
+      "notes": "MeroShareHub.jsx:1612 shows placeholder '120106000...' and validateAccountFields accepts it, but validateCasbaApplicationPayload rejects any BOID not starting with 130."
+    },
+    {
+      "id": "IPO-TEST-13",
+      "category": "Short CRN ('C-1234', Matches UI Placeholder 'C-1234')",
+      "targetFunction": "validateAccountFields vs validateCasbaApplicationPayload",
+      "input": { "appliedKitta": 10, "boid": "1301040000123456", "crnNumber": "C-123", "transactionPin": "1234", "bankId": 12, "companyShareId": 701 },
+      "expected": "Consistent CRN length validation between Demat Accounts form and Bulk Apply submission",
+      "actual": { "accountRegistrationAccepted": true, "casbaSubmissionAccepted": false, "errors": ["CRN Number must be 6-20 alphanumeric characters."] },
+      "status": "FAIL (BUG-033)",
+      "notes": "MeroShareHub.jsx:1654 shows placeholder 'C-1234' and validateAccountFields accepts any non-empty CRN (e.g. 'C-12' or 'C-123'), which then fails at C-ASBA submission time."
+    },
+    {
+      "id": "IPO-TEST-14",
+      "category": "Non-Numeric / Alphanumeric Transaction PIN ('12ab')",
+      "targetFunction": "validateCasbaApplicationPayload(payload)",
+      "input": { "appliedKitta": 10, "boid": "1301040000123456", "crnNumber": "CRN-987654", "transactionPin": "12ab", "bankId": 12, "companyShareId": 701 },
+      "expected": "Rejected (must be 4 digits)",
+      "actual": { "valid": false, "errors": ["Transaction PIN must be exactly 4 numeric digits."] },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-15",
+      "category": "Secondary Market Holding False-Positive IPO Allotment (HRL 250 Units via BROKER_TMS)",
+      "targetFunction": "checkSingleBoidAllotment(account, companyObj)",
+      "input": {
+        "account": { "boid": "1301370000654321", "holdings": [{ "symbol": "HRL", "name": "Himalayan Reinsurance Limited", "units": 250, "wacc": 640, "isCustomWacc": true, "waccSource": "BROKER_TMS" }] },
+        "companyObj": { "id": "502", "name": "Himalayan Reinsurance Limited", "scrip": "HRL" }
+      },
+      "expected": "Does NOT mistake secondary market holdings (250 units @ Rs. 640 via BROKER_TMS) for primary IPO lottery allotment",
+      "actual": { "success": true, "allotted": true, "units": 250, "message": "🎉 बधाई! 250 कित्ता शेयर डिम्याट खातामा जम्मा छ (Allotted 250 Units verified in Demat)" },
+      "status": "FAIL (BUG-030)",
+      "notes": "Verified live in Playwright screenshot 06_ipo_false_allotment_secondary_market_bug.png: checkSingleBoidAllotment Strategy 0 checks account.holdings without verifying whether the shares came from an IPO allotment or a secondary market purchase!"
+    },
+    {
+      "id": "IPO-TEST-16",
+      "category": "Empty Scrip Substring Collision in Demat Holdings",
+      "targetFunction": "checkSingleBoidAllotment(account, companyObj)",
+      "input": {
+        "account": { "boid": "1301040000123456", "holdings": [{ "symbol": "NABIL", "name": "Nabil Bank Limited", "units": 50, "wacc": 495 }] },
+        "companyObj": { "id": "999", "name": "Bank Limited", "scrip": "" }
+      },
+      "expected": "Does not match unrelated Demat holdings via substring inclusion when scrip is empty",
+      "actual": { "success": true, "allotted": true, "units": 50, "message": "🎉 बधाई! 50 कित्ता शेयर डिम्याट खातामा जम्मा छ (Allotted 50 Units verified in Demat)" },
+      "status": "FAIL (BUG-030)",
+      "notes": "meroShareService.js:1210 uses cleanTarget.includes(cleanH) || cleanH.includes(cleanTarget) after stripping 'limited'/'ltd', which can collide on shared words."
+    },
+    {
+      "id": "IPO-TEST-17",
+      "category": "Invalid 10-Digit BOID in Allotment Checker",
+      "targetFunction": "checkSingleBoidAllotment(account, companyObj)",
+      "input": { "account": { "boid": "1301040000", "holdings": [] }, "companyObj": { "id": "501", "name": "Beni Hydropower Project Limited", "scrip": "BENI" } },
+      "expected": "Rejected as invalid 16-digit BOID",
+      "actual": { "success": false, "allotted": false, "units": 0, "message": "अवैध BOID नम्बर (१६ अंक हुनुपर्छ)" },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-18",
+      "category": "Verify Already Applied (handleCheckAlreadyApplied) When MeroShare Login / API Fails",
+      "targetFunction": "checkBoidAlreadyApplied & MeroShareHub.handleCheckAlreadyApplied",
+      "input": { "account": { "boid": "1301040000123456", "username": "00123456", "password": "expired_or_invalid" }, "companyShareId": "701" },
+      "expected": "Displays error/warning badge ('⚠️ Login Failed / Unable to Verify') when authentication or CDSC API fails",
+      "actual": { "serviceReturn": { "success": false, "applied": false, "message": "Login failed: MeroShare password has expired." }, "uiBadge": "🟢 Ready to Apply" },
+      "status": "FAIL (BUG-031)",
+      "notes": "Verified live in Playwright screenshot 03_ipo_verify_already_applied.png: MeroShareHub.jsx:904-922 only checks if (check.applied) and completely ignores check.success === false, showing '🟢 Ready to Apply' for accounts whose login failed!"
+    },
+    {
+      "id": "IPO-TEST-19",
+      "category": "Standard 10% Bonus Share Book-Closure Price Adjustment",
+      "targetFunction": "adjustForBonusShare(550, 10)",
+      "input": { "marketPrice": 550, "bonusPercent": 10 },
+      "expected": 500,
+      "actual": 500,
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-20",
+      "category": "Standard 50% Right Share Book-Closure Price Adjustment (1:0.5 at Rs. 100 Par)",
+      "targetFunction": "adjustForRightShare(700, 50, 100)",
+      "input": { "marketPrice": 700, "rightPercent": 50, "issuePrice": 100 },
+      "expected": 500,
+      "actual": 500,
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-21",
+      "category": "Simultaneous 20% Bonus + 30% Right Share Price Adjustment",
+      "targetFunction": "adjustSimultaneousBonusAndRight(620, 20, 30, 100)",
+      "input": { "marketPrice": 620, "bonusPercent": 20, "rightPercent": 30, "rightIssuePrice": 100 },
+      "expected": 433.33,
+      "actual": { "adjustedPrice": 433.33, "bonusOnlyPrice": 516.67, "rightOnlyPrice": 500, "totalDilutionFactor": 1.5, "priceDropPercent": 30.11 },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-22",
+      "category": "Zero / Negative Market Price in Right Share Calculator",
+      "targetFunction": "adjustForRightShare(0, 50, 100)",
+      "input": { "marketPrice": 0, "rightPercent": 50, "issuePrice": 100 },
+      "expected": 0,
+      "actual": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-23",
+      "category": "Negative Bonus/Right Percentage (-20%)",
+      "targetFunction": "adjustSimultaneousBonusAndRight(500, -20, -10, 100)",
+      "input": { "marketPrice": 500, "bonusPercent": -20, "rightPercent": -10, "rightIssuePrice": 100 },
+      "expected": "Clamps negative percentages to 0 and returns 500",
+      "actual": { "adjustedPrice": 500, "bonusOnlyPrice": 500, "rightOnlyPrice": 500, "totalDilutionFactor": 1, "priceDropPercent": 0 },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-24",
+      "category": "Premium Right Share Issue Price (Rs. 250 Issue Price, 25% Right)",
+      "targetFunction": "adjustForRightShare(600, 25, 250)",
+      "input": { "marketPrice": 600, "rightPercent": 25, "issuePrice": 250 },
+      "expected": 530,
+      "actual": 530,
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-25",
+      "category": "Nepali Devanagari Digits in BOID & CRN Validation",
+      "targetFunction": "validateCasbaApplicationPayload(payload)",
+      "input": { "appliedKitta": 10, "boid": "१३०१०४००००१२३४५६", "crnNumber": "सीआरएन-१२३४५६", "transactionPin": "१२३४", "bankId": 1, "companyShareId": 701 },
+      "expected": "Cleanly rejected by ASCII regex without throwing exception",
+      "actual": { "valid": false, "errors": ["BOID must be a valid 16-digit CDSC number starting with 130.", "CRN Number must be 6-20 alphanumeric characters.", "Transaction PIN must be exactly 4 numeric digits."] },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-26",
+      "category": "XSS Payload in MeroShare CSV Import (parseMeroShareCsv)",
+      "targetFunction": "parseMeroShareCsv(csvText)",
+      "input": "Scrip,Current Balance,Last Closing Price,Last Transaction Price\n\"<script>alert(1)</script>\",100,500,520\nNABIL,50,540,549",
+      "expected": "Safely parsed as plain text without DOM execution",
+      "actual": "Parsed safely; React escapes text nodes.",
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-27",
+      "category": "Quoted Thousand-Separator Numbers in MeroShare CSV ('\"1,250\"' Units)",
+      "targetFunction": "parseMeroShareCsv(csvText)",
+      "input": "Scrip,Current Balance,Last Closing Price,Last Transaction Price\nNABIL,\"1,250\",\"540.50\",\"549.00\"",
+      "expected": "1250 units @ LTP 549.00",
+      "actual": "1 unit @ LTP 250 (columns shifted due to naive line.split(','))",
+      "status": "FAIL (BUG-024)",
+      "notes": "Same unquoted split(',') bug affects MeroShare CSV import in Demat Accounts."
+    },
+    {
+      "id": "IPO-TEST-28",
+      "category": "Extremely Long String (10,000 Characters) in BOID / CRN",
+      "targetFunction": "validateCasbaApplicationPayload(payload)",
+      "input": { "appliedKitta": 10, "boid": "130 + 9997 digits", "crnNumber": "10000 chars", "transactionPin": "1234", "bankId": 1, "companyShareId": 701 },
+      "expected": "Rejected in < 1ms without ReDoS",
+      "actual": { "valid": false, "executionTimeMs": 0.2 },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-29",
+      "category": "Attempt to Force >100% Guaranteed Allotment via Huge Kitta Application (10,000 Kitta on 5x Oversubscribed IPO)",
+      "targetFunction": "calculateIpoAllotmentProbability(ipo, 10000)",
+      "input": { "generalPublicUnits": 3000000, "totalApplicants": 1500000, "oversubscriptionTimes": 5.0, "appliedKitta": 10000 },
+      "expected": "Probability remains capped at 20.00% under SEBON 10-kitta rule (applying for more shares in an oversubscribed IPO does not increase lottery chance)",
+      "actual": { "probabilityPct": 20, "isLottery": true, "guaranteedKitta": 0 },
+      "status": "PASS"
+    },
+    {
+      "id": "IPO-TEST-30",
+      "category": "Offline / Fallback IPO Result Company List (fetchIpoCompanyList)",
+      "targetFunction": "fetchIpoCompanyList()",
+      "input": "API returns list without ID 501 or offline fallback triggered",
+      "expected": "Displays cached list with accurate publication date and no fake 'isTodayResult: true' tag",
+      "actual": "Injects hardcoded Beni Hydropower Project Limited (ID: 501) with isTodayResult: true and sorts it to #1 permanently",
+      "status": "FAIL (BUG-036)",
+      "notes": "meroShareService.js:1150-1171 permanently pins Beni Hydropower as 'Today's Result' (isTodayResult: true) in all environments."
+    }
+  ]
+}

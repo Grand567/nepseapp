@@ -1,0 +1,261 @@
+{
+  "phase": "Phase 6 - Stocks Tab (StockDetailModal - 13 Tabs & Child Modals) AI & Quantitative Stress Audit",
+  "timestamp": "2026-11-08T15:40:00+05:45",
+  "targetComponent": "src/components/StockDetailModal.jsx + src/components/StockBrokerAnalysisTab.jsx + src/utils/localLedgerManager.ts",
+  "totalInputsTested": 30,
+  "summary": {
+    "crashesOrUncaughtExceptions": 0,
+    "passed": 20,
+    "failedOrFlagged": 10,
+    "criticalFindings": [
+      "STK-TEST-01..06: Instant Buy Calculator omits the Rs. 25 DP fee from Total Cost Payable while displaying it in the 'SEBON Fee + DP' line item (line items do not sum to Total Cost Payable).",
+      "STK-TEST-08: Instant Buy Calculator accepts negative quantity (-100 shares) and computes negative Gross Turnover (Rs. -34,390), negative SEBON fee + DP (Rs. 19.84 = -5.16 + 25), and negative Total Cost Payable (Rs. -34,395.16).",
+      "STK-TEST-13..14: AI Guru Live Report ignores the active Order Flow Veto ('Whale Dump: Nagarik Stock Dealer dumped 33.14% of total session volume') and outputs '⚪ CAUTIOUS ZONE (BELOW 20 EMA) — Wyckoff Cycle Phase B: Absorption & Cause Building', contradicting both Overview Veto Law and Technicals Tab ('Phase D: Distribution / UTAD').",
+      "STK-TEST-18: Overview Rupee Investment Simulator accepts negative rupee input (-50,000) without clamping to 0.",
+      "STK-TEST-22: Compare Peers Tab allows comparing AKJCL against itself (AKJCL vs. AKJCL) without warning or filtering out the base symbol.",
+      "STK-TEST-23..25: Compare Peers Tab silently ignores non-existent symbols ('ZZZZZZ'), Nepali Devanagari ('आँखुखोला'), and invalid queries without showing a 'No matching stock found' message (leaves previous peer AHL on screen)."
+    ]
+  },
+  "testInputs": [
+    {
+      "id": "STK-TEST-01",
+      "category": "Buy Calculator Standard (Tier <= 50k @ 0.36%)",
+      "input": { "mode": "buy", "qty": 100, "price": 343.9 },
+      "expected": "Gross: Rs. 34,390 | Broker Comm (0.36%): Rs. 123.80 | SEBON+DP: Rs. 30.16 | Total Cost Payable: Rs. 34,543.96",
+      "actual": "Gross: Rs. 34,390 | Broker Comm: Rs. 123.8 | SEBON+DP: Rs. 30.16 | Total Cost Payable: Rs. 34,518.96 (Rs. 25.00 short!)",
+      "status": "FAIL (BUG-043)"
+    },
+    {
+      "id": "STK-TEST-02",
+      "category": "Buy Calculator Micro Lot (Min Rs. 10 Commission)",
+      "input": { "mode": "buy", "qty": 10, "price": 100 },
+      "expected": "Gross: Rs. 1,000 | Broker Comm (Min): Rs. 10.00 | SEBON+DP: Rs. 25.15 | Total Cost Payable: Rs. 1,035.15",
+      "actual": "Gross: Rs. 1,000 | Broker Comm: Rs. 10 | SEBON+DP: Rs. 25.15 | Total Cost Payable: Rs. 1,010.15 (Rs. 25.00 short!)",
+      "status": "FAIL (BUG-043)"
+    },
+    {
+      "id": "STK-TEST-03",
+      "category": "Buy Calculator Tier 2 (50k-5L @ 0.33%)",
+      "input": { "mode": "buy", "qty": 1000, "price": 343.9 },
+      "expected": "Gross: Rs. 3,43,900 | Broker Comm: Rs. 1,134.87 | SEBON+DP: Rs. 76.59 | Total Cost Payable: Rs. 3,45,111.46",
+      "actual": "Gross: Rs. 3,43,900 | Broker Comm: Rs. 1,134.87 | SEBON+DP: Rs. 76.58 | Total Cost Payable: Rs. 3,45,086.45 (Rs. 25.00 short!)",
+      "status": "FAIL (BUG-043)"
+    },
+    {
+      "id": "STK-TEST-04",
+      "category": "Buy Calculator Tier 3 (5L-20L @ 0.31%)",
+      "input": { "mode": "buy", "qty": 3000, "price": 343.9 },
+      "expected": "Gross: Rs. 10,31,700 | Broker Comm: Rs. 3,198.27 | SEBON+DP: Rs. 179.76 | Total Cost Payable: Rs. 10,35,078.03",
+      "actual": "Gross: Rs. 10,31,700 | Broker Comm: Rs. 3,198.27 | SEBON+DP: Rs. 179.75 | Total Cost Payable: Rs. 10,35,053.02 (Rs. 25.00 short!)",
+      "status": "FAIL (BUG-043)"
+    },
+    {
+      "id": "STK-TEST-05",
+      "category": "Buy Calculator Tier 4 (20L-1Cr @ 0.27%)",
+      "input": { "mode": "buy", "qty": 10000, "price": 500 },
+      "expected": "Gross: Rs. 50,00,000 | Broker Comm: Rs. 13,500 | SEBON+DP: Rs. 775 | Total Cost Payable: Rs. 50,14,275",
+      "actual": "Gross: Rs. 50,00,000 | Broker Comm: Rs. 13,500 | SEBON+DP: Rs. 775 | Total Cost Payable: Rs. 50,14,250 (Rs. 25.00 short!)",
+      "status": "FAIL (BUG-043)"
+    },
+    {
+      "id": "STK-TEST-06",
+      "category": "Buy Calculator Tier 5 (>1Cr @ 0.24%)",
+      "input": { "mode": "buy", "qty": 50000, "price": 500 },
+      "expected": "Gross: Rs. 2,50,00,000 | Broker Comm: Rs. 60,000 | SEBON+DP: Rs. 3,775 | Total Cost Payable: Rs. 2,50,63,775",
+      "actual": "Gross: Rs. 2,50,00,000 | Broker Comm: Rs. 60,000 | SEBON+DP: Rs. 3,775 | Total Cost Payable: Rs. 2,50,63,750 (Rs. 25.00 short!)",
+      "status": "FAIL (BUG-043)"
+    },
+    {
+      "id": "STK-TEST-07",
+      "category": "Buy Calculator Zero Quantity",
+      "input": { "mode": "buy", "qty": 0, "price": 343.9 },
+      "expected": "Hides result breakdown or shows Rs. 0 cleanly without NaN",
+      "actual": "Cleanly hides breakdown when qty=0; zero NaN/Infinity",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-08",
+      "category": "Buy Calculator Negative Quantity (-100 shares)",
+      "input": { "mode": "buy", "qty": -100, "price": 343.9 },
+      "expected": "Reject negative quantity or clamp to 0",
+      "actual": "Renders Gross Turnover: Rs. -34,390, SEBON Fee + DP: Rs. 19.84 (-5.16 + 25), Total Cost Payable: Rs. -34,395.16",
+      "status": "FAIL (BUG-043)"
+    },
+    {
+      "id": "STK-TEST-09",
+      "category": "Sell Calculator Individual Short-Term (<365d, 7.5% CGT)",
+      "input": { "mode": "sell", "qty": 100, "sellPrice": 343.9, "wacc": 300, "investorType": "individual", "holdingPeriod": "short" },
+      "expected": "Gross: Rs. 34,390 | Comm: Rs. 123.80 | SEBON+DP: Rs. 30.16 | CGT (7.5%): Rs. 304.67 | Net Receivable: Rs. 33,931.37 | Net Profit: +Rs. 3,782.41",
+      "actual": "Gross: Rs. 34,390 | Comm: Rs. 123.80 | SEBON+DP: Rs. 30.16 | CGT (7.5%): Rs. 304.67 | Net Receivable: Rs. 33,931.37 | Net Profit: +Rs. 3,782.41 (+12.55%)",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-10",
+      "category": "Sell Calculator Individual Long-Term (>=365d, 5.0% CGT)",
+      "input": { "mode": "sell", "qty": 100, "sellPrice": 343.9, "wacc": 300, "investorType": "individual", "holdingPeriod": "long" },
+      "expected": "CGT (5.0%): Rs. 203.11 | Net Receivable: Rs. 34,032.93 | Net Profit: +Rs. 3,883.97 (+12.88%)",
+      "actual": "CGT (5.0%): Rs. 203.11 | Net Receivable: Rs. 34,032.93 | Net Profit: +Rs. 3,883.97 (+12.88%)",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-11",
+      "category": "Sell Calculator Institutional (10.0% CGT)",
+      "input": { "mode": "sell", "qty": 100, "sellPrice": 343.9, "wacc": 300, "investorType": "institutional" },
+      "expected": "CGT (10.0%): Rs. 406.23 | Net Receivable: Rs. 33,829.81 | Net Profit: +Rs. 3,680.85 (+12.21%)",
+      "actual": "CGT (10.0%): Rs. 406.23 | Net Receivable: Rs. 33,829.81 | Net Profit: +Rs. 3,680.85 (+12.21%)",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-12",
+      "category": "Sell Calculator Capital Loss (Sell < WACC -> Rs. 0 CGT)",
+      "input": { "mode": "sell", "qty": 100, "sellPrice": 300, "wacc": 343.9, "investorType": "individual", "holdingPeriod": "short" },
+      "expected": "Gross: Rs. 30,000 | Comm: Rs. 108 | SEBON+DP: Rs. 29.50 | CGT: Rs. 0 | Net Receivable: Rs. 29,862.50 | Loss: -Rs. 4,527.50 (-13.17%)",
+      "actual": "Gross: Rs. 30,000 | Comm: Rs. 108 | SEBON+DP: Rs. 29.5 | CGT: Rs. 0 (omitted) | Net Receivable: Rs. 29,862.5 | Loss: Rs. -4,527.5 (-13.17%)",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-13",
+      "category": "AI Guru Quantitative Report Generation (Run #1)",
+      "input": { "symbol": "AKJCL", "action": "Generate Live Report" },
+      "expected": "Must respect active Order Flow Veto ('Whale Dump: Nagarik Stock Dealer dumped 33.14% of total session volume') and match Technicals tab Wyckoff phase",
+      "actual": "Outputs '⚪ CAUTIOUS ZONE (BELOW 20 EMA) — Wyckoff Cycle Phase: Phase B: Absorption & Cause Building' with zero mention of the active 33.14% Whale Dump Veto, and contradicts Technicals tab ('Phase D: Distribution / UTAD'). Includes disclaimer.",
+      "status": "FAIL (BUG-044)"
+    },
+    {
+      "id": "STK-TEST-14",
+      "category": "AI Guru Quantitative Report Determinism (Run #2)",
+      "input": { "symbol": "AKJCL", "action": "Refresh Analysis" },
+      "expected": "100% deterministic output for identical session state",
+      "actual": "100% identical to Run #1",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-15",
+      "category": "Overview Rupee Investment Simulator (Rs. 50,000)",
+      "input": { "rupeeAmount": 50000, "ltp": 343.9 },
+      "expected": "Calculates affordable whole shares (~144 kitta) + exact NEPSE fees + stop loss & target rupee outcomes",
+      "actual": "Renders 144 shares, exact fee breakdown, and target/stop rupee projections with zero NaN",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-16",
+      "category": "Overview Rupee Investment Simulator (< 1 Share: Rs. 100)",
+      "input": { "rupeeAmount": 100, "ltp": 343.9 },
+      "expected": "0 shares affordable, no division-by-zero or NaN",
+      "actual": "0 shares, zero NaN/Infinity",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-17",
+      "category": "Overview Rupee Investment Simulator (Rs. 0)",
+      "input": { "rupeeAmount": 0, "ltp": 343.9 },
+      "expected": "Clean 0 state without NaN",
+      "actual": "Clean 0 state, zero NaN/Infinity",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-18",
+      "category": "Overview Rupee Investment Simulator (Negative Rs. -50,000)",
+      "input": { "rupeeAmount": -50000, "ltp": 343.9 },
+      "expected": "Clamp negative capital to 0",
+      "actual": "Clamps shares to 0 via Math.max(0, ...), no crash or NaN",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-19",
+      "category": "Overview Rupee Investment Simulator (Whale Rs. 10,00,00,000 / 10 Cr)",
+      "input": { "rupeeAmount": 100000000, "ltp": 343.9 },
+      "expected": "Handles 10 Crore calculation without overflow or layout break",
+      "actual": "Renders cleanly without overflow or NaN",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-20",
+      "category": "Compare Peers - Valid Hydro Peer (API)",
+      "input": { "base": "AKJCL", "peer": "API" },
+      "expected": "Loads API (Api Power Company Ltd.) side-by-side with AKJCL",
+      "actual": "Renders AKJCL vs API comparison table with star (★) winners",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-21",
+      "category": "Compare Peers - Cross-Sector Peer (NABIL)",
+      "input": { "base": "AKJCL", "peer": "NABIL" },
+      "expected": "Loads NABIL side-by-side with AKJCL",
+      "actual": "Renders AKJCL vs NABIL comparison table cleanly",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-22",
+      "category": "Compare Peers - Self-Comparison (AKJCL vs AKJCL)",
+      "input": { "base": "AKJCL", "peer": "AKJCL" },
+      "expected": "Prevent self-comparison or show notice",
+      "actual": "Allows comparing AKJCL against AKJCL",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-23",
+      "category": "Compare Peers - Non-Existent Symbol (ZZZZZZ)",
+      "input": { "base": "AKJCL", "peer": "ZZZZZZ" },
+      "expected": "Show 'Stock not found' feedback when clicking Compare",
+      "actual": "Silently does nothing when clicking Compare (leaves previous peer AHL displayed without feedback)",
+      "status": "FAIL (BUG-048)"
+    },
+    {
+      "id": "STK-TEST-24",
+      "category": "Compare Peers - Nepali Devanagari Input (आँखुखोला)",
+      "input": { "base": "AKJCL", "peer": "आँखुखोला" },
+      "expected": "Match Nepali company name or show 'Stock not found' feedback",
+      "actual": "No crash, but silently ignores click without feedback",
+      "status": "FAIL (BUG-048)"
+    },
+    {
+      "id": "STK-TEST-25",
+      "category": "Compare Peers - XSS Payload (<script>alert(1)</script>)",
+      "input": { "base": "AKJCL", "peer": "<script>alert(1)</script>" },
+      "expected": "Escape payload, zero script execution",
+      "actual": "Zero script execution, React escapes input safely",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-26",
+      "category": "Floorsheet Filter - Buyer Broker 62",
+      "input": { "buyer": "62", "seller": "", "minQty": "" },
+      "expected": "Filters floorsheet rows to BB = 62 only",
+      "actual": "Filters rows to Buyer Broker 62 cleanly",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-27",
+      "category": "Floorsheet Filter - Seller Broker 60",
+      "input": { "buyer": "", "seller": "60", "minQty": "" },
+      "expected": "Filters floorsheet rows to SB = 60 only",
+      "actual": "Filters rows to Seller Broker 60 cleanly",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-28",
+      "category": "Floorsheet Filter - Min Quantity 300",
+      "input": { "buyer": "", "seller": "", "minQty": "300" },
+      "expected": "Filters floorsheet rows to QTY >= 300",
+      "actual": "Filters rows to QTY >= 300 cleanly",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-29",
+      "category": "Floorsheet Filter - Non-Existent Broker 999",
+      "input": { "buyer": "999", "seller": "", "minQty": "" },
+      "expected": "Shows empty state ('No floorsheet transactions found for current filter')",
+      "actual": "Shows 'No floorsheet transactions found for current filter. Total Amount: Rs. 0.00' cleanly",
+      "status": "PASS"
+    },
+    {
+      "id": "STK-TEST-30",
+      "category": "Cross-Tab Price & Metric Parity (NABIL & AKJCL across Search, Hero Quote, Overview, Price History, Compare Peers)",
+      "input": { "symbols": ["AKJCL", "NABIL"] },
+      "expected": "Identical LTP, Change %, High, Low, Volume, Turnover across all tabs",
+      "actual": "AKJCL shows Rs. 343.9 (-0.61%), High 349.9, Low 340, Vol 153,871, Turnover Rs. 5.29Cr across Search, Overview, Price History, and Compare Peers. NABIL shows Rs. 549 (-0.18%), Prev Close Rs. 550, Vol 21,117 across Search and Overview. However, ShareHubChart 1D header inside Overview shows '+0.00 (0.00%)' when market is closed, and Compare Peers shows Float Market Cap (Rs. 2.75B) > Total Market Cap (Rs. 2.72B)!",
+      "status": "FAIL (BUG-045, BUG-048)"
+    }
+  ]
+}
