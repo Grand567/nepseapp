@@ -468,8 +468,8 @@ export default function PredictorHub({
         bonusShare: Number(s.bonusShare || s.bonus || 0),
         rightShare: Number(s.rightShare || 0),
         volume_surge_ratio: vsr,
-        momentum_5d: momentum5d,
-        rsi_14: rsiIsReal ? Math.round(rsi) : null,
+        momentum_5d: momentum5d != null ? momentum5d : (s.momentum_5d != null ? Number(s.momentum_5d) : null),
+        rsi_14: rsiIsReal ? Math.round(rsi) : (s.rsi != null && !isNaN(Number(s.rsi)) ? Math.round(Number(s.rsi)) : (s.rsi_14 != null ? Number(s.rsi_14) : null)),
         rsiDataMissing,          // GAP-7: flag for screener ⚠️ RSI Unverified badge
         macd_signal: macdSignal,
         obv_trend: obvTrend,
@@ -3039,8 +3039,15 @@ export default function PredictorHub({
                     }}>
                       <div>
                         <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>5D Mom.</div>
-                        <div style={{ fontWeight: 800, color: s.momentum_5d >= 0 ? 'var(--bull)' : 'var(--bear)' }}>
-                          {s.momentum_5d > 0 ? `+${s.momentum_5d}%` : `${s.momentum_5d}%`}
+                        <div style={{
+                          fontWeight: 800,
+                          color: s.momentum_5d != null
+                            ? (s.momentum_5d > 0 ? 'var(--bull)' : s.momentum_5d < 0 ? 'var(--bear)' : 'var(--text-muted)')
+                            : 'var(--text-muted)'
+                        }}>
+                          {s.momentum_5d != null
+                            ? (s.momentum_5d > 0 ? `+${s.momentum_5d}%` : `${s.momentum_5d}%`)
+                            : '—'}
                         </div>
                       </div>
                       <div>
@@ -3051,8 +3058,8 @@ export default function PredictorHub({
                       </div>
                       <div>
                         <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>RSI (14)</div>
-                        <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>
-                          {s.rsi_14}
+                        <div style={{ fontWeight: 800, color: (s.rsi_14 != null || s.rsi != null) ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                          {s.rsi_14 != null ? s.rsi_14 : (s.rsi != null && !isNaN(Number(s.rsi)) ? Math.round(Number(s.rsi)) : '—')}
                         </div>
                       </div>
                       <div>
