@@ -1422,11 +1422,10 @@ export function WaccAveragingCalculator() {
 
   return (
     <div className="w-full max-w-2xl mx-auto space-y-4">
-      <InfoBanner
-        type="info"
-        title="Multi-Lot Averaging & Blended WACC (with Bonus/Right Dilution)"
-        text="Calculate your exact statutory Weighted Average Cost per share (WACC) across staggered secondary market lots, bonus shares, and right share subscriptions."
-      />
+      <InfoBanner type="info">
+        <div className="font-bold text-white mb-0.5">Multi-Lot Averaging & Blended WACC (with Bonus/Right Dilution)</div>
+        <div>Calculate your exact statutory Weighted Average Cost per share (WACC) across staggered secondary market lots, bonus shares, and right share subscriptions.</div>
+      </InfoBanner>
 
       <div className="space-y-2.5">
         <div className="flex justify-between items-center text-xs font-semibold text-slate-400 px-1">
