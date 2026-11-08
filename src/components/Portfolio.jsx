@@ -852,19 +852,8 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
   const handleApplyImportedHoldings = () => {
     if (!importParsedItems || importParsedItems.length === 0) return;
 
-    const newTransactions = importParsedItems.map(item => ({
-      id: `${Date.now()}_${item.symbol}_${Math.random().toString(36).substr(2, 4)}`,
-      type: 'buy',
-      symbol: item.symbol,
-      quantity: item.units,
-      price: item.rate,
-      date: new Date().toISOString().split('T')[0]
-    }));
-
-    saveTransactions([...newTransactions, ...transactions]);
-
-    if (meroshareProfiles.length > 0) {
-      const targetIndex = selectedImportProfileIndex >= 0 && selectedImportProfileIndex < meroshareProfiles.length ? selectedImportProfileIndex : 0;
+    if (meroshareProfiles.length > 0 && selectedImportProfileIndex >= 0 && selectedImportProfileIndex < meroshareProfiles.length) {
+      const targetIndex = selectedImportProfileIndex;
       const activeProf = meroshareProfiles[targetIndex];
       const existingHoldings = [...(activeProf.holdings || [])];
 
@@ -893,6 +882,18 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
       const updatedProfiles = meroshareProfiles.map((p, i) => i === targetIndex ? { ...p, holdings: existingHoldings, lastSyncedAt: Date.now() } : p);
       setMeroshareProfiles(updatedProfiles);
       saveProfilesToStorage(updatedProfiles);
+    } else {
+      // Import directly into Manual Trade Ledger (no double write to MeroShare)
+      const newTransactions = importParsedItems.map(item => ({
+        id: `${Date.now()}_${item.symbol}_${Math.random().toString(36).substr(2, 4)}`,
+        type: 'buy',
+        symbol: item.symbol,
+        quantity: item.units,
+        price: item.rate,
+        date: new Date().toISOString().split('T')[0]
+      }));
+
+      saveTransactions([...newTransactions, ...transactions]);
     }
 
     setImportStatusMsg(`🎉 Successfully imported ${importParsedItems.length} holdings into your active portfolio!`);
@@ -1723,11 +1724,15 @@ Based on this data, provide a robust analysis using this exact markdown structur
       map[h.symbol].totalInvestedCost += h.totalInvestedCost;
       if (h.currentLtp > 0) map[h.symbol].currentLtp = h.currentLtp;
       if (h.prevClose > 0) map[h.symbol].prevClose = h.prevClose;
-      if (h.valueAsOfLTP > 0) map[h.symbol].valueAsOfLTP += h.valueAsOfLTP;
-      if (h.valueAsOfPrevClose > 0) map[h.symbol].valueAsOfPrevClose += h.valueAsOfPrevClose;
     });
     return Object.values(map).map(h => {
       h.wacc = h.units > 0 ? h.totalInvestedCost / h.units : 100;
+      if (h.prevClose > 0) {
+        h.valueAsOfPrevClose = Number((h.units * h.prevClose).toFixed(2));
+      }
+      if (h.currentLtp > 0) {
+        h.valueAsOfLTP = Number((h.units * h.currentLtp).toFixed(2));
+      }
       return h;
     }).filter(h => h.units > 0);
   };
@@ -4244,6 +4249,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   onChange={e => setSelectedImportProfileIndex(Number(e.target.value))}
                   style={{ background: '#111827', color: '#fff', border: '1px solid #334155', borderRadius: 6, padding: '4px 8px', fontSize: 12 }}
                 >
+                  <option value={-1}>📖 Manual Trade Ledger</option>
                   {meroshareProfiles.map((p, idx) => (
                     <option key={p.id || idx} value={idx}>
                       {p.name || `Profile ${idx + 1}`} ({p.boid || 'No BOID'})
