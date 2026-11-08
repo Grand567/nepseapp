@@ -51,7 +51,7 @@ export function PortfolioAnalytics({ onOpenWacc, onSelectScrip, lang = 'ne', sto
         </div>
 
         <div className="mt-1 font-mono text-3xl font-extrabold text-white">
-          {isNe ? `रु ${totalVal.toLocaleString()}` : `NPR ${totalVal.toLocaleString()}`}<span className="text-slate-500 text-lg">.००</span>
+          {isNe ? `रु ${totalVal.toLocaleString()}` : `NPR ${totalVal.toLocaleString()}`}<span className="text-slate-500 text-lg">{isNe ? '.००' : '.00'}</span>
         </div>
 
         {/* Return Stat Matrix */}
