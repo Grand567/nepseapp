@@ -19,6 +19,8 @@ import {
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 import { getProxyBase, fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
 import { AlphaCommandCenter } from './AlphaCommandCenter';
+import { Capacitor } from '@capacitor/core';
+import { openExternalUrl } from '../utils/externalLinks';
 
 interface Master100ProfitWorkstationProps {
   stocks?: any[];
@@ -498,8 +500,33 @@ export function Master100ProfitWorkstation({
     } catch (_) {}
   };
 
-  const handleDownloadPdf = () => {
-    window.open('/NEPSE_100_Percent_Profit_Master_Guide.pdf', '_blank');
+  const handleDownloadPdf = async () => {
+    const pdfUrl = '/NEPSE_100_Percent_Profit_Master_Guide.pdf';
+    const filename = 'NEPSE_100_Percent_Profit_Master_Guide.pdf';
+
+    const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+
+    if (isNative && (window as any)?.NepseAndroidDownloader && typeof (window as any).NepseAndroidDownloader.saveFile === 'function') {
+      try {
+        const response = await fetch(pdfUrl);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const dataUrl = reader.result as string;
+          (window as any).NepseAndroidDownloader.saveFile(dataUrl, filename, 'application/pdf');
+        };
+        reader.readAsDataURL(blob);
+        return;
+      } catch (err) {
+        console.warn('[PDF] Native download error, fallback to browser handover:', err);
+      }
+    }
+
+    try {
+      openExternalUrl(pdfUrl);
+    } catch (_) {
+      window.open(pdfUrl, '_blank');
+    }
   };
 
   return (
