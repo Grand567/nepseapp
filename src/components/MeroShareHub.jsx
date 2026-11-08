@@ -232,13 +232,6 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
   const [selectedAccountIds, setSelectedAccountIds] = useState([]);
   const [accountSearchQuery, setAccountSearchQuery] = useState('');
 
-  // Apply Wizard state
-  const [showWizard, setShowWizard] = useState(false);
-  const [wizardStep, setWizardStep] = useState(0);
-  const [appliedStatus, setAppliedStatus] = useState({}); // { profileId: 'applied' / 'pending' }
-  const [copiedField, setCopiedField] = useState(null);
-  const [wizardMessage, setWizardMessage] = useState('');
-  const [isWizardApplying, setIsWizardApplying] = useState(false);
 
   // Sub Tabs & Portfolio state
   const [activeSubTab, setActiveSubTab] = useState(() => initialTab || 'accounts'); // 'accounts', 'ipo', 'portfolio'
@@ -1040,40 +1033,6 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     );
   };
 
-  // Helper copy to clipboard
-  const handleCopy = (text, fieldName) => {
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text);
-      } else {
-        const textArea = document.createElement("textarea");
-        textArea.value = text;
-        textArea.style.position = "fixed";
-        textArea.style.left = "-9999px";
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textArea);
-      }
-      setCopiedField(fieldName);
-      setTimeout(() => setCopiedField(null), 1500);
-      showToast(`${fieldName ? fieldName.toUpperCase() : 'Credential'} copied to clipboard!`, "success");
-    } catch (err) {
-      console.error("Clipboard copy error: ", err);
-      showToast("Failed to copy. Please copy manually.", "error");
-    }
-  };
-
-  const startApplyWizard = () => {
-    if (profiles.length === 0) {
-      showToast("Please add MeroShare profiles first.", "error");
-      return;
-    }
-    setActiveSubTab('accounts');
-    setShowWizard(true);
-    setWizardStep(0);
-  };
-
   const filterProfileBySearch = (p) => {
     if (!p) return false;
     if (!accountSearchQuery || !accountSearchQuery.trim()) return true;
@@ -1125,63 +1084,6 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     if (defaultIpo) return defaultIpo;
 
     return { name: 'Select IPO Issue', scrip: '...', status: '', amountPerShare: 100, minKitta: 10, maxKitta: 10000 };
-  };
-
-  const handleWizardApplyLive = async () => {
-    const profile = profiles[wizardStep];
-    const activeIpo = getActiveIpo();
-    
-    setIsWizardApplying(true);
-    setWizardMessage('Authenticating MeroShare session...');
-
-    try {
-      const clientId = await getRealClientId(profile.boid, profile.dpCode);
-      let resMsg = '';
-
-      setWizardMessage('Submitting secure ASBA flow via proxy...');
-      const response = await fetch(`${getProxyBase()}/api/meroshare/apply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientId,
-          username: profile.username,
-          password: profile.password,
-          companyShareId: Number(String(selectedIpo).replace(/\D+/g, '')) || Number(selectedIpo),
-          appliedKitta: Number(customAppliedKitta),
-          crnNumber: profile.crn,
-          transactionPin: profile.pin,
-          boid: profile.boid
-        })
-      });
-
-      const json = await response.json();
-      if (!response.ok || !json.success) {
-        throw new Error(json.message || 'Failed to submit IPO application via proxy.');
-      }
-
-      resMsg = json.data?.message || 'Share applied successfully.';
-
-      setAppliedStatus(prev => ({ ...prev, [profile.id]: 'applied' }));
-      showToast(`Success: ${resMsg}`, "success");
-      
-      // Auto advance to next step after a tiny delay
-      setTimeout(() => {
-        setIsWizardApplying(false);
-        setWizardMessage('');
-        if (wizardStep < profiles.length - 1) {
-          setWizardStep(prev => prev + 1);
-        } else {
-          setShowWizard(false);
-          showToast("Awesome! You completed applying IPO across all your registered family profiles.", "success");
-        }
-      }, 1000);
-
-    } catch (err) {
-      console.error("Wizard apply error:", err);
-      setIsWizardApplying(false);
-      setWizardMessage('');
-      showToast(`ASBA Application Failed: ${err.message}`, "error");
-    }
   };
 
   // Trigger direct live retrieval of Demat portfolio from CDSC MeroShare
@@ -1560,7 +1462,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
           <h2 style={{ fontSize: 20, fontWeight: 'bold', color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: 8 }}>
             <ShieldCheck style={{ width: 20, height: 20 }} /> MeroShare Hub
           </h2>
-          {activeSubTab === 'accounts' && !showWizard && (
+          {activeSubTab === 'accounts' && (
             <button 
               onClick={() => setShowAddForm(!showAddForm)} 
               className="btn-secondary"
@@ -1573,7 +1475,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       )}
 
       {/* Sub Tab Navigation */}
-      {!showWizard && !hideTopNav && (
+      {!hideTopNav && (
         <div style={{ marginBottom: 16 }}>
           <div className="segmented-bar">
             {[
@@ -1619,7 +1521,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       {/* ── Sub Tab: ACCOUNTS ── */}
       {activeSubTab === 'accounts' && (
         <>
-          {hideTopNav && !showWizard && (
+          {hideTopNav && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#ffffff' }}>MeroShare Demat Accounts</h3>
@@ -1862,158 +1764,11 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
             </div>
           )}
 
-          {/* Bulk Apply Wizard Section */}
-          {showWizard && profiles.length > 0 && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <span className="badge badge-primary">Apply Wizard</span>
-                <button onClick={() => setShowWizard(false)} style={{ fontSize: 12, color: 'var(--bear)', fontWeight: 600, cursor: 'pointer', background: 'transparent', border: 'none' }}>Exit Wizard</button>
-              </div>
-
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-                Apply IPO for issue <b style={{ color: 'var(--text-primary)' }}>{getActiveIpo().name}</b> across all accounts. Secure helper copies credentials in one click.
-              </p>
-
-              {/* Current Profile details */}
-              <div className="card" style={{ background: 'rgba(255,255,255,0.03)', padding: 16, marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Account {wizardStep + 1} of {profiles.length}</span>
-                  <span style={{ fontWeight: 'bold', fontSize: 14, color: 'var(--primary-light)' }}>{profiles[wizardStep].name}</span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
-                  <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>DP / BANK ID</div>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{profiles[wizardStep].dpCode}</div>
-                    </div>
-                    <button 
-                      onClick={() => handleCopy(profiles[wizardStep].dpCode, 'dp')}
-                      style={{ color: 'var(--primary-light)', cursor: 'pointer', background: 'transparent', border: 'none' }}
-                    >
-                      {copiedField === 'dp' ? <Check style={{ width: 14, height: 14 }} /> : <Copy style={{ width: 14, height: 14 }} />}
-                    </button>
-                  </div>
-
-                  <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>USERNAME</div>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{profiles[wizardStep].username}</div>
-                    </div>
-                    <button 
-                      onClick={() => handleCopy(profiles[wizardStep].username, 'username')}
-                      style={{ color: 'var(--primary-light)', cursor: 'pointer', background: 'transparent', border: 'none' }}
-                    >
-                      {copiedField === 'username' ? <Check style={{ width: 14, height: 14 }} /> : <Copy style={{ width: 14, height: 14 }} />}
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
-                  <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>PASSWORD</div>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>••••••••</div>
-                    </div>
-                    <button 
-                      onClick={() => handleCopy(profiles[wizardStep].password, 'pass')}
-                      style={{ color: 'var(--primary-light)', cursor: 'pointer', background: 'transparent', border: 'none' }}
-                    >
-                      {copiedField === 'pass' ? <Check style={{ width: 14, height: 14 }} /> : <Copy style={{ width: 14, height: 14 }} />}
-                    </button>
-                  </div>
-
-                  <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>CRN NUMBER</div>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{profiles[wizardStep].crn}</div>
-                    </div>
-                    <button 
-                      onClick={() => handleCopy(profiles[wizardStep].crn, 'crn')}
-                      style={{ color: 'var(--primary-light)', cursor: 'pointer', background: 'transparent', border: 'none' }}
-                    >
-                      {copiedField === 'crn' ? <Check style={{ width: 14, height: 14 }} /> : <Copy style={{ width: 14, height: 14 }} />}
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
-                  <div>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>4-Digit ASBA PIN</span>
-                    <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{profiles[wizardStep].pin}</span>
-                  </div>
-                  <button 
-                    onClick={() => handleCopy(profiles[wizardStep].pin, 'pin')}
-                    style={{ color: 'var(--primary-light)', cursor: 'pointer', background: 'transparent', border: 'none' }}
-                  >
-                    {copiedField === 'pin' ? <Check style={{ width: 14, height: 14 }} /> : <Copy style={{ width: 14, height: 14 }} />}
-                  </button>
-                </div>
-              </div>
-
-              {isWizardApplying && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 8, marginBottom: 12, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Loader2 style={{ width: 18, height: 18, color: 'var(--primary-light)' }} className="animate-spin" />
-                  <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{wizardMessage}</span>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button 
-                  onClick={handleWizardApplyLive}
-                  disabled={isWizardApplying}
-                  className="btn-success"
-                  style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', flex: 2, padding: '11px 0', minWidth: 140, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, borderRadius: 10, cursor: isWizardApplying ? 'wait' : 'pointer' }}
-                >
-                  {isWizardApplying ? <Loader2 style={{ width: 15, height: 15 }} className="animate-spin" /> : '⚡ Auto-Apply Live'}
-                </button>
-
-                <a 
-                  href="https://meroshare.cdsc.com.np/" 
-                  target="_blank" 
-                  rel="noreferrer" 
-                  className="btn-secondary"
-                  style={{ fontSize: 12, flex: 1, padding: '10px 0', textDecoration: 'none', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, minWidth: 120 }}
-                >
-                  Manual Open <ExternalLink style={{ width: 14, height: 14 }} />
-                </a>
-
-                {wizardStep < profiles.length - 1 ? (
-                  <button 
-                    onClick={() => {
-                      setAppliedStatus(prev => ({ ...prev, [profiles[wizardStep].id]: 'applied' }));
-                      setWizardStep(prev => prev + 1);
-                    }}
-                    disabled={isWizardApplying}
-                    className="btn-primary"
-                    style={{ fontSize: 12, flex: 1, padding: '10px 0', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, minWidth: 120 }}
-                  >
-                    Skip / Next <ArrowRight style={{ width: 14, height: 14 }} />
-                  </button>
-                ) : (
-                  <button 
-                    onClick={() => {
-                      setAppliedStatus(prev => ({ ...prev, [profiles[wizardStep].id]: 'applied' }));
-                      setShowWizard(false);
-                      showToast("Awesome! You completed applying IPO across all your registered family profiles.", "success");
-                    }}
-                    disabled={isWizardApplying}
-                    className="btn-bull"
-                    style={{ fontSize: 12, flex: 1, padding: '10px 0', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, minWidth: 120 }}
-                  >
-                    Finish 🎉
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Custom Proxy Server Settings (Only when not showing Wizard) */}
-          {!showWizard && (
-            <div className="card" style={{ marginTop: 16, padding: '14px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
-              <h4 style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--primary-light)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
-                ⚙️ Proxy Server Configuration
-              </h4>
+          {/* Custom Proxy Server Settings */}
+          <div className="card" style={{ marginTop: 16, padding: '14px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+            <h4 style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--primary-light)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+              ⚙️ Proxy Server Configuration
+            </h4>
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, marginBottom: 12 }}>
                 The mobile app connects to a secure proxy backend to query CDSC/MeroShare. If the default Vercel server is blocked or offline, you can configure a custom proxy server IP/domain here.
               </p>
@@ -2058,7 +1813,6 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                 </button>
               </div>
             </div>
-          )}
         </>
       )}
 
