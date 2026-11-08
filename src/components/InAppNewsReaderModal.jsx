@@ -33,7 +33,7 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState(null);
 
-  const navigation = useNavigation ? useNavigation() : null;
+  const navigation = useNavigation();
   const openStockDetail = navigation?.openStockDetail;
   const setActiveTab = navigation?.setActiveTab;
 
