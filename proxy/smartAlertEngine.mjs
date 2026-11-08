@@ -67,7 +67,9 @@ export {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = (process.env.NEPSE_DATA_DIR && fs.existsSync(process.env.NEPSE_DATA_DIR))
+  ? process.env.NEPSE_DATA_DIR
+  : path.join(__dirname, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'smart_alert_state.json');
 const B58_STATE_FILE = path.join(DATA_DIR, 'broker58_alert_state.json');
 const HISTORY_FILE = path.join(DATA_DIR, 'smart_alert_history.json');

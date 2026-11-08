@@ -2386,10 +2386,11 @@ export async function getFullSessionFloorsheet(dateStr = '') {
   const isIntradayWindow = nptMinutesOfDay >= 660 && nptMinutesOfDay <= 930;
 
   const candidateDirs = [
+    process.env.NEPSE_DATA_DIR,
     path.join(__dirname, 'data'),
     path.join(process.cwd(), 'data'),
     path.join(process.cwd(), 'proxy', 'data')
-  ].filter((d, i, arr) => arr.indexOf(d) === i);
+  ].filter(Boolean).filter((d, i, arr) => arr.indexOf(d) === i);
 
   if (cleanDate) {
     for (const dataDir of candidateDirs) {

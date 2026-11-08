@@ -1,6 +1,12 @@
 const { app, BrowserWindow, shell, session } = require('electron');
 const path = require('path');
 
+// Ensure Node supports ES module require where required by subdependencies
+if (!process.env.NODE_OPTIONS || !process.env.NODE_OPTIONS.includes('--experimental-require-module')) {
+  process.env.NODE_OPTIONS = ((process.env.NODE_OPTIONS || '') + ' --experimental-require-module').trim();
+}
+app.commandLine.appendSwitch('js-flags', '--experimental-require-module');
+
 // Ensure single instance of the application
 const gotTheLock = app.requestSingleInstanceLock();
 let mainWindow = null;
@@ -86,7 +92,54 @@ if (!gotTheLock) {
     });
   }
 
+  const fs = require('fs');
   const http = require('http');
+
+  function setupUserDataAndMigration() {
+    const userData = app.getPath('userData');
+    const targetDataDir = path.join(userData, 'data');
+    if (!fs.existsSync(targetDataDir)) {
+      try {
+        fs.mkdirSync(targetDataDir, { recursive: true });
+      } catch (err) {
+        console.warn('[Electron] Failed to create userData data directory:', err.message);
+      }
+    }
+    process.env.NEPSE_DATA_DIR = targetDataDir;
+
+    // Discover candidate source directories for initial seed or legacy database migration
+    const candidateSourceDirs = [
+      app.isPackaged ? path.join(process.resourcesPath, 'proxy', 'data') : null,
+      path.join(__dirname, '../proxy/data'),
+      path.join(process.cwd(), 'proxy', 'data'),
+      path.join(process.cwd(), 'data')
+    ].filter(Boolean);
+
+    for (const sourceDir of candidateSourceDirs) {
+      if (fs.existsSync(sourceDir)) {
+        try {
+          const entries = fs.readdirSync(sourceDir);
+          for (const entry of entries) {
+            const srcPath = path.join(sourceDir, entry);
+            const dstPath = path.join(targetDataDir, entry);
+            // Safe copy: Never overwrite or delete existing user data
+            if (!fs.existsSync(dstPath)) {
+              const stat = fs.statSync(srcPath);
+              if (stat.isDirectory()) {
+                fs.cpSync(srcPath, dstPath, { recursive: true, errorOnExist: false });
+              } else if (stat.isFile()) {
+                fs.copyFileSync(srcPath, dstPath);
+              }
+            }
+          }
+        } catch (migErr) {
+          console.warn('[Electron] Migration notice (non-fatal):', migErr.message);
+        }
+        break;
+      }
+    }
+    return targetDataDir;
+  }
 
   function ensureLocalProxy() {
     const req = http.get('http://localhost:5000/api/market-summary', (res) => {
@@ -111,6 +164,7 @@ if (!gotTheLock) {
   }
 
   app.whenReady().then(() => {
+    setupUserDataAndMigration();
     ensureLocalProxy();
     createWindow();
   });

@@ -34,7 +34,6 @@
         "**/*.mjs",
         "**/*.js",
         "package.json",
-        "node_modules/**/*",
         "data/drabyashree_ledger.db*",
         "data/broker_matrix_latest.json",
         "data/nepse-1year-market-history.json.gz",
@@ -56,8 +55,22 @@
         "!data/broker_alltime/**/*",
         "!data/raw_floorsheet_backups/**/*",
         "!data/daily_floorsheets/**/*",
+        "!node_modules/**/*",
         "!scratch/**/*",
         "!.env*"
+      ]
+    },
+    {
+      "from": "proxy/node_modules",
+      "to": "proxy/node_modules"
+    },
+    {
+      "from": "src",
+      "to": "src",
+      "filter": [
+        "utils/**/*",
+        "data/**/*",
+        "package.json"
       ]
     }
   ]

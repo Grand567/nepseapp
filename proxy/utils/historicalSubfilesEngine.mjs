@@ -29,6 +29,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 function resolveDataDir() {
+  if (process.env.NEPSE_DATA_DIR && fs.existsSync(process.env.NEPSE_DATA_DIR)) {
+    return process.env.NEPSE_DATA_DIR;
+  }
   if (process.env.RENDER_DISK_PATH && fs.existsSync(process.env.RENDER_DISK_PATH)) {
     return process.env.RENDER_DISK_PATH;
   }
