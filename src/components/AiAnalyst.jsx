@@ -2298,7 +2298,16 @@ Format as plain text (not JSON) for this conversational response.`;
       {activeTab === 'sandbox' && (
         <div className="flex-1 overflow-y-auto px-4 py-4 max-w-4xl mx-auto w-full space-y-4">
           {(() => {
-            const summary = calculateSandboxSummary(paperState);
+            const currentPrices = {};
+            if (Array.isArray(marketStocks)) {
+              marketStocks.forEach(s => {
+                if (s?.symbol) {
+                  const p = Number(s.ltp ?? s.lastTradedPrice ?? s.price ?? s.close ?? 0);
+                  if (p > 0) currentPrices[s.symbol] = p;
+                }
+              });
+            }
+            const summary = calculateSandboxSummary(paperState, currentPrices);
             return (
               <>
                 {/* Summary Banner */}
@@ -2419,10 +2428,11 @@ Format as plain text (not JSON) for this conversational response.`;
                               <td className="py-2.5 text-right">
                                 <button
                                   onClick={() => {
-                                    const res = executePaperSell(pos.id, pos.buyPrice);
+                                    const effectiveLtp = Number(pos.currentLtp || pos.currentPrice || currentPrices[pos.symbol] || marketStocks.find(s => s.symbol === pos.symbol)?.ltp || pos.buyPrice);
+                                    const res = executePaperSell(pos.id, effectiveLtp);
                                     if (res.success) {
                                       setPaperState(getPaperState());
-                                      showToast(`Closed ${pos.quantity} units of ${pos.symbol}. Net P/L: Rs. ${res.closedTrade.netProfitLoss}`);
+                                      showToast(`Closed ${pos.quantity} units of ${pos.symbol} at Rs. ${effectiveLtp}. Net P/L: Rs. ${res.closedTrade.netProfitLoss}`);
                                     }
                                   }}
                                   className="rounded-lg bg-rose-600/20 border border-rose-600/50 px-2.5 py-1 text-[11px] font-bold text-rose-300 hover:bg-rose-600 hover:text-white transition cursor-pointer"
