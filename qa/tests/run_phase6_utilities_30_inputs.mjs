@@ -55,12 +55,12 @@ runTest('UTIL-IN-01', 'Normal Buy Share Calculation (100 shares @ Rs. 250)', 'Ca
   const pass = res.shareValue === 25000 &&
                res.commission === 90 && // 25,000 * 0.36% = 90
                res.sebonFee === 3.75 && // 25,000 * 0.015% = 3.75
-               res.dpFee === 0 &&
-               res.totalAmount === 25093.75 &&
-               res.costPerShare === 250.9375;
+               res.dpFee === 25 &&
+               res.totalAmount === 25118.75 &&
+               res.costPerShare === 251.1875;
   return {
     pass,
-    expected: 'Payable = Rs. 25,093.75, Cost/Share = Rs. 250.94',
+    expected: 'Payable = Rs. 25,118.75, Cost/Share = Rs. 251.19',
     actual: `Payable = Rs. ${res.totalAmount}, Cost/Share = Rs. ${res.costPerShare.toFixed(2)}`
   };
 });
@@ -72,10 +72,11 @@ runTest('UTIL-IN-02', 'High-Tier Buy Order (5,000 shares @ Rs. 600 = Rs. 30 Lakh
   const pass = res.shareValue === 3000000 &&
                res.commission === 8100 &&
                res.sebonFee === 450 &&
-               res.totalAmount === 3008550;
+               res.dpFee === 25 &&
+               res.totalAmount === 3008575;
   return {
     pass,
-    expected: 'Commission = Rs. 8,100 (0.27%), Total = Rs. 3,008,550.00',
+    expected: 'Commission = Rs. 8,100 (0.27%), DP = Rs. 25, Total = Rs. 3,008,575.00',
     actual: `Commission = Rs. ${res.commission}, Total = Rs. ${res.totalAmount}`
   };
 });

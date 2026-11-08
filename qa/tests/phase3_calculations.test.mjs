@@ -55,8 +55,9 @@ describe('Phase 3A — Financial Calculations & Statutory Fee Unit Tests (src/ut
     expect(normal.shareValue).toBe(50000);
     expect(normal.commission).toBe(180);
     expect(normal.sebonFee).toBeCloseTo(7.5, 2);
-    expect(normal.totalAmount).toBeCloseTo(50187.5, 2);
-    expect(normal.costPerShare).toBeCloseTo(501.875, 3);
+    expect(normal.dpFee).toBe(25);
+    expect(normal.totalAmount).toBeCloseTo(50212.5, 2);
+    expect(normal.costPerShare).toBeCloseTo(502.125, 3);
 
     const zero = calculateBuyDetails(0, 500);
     expect(Number.isNaN(zero.costPerShare)).toBe(false);

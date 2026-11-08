@@ -343,12 +343,15 @@ export const DP_CHARGE = 25;
 
 /**
  * Calculates the complete buy transaction details.
+ * Unifies statutory CDSC DP fee (Rs. 25) with calculateNepseStatutoryTrade, calculateNetProfit, and BrokerageCalculator.
  */
-export function calculateBuyDetails(quantity, price) {
-  const shareValue = quantity * price;
+export function calculateBuyDetails(quantity, price, includeDp = true) {
+  const qty = Number(quantity) || 0;
+  const px = Number(price) || 0;
+  const shareValue = qty * px;
   const commission = calculateBrokerCommission(shareValue);
   const sebonFee = calculateSebonFee(shareValue);
-  const dpFee = 0; // Per CDSC regulations, DP fee (Rs. 25) is levied strictly on the SELL leg
+  const dpFee = (qty > 0 && px > 0 && includeDp) ? DP_CHARGE : 0;
   const totalAmount = shareValue + commission + sebonFee + dpFee;
 
   return {
@@ -357,7 +360,7 @@ export function calculateBuyDetails(quantity, price) {
     sebonFee,
     dpFee,
     totalAmount,
-    costPerShare: quantity > 0 ? totalAmount / quantity : 0
+    costPerShare: qty > 0 ? totalAmount / qty : 0
   };
 }
 
