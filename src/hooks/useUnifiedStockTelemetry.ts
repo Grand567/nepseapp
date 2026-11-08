@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { resolveValidNepseSymbol } from "@/services/aiGuru/runAiQuantitativeAssessment";
-import type { AtomicStockTelemetryApiResponse } from "@/app/api/stocks/[symbol]/telemetry/route";
+import type { AtomicStockTelemetryApiResponse } from "@/types/stockTelemetry";
 
 export function useUnifiedStockTelemetry(rawSymbol?: string | null) {
   const validSymbol = resolveValidNepseSymbol(rawSymbol);

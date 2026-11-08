@@ -8,7 +8,7 @@ import {
   type HistoricalCandle,
   type LedgerTelemetryRow,
 } from "../src/services/aiGuru/runAiQuantitativeAssessment";
-import { normalize5DBrokerPayloadForAi } from "../src/lib/db/drabyashreeDb";
+import { normalize5DBrokerPayloadForAi } from "../proxy/lib/db/drabyashreeDb";
 
 interface TestResult {
   suite: string;

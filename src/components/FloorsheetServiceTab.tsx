@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import type { FloorsheetHubApiResponse } from "@/app/api/floorsheet/hub/route";
+import type { FloorsheetHubApiResponse } from "../types/floorsheetHub";
 import { getProxyBase } from "../utils/liveData";
 import { triggerHaptic } from "../utils/haptics";
 import LoadingShimmerBar from "./LoadingShimmerBar";
