@@ -851,7 +851,7 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
     let list = [];
     if (tab === 'advanced') list = stocks.filter(s => (s.pChange || 0) > 0);
     else if (tab === 'declined') list = stocks.filter(s => (s.pChange || 0) < 0);
-    else if (tab === 'unchanged') list = stocks.filter(s => (s.pChange || 0) === 0);
+    else if (tab === 'unchanged') list = stocks.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0));
     else if (tab === 'circuit_pos') list = stocks.filter(s => isCircuitStock(s, 'pos'));
     else if (tab === 'circuit_neg') list = stocks.filter(s => isCircuitStock(s, 'neg'));
 
@@ -894,7 +894,7 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
           {[
             { id: 'advanced', label: 'Advanced', count: stocks.filter(s => (s.pChange || 0) > 0).length, color: 'var(--bull)' },
             { id: 'declined', label: 'Declined', count: stocks.filter(s => (s.pChange || 0) < 0).length, color: '#F43F5E' },
-            { id: 'unchanged', label: 'Unchanged', count: stocks.filter(s => (s.pChange || 0) === 0).length, color: 'var(--text-muted)' },
+            { id: 'unchanged', label: 'Unchanged', count: stocks.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0)).length, color: 'var(--text-muted)' },
             { id: 'circuit_pos', label: '+ve Circuit (15%)', count: stocks.filter(s => isCircuitStock(s, 'pos')).length, color: 'var(--bull)' },
             { id: 'circuit_neg', label: '-ve Circuit (15%)', count: stocks.filter(s => isCircuitStock(s, 'neg')).length, color: '#F43F5E' },
           ].map(t => (
@@ -2813,7 +2813,8 @@ function Dashboard({
       floatVal,
       floatChg,
       floatPChg,
-      totalScrips: stocks.length
+      totalScrips: stocks.length,
+      tradedScrips: (adv + dec + unc)
     };
   }, [stocks, indices, cachedSummaryForBreadth]);
 
@@ -3665,7 +3666,7 @@ function Dashboard({
         if (breadthFilter && Array.isArray(stocks)) {
           if (breadthFilter === 'advanced') filteredBreadthStocks = stocks.filter(s => (Number(s.pChange) || 0) > 0).sort((a, b) => (Number(b.pChange) || 0) - (Number(a.pChange) || 0));
           else if (breadthFilter === 'declined') filteredBreadthStocks = stocks.filter(s => (Number(s.pChange) || 0) < 0).sort((a, b) => (Number(a.pChange) || 0) - (Number(b.pChange) || 0));
-          else if (breadthFilter === 'unchanged') filteredBreadthStocks = stocks.filter(s => (Number(s.pChange) || 0) === 0);
+          else if (breadthFilter === 'unchanged') filteredBreadthStocks = stocks.filter(s => (Number(s.pChange) || 0) === 0 && ((Number(s.volume) || 0) > 0 || (Number(s.turnover) || 0) > 0));
           else if (breadthFilter === 'circuit_pos') filteredBreadthStocks = stocks.filter(s => isCircuitStock(s, 'pos')).sort((a, b) => (Number(b.pChange) || 0) - (Number(a.pChange) || 0));
           else if (breadthFilter === 'circuit_neg') filteredBreadthStocks = stocks.filter(s => isCircuitStock(s, 'neg')).sort((a, b) => (Number(a.pChange) || 0) - (Number(b.pChange) || 0));
         }
@@ -4024,7 +4025,8 @@ function Dashboard({
           }}>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Active Scrips</div>
             <div style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-              {marketSummaryStats.totalScrips} Listed
+              {marketSummaryStats.tradedScrips ? `${marketSummaryStats.tradedScrips} Traded` : `${marketSummaryStats.totalScrips} Listed`}&nbsp;
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>({marketSummaryStats.totalScrips} Listed)</span>
             </div>
           </div>
         </div>

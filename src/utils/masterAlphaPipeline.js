@@ -405,7 +405,8 @@ export function runUnifiedFiveStepAlphaDesk({
 
   const adv = stocks.filter(s => Number(s?.pChange || 0) > 0).length;
   const dec = stocks.filter(s => Number(s?.pChange || 0) < 0).length;
-  const totalTraded = Math.max(1, adv + dec);
+  const unch = stocks.filter(s => Number(s?.pChange || 0) === 0 && (Number(s?.volume || 0) > 0 || Number(s?.turnover || 0) > 0)).length;
+  const totalTraded = Math.max(1, adv + dec + unch);
   const breadthPct = Math.round((adv / totalTraded) * 100);
   const breadthPassed = breadthPct >= 38;
 
@@ -734,7 +735,8 @@ export function evaluateSingleStockAlphaDossier(stockOrSymbol, {
 
   const adv = stocks.filter(s => Number(s?.pChange || 0) > 0).length;
   const dec = stocks.filter(s => Number(s?.pChange || 0) < 0).length;
-  const totalTraded = Math.max(1, adv + dec);
+  const unch = stocks.filter(s => Number(s?.pChange || 0) === 0 && (Number(s?.volume || 0) > 0 || Number(s?.turnover || 0) > 0)).length;
+  const totalTraded = Math.max(1, adv + dec + unch);
   const breadthPct = Math.round((adv / totalTraded) * 100);
   const breadthPassed = breadthPct >= 38;
 
