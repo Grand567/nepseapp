@@ -161,7 +161,7 @@ const getRealClientId = async (boid, dpCode) => {
   return 101;
 };
 
-export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'guest_local', userEmail = '', initialTab = 'accounts', onSwitchToPortfolio }) {
+export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'guest_local', userEmail = '', initialTab = 'accounts', onSwitchToPortfolio, hideTopNav = false }) {
   // Profiles state
   const [profiles, setProfiles] = useState([]);
   
@@ -1548,23 +1548,25 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
   return (
     <div className="meroshare-view-container" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 10px' }}>
       {/* Tab Switch header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 'bold', color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <ShieldCheck style={{ width: 20, height: 20 }} /> MeroShare Hub
-        </h2>
-        {activeSubTab === 'accounts' && !showWizard && (
-          <button 
-            onClick={() => setShowAddForm(!showAddForm)} 
-            className="btn-secondary"
-            style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, borderColor: 'rgba(91,94,244,0.25)', color: 'var(--primary-light)' }}
-          >
-            <Plus style={{ width: 14, height: 14 }} /> {showAddForm ? 'Cancel' : 'Add Profile'}
-          </button>
-        )}
-      </div>
+      {!hideTopNav && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 'bold', color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <ShieldCheck style={{ width: 20, height: 20 }} /> MeroShare Hub
+          </h2>
+          {activeSubTab === 'accounts' && !showWizard && (
+            <button 
+              onClick={() => setShowAddForm(!showAddForm)} 
+              className="btn-secondary"
+              style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, borderColor: 'rgba(91,94,244,0.25)', color: 'var(--primary-light)' }}
+            >
+              <Plus style={{ width: 14, height: 14 }} /> {showAddForm ? 'Cancel' : 'Add Profile'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Sub Tab Navigation */}
-      {!showWizard && (
+      {!showWizard && !hideTopNav && (
         <div style={{ marginBottom: 16 }}>
           <div className="segmented-bar">
             {[
@@ -1610,6 +1612,21 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       {/* ── Sub Tab: ACCOUNTS ── */}
       {activeSubTab === 'accounts' && (
         <>
+          {hideTopNav && !showWizard && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#ffffff' }}>MeroShare Demat Accounts</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>{profiles.length} connected profile(s) for 1-click bulk application and C-ASBA verification.</p>
+              </div>
+              <button 
+                onClick={() => setShowAddForm(!showAddForm)} 
+                className="btn-secondary"
+                style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, borderColor: 'rgba(91,94,244,0.25)', color: 'var(--primary-light)' }}
+              >
+                <Plus style={{ width: 14, height: 14 }} /> {showAddForm ? 'Cancel' : 'Add Account'}
+              </button>
+            </div>
+          )}
           {/* Add profile form modal */}
           {showAddForm && (
             <form onSubmit={handleAddProfile} className="card fade-in" style={{ marginBottom: 16 }}>

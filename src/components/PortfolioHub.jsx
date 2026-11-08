@@ -118,6 +118,7 @@ export default function PortfolioHub({
             marketStocks={marketStocks}
             apiStatus={apiStatus}
             initialTab={subTab === 'bulk_ipo' ? 'ipo' : 'accounts'}
+            hideTopNav={true}
             onSwitchToPortfolio={() => setSubTab('portfolio')}
           />
         )}
