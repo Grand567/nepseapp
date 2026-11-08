@@ -1384,169 +1384,76 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
     }
   };
 
-  // ── Unified AI Analyst Engine Integration (Gemini, Groq, Pollinations, local fallback) ──
-  const callGroq = async (prompt, apiKey) => {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: 'You are an expert Nepalese Stock Market (NEPSE) analyst. Always respond in clear Markdown with headers, bullet points, and bold text. Always include an explicit BUY, HOLD, or SELL recommendation.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.4,
-        max_tokens: 1200
-      })
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `Groq error ${response.status}`);
-    }
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
-  };
-
-  const callGemini = async (prompt, apiKey) => {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      }
-    );
-    if (!response.ok) throw new Error(`Gemini error ${response.status}`);
-    const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  };
-
-  const callPollinations = async (prompt) => {
-    const response = await fetch('https://text.pollinations.ai/openai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'openai',
-        messages: [
-          { role: 'system', content: 'You are an expert Nepalese Stock Market (NEPSE) analyst.' },
-          { role: 'user', content: prompt }
-        ]
-      })
-    });
-    if (!response.ok) throw new Error('Pollinations failed');
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
-  };
+  // ── Unified AI Analyst Engine Integration (Secure Backend Proxy + Local Fallback) ──
+  const SEBON_DISCLAIMER = `\n\n---\n> ⚠️ **SEBON Regulatory Notice & Risk Disclaimer**: This analysis is generated automatically by artificial intelligence algorithms for informational, quantitative research and educational simulations only. It does NOT constitute financial advice, investment recommendations, or an endorsement to buy or sell securities under Securities Board of Nepal (SEBON) regulations. Past performance is not indicative of future returns. Stock trading on NEPSE involves capital loss risk. Consult a licensed SEBON investment advisor before making financial decisions.`;
 
   const getActiveLLMName = () => {
-    const activeGlm = localStorage.getItem('nepse_hub_glm_api_key') || glmKey;
-    const activeGemini = localStorage.getItem('nepse_hub_gemini_api_key') || geminiKey;
-    const activeGroq = localStorage.getItem('nepse_hub_groq_api_key') || groqKey;
-    const activePref = localStorage.getItem('nepse_hub_preferred_ai_engine') || preferredEngine;
-
-    if (activePref === 'glm' && activeGlm?.trim()) return 'GLM-4 AI (Active)';
-    if (activePref === 'gemini' && activeGemini.trim()) return 'Google Gemini 1.5 Flash';
-    if (activePref === 'groq' && activeGroq.trim()) return 'Groq LLaMA 3.3 70B';
-    // auto
-    if (activeGlm?.trim()) return 'GLM-4 AI (Active)';
-    if (activeGemini.trim()) return 'Google Gemini 1.5 Flash';
-    if (activeGroq.trim()) return 'Groq LLaMA 3.3 70B';
-    return 'Pollinations AI (Free)';
+    return 'Drabyashree Institutional AI Proxy';
   };
 
   const callLLM = async (prompt) => {
-    const activeGlm = localStorage.getItem('nepse_hub_glm_api_key') || glmKey;
-    const activeGemini = localStorage.getItem('nepse_hub_gemini_api_key') || geminiKey;
-    const activeGroq = localStorage.getItem('nepse_hub_groq_api_key') || groqKey;
-    const activePref = localStorage.getItem('nepse_hub_preferred_ai_engine') || preferredEngine;
-
-    const engines = [];
-    if (activePref === 'glm') {
-      engines.push({ name: 'glm', call: () => callGlmAi(prompt, undefined, activeGlm?.trim()), key: activeGlm, label: 'GLM-4 AI' });
-      engines.push({ name: 'gemini', call: () => callGemini(prompt, activeGemini.trim()), key: activeGemini, label: 'Google Gemini 1.5 Flash' });
-      engines.push({ name: 'groq', call: () => callGroq(prompt, activeGroq.trim()), key: activeGroq, label: 'Groq LLaMA 3.3 70B' });
-    } else if (activePref === 'gemini') {
-      engines.push({ name: 'gemini', call: () => callGemini(prompt, activeGemini.trim()), key: activeGemini, label: 'Google Gemini 1.5 Flash' });
-      engines.push({ name: 'glm', call: () => callGlmAi(prompt, undefined, activeGlm?.trim()), key: activeGlm, label: 'GLM-4 AI' });
-      engines.push({ name: 'groq', call: () => callGroq(prompt, activeGroq.trim()), key: activeGroq, label: 'Groq LLaMA 3.3 70B' });
-    } else if (activePref === 'groq') {
-      engines.push({ name: 'groq', call: () => callGroq(prompt, activeGroq.trim()), key: activeGroq, label: 'Groq LLaMA 3.3 70B' });
-      engines.push({ name: 'glm', call: () => callGlmAi(prompt, undefined, activeGlm?.trim()), key: activeGlm, label: 'GLM-4 AI' });
-      engines.push({ name: 'gemini', call: () => callGemini(prompt, activeGemini.trim()), key: activeGemini, label: 'Google Gemini 1.5 Flash' });
-    } else { // auto
-      if (activeGlm?.trim()) {
-        engines.push({ name: 'glm', call: () => callGlmAi(prompt, undefined, activeGlm.trim()), key: activeGlm, label: 'GLM-4 AI' });
-      }
-      if (activeGemini.trim()) {
-        engines.push({ name: 'gemini', call: () => callGemini(prompt, activeGemini.trim()), key: activeGemini, label: 'Google Gemini 1.5 Flash' });
-      }
-      if (activeGroq.trim()) {
-        engines.push({ name: 'groq', call: () => callGroq(prompt, activeGroq.trim()), key: activeGroq, label: 'Groq LLaMA 3.3 70B' });
-      }
-      if (!activeGlm?.trim() && !activeGemini.trim() && !activeGroq.trim()) {
-        engines.push({ name: 'glm', call: () => callGlmAi(prompt, undefined, DEFAULT_AI_KEY), key: DEFAULT_AI_KEY, label: 'GLM-4 AI' });
-        engines.push({ name: 'gemini', call: () => callGemini(prompt, activeGemini.trim()), key: activeGemini, label: 'Google Gemini 1.5 Flash' });
-        engines.push({ name: 'groq', call: () => callGroq(prompt, activeGroq.trim()), key: activeGroq, label: 'Groq LLaMA 3.3 70B' });
-      }
-    }
-
-    for (const engine of engines) {
-      if (engine.key?.trim()) {
-        try {
-          const result = await engine.call();
-          if (result) return { text: result, source: engine.label };
-        } catch (e) {
-          console.warn(`${engine.label} failed, trying next:`, e.message);
-        }
-      }
-    }
-
     try {
-      const result = await callPollinations(prompt);
-      if (result) return { text: result, source: 'Pollinations AI (Free)' };
+      const res = await generateNepseAiContent(prompt, {
+        systemPrompt: 'You are an expert Nepalese Stock Market (NEPSE) quantitative analyst. Always respond in clear Markdown with headers, bullet points, and bold text. Include explicit BUY, HOLD, or SELL recommendations based strictly on NEPSE risk models.'
+      });
+      if (res && res.text) {
+        return { text: res.text, source: res.source || 'Proxy GURU AI' };
+      }
     } catch (e) {
-      console.warn('Pollinations failed:', e.message);
+      console.warn('[Portfolio AI] Backend proxy failed, falling back to local heuristics:', e.message);
     }
-
     return { text: null, source: 'Local Heuristic' };
   };
 
-  const getLocalPortfolioHeuristics = (holdings) => {
+  const getLocalPortfolioHeuristics = (holdingsList) => {
     let text = "### 📊 NEPSE Hub Local Offline Analysis\n\n";
     text += "Your online AI APIs are currently offline or keys are not configured. Here is the local heuristic evaluation of your portfolio:\n\n";
-    holdings.forEach(h => {
-      const isProfit = h.profitLoss >= 0;
-      text += `* **${h.symbol}**: ${h.units} shares. cost base: Rs. ${Number(h.wacc || 0).toFixed(2)}, current: Rs. ${h.currentPrice}. Return: **${isProfit ? '+' : ''}${Number(h.plPercent || 0).toFixed(2)}%**.\n`;
-      if (h.plPercent < -15) {
-        text += `  - *Verdict*: **ACCUMULATE / AVERAGE DOWN**. You are at a significant loss. If fundamentals are intact, buying more will lower WACC.\n`;
-      } else if (h.plPercent > 20) {
-        text += `  - *Verdict*: **PARTIAL TAKE PROFIT**. Sitting on a substantial gain. Consider locking in some profit to secure capital.\n`;
+    (holdingsList || []).forEach(h => {
+      const units = Number.isFinite(h?.units) ? h.units : 0;
+      const wacc = Number.isFinite(h?.wacc) ? h.wacc : 100;
+      const curPrice = Number.isFinite(h?.currentPrice) ? h.currentPrice : wacc;
+      const plPercent = Number.isFinite(h?.plPercent) ? h.plPercent : 0;
+      const isProfit = plPercent >= 0;
+
+      text += `* **${h?.symbol || 'SCRIP'}**: ${units} shares. cost base: Rs. ${wacc.toFixed(2)}, current: Rs. ${curPrice.toFixed(2)}. Return: **${isProfit ? '+' : ''}${plPercent.toFixed(2)}%**.\n`;
+      if (plPercent < -50) {
+        text += `  - *Verdict*: **SEVERE DRAWDOWN / CAPITAL RISK**. Position is down ${plPercent.toFixed(1)}%. Review company solvency, NPL, and audit qualifications before allocating more capital. Do not blind-average down on distressed assets.\n`;
+      } else if (plPercent < -15) {
+        text += `  - *Verdict*: **ACCUMULATE / AVERAGE DOWN**. You are at a drawdown. If company fundamentals and cash flows remain intact, gradual accumulation will lower your cost basis.\n`;
+      } else if (plPercent > 20) {
+        text += `  - *Verdict*: **PARTIAL TAKE PROFIT**. Sitting on a substantial gain (+${plPercent.toFixed(1)}%). Consider locking in profits into risk-free assets or trailing stop-losses.\n`;
       } else {
-        text += `  - *Verdict*: **HOLD**. Standard fluctuations. Monitor sector trends and daily volume.\n`;
+        text += `  - *Verdict*: **HOLD**. Normal range fluctuations. Monitor sector rotation and volume.\n`;
       }
     });
-    return text;
+    return text + SEBON_DISCLAIMER;
   };
 
   const getLocalStockHeuristics = (holding, mStock) => {
-    let text = `### 📊 NEPSE Hub Local Analysis — ${holding.symbol}\n\n`;
-    text += `* **Average Buying Price (WACC)**: Rs. ${Number(holding.wacc || 0).toFixed(2)}\n`;
-    text += `* **Last Traded Price (LTP)**: Rs. ${mStock.ltp} (${mStock.pChange >= 0 ? '+' : ''}${mStock.pChange}%)\n`;
+    const sym = holding?.symbol || mStock?.symbol || 'SCRIP';
+    const units = Number.isFinite(holding?.units) ? holding.units : 0;
+    const wacc = Number.isFinite(holding?.wacc) ? holding.wacc : 100;
+    const ltp = Number.isFinite(mStock?.ltp) ? mStock.ltp : (Number.isFinite(holding?.currentPrice) ? holding.currentPrice : wacc);
+    const pChange = Number.isFinite(mStock?.pChange) ? mStock.pChange : 0;
+    const rsi = Number.isFinite(mStock?.rsi) ? mStock.rsi : 50;
+    const plPercent = Number.isFinite(holding?.plPercent) ? holding.plPercent : (wacc > 0 ? ((ltp - wacc) / wacc) * 100 : 0);
+
+    let text = `### 📊 NEPSE Hub Local Analysis — ${sym}\n\n`;
+    text += `* **Average Buying Price (WACC)**: Rs. ${wacc.toFixed(2)}\n`;
+    text += `* **Last Traded Price (LTP)**: Rs. ${ltp.toFixed(2)} (${pChange >= 0 ? '+' : ''}${pChange.toFixed(2)}%)\n`;
+    text += `* **Holdings**: ${units} units (P/L: ${plPercent >= 0 ? '+' : ''}${plPercent.toFixed(2)}%)\n`;
     text += `* **Technical Status**:\n`;
-    if (mStock.rsi < 35) {
-      text += `  - **RSI (14)**: ${Number(mStock.rsi || 0).toFixed(2)} (Oversold 🟢). Strong buying interest expected soon.\n`;
-      text += `  - **Verdict**: **BUY / AVERAGE DOWN**. Highly favorable risk-to-reward ratio.\n`;
-    } else if (mStock.rsi > 70) {
-      text += `  - **RSI (14)**: ${Number(mStock.rsi || 0).toFixed(2)} (Overbought 🔴). Price is saturated.\n`;
-      text += `  - **Verdict**: **SELL / TAKE PROFIT**. Expect short-term pullbacks.\n`;
+    if (rsi < 35) {
+      text += `  - **RSI (14)**: ${rsi.toFixed(2)} (Oversold 🟢). Favorable mean-reversion setup.\n`;
+      text += `  - **Verdict**: **ACCUMULATE / BUY**. Strong risk-to-reward ratio with disciplined stop-loss.\n`;
+    } else if (rsi > 70) {
+      text += `  - **RSI (14)**: ${rsi.toFixed(2)} (Overbought 🔴). Momentum exhausted.\n`;
+      text += `  - **Verdict**: **SELL / TAKE PROFIT**. Expect short-term pullbacks; tighten trailing stops.\n`;
     } else {
-      text += `  - **RSI (14)**: ${Number(mStock.rsi || 0).toFixed(2)} (Neutral ⚪). Consolidation phase.\n`;
-      text += `  - **Verdict**: **HOLD**. Stable trend.\n`;
+      text += `  - **RSI (14)**: ${rsi.toFixed(2)} (Neutral ⚪). Consolidation phase.\n`;
+      text += `  - **Verdict**: **HOLD**. Trend in equilibrium.\n`;
     }
-    return text;
+    return text + SEBON_DISCLAIMER;
   };
 
   const handleAnalyzePortfolio = async () => {
@@ -1570,7 +1477,7 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
     try {
       const { text, source } = await callLLM(prompt);
       if (text) {
-        setAiResult(text + `\n\n---\n*Analysis engine: ${source}*`);
+        setAiResult(text + `\n\n---\n*Analysis engine: ${source}*` + SEBON_DISCLAIMER);
       } else {
         setAiResult(getLocalPortfolioHeuristics(holdings));
       }
@@ -1628,7 +1535,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
     try {
       const { text, source } = await callLLM(prompt);
       if (text) {
-        setAiResult(text + `\n\n---\n*Analysis engine: ${source}*`);
+        setAiResult(text + `\n\n---\n*Analysis engine: ${source}*` + SEBON_DISCLAIMER);
       } else {
         setAiResult(getLocalStockHeuristics(holding, mStock));
       }
