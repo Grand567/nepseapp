@@ -1,8 +1,9 @@
 import React from 'react';
 import { Calculator, ChevronRight } from 'lucide-react';
 
-export function PortfolioAnalytics({ onOpenWacc, onSelectScrip, lang = 'ne', stocks = [] }) {
+export function PortfolioAnalytics({ onOpenWacc, onSelectScrip, lang = 'ne', stocks: rawStocks = [] }) {
   const isNe = lang === 'ne';
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
 
   // Live price lookups with fallbacks
   const nabilStock = stocks.find(s => s.symbol === 'NABIL');

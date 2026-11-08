@@ -128,7 +128,8 @@ const getRealClientId = async (boid, dpCode) => {
   return 101;
 };
 
-export default function Portfolio({ marketStocks, userId = 'local', userEmail = '', onSelectStock, onSwitchToAccounts, onSwitchToSimulator }) {
+export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altStocks, allStocks: altAllStocks, userId = 'local', userEmail = '', onSelectStock, onSwitchToAccounts, onSwitchToSimulator }) {
+  const marketStocks = Array.isArray(rawMarketStocks) ? rawMarketStocks : (Array.isArray(altStocks) ? altStocks : (Array.isArray(altAllStocks) ? altAllStocks : []));
 
   const [transactions, setTransactions] = useState([]);
   const [meroshareProfiles, setMeroshareProfiles] = useState([]);

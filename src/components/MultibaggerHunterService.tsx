@@ -12,7 +12,8 @@ interface MultibaggerHunterProps {
 
 const GATE_LABELS = ['Float', 'Supply', 'Squeeze', 'Volume', 'Broker', 'DPI', 'Graham', 'Season'];
 
-export function MultibaggerHunterService({ stocks = [], indices, onSelectStock }: MultibaggerHunterProps) {
+export function MultibaggerHunterService({ stocks: rawStocks = [], indices, onSelectStock }: MultibaggerHunterProps) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const [filterScore, setFilterScore] = useState<number | null>(null);
   const [filterSector, setFilterSector] = useState<string | null>(null);
   const [brokerMapLoaded, setBrokerMapLoaded] = useState(false);

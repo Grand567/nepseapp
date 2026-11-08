@@ -27,11 +27,13 @@ const CGT_MODES = [
 ];
 
 export function AlphaCommandCenter({
-  stocks = [],
-  indices = {},
+  stocks: rawStocks = [],
+  indices: rawIndices = {},
   onSelectStock,
   onNavigateTab
 }: AlphaCommandCenterProps) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
+  const indices = (rawIndices && typeof rawIndices === 'object') ? rawIndices : {};
   const [userCapital, setUserCapital] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('master_guide_capital');

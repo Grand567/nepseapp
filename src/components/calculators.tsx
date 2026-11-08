@@ -8,12 +8,13 @@ const inputCls = 'w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py
 const btnCls = 'w-full cursor-pointer rounded-lg bg-blue-600 px-4 py-3 text-base sm:text-sm font-bold text-white hover:bg-blue-700 active:scale-[0.98] transition-transform disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500';
 
 export function GrahamValuation({
-  stocks = [],
+  stocks: rawStocks = [],
   initialSymbol = '',
 }: {
   stocks?: any[];
   initialSymbol?: string;
 } = {}) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const [modelType, setModelType] = useState<'classical' | 'interest_adjusted'>('classical');
   const [selectedSym, setSelectedSym] = useState(
     initialSymbol ||
@@ -275,7 +276,8 @@ export function GrahamValuation({
   );
 }
 
-export function BrokerageCalculator({ stocks = [], initialSymbol = '' }: { stocks?: any[]; initialSymbol?: string } = {}) {
+export function BrokerageCalculator({ stocks: rawStocks = [], initialSymbol = '' }: { stocks?: any[]; initialSymbol?: string } = {}) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const [selectedSym, setSelectedSym] = useState(initialSymbol || '');
   const [form, setForm] = useState({ buy: '500', sell: '560', qty: '100', holdingType: 'short', slabType: 'jestha_2081' });
   const [result, setResult] = useState<any>(null);
@@ -563,7 +565,8 @@ export function SIPCalculator() {
   );
 }
 
-export function RiskRewardCalculator({ stocks = [], initialSymbol = '' }: { stocks?: any[]; initialSymbol?: string } = {}) {
+export function RiskRewardCalculator({ stocks: rawStocks = [], initialSymbol = '' }: { stocks?: any[]; initialSymbol?: string } = {}) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const [selectedSym, setSelectedSym] = useState(initialSymbol || '');
   const [form, setForm] = useState({ entry: '500', target: '550', stop: '475', capital: '100000', riskPct: '2', winProbPct: '58' });
   const [result, setResult] = useState<any>(null);

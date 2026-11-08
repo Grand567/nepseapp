@@ -26,11 +26,14 @@ function fmtQty(n) {
  * 4. Parallel Channel & Breakout Tradable Scanner
  */
 export default function StockYanAnalyticsCard({
-  stock = {},
-  history = [],
+  stock: rawStock = {},
+  history: rawHistory = [],
   brokerData = null,
-  floorsheet = []
+  floorsheet: rawFloorsheet = []
 }) {
+  const stock = rawStock && typeof rawStock === 'object' ? rawStock : {};
+  const history = Array.isArray(rawHistory) ? rawHistory : [];
+  const floorsheet = Array.isArray(rawFloorsheet) ? rawFloorsheet : [];
   const ltp = Number(stock.ltp || stock.close || 0);
   const closes = useMemo(() => {
     return Array.isArray(history)

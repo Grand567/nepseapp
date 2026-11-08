@@ -1446,8 +1446,8 @@ const TopSearchBar = React.memo(function TopSearchBar({
    MAIN DASHBOARD COMPONENT
 ═══════════════════════════════════════════════════════════════════════════ */
 function Dashboard({
-  stocks = [],
-  indices = {},
+  stocks: rawStocks = [],
+  indices: rawIndices = {},
   onRefresh,
   isRefreshing,
   triggerTick,
@@ -1457,6 +1457,8 @@ function Dashboard({
   onSelectStock,
   onOpenCalendar
 }) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
+  const indices = (rawIndices && typeof rawIndices === 'object') ? rawIndices : {};
   const [selectedStock, setSelectedStock] = useState(null);
   const [activeScanner, setActiveScanner] = useState(null);
   const [breadthModalTab, setBreadthModalTab] = useState(null);

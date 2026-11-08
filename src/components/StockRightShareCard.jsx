@@ -1,7 +1,8 @@
 import React from 'react';
 import { Layers, Calendar, DollarSign, Award, CheckCircle2, AlertCircle } from 'lucide-react';
 
-export default function StockRightShareCard({ stock = {}, rightShareData = null }) {
+export default function StockRightShareCard({ stock: rawStock = {}, rightShareData = null }) {
+  const stock = rawStock && typeof rawStock === 'object' ? rawStock : {};
   const sym = stock.symbol || '';
   const sector = stock.sector || 'Hydropower';
 

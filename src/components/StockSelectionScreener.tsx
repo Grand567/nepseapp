@@ -19,8 +19,9 @@ export function StockSelectionScreener({
   onSelectStock?: ((s: any) => void) | null;
   onSelectSymbol?: ((sym: string) => void) | null;
 }) {
-  const [stocks, setStocks] = useState<any[]>(propStocks);
-  const [loading, setLoading] = useState<boolean>(propStocks.length === 0);
+  const safePropStocks = Array.isArray(propStocks) ? propStocks : [];
+  const [stocks, setStocks] = useState<any[]>(safePropStocks);
+  const [loading, setLoading] = useState<boolean>(safePropStocks.length === 0);
   const [error, setError] = useState<string | null>(null);
 
   // Filter States

@@ -19,7 +19,8 @@ import {
 // ══════════════════════════════════════════════════════════════════
 // 1. 28-PATTERN CANDLESTICK VISUAL SCANNER (Share Hub Parity)
 // ══════════════════════════════════════════════════════════════════
-export function CandlestickPatternScannerService({ stocks = [] }: { stocks?: any[] }) {
+export function CandlestickPatternScannerService({ stocks: rawStocks = [] }: { stocks?: any[] }) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const [filterType, setFilterType] = useState<'all' | 'bullish' | 'bearish' | 'neutral'>('all');
   const [selectedPatternId, setSelectedPatternId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -295,7 +296,8 @@ export function CandlestickPatternScannerService({ stocks = [] }: { stocks?: any
 // ══════════════════════════════════════════════════════════════════
 // 2. TECHNICAL RATINGS SPEEDOMETER SUITE (Share Hub Parity)
 // ══════════════════════════════════════════════════════════════════
-export function TechnicalRatingsGaugeService({ stocks = [] }: { stocks?: any[] }) {
+export function TechnicalRatingsGaugeService({ stocks: rawStocks = [] }: { stocks?: any[] }) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const [selectedStock, setSelectedStock] = useState<any | null>(null);
   const [ratingFilter, setRatingFilter] = useState<'All' | 'Strong Buy' | 'Buy' | 'Neutral' | 'Sell' | 'Strong Sell'>('All');
   const [search, setSearch] = useState('');
@@ -501,7 +503,8 @@ export function TechnicalRatingsGaugeService({ stocks = [] }: { stocks?: any[] }
 // ══════════════════════════════════════════════════════════════════
 // 3. GDP VS NEPSE (BUFFETT INDICATOR FOR NEPAL) (Share Hub Parity)
 // ══════════════════════════════════════════════════════════════════
-export function GdpVsNepseMacroService({ stocks = [] }: { stocks?: any[] }) {
+export function GdpVsNepseMacroService({ stocks: rawStocks = [] }: { stocks?: any[] }) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const [macroApiData, setMacroApiData] = useState<any>(null);
 
   useEffect(() => {

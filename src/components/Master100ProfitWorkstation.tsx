@@ -29,10 +29,12 @@ interface Master100ProfitWorkstationProps {
 const CAPITAL_PRESETS = [100000, 50000, 200000, 500000];
 
 export function Master100ProfitWorkstation({
-  stocks = [],
-  indices = {},
+  stocks: rawStocks = [],
+  indices: rawIndices = {},
   onSelectStock
 }: Master100ProfitWorkstationProps) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
+  const indices = (rawIndices && typeof rawIndices === 'object') ? rawIndices : {};
   // Sizing & Portfolio capital (default to 1 Lakh / NPR 100,000)
   const [portfolioCapital, setPortfolioCapital] = useState<number>(() => {
     try {

@@ -110,7 +110,8 @@ function computeOAMI(s: any, rsScore: number): number {
   return Math.round(0.35 * stealth + 0.30 * normZ + 0.20 * normMom + 0.15 * Math.min(100, rsScore));
 }
 
-export function MinerviniLeaderboard({ stocks = [], indices, onSelectStock }: Props) {
+export function MinerviniLeaderboard({ stocks: rawStocks = [], indices, onSelectStock }: Props) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const [minScore,     setMinScore]     = useState(4);
   const [sortBy,       setSortBy]       = useState<'score' | 'oami' | 'turnover'>('score');
   const [sectorFilter, setSectorFilter] = useState('ALL');

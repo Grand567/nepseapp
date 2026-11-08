@@ -12,7 +12,8 @@ import { FloorSheetTape } from './FloorSheetTape';
 import { WaccTaxCalculator } from './WaccTaxCalculator';
 import { PortfolioAnalytics } from './PortfolioAnalytics';
 
-export function StitchHub({ onExit, stocks = [], indices = null, marketStatus = null, apiStatus = 'offline' }) {
+export function StitchHub({ onExit, stocks: rawStocks = [], indices = null, marketStatus = null, apiStatus = 'offline' }) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const [activeTab, setActiveTab] = useState('dashboard');
   const [history, setHistory] = useState(['dashboard']);
   const [lang, setLang] = useState('ne'); // 'ne' or 'en'

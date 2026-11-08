@@ -6,7 +6,9 @@ import {
   calculateTechnicalSpeedometer
 } from '../utils/candlestickPatterns';
 
-export default function StockTechnicalGaugeCard({ stock = {}, history = [] }) {
+export default function StockTechnicalGaugeCard({ stock: rawStock = {}, history: rawHistory = [] }) {
+  const stock = rawStock && typeof rawStock === 'object' ? rawStock : {};
+  const history = Array.isArray(rawHistory) ? rawHistory : [];
   const [gaugeMode, setGaugeMode] = useState('summary'); // 'summary' | 'ma' | 'osc'
   const [showIndicatorTable, setShowIndicatorTable] = useState(false);
   const [showAllPatterns, setShowAllPatterns] = useState(false);

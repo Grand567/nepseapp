@@ -6,8 +6,9 @@ export function StockDetails({
   onBack,
   onOpenOrder,
   lang = 'ne',
-  stocks = [],
+  stocks: rawStocks = [],
 }) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const isNe = lang === 'ne';
   const [subTab, setSubTab] = useState('fund'); // 'fund', 'depth', 'div'
   const [timeframe, setTimeframe] = useState('1D');

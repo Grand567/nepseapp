@@ -6,11 +6,12 @@ export function LiveMarketDashboard({
   onOpenFloorSheet,
   onOpenOrder,
   lang = 'ne',
-  stocks = [],
+  stocks: rawStocks = [],
   indices = null,
   marketStatus = null,
   apiStatus = 'offline',
 }) {
+  const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const isNe = lang === 'ne';
 
   // ── 1. Live NEPSE Hero Index ──
