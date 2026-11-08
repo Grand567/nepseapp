@@ -1974,11 +1974,11 @@ export function Master100ProfitWorkstation({
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: 10, fontSize: 12, lineHeight: 1.5 }}>
                     <b style={{ color: '#34d399' }}>2. Create a Free Server:</b><br />
-                    Tap the <b>+</b> button on the left sidebar $\rightarrow$ tap <b>Create My Own</b> $\rightarrow$ Name it <i>NEPSE Alerts</i>.
+                    Tap the <b>+</b> button on the left sidebar → tap <b>Create My Own</b> → Name it <i>NEPSE Alerts</i>.
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: 10, fontSize: 12, lineHeight: 1.5 }}>
                     <b style={{ color: '#34d399' }}>3. Copy Webhook URL:</b><br />
-                    Tap the gear icon on the <code>#general</code> channel $\rightarrow$ tap <b>Integrations</b> $\rightarrow$ <b>Webhooks</b> $\rightarrow$ tap <b>Copy Webhook URL</b>. Paste it above and tap <b>Save</b>!
+                    Tap the gear icon on the <code>#general</code> channel → tap <b>Integrations</b> → <b>Webhooks</b> → tap <b>Copy Webhook URL</b>. Paste it above and tap <b>Save</b>!
                   </div>
                 </div>
               </div>

@@ -2068,7 +2068,7 @@ export default function ShortTermProfitPlan({
                   <span>The Mathematics of Systematic Profit (EV & Kelly)</span>
                 </div>
                 <p style={{ margin: '4px 0 0', color: '#CBD5E1', fontSize: 12 }}>
-                  Professional traders do not rely on 100% win rates. They rely on positive mathematical expectancy ($EV &gt; 0$) and safe capital allocation.
+                  Professional traders do not rely on 100% win rates. They rely on positive mathematical expectancy (EV &gt; 0) and safe capital allocation.
                 </p>
               </div>
 
