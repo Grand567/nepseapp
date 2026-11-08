@@ -532,7 +532,7 @@ export default function ShareHubChart({
 
     let sliced = allSorted;
     if (tf === '1D') {
-      sliced = allSorted.slice(-Math.min(5, allSorted.length));
+      sliced = allSorted.slice(-1);
     } else if (tf === '1W' || tf === '7') {
       const oneWeekAgo = new Date(latestDate.getTime() - 7 * 24 * 3600 * 1000);
       const weekBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= oneWeekAgo);

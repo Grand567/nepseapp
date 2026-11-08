@@ -2877,8 +2877,32 @@ function Dashboard({
         : (activeHeroIndex?.val || indices?.nepse || fallbackHero));
   const isHeroBull = (heroVal.pChange || 0) >= 0 || (heroVal.change || 0) >= 0;
 
+  // Slice history according to the active timeframe
+  // 1W: 5 trading days, 1M: 22 trading days, 3M: 65 trading days, 6M: 130 trading days, 1Y: 245 trading days, ALL: all available
+  const slicedHeroHistory = useMemo(() => {
+    if (!heroHistory || !Array.isArray(heroHistory) || heroHistory.length === 0) return [];
+    if (heroTimeframe === '1D') {
+      const hasIntradayTicks = heroHistory.some(pt => {
+        const timeStr = String(pt.time || pt.date || '');
+        return /\d{1,2}:\d{2}/.test(timeStr);
+      });
+      if (hasIntradayTicks) return heroHistory;
+      return heroHistory.slice(-1);
+    }
+    const tfCounts = {
+      '1W': 5,
+      '1M': 22,
+      '3M': 65,
+      '6M': 130,
+      '1Y': 245,
+      'ALL': heroHistory.length
+    };
+    const count = tfCounts[heroTimeframe] || heroHistory.length;
+    return heroHistory.slice(-count);
+  }, [heroHistory, heroTimeframe]);
+
   const heroTfStats = useMemo(() => {
-    if (heroTimeframe === '1D' || !heroHistory || heroHistory.length < 2) {
+    if (heroTimeframe === '1D' || !slicedHeroHistory || slicedHeroHistory.length < 2) {
       const c = Number(heroVal.change != null ? heroVal.change : (indices?.nepse?.change != null ? indices.nepse.change : 0));
       const prevC = Number(heroVal.prevClose || (heroVal.value && c ? heroVal.value - c : 0));
       const pc = (prevC > 0 && c != null)
@@ -2891,8 +2915,8 @@ function Dashboard({
         periodLabel: '1D'
       };
     }
-    const firstClose = Number(heroHistory[0]?.close || heroHistory[0]?.open || 0);
-    const lastClose = Number(heroHistory[heroHistory.length - 1]?.close || 0);
+    const firstClose = Number(slicedHeroHistory[0]?.close || slicedHeroHistory[0]?.open || 0);
+    const lastClose = Number(slicedHeroHistory[slicedHeroHistory.length - 1]?.close || 0);
     if (firstClose > 0 && lastClose > 0) {
       const diff = +(lastClose - firstClose).toFixed(2);
       const pct = +((diff / firstClose) * 100).toFixed(2);
@@ -2911,7 +2935,7 @@ function Dashboard({
       isBull: c >= 0 || pc >= 0,
       periodLabel: '1D'
     };
-  }, [heroTimeframe, heroHistory, heroVal, indices]);
+  }, [heroTimeframe, slicedHeroHistory, heroVal, indices]);
 
 
 
@@ -3606,7 +3630,7 @@ function Dashboard({
 
         {/* Intraday Line/Candle Chart */}
         <ShareHubChart
-          history={heroHistory}
+          history={slicedHeroHistory}
           symbol={activeHeroIndex?.symbol || activeHeroIndex.name}
           isIntraday={heroTimeframe === '1D'}
           mode={heroChartMode}
@@ -5903,7 +5927,7 @@ function Dashboard({
           {/* Fullscreen Chart Area */}
           <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px 8px', overflow: 'hidden' }}>
             <ShareHubChart
-              history={heroHistory}
+              history={slicedHeroHistory}
               symbol={activeHeroIndex.name}
               isIntraday={heroTimeframe === '1D'}
               mode={heroChartMode}
