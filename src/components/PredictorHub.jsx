@@ -2615,7 +2615,7 @@ export default function PredictorHub({
                     💡 <strong style={{ color: '#c4b5fd' }}>Fully Synchronized:</strong> Prime Pick is now powered directly by the
                     <strong style={{ color: '#38bdf8' }}> Entry/Exit Analyzer Engine</strong>.
                     {hasPlan ? (
-                      <span> This score ({displayScore}/100) incorporates 500-day historical analogs and SEBON fees + 10% CGT.</span>
+                      <span> This score ({displayScore}/100) incorporates 500-day historical analogs and SEBON fees + 7.5% short-term CGT (5% long-term).</span>
                     ) : (
                       <span> Screening all 350+ NEPSE scrips. Deep backtesting triggers automatically for the top pick.</span>
                     )}
