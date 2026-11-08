@@ -277,6 +277,7 @@ export function calculateNetProfit({
   sellPrice,
   buyDate = null,
   sellDate = null,
+  holdingDays = null,
   investorType = 'individual',
 }) {
   const qty  = Math.round(Number(shares)   || 0);
@@ -302,16 +303,19 @@ export function calculateNetProfit({
   const sellDp         = DP_CHARGE;
 
   // ── Holding period & CGT rate ─────────────────────────────────────────────
-  let holdingDays = null;
+  let resolvedHoldingDays = holdingDays != null ? Number(holdingDays) : null;
   let isLongTerm  = false;
 
   if (buyDate && sellDate) {
     try {
       const d1 = new Date(buyDate);
       const d2 = new Date(sellDate);
-      holdingDays = Math.round(Math.abs(d2 - d1) / 86400000);
-      isLongTerm  = holdingDays > 365;
+      resolvedHoldingDays = Math.round(Math.abs(d2 - d1) / 86400000);
     } catch (_) {}
+  }
+
+  if (resolvedHoldingDays != null && !isNaN(resolvedHoldingDays)) {
+    isLongTerm = resolvedHoldingDays > 365;
   }
 
   let cgtRate;
@@ -321,7 +325,7 @@ export function calculateNetProfit({
     cgtLabel = 'Institutional (10%)';
   } else if (isLongTerm) {
     cgtRate  = CGT_LONG_TERM;
-    cgtLabel = `Long-term >${holdingDays ?? 365} days (5%)`;
+    cgtLabel = `Long-term >${resolvedHoldingDays ?? 365} days (5%)`;
   } else {
     cgtRate  = CGT_SHORT_TERM;
     cgtLabel = `Short-term ≤365 days (7.5%)`;
@@ -348,10 +352,10 @@ export function calculateNetProfit({
     shares: qty,
     buyPrice: +buy.toFixed(2),
     sellPrice: +sell.toFixed(2),
-    holdingDays,
+    holdingDays: resolvedHoldingDays,
     investorType,
     cgtLabel,
-    cgtRate: `${(cgtRate * 100).toFixed(1)}%`,
+    cgtRate: `${parseFloat((cgtRate * 100).toFixed(1))}%`,
 
     // Buy side breakdown
     buyValue:       +buyValue.toFixed(2),
