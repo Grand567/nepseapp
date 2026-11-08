@@ -676,6 +676,43 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
     return cached;
   }
 
+  // 0. 0ms Fast Path: Check local File B ledger / File A static analytics before waiting for network timeouts
+  if (!forceRefresh) {
+    try {
+      const { getScripFromLedger, getTodayStaticAnalyticsDirect } = await import('./localLedgerManager');
+      const scripRecord = typeof getScripFromLedger === 'function' ? getScripFromLedger(sym) : null;
+      const staticData = typeof getTodayStaticAnalyticsDirect === 'function' ? await getTodayStaticAnalyticsDirect(sym) : null;
+      const f = scripRecord?.fundamentals || staticData?.long_term_static?.audited_quarterly_fundamentals;
+      if (f && (f.eps !== undefined || f.book_value !== undefined || f.book_value_per_share !== undefined || f.paid_up_capital !== undefined)) {
+        const ltp = scripRecord?.ltp || Number(staticData?.card_1_quote?.ltp || 100);
+        const epsVal = f.eps !== undefined && f.eps !== 0 ? f.eps : (f.eps_ttm ?? null);
+        const bvVal = f.book_value !== undefined && f.book_value !== 0 ? f.book_value : (f.book_value_per_share ?? null);
+        const totalShares = f.shares_outstanding || f.total_listed_shares || Math.round((Number(f.paid_up_capital) || 1000000000) / 100);
+        const fastDetail = {
+          symbol: sym,
+          companyName: scripRecord?.company_name || sym,
+          sector: scripRecord?.sector || f.sector || '',
+          eps: epsVal,
+          bookValue: bvVal,
+          pe: (epsVal && epsVal > 0 && ltp > 0) ? Number((ltp / epsVal).toFixed(2)) : (f.pe ?? f.pe_ratio ?? 0),
+          pbv: (bvVal && bvVal > 0 && ltp > 0) ? Number((ltp / bvVal).toFixed(2)) : (f.pbv ?? 0),
+          sharesOutstanding: totalShares,
+          marketCap: f.market_cap || Math.round(ltp * totalShares),
+          paidUpCapital: Number(f.paid_up_capital) || 0,
+          publicFloatKitta: Number(f.public_float_kitta) || 0,
+          promoterSharePct: Number(f.promoter_share_pct) || 0,
+          publicSharePct: Number(f.public_share_pct) || 0,
+          roe: Number(f.roe || f.roe_pct) || 0,
+          isReal: true,
+          isOfflinePrecomputed: true
+        };
+        fastDetail.data = fastDetail;
+        setCachedStockFundamentals(sym, fastDetail);
+        return fastDetail;
+      }
+    } catch (_) {}
+  }
+
   const qs = forceRefresh ? '?refresh=true' : '';
 
   let detail = null;
@@ -1721,6 +1758,33 @@ export async function fetchPriceHistory(symbol, days = 365) {
 
   // 1. Check local persistent cache of real historical candles (IDB-aware async read)
   const cachedHistory = await getCachedRealPriceHistoryAsync(symKey);
+
+  // 1B. 0ms Fast Path: For short timeframes (<= 5 days), check local File B 5-day ledger first
+  if (days <= 5 && !isNepseOrIndex) {
+    try {
+      const { getScripFromLedger } = await import('./localLedgerManager');
+      const scrip = typeof getScripFromLedger === 'function' ? getScripFromLedger(symKey) : null;
+      const h5 = scrip?.history_5d || scrip?.history_4d;
+      if (Array.isArray(h5) && h5.length > 0) {
+        const mapped5D = h5.slice(0, days).map(d => ({
+          date: d.date,
+          open: Number(d.open || d.close),
+          high: Number(d.high || d.close),
+          low: Number(d.low || d.close),
+          close: Number(d.close),
+          volume: Number(d.volume || 0),
+          turnover: Number(d.turnover || 0),
+          vwap: Number(d.vwap || d.close),
+          isReal: true,
+          isOfflinePrecomputed: true
+        })).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        const full5D = appendTodayIfMissing(mapped5D);
+        full5D.isRealData = true;
+        full5D.dataSource = 'local_file_b_5d';
+        return full5D;
+      }
+    } catch (_) {}
+  }
 
   // 2. Fetch fresh real historical records from backend (with automatic fallback to Render proxy)
   try {
@@ -3265,6 +3329,18 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
     };
   };
 
+  // Tier 0 Fast Path: 0ms Offline Subfile synthesis for 1D, 5D, or selected dates
+  if (!isAllTime && !refresh && (date || numDays === 5 || numDays === 1)) {
+    try {
+      const { getHistoricalSubfileBrokerAnalysis } = await import('./localLedgerManager');
+      const subfileBa = await getHistoricalSubfileBrokerAnalysis(sym, { days: numDays, date });
+      if (subfileBa && (subfileBa.brokers?.length > 0 || subfileBa.topBuyers?.length > 0 || subfileBa.topAccumulators?.length > 0)) {
+        setCachedRealBrokerAnalysis(sym, subfileBa, numDays, options);
+        return subfileBa;
+      }
+    } catch (_) {}
+  }
+
   // Tier 1 Fast Path: Query in-memory hot cache for single stock diagnostic (< 5ms response)
   // ONLY for short/numeric days, NEVER for 'all' / all-time!
   if (!isAllTime) {
@@ -3396,6 +3472,16 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
       };
       setCachedRealBrokerAnalysis(sym, enriched, numDays, options);
       return enriched;
+    }
+  } catch (_) {}
+
+  // 0ms Offline Fallback: Synthesize authentic broker analysis from bundled historical subfiles
+  try {
+    const { getHistoricalSubfileBrokerAnalysis } = await import('./localLedgerManager');
+    const subfileBa = await getHistoricalSubfileBrokerAnalysis(sym, { days: numDays, date });
+    if (subfileBa && (subfileBa.brokers?.length > 0 || subfileBa.topBuyers?.length > 0 || subfileBa.topAccumulators?.length > 0)) {
+      setCachedRealBrokerAnalysis(sym, subfileBa, numDays, options);
+      return subfileBa;
     }
   } catch (_) {}
 

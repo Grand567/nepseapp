@@ -136,10 +136,11 @@ export function compileHistoricalSubfiles(options = {}) {
   try { db.pragma('busy_timeout = 10000'); } catch (_) {}
   const stockmap = loadStockmap();
 
-  // 1. Query the 4 most recent completed trading sessions
+  // 1. Query the most recent completed trading sessions (default 5 trading days)
+  const maxDays = Math.max(1, parseInt(options.maxDays || 5, 10) || 5);
   const sessionRows = db
-    .prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT 4')
-    .all();
+    .prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT ?')
+    .all(maxDays);
 
   const tradingSessions = sessionRows.map(r => r.trade_date);
   if (tradingSessions.length === 0) {
@@ -663,6 +664,7 @@ export function compileHistoricalSubfiles(options = {}) {
       '2D': generatedSubfiles[1]?.session_date || null,
       '3D': generatedSubfiles[2]?.session_date || null,
       '4D': generatedSubfiles[3]?.session_date || null,
+      '5D': generatedSubfiles[4]?.session_date || null,
       '5D_cumulative_context': {
         start_date: generatedSubfiles[generatedSubfiles.length - 1]?.session_date || null,
         end_date: generatedSubfiles[0]?.session_date || null,
@@ -683,8 +685,47 @@ export function compileHistoricalSubfiles(options = {}) {
 
   _subfilesIndexCache = manifest;
 
-  console.log(`[HistoricalSubfiles] 🚀 Subfiles compilation finished in ${Date.now() - t0}ms. 4 Sub-files + Index saved to proxy/data/subfiles/`);
+  // Sync to public/data bundle for 0ms offline APK access
+  try {
+    syncSubfilesToPublicBundle();
+  } catch (syncErr) {
+    console.warn('[HistoricalSubfiles] Notice: Public bundle sync skipped:', syncErr.message);
+  }
+
+  console.log(`[HistoricalSubfiles] 🚀 Subfiles compilation finished in ${Date.now() - t0}ms. ${generatedSubfiles.length} Sub-files + Index saved to proxy/data/subfiles/ and synced to public/data/`);
   return manifest;
+}
+
+/**
+ * Copies compiled subfiles and today_static_analytics.json into public/data/
+ * so the Android APK / Vite client has direct 0ms local access without network calls.
+ */
+export function syncSubfilesToPublicBundle() {
+  const publicDir = path.resolve(__dirname, '..', '..', 'public', 'data');
+  const publicSubfilesDir = path.join(publicDir, 'subfiles');
+  if (!fs.existsSync(publicSubfilesDir)) {
+    fs.mkdirSync(publicSubfilesDir, { recursive: true });
+  }
+
+  // Copy subfiles & index
+  if (fs.existsSync(SUBFILES_DIR)) {
+    const files = fs.readdirSync(SUBFILES_DIR);
+    for (const file of files) {
+      const src = path.join(SUBFILES_DIR, file);
+      const dest = path.join(publicSubfilesDir, file);
+      try {
+        fs.copyFileSync(src, dest);
+      } catch (_) {}
+    }
+  }
+
+  // Copy today_static_analytics.json if it exists
+  const todayAnalytics = path.join(DATA_DIR, 'today_static_analytics.json');
+  if (fs.existsSync(todayAnalytics)) {
+    try {
+      fs.copyFileSync(todayAnalytics, path.join(publicDir, 'today_static_analytics.json'));
+    } catch (_) {}
+  }
 }
 
 /**
@@ -765,17 +806,18 @@ export function readHistoricalSubfilesIndex() {
 }
 
 /**
- * Extracts a scrip's chronological 4-day trajectory across all 4 sub-files (< 1ms)
+ * Extracts a scrip's chronological multi-day trajectory across all sub-files (< 1ms)
  */
-export function getScrip4DayTrajectory(symbol) {
+export function getScrip4DayTrajectory(symbol, maxDays = 5) {
   const cleanSym = String(symbol || '').trim().toUpperCase();
   if (!cleanSym) return null;
 
   const index = readHistoricalSubfilesIndex();
   if (!index || !Array.isArray(index.subfiles)) return null;
 
+  const numFiles = Math.min(index.subfiles.length, Math.max(1, parseInt(maxDays, 10) || 5));
   const history = [];
-  for (let offset = 4; offset >= 1; offset--) {
+  for (let offset = numFiles; offset >= 1; offset--) {
     const subfile = readHistoricalSubfile(offset);
     const scrip = subfile?.scrips?.[cleanSym];
     if (scrip) {

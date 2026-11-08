@@ -38,6 +38,8 @@
         "data/nepse-1year-market-history.json.gz",
         "data/subfiles/**/*",
         "data/today_*.json*",
+        "data/historical_*days_ledger.json*",
+        "data/live_today_session.json*",
         "!proxy/**/*",
         "!data/sync_vaults/**/*",
         "!data/sync_vaults*.*",

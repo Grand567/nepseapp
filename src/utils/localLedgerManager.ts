@@ -12,6 +12,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { idbGet, idbSet } from './indexedDb.js';
 import { fetchFromBackend } from './liveData.js';
+import { getProxyBase } from './proxyBase.js';
 
 export interface ScripTacticalLevels {
   limit_buy_min: number;
@@ -116,10 +117,33 @@ export async function initLocalLedger(): Promise<Historical4DayLedger | null> {
       console.log(`[LocalLedger] ⚡ Instant boot from IndexedDB (${_hotHistoricalLedger.total_scrips} scrips, sessions: ${_hotHistoricalLedger.trading_sessions.join(', ')})`);
     }
 
-    // 2. Refresh / validate from server in background
+    // 2. Local bundled asset check (0ms offline APK access without network call)
+    if (!_hotHistoricalLedger) {
+      for (const candidate of [
+        './data/historical_5days_ledger.json',
+        '/data/historical_5days_ledger.json',
+        './data/historical_4days_ledger.json',
+        '/data/historical_4days_ledger.json'
+      ]) {
+        try {
+          const res = await fetch(candidate);
+          if (res.ok) {
+            const bundled = await res.json();
+            if (bundled && bundled.stocks) {
+              _hotHistoricalLedger = bundled as Historical4DayLedger;
+              console.log(`[LocalLedger] 📦 Instant boot from Bundled 5-Day Ledger (${_hotHistoricalLedger.total_scrips} scrips, sessions: ${_hotHistoricalLedger.trading_sessions.join(', ')})`);
+              idbSet(STORAGE_KEY_4D, bundled, 7 * 24 * 60 * 60 * 1000).catch(() => {});
+              break;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 3. Refresh / validate from server in background
     syncLedgerFromServer().catch(() => {});
 
-    // 3. Pre-warm 4-subfiles in background idle time for 0ms day-switching
+    // 4. Pre-warm 5-subfiles in background idle time for 0ms day-switching
     prewarmHistoricalSubfiles().catch(() => {});
 
     // Notify any waiting callers
@@ -137,22 +161,37 @@ export async function initLocalLedger(): Promise<Historical4DayLedger | null> {
 }
 
 /**
- * Syncs the 4-day ledger from server API
+ * Syncs the 5-day / 4-day ledger from server API
  */
 export async function syncLedgerFromServer(): Promise<Historical4DayLedger | null> {
   try {
-    let data: any = await fetchFromBackend('/api/ledger/4day-history', 15000);
+    let data: any = await fetchFromBackend('/api/ledger/5day-history', 8000);
+    if (!data) {
+      data = await fetchFromBackend('/api/ledger/4day-history', 8000);
+    }
     if (!data && typeof fetch !== 'undefined') {
-      const res = await fetch('/api/ledger/4day-history');
-      if (res.ok) data = await res.json();
+      const base = getProxyBase();
+      try {
+        const res = await fetch(`${base}/api/ledger/5day-history`);
+        if (res.ok) data = await res.json();
+      } catch (_) {
+        const res2 = await fetch(`${base}/api/ledger/4day-history`);
+        if (res2.ok) data = await res2.json();
+      }
     }
 
     if (data && data.stocks) {
-      _hotHistoricalLedger = data;
-      // Persist to IndexedDB with 7-day safety TTL
-      await idbSet(STORAGE_KEY_4D, data, 7 * 24 * 60 * 60 * 1000);
-      console.log(`[LocalLedger] 🔄 Refreshed 4-day ledger from server (Compiled: ${data.compiled_at})`);
-      return data;
+      const isNewer = !_hotHistoricalLedger || 
+        (data.compiled_at && _hotHistoricalLedger.compiled_at && data.compiled_at > _hotHistoricalLedger.compiled_at) ||
+        (data.trading_sessions?.[0] !== _hotHistoricalLedger.trading_sessions?.[0]);
+
+      if (isNewer) {
+        _hotHistoricalLedger = data;
+        // Persist to IndexedDB with 7-day safety TTL, automatically replacing older 5-day window
+        await idbSet(STORAGE_KEY_4D, data, 7 * 24 * 60 * 60 * 1000);
+        console.log(`[LocalLedger] 🔄 Auto-replaced local 5-day ledger with new sessions: ${data.trading_sessions?.join(', ')}`);
+      }
+      return _hotHistoricalLedger;
     }
   } catch (err) {
     console.warn('[LocalLedger] Background server sync warning:', (err as Error).message);
@@ -222,7 +261,17 @@ export function useScrip5DayData(symbol: string) {
     trapReason: scripData?.trap_audit?.reason ?? '',
     leadBroker: scripData?.lead_broker ?? null,
     tacticalLevels: scripData?.tactical_levels ?? null,
-    history4D: scripData?.history_4d ?? []
+    history4D: scripData?.history_4d ?? [],
+    history5D: (scripData as any)?.history_5d ?? scripData?.history_4d ?? [],
+    marketVwap5D: (scripData as any)?.market_vwap_5d ?? 0,
+    whaleVwap5D: (scripData as any)?.whale_vwap_5d ?? 0,
+    totalVolume5D: (scripData as any)?.total_volume_5d ?? scripData?.total_volume_4d ?? 0,
+    totalTurnover5D: (scripData as any)?.total_turnover_5d ?? scripData?.total_turnover_4d ?? 0,
+    pChange5D: (scripData as any)?.p_change_5d ?? scripData?.p_change_4d ?? 0,
+    topAccumulators: scripData?.top_accumulators ?? [],
+    topDistributors: scripData?.top_distributors ?? [],
+    fundamentals: (scripData as any)?.fundamentals ?? null,
+    pivots: (scripData as any)?.pivots ?? null
   };
 }
 
@@ -267,7 +316,8 @@ export async function fetchCloudHistoricalData(symbol: string, days: number = 36
     const data = await fetchFromBackend(`/api/history/${sym}?days=${days}`, 10000);
     if (data) return data;
     if (typeof fetch !== 'undefined') {
-      const res = await fetch(`/api/history/${sym}?days=${days}`);
+      const base = getProxyBase();
+      const res = await fetch(`${base}/api/history/${sym}?days=${days}`);
       if (res.ok) return await res.json();
     }
     return null;
@@ -280,6 +330,39 @@ export async function fetchCloudHistoricalData(symbol: string, days: number = 36
 // ── TWO-FILE SUB-PIPELINE CLIENT HOOKS ──────────────────────────────────────
 
 const _staticAnalyticsCache = new Map<string, any>();
+let _bundledTodayStaticAll: any = null;
+
+/**
+ * Direct accessor for Sub-File A1 (Today Static Analytics) with memory and bundled fallback (< 1ms).
+ */
+export async function getTodayStaticAnalyticsDirect(symbol?: string | null): Promise<any> {
+  const cleanSym = symbol ? String(symbol).toUpperCase().trim() : null;
+  if (cleanSym && _staticAnalyticsCache.has(cleanSym)) {
+    return _staticAnalyticsCache.get(cleanSym);
+  }
+
+  if (!_bundledTodayStaticAll && typeof fetch !== 'undefined') {
+    for (const candidate of ['./data/today_static_analytics.json', '/data/today_static_analytics.json']) {
+      try {
+        const localRes = await fetch(candidate);
+        if (localRes.ok) {
+          _bundledTodayStaticAll = await localRes.json();
+          break;
+        }
+      } catch (_) {}
+    }
+  }
+
+  if (_bundledTodayStaticAll?.scrips) {
+    if (cleanSym) {
+      const scripData = _bundledTodayStaticAll.scrips[cleanSym] || null;
+      if (scripData) _staticAnalyticsCache.set(cleanSym, scripData);
+      return scripData;
+    }
+    return _bundledTodayStaticAll;
+  }
+  return null;
+}
 
 /**
  * React Hook: useTodayStaticAnalytics(symbol)
@@ -314,12 +397,38 @@ export function useTodayStaticAnalytics(symbol?: string | null) {
           _staticAnalyticsCache.set(cleanSym, cachedIdb);
           setData(cachedIdb);
           setIsLoading(false);
+          return;
         }
       } catch (_) {}
 
-      // 3. Network fetch (with ETag & 304 support)
+      // 3. Local bundled asset check (0ms offline APK access without network call)
       try {
-        const res = await fetch(`/api/today/static-analytics?symbol=${cleanSym}`);
+        let raw: any = null;
+        for (const candidate of ['./data/today_static_analytics.json', '/data/today_static_analytics.json']) {
+          try {
+            const localRes = await fetch(candidate);
+            if (localRes.ok) {
+              raw = await localRes.json();
+              break;
+            }
+          } catch (_) {}
+        }
+        if (raw && raw.scrips) {
+          const scripData = raw.scrips[cleanSym];
+          if (scripData && isMounted) {
+            _staticAnalyticsCache.set(cleanSym, scripData);
+            setData(scripData);
+            setIsLoading(false);
+            idbSet(`today_static_${cleanSym}`, scripData).catch(() => {});
+            return;
+          }
+        }
+      } catch (_) {}
+
+      // 4. Network fetch from backend proxy (with ETag & 304 support)
+      try {
+        const base = getProxyBase();
+        const res = await fetch(`${base}/api/today/static-analytics?symbol=${cleanSym}`);
         if (res.ok && res.status !== 304) {
           const json = await res.json();
           const scripData = json.data || json;
@@ -543,8 +652,325 @@ export interface HistoricalDaySubfile {
 const _subfileMemoryCache = new Map<string | number, HistoricalDaySubfile>();
 
 /**
+ * Standalone asynchronous subfile loader with 4-tier fallback:
+ * Hot memory cache -> IndexedDB -> Bundled ./data/subfiles/ -> Backend proxy
+ */
+export async function getHistoricalSubfileDirect(dateOrOffset: string | number): Promise<HistoricalDaySubfile | null> {
+  const cacheKey = dateOrOffset || 1;
+  if (_subfileMemoryCache.has(cacheKey)) {
+    return _subfileMemoryCache.get(cacheKey)!;
+  }
+  const idbKey = `drabyashree_subfile_${cacheKey}`;
+  try {
+    const cached = await idbGet(idbKey);
+    if (cached) {
+      _subfileMemoryCache.set(cacheKey, cached);
+      return cached;
+    }
+  } catch (_) {}
+
+  // Local bundled check (0ms offline APK access without network call)
+  let subfileNum: number | null = typeof dateOrOffset === 'number' && dateOrOffset >= 1 && dateOrOffset <= 5 ? dateOrOffset : null;
+  if (!subfileNum && typeof dateOrOffset === 'string') {
+    const manifest = _subfileMemoryCache.get('manifest') as any;
+    if (manifest && Array.isArray(manifest.subfiles)) {
+      const found = manifest.subfiles.find((s: any) => s.session_date === dateOrOffset);
+      if (found) subfileNum = found.day_offset;
+    }
+    if (!subfileNum) {
+      const dateMap: Record<string, number> = {
+        '2026-11-06': 1,
+        '2026-11-05': 2,
+        '2026-11-04': 3,
+        '2026-11-03': 4,
+        '2026-11-02': 5
+      };
+      if (dateMap[dateOrOffset]) subfileNum = dateMap[dateOrOffset];
+    }
+  }
+
+  if (subfileNum) {
+    for (const candidate of [`./data/subfiles/historical_day_${subfileNum}.json`, `/data/subfiles/historical_day_${subfileNum}.json`]) {
+      try {
+        const localRes = await fetch(candidate);
+        if (localRes.ok) {
+          const json = await localRes.json();
+          if (json && json.scrips) {
+            _subfileMemoryCache.set(cacheKey, json);
+            if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
+            if (json.day_offset) _subfileMemoryCache.set(json.day_offset, json);
+            idbSet(idbKey, json).catch(() => {});
+            return json;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  // Network fetch from proxy
+  try {
+    const base = getProxyBase();
+    const url = typeof dateOrOffset === 'string' && dateOrOffset.includes('-')
+      ? `${base}/api/ledger/subfiles/date/${dateOrOffset}`
+      : `${base}/api/ledger/subfiles/day/${subfileNum || 1}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const json = await res.json();
+      if (json && json.scrips) {
+        _subfileMemoryCache.set(cacheKey, json);
+        if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
+        if (json.day_offset) _subfileMemoryCache.set(json.day_offset, json);
+        idbSet(idbKey, json).catch(() => {});
+        return json;
+      }
+    }
+  } catch (_) {}
+
+  return null;
+}
+
+/**
+ * Synthesizes complete, authentic broker analysis from local subfiles (0ms offline).
+ */
+export async function getHistoricalSubfileBrokerAnalysis(
+  symbol: string,
+  options: { days?: number | string; date?: string } = {}
+): Promise<any | null> {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!sym) return null;
+  const numDays = options?.days === 'all' ? 5 : (parseInt(String(options?.days || 1), 10) || 1);
+  const targetDate = options?.date ? String(options.date).trim() : null;
+
+  if (targetDate || numDays === 1) {
+    const sf = await getHistoricalSubfileDirect(targetDate || 1);
+    if (!sf || !sf.scrips?.[sym]) return null;
+    const scrip = sf.scrips[sym];
+    const flow = scrip.card_4_broker_smart_flow;
+    const quote = scrip.card_1_quote;
+    if (!flow) return null;
+
+    const buyers = (flow.top_5_buyers || []).map((b: any) => ({
+      broker: String(b.broker_id),
+      id: String(b.broker_id),
+      brokerId: String(b.broker_id),
+      name: `Broker #${b.broker_id}`,
+      brokerName: `Broker #${b.broker_id}`,
+      buyQty: b.buy_kitta || b.net_kitta || 0,
+      buyAmt: (b.buy_kitta || b.net_kitta || 0) * (b.buy_vwap || quote?.vwap || 0),
+      sellQty: 0,
+      sellAmt: 0,
+      netQty: b.net_kitta || b.buy_kitta || 0,
+      signedHoldQty: b.net_kitta || b.buy_kitta || 0,
+      holdQty: Math.max(0, b.net_kitta || b.buy_kitta || 0),
+      avgBuyRate: b.buy_vwap || quote?.vwap || 0,
+      avgBuyPrice: b.buy_vwap || quote?.vwap || 0,
+      avgSellRate: 0,
+      avgSellPrice: 0,
+      retentionPct: b.retention_pct || 100
+    }));
+
+    const sellers = (flow.top_5_sellers || []).map((s: any) => ({
+      broker: String(s.broker_id),
+      id: String(s.broker_id),
+      brokerId: String(s.broker_id),
+      name: `Broker #${s.broker_id}`,
+      brokerName: `Broker #${s.broker_id}`,
+      buyQty: 0,
+      buyAmt: 0,
+      sellQty: s.sell_kitta || s.net_dump_kitta || 0,
+      sellAmt: (s.sell_kitta || s.net_dump_kitta || 0) * (s.sell_vwap || quote?.vwap || 0),
+      netQty: -(s.net_dump_kitta || s.sell_kitta || 0),
+      signedHoldQty: -(s.net_dump_kitta || s.sell_kitta || 0),
+      holdQty: 0,
+      avgBuyRate: 0,
+      avgBuyPrice: 0,
+      avgSellRate: s.sell_vwap || quote?.vwap || 0,
+      avgSellPrice: s.sell_vwap || quote?.vwap || 0,
+      retentionPct: 0
+    }));
+
+    const topAcc = buyers[0] || null;
+    const topDist = sellers[0] || null;
+    const allBrokers = [...buyers, ...sellers];
+
+    return {
+      symbol: sym,
+      businessDate: sf.session_date,
+      date: sf.session_date,
+      tradingDays: 1,
+      timeframeDays: 1,
+      totalVolume: quote?.volume || 0,
+      totalTurnover: quote?.turnover || 0,
+      totalAmount: quote?.turnover || 0,
+      vwap: quote?.vwap || (quote?.turnover && quote?.volume ? +(quote.turnover / quote.volume).toFixed(2) : 0),
+      bcr3BuyPct: flow.concentration?.bcr3_buy_pct || 0,
+      bcr3SellPct: flow.concentration?.scr3_sell_pct || 0,
+      adSignal: (flow.concentration?.bcr3_buy_pct || 0) > (flow.concentration?.scr3_sell_pct || 0) ? 'Accumulation' : 'Distribution',
+      topAccumulator: topAcc,
+      topDistributor: topDist,
+      leadAccumulator: topAcc,
+      leadDistributor: topDist,
+      topBuyers: buyers,
+      topSellers: sellers,
+      topNetBuyers: buyers,
+      topNetSellers: sellers,
+      topAccumulators: buyers,
+      topDistributors: sellers,
+      brokers: allBrokers,
+      allBrokers: allBrokers,
+      avgAccumulatorBuyPrice: topAcc?.avgBuyRate || 0,
+      avgDistributorSellPrice: topDist?.avgSellRate || 0,
+      isReal: true,
+      source: 'offline_subfiles_bundle'
+    };
+  }
+
+  // Multi-Day (5D) Synthesis across all 5 subfiles
+  const subfiles: HistoricalDaySubfile[] = [];
+  for (let d = 1; d <= 5; d++) {
+    const sf = await getHistoricalSubfileDirect(d);
+    if (sf) subfiles.push(sf);
+  }
+
+  if (subfiles.length === 0) return null;
+
+  let totalVol = 0;
+  let totalAmt = 0;
+  const brokerAgg: Record<string, {
+    id: string;
+    buyQty: number;
+    buyAmt: number;
+    sellQty: number;
+    sellAmt: number;
+  }> = {};
+
+  const dailyFlow: any[] = [];
+
+  for (const sf of subfiles) {
+    const scrip = sf.scrips?.[sym];
+    if (!scrip) continue;
+    const q = scrip.card_1_quote;
+    const flow = scrip.card_4_broker_smart_flow;
+    if (q) {
+      totalVol += q.volume || 0;
+      totalAmt += q.turnover || 0;
+    }
+    const dayVwap = q?.vwap || (q?.turnover && q?.volume ? +(q.turnover / q.volume).toFixed(2) : 0);
+    dailyFlow.push({
+      date: sf.session_date,
+      buyVol: q?.volume || 0,
+      totalVolume: q?.volume || 0,
+      turnover: q?.turnover || 0,
+      amount: q?.turnover || 0,
+      vwap: dayVwap,
+      topAccumulator: flow?.lead_accumulator ? {
+        broker: String(flow.lead_accumulator.broker_id),
+        brokerId: String(flow.lead_accumulator.broker_id),
+        buyQty: flow.lead_accumulator.buy_kitta,
+        netQty: flow.lead_accumulator.net_kitta
+      } : null,
+      topDistributor: flow?.top_5_sellers?.[0] ? {
+        broker: String(flow.top_5_sellers[0].broker_id),
+        brokerId: String(flow.top_5_sellers[0].broker_id),
+        sellQty: flow.top_5_sellers[0].sell_kitta,
+        netQty: -flow.top_5_sellers[0].net_dump_kitta
+      } : null
+    });
+
+    if (flow) {
+      (flow.top_5_buyers || []).forEach((b: any) => {
+        const id = String(b.broker_id);
+        if (!brokerAgg[id]) brokerAgg[id] = { id, buyQty: 0, buyAmt: 0, sellQty: 0, sellAmt: 0 };
+        const kitta = b.buy_kitta || b.net_kitta || 0;
+        const rate = b.buy_vwap || dayVwap || 0;
+        brokerAgg[id].buyQty += kitta;
+        brokerAgg[id].buyAmt += kitta * rate;
+      });
+
+      (flow.top_5_sellers || []).forEach((s: any) => {
+        const id = String(s.broker_id);
+        if (!brokerAgg[id]) brokerAgg[id] = { id, buyQty: 0, buyAmt: 0, sellQty: 0, sellAmt: 0 };
+        const kitta = s.sell_kitta || s.net_dump_kitta || 0;
+        const rate = s.sell_vwap || dayVwap || 0;
+        brokerAgg[id].sellQty += kitta;
+        brokerAgg[id].sellAmt += kitta * rate;
+      });
+    }
+  }
+
+  const marketVwap = totalVol > 0 ? +(totalAmt / totalVol).toFixed(2) : 0;
+
+  const brokersList = Object.values(brokerAgg).map(b => {
+    const netQty = b.buyQty - b.sellQty;
+    const avgBuyRate = b.buyQty > 0 ? +(b.buyAmt / b.buyQty).toFixed(2) : 0;
+    const avgSellRate = b.sellQty > 0 ? +(b.sellAmt / b.sellQty).toFixed(2) : 0;
+    return {
+      broker: b.id,
+      id: b.id,
+      brokerId: b.id,
+      name: `Broker #${b.id}`,
+      brokerName: `Broker #${b.id}`,
+      buyQty: b.buyQty,
+      buyAmt: b.buyAmt,
+      sellQty: b.sellQty,
+      sellAmt: b.sellAmt,
+      netQty,
+      signedHoldQty: netQty,
+      holdQty: Math.max(0, netQty),
+      avgBuyRate,
+      avgBuyPrice: avgBuyRate,
+      avgSellRate,
+      avgSellPrice: avgSellRate
+    };
+  });
+
+  const accumulators = brokersList.filter(b => b.netQty > 0).sort((a, b) => b.netQty - a.netQty);
+  const distributors = brokersList.filter(b => b.netQty < 0).sort((a, b) => a.netQty - b.netQty);
+
+  // 5D Whale Buy VWAP
+  let whaleBuyAmt = 0;
+  let whaleBuyQty = 0;
+  accumulators.slice(0, 5).forEach(b => {
+    whaleBuyQty += b.buyQty;
+    whaleBuyAmt += b.buyAmt;
+  });
+  const whaleVwap = whaleBuyQty > 0 ? +(whaleBuyAmt / whaleBuyQty).toFixed(2) : marketVwap;
+
+  const topAcc = accumulators[0] || null;
+  const topDist = distributors[0] || null;
+
+  return {
+    symbol: sym,
+    tradingDays: 5,
+    timeframeDays: 5,
+    totalVolume: totalVol,
+    totalTurnover: totalAmt,
+    totalAmount: totalAmt,
+    vwap: marketVwap,
+    bigBrokerVWAP: whaleVwap,
+    topAccumulator: topAcc,
+    topDistributor: topDist,
+    leadAccumulator: topAcc,
+    leadDistributor: topDist,
+    topAccumulators: accumulators,
+    topDistributors: distributors,
+    topNetBuyers: accumulators,
+    topNetSellers: distributors,
+    topBuyers: brokersList.filter(b => b.buyQty > 0).sort((a, b) => b.buyQty - a.buyQty),
+    topSellers: brokersList.filter(b => b.sellQty > 0).sort((a, b) => b.sellQty - a.sellQty),
+    brokers: brokersList,
+    allBrokers: brokersList,
+    dailyFlow,
+    avgAccumulatorBuyPrice: topAcc?.avgBuyRate || 0,
+    avgDistributorSellPrice: topDist?.avgSellRate || 0,
+    isReal: true,
+    source: 'offline_subfiles_bundle_5d'
+  };
+}
+
+/**
  * React Hook: useHistoricalSubfile({ dayOffset, date, symbol })
- * Instantly loads any of the 4 historical sub-files from IndexedDB/Memory (< 1ms).
+ * Instantly loads any of the historical sub-files from IndexedDB/Memory/Bundle (< 1ms).
  */
 export function useHistoricalSubfile({
   dayOffset = 1,
@@ -565,7 +991,6 @@ export function useHistoricalSubfile({
     let isMounted = true;
 
     async function load() {
-      // 1. Hot memory check
       if (_subfileMemoryCache.has(cacheKey)) {
         if (isMounted) {
           setSubfile(_subfileMemoryCache.get(cacheKey)!);
@@ -574,37 +999,11 @@ export function useHistoricalSubfile({
         return;
       }
 
-      // 2. IndexedDB check
-      const idbKey = `drabyashree_subfile_${cacheKey}`;
-      try {
-        const cached = await idbGet(idbKey);
-        if (cached && isMounted) {
-          _subfileMemoryCache.set(cacheKey, cached);
-          setSubfile(cached);
-          setIsLoading(false);
-          return;
-        }
-      } catch (_) {}
-
-      // 3. Network fetch
-      try {
-        setIsLoading(true);
-        const url = date ? `/api/ledger/subfiles/date/${date}` : `/api/ledger/subfiles/day/${dayOffset}`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const json = await res.json();
-          if (isMounted && json && json.scrips) {
-            _subfileMemoryCache.set(cacheKey, json);
-            if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
-            if (json.day_offset) _subfileMemoryCache.set(json.day_offset, json);
-            setSubfile(json);
-            idbSet(idbKey, json).catch(() => {});
-          }
-        }
-      } catch (err) {
-        console.warn(`[LocalLedger] Failed to fetch subfile ${cacheKey}:`, (err as Error).message);
-      } finally {
-        if (isMounted) setIsLoading(false);
+      setIsLoading(true);
+      const res = await getHistoricalSubfileDirect(cacheKey);
+      if (isMounted) {
+        if (res) setSubfile(res);
+        setIsLoading(false);
       }
     }
 
@@ -653,7 +1052,8 @@ export function useScrip4DayTrajectory(symbol: string | null) {
     async function load() {
       try {
         setIsLoading(true);
-        const res = await fetch(`/api/ledger/subfiles/trajectory/${cleanSym}`);
+        const base = getProxyBase();
+        const res = await fetch(`${base}/api/ledger/subfiles/trajectory/${cleanSym}`);
         if (res.ok) {
           const json = await res.json();
           if (isMounted) setTrajectory(json);
@@ -673,62 +1073,72 @@ export function useScrip4DayTrajectory(symbol: string | null) {
 }
 
 /**
- * Pre-warms the 4 historical sub-files in the background during idle time.
- * Populates memory cache and IndexedDB so Day 1..4 switching is instant (<1ms).
+ * Pre-warms the historical sub-files (Days 1..5) in the background during idle time.
+ * Populates memory cache and IndexedDB from local bundled assets or proxy so day-switching is instant (<1ms).
  */
 export async function prewarmHistoricalSubfiles(): Promise<void> {
   if (typeof window === 'undefined') return;
 
   const runWarmup = async () => {
     try {
-      // 1. Fetch manifest index
-      const manifestRes = await fetch('/api/ledger/subfiles/index');
-      if (!manifestRes.ok) return;
-      const manifest = await manifestRes.json();
+      const base = getProxyBase();
+      // 1. Fetch manifest index (try local bundle first, then proxy)
+      let manifest: any = null;
+      for (const p of ['./data/subfiles/historical_subfiles_index.json', '/data/subfiles/historical_subfiles_index.json', `${base}/api/ledger/subfiles/index`]) {
+        try {
+          const r = await fetch(p);
+          if (r.ok) {
+            manifest = await r.json();
+            if (manifest?.available_sessions) break;
+          }
+        } catch (_) {}
+      }
       if (!manifest?.available_sessions || !Array.isArray(manifest.available_sessions)) return;
+      _subfileMemoryCache.set('manifest', manifest);
 
-      // 2. Prewarm Day 1 (Yesterday's settled close)
-      const day1Key = 1;
-      if (!_subfileMemoryCache.has(day1Key)) {
-        const idbKey = `drabyashree_subfile_${day1Key}`;
+      // Prewarm all 5 days
+      const daysToWarm = Math.min(manifest.subfiles?.length || 5, 5);
+      for (let day = 1; day <= daysToWarm; day++) {
+        const expectedSessionDate = manifest.subfiles?.[day - 1]?.session_date;
+        const idbKey = `drabyashree_subfile_${day}`;
         const cached = await idbGet(idbKey);
-        if (cached && cached.scrips) {
-          _subfileMemoryCache.set(day1Key, cached);
+        if (cached && cached.scrips && (!expectedSessionDate || cached.session_date === expectedSessionDate)) {
+          _subfileMemoryCache.set(day, cached);
           if (cached.session_date) _subfileMemoryCache.set(cached.session_date, cached);
         } else {
-          const res = await fetch('/api/ledger/subfiles/day/1');
-          if (res.ok) {
-            const json = await res.json();
-            if (json && json.scrips) {
-              _subfileMemoryCache.set(day1Key, json);
-              if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
-              idbSet(idbKey, json).catch(() => {});
+            // Try local bundle first
+            let loaded = false;
+            for (const cand of [`./data/subfiles/historical_day_${day}.json`, `/data/subfiles/historical_day_${day}.json`]) {
+              try {
+                const res = await fetch(cand);
+                if (res.ok) {
+                  const json = await res.json();
+                  if (json && json.scrips) {
+                    _subfileMemoryCache.set(day, json);
+                    if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
+                    idbSet(idbKey, json).catch(() => {});
+                    loaded = true;
+                    break;
+                  }
+                }
+              } catch (_) {}
+            }
+            if (!loaded) {
+              try {
+                const res = await fetch(`${base}/api/ledger/subfiles/day/${day}`);
+                if (res.ok) {
+                  const json = await res.json();
+                  if (json && json.scrips) {
+                    _subfileMemoryCache.set(day, json);
+                    if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
+                    idbSet(idbKey, json).catch(() => {});
+                  }
+                }
+              } catch (_) {}
             }
           }
         }
-      }
-
-      // 3. Prewarm Day 2 during idle if available
-      const day2Key = 2;
-      if (!_subfileMemoryCache.has(day2Key)) {
-        const idbKey = `drabyashree_subfile_${day2Key}`;
-        const cached = await idbGet(idbKey);
-        if (cached && cached.scrips) {
-          _subfileMemoryCache.set(day2Key, cached);
-          if (cached.session_date) _subfileMemoryCache.set(cached.session_date, cached);
-        } else {
-          const res = await fetch('/api/ledger/subfiles/day/2');
-          if (res.ok) {
-            const json = await res.json();
-            if (json && json.scrips) {
-              _subfileMemoryCache.set(day2Key, json);
-              if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
-              idbSet(idbKey, json).catch(() => {});
-            }
-          }
-        }
-      }
-    } catch (_) {}
+      } catch (_) {}
   };
 
   if ('requestIdleCallback' in window) {

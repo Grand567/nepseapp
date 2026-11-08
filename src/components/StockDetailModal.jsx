@@ -1438,10 +1438,19 @@ export default function StockDetailModal({
     }
     return null;
   });
+  const [broker1DData, setBroker1DData] = useState(() => {
+    const cached1D = getCachedRealBrokerAnalysis(initialSym, 1);
+    if (cached1D) return cached1D;
+    const parentBa = stock?.brokerAnalysis || stock?.realBrokerAnalysis;
+    if (parentBa && (parentBa.tradingDays === 1 || parentBa.timeframeDays === 1 || parentBa.timeframe === '1D' || parentBa.days === 1)) {
+      return parentBa;
+    }
+    return null;
+  });
   const [allTimeBrokerAnalysis, setAllTimeBrokerAnalysis] = useState(() => {
     return getCachedRealBrokerAnalysis(initialSym, 'all') || null;
   });
-  const [overviewBrokerTapeMode, setOverviewBrokerTapeMode] = useState('1D_LIVE'); // '1D_LIVE' | 'ALL_TIME'
+  const [overviewBrokerTapeMode, setOverviewBrokerTapeMode] = useState('1D_LIVE'); // '1D_LIVE' | '5D_SWING' | 'ALL_TIME'
   const [brokerAnalysisLoading, setBrokerAnalysisLoading] = useState(() => {
     const cached = getCachedRealBrokerAnalysis(initialSym, 1);
     if (cached) return false;
@@ -2187,6 +2196,11 @@ export default function StockDetailModal({
     fetchRealBrokerAnalysis(d.symbol, brokerDays).then(data => {
       if (active && data) {
         setRealBrokerAnalysis(data);
+        if (brokerDays === 1) {
+          setBroker1DData(data);
+        } else if (brokerDays === 5) {
+          setBroker5DData(data);
+        }
       }
     }).catch(() => {}).finally(() => {
       if (active) setBrokerAnalysisLoading(false);
@@ -2249,7 +2263,14 @@ export default function StockDetailModal({
     setBrokerAnalysisLoading(true);
     try {
       const data = await fetchRealBrokerAnalysis(d.symbol, targetDays, { date: targetDate, refresh });
-      if (data) setRealBrokerAnalysis(data);
+      if (data) {
+        setRealBrokerAnalysis(data);
+        if (targetDays === 1 && !targetDate) {
+          setBroker1DData(data);
+        } else if (targetDays === 5 && !targetDate) {
+          setBroker5DData(data);
+        }
+      }
     } catch (_) {}
     setBrokerAnalysisLoading(false);
   }, [d?.symbol, brokerDays, brokerDate]);
@@ -4545,9 +4566,34 @@ export default function StockDetailModal({
                       >
                         {(() => {
                           const ms = getDetailedMarketStatus();
-                          const dateStr = realBrokerAnalysis?.businessDate || realBrokerAnalysis?.date || modalSessionDate;
+                          const dateStr = pure1DBa?.businessDate || pure1DBa?.date || modalSessionDate;
                           return ms.isOpen ? `🟢 LIVE SESSION (${dateStr || 'Today'})` : `🌙 LAST TRADING DAY (${dateStr || 'Settled'})`;
                         })()}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOverviewBrokerTapeMode('5D_SWING');
+                          if (!broker5DData && !broker5DLoading) {
+                            setBroker5DLoading(true);
+                            fetchRealBrokerAnalysis(d.symbol, 5, { refresh: false })
+                              .then(b5 => { if (b5) setBroker5DData(b5); })
+                              .catch(() => {})
+                              .finally(() => setBroker5DLoading(false));
+                          }
+                        }}
+                        style={{
+                          fontSize: 9.5,
+                          fontWeight: 800,
+                          padding: '2px 7px',
+                          borderRadius: 6,
+                          background: overviewBrokerTapeMode === '5D_SWING' ? 'rgba(56, 189, 248, 0.25)' : 'transparent',
+                          color: overviewBrokerTapeMode === '5D_SWING' ? '#38bdf8' : '#94a3b8',
+                          border: overviewBrokerTapeMode === '5D_SWING' ? '1px solid rgba(56, 189, 248, 0.4)' : 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        🗓️ 5D SWING
                       </button>
                       <button
                         type="button"
@@ -4573,10 +4619,10 @@ export default function StockDetailModal({
                       fontWeight: 800,
                       padding: '3px 10px',
                       borderRadius: 8,
-                      background: (overviewBrokerTapeMode === '1D_LIVE' ? (realBrokerAnalysis?.adSignal === 'Accumulation') : brokerConcentration.smartMoneyBias.includes('Cornering')) ? 'rgba(16, 185, 129, 0.15)' : (overviewBrokerTapeMode === '1D_LIVE' ? (realBrokerAnalysis?.adSignal === 'Distribution') : brokerConcentration.smartMoneyBias.includes('Offloading')) ? 'rgba(244, 63, 94, 0.15)' : 'rgba(56, 189, 248, 0.15)',
-                      color: (overviewBrokerTapeMode === '1D_LIVE' ? (realBrokerAnalysis?.adSignal === 'Accumulation') : brokerConcentration.smartMoneyBias.includes('Cornering')) ? '#34d399' : (overviewBrokerTapeMode === '1D_LIVE' ? (realBrokerAnalysis?.adSignal === 'Distribution') : brokerConcentration.smartMoneyBias.includes('Offloading')) ? '#f87171' : '#38bdf8'
+                      background: (overviewBrokerTapeMode === '1D_LIVE' ? (pure1DBa?.adSignal === 'Accumulation') : overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.adSignal === 'Accumulation') : brokerConcentration.smartMoneyBias.includes('Cornering')) ? 'rgba(16, 185, 129, 0.15)' : (overviewBrokerTapeMode === '1D_LIVE' ? (pure1DBa?.adSignal === 'Distribution') : overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.adSignal === 'Distribution') : brokerConcentration.smartMoneyBias.includes('Offloading')) ? 'rgba(244, 63, 94, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                      color: (overviewBrokerTapeMode === '1D_LIVE' ? (pure1DBa?.adSignal === 'Accumulation') : overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.adSignal === 'Accumulation') : brokerConcentration.smartMoneyBias.includes('Cornering')) ? '#34d399' : (overviewBrokerTapeMode === '1D_LIVE' ? (pure1DBa?.adSignal === 'Distribution') : overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.adSignal === 'Distribution') : brokerConcentration.smartMoneyBias.includes('Offloading')) ? '#f87171' : '#38bdf8'
                     }}>
-                      {overviewBrokerTapeMode === '1D_LIVE' ? (realBrokerAnalysis?.adSignal ? `Live: ${realBrokerAnalysis.adSignal}` : 'Live: Syncing...') : brokerConcentration.smartMoneyBias}
+                      {overviewBrokerTapeMode === '1D_LIVE' ? (pure1DBa?.adSignal ? `Live: ${pure1DBa.adSignal}` : 'Live: Syncing...') : overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.adSignal ? `5D: ${broker5DData.adSignal}` : '5D: Syncing...') : brokerConcentration.smartMoneyBias}
                     </span>
                     <button
                       type="button"
@@ -4598,20 +4644,37 @@ export default function StockDetailModal({
                   </div>
                 </div>
 
-                {/* 4-Stat Metric Summary Bar (Top Holder, Held Shares, Avg Buy, Avg Sell) */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 12 }}>
+                {/* Shimmer loading progress bar */}
+                <LoadingShimmerBar active={Boolean(brokerAnalysisLoading || (overviewBrokerTapeMode === '5D_SWING' && broker5DLoading))} />
+                {(brokerAnalysisLoading || (overviewBrokerTapeMode === '5D_SWING' && broker5DLoading)) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#38bdf8', fontWeight: 700, marginBottom: 8, marginTop: 4 }}>
+                    <RefreshCw className="animate-spin" style={{ width: 12, height: 12 }} />
+                    <span>Loading broker holding and distribution...</span>
+                  </div>
+                )}
+
+                {/* 5-Stat Metric Summary Bar (Top Holder, Held Shares, Market VWAP, Avg Buy, Avg Sell) */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 12, marginTop: 8 }}>
                   <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
                     <div style={{ fontSize: 10, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>
-                      {overviewBrokerTapeMode === '1D_LIVE' ? "Today's Top Accumulator" : "Top Holding Broker"}
+                      {overviewBrokerTapeMode === '1D_LIVE' ? "Today's Top Buyer" : overviewBrokerTapeMode === '5D_SWING' ? "Top 5D Buyer" : "Top Holding Broker"}
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
                       {(() => {
                         if (overviewBrokerTapeMode === '1D_LIVE') {
-                          const top1D = realBrokerAnalysis?.leadAccumulator || realBrokerAnalysis?.topNetBuyers?.[0] || realBrokerAnalysis?.topBuyers?.[0];
+                          const top1D = pure1DBa?.leadAccumulator || pure1DBa?.topAccumulators?.[0] || pure1DBa?.topNetBuyers?.[0] || pure1DBa?.topBuyers?.[0];
                           if (top1D) {
                             const qty = Number(top1D.netQty ?? top1D.holdQty ?? top1D.buyVolume ?? top1D.netKitta ?? 0);
                             const bId = top1D.brokerId || top1D.broker || top1D.id;
                             return `#${bId} (${qty.toLocaleString()} sh)`;
+                          }
+                        } else if (overviewBrokerTapeMode === '5D_SWING') {
+                          const b5Accs = broker5DData?.topAccumulators || broker5DData?.topNetBuyers || [];
+                          const top5D = broker5DData?.leadAccumulator || b5Accs[0];
+                          if (top5D) {
+                            const qty = Number(top5D.netQty ?? top5D.holdQty ?? ((top5D.buyQty || 0) - (top5D.sellQty || 0)) ?? 0);
+                            const bId = top5D.brokerId || top5D.broker || top5D.id;
+                            return `#${bId} (+${qty.toLocaleString()} sh)`;
                           }
                         }
                         const topHolderAllTime = allTimeBrokerAnalysis?.topHoldingBroker || (allTimeBrokerAnalysis?.topHoldings || [])[0];
@@ -4625,30 +4688,77 @@ export default function StockDetailModal({
                       })()}
                     </div>
                   </div>
+
                   <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
-                    <div style={{ fontSize: 10, fontWeight: 800, color: '#10b981', textTransform: 'uppercase' }}>Total Shares Held</div>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#10b981', textTransform: 'uppercase' }}>Total Shares Traded / Held</div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: '#10b981', marginTop: 2 }}>
                       {(() => {
+                        if (overviewBrokerTapeMode === '1D_LIVE') {
+                          const vol1D = Number(pure1DBa?.totalVolume || pure1DBa?.totalBuyVolume || d?.volume || 0);
+                          return `${vol1D.toLocaleString()} sh`;
+                        } else if (overviewBrokerTapeMode === '5D_SWING') {
+                          const vol5D = Number(broker5DData?.totalVolume || 0);
+                          return `${vol5D.toLocaleString()} sh`;
+                        }
                         const totalAllTime = Number(allTimeBrokerAnalysis?.totalSharesHeldTillNow || 0);
                         if (totalAllTime > 0) return `${totalAllTime.toLocaleString()} sh`;
-                        return `${Number(realBrokerAnalysis?.totalSharesHeldTillNow || realBrokerAnalysis?.summary?.totalHoldQty || (brokerConcentration.topNetAccumulators || []).reduce((s, b) => s + (b.netQty || 0), 0)).toLocaleString()} sh`;
+                        return `${Number(realBrokerAnalysis?.totalSharesHeldTillNow || realBrokerAnalysis?.summary?.totalHoldQty || 0).toLocaleString()} sh`;
                       })()}
                     </div>
                   </div>
-                  <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
-                    <div style={{ fontSize: 10, fontWeight: 800, color: '#60a5fa', textTransform: 'uppercase' }}>Avg Buying Price</div>
-                    <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
+
+                  <div style={{ background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#c084fc', textTransform: 'uppercase' }}>
+                      {overviewBrokerTapeMode === '1D_LIVE' ? "1D Session VWAP" : overviewBrokerTapeMode === '5D_SWING' ? "5D Market VWAP" : "Market VWAP"}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
                       {(() => {
+                        if (overviewBrokerTapeMode === '1D_LIVE') {
+                          const v = Number(pure1DBa?.vwap || (pure1DBa?.totalAmount && pure1DBa?.totalVolume ? pure1DBa.totalAmount / pure1DBa.totalVolume : 0) || d?.vwap || d?.ltp || 0);
+                          return v > 0 ? `Rs. ${v.toFixed(1)}` : '—';
+                        } else if (overviewBrokerTapeMode === '5D_SWING') {
+                          const v = Number(broker5DData?.vwap || (broker5DData?.totalAmount && broker5DData?.totalVolume ? broker5DData.totalAmount / broker5DData.totalVolume : 0) || d?.vwap || 0);
+                          return v > 0 ? `Rs. ${v.toFixed(1)}` : '—';
+                        }
+                        return d?.vwap ? `Rs. ${Number(d.vwap).toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—');
+                      })()}
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#60a5fa', textTransform: 'uppercase' }}>
+                      {overviewBrokerTapeMode === '5D_SWING' ? "5D Whale VWAP" : "Avg Buying Price"}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+                      {(() => {
+                        if (overviewBrokerTapeMode === '1D_LIVE') {
+                          const buyPx = Number(pure1DBa?.avgAccumulatorBuyPrice || pure1DBa?.leadAccumulator?.avgBuyRate || pure1DBa?.leadAccumulator?.avgBuyPrice || pure1DBa?.topNetBuyers?.[0]?.avgBuyRate || 0);
+                          return buyPx > 0 ? `Rs. ${buyPx.toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—');
+                        } else if (overviewBrokerTapeMode === '5D_SWING') {
+                          const buyPx = Number(broker5DData?.bigBrokerVWAP || broker5DData?.avgAccumulatorBuyPrice || broker5DData?.topAccumulators?.[0]?.avgBuyRate || 0);
+                          return buyPx > 0 ? `Rs. ${buyPx.toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—');
+                        }
                         const avgBuyAllTime = Number(allTimeBrokerAnalysis?.avgBuyingPrice || allTimeBrokerAnalysis?.avgAccumulatorBuyPrice || allTimeBrokerAnalysis?.topHoldingBroker?.avgBuyPrice || 0);
                         if (avgBuyAllTime > 0) return `Rs. ${avgBuyAllTime.toFixed(1)}`;
-                        return Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice || 0) > 0 ? `Rs. ${Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice).toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—');
+                        return Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || 0) > 0 ? `Rs. ${Number(realBrokerAnalysis.avgAccumulatorBuyPrice).toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—');
                       })()}
                     </div>
                   </div>
+
                   <div style={{ background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
                     <div style={{ fontSize: 10, fontWeight: 800, color: '#fb7185', textTransform: 'uppercase' }}>Avg Selling Price</div>
-                    <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
-                      {Number(realBrokerAnalysis?.avgDistributorSellPrice || realBrokerAnalysis?.summary?.avgDistributorSellPrice || 0) > 0 ? `Rs. ${Number(realBrokerAnalysis?.avgDistributorSellPrice || realBrokerAnalysis?.summary?.avgDistributorSellPrice).toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—')}
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+                      {(() => {
+                        if (overviewBrokerTapeMode === '1D_LIVE') {
+                          const sellPx = Number(pure1DBa?.avgDistributorSellPrice || pure1DBa?.leadDistributor?.avgSellRate || pure1DBa?.leadDistributor?.avgSellPrice || pure1DBa?.topNetSellers?.[0]?.avgSellRate || 0);
+                          return sellPx > 0 ? `Rs. ${sellPx.toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—');
+                        } else if (overviewBrokerTapeMode === '5D_SWING') {
+                          const sellPx = Number(broker5DData?.avgDistributorSellPrice || broker5DData?.topDistributors?.[0]?.avgSellRate || 0);
+                          return sellPx > 0 ? `Rs. ${sellPx.toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—');
+                        }
+                        const sellPx = Number(allTimeBrokerAnalysis?.avgDistributorSellPrice || realBrokerAnalysis?.avgDistributorSellPrice || 0);
+                        return sellPx > 0 ? `Rs. ${sellPx.toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—');
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -4659,13 +4769,15 @@ export default function StockDetailModal({
                   <div style={{ background: 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: 12, padding: '12px 14px' }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#34d399', textTransform: 'uppercase', marginBottom: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
                       <span>Top Accumulators</span>
-                      <span>BCR₃: {brokerConcentration.bcr3BuyPct ?? 0}%</span>
+                      <span>BCR₃: {overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.bcr3BuyPct ?? 0) : (brokerConcentration.bcr3BuyPct ?? 0)}%</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {(() => {
                         const accList = overviewBrokerTapeMode === '1D_LIVE'
-                          ? (realBrokerAnalysis?.topNetBuyers?.length ? realBrokerAnalysis.topNetBuyers : (realBrokerAnalysis?.topBuyers?.length ? realBrokerAnalysis.topBuyers : (brokerConcentration.topNetAccumulators || [])))
-                          : (allTimeBrokerAnalysis?.topHoldings?.length ? allTimeBrokerAnalysis.topHoldings : (brokerConcentration.topNetAccumulators?.length ? brokerConcentration.topNetAccumulators : (brokerConcentration.topBuyerBrokers || [])));
+                          ? (pure1DBa?.topNetBuyers?.length ? pure1DBa.topNetBuyers : (pure1DBa?.topAccumulators?.length ? pure1DBa.topAccumulators : (pure1DBa?.topBuyers?.length ? pure1DBa.topBuyers : (brokerConcentration.topNetAccumulators || []))))
+                          : overviewBrokerTapeMode === '5D_SWING'
+                            ? (broker5DData?.topAccumulators?.length ? broker5DData.topAccumulators : (broker5DData?.topNetBuyers || []))
+                            : (allTimeBrokerAnalysis?.topHoldings?.length ? allTimeBrokerAnalysis.topHoldings : (brokerConcentration.topNetAccumulators || []));
                         if (!accList || accList.length === 0) {
                           return <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '8px 0' }}>No buyer records</div>;
                         }
@@ -4674,6 +4786,7 @@ export default function StockDetailModal({
                           const bId = b.broker || b.id || b.brokerId;
                           const bName = b.brokerName || b.name || getBrokerName(bId);
                           const amtVal = Math.abs(b.holdAmt || (b.netAmt != null && b.netAmt !== 0 ? b.netAmt : (b.buyAmt || b.buyAmount || b.amount || 0)));
+                          const avgPx = Number(b.avgBuyRate || b.avgBuyPrice || (amtVal > 0 && qtyVal > 0 ? amtVal / qtyVal : 0));
                           return (
                             <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
                               <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -4683,8 +4796,15 @@ export default function StockDetailModal({
                                 </span>
                               </span>
                               <div style={{ textAlign: 'right' }}>
-                                <span style={{ color: '#34d399', fontWeight: 800 }}>+{Number(qtyVal || 0).toLocaleString()}</span>
-                                <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 6 }}>({formatBrokerAmount(amtVal)})</span>
+                                <div>
+                                  <span style={{ color: '#34d399', fontWeight: 800 }}>+{Number(qtyVal || 0).toLocaleString()}</span>
+                                  <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 4 }}>({formatBrokerAmount(amtVal)})</span>
+                                </div>
+                                {avgPx > 0 && (
+                                  <div style={{ fontSize: 10, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
+                                    Avg: Rs. {avgPx.toFixed(1)}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
@@ -4697,33 +4817,47 @@ export default function StockDetailModal({
                   <div style={{ background: 'rgba(244, 63, 94, 0.04)', border: '1px solid rgba(244, 63, 94, 0.2)', borderRadius: 12, padding: '12px 14px' }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#f87171', textTransform: 'uppercase', marginBottom: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
                       <span>Top Distributors</span>
-                      <span>BCR₃: {brokerConcentration.bcr3SellPct || 0}%</span>
+                      <span>BCR₃: {overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.bcr3SellPct ?? 0) : (brokerConcentration.bcr3SellPct || 0)}%</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {((overviewBrokerTapeMode === '1D_LIVE'
-                        ? (realBrokerAnalysis?.topNetSellers?.length ? realBrokerAnalysis.topNetSellers : (realBrokerAnalysis?.topSellers?.length ? realBrokerAnalysis.topSellers : (brokerConcentration.topNetDistributors || [])))
-                        : (brokerConcentration.topNetDistributors?.length ? brokerConcentration.topNetDistributors : (brokerConcentration.topSellerBrokers || []))
-                      ) || []).slice(0, 3).map((s, idx) => {
-                        const qtyVal = Math.abs(s.netQty !== undefined ? s.netQty : s.volume);
-                        const sellAmtVal = Math.abs(s.netAmt != null && s.netAmt !== 0 ? s.netAmt : (s.sellAmt || s.sellAmount || s.amount || 0));
-                        return (
-                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
-                            <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ color: '#94a3b8', fontSize: 12 }}>#{s.broker}</span>
-                              <span style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={s.brokerName}>
-                                {s.brokerName}
+                      {(() => {
+                        const distList = overviewBrokerTapeMode === '1D_LIVE'
+                          ? (pure1DBa?.topNetSellers?.length ? pure1DBa.topNetSellers : (pure1DBa?.topDistributors?.length ? pure1DBa.topDistributors : (pure1DBa?.topSellers?.length ? pure1DBa.topSellers : (brokerConcentration.topNetDistributors || []))))
+                          : overviewBrokerTapeMode === '5D_SWING'
+                            ? (broker5DData?.topDistributors?.length ? broker5DData.topDistributors : (broker5DData?.topNetSellers || []))
+                            : (brokerConcentration.topNetDistributors || []);
+                        if (!distList || distList.length === 0) {
+                          return <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '8px 0' }}>No seller records</div>;
+                        }
+                        return distList.slice(0, 3).map((s, idx) => {
+                          const qtyVal = Math.abs(s.netQty !== undefined ? s.netQty : s.volume);
+                          const sellAmtVal = Math.abs(s.netAmt != null && s.netAmt !== 0 ? s.netAmt : (s.sellAmt || s.sellAmount || s.amount || 0));
+                          const sId = s.broker || s.brokerId || s.id;
+                          const sName = s.brokerName || s.name || getBrokerName(sId);
+                          const avgSellPx = Number(s.avgSellRate || s.avgSellPrice || (sellAmtVal > 0 && qtyVal > 0 ? sellAmtVal / qtyVal : 0));
+                          return (
+                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
+                              <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ color: '#94a3b8', fontSize: 12 }}>#{sId}</span>
+                                <span style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={sName}>
+                                  {sName}
+                                </span>
                               </span>
-                            </span>
-                            <div style={{ textAlign: 'right' }}>
-                              <span style={{ color: '#f87171', fontWeight: 800 }}>-{Number(qtyVal || 0).toLocaleString()}</span>
-                              <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 6 }}>({formatBrokerAmount(sellAmtVal)})</span>
+                              <div style={{ textAlign: 'right' }}>
+                                <div>
+                                  <span style={{ color: '#f87171', fontWeight: 800 }}>-{Number(qtyVal || 0).toLocaleString()}</span>
+                                  <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 4 }}>({formatBrokerAmount(sellAmtVal)})</span>
+                                </div>
+                                {avgSellPx > 0 && (
+                                  <div style={{ fontSize: 10, color: '#fb7185', fontFamily: 'var(--font-mono)' }}>
+                                    Avg: Rs. {avgSellPx.toFixed(1)}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                      {(!brokerConcentration.topNetDistributors?.length && (!brokerConcentration.topSellerBrokers || brokerConcentration.topSellerBrokers.length === 0)) && (
-                        <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '8px 0' }}>No seller records</div>
-                      )}
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -5148,7 +5282,7 @@ export default function StockDetailModal({
         {(activeTab === 'market_depth' || activeTab === 'depth_broker') && (() => {
           // --- Unified Intraday & Live Order Flow Analytics ---
           // Strict Guard: Live intraday order flow must strictly use 1D session data. Never poison with multi-day rollups!
-          const pure1DBa = (realBrokerAnalysis && (realBrokerAnalysis.tradingDays === 1 || !realBrokerAnalysis.tradingDays)) ? realBrokerAnalysis : null;
+          const pure1DBa = broker1DData || ((realBrokerAnalysis && (realBrokerAnalysis.tradingDays === 1 || !realBrokerAnalysis.tradingDays)) ? realBrokerAnalysis : null) || getCachedRealBrokerAnalysis(d?.symbol, 1);
           const liveBc = brokerConcentration;
 
           // Top Accumulators (Net Buyers) for Live / 1D session
@@ -5621,6 +5755,29 @@ export default function StockDetailModal({
               {(() => {
                 const b5 = broker5DData || (brokerAccumData?.tradingDays === 5 ? brokerAccumData : null);
 
+                if (broker5DLoading && !b5) {
+                  return (
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8))',
+                      border: '1px solid rgba(148, 163, 184, 0.25)',
+                      borderRadius: 16,
+                      padding: '20px 18px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 10,
+                      boxShadow: '0 4px 18px rgba(0, 0, 0, 0.3)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#38bdf8', fontSize: 13.5, fontWeight: 800 }}>
+                        <RefreshCw className="animate-spin" style={{ width: 16, height: 16 }} />
+                        <span>Loading 5-Day institutional swing broker telemetry...</span>
+                      </div>
+                      <LoadingShimmerBar active={true} />
+                    </div>
+                  );
+                }
+
                 const b5Accums = (
                   (Array.isArray(b5?.topAccumulators) && b5.topAccumulators.length > 0) ? b5.topAccumulators :
                   (Array.isArray(b5?.topNetBuyers) && b5.topNetBuyers.length > 0) ? b5.topNetBuyers :
@@ -5871,14 +6028,14 @@ export default function StockDetailModal({
                         </div>
                       </div>
 
-                      {/* Metric 2: 5D Whale Buy VWAP */}
+                      {/* Metric 2: 5D Whale Buy VWAP & Market VWAP */}
                       <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)' }}>
                         <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase' }}>5D Whale VWAP</div>
                         <div style={{ fontSize: 15, fontWeight: 900, color: '#38bdf8', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                           Rs. {b5WhaleVwap > 0 ? b5WhaleVwap : '--'}
                         </div>
-                        <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 1 }}>
-                          LTP vs VWAP: <strong style={{ color: diff5DVwap <= 2.5 && diff5DVwap >= -3 ? '#10b981' : diff5DVwap > 2.5 ? '#f59e0b' : '#38bdf8' }}>{diff5DVwap >= 0 ? '+' : ''}{diff5DVwap}%</strong>
+                        <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 1 }}>
+                          5D Mkt VWAP: <strong style={{ color: '#e2e8f0' }}>Rs. {b5?.vwap > 0 ? b5.vwap : '--'}</strong> ({diff5DVwap >= 0 ? '+' : ''}{diff5DVwap}%)
                         </div>
                       </div>
 
@@ -5891,6 +6048,9 @@ export default function StockDetailModal({
                         <div style={{ fontSize: 10.5, color: '#10b981', marginTop: 1, fontFamily: 'var(--font-mono)', fontWeight: 800 }}>
                           {b5TopAccum ? `+${Number(b5TopAccum.netQty !== undefined ? b5TopAccum.netQty : ((b5TopAccum.buyQty || 0) - (b5TopAccum.sellQty || 0))).toLocaleString()} sh` : 'No net buys'}
                         </div>
+                        <div style={{ fontSize: 10, color: '#38bdf8', marginTop: 1, fontFamily: 'var(--font-mono)' }}>
+                          Avg Buy: <strong style={{ color: '#ffffff' }}>Rs. {Number(b5TopAccum?.avgBuyRate || b5TopAccum?.avgBuyPrice || b5TopAccum?.buyRate || 0) > 0 ? Number(b5TopAccum?.avgBuyRate || b5TopAccum?.avgBuyPrice || b5TopAccum?.buyRate).toFixed(1) : '--'}</strong>
+                        </div>
                       </div>
 
                       {/* Metric 4: Top 5D Distributor */}
@@ -5901,6 +6061,9 @@ export default function StockDetailModal({
                         </div>
                         <div style={{ fontSize: 10.5, color: '#f43f5e', marginTop: 1, fontFamily: 'var(--font-mono)', fontWeight: 800 }}>
                           {b5TopDist ? `-${Math.abs(Number(b5TopDist.netQty !== undefined ? b5TopDist.netQty : ((b5TopDist.sellQty || 0) - (b5TopDist.buyQty || 0)))).toLocaleString()} sh` : 'No net sells'}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#fb7185', marginTop: 1, fontFamily: 'var(--font-mono)' }}>
+                          Avg Sell: <strong style={{ color: '#ffffff' }}>Rs. {Number(b5TopDist?.avgSellRate || b5TopDist?.avgSellPrice || b5TopDist?.sellRate || 0) > 0 ? Number(b5TopDist?.avgSellRate || b5TopDist?.avgSellPrice || b5TopDist?.sellRate).toFixed(1) : '--'}</strong>
                         </div>
                       </div>
                     </div>

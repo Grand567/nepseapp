@@ -386,6 +386,7 @@ function StockBrokerAnalysisTabInner({
     if (dt) {
       setLocalDays(1);
       if (onDaysChange) onDaysChange(1);
+      setTableHoldingView('session');
     }
     setInternalBrokerData(null);
     if (onDateChange) {
@@ -1136,7 +1137,27 @@ function StockBrokerAnalysisTabInner({
       </div>
 
       {/* ── Sub-Millisecond Progress Bar Shimmer Line for Broker Flow ── */}
-      <LoadingShimmerBar active={Boolean(loading)} />
+      <LoadingShimmerBar active={Boolean(isTabLoading)} />
+
+      {/* Prominent loading status message */}
+      {isTabLoading && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          background: 'rgba(2, 132, 199, 0.12)',
+          border: '1px solid rgba(56, 189, 248, 0.3)',
+          borderRadius: 12,
+          padding: '10px 14px',
+          marginBottom: 12,
+          color: '#38bdf8',
+          fontSize: 13,
+          fontWeight: 700
+        }}>
+          <RefreshCw className="animate-spin" style={{ width: 16, height: 16, flexShrink: 0 }} />
+          <span>Loading broker analysis for {effectiveDate || (effectiveDays > 1 ? `${effectiveDays}-Day window` : 'latest session')}...</span>
+        </div>
+      )}
 
       {/* ── Date-Wise & Multi-Day Timeframe Filter Bar (Share Hub Parity) ── */}
       <div style={{
@@ -2208,10 +2229,10 @@ function StockBrokerAnalysisTabInner({
                               : (b.cumHoldQty === 0 ? '—' : (cumulativeHoldingMap && Object.keys(cumulativeHoldingMap).length > 0 ? '—' : '...'))}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
-                            {safeNum(b.avgBuy) > 0 ? safeNum(b.avgBuy).toFixed(2) : '0.00'}
+                            {safeNum(b.avgBuy) > 0 ? safeNum(b.avgBuy).toFixed(2) : (b.buyQty > 0 && b.buyAmt > 0 ? (b.buyAmt / b.buyQty).toFixed(2) : '—')}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
-                            {safeNum(b.avgSell) > 0 ? safeNum(b.avgSell).toFixed(2) : '0.00'}
+                            {safeNum(b.avgSell) > 0 ? safeNum(b.avgSell).toFixed(2) : (b.sellQty > 0 && b.sellAmt > 0 ? (b.sellAmt / b.sellQty).toFixed(2) : '—')}
                           </td>
                         </tr>
                       );
@@ -2450,7 +2471,7 @@ function StockBrokerAnalysisTabInner({
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Avg Buy Price</div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                      {safeNum(b.avgBuy) > 0 ? safeNum(b.avgBuy).toFixed(2) : '0.00'}
+                      {safeNum(b.avgBuy) > 0 ? `Rs. ${safeNum(b.avgBuy).toFixed(2)}` : (b.buyQty > 0 && b.buyAmt > 0 ? `Rs. ${(b.buyAmt / b.buyQty).toFixed(2)}` : '— (No Buys)')}
                     </div>
                   </div>
 
@@ -2469,7 +2490,7 @@ function StockBrokerAnalysisTabInner({
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Avg Sell Price</div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                      {safeNum(b.avgSell) > 0 ? safeNum(b.avgSell).toFixed(2) : '0.00'}
+                      {safeNum(b.avgSell) > 0 ? `Rs. ${safeNum(b.avgSell).toFixed(2)}` : (b.sellQty > 0 && b.sellAmt > 0 ? `Rs. ${(b.sellAmt / b.sellQty).toFixed(2)}` : '— (No Sells)')}
                     </div>
                   </div>
                 </div>
@@ -2512,22 +2533,40 @@ function StockBrokerAnalysisTabInner({
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-            <div style={{ padding: 12, borderRadius: 12, background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-              <div style={{ fontSize: 12, color: '#10b981', fontWeight: 700 }}>Total Buy Volume</div>
-              <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 4 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+            <div style={{ padding: 10, borderRadius: 12, background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+              <div style={{ fontSize: 11, color: '#10b981', fontWeight: 700 }}>Total Buy Volume</div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                 {totalVolume.toLocaleString()} kitta
               </div>
             </div>
-            <div style={{ padding: 12, borderRadius: 12, background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-              <div style={{ fontSize: 12, color: '#38bdf8', fontWeight: 700 }}>Total Net Held Float</div>
-              <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 4 }}>
+            <div style={{ padding: 10, borderRadius: 12, background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+              <div style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700 }}>Total Net Held Float</div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                 {totalHold.toLocaleString()} kitta
               </div>
             </div>
-            <div style={{ padding: 12, borderRadius: 12, background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
-              <div style={{ fontSize: 12, color: '#c084fc', fontWeight: 700 }}>A/D Signal ({activeBrokerData?.period || `${effectiveDays}D`})</div>
-              <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 4 }}>
+            <div style={{ padding: 10, borderRadius: 12, background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
+              <div style={{ fontSize: 11, color: '#c084fc', fontWeight: 700 }}>Market VWAP</div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                Rs. {safeNum(activeBrokerData?.vwap || (activeBrokerData?.totalAmount && activeBrokerData?.totalVolume ? +(activeBrokerData.totalAmount / activeBrokerData.totalVolume).toFixed(2) : summaryTotals.weightedAvgBuy)).toFixed(2)}
+              </div>
+            </div>
+            <div style={{ padding: 10, borderRadius: 12, background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+              <div style={{ fontSize: 11, color: '#60a5fa', fontWeight: 700 }}>Weighted Avg Buy</div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                {summaryTotals.weightedAvgBuy > 0 ? `Rs. ${summaryTotals.weightedAvgBuy.toFixed(2)}` : '—'}
+              </div>
+            </div>
+            <div style={{ padding: 10, borderRadius: 12, background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.2)' }}>
+              <div style={{ fontSize: 11, color: '#fb7185', fontWeight: 700 }}>Weighted Avg Sell</div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                {summaryTotals.weightedAvgSell > 0 ? `Rs. ${summaryTotals.weightedAvgSell.toFixed(2)}` : '—'}
+              </div>
+            </div>
+            <div style={{ padding: 10, borderRadius: 12, background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+              <div style={{ fontSize: 11, color: '#fbbf24', fontWeight: 700 }}>A/D Signal ({activeBrokerData?.period || `${effectiveDays}D`})</div>
+              <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                 {activeBrokerData?.adSignal || 'Neutral'} {activeBrokerData?.adStrength ? `(${activeBrokerData.adStrength})` : ''}
               </div>
             </div>
@@ -2547,17 +2586,19 @@ function StockBrokerAnalysisTabInner({
                 <span>Net Shares</span>
               </div>
               {(() => {
-                const accs = (brokerRecords || []).filter(b => (b.holdQty || b.netQty) > 0).sort((a, b) => (b.holdQty || b.netQty) - (a.holdQty || a.netQty)).slice(0, 5);
+                const accs = (brokerRecords || []).filter(b => (b.signedHoldQty ?? b.netQty ?? 0) > 0).sort((a, b) => (b.signedHoldQty ?? b.netQty) - (a.signedHoldQty ?? a.netQty)).slice(0, 5);
                 if (accs.length === 0) return <div style={{ fontSize: 11.5, color: '#94a3b8', padding: '6px 0' }}>No net accumulators recorded for this period.</div>;
                 return accs.map((b, idx) => (
                   <div key={b.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: idx < accs.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>#{b.id} {b.name}</span>
-                      <span style={{ fontSize: 10, color: '#94a3b8' }}>Turnover: {formatShareHubCurrency(b.buyAmt || 0)}</span>
+                      <span style={{ fontSize: 10, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
+                        Avg Buy: Rs. {b.avgBuy > 0 ? safeNum(b.avgBuy).toFixed(2) : (b.buyQty > 0 && b.buyAmt > 0 ? (b.buyAmt / b.buyQty).toFixed(2) : '--')} • Turnover: {formatShareHubCurrency(b.buyAmt || 0)}
+                      </span>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <span style={{ fontSize: 12.5, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                        +{Number(b.holdQty || b.netQty || 0).toLocaleString()}
+                        +{Number(b.signedHoldQty ?? b.holdQty ?? b.netQty ?? 0).toLocaleString()}
                       </span>
                     </div>
                   </div>
@@ -2577,17 +2618,19 @@ function StockBrokerAnalysisTabInner({
                 <span>Net Shares</span>
               </div>
               {(() => {
-                const dists = (brokerRecords || []).filter(b => (b.holdQty || b.netQty) < 0).sort((a, b) => (a.holdQty || a.netQty) - (b.holdQty || b.netQty)).slice(0, 5);
+                const dists = (brokerRecords || []).filter(b => (b.signedHoldQty ?? b.netQty ?? 0) < 0).sort((a, b) => (a.signedHoldQty ?? a.netQty) - (b.signedHoldQty ?? b.netQty)).slice(0, 5);
                 if (dists.length === 0) return <div style={{ fontSize: 11.5, color: '#94a3b8', padding: '6px 0' }}>No net distributors recorded for this period.</div>;
                 return dists.map((b, idx) => (
                   <div key={b.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: idx < dists.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>#{b.id} {b.name}</span>
-                      <span style={{ fontSize: 10, color: '#94a3b8' }}>Turnover: {formatShareHubCurrency(b.sellAmt || 0)}</span>
+                      <span style={{ fontSize: 10, color: '#fb7185', fontFamily: 'var(--font-mono)' }}>
+                        Avg Sell: Rs. {b.avgSell > 0 ? safeNum(b.avgSell).toFixed(2) : (b.sellQty > 0 && b.sellAmt > 0 ? (b.sellAmt / b.sellQty).toFixed(2) : '--')} • Turnover: {formatShareHubCurrency(b.sellAmt || 0)}
+                      </span>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <span style={{ fontSize: 12.5, fontWeight: 900, color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                        -{Math.abs(Number(b.holdQty || b.netQty || 0)).toLocaleString()}
+                        -{Math.abs(Number(b.signedHoldQty ?? b.holdQty ?? b.netQty ?? 0)).toLocaleString()}
                       </span>
                     </div>
                   </div>
@@ -2609,6 +2652,7 @@ function StockBrokerAnalysisTabInner({
                       <th style={{ padding: '8px 6px', textAlign: 'left' }}>DATE</th>
                       <th style={{ padding: '8px 6px', textAlign: 'right' }}>TRADED QTY</th>
                       <th style={{ padding: '8px 6px', textAlign: 'right' }}>TURNOVER</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right' }}>SESSION VWAP</th>
                       <th style={{ padding: '8px 6px', textAlign: 'left' }}>TOP ACCUMULATOR</th>
                       <th style={{ padding: '8px 6px', textAlign: 'left' }}>TOP DISTRIBUTOR</th>
                       <th style={{ padding: '8px 6px', textAlign: 'right' }}>NET INST. FLOW</th>
@@ -2618,11 +2662,13 @@ function StockBrokerAnalysisTabInner({
                     {dailyFlowList.map(df => {
                       const net = Number(df.netFlow || 0);
                       const isSelectedSession = effectiveDate === df.date;
+                      const sessionVwap = df.vwap || (df.turnover && df.buyVol ? (df.turnover / df.buyVol).toFixed(2) : null);
                       return (
                         <tr
                           key={df.date}
                           onClick={() => {
                             handleDateSelect(df.date);
+                            setTableHoldingView('session');
                           }}
                           style={{
                             borderBottom: '1px solid rgba(255,255,255,0.04)',
@@ -2639,6 +2685,9 @@ function StockBrokerAnalysisTabInner({
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>
                             {formatShareHubCurrency(df.turnover || 0)}
+                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'right', color: '#c084fc', fontFamily: 'var(--font-mono)' }}>
+                            {sessionVwap ? `Rs. ${sessionVwap}` : '—'}
                           </td>
                           <td style={{ padding: '8px 6px', color: '#10b981', fontWeight: 700 }}>
                             {(() => {

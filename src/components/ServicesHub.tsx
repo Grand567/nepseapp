@@ -53,6 +53,8 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { StockSelectionScreener } from './StockSelectionScreener';
 import { BrokerAccumulationView } from './BrokerAccumulationView';
 import { WatchlistEntryAlertModal } from './WatchlistEntryAlertModal';
+import { getProxyBase } from '../utils/proxyBase.js';
+import { getHistoricalSubfileDirect } from '../utils/localLedgerManager';
 import { PreferencesSettingsService } from './PreferencesSettingsService';
 import { GlossaryGuideService } from './GlossaryGuideService';
 import { BrokerFlowDominanceService } from './BrokerFlowDominanceService';
@@ -1337,12 +1339,23 @@ export default function ServicesHub({
   const [dateSubfile, setDateSubfile] = useState<any>(null);
 
   useEffect(() => {
-    // 1. Fetch available trading sessions from subfiles index
-    fetch('/api/ledger/subfiles/index').then(res => res.json()).then(manifest => {
-      if (manifest?.available_sessions && Array.isArray(manifest.available_sessions) && manifest.available_sessions.length > 0) {
-        setAvailableTradingDates(manifest.available_sessions);
+    // 1. Fetch available trading sessions from subfiles index (bundled first for APK offline, then proxy)
+    const loadManifest = async () => {
+      const base = getProxyBase();
+      for (const p of ['./data/subfiles/historical_subfiles_index.json', '/data/subfiles/historical_subfiles_index.json', `${base}/api/ledger/subfiles/index`]) {
+        try {
+          const res = await fetch(p);
+          if (res.ok) {
+            const manifest = await res.json();
+            if (manifest?.available_sessions && Array.isArray(manifest.available_sessions) && manifest.available_sessions.length > 0) {
+              setAvailableTradingDates(manifest.available_sessions);
+              return;
+            }
+          }
+        } catch (_) {}
       }
-    }).catch(() => {});
+    };
+    loadManifest();
 
     // 2. Also check available trading dates from legacy
     fetchAvailableTradingDates().then(dates => {
@@ -1361,12 +1374,11 @@ export default function ServicesHub({
     let active = true;
     setDateStocksLoading(true);
 
-    // Fast Path: Check dedicated sub-file (< 2ms)
-    fetch(`/api/ledger/subfiles/date/${selectedSessionDate}`).then(async res => {
-      if (res.ok) {
-        const subfile = await res.json();
-        if (subfile && subfile.scrips) {
-          const mapped = Object.values(subfile.scrips).map((s: any) => ({
+    // Fast Path: Check dedicated sub-file via getHistoricalSubfileDirect (< 2ms)
+    getHistoricalSubfileDirect(selectedSessionDate).then((subfile: any) => {
+      if (!active) return;
+      if (subfile && subfile.scrips) {
+        const mapped = Object.values(subfile.scrips).map((s: any) => ({
             symbol: s.symbol,
             companyName: s.company_name,
             name: s.company_name,
@@ -1403,26 +1415,25 @@ export default function ServicesHub({
             return;
           }
         }
-      }
-      // Fallback to fetchLiveMarketData
-      fetchLiveMarketData(selectedSessionDate).then(data => {
-        const stockArr = Array.isArray(data) ? data : (data?.stocks || data?.data || []);
-        if (active && Array.isArray(stockArr) && stockArr.length > 0) {
-          setDateStocks(stockArr);
-        }
-      }).catch(() => {}).finally(() => {
-        if (active) setDateStocksLoading(false);
+        // Fallback to fetchLiveMarketData
+        fetchLiveMarketData(selectedSessionDate).then(data => {
+          const stockArr = Array.isArray(data) ? data : (data?.stocks || data?.data || []);
+          if (active && Array.isArray(stockArr) && stockArr.length > 0) {
+            setDateStocks(stockArr);
+          }
+        }).catch(() => {}).finally(() => {
+          if (active) setDateStocksLoading(false);
+        });
+      }).catch(() => {
+        fetchLiveMarketData(selectedSessionDate).then(data => {
+          const stockArr = Array.isArray(data) ? data : (data?.stocks || data?.data || []);
+          if (active && Array.isArray(stockArr) && stockArr.length > 0) {
+            setDateStocks(stockArr);
+          }
+        }).catch(() => {}).finally(() => {
+          if (active) setDateStocksLoading(false);
+        });
       });
-    }).catch(() => {
-      fetchLiveMarketData(selectedSessionDate).then(data => {
-        const stockArr = Array.isArray(data) ? data : (data?.stocks || data?.data || []);
-        if (active && Array.isArray(stockArr) && stockArr.length > 0) {
-          setDateStocks(stockArr);
-        }
-      }).catch(() => {}).finally(() => {
-        if (active) setDateStocksLoading(false);
-      });
-    });
 
     return () => { active = false; };
   }, [selectedSessionDate]);

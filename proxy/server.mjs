@@ -101,10 +101,12 @@ import {
   syncLocalFloorsheetsToCloud
 } from './utils/cloudFloorsheetVault.mjs';
 import {
+  readHistorical5DayLedger,
   readHistorical4DayLedger,
   readLiveTodaySession,
   getScrip5DayCombined,
   runCalendarGuardedDailyTransition,
+  HISTORICAL_5D_GZ,
   HISTORICAL_4D_GZ,
   LIVE_TODAY_GZ
 } from './utils/rollingLedgerEngine.mjs';
@@ -3709,15 +3711,16 @@ app.get('/api/floorsheet/archives', (req, res) => {
 });
 
 // ─── Dual-File 5-Day Rolling Ledger Routes ────────────────────────────────────
-app.get('/api/ledger/4day-history', (req, res) => {
+app.get(['/api/ledger/5day-history', '/api/ledger/4day-history'], (req, res) => {
   try {
     const acceptEncoding = req.headers['accept-encoding'] || '';
-    if (acceptEncoding.includes('gzip') && fs.existsSync(HISTORICAL_4D_GZ)) {
+    const gzFile = (fs.existsSync(HISTORICAL_5D_GZ) ? HISTORICAL_5D_GZ : (fs.existsSync(HISTORICAL_4D_GZ) ? HISTORICAL_4D_GZ : null));
+    if (acceptEncoding.includes('gzip') && gzFile) {
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Encoding', 'gzip');
-      return fs.createReadStream(HISTORICAL_4D_GZ).pipe(res);
+      return fs.createReadStream(gzFile).pipe(res);
     }
-    const ledger = readHistorical4DayLedger();
+    const ledger = readHistorical5DayLedger();
     return res.json(ledger);
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

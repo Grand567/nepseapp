@@ -17,6 +17,7 @@ import { AiGuruQuantitativeCard } from "@/components/AiGuruQuantitativeCard";
 import { StockFundamentalsAndLockInTab } from "@/components/StockFundamentalsAndLockInTab";
 import { DividendHistoryPanel } from "./DividendHistoryPanel";
 import { fetchFromBackend, fetchRealBrokerAnalysis, fetchRealFloorsheet, subscribeToFloorsheetStream } from "@/utils/liveData";
+import { getProxyBase } from "@/utils/proxyBase";
 import { getBrokerName } from "@/utils/accumulationDistributionEngine";
 import { calculateMACD } from "@/utils/indicators";
 import {
@@ -305,12 +306,22 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   } | null>(null);
 
   useEffect(() => {
-    fetch('/api/ledger/subfiles/index')
-      .then((r) => r.json())
-      .then((m) => {
-        if (m && m.available_sessions) setSubfileManifest(m);
-      })
-      .catch(() => {});
+    const loadManifest = async () => {
+      const base = getProxyBase();
+      for (const p of ['./data/subfiles/historical_subfiles_index.json', '/data/subfiles/historical_subfiles_index.json', `${base}/api/ledger/subfiles/index`]) {
+        try {
+          const r = await fetch(p);
+          if (r.ok) {
+            const m = await r.json();
+            if (m && m.available_sessions) {
+              setSubfileManifest(m);
+              return;
+            }
+          }
+        } catch (_) {}
+      }
+    };
+    loadManifest();
   }, []);
 
   // Floorsheet Filters
