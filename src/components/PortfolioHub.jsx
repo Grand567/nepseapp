@@ -45,7 +45,7 @@ export default function PortfolioHub({
         alignItems: 'center',
         justifyContent: 'center'
       }}>
-        <div className="segmented-bar" style={{ width: '100%', maxWidth: 500 }}>
+        <div className="segmented-bar portfolio-segmented-bar" style={{ width: '100%', maxWidth: 520 }}>
           <button
             onClick={() => {
               triggerHaptic(25);
