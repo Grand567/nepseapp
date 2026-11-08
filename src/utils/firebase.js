@@ -184,16 +184,13 @@ export const getCachedCloudData = () => _cachedCloudData;
 export const getCandidateSyncEndpoints = () => {
   const endpoints = [];
 
-  // 1. If running on localhost / 127.0.0.1 / file: (Electron or Vite dev), prioritize local proxy
+  // 1. If running in Electron (file:) or browser, prioritize appropriate sync path
   if (typeof window !== 'undefined') {
-    const isLocal =
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1' ||
-      window.location.protocol === 'file:' ||
-      window.location.port === '5173' ||
-      window.location.port === '3000';
-    if (isLocal) {
+    const isElectron = window.location.protocol === 'file:' || (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Electron'));
+    if (isElectron) {
       endpoints.push('http://localhost:5000/api/sync');
+    } else {
+      endpoints.push('/api/sync');
     }
   }
 
@@ -210,11 +207,6 @@ export const getCandidateSyncEndpoints = () => {
   const renderProxy = 'https://nepseapp.onrender.com/api/sync';
   if (!endpoints.includes(renderProxy)) {
     endpoints.push(renderProxy);
-  }
-
-  // 4. Fallback localhost for mobile debug bridge
-  if (!endpoints.includes('http://localhost:5000/api/sync')) {
-    endpoints.push('http://localhost:5000/api/sync');
   }
 
   return endpoints;

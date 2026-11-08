@@ -88,24 +88,27 @@ export async function warmUpServer() {
     try {
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), timeout);
-      const r = await fetch(`${url}/api/ping`, { signal: ctrl.signal, cache: 'no-store' });
+      const pingUrl = url ? `${url}/api/ping` : '/api/ping';
+      const r = await fetch(pingUrl, { signal: ctrl.signal, cache: 'no-store' });
       clearTimeout(tid);
       if (r.ok) {
         _serverWarmTs = Date.now();
-        console.log(`[warmUp] Proxy ready (${url}) in ${Date.now() - started}ms`);
+        console.log(`[warmUp] Proxy ready (${url || 'relative'}) in ${Date.now() - started}ms`);
         return true;
       }
     } catch (_) {}
     return false;
   };
 
-  // In desktop browser on localhost, probe local proxy with lightweight timeout
+  // In desktop browser on localhost, probe local proxy with lightweight timeout via relative endpoint
   // Run it in background — don't await, this should never block the data fetch
   if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    ping('http://localhost:5000', 2000).then(ok => {
+    ping('', 2000).then(ok => {
       _localProxyState = ok ? 'alive' : 'dead';
+      setLocalProxyState(_localProxyState);
     }).catch(() => {
       _localProxyState = 'dead';
+      setLocalProxyState('dead');
     });
   }
 
@@ -816,13 +819,14 @@ export async function fetchFromBackend(path, timeoutMs = 12000) {
       const res = await tryFetchJSON(`${base}${path}`, probeTimeout);
       if (res && res.success !== false) {
         if (!isServerWarm()) { _serverWarmTs = Date.now(); }
-        if (isLocal) _localProxyState = 'alive';
+        if (isLocal) { _localProxyState = 'alive'; setLocalProxyState('alive'); }
         return res;
       } else if (isLocal && _localProxyState === 'unknown') {
         _localProxyState = 'dead';
+        setLocalProxyState('dead');
       }
     } catch (_) {
-      if (isLocal) _localProxyState = 'dead';
+      if (isLocal) { _localProxyState = 'dead'; setLocalProxyState('dead'); }
     }
 
     // 1b. If running in browser and base is localhost, also try relative path (via Vite dev server proxy)
@@ -2571,8 +2575,8 @@ export async function fetchMarketIndices(targetDate) {
         if (!j && isNative) {
           j = await tryFetchJSON(`${getProxyBase()}/api/nepalipaisa/index-live?_t=${nonce}`, 3000);
         }
-        if (!j) {
-          // Direct fallback if proxy is offline or busy
+        if (!j && isNative) {
+          // Direct fallback only on native platforms (Capacitor) where CORS is bypassed
           j = await tryFetchJSON(`https://nepalipaisa.com/api/GetIndexLive?_t=${nonce}`, 3000);
         }
         const list = Array.isArray(j?.result) ? j.result : (Array.isArray(j) ? j : null);

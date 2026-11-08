@@ -43,13 +43,13 @@ export function getProxyBase() {
     const h = window.location.hostname || '';
     if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0') {
       if (_localProxyState === 'dead') return 'https://nepseapp.onrender.com';
-      return 'http://localhost:5000';
+      return '';
     }
 
     // 3. Local LAN access (e.g. 192.168.x.x, 10.x.x.x)
     if (/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(h)) {
       if (_localProxyState === 'dead') return 'https://nepseapp.onrender.com';
-      return `http://${h}:5000`;
+      return '';
     }
   }
 

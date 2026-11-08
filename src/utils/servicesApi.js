@@ -9,7 +9,7 @@ const getProxy = () => {
       const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
       const isLocal = !isNative && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
       if (isLocal) {
-        return 'http://localhost:5000';
+        return '';
       }
       const stored = localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base');
       if (stored && stored.startsWith('http')) return stored.replace(/\/$/, '');

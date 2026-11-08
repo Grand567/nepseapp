@@ -676,8 +676,15 @@ function initWebPushFallback() {
       }
     };
 
+    let sseErrorCount = 0;
     eventSource.onerror = () => {
-      // Auto-reconnects by default in EventSource
+      sseErrorCount++;
+      if (sseErrorCount >= 3) {
+        try {
+          eventSource.close();
+        } catch (_) {}
+        console.debug('[PushService] Web SSE fallback offline or unavailable, closed reconnect loop.');
+      }
     };
   } catch (err) {
     console.debug('[PushService] Web SSE fallback notice:', err.message);

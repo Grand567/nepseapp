@@ -18,6 +18,16 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src')
     }
   },
+  preview: {
+    port: 4173,
+    host: true,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true
+      }
+    }
+  },
   server: {
     port: 3000,
     host: true,
