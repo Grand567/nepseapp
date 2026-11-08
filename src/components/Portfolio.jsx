@@ -321,6 +321,7 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
   const [isSyncingWacc, setIsSyncingWacc] = useState(false);
   const [waccSyncProgress, setWaccSyncProgress] = useState('');
   const [waccSyncResult, setWaccSyncResult] = useState('');
+  const [waccVersion, setWaccVersion] = useState(0);
 
   // MeroShare Holdings Sync state
   const [showSyncModal, setShowSyncModal] = useState(false);
@@ -884,6 +885,7 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
       const updatedProfiles = meroshareProfiles.map((p, i) => i === targetIndex ? { ...p, holdings: existingHoldings, lastSyncedAt: Date.now() } : p);
       setMeroshareProfiles(updatedProfiles);
       saveProfilesToStorage(updatedProfiles);
+      setWaccVersion(v => v + 1);
     } else {
       // Import directly into Manual Trade Ledger (no double write to MeroShare)
       const newTransactions = importParsedItems.map(item => ({
@@ -1134,6 +1136,7 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
 
       setMeroshareProfiles(updatedProfiles);
       saveProfilesToStorage(updatedProfiles);
+      setWaccVersion(v => v + 1);
     } catch (err) {
       console.warn('[SaveAllWacc Warning]', err);
     } finally {
@@ -1149,14 +1152,11 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
       const sym = symbol.toUpperCase().trim();
       setScripCustomWacc(sym, num, userId, targetAccountId, source);
 
-      if (targetAccountId === 'manual') {
-        const updatedTxs = transactions.map(t => {
-          if ((t.symbol || '').toUpperCase().trim() === sym) {
-            return { ...t, price: Number(num.toFixed(2)) };
-          }
-          return t;
-        });
-        saveTransactions(updatedTxs);
+      if (targetAccountId === 'manual' || (!targetAccountId && activeView === 'manual')) {
+        setScripCustomWacc(sym, num, userId, 'manual', source);
+        setWaccVersion(v => v + 1);
+        setEditingScrip(null);
+        setQuickWaccInput('');
         return;
       }
 
@@ -1183,6 +1183,7 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
 
       setMeroshareProfiles(updatedProfiles);
       saveProfilesToStorage(updatedProfiles);
+      setWaccVersion(v => v + 1);
     } catch (err) {
       console.warn('[QuickSaveWacc Warning]', err);
     } finally {
@@ -1368,6 +1369,7 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
 
       setMeroshareProfiles(updatedProfiles);
       saveProfilesToStorage(updatedProfiles);
+      setWaccVersion(v => v + 1);
 
       const methodLabel = method === 'ipo' 
         ? 'IPO Allotment (Rs. 100 Par)' 
@@ -1553,6 +1555,8 @@ Based on this data, provide a robust analysis using this exact markdown structur
   const getManualHoldingsRaw = () => {
     const holdingsMap = {};
     const chronologicalTxs = [...transactions].reverse();
+    const manualCustomWaccMap = getCustomWaccMap(userId, 'manual');
+    const globalCustomWaccMap = getCustomWaccMap(userId);
 
     chronologicalTxs.forEach(tx => {
       const sym = tx.symbol.trim().toUpperCase();
@@ -1577,7 +1581,17 @@ Based on this data, provide a robust analysis using this exact markdown structur
       }
     });
 
-    return Object.values(holdingsMap).filter(h => h.units > 0);
+    return Object.values(holdingsMap).map(h => {
+      const customOverride = manualCustomWaccMap[h.symbol] || globalCustomWaccMap[h.symbol];
+      const customVal = typeof customOverride === 'object' ? customOverride.wacc : Number(customOverride);
+      if (customVal && customVal > 0) {
+        h.wacc = Number(customVal.toFixed(2));
+        h.totalInvestedCost = Number((h.units * h.wacc).toFixed(2));
+        h.waccSource = (typeof customOverride === 'object' && customOverride.source) || 'CUSTOM_USER_SET';
+        h.isCustomWacc = true;
+      }
+      return h;
+    }).filter(h => h.units > 0);
   };
 
   const getMeroshareHoldingsRaw = () => {
