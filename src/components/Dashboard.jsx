@@ -3099,14 +3099,14 @@ function Dashboard({
               display: 'flex',
               alignItems: 'center',
               whiteSpace: 'nowrap',
-              animation: 'ticker-move 38s linear infinite',
+              animation: (watchlistBreakoutItems.length + newsTickerItems.length) >= 4 ? 'ticker-move 38s linear infinite' : 'none',
               willChange: 'transform',
               transform: 'translate3d(0, 0, 0)',
               gap: 0,
               paddingLeft: 12
             }}
           >
-            {[0, 1].map((copyIndex) => (
+            {((watchlistBreakoutItems.length + newsTickerItems.length) >= 4 ? [0, 1] : [0]).map((copyIndex) => (
               <React.Fragment key={copyIndex}>
                 {/* Watchlist Breakout Stocks (Price & Volume) */}
                 {watchlistBreakoutItems.map((bo) => (

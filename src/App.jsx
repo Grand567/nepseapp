@@ -2256,7 +2256,7 @@ function AppInner() {
                       : marketStatus?.isOpen
                       ? 'Market Open (खुल्ला)'
                       : marketStatus?.isHoliday
-                      ? `Holiday: ${marketStatus.holidayName || 'Public Holiday'}`
+                      ? (marketStatus.festivalName || marketStatus.holidayName ? `Holiday: ${marketStatus.festivalName || marketStatus.holidayName}` : (marketStatus.statusLabel?.startsWith('Holiday:') ? marketStatus.statusLabel : `Holiday: ${marketStatus.statusLabel || 'Public Holiday'}`))
                       : marketStatus?.isWeekend
                       ? 'Weekend Closed (शनिबार/आइतबार)'
                       : 'Market Closed (बन्द)'}
