@@ -3272,6 +3272,9 @@ export default function StockDetailModal({
 
   const isBull = (d.pChange || 0) >= 0;
 
+  // Strict Guard: Live intraday 1D broker analytics available globally across all modal tabs
+  const pure1DBa = broker1DData || ((realBrokerAnalysis && (realBrokerAnalysis.tradingDays === 1 || !realBrokerAnalysis.tradingDays)) ? realBrokerAnalysis : null) || getCachedRealBrokerAnalysis(d?.symbol, 1);
+
   const modalContent = (
     <div
       style={{
@@ -5281,8 +5284,7 @@ export default function StockDetailModal({
         {/* ════ TAB 2: MARKET DEPTH (Share Hub Parity & Live Order Flow Intelligence) ════ */}
         {(activeTab === 'market_depth' || activeTab === 'depth_broker') && (() => {
           // --- Unified Intraday & Live Order Flow Analytics ---
-          // Strict Guard: Live intraday order flow must strictly use 1D session data. Never poison with multi-day rollups!
-          const pure1DBa = broker1DData || ((realBrokerAnalysis && (realBrokerAnalysis.tradingDays === 1 || !realBrokerAnalysis.tradingDays)) ? realBrokerAnalysis : null) || getCachedRealBrokerAnalysis(d?.symbol, 1);
+          // Uses pure1DBa declared in modal scope
           const liveBc = brokerConcentration;
 
           // Top Accumulators (Net Buyers) for Live / 1D session
