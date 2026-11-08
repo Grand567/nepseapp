@@ -30,6 +30,21 @@ function getAudioContext() {
   }
 }
 
+// Global one-time unlock listener for mobile WebViews
+if (typeof window !== 'undefined') {
+  const unlockAudio = () => {
+    try {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+    } catch (_) {}
+  };
+  window.addEventListener('click', unlockAudio, { passive: true, once: true });
+  window.addEventListener('touchstart', unlockAudio, { passive: true, once: true });
+  window.addEventListener('keydown', unlockAudio, { passive: true, once: true });
+}
+
 /**
  * Trigger physical haptic vibration on mobile devices (Android / Capacitor)
  */
@@ -208,8 +223,13 @@ export const removeWatchlistAlertConfig = deleteWatchlistAlertConfig;
  * Request notification permission if not yet granted
  */
 export async function requestNotificationPermission() {
+  if (typeof window === 'undefined') return 'denied';
   try {
-    if ('Notification' in window && Notification.permission === 'default') {
+    if (window.NepseNativeNotifier && typeof window.NepseNativeNotifier.requestNotificationPermission === 'function') {
+      window.NepseNativeNotifier.requestNotificationPermission();
+      return 'granted';
+    }
+    if ('Notification' in window && typeof Notification.requestPermission === 'function') {
       return await Notification.requestPermission();
     }
   } catch (_) {}
@@ -217,16 +237,36 @@ export async function requestNotificationPermission() {
 }
 
 /**
- * Dispatch native system notification
+ * Dispatch native system notification (Supports Android Native StatusBar bridge and Web Notification API)
  */
-export function dispatchSystemNotification(title, body) {
+export function dispatchSystemNotification(title, body, symbol = '', channelId = 'dravyashree-pro-signals') {
+  if (typeof window === 'undefined') return;
+
+  // 1. Android Native Status Bar Bridge (Works on Android APK)
   try {
-    if ('Notification' in window && Notification.permission === 'granted') {
+    if (window.NepseNativeNotifier && typeof window.NepseNativeNotifier.postStatusBarNotification === 'function') {
+      window.NepseNativeNotifier.postStatusBarNotification(
+        title || '🔔 Dravyashree Alert',
+        body || '',
+        channelId,
+        symbol || '',
+        'BREAKOUT_ALERT',
+        'OPEN_STOCK',
+        '',
+        String(Date.now())
+      );
+      return;
+    }
+  } catch (_) {}
+
+  // 2. Browser Native Notification fallback for desktop & PWA
+  try {
+    if (typeof Notification === 'function' && Notification.permission === 'granted') {
       new Notification(title, {
         body,
         icon: '/favicon.ico',
         badge: '/favicon.ico',
-        tag: 'nepse-breakout-alert'
+        tag: `nepse-breakout-${symbol || 'alert'}`
       });
     }
   } catch (_) {}
@@ -453,17 +493,20 @@ export function evaluateWatchlistAlerts(stocks = [], watchedSymbols = [], onTrig
         if (alertType === 'DISTRIBUTION_TRAP') {
           dispatchSystemNotification(
             `🚨 Distribution Trap Warning: ${sym}`,
-            `${sym} shows heavy volume churn / operator offloading (${pChange > 0 ? '+' : ''}${pChange}%, ${rvol.toFixed(1)}x RVOL). Protect capital!`
+            `${sym} shows heavy volume churn / operator offloading (${pChange > 0 ? '+' : ''}${pChange}%, ${rvol.toFixed(1)}x RVOL). Protect capital!`,
+            sym
           );
         } else if (alertType === 'STEALTH_ACCUMULATION') {
           dispatchSystemNotification(
             `🟢 Smart Money Stealth Base: ${sym}`,
-            `${sym} detected in tight institutional accumulation (Score: ${stealthScore}/100, RVOL: ${rvol.toFixed(1)}x). Base building active!`
+            `${sym} detected in tight institutional accumulation (Score: ${stealthScore}/100, RVOL: ${rvol.toFixed(1)}x). Base building active!`,
+            sym
           );
         } else {
           dispatchSystemNotification(
             `🚀 Breakout Alert: ${sym} Triggers!`,
-            `${sym} broke above Rs. ${targetPrice} with ${rvol.toFixed(2)}x RVOL! Execution checklist satisfied.`
+            `${sym} broke above Rs. ${targetPrice} with ${rvol.toFixed(2)}x RVOL! Execution checklist satisfied.`,
+            sym
           );
         }
       }
