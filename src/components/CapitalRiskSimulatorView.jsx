@@ -24,9 +24,9 @@ export function CapitalRiskSimulatorView({
   const [capital, setCapital] = useState(() => getUserConfiguredCapital());
 
   // Interactive Position Sizing Sandbox state
-  const [testPrice, setTestPrice] = useState(480);
-  const [testStopLoss, setTestStopLoss] = useState(455);
-  const [testTarget, setTestTarget] = useState(530);
+  const [testPrice, setTestPrice] = useState('480');
+  const [testStopLoss, setTestStopLoss] = useState('455');
+  const [testTarget, setTestTarget] = useState('530');
 
   useEffect(() => {
     const handleCapitalUpdated = (e) => {
@@ -39,18 +39,22 @@ export function CapitalRiskSimulatorView({
   }, [capital]);
 
   const tierConfig = getCapitalTierConfig(capital);
-  // Enforce strict 1% maximum portfolio risk cap alongside tier configuration
-  const effectiveRiskPct = Math.min(tierConfig.riskPerTradePct, 0.01);
+  // Respect dynamic capital tier risk per trade percentage
+  const effectiveRiskPct = tierConfig.riskPerTradePct;
   const maxRiskRs = Math.round(capital * effectiveRiskPct);
   const maxSlotCapitalRs = Math.round(capital * tierConfig.maxSlotAllocationPct);
   const cashReserveRs = Math.round(capital * tierConfig.tacticalCashReservePct);
   const commissionRate = getNepseBrokerCommissionRate(maxSlotCapitalRs);
 
+  const numPrice = Math.max(0, Number(testPrice) || 0);
+  const numStopLoss = Math.max(0, Number(testStopLoss) || 0);
+  const numTarget = Math.max(0, Number(testTarget) || 0);
+
   // Stop-Loss Inversion Guard & Half-Kelly Position Sizing (p = 0.635)
-  const isStopValid = Number(testPrice) > 0 && Number(testStopLoss) > 0 && Number(testStopLoss) < Number(testPrice);
-  const isTargetValid = Number(testTarget) > Number(testPrice);
-  const perShareRisk = isStopValid ? (testPrice - testStopLoss) : 0;
-  const perShareGain = isTargetValid ? (testTarget - testPrice) : 0;
+  const isStopValid = numPrice > 0 && numStopLoss > 0 && numStopLoss < numPrice;
+  const isTargetValid = numTarget > numPrice;
+  const perShareRisk = isStopValid ? (numPrice - numStopLoss) : 0;
+  const perShareGain = isTargetValid ? (numTarget - numPrice) : 0;
   const bRatio = isStopValid && perShareRisk > 0 ? perShareGain / perShareRisk : 0;
 
   // Half-Kelly fraction: f*_half = 0.5 * (p - (1 - p) / b) with p = 0.635
@@ -60,7 +64,7 @@ export function CapitalRiskSimulatorView({
   const effectiveSlotCeilingRs = Math.min(maxSlotCapitalRs, Math.round(capital * halfKellyFraction));
 
   const theoreticalUnits = isStopValid && halfKellyFraction > 0 && perShareRisk > 0 ? (maxRiskRs / perShareRisk) : 0;
-  const maxUnitsBySlot = isStopValid && halfKellyFraction > 0 && testPrice > 0 ? Math.floor(effectiveSlotCeilingRs / testPrice) : 0;
+  const maxUnitsBySlot = isStopValid && halfKellyFraction > 0 && numPrice > 0 ? Math.floor(effectiveSlotCeilingRs / numPrice) : 0;
   const rawUnits = isStopValid && halfKellyFraction > 0 ? Math.max(0, Math.min(theoreticalUnits, maxUnitsBySlot)) : 0;
 
   // Invalid stops (StopLoss >= Price) or negative Kelly expectancy strictly yield 0 suggested kitta
@@ -70,7 +74,7 @@ export function CapitalRiskSimulatorView({
     ? Math.floor(rawUnits / 10) * 10
     : Math.floor(rawUnits);
 
-  const totalOutlay = suggestedKitta * testPrice;
+  const totalOutlay = suggestedKitta * numPrice;
   const actualRiskRs = Math.round(suggestedKitta * perShareRisk);
   const totalGainRs = Math.round(suggestedKitta * perShareGain);
   const riskRewardRatio = isStopValid && perShareRisk > 0 ? (perShareGain / perShareRisk).toFixed(2) : '0.00';
@@ -232,7 +236,10 @@ export function CapitalRiskSimulatorView({
                 min="10"
                 step="1"
                 value={testPrice}
-                onChange={(e) => setTestPrice(Math.max(1, Number(e.target.value)))}
+                onChange={(e) => setTestPrice(e.target.value)}
+                onBlur={() => {
+                  if (!testPrice || Number(testPrice) <= 0) setTestPrice('480');
+                }}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-black font-mono text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
@@ -247,7 +254,10 @@ export function CapitalRiskSimulatorView({
                   min="1"
                   step="0.5"
                   value={testStopLoss}
-                  onChange={(e) => setTestStopLoss(Math.max(0.5, Number(e.target.value)))}
+                  onChange={(e) => setTestStopLoss(e.target.value)}
+                  onBlur={() => {
+                    if (!testStopLoss || Number(testStopLoss) <= 0) setTestStopLoss('455');
+                  }}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-black font-mono text-rose-400 focus:outline-none focus:border-rose-500"
                 />
               </div>
@@ -261,7 +271,10 @@ export function CapitalRiskSimulatorView({
                   min="1"
                   step="0.5"
                   value={testTarget}
-                  onChange={(e) => setTestTarget(Math.max(1, Number(e.target.value)))}
+                  onChange={(e) => setTestTarget(e.target.value)}
+                  onBlur={() => {
+                    if (!testTarget || Number(testTarget) <= 0) setTestTarget('530');
+                  }}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-black font-mono text-emerald-400 focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -293,7 +306,7 @@ export function CapitalRiskSimulatorView({
                 Rs. {totalOutlay.toLocaleString()}
               </span>
               <span className="text-[10px] text-slate-500 mt-0.5">
-                {((totalOutlay / capital) * 100).toFixed(1)}% of capital
+                {capital > 0 ? ((totalOutlay / capital) * 100).toFixed(1) : '0.0'}% of capital
               </span>
             </div>
 
@@ -317,7 +330,7 @@ export function CapitalRiskSimulatorView({
                 Rs. {actualRiskRs.toLocaleString()}
               </span>
               <span className="text-[10px] text-slate-500 mt-0.5">
-                {((actualRiskRs / capital) * 100).toFixed(2)}% of portfolio
+                {capital > 0 ? ((actualRiskRs / capital) * 100).toFixed(2) : '0.00'}% of portfolio
               </span>
             </div>
 
