@@ -1250,11 +1250,10 @@ export function StockSplitCalculator() {
 
   return (
     <div className="w-full max-w-2xl mx-auto space-y-4">
-      <InfoBanner
-        type="info"
-        title="NEPSE Stock Split Calculator"
-        text="A stock split divides existing shares into multiple new shares without changing total company valuation. Post-split price drops proportionally while share units multiply."
-      />
+      <InfoBanner type="info">
+        <div className="font-bold text-white mb-0.5">NEPSE Stock Split Calculator</div>
+        <div>A stock split divides existing shares into multiple new shares without changing total company valuation. Post-split price drops proportionally while share units multiply.</div>
+      </InfoBanner>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="text-xs font-semibold text-slate-400 block mb-1">Current Market Price (LTP Rs.)</label>

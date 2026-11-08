@@ -97,7 +97,17 @@ export function NoData({ message }: { message?: string }) {
   );
 }
 
-export function InfoBanner({ children, type = 'info' }: { children: ReactNode; type?: 'info' | 'success' | 'warning' | 'danger' }) {
+export function InfoBanner({
+  children,
+  type = 'info',
+  title,
+  text
+}: {
+  children?: ReactNode;
+  type?: 'info' | 'success' | 'warning' | 'danger';
+  title?: string;
+  text?: string;
+}) {
   const map: Record<string, string> = {
     info: 'border-blue-900/50 bg-blue-950/30 text-blue-200',
     success: 'border-emerald-900/50 bg-emerald-950/30 text-emerald-200',
@@ -107,7 +117,11 @@ export function InfoBanner({ children, type = 'info' }: { children: ReactNode; t
   return (
     <div className={`mb-4 flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13px] leading-relaxed ${map[type]}`}>
       <Info size={15} className="mt-0.5 shrink-0" />
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1">
+        {title && <div className="font-bold text-white mb-0.5">{title}</div>}
+        {text && <div className="text-slate-300">{text}</div>}
+        {children}
+      </div>
     </div>
   );
 }
