@@ -471,7 +471,8 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
       activeTab === 'BROKER_FLOW' ||
       activeTab === 'OVERVIEW' ||
       activeTab === 'MARKET_DEPTH' ||
-      activeTab === 'FLOORSHEET';
+      activeTab === 'FLOORSHEET' ||
+      activeTab === 'VOLUME_PROFILE';
 
     if (isRelevantTab) {
       const pollLiveData = () => {
@@ -493,8 +494,8 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
             });
         }
 
-        // 2. Poll Floorsheet Tape with Incremental Delta (Active during session or when current buffer is empty)
-        if (open || activeTab === 'FLOORSHEET' || liveFloorsheetContracts.length === 0) {
+        // 2. Poll Floorsheet Tape with Incremental Delta (Active during session, on floorsheet/volume_profile tabs, or when buffer is empty)
+        if (open || activeTab === 'FLOORSHEET' || activeTab === 'VOLUME_PROFILE' || liveFloorsheetContracts.length === 0) {
           setIsLiveFloorsheetUpdating(true);
           const lastSeenId = liveFloorsheetRef.current.length > 0
             ? String(liveFloorsheetRef.current[0]?.contractNo || liveFloorsheetRef.current[0]?.contractId || '')

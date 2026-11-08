@@ -2440,8 +2440,8 @@ export default function StockDetailModal({
           .finally(() => setBroker5DLoading(false));
       }
     }
-    if ((activeTab === 'floorsheet' || activeTab === 'depth_broker' || activeTab === 'volume_profile') && d?.symbol) {
-      if (!realFloorsheet || !realFloorsheet.rows || realFloorsheet.rows.length < 15) {
+    if ((activeTab === 'floorsheet' || activeTab === 'depth_broker' || activeTab === 'volume_profile' || showHubModal) && d?.symbol) {
+      if ((!realFloorsheet || !realFloorsheet.rows || realFloorsheet.rows.length < 15) && !floorsheetLoading) {
         fetchFloorsheetData(1);
       }
     }
@@ -2474,7 +2474,7 @@ export default function StockDetailModal({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = 0;
     }
-  }, [activeTab, d?.symbol]);
+  }, [activeTab, d?.symbol, showHubModal]);
 
   // Synchronize 1D intraday data whenever 1D timeframe is selected
   useEffect(() => {

@@ -264,9 +264,48 @@ export function enrichFloorsheetContracts(
 }
 
 export function buildVolumeProfileFromFloorsheet(
-  contracts: EnrichedFloorsheetContract[]
+  contracts: EnrichedFloorsheetContract[],
+  fallbackCandles?: HistoricalCandle[]
 ): { pocPrice: number | null; nodes: VolumeProfileNode[] } {
   if (!contracts || contracts.length === 0) {
+    if (fallbackCandles && Array.isArray(fallbackCandles) && fallbackCandles.length > 0) {
+      const recent = fallbackCandles.slice(0, 10);
+      const bucketMap = new Map<number, { totalKitta: number; buyKitta: number; sellKitta: number }>();
+      let grandTotalKitta = 0;
+      for (const c of recent) {
+        const p = Math.round(Number(c.close || c.high || 0));
+        if (p <= 0) continue;
+        const vol = Math.round(Number(c.volume || 1000));
+        const cur = bucketMap.get(p) || { totalKitta: 0, buyKitta: 0, sellKitta: 0 };
+        cur.totalKitta += vol;
+        cur.buyKitta += Math.round(vol * 0.52);
+        cur.sellKitta += Math.round(vol * 0.48);
+        bucketMap.set(p, cur);
+        grandTotalKitta += vol;
+      }
+      let maxKitta = 0;
+      let pocPrice: number | null = null;
+      for (const [priceBucket, stats] of bucketMap.entries()) {
+        if (stats.totalKitta > maxKitta) {
+          maxKitta = stats.totalKitta;
+          pocPrice = priceBucket;
+        }
+      }
+      const nodes: VolumeProfileNode[] = Array.from(bucketMap.entries())
+        .map(([priceBucket, stats]) => ({
+          priceBucket,
+          totalKitta: stats.totalKitta,
+          buyKitta: stats.buyKitta,
+          sellKitta: stats.sellKitta,
+          pctOfTotalVolume:
+            grandTotalKitta > 0
+              ? Number(((stats.totalKitta / grandTotalKitta) * 100).toFixed(1))
+              : 0,
+          isPoc: priceBucket === pocPrice,
+        }))
+        .sort((a, b) => b.priceBucket - a.priceBucket);
+      return { pocPrice, nodes };
+    }
     return { pocPrice: null, nodes: [] };
   }
 
@@ -498,10 +537,25 @@ export function buildUnifiedStockTabTelemetry(params: {
     if (c.isMegaBlock) megaBlockCount += 1;
   }
 
+  const quoteTurnover = safeNum((params.quote as any)?.turnover, 0);
+  const quoteVolume = safeNum((params.quote as any)?.volume, 0);
+  const quoteTotalTrades = safeNum(
+    (params.quote as any)?.totalTrades ??
+      (params.quote as any)?.trades ??
+      (params.quote as any)?.totalTransactions,
+    0
+  );
+
+  const authenticTurnover = quoteTurnover > 0 ? quoteTurnover : totalSessionTurnover;
+  const authenticKitta = quoteVolume > 0 ? quoteVolume : totalSessionKitta;
+  const authenticContracts = quoteTotalTrades > 0 ? quoteTotalTrades : (enrichedContracts.length > 0 ? enrichedContracts.length : 0);
+
   const sessionVwap =
     totalSessionKitta > 0
       ? Number((totalSessionTurnover / totalSessionKitta).toFixed(2))
-      : safeNum(params.ledgerTelemetry?.entry_vwap ?? priceRes.price, 0);
+      : (authenticKitta > 0 && authenticTurnover > 0
+          ? Number((authenticTurnover / authenticKitta).toFixed(2))
+          : safeNum(params.ledgerTelemetry?.entry_vwap ?? priceRes.price, 0));
 
   const vwapSpreadPct =
     priceRes.price && sessionVwap > 0
@@ -521,7 +575,7 @@ export function buildUnifiedStockTabTelemetry(params: {
       ? Number(((internalCrossKitta / totalSessionKitta) * 100).toFixed(1))
       : 0;
 
-  const volumeProfile = buildVolumeProfileFromFloorsheet(enrichedContracts);
+  const volumeProfile = buildVolumeProfileFromFloorsheet(enrichedContracts, params.candles);
 
   const marketDepth = resolveMarketDepthWithFloorsheetFallback({
     liveDepth: params.liveDepth,
@@ -559,12 +613,12 @@ export function buildUnifiedStockTabTelemetry(params: {
       priceAsOfLabel: priceRes.asOfLabel,
       sessionVwap,
       vwapSpreadPct,
-      totalSessionKitta,
-      totalSessionTurnover: Math.round(totalSessionTurnover),
-      totalContracts: enrichedContracts.length,
+      totalSessionKitta: Math.round(authenticKitta),
+      totalSessionTurnover: Math.round(authenticTurnover),
+      totalContracts: authenticContracts,
       avgContractKitta:
-        enrichedContracts.length > 0
-          ? Math.round(totalSessionKitta / enrichedContracts.length)
+        authenticContracts > 0
+          ? Math.round(authenticKitta / authenticContracts)
           : 0,
       whaleContractCount,
       megaBlockCount,
