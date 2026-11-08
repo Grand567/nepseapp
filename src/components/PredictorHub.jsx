@@ -1896,10 +1896,10 @@ export default function PredictorHub({
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
                   {[
-                    { label: 'Technical Flow', weight: '40%', val: indexPrediction.contributing_factors.technical, desc: 'RSI, EMA-20, MACD' },
-                    { label: 'Market Breadth', weight: '20%', val: indexPrediction.contributing_factors.breadth, desc: 'Advance/Decline, Sectors' },
-                    { label: 'News Sentiment', weight: '20%', val: indexPrediction.contributing_factors.sentiment, desc: 'Scraped Portal Sentiments' },
-                    { label: 'NRB Macro', weight: '20%', val: indexPrediction.contributing_factors.macro, desc: 'M2, Policy Rates, Remittance' },
+                    { label: 'Technical Flow', weight: `${Math.round((indexPrediction.contributing_factors?.weights?.technical ?? 0.35) * 100)}%`, val: indexPrediction.contributing_factors.technical, desc: 'RSI, EMA-20, MACD' },
+                    { label: 'Market Breadth', weight: `${Math.round((indexPrediction.contributing_factors?.weights?.breadth ?? 0.25) * 100)}%`, val: indexPrediction.contributing_factors.breadth, desc: 'Advance/Decline, Sectors' },
+                    { label: 'News Sentiment', weight: `${Math.round((indexPrediction.contributing_factors?.weights?.sentiment ?? 0.15) * 100)}%`, val: indexPrediction.contributing_factors.sentiment, desc: 'Scraped Portal Sentiments' },
+                    { label: 'NRB Macro', weight: `${Math.round((indexPrediction.contributing_factors?.weights?.macro ?? 0.25) * 100)}%`, val: indexPrediction.contributing_factors.macro, desc: 'M2, Policy Rates, Remittance' },
                   ].map((f, idx) => (
                     <div key={idx} style={{
                       padding: '12px 14px',
