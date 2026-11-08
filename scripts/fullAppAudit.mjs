@@ -499,11 +499,11 @@ async function auditCategoryD() {
 
     const sebonBuyFee = buyDetails.sebonFee; // 50000 * 0.00015 = 7.5
     const sebonSellFee = sellDetails.sebonFee; // 60000 * 0.00015 = 9.0
-    const dpBuy = buyDetails.dpFee; // 25
+    const dpBuy = buyDetails.dpFee; // Per CDSC regulations: Rs 0 on Buy leg, Rs 25 on Sell leg
     const dpSell = sellDetails.dpFee; // 25
     const cgtRate = sellDetails.cgtRate; // 0.075
 
-    const calcPass = sebonBuyFee === 7.5 && sebonSellFee === 9.0 && dpBuy === 25 && dpSell === 25 && cgtRate === 0.075;
+    const calcPass = sebonBuyFee === 7.5 && sebonSellFee === 9.0 && dpBuy === 0 && dpSell === 25 && cgtRate === 0.075;
 
     recordCheck(
       'Category D',
