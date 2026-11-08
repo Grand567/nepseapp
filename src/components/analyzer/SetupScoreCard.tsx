@@ -66,7 +66,9 @@ interface SetupScoreCardProps {
       breakEvenWinRate: number;
       hasPositiveEdge: boolean;
       edgeRating: string;
+      pWin?: number;
     };
+    winProbability?: number;
     kelly?: {
       halfKellyPct: number;
       recommendationPct: number;
@@ -280,7 +282,8 @@ export function SetupScoreCard({
             <div className="rounded-lg bg-slate-900/60 p-2 border border-slate-800">
               <div className="text-[10.5px] text-slate-400">Statistical Edge (Δ)</div>
               {(() => {
-                const empiricalWin = quantMetrics.expectancy?.pWin;
+                const rawWin = quantMetrics.expectancy?.pWin ?? quantMetrics.winProbability;
+                const empiricalWin = rawWin != null ? (rawWin <= 1 && rawWin > 0 ? +(rawWin * 100).toFixed(1) : rawWin) : null;
                 const beWin = quantMetrics.expectancy?.breakEvenWinRate;
                 if (empiricalWin == null || beWin == null) {
                   return (
