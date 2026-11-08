@@ -135,7 +135,7 @@ export default function BreakoutAlertDialog({
     <div style={{
       position: 'fixed',
       inset: 0,
-      zIndex: 99999,
+      zIndex: 100005,
       background: 'rgba(0, 0, 0, 0.75)',
       backdropFilter: 'blur(6px)',
       display: 'flex',

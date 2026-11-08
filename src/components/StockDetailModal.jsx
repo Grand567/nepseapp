@@ -3362,9 +3362,11 @@ export default function StockDetailModal({
         alignItems: 'center',
         justifyContent: 'space-between',
         borderBottom: '1px solid rgba(255, 255, 255, 0.07)',
-        background: '#0B0E14'
+        background: '#0B0E14',
+        flexWrap: 'wrap',
+        gap: 8
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flexShrink: 0 }}>
           <button
             onClick={onClose}
             style={{
@@ -3382,12 +3384,12 @@ export default function StockDetailModal({
           >
             <ChevronLeft style={{ width: 22, height: 22 }} />
           </button>
-          <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff' }}>
+          <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', whiteSpace: 'nowrap' }}>
             {d.symbol}
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={() => {
@@ -3404,16 +3406,16 @@ export default function StockDetailModal({
               borderRadius: 8,
               color: isFavorite ? '#fbbf24' : 'rgba(255,255,255,0.7)',
               cursor: 'pointer',
-              padding: '5px 10px',
+              padding: '5px 8px',
               display: 'flex',
               alignItems: 'center',
-              gap: 5,
+              gap: 4,
               fontSize: 12,
               fontWeight: 700,
               transition: 'all 0.15s'
             }}
           >
-            <Star style={{ width: 15, height: 15, fill: isFavorite ? '#fbbf24' : 'none' }} />
+            <Star style={{ width: 14, height: 14, fill: isFavorite ? '#fbbf24' : 'none' }} />
             <span>{isFavorite ? 'Watched' : 'Watch'}</span>
           </button>
 
@@ -3427,10 +3429,10 @@ export default function StockDetailModal({
               borderRadius: 8,
               color: '#38bdf8',
               cursor: 'pointer',
-              padding: '5px 10px',
+              padding: '5px 8px',
               display: 'flex',
               alignItems: 'center',
-              gap: 5,
+              gap: 4,
               fontSize: 12,
               fontWeight: 700,
               transition: 'all 0.15s'
@@ -3450,17 +3452,18 @@ export default function StockDetailModal({
               borderRadius: 8,
               color: '#a5b4fc',
               cursor: 'pointer',
-              padding: '5px 10px',
+              padding: '5px 8px',
               display: 'flex',
               alignItems: 'center',
-              gap: 5,
+              gap: 4,
               fontSize: 12,
               fontWeight: 700,
               transition: 'all 0.15s'
             }}
           >
             <Activity style={{ width: 14, height: 14 }} />
-            <span>Telemetry Hub</span>
+            <span className="hidden sm:inline">Telemetry Hub</span>
+            <span className="sm:hidden">Hub</span>
           </button>
 
           <button
