@@ -1236,6 +1236,21 @@ const TopSearchBar = React.memo(function TopSearchBar({
 }) {
   const [inputValue, setInputValue] = useState('');
   const debounceTimer = useRef(null);
+  const searchContainerRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setIsSearching(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, [setIsSearching]);
 
   const onChange = (e) => {
     const val = e.target.value;
@@ -1277,7 +1292,7 @@ const TopSearchBar = React.memo(function TopSearchBar({
   };
 
   return (
-    <div style={{ position: 'relative', marginBottom: 10, zIndex: 1000 }}>
+    <div ref={searchContainerRef} style={{ position: 'relative', marginBottom: 10, zIndex: 100 }}>
       <form onSubmit={handleSubmit} style={{ width: '100%', margin: 0, padding: 0 }}>
         <div style={{
           display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.05)',
@@ -2982,7 +2997,7 @@ function Dashboard({
       />
 
       {/* ── 1B. LIVE STOCK SEARCH SPOTLIGHT CARD (Always prominently displayed when searching) ── */}
-      {topSearch.trim() && topSearchResults.length > 0 && (() => {
+      {!isSearching && topSearch.trim() && topSearchResults.length > 0 && (() => {
         const topStock = topSearchResults[0];
         const isBull = (topStock.pChange || 0) >= 0;
         return (
