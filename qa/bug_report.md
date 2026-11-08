@@ -2031,6 +2031,10 @@ Generated: 2026-11-09T05:20:00+05:45
 - **Update Checking Logic:**
   - `electron/main.cjs` has no auto-updater check listeners (`autoUpdater.checkForUpdatesAndNotify()`).
   - **Defect:** Packaged desktop applications cannot discover, download, or apply background differential updates; users must manually download new installer binaries (`BUG-091`).
+  - **Resolution Status:** **Deferred.** Implementing `electron-updater` requires external infrastructure:
+    1. A public releases feed / hosting bucket (`publish: { provider: 'github', owner, repo }` or AWS S3 / Cloudflare R2 bucket with token secrets).
+    2. Code Signing Certificate (e.g. EV Code Signing for Windows Authenticode) — without code signing, Windows SmartScreen will flag downloaded update differentials as unrecognized binaries and Windows OS will reject silent background NSIS elevations.
+    3. Dedicated staging / release pipeline for uploading signed `.exe` and `latest.yml` manifests. Deferred until remote release infrastructure and certificates are established.
 
 ---
 
@@ -2080,5 +2084,5 @@ Generated: 2026-11-09T05:20:00+05:45
 | **BUG-088** | **Medium** | `index.html`, `electron/main.cjs` | Missing Content Security Policy (CSP) declaration for the desktop app. | Violates Electron security model; exposes renderer to unrestricted script execution and data exfiltration on potential XSS. | **Fixed** |
 | **BUG-089** | **High** | `electron/main.cjs` | Missing `will-navigate` interception handler on `mainWindow.webContents`. | In-app external links without `target="_blank"` hijack the main window, trapping the user inside the external website. | **Fixed** |
 | **BUG-090** | **High** | `electron-builder.json`, `electron/main.cjs` | Packaged `extraResources` excludes `node_modules`, crashing embedded proxy on `server.mjs` import. | Embedded backend fails with `ERR_MODULE_NOT_FOUND` in packaged production desktop builds. | **Fixed** |
-| **BUG-091** | **Low** | `package.json`, `electron-builder.json`, `electron/main.cjs` | Missing auto-update mechanism (`electron-updater` and publish feed configuration). | Desktop users cannot receive background differential updates; manual re-download required for every release. | **Pending** |
+| **BUG-091** | **Low** | `package.json`, `electron-builder.json`, `electron/main.cjs` | Missing auto-update mechanism (`electron-updater` and publish feed configuration). | Desktop users cannot receive background differential updates; manual re-download required for every release. | **Deferred** |
 | **BUG-092** | **Medium** | `proxy/db/ledgerStore.js` | Packaged database path resolves to read-only `resourcesPath` instead of writable `app.getPath('userData')`. | Non-admin users encounter `EPERM` file system crashes when writing SQLite database in `C:\Program Files`. | **Fixed** |
