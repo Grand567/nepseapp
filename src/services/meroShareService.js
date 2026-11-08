@@ -1194,33 +1194,35 @@ export async function checkSingleBoidAllotment(companyShareId, boid, account = n
     .replace(/[^a-z0-9]/g, ' ')
     .trim();
 
-  // 0. IMMEDIATE STRATEGY: Check account's Demat Portfolio / Holdings
-  // If the user's Demat account already holds shares of this company, it is 100% ALLOTTED!
+  // 0. SECONDARY / FALLBACK CHECK: Only check Demat holdings if explicitly tagged as primary IPO allotment
+  // Do NOT match secondary market purchases (e.g. BROKER_TMS, MANUAL_LEDGER, wacc != 100) or loose substring names.
   if (account && Array.isArray(account.holdings) && account.holdings.length > 0) {
     const targetScrip = String(companyObj?.scrip || '').trim().toUpperCase();
-    const targetName = String(companyObj?.name || '').trim();
-    const cleanTarget = cleanTokenStr(targetName);
 
-    const foundHolding = account.holdings.find(h => {
-      const hSym = String(h.scrip || h.symbol || '').trim().toUpperCase();
-      const hName = String(h.name || h.companyName || '').trim();
-      const cleanH = cleanTokenStr(hName);
+    if (targetScrip) {
+      const foundHolding = account.holdings.find(h => {
+        const hSym = String(h.scrip || h.symbol || '').trim().toUpperCase();
+        if (targetScrip !== hSym) return false;
 
-      if (targetScrip && hSym && targetScrip === hSym) return true;
-      if (cleanTarget && cleanH && (cleanTarget.includes(cleanH) || cleanH.includes(cleanTarget))) return true;
-      return false;
-    });
+        // Must strictly be an authentic primary IPO allotment origin, NOT secondary market TMS trade
+        const isIpoSource = h.waccSource === 'IPO_ALLOTMENT' || h.waccSource === 'IPO_PAR';
+        const isParWacc = Number(h.wacc) === 100;
+        const isStandardLot = Number(h.units || h.totalQuantity || h.balance || 0) <= 50;
 
-    if (foundHolding) {
-      const qty = Number(foundHolding.currentBalance || foundHolding.totalQuantity || foundHolding.balance || foundHolding.units || 10);
-      if (qty > 0) {
-        return {
-          success: true,
-          allotted: true,
-          units: qty,
-          message: `🎉 बधाई! ${qty} कित्ता शेयर डिम्याट खातामा जम्मा छ (Allotted ${qty} Units verified in Demat)`,
-          source: 'demat-holdings'
-        };
+        return isIpoSource && isParWacc && isStandardLot && !h.isCustomWacc;
+      });
+
+      if (foundHolding) {
+        const qty = Number(foundHolding.currentBalance || foundHolding.totalQuantity || foundHolding.balance || foundHolding.units || 10);
+        if (qty > 0 && qty <= 50) {
+          return {
+            success: true,
+            allotted: true,
+            units: qty,
+            message: `🎉 बधाई! ${qty} कित्ता शेयर डिम्याट खातामा जम्मा छ (Allotted ${qty} Units verified in Demat)`,
+            source: 'demat-holdings'
+          };
+        }
       }
     }
   }
