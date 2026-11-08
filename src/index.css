@@ -1572,6 +1572,8 @@ button, a, input, select, .card, .nav-btn {
   }
   .header-pro-btn {
     padding: 0 6px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
   }
 }
 

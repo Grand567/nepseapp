@@ -1360,7 +1360,9 @@ function AppInner() {
                 color: isPro ? '#f59e0b' : '#fbbf24',
                 cursor: 'pointer',
                 fontWeight: 900,
-                fontSize: 12
+                fontSize: 12,
+                whiteSpace: 'nowrap',
+                flexShrink: 0
               }}
             >
               <Crown style={{ width: 13, height: 13, color: isPro ? '#f59e0b' : '#fbbf24' }} />
