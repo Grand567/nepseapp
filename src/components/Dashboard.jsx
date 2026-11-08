@@ -2168,16 +2168,31 @@ function Dashboard({
   }, [stocks, sectorTf]);
 
   // Robust Movers Data Lists
+  const isDebentureOrBond = (s) => {
+    if (!s) return false;
+    const sec = String(s.sector || '').toLowerCase();
+    if (sec.includes('debenture') || sec.includes('bond')) return true;
+    const sym = String(s.symbol || '').toUpperCase();
+    if (/[A-Z0-9]+D\d{2}/i.test(sym) || sym.includes('/8') || sym.includes('/9')) return true;
+    return false;
+  };
+
+  const isMutualFund = (s) => {
+    if (!s) return false;
+    const sec = String(s.sector || '').toLowerCase();
+    return sec.includes('mutual');
+  };
+
   const gainers = useMemo(() => {
     return [...stocks]
-      .filter(s => (Number(s.pChange) || 0) > 0)
+      .filter(s => (Number(s.pChange) || 0) > 0 && !isDebentureOrBond(s) && (Number(s.volume) || 0) >= 100)
       .sort((a, b) => (Number(b.pChange) || 0) - (Number(a.pChange) || 0))
       .slice(0, 8);
   }, [stocks]);
 
   const losers = useMemo(() => {
     return [...stocks]
-      .filter(s => (Number(s.pChange) || 0) < 0)
+      .filter(s => (Number(s.pChange) || 0) < 0 && !isDebentureOrBond(s) && (Number(s.volume) || 0) >= 100)
       .sort((a, b) => (Number(a.pChange) || 0) - (Number(b.pChange) || 0))
       .slice(0, 8);
   }, [stocks]);
@@ -2194,7 +2209,13 @@ function Dashboard({
 
   const volumeLeaders = useMemo(() => {
     return [...stocks]
-      .sort((a, b) => (Number(b.volume) || 0) - (Number(a.volume) || 0))
+      .filter(s => !isDebentureOrBond(s) && !isMutualFund(s))
+      .sort((a, b) => {
+        const rB = Number(b.rvol || b.volumeSurgeRatio || 0);
+        const rA = Number(a.rvol || a.volumeSurgeRatio || 0);
+        if (rB !== rA && rB > 0 && rA > 0) return rB - rA;
+        return (Number(b.volume) || 0) - (Number(a.volume) || 0);
+      })
       .slice(0, 8);
   }, [stocks]);
 
@@ -5597,7 +5618,7 @@ function Dashboard({
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                         {moversTab === 'turnover' ? `Turnover: ${fmtCr(s.turnover || s.ltp * s.volume)}` :
                          moversTab === 'volume' ? `Vol: ${(s.volume || 0).toLocaleString()} shares` :
-                         moversTab === 'breakouts' ? `Pivot Rs. ${s.pivotLevel || '—'} · RVOL ${s.rvol || 1.2}x` :
+                         moversTab === 'breakouts' ? `Pivot Rs. ${s.pivotLevel ? fmt(s.pivotLevel) : '—'} · RVOL ${s.rvol ? Number(s.rvol).toFixed(2) : 1.2}x` :
                          moversTab === 'next_breakouts' ? `Coiled ${s.distToPivotPct != null ? s.distToPivotPct + '% to pivot' : 'Base'} · Score ${s.score || s.compositeScore || 80}` :
                          `Vol: ${(s.volume || 0).toLocaleString()} shares`}
                       </div>
