@@ -753,12 +753,13 @@ export async function getHistoricalSubfileDirect(dateOrOffset: string | number):
  */
 export async function getHistoricalSubfileBrokerAnalysis(
   symbol: string,
-  options: { days?: number | string; date?: string } = {}
+  options: { days?: number | string; date?: string } | number | string = {}
 ): Promise<any | null> {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return null;
-  const numDays = options?.days === 'all' ? 5 : (parseInt(String(options?.days || 1), 10) || 1);
-  const targetDate = options?.date ? String(options.date).trim() : null;
+  const rawDays = typeof options === 'object' && options !== null ? options.days : options;
+  const numDays = rawDays === 'all' ? 5 : (parseInt(String(rawDays || 1), 10) || 1);
+  const targetDate = typeof options === 'object' && options !== null && options.date ? String(options.date).trim() : null;
 
   if (targetDate || numDays === 1) {
     const sf = await getHistoricalSubfileDirect(targetDate || 1);
@@ -976,22 +977,36 @@ export async function getHistoricalSubfileBrokerAnalysis(
     });
 
     if (flow) {
+      const processedThisDay = new Set<string>();
+
       (flow.top_5_buyers || []).forEach((b: any) => {
         const id = String(b.broker_id);
         if (!brokerAgg[id]) brokerAgg[id] = { id, buyQty: 0, buyAmt: 0, sellQty: 0, sellAmt: 0 };
-        const kitta = b.buy_kitta || b.net_kitta || 0;
-        const rate = b.buy_vwap || dayVwap || 0;
-        brokerAgg[id].buyQty += kitta;
-        brokerAgg[id].buyAmt += kitta * rate;
+        const buyQty = Number(b.buy_kitta || b.net_kitta || 0);
+        const sellQty = Number(b.sell_kitta !== undefined ? b.sell_kitta : Math.max(0, buyQty - Number(b.net_kitta || buyQty)));
+        const buyRate = Number(b.buy_vwap || dayVwap || 0);
+        const sellRate = Number(b.sell_vwap || dayVwap || 0);
+        brokerAgg[id].buyQty += buyQty;
+        brokerAgg[id].buyAmt += buyQty * buyRate;
+        brokerAgg[id].sellQty += sellQty;
+        brokerAgg[id].sellAmt += sellQty * sellRate;
+        processedThisDay.add(id);
       });
 
       (flow.top_5_sellers || []).forEach((s: any) => {
         const id = String(s.broker_id);
+        if (processedThisDay.has(id)) return;
         if (!brokerAgg[id]) brokerAgg[id] = { id, buyQty: 0, buyAmt: 0, sellQty: 0, sellAmt: 0 };
-        const kitta = s.sell_kitta || s.net_dump_kitta || 0;
-        const rate = s.sell_vwap || dayVwap || 0;
-        brokerAgg[id].sellQty += kitta;
-        brokerAgg[id].sellAmt += kitta * rate;
+        const sellQty = Number(s.sell_kitta || s.net_dump_kitta || 0);
+        const netDump = Number(s.net_dump_kitta || s.sell_kitta || 0);
+        const buyQty = s.buy_kitta !== undefined ? Number(s.buy_kitta) : Math.max(0, sellQty - netDump);
+        const sellRate = Number(s.sell_vwap || dayVwap || 0);
+        const buyRate = Number(s.buy_vwap || dayVwap || 0);
+        brokerAgg[id].buyQty += buyQty;
+        brokerAgg[id].buyAmt += buyQty * buyRate;
+        brokerAgg[id].sellQty += sellQty;
+        brokerAgg[id].sellAmt += sellQty * sellRate;
+        processedThisDay.add(id);
       });
     }
   }
@@ -1037,6 +1052,21 @@ export async function getHistoricalSubfileBrokerAnalysis(
   const topAcc = accumulators[0] || null;
   const topDist = distributors[0] || null;
 
+  // 5D Concentration: BCR3 (Top 3 Buyers Buy Qty / Total Traded Vol) and SCR3 (Top 3 Sellers Sell Qty / Total Traded Vol)
+  const sortedTopBuyers = [...brokersList].filter(b => b.buyQty > 0).sort((a, b) => b.buyQty - a.buyQty);
+  const sortedTopSellers = [...brokersList].filter(b => b.sellQty > 0).sort((a, b) => b.sellQty - a.sellQty);
+  const top3BuyQty = sortedTopBuyers.slice(0, 3).reduce((sum, b) => sum + b.buyQty, 0);
+  const top3SellQty = sortedTopSellers.slice(0, 3).reduce((sum, b) => sum + b.sellQty, 0);
+
+  const bcr3 = totalVol > 0 ? +((top3BuyQty / totalVol) * 100).toFixed(1) : 0;
+  const scr3 = totalVol > 0 ? +((top3SellQty / totalVol) * 100).toFixed(1) : 0;
+  const adSignal = bcr3 > scr3 + 5 ? 'Accumulation' : (scr3 > bcr3 + 5 ? 'Distribution' : 'Neutral');
+  const adStrength = adSignal === 'Accumulation' ? `${bcr3}%` : adSignal === 'Distribution' ? `${scr3}%` : `${bcr3}% / ${scr3}%`;
+
+  const topAccNet = accumulators.slice(0, 3).reduce((sum, b) => sum + b.netQty, 0);
+  const topDistNet = distributors.slice(0, 3).reduce((sum, b) => sum + Math.abs(b.netQty), 0);
+  const smartMoneyNetFlowPct = totalVol > 0 ? +(((topAccNet - topDistNet) / totalVol) * 100).toFixed(1) : 0;
+
   return {
     symbol: sym,
     tradingDays: 5,
@@ -1054,13 +1084,20 @@ export async function getHistoricalSubfileBrokerAnalysis(
     topDistributors: distributors,
     topNetBuyers: accumulators,
     topNetSellers: distributors,
-    topBuyers: brokersList.filter(b => b.buyQty > 0).sort((a, b) => b.buyQty - a.buyQty),
-    topSellers: brokersList.filter(b => b.sellQty > 0).sort((a, b) => b.sellQty - a.sellQty),
+    topBuyers: sortedTopBuyers,
+    topSellers: sortedTopSellers,
     brokers: brokersList,
     allBrokers: brokersList,
     dailyFlow,
     avgAccumulatorBuyPrice: topAcc?.avgBuyRate || 0,
     avgDistributorSellPrice: topDist?.avgSellRate || 0,
+    bcr3BuyPct: bcr3,
+    scr3SellPct: scr3,
+    bcr3SellPct: scr3,
+    adSignal,
+    adStrength,
+    adPercentage: adSignal === 'Accumulation' ? bcr3 : adSignal === 'Distribution' ? scr3 : Math.max(bcr3, scr3),
+    smartMoneyNetFlowPct,
     isReal: true,
     source: 'offline_subfiles_bundle_5d'
   };
