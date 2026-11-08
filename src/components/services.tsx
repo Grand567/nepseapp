@@ -4456,16 +4456,16 @@ export function BrokersDirectoryService() {
       let list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
       if (!list.length) {
         list = [
-          { id: 58, name: 'Nabil Stock Dealer Ltd.', location: 'Kathmandu', contact: '01-5970014', tmsUrl: 'https://tms58.nepse.com.np' },
-          { id: 34, name: 'Vision Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4233215', tmsUrl: 'https://tms34.nepse.com.np' },
-          { id: 45, name: 'Imperial Securities Co. Pvt. Ltd.', location: 'Kathmandu', contact: '01-4445811', tmsUrl: 'https://tms45.nepse.com.np' },
-          { id: 33, name: 'Dakshinkali Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4228912', tmsUrl: 'https://tms33.nepse.com.np' },
-          { id: 17, name: 'ABC Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4437299', tmsUrl: 'https://tms17.nepse.com.np' },
-          { id: 49, name: 'Online Securities Ltd.', location: 'Kathmandu', contact: '01-4240375', tmsUrl: 'https://tms49.nepse.com.np' },
-          { id: 28, name: 'Shree Krishna Securities Ltd.', location: 'Kathmandu', contact: '01-4227317', tmsUrl: 'https://tms28.nepse.com.np' },
-          { id: 14, name: 'Nepal Stock House Pvt. Ltd.', location: 'Kathmandu', contact: '01-4222013', tmsUrl: 'https://tms14.nepse.com.np' },
-          { id: 38, name: 'Dipshikha Dhitopatra Karobar Co.', location: 'Kathmandu', contact: '01-4223298', tmsUrl: 'https://tms38.nepse.com.np' },
-          { id: 60, name: 'Nagarik Stock Dealer Ltd.', location: 'Kathmandu', contact: '01-4250000', tmsUrl: 'https://tms60.nepse.com.np' },
+          { id: 58, name: 'Nabil Stock Dealer Ltd.', location: 'Kathmandu', contact: '01-5970014', tmsUrl: 'https://tms58.nepalstock.com.np/' },
+          { id: 34, name: 'Vision Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4233215', tmsUrl: 'https://tms34.nepalstock.com.np/' },
+          { id: 45, name: 'Imperial Securities Co. Pvt. Ltd.', location: 'Kathmandu', contact: '01-4445811', tmsUrl: 'https://tms45.nepalstock.com.np/' },
+          { id: 33, name: 'Dakshinkali Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4228912', tmsUrl: 'https://tms33.nepalstock.com.np/' },
+          { id: 17, name: 'ABC Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4437299', tmsUrl: 'https://tms17.nepalstock.com.np/' },
+          { id: 49, name: 'Online Securities Ltd.', location: 'Kathmandu', contact: '01-4240375', tmsUrl: 'https://tms49.nepalstock.com.np/' },
+          { id: 28, name: 'Shree Krishna Securities Ltd.', location: 'Kathmandu', contact: '01-4227317', tmsUrl: 'https://tms28.nepalstock.com.np/' },
+          { id: 14, name: 'Nepal Stock House Pvt. Ltd.', location: 'Kathmandu', contact: '01-4222013', tmsUrl: 'https://tms14.nepalstock.com.np/' },
+          { id: 38, name: 'Dipshikha Dhitopatra Karobar Co.', location: 'Kathmandu', contact: '01-4223298', tmsUrl: 'https://tms38.nepalstock.com.np/' },
+          { id: 60, name: 'Nagarik Stock Dealer Ltd.', location: 'Kathmandu', contact: '01-4250000', tmsUrl: 'https://tms60.nepalstock.com.np/' },
         ];
       }
       setBrokers(list);
@@ -4619,7 +4619,7 @@ export function BrokersDirectoryService() {
                 <td className="whitespace-nowrap px-3.5 py-2.5 text-right">
                   {b.tmsUrl ? (
                     <a
-                      href={b.tmsUrl}
+                      href={b.tmsUrl.replace('nepse.com.np', 'nepalstock.com.np')}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-2.5 py-1 text-xs font-bold text-emerald-400 hover:bg-emerald-900/60"

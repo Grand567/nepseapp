@@ -7210,7 +7210,7 @@ const NEPSE_BROKERS_LIST = Object.entries(BROKER_NAMES).map(([idStr, name]) => {
     name: name.includes('Securities') || name.includes('Dealer') || name.includes('Broking') ? `${name} Pvt. Ltd.` : `${name} Ltd.`,
     location: 'Kathmandu',
     contact: '01-4400000',
-    tmsUrl: `https://tms${id}.nepse.com.np`
+    tmsUrl: `https://tms${id}.nepalstock.com.np/`
   };
 }).sort((a, b) => a.id - b.id);
 

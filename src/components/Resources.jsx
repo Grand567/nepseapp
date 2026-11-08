@@ -376,7 +376,7 @@ export default function Resources({ onNavigateTab }) {
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{broker.name}</span>
                   </div>
                   <a 
-                    href={`https://tms${broker.number}.nepse.com.np/`} 
+                    href={`https://tms${broker.number}.nepalstock.com.np/`} 
                     target="_blank" 
                     rel="noreferrer" 
                     style={{ padding: 6, background: 'var(--primary-subtle)', border: '1px solid rgba(91,94,244,0.2)', borderRadius: 8, color: 'var(--primary-light)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
