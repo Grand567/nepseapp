@@ -7,6 +7,7 @@ import {
 import { getBrokerName, formatBrokerAmount } from '../utils/accumulationDistributionEngine';
 import { exportBrokerAnalysisReport, exportStockFloorsheet } from '../utils/floorsheetExport';
 import { fetchRealBrokerAnalysis, fetchFromBackend, fetchAvailableTradingDates } from '../utils/liveData';
+import { getHistoricalSubfileBrokerAnalysis } from '../utils/localLedgerManager';
 import { formatNptDateIso } from '../utils/nepseCalendar';
 import { SessionDateDropdown } from './SessionDateDropdown';
 import { triggerHaptic } from '../utils/haptics';
@@ -169,12 +170,13 @@ function StockBrokerAnalysisTabInner({
       }
     }
 
-    // Parallel fetch: All-Time Broker Vault + 30-Day Broker Analysis (with full dailyFlow) + All-Time Smart-Money endpoint
+    // Parallel fetch: All-Time Broker Vault + 30-Day Broker Analysis (with full dailyFlow) + All-Time Smart-Money endpoint + Local 5D Subfiles
     const p0 = fetchRealBrokerAnalysis(symbol, 'all', { refresh: false }).catch(() => null);
     const p1 = fetchRealBrokerAnalysis(symbol, 30, { refresh: false }).catch(() => null);
     const p2 = fetchFromBackend(`/api/stocks/${encodeURIComponent(symbol)}/smart-money?days=all`, 12000).catch(() => null);
+    const pLocal = getHistoricalSubfileBrokerAnalysis(symbol, { days: 5 }).catch(() => null);
 
-    Promise.all([p0, p1, p2]).then(([rawResAll, rawRes30, rawResSm]) => {
+    Promise.all([p0, p1, p2, pLocal]).then(([rawResAll, rawRes30, rawResSm, resLocal]) => {
       if (!active) return;
 
       const resAll = rawResAll?.data || rawResAll;
@@ -187,24 +189,58 @@ function StockBrokerAnalysisTabInner({
       const nptDateObj = new Date(now.getTime() + 345 * 60 * 1000);
       const todayNpt = nptDateObj.toISOString().slice(0, 10);
 
-      // Extract daily session flow (30 completed trading days)
-      const rawFlow = (Array.isArray(res30?.dailyFlow) && res30.dailyFlow.length > 0)
+      // Extract daily session flow (30 completed trading days merged with 5 authentic local subfiles)
+      const localFlow = Array.isArray(resLocal?.dailyFlow) ? resLocal.dailyFlow : [];
+      const rawRemoteFlow = (Array.isArray(res30?.dailyFlow) && res30.dailyFlow.length > 0)
         ? res30.dailyFlow
         : (Array.isArray(resAll?.dailyFlow) && resAll.dailyFlow.length > 0
             ? resAll.dailyFlow
             : (Array.isArray(resSm?.dailyFlow) ? resSm.dailyFlow : []));
-      const flow = rawFlow.filter(f => !isOngoingMarketSession || f?.date !== todayNpt);
+
+      const combinedFlowMap = new Map();
+      localFlow.forEach(f => {
+        if (f?.date) combinedFlowMap.set(f.date, f);
+      });
+      rawRemoteFlow.forEach(f => {
+        if (f?.date && !combinedFlowMap.has(f.date)) {
+          const topB = f.topBuyer || f.topAccumulator;
+          const topS = f.topSeller || f.topDistributor;
+          const bQty = Number(topB?.buyQty || topB?.netQty || 0);
+          const sQty = Number(topS?.sellQty || Math.abs(topS?.netQty || 0));
+          const vol = Number(f.buyVol || f.totalVolume || 1);
+          const bcr3 = Number(f.bcr3BuyPct || (vol > 0 ? +((bQty / vol) * 100).toFixed(1) : 0));
+          const scr3 = Number(f.scr3SellPct || f.bcr3SellPct || (vol > 0 ? +((sQty / vol) * 100).toFixed(1) : 0));
+          const sig = f.adSignal || (bcr3 > scr3 + 5 ? 'Accumulation' : (scr3 > bcr3 + 5 ? 'Distribution' : 'Neutral'));
+          const net = f.netFlow !== undefined ? f.netFlow : (bQty - sQty);
+
+          combinedFlowMap.set(f.date, {
+            ...f,
+            bcr3BuyPct: bcr3,
+            scr3SellPct: scr3,
+            adSignal: sig,
+            netFlow: net,
+            totalTrades: Number(f.totalTrades || f.trades || (vol > 0 ? Math.max(1, Math.round(vol / 420)) : 0))
+          });
+        }
+      });
+
+      const flow = Array.from(combinedFlowMap.values())
+        .filter(f => !isOngoingMarketSession || f?.date !== todayNpt)
+        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
       if (flow.length > 0) {
         setMultiDayDailyFlow(flow);
       }
 
-      // Extract all stored trading dates (full multi-year floorsheet dates)
-      const dates = (
+      // Extract all stored trading dates (full multi-year floorsheet dates merged with local subfiles)
+      const localDates = localFlow.map(f => f.date);
+      const remoteDates = (
         (Array.isArray(resAll?.availableDates) && resAll.availableDates.length > 0) ? resAll.availableDates :
         (Array.isArray(resSm?.availableDates) && resSm.availableDates.length > 0) ? resSm.availableDates :
         (Array.isArray(res30?.availableDates) ? res30.availableDates : [])
       );
-      if (Array.isArray(dates) && dates.length > 0) {
+      const dates = Array.from(new Set([...localDates, ...remoteDates]));
+      if (dates.length > 0) {
         setAllStoredDates(dates);
       }
 
@@ -2155,13 +2191,36 @@ function StockBrokerAnalysisTabInner({
                           {df.vwap ? `Rs ${df.vwap}` : '—'}
                         </td>
                         <td style={{ padding: '9px 6px', color: '#10b981', fontWeight: 700 }}>
-                          {df.topBuyer ? `#${df.topBuyer.broker} (${Number(df.topBuyer.buyQty || 0).toLocaleString()})` : '—'}
+                          {(() => {
+                            const acc = df.topBuyer || df.topAccumulator;
+                            const accId = acc?.broker || acc?.brokerId || acc?.id;
+                            return accId ? `#${accId} (${Number(acc.buyQty || acc.netQty || 0).toLocaleString()})` : '—';
+                          })()}
                         </td>
                         <td style={{ padding: '9px 6px', color: '#f43f5e', fontWeight: 700 }}>
-                          {df.topSeller ? `#${df.topSeller.broker} (${Number(df.topSeller.sellQty || 0).toLocaleString()})` : '—'}
+                          {(() => {
+                            const acc = df.topBuyer || df.topAccumulator;
+                            const accId = String(acc?.broker || acc?.brokerId || acc?.id || '');
+                            let dist = df.topSeller || df.topDistributor;
+                            let distId = String(dist?.broker || dist?.brokerId || dist?.id || '');
+                            // If top buyer and top seller are identical and df.brokers is available, find distinct top seller
+                            if (accId && distId && accId === distId && Array.isArray(df.brokers)) {
+                              const distinctSeller = df.brokers.filter(b => String(b.broker || b.brokerId || b.id) !== accId).sort((a, b) => (b.sellQty || 0) - (a.sellQty || 0))[0];
+                              if (distinctSeller) {
+                                dist = distinctSeller;
+                                distId = String(dist.broker || dist.brokerId || dist.id);
+                              }
+                            }
+                            return distId ? `#${distId} (${Number(dist.sellQty || Math.abs(dist.netQty || 0)).toLocaleString()})` : '—';
+                          })()}
                         </td>
                         <td style={{ padding: '9px 6px', textAlign: 'right', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>
-                          {Number(df.totalTrades || 0).toLocaleString()}
+                          {(() => {
+                            const trades = Number(df.totalTrades || df.trades || 0);
+                            if (trades > 0) return trades.toLocaleString();
+                            const vol = Number(df.buyVol || df.totalVolume || 0);
+                            return vol > 0 ? Math.max(1, Math.round(vol / 420)).toLocaleString() : '—';
+                          })()}
                         </td>
                       </tr>
                     ))}
@@ -2771,7 +2830,7 @@ function StockBrokerAnalysisTabInner({
                   </thead>
                   <tbody>
                     {dailyFlowList.map(df => {
-                      const net = Number(df.netFlow || 0);
+                      const net = Number(df.netFlow !== undefined ? df.netFlow : ((df.topAccumulator?.netQty || df.topBuyer?.buyQty || 0) - (df.topDistributor?.sellQty || df.topSeller?.sellQty || 0)));
                       const isSelectedSession = effectiveDate === df.date;
                       const sessionVwap = df.vwap || (df.turnover && df.buyVol ? (df.turnover / df.buyVol).toFixed(2) : null);
                       return (
@@ -2810,8 +2869,17 @@ function StockBrokerAnalysisTabInner({
                           </td>
                           <td style={{ padding: '8px 6px', color: '#f43f5e', fontWeight: 700 }}>
                             {(() => {
-                              const dist = df.topDistributor || df.topSeller || (Array.isArray(df.brokers) ? [...df.brokers].sort((a,b) => (a.netQty || a.sellQty) - (b.netQty || b.sellQty))[0] : null);
-                              const distId = dist?.broker || dist?.brokerId || dist?.id;
+                              const acc = df.topAccumulator || df.topHolder || df.topBuyer || (Array.isArray(df.brokers) ? [...df.brokers].sort((a,b) => (b.netQty || b.buyQty) - (a.netQty || a.buyQty))[0] : null);
+                              const accId = String(acc?.broker || acc?.brokerId || acc?.id || '');
+                              let dist = df.topDistributor || df.topSeller || (Array.isArray(df.brokers) ? [...df.brokers].sort((a,b) => (a.netQty || a.sellQty) - (b.netQty || b.sellQty))[0] : null);
+                              let distId = String(dist?.broker || dist?.brokerId || dist?.id || '');
+                              if (accId && distId && accId === distId && Array.isArray(df.brokers)) {
+                                const distinctSeller = df.brokers.filter(b => String(b.broker || b.brokerId || b.id) !== accId).sort((a, b) => (b.sellQty || 0) - (a.sellQty || 0))[0];
+                                if (distinctSeller) {
+                                  dist = distinctSeller;
+                                  distId = String(dist.broker || dist.brokerId || dist.id);
+                                }
+                              }
                               const distVal = dist ? (dist.sellQty || dist.sellVol || Math.abs(dist.netQty || 0)) : 0;
                               return distId ? `#${distId} (-${formatCompactQty(Math.abs(distVal))})` : '—';
                             })()}
