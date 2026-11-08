@@ -4,6 +4,7 @@ import { fetchPriceHistory, fetchAllSecurities, loadNepseData } from '../utils/l
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { StockCandlestickChart, type CandleData, type ChartLevels } from './charts/StockCandlestickChart';
 import { StockSearchSelect, StatCard, Spinner } from './ui';
+import { openExternalUrl } from '../utils/externalLinks';
 
 export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSymbol?: string }) {
   const [symbol, setSymbol] = useState(initialSymbol);
@@ -135,7 +136,7 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
           <button
             type="button"
             onClick={() => {
-              window.open(`https://nepsealpha.com/trading/chart?symbol=${encodeURIComponent(cleanSymbol)}`, '_blank', 'noopener,noreferrer');
+              openExternalUrl(`https://nepsealpha.com/trading/chart?symbol=${encodeURIComponent(cleanSymbol)}`);
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition shadow-sm"
             title="Launch full TradingView terminal for this symbol on NepseAlpha"

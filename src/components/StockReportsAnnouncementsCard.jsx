@@ -3,6 +3,7 @@ import { FileText, ExternalLink, Calendar, Bell, Newspaper, ChevronRight, Filter
 import { fetchMarketNews } from '../utils/servicesApi';
 import { NEPALI_NAME_TO_SYMBOL, classifyCorporateArticle } from '../services/merolaganiNewsService.js';
 import { getProxyBase } from '../utils/proxyBase.js';
+import { openExternalUrl } from '../utils/externalLinks';
 
 export default function StockReportsAnnouncementsCard({ symbol = '', companyName = '', sector = '' }) {
   const [activeTab, setActiveTab] = useState('news'); // default to 'news' or 'reports'
@@ -390,7 +391,7 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
                     transition: 'border-color 0.15s ease'
                   }}
                   onClick={() => {
-                    if (isClickable) window.open(n.url || n.link, '_blank');
+                    if (isClickable) openExternalUrl(n.url || n.link);
                   }}
                 >
                   <div style={{
@@ -492,7 +493,7 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
                       transition: 'border-color 0.15s ease'
                     }}
                     onClick={() => {
-                      window.open(`https://nepalstock.com.np/company/detail/${sym}`, '_blank');
+                      openExternalUrl(`https://nepalstock.com.np/company/detail/${sym}`);
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -541,7 +542,7 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
                 cursor: a.url ? 'pointer' : 'default'
               }}
               onClick={() => {
-                if (a.url) window.open(a.url, '_blank');
+                if (a.url) openExternalUrl(a.url);
               }}
             >
               <div style={{

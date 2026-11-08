@@ -48,6 +48,7 @@ import {
   deleteWatchlistAlertConfig
 } from '../utils/watchlistAlerts';
 import DataQualityBanner, { RiskDisclaimer } from './DataQualityBanner'; // A1+A2
+import { openExternalUrl } from '../utils/externalLinks';
 import { computeLiveSectorMedians } from '../utils/liveSectorMedians';
 import { classifySector } from '../utils/fundamentals';
 import { evaluateOpenSignals, getSignalStats } from '../services/signalTracker';
@@ -3165,7 +3166,7 @@ function Dashboard({
                   <div
                     key={`news_${copyIndex}_${item.id || item.title}`}
                     onClick={() => {
-                      if (item.url) window.open(item.url, '_blank');
+                      if (item.url) openExternalUrl(item.url);
                       else setActiveTab('services');
                     }}
                     style={{

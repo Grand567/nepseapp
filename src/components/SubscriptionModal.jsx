@@ -28,6 +28,7 @@ import {
 import { useSubscription } from '../context/SubscriptionContext';
 import { PRO_PLANS } from '../utils/subscription';
 import { generateLicenseKey, cleanDeviceId, formatDeviceId } from '../utils/licenseEngine';
+import { openExternalUrl } from '../utils/externalLinks';
 
 export default function SubscriptionModal() {
   const {
@@ -136,7 +137,7 @@ export default function SubscriptionModal() {
   const handleShareDeviceIdWhatsApp = () => {
     const text = `Hi Rexsh, I would like to activate Drabyashree Pro for my device: ${deviceId}`;
     const url = `https://wa.me/9779841576936?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+    openExternalUrl(url);
   };
 
   const handleUnlockDev = (e) => {

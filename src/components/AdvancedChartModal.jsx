@@ -4,6 +4,7 @@ import { useEffect, useCallback } from 'react';
 import ShareHubChart from './ShareHubChart';
 import { StockCandlestickChart } from './charts/StockCandlestickChart';
 import { useBackHandler } from '../context/NavigationContext';
+import { openExternalUrl } from '../utils/externalLinks';
 
 const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
@@ -228,7 +229,7 @@ export default function AdvancedChartModal({
           <button
             type="button"
             onClick={() => {
-              window.open(`https://nepsealpha.com/trading/chart?symbol=${encodeURIComponent(cleanSymbol)}`, '_blank', 'noopener,noreferrer');
+              openExternalUrl(`https://nepsealpha.com/trading/chart?symbol=${encodeURIComponent(cleanSymbol)}`);
             }}
             style={{
               display: 'flex',
