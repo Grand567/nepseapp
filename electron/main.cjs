@@ -87,6 +87,31 @@ if (!gotTheLock) {
       return { action: 'deny' };
     });
 
+    // BUG-089: Block in-window navigation to external URLs and open them in the system browser
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+      const isDevOrigin = isDev && (url.startsWith('http://localhost:3000') || url.startsWith('http://127.0.0.1:3000'));
+      const isFileOrigin = !isDev && url.startsWith('file://');
+      if (isDevOrigin || isFileOrigin) {
+        return; // Allow internal app shell navigation
+      }
+
+      event.preventDefault();
+      if (url.startsWith('http:') || url.startsWith('https:')) {
+        shell.openExternal(url);
+      }
+    });
+
+    mainWindow.webContents.on('will-redirect', (event, url) => {
+      const isDevOrigin = isDev && (url.startsWith('http://localhost:3000') || url.startsWith('http://127.0.0.1:3000'));
+      const isFileOrigin = !isDev && url.startsWith('file://');
+      if (!isDevOrigin && !isFileOrigin) {
+        event.preventDefault();
+        if (url.startsWith('http:') || url.startsWith('https:')) {
+          shell.openExternal(url);
+        }
+      }
+    });
+
     mainWindow.on('closed', () => {
       mainWindow = null;
     });
