@@ -2584,19 +2584,19 @@ function StockBrokerAnalysisTabInner({
             <div style={{ padding: 10, borderRadius: 12, background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
               <div style={{ fontSize: 11, color: '#c084fc', fontWeight: 700 }}>Market VWAP</div>
               <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {safeNum(activeBrokerData?.vwap || (activeBrokerData?.totalAmount && activeBrokerData?.totalVolume ? +(activeBrokerData.totalAmount / activeBrokerData.totalVolume).toFixed(2) : summaryTotals.weightedAvgBuy)).toFixed(2)}
+                Rs. {safeNum(activeBrokerData?.vwap || (activeBrokerData?.totalAmount && activeBrokerData?.totalVolume ? +(activeBrokerData.totalAmount / activeBrokerData.totalVolume).toFixed(2) : brokerHoldingTotals?.weightedAvgBuy)).toFixed(2)}
               </div>
             </div>
             <div style={{ padding: 10, borderRadius: 12, background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
               <div style={{ fontSize: 11, color: '#60a5fa', fontWeight: 700 }}>Weighted Avg Buy</div>
               <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                {summaryTotals.weightedAvgBuy > 0 ? `Rs. ${summaryTotals.weightedAvgBuy.toFixed(2)}` : '—'}
+                {safeNum(brokerHoldingTotals?.weightedAvgBuy) > 0 ? `Rs. ${safeNum(brokerHoldingTotals.weightedAvgBuy).toFixed(2)}` : '—'}
               </div>
             </div>
             <div style={{ padding: 10, borderRadius: 12, background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.2)' }}>
               <div style={{ fontSize: 11, color: '#fb7185', fontWeight: 700 }}>Weighted Avg Sell</div>
               <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                {summaryTotals.weightedAvgSell > 0 ? `Rs. ${summaryTotals.weightedAvgSell.toFixed(2)}` : '—'}
+                {safeNum(brokerHoldingTotals?.weightedAvgSell) > 0 ? `Rs. ${safeNum(brokerHoldingTotals.weightedAvgSell).toFixed(2)}` : '—'}
               </div>
             </div>
             <div style={{ padding: 10, borderRadius: 12, background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
