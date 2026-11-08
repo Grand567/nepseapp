@@ -13,7 +13,7 @@
  */
 
 import { Capacitor, CapacitorHttp, CapacitorCookies } from '@capacitor/core';
-import { getProxyBase } from '../utils/liveData';
+import { getProxyBase } from '../utils/liveData.js';
 
 // ─── Platform Detection ────────────────────────────────────────────────────
 export const isNativeMobile = Capacitor.isNativePlatform();
@@ -1687,7 +1687,21 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10,
       return { success: false, message: 'No registered C-ASBA bank account found on CDSC for this DEMAT account.' };
     }
 
-    const primaryBank = banks[0];
+    // Support bank selection per profile or IPO config, falling back cleanly to primary bank
+    const targetBankId = account.bankId || account.casbaBankId || account.selectedBankId || companyObj?.bankId;
+    let selectedBank = null;
+    if (targetBankId) {
+      selectedBank = banks.find(b => String(b.id) === String(targetBankId) || String(b.bankId) === String(targetBankId));
+    }
+    if (!selectedBank && account.bankName) {
+      const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      selectedBank = banks.find(b => {
+        const bName = norm(b.name || b.bankName || '');
+        const aName = norm(account.bankName);
+        return bName && aName && (bName.includes(aName) || aName.includes(bName));
+      });
+    }
+    const primaryBank = selectedBank || banks[0];
     const bankId = primaryBank.id;
 
     // 5. Fetch customer account details for this bank
@@ -1726,10 +1740,14 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10,
     } catch {}
 
     // Pre-flight C-ASBA payload safety validation
+    const resolvedMaxUnits = Number(companyObj?.maxKitta || companyObj?.maxUnits || companyObj?.maxUnitsAllowed || 10000);
+    const resolvedMinUnits = Number(companyObj?.minKitta || companyObj?.minUnits || 10);
     const valResult = validateCasbaApplicationPayload({
       boid: String(account.boid || auth.boid || '').trim(),
       dpId: String(account.dpCode || account.dpId || '').trim(),
       appliedKitta: Number(appliedKitta),
+      minUnits: resolvedMinUnits,
+      maxUnits: Math.max(resolvedMaxUnits, 10000),
       crnNumber: crnNumber,
       accountNumber: String(customer.accountNumber || '').trim(),
       bankId: bankId,
@@ -2103,7 +2121,7 @@ export function validateCasbaApplicationPayload({
   dpId,
   appliedKitta,
   minUnits = 10,
-  maxUnits = 5000,
+  maxUnits = 10000,
   crnNumber,
   accountNumber,
   bankId,
