@@ -548,7 +548,9 @@ export default function PredictorHub({
         const target1 = clampToDailyCircuitBand(rawT1, prevIndexClose, 15.0);
         const target2 = clampToDailyCircuitBand(rawT2, prevIndexClose, 15.0);
         const stopFloor = clampToDailyCircuitBand(rawStop, prevIndexClose, 15.0);
-        const rrr = +((atr * 1.4) / Math.max(1, atr * 1.1)).toFixed(2);
+        const rewardDist = Math.abs(target1 - nepseIdx);
+        const riskDist = Math.max(0.01, Math.abs(nepseIdx - stopFloor));
+        const rrr = +(rewardDist / riskDist).toFixed(2);
 
         const baselineVolPct = nepseIdx > 0 ? (atr / nepseIdx) * 100 : 1.2;
         const expectedMeanPct = +(rawScore * baselineVolPct * 1.5).toFixed(2);
@@ -655,8 +657,8 @@ export default function PredictorHub({
           },
           model_version: 'quant-v2.2-institutional',
           explanation: dir === 'up'
-            ? `NEPSE (Rs. ${nepseIdx.toFixed(1)}) displays bullish bias driven by favorable sector breadth (${advances} advances vs ${declines} declines). Tactical upside target set at Rs. ${target1} (extension Rs. ${target2}, bounded by 15% daily ceiling Rs. ${circuitCeiling}) with trailing stop floor at Rs. ${stopFloor} (RRR ${rrr}:1).`
-            : `NEPSE (Rs. ${nepseIdx.toFixed(1)}) indicates consolidation near benchmark levels. Support floor: Rs. ${stopFloor}, Resistance ceiling: Rs. ${target1}.`
+            ? `NEPSE (${nepseIdx.toFixed(1)} pts) displays bullish bias driven by favorable sector breadth (${advances} advances vs ${declines} declines). Tactical upside target set at ${target1} pts (extension ${target2} pts, bounded by 15% daily ceiling ${circuitCeiling} pts) with trailing stop floor at ${stopFloor} pts (RRR ${rrr}:1).`
+            : `NEPSE (${nepseIdx.toFixed(1)} pts) indicates consolidation near benchmark levels. Support floor: ${stopFloor} pts, Resistance ceiling: ${target1} pts.`
         });
 
         // Load authentic verified prediction history if recorded; otherwise return explicit insufficient_history
@@ -1627,7 +1629,7 @@ export default function PredictorHub({
                   }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Target 1 (Primary)</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: indexPrediction.direction === 'down' ? 'var(--bear)' : 'var(--bull)' }}>
-                      Rs. {indexPrediction.targets.target1}
+                      {indexPrediction.targets.target1} pts
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Immediate swing objective</div>
                   </div>
@@ -1640,7 +1642,7 @@ export default function PredictorHub({
                   }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Target 2 (Extension)</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: indexPrediction.direction === 'down' ? 'var(--bear)' : 'var(--bull)' }}>
-                      Rs. {indexPrediction.targets.target2}
+                      {indexPrediction.targets.target2} pts
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Trend expansion target</div>
                   </div>
@@ -1655,7 +1657,7 @@ export default function PredictorHub({
                       {indexPrediction.direction === 'down' ? 'Invalidation Ceiling' : 'Stop Floor'}
                     </div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--bear)' }}>
-                      Rs. {indexPrediction.targets.stopFloor}
+                      {indexPrediction.targets.stopFloor} pts
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Structural risk boundary</div>
                   </div>
@@ -1737,7 +1739,7 @@ export default function PredictorHub({
                   }}>
                     <ShieldAlert style={{ width: 18, height: 18, flexShrink: 0 }} />
                     <span>
-                      <strong>Hard Trend Ceiling Active:</strong> NEPSE is below its 50-day EMA (Rs. {Number(indexPrediction.trend_structure.ema_50 || 0).toFixed(1)}). The algorithm classifies all green moves as counter-trend rallies facing institutional resistance.
+                      <strong>Hard Trend Ceiling Active:</strong> NEPSE is below its 50-day EMA ({Number(indexPrediction.trend_structure.ema_50 || 0).toFixed(1)} pts). The algorithm classifies all green moves as counter-trend rallies facing institutional resistance.
                     </span>
                   </div>
                 )}
@@ -1755,7 +1757,7 @@ export default function PredictorHub({
                     <div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>20 EMA (Short-term)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
-                        {indexPrediction.trend_structure.ema_20 != null ? `Rs. ${Number(indexPrediction.trend_structure.ema_20).toFixed(1)}` : 'N/A (<20d)'}
+                        {indexPrediction.trend_structure.ema_20 != null ? `${Number(indexPrediction.trend_structure.ema_20).toFixed(1)} pts` : 'N/A (<20d)'}
                       </div>
                     </div>
                     <span style={{
@@ -1782,7 +1784,7 @@ export default function PredictorHub({
                     <div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>50 EMA (Structural)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
-                        {indexPrediction.trend_structure.ema_50 != null ? `Rs. ${Number(indexPrediction.trend_structure.ema_50).toFixed(1)}` : 'N/A (<50d)'}
+                        {indexPrediction.trend_structure.ema_50 != null ? `${Number(indexPrediction.trend_structure.ema_50).toFixed(1)} pts` : 'N/A (<50d)'}
                       </div>
                     </div>
                     <span style={{
@@ -1809,7 +1811,7 @@ export default function PredictorHub({
                     <div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>200 EMA (Macro)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
-                        {indexPrediction.trend_structure.ema_200 != null ? `Rs. ${Number(indexPrediction.trend_structure.ema_200).toFixed(1)}` : 'N/A (<200d)'}
+                        {indexPrediction.trend_structure.ema_200 != null ? `${Number(indexPrediction.trend_structure.ema_200).toFixed(1)} pts` : 'N/A (<200d)'}
                       </div>
                     </div>
                     <span style={{
