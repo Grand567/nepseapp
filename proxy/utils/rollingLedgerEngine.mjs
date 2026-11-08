@@ -61,11 +61,8 @@ export function syncLedgerToPublicBundle() {
   }
   const filesToSync = [
     { src: HISTORICAL_5D_JSON, dst: path.join(publicDataDir, 'historical_5days_ledger.json') },
-    { src: HISTORICAL_5D_GZ, dst: path.join(publicDataDir, 'historical_5days_ledger.json.gz') },
     { src: HISTORICAL_4D_JSON, dst: path.join(publicDataDir, 'historical_4days_ledger.json') },
-    { src: HISTORICAL_4D_GZ, dst: path.join(publicDataDir, 'historical_4days_ledger.json.gz') },
-    { src: LIVE_TODAY_JSON, dst: path.join(publicDataDir, 'live_today_session.json') },
-    { src: LIVE_TODAY_GZ, dst: path.join(publicDataDir, 'live_today_session.json.gz') }
+    { src: LIVE_TODAY_JSON, dst: path.join(publicDataDir, 'live_today_session.json') }
   ];
   for (const f of filesToSync) {
     try {

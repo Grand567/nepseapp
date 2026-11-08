@@ -709,7 +709,8 @@ export function syncSubfilesToPublicBundle() {
 
   // Copy subfiles & index
   if (fs.existsSync(SUBFILES_DIR)) {
-    const files = fs.readdirSync(SUBFILES_DIR);
+    // Copy subfiles & index (exclude .gz files to prevent Android AAPT duplicate resource errors)
+    const files = fs.readdirSync(SUBFILES_DIR).filter(f => !f.endsWith('.gz'));
     for (const file of files) {
       const src = path.join(SUBFILES_DIR, file);
       const dest = path.join(publicSubfilesDir, file);
