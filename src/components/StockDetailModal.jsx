@@ -3017,11 +3017,20 @@ export default function StockDetailModal({
   }, []);
 
   const calcResult = useMemo(() => {
-    const qty = parseFloat(qtyInput) || 0;
-    const price = parseFloat(priceInput) || 0;
-    const wacc = parseFloat(waccInput) || 0;
+    const qty = Math.max(0, parseFloat(qtyInput) || 0);
+    const price = Math.max(0, parseFloat(priceInput) || 0);
+    const wacc = Math.max(0, parseFloat(waccInput) || 0);
     if (!qty || !price) return null;
-    if (calcMode === 'buy') return calculateBuyDetails(qty, price);
+    if (calcMode === 'buy') {
+      const res = calculateBuyDetails(qty, price, true);
+      const dp = res.dpFee ?? 25;
+      const expectedTotal = Number(((res.shareValue || res.grossAmount || (qty * price)) + (res.commission || 0) + (res.sebonFee || 0) + dp).toFixed(2));
+      return {
+        ...res,
+        dpFee: dp,
+        totalAmount: expectedTotal
+      };
+    }
     if (calcMode === 'sell') {
       const rt = computeNepseRoundTripTrade({
         qty,
@@ -8821,8 +8830,14 @@ export default function StockDetailModal({
                   <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Quantity (Shares)</label>
                   <input
                     type="number"
+                    min="0"
                     value={qtyInput}
-                    onChange={e => setQtyInput(e.target.value)}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === '') { setQtyInput(''); return; }
+                      const num = parseFloat(val);
+                      setQtyInput(isNaN(num) ? '' : String(Math.max(0, num)));
+                    }}
                     style={{ width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#fff', fontSize: 13, marginTop: 4 }}
                   />
                 </div>
@@ -8930,7 +8945,7 @@ export default function StockDetailModal({
                 <div style={{ padding: 12, background: 'rgba(255,255,255,0.03)', borderRadius: 10, fontSize: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                     <span style={{ color: 'var(--text-muted)' }}>Gross Turnover:</span>
-                    <span style={{ fontWeight: 800, color: '#ffffff' }}>Rs. {fmt(calcResult.shareValue || calcResult.sellValue || calcResult.shareAmount || calcResult.grossAmount || (parseFloat(qtyInput || 0) * parseFloat(priceInput || 0)))}</span>
+                    <span style={{ fontWeight: 800, color: '#ffffff' }}>Rs. {fmt(calcResult.shareValue || calcResult.sellValue || calcResult.shareAmount || calcResult.grossAmount || (Math.max(0, parseFloat(qtyInput || 0)) * Math.max(0, parseFloat(priceInput || 0))))}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                     <span style={{ color: 'var(--text-muted)' }}>Broker Commission ({calcResult.commRatePct ? `${calcResult.commRatePct}%` : 'Tiered'}):</span>
