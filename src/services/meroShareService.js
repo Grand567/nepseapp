@@ -1147,26 +1147,25 @@ export async function fetchIpoCompanyList(forceRefresh = false, profile = null) 
     } catch (_) {}
   }
 
-  // 3. Fallback: Always ensure Beni Hydropower Project Limited is present and pinned to top
-  const beniFound = resultCompanies.some(c => (c.scrip && c.scrip.toUpperCase() === 'BENI') || (c.name && c.name.toLowerCase().includes('beni')));
-  if (!beniFound) {
-    resultCompanies.unshift({
+  // 3. Fallback: If no companies loaded (e.g. offline), add historical fallback entry
+  if (resultCompanies.length === 0) {
+    addCompany({
       id: '501',
       companyShareId: 501,
-      name: 'Beni Hydropower Project Limited (Result Published)',
+      name: 'Beni Hydropower Project Limited',
       scrip: 'BENI',
       status: 'Alloted',
       type: 'IPO (Result Published)',
       issueManager: 'NMB Capital Limited',
       nmbclId: 41,
-      isTodayResult: true
+      isTodayResult: false
     });
   }
 
-  // Sort so today's result is at index 0, followed by newest
+  // Sort so genuine today's result from live feed is at index 0, followed by newest company ID
   resultCompanies.sort((a, b) => {
-    if (a.isTodayResult) return -1;
-    if (b.isTodayResult) return 1;
+    if (a.isTodayResult && !b.isTodayResult) return -1;
+    if (b.isTodayResult && !a.isTodayResult) return 1;
     return (Number(b.companyShareId || b.id) || 0) - (Number(a.companyShareId || a.id) || 0);
   });
 
