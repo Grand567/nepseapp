@@ -102,6 +102,8 @@ const CATALYST_MAP = new Map([
 ]);
 
 export const DEFAULT_MACRO_DATA = {
+  isOfflineFallback: true,
+  lastUpdated: '2026-11-08 15:00 NPT (Reference Baseline)',
   m2_growth_pct: 12.8,
   interest_rate_pct: 5.0,
   cpi_inflation_pct: 4.4,
@@ -112,10 +114,12 @@ export const DEFAULT_MACRO_DATA = {
 export const DEFAULT_SENTIMENT_NEWS = [
   {
     id: 'nrb-monetary-policy-accommodative',
+    isOfflineFallback: true,
+    lastUpdated: '2026-11-08 (Sample Baseline)',
     headline: 'NRB Maintains Accommodative Policy Stance; Interbank Rates Hold Below 5.0%',
     source: 'Bizshala',
     category: 'Monetary Policy',
-    published_at: 'Recent Session',
+    published_at: 'Offline Sample Data (2026-11-08)',
     sentiment_score: 0.65,
     summary: 'Nepal Rastra Bank maintains lower policy corridor limits and ample banking liquidity, supporting credit flow to secondary markets.',
     related_symbols: ['NABIL', 'NICA', 'GBIME'],
@@ -123,10 +127,12 @@ export const DEFAULT_SENTIMENT_NEWS = [
   },
   {
     id: 'remittance-inflow-record-high',
+    isOfflineFallback: true,
+    lastUpdated: '2026-11-08 (Sample Baseline)',
     headline: 'Remittance Inflows Cross Record Highs, Bolstering Gross Foreign Exchange Reserves',
     source: 'Sharesansar',
     category: 'Macroeconomics',
-    published_at: 'Recent Session',
+    published_at: 'Offline Sample Data (2026-11-08)',
     sentiment_score: 0.72,
     summary: 'Sustained remittance inflows provide robust current account surplus and liquidity injection across the domestic financial system.',
     related_symbols: ['CIT', 'HRL'],
@@ -134,10 +140,12 @@ export const DEFAULT_SENTIMENT_NEWS = [
   },
   {
     id: 'sebon-expands-margin-lending',
+    isOfflineFallback: true,
+    lastUpdated: '2026-11-08 (Sample Baseline)',
     headline: 'SEBON and NRB Review Working Capital Guidelines to Ease Market Liquidity',
     source: 'Merolagani',
     category: 'Regulations',
-    published_at: 'Recent Session',
+    published_at: 'Offline Sample Data (2026-11-08)',
     sentiment_score: 0.45,
     summary: 'Financial regulators evaluate adjustments to retail margin lending and risk-weighted assets to improve secondary market depth.',
     related_symbols: ['SHIVM', 'HDL'],
@@ -145,10 +153,12 @@ export const DEFAULT_SENTIMENT_NEWS = [
   },
   {
     id: 'commercial-banks-base-rate-drop',
+    isOfflineFallback: true,
+    lastUpdated: '2026-11-08 (Sample Baseline)',
     headline: 'Commercial Banks Reduce Base Lending Rates to Multi-Year Lows',
     source: 'Aarthik Abhiyan',
     category: 'Banking',
-    published_at: 'Recent Session',
+    published_at: 'Offline Sample Data (2026-11-08)',
     sentiment_score: 0.58,
     summary: 'Declining deposit interest rates lead to cheaper margin financing rates, encouraging equity allocation among institutional participants.',
     related_symbols: ['KBL', 'JBBL'],
@@ -3221,10 +3231,15 @@ export default function PredictorHub({
                 flexDirection: 'column',
                 gap: 14
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 7 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                     <Landmark style={{ width: 16, height: 16, color: 'var(--primary-light)' }} />
-                    Nepal Rastra Bank (NRB) Macro Pulse
+                    <span>Nepal Rastra Bank (NRB) Macro Pulse</span>
+                    {macroData.isOfflineFallback && (
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                        Offline Baseline ({macroData.lastUpdated || 'Offline Data'})
+                      </span>
+                    )}
                   </div>
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Official Gazette Releases</span>
                 </div>
@@ -3274,9 +3289,14 @@ export default function PredictorHub({
               flexDirection: 'column',
               gap: 14
             }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 7 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                 <Globe style={{ width: 16, height: 16, color: 'var(--primary-light)' }} />
-                Scraped News Headlines & AI Sentiment Scoring
+                <span>Scraped News Headlines & AI Sentiment Scoring</span>
+                {Array.isArray(sentimentNews) && sentimentNews[0]?.isOfflineFallback && (
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                    Offline Sample Data (Last Updated: 2026-11-08)
+                  </span>
+                )}
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

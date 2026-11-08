@@ -352,10 +352,15 @@ export function synthesizeGuruMarketOutlook(marketData, topGainers = [], topLose
     ? topLosers.slice(0, 5).map(l => `${l.symbol || l.scrip} (${Number(l.percentageChange || l.pChange || 0).toFixed(1)}%)`)
     : ['NICA (-1.2%)', 'GBIME (-0.8%)'];
 
+  const nowTime = new Date().toLocaleTimeString('en-NP', { hour: '2-digit', minute: '2-digit' });
+  const nowDate = new Date().toLocaleDateString('en-NP');
+
   return {
+    isOfflineFallback: true,
+    lastUpdated: `${nowDate} ${nowTime} NPT (Offline Quant Synthesis)`,
     verdict,
     marketSentiment: sentiment,
-    actionZoneBadge: isBullish ? 'BULLISH BIAS' : isBearish ? 'DEFENSIVE BIAS' : 'NEUTRAL BIAS',
+    actionZoneBadge: `OFFLINE QUANT SYNTHESIS (${isBullish ? 'BULLISH' : isBearish ? 'DEFENSIVE' : 'NEUTRAL'})`,
     confidence,
     scores: {
       technical: isBullish ? 76 : isBearish ? 48 : 62,
@@ -926,6 +931,19 @@ const GuruResponse = ({ data, type, onDeployPaperTrade }) => {
 
         {/* Multi-pillar rating vector */}
         <ThreePillarScores scores={scores} />
+
+        {/* Offline Fallback Clarification Banner */}
+        {parsed.isOfflineFallback && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs text-amber-300 flex flex-wrap items-center justify-between gap-2">
+            <span className="font-bold flex items-center gap-1.5">
+              <span>⚠️</span>
+              <span>Offline Quant Synthesis (Offline / Sample Data — Not Live Market Stream)</span>
+            </span>
+            <span className="text-[11px] font-mono text-amber-400 font-semibold">
+              Last Updated: {parsed.lastUpdated}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 2. Wyckoff & Accumulation / Distribution Matrix */}
@@ -2370,13 +2388,24 @@ Format as plain text (not JSON) for this conversational response.`;
         <div className="flex-1 overflow-y-auto px-4 py-4 max-w-4xl mx-auto w-full space-y-4">
           {(() => {
             const currentPrices = {};
-            if (Array.isArray(marketStocks)) {
+            if (Array.isArray(marketStocks) && marketStocks.length > 0) {
               marketStocks.forEach(s => {
                 if (s?.symbol) {
                   const p = Number(s.ltp ?? s.lastTradedPrice ?? s.price ?? s.close ?? 0);
                   if (p > 0) currentPrices[s.symbol] = p;
                 }
               });
+            } else {
+              try {
+                const cached = typeof localStorage !== 'undefined' ? localStorage.getItem('nepse_live_prices') : null;
+                if (cached) {
+                  const parsed = JSON.parse(cached);
+                  Object.entries(parsed).forEach(([sym, p]) => {
+                    const num = Number(p);
+                    if (num > 0) currentPrices[sym] = num;
+                  });
+                }
+              } catch (_) {}
             }
             const summary = calculateSandboxSummary(paperState, currentPrices);
             return (
