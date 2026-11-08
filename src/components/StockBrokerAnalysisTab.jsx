@@ -324,6 +324,15 @@ function StockBrokerAnalysisTabInner({
           timeframeDays: 1,
           totalVolume: dayFromInternal.buyVol || dayFromInternal.totalVolume || 0,
           totalAmount: dayFromInternal.turnover || dayFromInternal.amount || 0,
+          vwap: dayFromInternal.vwap || 0,
+          adSignal: dayFromInternal.adSignal || 'Neutral',
+          adStrength: dayFromInternal.adStrength || '',
+          bcr3BuyPct: dayFromInternal.bcr3BuyPct || 0,
+          bcr3SellPct: dayFromInternal.scr3SellPct || 0,
+          leadAccumulator: dayFromInternal.topAccumulator,
+          leadDistributor: dayFromInternal.topDistributor,
+          topAccumulator: dayFromInternal.topAccumulator,
+          topDistributor: dayFromInternal.topDistributor,
           brokers: dayFromInternal.brokers,
           topBuyers: dayFromInternal.brokers.filter(b => b.buyQty > 0).sort((a, b) => b.buyQty - a.buyQty),
           topSellers: dayFromInternal.brokers.filter(b => b.sellQty > 0).sort((a, b) => b.sellQty - a.sellQty),
@@ -341,6 +350,15 @@ function StockBrokerAnalysisTabInner({
           timeframeDays: 1,
           totalVolume: dayFromProp.buyVol || dayFromProp.totalVolume || 0,
           totalAmount: dayFromProp.turnover || dayFromProp.amount || 0,
+          vwap: dayFromProp.vwap || 0,
+          adSignal: dayFromProp.adSignal || 'Neutral',
+          adStrength: dayFromProp.adStrength || '',
+          bcr3BuyPct: dayFromProp.bcr3BuyPct || 0,
+          bcr3SellPct: dayFromProp.scr3SellPct || 0,
+          leadAccumulator: dayFromProp.topAccumulator,
+          leadDistributor: dayFromProp.topDistributor,
+          topAccumulator: dayFromProp.topAccumulator,
+          topDistributor: dayFromProp.topDistributor,
           brokers: dayFromProp.brokers,
           topBuyers: dayFromProp.brokers.filter(b => b.buyQty > 0).sort((a, b) => b.buyQty - a.buyQty),
           topSellers: dayFromProp.brokers.filter(b => b.sellQty > 0).sort((a, b) => b.sellQty - a.sellQty),
@@ -348,6 +366,34 @@ function StockBrokerAnalysisTabInner({
           topDistributors: dayFromProp.brokers.filter(b => (b.netQty || (b.buyQty - b.sellQty)) < 0).sort((a, b) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - b.sellQty))),
         };
       }
+      const dayFromMulti = multiDayDailyFlow?.find(df => df.date === effectiveDate);
+      if (dayFromMulti && Array.isArray(dayFromMulti.brokers) && dayFromMulti.brokers.length > 0) {
+        return {
+          symbol,
+          businessDate: effectiveDate,
+          date: effectiveDate,
+          tradingDays: 1,
+          timeframeDays: 1,
+          totalVolume: dayFromMulti.buyVol || dayFromMulti.totalVolume || 0,
+          totalAmount: dayFromMulti.turnover || dayFromMulti.amount || 0,
+          vwap: dayFromMulti.vwap || 0,
+          adSignal: dayFromMulti.adSignal || 'Neutral',
+          adStrength: dayFromMulti.adStrength || '',
+          bcr3BuyPct: dayFromMulti.bcr3BuyPct || 0,
+          bcr3SellPct: dayFromMulti.scr3SellPct || 0,
+          leadAccumulator: dayFromMulti.topAccumulator,
+          leadDistributor: dayFromMulti.topDistributor,
+          topAccumulator: dayFromMulti.topAccumulator,
+          topDistributor: dayFromMulti.topDistributor,
+          brokers: dayFromMulti.brokers,
+          topBuyers: dayFromMulti.brokers.filter(b => b.buyQty > 0).sort((a, b) => b.buyQty - a.buyQty),
+          topSellers: dayFromMulti.brokers.filter(b => b.sellQty > 0).sort((a, b) => b.sellQty - a.sellQty),
+          topAccumulators: dayFromMulti.brokers.filter(b => (b.netQty || (b.buyQty - b.sellQty)) > 0).sort((a, b) => (b.netQty || (b.buyQty - b.sellQty)) - (a.netQty || (a.buyQty - a.sellQty))),
+          topDistributors: dayFromMulti.brokers.filter(b => (b.netQty || (b.buyQty - b.sellQty)) < 0).sort((a, b) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - b.sellQty))),
+        };
+      }
+      // When an explicit date is selected, NEVER return another date's data!
+      return null;
     }
 
     if (internalBrokerData && (
@@ -357,7 +403,7 @@ function StockBrokerAnalysisTabInner({
       return internalBrokerData;
     }
     return brokerData || null;
-  }, [effectiveDate, internalBrokerData, brokerData]);
+  }, [effectiveDate, internalBrokerData, brokerData, multiDayDailyFlow, symbol]);
 
   const isTabLoading = Boolean(loading || internalLoading);
 
@@ -391,7 +437,9 @@ function StockBrokerAnalysisTabInner({
     setInternalBrokerData(null);
     if (onDateChange) {
       onDateChange(dt);
-    } else {
+    }
+    // Always trigger direct offline subfile / API fetch so activeBrokerData resolves in 0ms!
+    if (dt && symbol) {
       setInternalLoading(true);
       fetchRealBrokerAnalysis(symbol, 1, { date: dt, refresh: false })
         .then(res => { if (res) setInternalBrokerData(res); })
@@ -2690,6 +2738,7 @@ function StockBrokerAnalysisTabInner({
                       <th style={{ padding: '8px 6px', textAlign: 'right' }}>SESSION VWAP</th>
                       <th style={{ padding: '8px 6px', textAlign: 'left' }}>TOP ACCUMULATOR</th>
                       <th style={{ padding: '8px 6px', textAlign: 'left' }}>TOP DISTRIBUTOR</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'center' }}>A/D SIGNAL</th>
                       <th style={{ padding: '8px 6px', textAlign: 'right' }}>NET INST. FLOW</th>
                     </tr>
                   </thead>
@@ -2740,8 +2789,39 @@ function StockBrokerAnalysisTabInner({
                               return distId ? `#${distId} (-${formatCompactQty(Math.abs(distVal))})` : '—';
                             })()}
                           </td>
-                          <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: net >= 0 ? '#10b981' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                            {net >= 0 ? '+' : ''}{net.toLocaleString()}
+                          <td style={{ padding: '8px 6px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            {(() => {
+                              const bcr = Number(df.bcr3BuyPct || 0);
+                              const scr = Number(df.scr3SellPct || df.bcr3SellPct || 0);
+                              const sig = df.adSignal || (bcr > scr + 5 ? 'Accumulation' : (scr > bcr + 5 ? 'Distribution' : 'Neutral'));
+                              const pct = sig === 'Accumulation' ? bcr : sig === 'Distribution' ? scr : Math.max(bcr, scr);
+                              const isAcc = sig === 'Accumulation';
+                              const isDist = sig === 'Distribution';
+                              const bg = isAcc ? 'rgba(16, 185, 129, 0.15)' : isDist ? 'rgba(244, 63, 94, 0.15)' : 'rgba(245, 158, 11, 0.15)';
+                              const border = isAcc ? 'rgba(16, 185, 129, 0.3)' : isDist ? 'rgba(244, 63, 94, 0.3)' : 'rgba(245, 158, 11, 0.3)';
+                              const textCol = isAcc ? '#10b981' : isDist ? '#f43f5e' : '#fbbf24';
+                              return (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  padding: '2px 8px',
+                                  borderRadius: 9999,
+                                  background: bg,
+                                  border: `1px solid ${border}`,
+                                  color: textCol,
+                                  fontSize: 11,
+                                  fontWeight: 800
+                                }}>
+                                  <span>{isAcc ? '🟢' : isDist ? '🔴' : '🟡'}</span>
+                                  <span>{sig}</span>
+                                  {pct > 0 && <span style={{ fontFamily: 'var(--font-mono)', opacity: 0.9 }}>({pct}%)</span>}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: net > 0 ? '#10b981' : net < 0 ? '#f43f5e' : '#94a3b8', fontFamily: 'var(--font-mono)' }}>
+                            {net > 0 ? `+${net.toLocaleString()} sh` : net < 0 ? `${net.toLocaleString()} sh` : '0 sh'}
                           </td>
                         </tr>
                       );

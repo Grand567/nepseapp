@@ -53,6 +53,9 @@ function todayKey() {
 }
 
 
+// Universal dynamic importer for local ledger manager (compatible with Vite bundler, browser, and Node ESM)
+const getLocalLedger = async () => import('./localLedgerManager.ts').catch(() => import('./localLedgerManager'));
+
 // In-memory + localStorage cache
 let MEM_STOCKS = null;
 let MEM_SUMMARY = null;
@@ -679,7 +682,7 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
   // 0. 0ms Fast Path: Check local File B ledger / File A static analytics before waiting for network timeouts
   if (!forceRefresh) {
     try {
-      const { getScripFromLedger, getTodayStaticAnalyticsDirect } = await import('./localLedgerManager');
+      const { getScripFromLedger, getTodayStaticAnalyticsDirect } = await getLocalLedger();
       const scripRecord = typeof getScripFromLedger === 'function' ? getScripFromLedger(sym) : null;
       const staticData = typeof getTodayStaticAnalyticsDirect === 'function' ? await getTodayStaticAnalyticsDirect(sym) : null;
       const f = scripRecord?.fundamentals || staticData?.long_term_static?.audited_quarterly_fundamentals;
@@ -1769,7 +1772,7 @@ export async function fetchPriceHistory(symbol, days = 365) {
   // 1B. 0ms Fast Path: Check local File B 5-day ledger first (instant offline render)
   if (!isNepseOrIndex) {
     try {
-      const { getScripFromLedger } = await import('./localLedgerManager');
+      const { getScripFromLedger } = await getLocalLedger();
       const scrip = typeof getScripFromLedger === 'function' ? getScripFromLedger(symKey) : null;
       const h5 = scrip?.history_5d || scrip?.history_4d;
       if (Array.isArray(h5) && h5.length > 0) {
@@ -2979,6 +2982,19 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
 
   const mkt = getDetailedMarketStatus();
   const todayIso = formatNptDateIso(new Date());
+
+  // Tier 0 Fast Path: 0ms Offline Subfile synthesis for explicit historical dates (e.g. 2026-11-06, 2026-11-05, 2026-11-04)
+  if (sym && sym !== 'ALL' && date && !refresh && (!mkt.isOpen || date !== todayIso) && days === 1 && !fromDate && !toDate) {
+    try {
+      const { getHistoricalSubfileFloorsheet } = await getLocalLedger();
+      const sfFloorsheet = await getHistoricalSubfileFloorsheet(sym, { date, page, size, buyer, seller });
+      if (sfFloorsheet && sfFloorsheet.rows?.length > 0) {
+        sfFloorsheet.availableDates = [date];
+        return sfFloorsheet;
+      }
+    } catch (_) {}
+  }
+
   const availableTradingDates = await fetchAvailableTradingDates().catch(() => []);
   const uniqueDates = date
     ? [date]
@@ -3050,7 +3066,7 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
     // Offline Subfile Fast Path for explicit historical dates (e.g. 2026-11-05, 2026-11-04)
     if (date && !mkt.isOpen) {
       try {
-        const { getHistoricalSubfileFloorsheet } = await import('./localLedgerManager');
+        const { getHistoricalSubfileFloorsheet } = await getLocalLedger();
         const sfFloorsheet = await getHistoricalSubfileFloorsheet(sym, { date: targetDate, page, size, buyer, seller });
         if (sfFloorsheet && sfFloorsheet.rows?.length > 0) {
           sfFloorsheet.availableDates = uniqueDates;
@@ -3119,7 +3135,7 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
   // Try offline subfiles before returning empty
   if (sym && sym !== 'ALL' && !mkt.isOpen) {
     try {
-      const { getHistoricalSubfileFloorsheet } = await import('./localLedgerManager');
+      const { getHistoricalSubfileFloorsheet } = await getLocalLedger();
       const sfFloorsheet = await getHistoricalSubfileFloorsheet(sym, { date: targetDate, page, size, buyer, seller });
       if (sfFloorsheet && sfFloorsheet.rows?.length > 0) {
         sfFloorsheet.availableDates = uniqueDates;
@@ -3365,7 +3381,7 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
   // Tier 0 Fast Path: 0ms Offline Subfile synthesis for 1D, 5D, or selected dates
   if (!isAllTime && !refresh && (date || numDays === 5 || numDays === 1)) {
     try {
-      const { getHistoricalSubfileBrokerAnalysis } = await import('./localLedgerManager');
+      const { getHistoricalSubfileBrokerAnalysis } = await getLocalLedger();
       const subfileBa = await getHistoricalSubfileBrokerAnalysis(sym, { days: numDays, date });
       if (subfileBa && (subfileBa.brokers?.length > 0 || subfileBa.topBuyers?.length > 0 || subfileBa.topAccumulators?.length > 0)) {
         setCachedRealBrokerAnalysis(sym, subfileBa, numDays, options);
@@ -3510,7 +3526,7 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
 
   // 0ms Offline Fallback: Synthesize authentic broker analysis from bundled historical subfiles
   try {
-    const { getHistoricalSubfileBrokerAnalysis } = await import('./localLedgerManager');
+    const { getHistoricalSubfileBrokerAnalysis } = await getLocalLedger();
     const subfileBa = await getHistoricalSubfileBrokerAnalysis(sym, { days: numDays, date });
     if (subfileBa && (subfileBa.brokers?.length > 0 || subfileBa.topBuyers?.length > 0 || subfileBa.topAccumulators?.length > 0)) {
       setCachedRealBrokerAnalysis(sym, subfileBa, numDays, options);

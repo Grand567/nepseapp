@@ -768,49 +768,69 @@ export async function getHistoricalSubfileBrokerAnalysis(
     const quote = scrip.card_1_quote;
     if (!flow) return null;
 
-    const buyers = (flow.top_5_buyers || []).map((b: any) => ({
-      broker: String(b.broker_id),
-      id: String(b.broker_id),
-      brokerId: String(b.broker_id),
-      name: `Broker #${b.broker_id}`,
-      brokerName: `Broker #${b.broker_id}`,
-      buyQty: b.buy_kitta || b.net_kitta || 0,
-      buyAmt: (b.buy_kitta || b.net_kitta || 0) * (b.buy_vwap || quote?.vwap || 0),
-      sellQty: 0,
-      sellAmt: 0,
-      netQty: b.net_kitta || b.buy_kitta || 0,
-      signedHoldQty: b.net_kitta || b.buy_kitta || 0,
-      holdQty: Math.max(0, b.net_kitta || b.buy_kitta || 0),
-      avgBuyRate: b.buy_vwap || quote?.vwap || 0,
-      avgBuyPrice: b.buy_vwap || quote?.vwap || 0,
-      avgSellRate: 0,
-      avgSellPrice: 0,
-      retentionPct: b.retention_pct || 100
-    }));
+    const buyers = (flow.top_5_buyers || []).map((b: any) => {
+      const isLead = flow.lead_accumulator && String(flow.lead_accumulator.broker_id) === String(b.broker_id);
+      const buyQty = Number(b.buy_kitta || b.net_kitta || 0);
+      const sellQty = isLead && flow.lead_accumulator.sell_kitta !== undefined
+        ? Number(flow.lead_accumulator.sell_kitta)
+        : (b.sell_kitta !== undefined ? Number(b.sell_kitta) : Math.max(0, buyQty - Number(b.net_kitta || buyQty)));
+      const netQty = Number(b.net_kitta !== undefined ? b.net_kitta : (buyQty - sellQty));
+      const vwapRate = Number(b.buy_vwap || quote?.vwap || 0);
+      return {
+        broker: String(b.broker_id),
+        id: String(b.broker_id),
+        brokerId: String(b.broker_id),
+        name: `Broker #${b.broker_id}`,
+        brokerName: `Broker #${b.broker_id}`,
+        buyQty,
+        buyAmt: buyQty * vwapRate,
+        sellQty,
+        sellAmt: sellQty * vwapRate,
+        netQty,
+        signedHoldQty: netQty,
+        holdQty: Math.max(0, netQty),
+        avgBuyRate: vwapRate,
+        avgBuyPrice: vwapRate,
+        avgSellRate: sellQty > 0 ? vwapRate : 0,
+        avgSellPrice: sellQty > 0 ? vwapRate : 0,
+        retentionPct: b.retention_pct || (buyQty > 0 ? Math.round((netQty / buyQty) * 100) : 100)
+      };
+    });
 
-    const sellers = (flow.top_5_sellers || []).map((s: any) => ({
-      broker: String(s.broker_id),
-      id: String(s.broker_id),
-      brokerId: String(s.broker_id),
-      name: `Broker #${s.broker_id}`,
-      brokerName: `Broker #${s.broker_id}`,
-      buyQty: 0,
-      buyAmt: 0,
-      sellQty: s.sell_kitta || s.net_dump_kitta || 0,
-      sellAmt: (s.sell_kitta || s.net_dump_kitta || 0) * (s.sell_vwap || quote?.vwap || 0),
-      netQty: -(s.net_dump_kitta || s.sell_kitta || 0),
-      signedHoldQty: -(s.net_dump_kitta || s.sell_kitta || 0),
-      holdQty: 0,
-      avgBuyRate: 0,
-      avgBuyPrice: 0,
-      avgSellRate: s.sell_vwap || quote?.vwap || 0,
-      avgSellPrice: s.sell_vwap || quote?.vwap || 0,
-      retentionPct: 0
-    }));
+    const sellers = (flow.top_5_sellers || []).map((s: any) => {
+      const sellQty = Number(s.sell_kitta || s.net_dump_kitta || 0);
+      const netDump = Number(s.net_dump_kitta || s.sell_kitta || 0);
+      const buyQty = s.buy_kitta !== undefined ? Number(s.buy_kitta) : Math.max(0, sellQty - netDump);
+      const vwapRate = Number(s.sell_vwap || quote?.vwap || 0);
+      return {
+        broker: String(s.broker_id),
+        id: String(s.broker_id),
+        brokerId: String(s.broker_id),
+        name: `Broker #${s.broker_id}`,
+        brokerName: `Broker #${s.broker_id}`,
+        buyQty,
+        buyAmt: buyQty * vwapRate,
+        sellQty,
+        sellAmt: sellQty * vwapRate,
+        netQty: -netDump,
+        signedHoldQty: -netDump,
+        holdQty: 0,
+        avgBuyRate: buyQty > 0 ? vwapRate : 0,
+        avgBuyPrice: buyQty > 0 ? vwapRate : 0,
+        avgSellRate: vwapRate,
+        avgSellPrice: vwapRate,
+        retentionPct: 0
+      };
+    });
 
     const topAcc = buyers[0] || null;
     const topDist = sellers[0] || null;
     const allBrokers = [...buyers, ...sellers];
+
+    const bcr3 = Number(flow.concentration?.bcr3_buy_pct || 0);
+    const scr3 = Number(flow.concentration?.scr3_sell_pct || 0);
+    const singleAdSignal = bcr3 > scr3 + 5 ? 'Accumulation' : (scr3 > bcr3 + 5 ? 'Distribution' : 'Neutral');
+    const singleAdStrength = singleAdSignal === 'Accumulation' ? `${bcr3}%` : singleAdSignal === 'Distribution' ? `${scr3}%` : `${bcr3}% / ${scr3}%`;
 
     return {
       symbol: sym,
@@ -822,9 +842,12 @@ export async function getHistoricalSubfileBrokerAnalysis(
       totalTurnover: quote?.turnover || 0,
       totalAmount: quote?.turnover || 0,
       vwap: quote?.vwap || (quote?.turnover && quote?.volume ? +(quote.turnover / quote.volume).toFixed(2) : 0),
-      bcr3BuyPct: flow.concentration?.bcr3_buy_pct || 0,
-      bcr3SellPct: flow.concentration?.scr3_sell_pct || 0,
-      adSignal: (flow.concentration?.bcr3_buy_pct || 0) > (flow.concentration?.scr3_sell_pct || 0) ? 'Accumulation' : 'Distribution',
+      bcr3BuyPct: bcr3,
+      scr3SellPct: scr3,
+      bcr3SellPct: scr3,
+      adSignal: singleAdSignal,
+      adStrength: singleAdStrength,
+      adPercentage: singleAdSignal === 'Accumulation' ? bcr3 : singleAdSignal === 'Distribution' ? scr3 : Math.max(bcr3, scr3),
       topAccumulator: topAcc,
       topDistributor: topDist,
       leadAccumulator: topAcc,
@@ -875,6 +898,66 @@ export async function getHistoricalSubfileBrokerAnalysis(
       totalAmt += q.turnover || 0;
     }
     const dayVwap = q?.vwap || (q?.turnover && q?.volume ? +(q.turnover / q.volume).toFixed(2) : 0);
+    const dayBuyers = (flow?.top_5_buyers || []).map((b: any) => {
+      const isLead = flow?.lead_accumulator && String(flow.lead_accumulator.broker_id) === String(b.broker_id);
+      const buyQty = Number(b.buy_kitta || b.net_kitta || 0);
+      const sellQty = isLead && flow.lead_accumulator.sell_kitta !== undefined
+        ? Number(flow.lead_accumulator.sell_kitta)
+        : (b.sell_kitta !== undefined ? Number(b.sell_kitta) : Math.max(0, buyQty - Number(b.net_kitta || buyQty)));
+      const netQty = Number(b.net_kitta !== undefined ? b.net_kitta : (buyQty - sellQty));
+      const vwapRate = Number(b.buy_vwap || dayVwap || 0);
+      return {
+        broker: String(b.broker_id),
+        id: String(b.broker_id),
+        brokerId: String(b.broker_id),
+        name: `Broker #${b.broker_id}`,
+        brokerName: `Broker #${b.broker_id}`,
+        buyQty,
+        buyAmt: buyQty * vwapRate,
+        sellQty,
+        sellAmt: sellQty * vwapRate,
+        netQty,
+        signedHoldQty: netQty,
+        holdQty: Math.max(0, netQty),
+        avgBuyRate: vwapRate,
+        avgBuyPrice: vwapRate,
+        avgSellRate: sellQty > 0 ? vwapRate : 0,
+        avgSellPrice: sellQty > 0 ? vwapRate : 0,
+        retentionPct: b.retention_pct || (buyQty > 0 ? Math.round((netQty / buyQty) * 100) : 100)
+      };
+    });
+
+    const daySellers = (flow?.top_5_sellers || []).map((s: any) => {
+      const sellQty = Number(s.sell_kitta || s.net_dump_kitta || 0);
+      const netDump = Number(s.net_dump_kitta || s.sell_kitta || 0);
+      const buyQty = s.buy_kitta !== undefined ? Number(s.buy_kitta) : Math.max(0, sellQty - netDump);
+      const vwapRate = Number(s.sell_vwap || dayVwap || 0);
+      return {
+        broker: String(s.broker_id),
+        id: String(s.broker_id),
+        brokerId: String(s.broker_id),
+        name: `Broker #${s.broker_id}`,
+        brokerName: `Broker #${s.broker_id}`,
+        buyQty,
+        buyAmt: buyQty * vwapRate,
+        sellQty,
+        sellAmt: sellQty * vwapRate,
+        netQty: -netDump,
+        signedHoldQty: -netDump,
+        holdQty: 0,
+        avgBuyRate: buyQty > 0 ? vwapRate : 0,
+        avgBuyPrice: buyQty > 0 ? vwapRate : 0,
+        avgSellRate: vwapRate,
+        avgSellPrice: vwapRate,
+        retentionPct: 0
+      };
+    });
+
+    const bcr3 = Number(flow?.concentration?.bcr3_buy_pct || 0);
+    const scr3 = Number(flow?.concentration?.scr3_sell_pct || 0);
+    const dayAdSignal = bcr3 > scr3 + 5 ? 'Accumulation' : (scr3 > bcr3 + 5 ? 'Distribution' : 'Neutral');
+    const dayNetFlow = dayBuyers.reduce((acc, b) => acc + b.netQty, 0) + daySellers.reduce((acc, s) => acc + s.netQty, 0);
+
     dailyFlow.push({
       date: sf.session_date,
       buyVol: q?.volume || 0,
@@ -882,18 +965,14 @@ export async function getHistoricalSubfileBrokerAnalysis(
       turnover: q?.turnover || 0,
       amount: q?.turnover || 0,
       vwap: dayVwap,
-      topAccumulator: flow?.lead_accumulator ? {
-        broker: String(flow.lead_accumulator.broker_id),
-        brokerId: String(flow.lead_accumulator.broker_id),
-        buyQty: flow.lead_accumulator.buy_kitta,
-        netQty: flow.lead_accumulator.net_kitta
-      } : null,
-      topDistributor: flow?.top_5_sellers?.[0] ? {
-        broker: String(flow.top_5_sellers[0].broker_id),
-        brokerId: String(flow.top_5_sellers[0].broker_id),
-        sellQty: flow.top_5_sellers[0].sell_kitta,
-        netQty: -flow.top_5_sellers[0].net_dump_kitta
-      } : null
+      netFlow: dayNetFlow,
+      adSignal: dayAdSignal,
+      adStrength: `${bcr3}%`,
+      bcr3BuyPct: bcr3,
+      scr3SellPct: scr3,
+      topAccumulator: dayBuyers[0] || null,
+      topDistributor: daySellers[0] || null,
+      brokers: [...dayBuyers, ...daySellers]
     });
 
     if (flow) {

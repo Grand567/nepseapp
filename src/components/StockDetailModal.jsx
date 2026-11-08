@@ -1590,15 +1590,15 @@ export default function StockDetailModal({
             if (isMounted && depth) setRealMarketDepth(depth);
           }).catch(() => {});
 
-          // Refresh live intraday broker execution data every 10 seconds during active session
-          if (liveTickCount % 4 === 0) {
+          // Refresh live intraday broker execution data every 10 seconds ONLY during live active session when no past date is selected
+          if (marketStatus.isOpen && !brokerDate && liveTickCount % 4 === 0) {
             fetchRealBrokerAnalysis(sym, 1, { refresh: true }).then(ba => {
               if (isMounted && ba) setRealBrokerAnalysis(ba);
             }).catch(() => {});
           }
 
-          // Refresh live intraday floorsheet tape every 5 seconds during active session with incremental delta
-          if (liveTickCount % 2 === 0 && (activeTab === 'floorsheet' || activeTab === 'market_depth' || activeTab === 'depth_broker' || showHubModal)) {
+          // Refresh live intraday floorsheet tape every 5 seconds ONLY during live active session when no past date is selected
+          if (marketStatus.isOpen && !floorsheetDate && liveTickCount % 2 === 0 && (activeTab === 'floorsheet' || activeTab === 'market_depth' || activeTab === 'depth_broker' || showHubModal)) {
             const lastSeenId = realFloorsheet?.rows?.[0]?.contractId || realFloorsheet?.rows?.[0]?.contractNo || '';
             fetchRealFloorsheet(sym, '', 1, 500, { refresh: true, sinceContractId: lastSeenId }).then(fs => {
               if (isMounted && fs && Array.isArray(fs.rows) && fs.rows.length > 0) {
@@ -3282,8 +3282,10 @@ export default function StockDetailModal({
 
   const isBull = (d.pChange || 0) >= 0;
 
-  // Strict Guard: Live intraday 1D broker analytics available globally across all modal tabs
-  const pure1DBa = broker1DData || ((realBrokerAnalysis && (realBrokerAnalysis.tradingDays === 1 || !realBrokerAnalysis.tradingDays)) ? realBrokerAnalysis : null) || getCachedRealBrokerAnalysis(d?.symbol, 1);
+  // Strict Guard: Live intraday 1D broker analytics available globally across all modal tabs (respects selected date)
+  const pure1DBa = (brokerDate && realBrokerAnalysis && (realBrokerAnalysis.businessDate === brokerDate || realBrokerAnalysis.date === brokerDate))
+    ? realBrokerAnalysis
+    : (broker1DData || ((realBrokerAnalysis && (realBrokerAnalysis.tradingDays === 1 || !realBrokerAnalysis.tradingDays)) ? realBrokerAnalysis : null) || getCachedRealBrokerAnalysis(d?.symbol, 1));
 
   const modalContent = (
     <div
