@@ -1539,6 +1539,10 @@ button, a, input, select, .card, .nav-btn {
 /* ── Mobile Header Optimization: Keep all actions visible without pushing avatar ── */
 @media (max-width: 520px) {
   .header-stitch-btn {
+    padding: 0 6px !important;
+    height: 28px !important;
+  }
+  .header-stitch-btn span {
     display: none !important;
   }
 }

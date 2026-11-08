@@ -1686,6 +1686,33 @@ function AppInner() {
                     </span>
                   </button>
 
+                  {/* Stitch UI Design System navigation */}
+                  <button
+                    id="btn-stitch-hub-menu"
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setActiveTab('stitch');
+                    }}
+                    style={{
+                      width: '100%', padding: '10px 16px',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      color: '#38bdf8', fontSize: 13, fontWeight: 700,
+                      textAlign: 'left',
+                      borderBottom: '1px solid var(--border)'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(56,189,248,0.06)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Sparkles style={{ width: 14, height: 14, color: '#38bdf8' }} />
+                      Stitch UI Design System
+                    </span>
+                    <span style={{ fontSize: 11, padding: '2px 6px', background: 'rgba(56,189,248,0.2)', color: '#38bdf8', borderRadius: 4, fontWeight: 800 }}>
+                      7 SCREENS
+                    </span>
+                  </button>
+
                   {/* System Diagnostics */}
                   <button
                     id="btn-diagnostics"
