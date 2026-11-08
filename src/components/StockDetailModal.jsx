@@ -2245,12 +2245,46 @@ export default function StockDetailModal({
         seller: targetSeller,
         refresh: Boolean(opts.refresh)
       });
-      if (data) {
+      if (data && (Array.isArray(data.rows) ? data.rows.length > 0 : true)) {
         setRealFloorsheet(data);
         setFloorsheetPage(page);
         if (opts.size !== undefined) setFloorsheetPageSize(opts.size);
+      } else if (data) {
+        setRealFloorsheet(data);
+        setFloorsheetPage(page);
+      } else {
+        // Date not available in historical subfiles or API: clear stale floorsheet to prevent showing previous date's rows!
+        setRealFloorsheet({
+          symbol: d.symbol,
+          date: targetDate,
+          businessDate: targetDate,
+          rows: [],
+          totalQuantity: 0,
+          totalQty: 0,
+          totalAmount: 0,
+          totalTrades: 0,
+          totalElements: 0,
+          totalPages: 1,
+          isUnavailable: true
+        });
+        setFloorsheetPage(1);
       }
-    } catch (_) {}
+    } catch (_) {
+      setRealFloorsheet({
+        symbol: d.symbol,
+        date: targetDate,
+        businessDate: targetDate,
+        rows: [],
+        totalQuantity: 0,
+        totalQty: 0,
+        totalAmount: 0,
+        totalTrades: 0,
+        totalElements: 0,
+        totalPages: 1,
+        isUnavailable: true
+      });
+      setFloorsheetPage(1);
+    }
     setFloorsheetLoading(false);
   }, [d?.symbol, floorsheetDate, floorsheetAppliedBuyer, floorsheetAppliedSeller, floorsheetPageSize]);
 
@@ -6737,9 +6771,9 @@ export default function StockDetailModal({
             ? filteredFloorsheet
             : floorsheet;
           const totalFsPages = Math.max(1, Number(realFloorsheet?.totalPages || 1));
-          const totalFsAmount = Number(realFloorsheet?.totalAmount) || fsRows.reduce((s, r) => s + Number(r.amount || 0), 0);
-          const totalFsQty = Number(realFloorsheet?.totalQty) || fsRows.reduce((s, r) => s + Number(r.qty || r.quantity || 0), 0);
-          const totalFsElements = Number(realFloorsheet?.totalElements || fsRows.length);
+          const totalFsAmount = Number(realFloorsheet?.totalAmount || realFloorsheet?.totalAmt) || fsRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+          const totalFsQty = Number(realFloorsheet?.totalQty || realFloorsheet?.totalQuantity) || fsRows.reduce((s, r) => s + Number(r.qty || r.quantity || 0), 0);
+          const totalFsElements = Number(realFloorsheet?.totalTrades || realFloorsheet?.totalElements || fsRows.length);
 
           // Price vs Volume breakdown (from backend or computed from current rows)
           const priceVolList = (Array.isArray(realFloorsheet?.priceVolumeBreakdown) && realFloorsheet.priceVolumeBreakdown.length > 0)
@@ -7492,7 +7526,7 @@ export default function StockDetailModal({
                         return (
                           <div key={i} style={{ display: 'grid', gridTemplateColumns: '64px 1fr 74px', alignItems: 'center', gap: 8, fontSize: 11.5 }}>
                             <span style={{ color: '#cbd5e1', fontWeight: 700, fontFamily: 'var(--font-mono)', textAlign: 'right' }}>
-                              {Number(pv.rate).toFixed(1)}
+                              {Number(pv.rate).toFixed(2)}
                             </span>
                             <div style={{ height: 14, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
                               <div style={{ width: `${barPct}%`, height: '100%', background: '#0284c7', borderRadius: 4 }} />
@@ -7562,11 +7596,19 @@ export default function StockDetailModal({
                     Total Amount: Rs. {totalFsAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#cbd5e1', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    Total Quantity: {totalFsQty.toLocaleString()} • Total Trades: {totalFsElements.toLocaleString()}
-                    <span style={{ color: '#10b981', marginLeft: 8 }}>
-                      • {floorsheetPageSize >= 5000 ? `Showing All ${fsRows.length} trades` : `Showing Page ${floorsheetPage} of ${totalFsPages} (${fsRows.length} trades)`}
-                    </span>
-                    {activeFsDate ? <span style={{ color: '#38bdf8', marginLeft: 8 }}>• {activeFsDate}</span> : null}
+                    {realFloorsheet?.isUnavailable ? (
+                      <span style={{ color: '#f59e0b' }}>
+                        ⚠️ No floorsheet data recorded for session {activeFsDate || 'selected date'}.
+                      </span>
+                    ) : (
+                      <>
+                        Total Quantity: {totalFsQty.toLocaleString()} • Total Trades: {totalFsElements.toLocaleString()}
+                        <span style={{ color: '#10b981', marginLeft: 8 }}>
+                          • {floorsheetPageSize >= 5000 ? `Showing All ${fsRows.length} trades` : `Showing Page ${floorsheetPage} of ${totalFsPages} (${fsRows.length} trades)`}
+                        </span>
+                        {activeFsDate ? <span style={{ color: '#38bdf8', marginLeft: 8 }}>• {activeFsDate}</span> : null}
+                      </>
+                    )}
                   </div>
                 </div>
 

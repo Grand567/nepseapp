@@ -1231,7 +1231,11 @@ export async function getHistoricalSubfileFloorsheet(
     sIdx += (i % 2 === 0 ? 1 : 2);
 
     const tradeRate = Number((((b.vwap + s.vwap) / 2) + ((Math.sin(i * 1.7) * 0.8))).toFixed(2));
-    const tradeQty = Math.max(10, Math.min(2500, Math.round((Math.sin(i * 0.9) + 1.2) * 180 / 10) * 10));
+    let tradeQty = Math.max(10, Math.min(2500, Math.round((Math.sin(i * 0.9) + 1.2) * 180 / 10) * 10));
+    // Introduce institutional block / bulk deals (>= 500 kitta) periodically
+    if (i % 6 === 0) {
+      tradeQty = 500 + ((i * 150) % 1500);
+    }
     const tradeAmt = Number((tradeRate * tradeQty).toFixed(2));
     const timeOffsetSec = baseTimeSec + (i * 95);
     const hrs = Math.floor(timeOffsetSec / 3600);
@@ -1297,11 +1301,14 @@ export async function getHistoricalSubfileFloorsheet(
     totalPages,
     totalElements: totalElements > 0 ? (totalVol > 0 ? Math.max(totalElements, 360) : totalElements) : 0,
     totalQuantity: totalVol > 0 ? totalVol : rawRows.reduce((s, r) => s + r.qty, 0),
+    totalQty: totalVol > 0 ? totalVol : rawRows.reduce((s, r) => s + r.qty, 0),
     totalAmount: totalAmt > 0 ? totalAmt : rawRows.reduce((s, r) => s + r.amount, 0),
-    totalTrades: totalElements > 0 ? Math.max(totalElements, 360) : 0,
+    totalAmt: totalAmt > 0 ? totalAmt : rawRows.reduce((s, r) => s + r.amount, 0),
+    totalTrades: totalElements > 0 ? (totalVol > 0 ? Math.max(totalElements, 360) : totalElements) : 0,
     priceVolumeBreakdown,
     bulkTransactions,
     isReal: true,
+    isEstimatedFlow: true,
     source: 'offline_subfiles_synthesized'
   };
 }
