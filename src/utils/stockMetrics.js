@@ -32,10 +32,13 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
   const publicShares = Number(s.publicShares || (listedShares > 0 ? Math.round(listedShares * (publicPct / 100)) : 0));
   const promoterShares = Number(s.promoterShares || (listedShares > 0 ? Math.round(listedShares * (promoterPct / 100)) : 0));
 
-  // Market Cap
-  const marketCap = Number(s.marketCap || (ltp > 0 && listedShares > 0 ? ltp * listedShares : 0));
-  // Float Market Cap = Public Shares * LTP
-  const floatMarketCap = publicShares > 0 && ltp > 0 ? publicShares * ltp : (marketCap * (publicPct / 100));
+  // Market Cap (compute dynamically from ltp * listedShares to ensure consistent price basis)
+  const dynamicMarketCap = (ltp > 0 && listedShares > 0) ? ltp * listedShares : Number(s.marketCap || 0);
+  const marketCap = dynamicMarketCap > 0 ? dynamicMarketCap : Number(s.marketCap || 0);
+
+  // Float Market Cap = Public Shares * LTP (mathematically bounded by total Market Cap)
+  const rawFloatMarketCap = publicShares > 0 && ltp > 0 ? publicShares * ltp : (marketCap * (publicPct / 100));
+  const floatMarketCap = marketCap > 0 ? Math.min(rawFloatMarketCap, marketCap) : rawFloatMarketCap;
 
   // Cap Category
   let capCategory = 'Low Cap';
