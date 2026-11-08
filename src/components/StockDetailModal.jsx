@@ -3865,7 +3865,14 @@ export default function StockDetailModal({
                   <div>
                     <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Last Traded Time</div>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: '#cbd5e1' }}>
-                      {clockTime ? `Today, ${clockTime}` : 'Oct 12, 2:59 PM NPT'}
+                      {(() => {
+                        if (marketStatus?.isOpen) {
+                          return clockTime ? `Today, ${clockTime}` : 'Live Session';
+                        }
+                        const settledDate = d.businessDate || d.date || marketStatus?.lastTradingDay;
+                        const dateFormatted = settledDate ? new Date(settledDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Nov 6';
+                        return `${dateFormatted}, 15:00 NPT`;
+                      })()}
                     </div>
                   </div>
                 </div>

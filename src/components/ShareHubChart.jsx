@@ -329,9 +329,12 @@ export default function ShareHubChart({
         if (res && Array.isArray(res) && res.length > 0) {
           setIntradayData(res);
           setError(null);
+        } else {
+          setIntradayData([]);
         }
       } catch (err) {
         console.warn('[ShareHubChart] Intraday fetch error:', err);
+        if (isMounted) setIntradayData([]);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -345,15 +348,18 @@ export default function ShareHubChart({
   }, [activeTf, symbol, rawHistory]);
 
   const activeDataset = useMemo(() => {
-    if (activeTf === '1D' && intradayData.length > 0) {
-      return intradayData;
+    if (activeTf === '1D') {
+      if (intradayData.length > 0) return intradayData;
+      if (Array.isArray(rawHistory) && rawHistory.length > 0) {
+        return rawHistory.slice(-5);
+      }
     }
     return rawHistory;
   }, [activeTf, intradayData, rawHistory]);
 
   const isTrulyIntraday = useMemo(() => {
-    return activeTf === '1D';
-  }, [activeTf]);
+    return activeTf === '1D' && intradayData.length > 0;
+  }, [activeTf, intradayData]);
 
   const aggregateToIntradayCandles = useCallback((points, intervalMinutes = 5) => {
     if (!Array.isArray(points) || points.length === 0) return [];
@@ -542,7 +548,7 @@ export default function ShareHubChart({
 
     let sliced = allSorted;
     if (tf === '1D') {
-      sliced = allSorted.slice(-1);
+      sliced = allSorted.slice(-5);
     } else if (tf === '1W' || tf === '7') {
       const oneWeekAgo = new Date(latestDate.getTime() - 7 * 24 * 3600 * 1000);
       const weekBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= oneWeekAgo);
@@ -1451,10 +1457,9 @@ export default function ShareHubChart({
   } : null);
 
   const hudMetrics = useMemo(() => {
-    if (!activeHud) return { change: 0, pChange: 0, isBull: true };
-    if (!hoverData && stock && stock.change != null && stock.pChange != null && !isNaN(Number(stock.change))) {
-      let c = Number(stock.change);
-      let pc = Number(stock.pChange);
+    if (!hoverData && stock && (stock.change != null || stock.pChange != null)) {
+      let c = Number(stock.change ?? 0);
+      let pc = Number(stock.pChange ?? 0);
       const ltpVal = Number(stock.ltp || authoritativeLtp || 0);
       const prevC = Number(stock.prevClose || stock.previousClose || 0);
       if (c === 0 && prevC > 0 && ltpVal > 0 && ltpVal !== prevC) {
@@ -1464,6 +1469,7 @@ export default function ShareHubChart({
       const isBull = c > 0 || (c === 0 && pc >= 0);
       return { change: c, pChange: pc, isBull };
     }
+    if (!activeHud) return { change: 0, pChange: 0, isBull: true };
     const currentVal = Number(activeHud.close ?? activeHud.value ?? authoritativeLtp ?? 0);
     const prevCloseVal = Number(stock?.prevClose || stock?.previousClose || (stock?.ltp != null && stock?.change != null ? stock.ltp - stock.change : null));
     const firstPointVal = Number(processedChartData[0]?.close ?? processedChartData[0]?.value ?? 0);
