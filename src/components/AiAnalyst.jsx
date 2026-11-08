@@ -1385,7 +1385,7 @@ export default function AiAnalyst({
   const [paperState, setPaperState] = useState(getPaperState);
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
-  const [glmKey, setGlmKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || import.meta.env.VITE_GLM_API_KEY || '') : ''));
+  const [glmKey, setGlmKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || '') : ''));
   const [geminiKey, setGeminiKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_gemini_api_key') || '') : ''));
   const [autoClearChat, setAutoClearChat] = useState(() => {
     if (typeof localStorage !== 'undefined') {
@@ -1483,7 +1483,7 @@ export default function AiAnalyst({
   const callGuruAI = async (prompt, analysisType = 'general') => {
     try {
       const apiKey = localStorage.getItem('nepse_hub_gemini_api_key') || localStorage.getItem('gemini_api_key') || '';
-      const glmApiKey = (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || import.meta.env.VITE_GLM_API_KEY || glmKey || '';
+      const glmApiKey = (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || glmKey || '';
       const res = await fetch(`${PROXY}/api/guru/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1683,7 +1683,7 @@ export default function AiAnalyst({
             adSignal: brokerData.adSignal ?? 'Neutral',
             adStrength: brokerData.adStrength ?? 0
           },
-          apiKey: (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || import.meta.env.VITE_GLM_API_KEY || glmKey || ''
+          apiKey: (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || glmKey || ''
         };
 
         const predictRes = await fetch(`${PROXY}/api/ai/predict`, {

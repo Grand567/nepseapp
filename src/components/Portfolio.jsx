@@ -299,9 +299,9 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState('');
   const [selectedAiStock, setSelectedAiStock] = useState(null);
-  const [glmKey, setGlmKey] = useState(() => localStorage.getItem('nepse_hub_glm_api_key') || import.meta.env.VITE_GLM_API_KEY || DEFAULT_AI_KEY);
-  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('nepse_hub_gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '');
-  const [groqKey, setGroqKey] = useState(() => localStorage.getItem('nepse_hub_groq_api_key') || import.meta.env.VITE_GROQ_API_KEY || '');
+  const [glmKey, setGlmKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || '') : ''));
+  const [geminiKey, setGeminiKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_gemini_api_key') || localStorage.getItem('gemini_api_key') || '') : ''));
+  const [groqKey, setGroqKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_groq_api_key') || localStorage.getItem('groq_api_key') || '') : ''));
   const [preferredEngine, setPreferredEngine] = useState(() => localStorage.getItem('nepse_hub_preferred_ai_engine') || 'auto');
   const [showKeyInput, setShowKeyInput] = useState(false);
 
