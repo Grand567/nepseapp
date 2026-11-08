@@ -554,10 +554,10 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     }
     const cleanBoid = String(boid || '').replace(/\D/g, '').trim();
     if (!cleanBoid) {
-      return { valid: false, message: "⚠️ Demat BOID is required (16 digits)." };
+      return { valid: false, message: "⚠️ Demat BOID is required (16 digits starting with 130)." };
     }
-    if (cleanBoid.length !== 16) {
-      return { valid: false, message: `⚠️ Invalid BOID: Demat BOID must be exactly 16 digits (you entered ${cleanBoid.length} digits).` };
+    if (!/^130\d{13}$/.test(cleanBoid)) {
+      return { valid: false, message: `⚠️ Invalid BOID: Demat BOID must be an exact 16-digit CDSC number starting with 130 (e.g. 1301060001234567).` };
     }
     if (!username || !username.trim()) {
       return { valid: false, message: "⚠️ MeroShare Username is required." };
@@ -565,8 +565,12 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     if (!password || !password.trim()) {
       return { valid: false, message: "⚠️ MeroShare Password is required." };
     }
-    if (!crn || !crn.trim()) {
-      return { valid: false, message: "⚠️ Bank C-ASBA CRN Number is required (e.g. C-1234)." };
+    const cleanCrn = String(crn || '').trim();
+    if (!cleanCrn) {
+      return { valid: false, message: "⚠️ Bank C-ASBA CRN Number is required (e.g. CRN-0123456)." };
+    }
+    if (!/^[A-Za-z0-9\-/]{6,20}$/.test(cleanCrn)) {
+      return { valid: false, message: "⚠️ Invalid CRN: C-ASBA Registration Number must be 6–20 characters (e.g. CRN-0123456)." };
     }
     const cleanPin = String(pin || '').replace(/\D/g, '').trim();
     if (!cleanPin) {
@@ -1639,7 +1643,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                 </div>
                 <div>
                   <label className="input-label">Demat BOID (16 Digits)</label>
-                  <input type="text" maxLength="16" required value={boid} onChange={e => setBoid(e.target.value.replace(/\D/g, ''))} className="input" placeholder="120106000..." />
+                  <input type="text" maxLength="16" required value={boid} onChange={e => setBoid(e.target.value.replace(/\D/g, ''))} className="input" placeholder="130106000..." />
                 </div>
               </div>
 
@@ -1681,7 +1685,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
                 <div>
                   <label className="input-label">CRN Number</label>
-                  <input type="text" required value={crn} onChange={e => setCrn(e.target.value)} className="input" placeholder="C-1234" />
+                  <input type="text" required value={crn} onChange={e => setCrn(e.target.value)} className="input" placeholder="CRN-0123456" />
                 </div>
                 <div>
                   <label className="input-label">4-Digit PIN</label>
@@ -1725,7 +1729,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                 </div>
                 <div>
                   <label className="input-label">Demat BOID (16 Digits)</label>
-                  <input type="text" maxLength="16" required value={editBoid} onChange={e => setEditBoid(e.target.value.replace(/\D/g, ''))} className="input" placeholder="120106000..." />
+                  <input type="text" maxLength="16" required value={editBoid} onChange={e => setEditBoid(e.target.value.replace(/\D/g, ''))} className="input" placeholder="130106000..." />
                 </div>
               </div>
 
@@ -1767,7 +1771,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
                 <div>
                   <label className="input-label">CRN Number</label>
-                  <input type="text" required value={editCrn} onChange={e => setEditCrn(e.target.value)} className="input" placeholder="C-1234" />
+                  <input type="text" required value={editCrn} onChange={e => setEditCrn(e.target.value)} className="input" placeholder="CRN-0123456" />
                 </div>
                 <div>
                   <label className="input-label">4-Digit PIN</label>

@@ -451,7 +451,7 @@ export default function AccountManager({ userId = 'guest_local' }) {
             <div>
               <label className="input-label" style={{ fontSize: 14, fontWeight: 700, color: '#ffffff' }}>CRN Number</label>
               <input type="text" value={crn} onChange={e => setCrn(e.target.value)}
-                placeholder="C-12345" className="input"
+                placeholder="CRN-0123456" className="input"
                 style={{ padding: '12px 14px', fontSize: 15, fontWeight: 600, color: '#ffffff', background: '#0b1120', border: '1.5px solid #334155' }} required />
             </div>
             <div>
