@@ -3640,6 +3640,7 @@ export default function StockDetailModal({
             d.symbol
           );
           const overviewEntryZone = horizonTargets?.entryZone;
+          const isVetoed = Boolean(overviewOrderFlowVeto?.isVetoed || modalIsAvoid);
           const isOverextended = overviewEntryZone?.isOverextended === true || operatorPremiumPct > 10.0;
           const overviewStopLoss = horizonTargets?.stopLoss;
           const overviewTarget1 = horizonTargets?.target1;
@@ -3864,12 +3865,16 @@ export default function StockDetailModal({
               {/* ── 1B. INSTITUTIONAL OPERATOR FLOOR & SAFE ENTRY RADAR ── */}
               <CardLocalErrorBoundary>
                 <div style={{
-                  background: isOverextended
-                    ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(17, 24, 39, 0.95))'
-                    : 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(17, 24, 39, 0.95))',
-                  border: isOverextended
-                    ? '1.5px solid rgba(245, 158, 11, 0.45)'
-                    : '1.5px solid rgba(16, 185, 129, 0.45)',
+                  background: isVetoed
+                    ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.16), rgba(17, 24, 39, 0.95))'
+                    : (isOverextended
+                        ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(17, 24, 39, 0.95))'
+                        : 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(17, 24, 39, 0.95))'),
+                  border: isVetoed
+                    ? '1.5px solid rgba(239, 68, 68, 0.65)'
+                    : (isOverextended
+                        ? '1.5px solid rgba(245, 158, 11, 0.45)'
+                        : '1.5px solid rgba(16, 185, 129, 0.45)'),
                   borderRadius: 16,
                   padding: '16px 18px',
                   boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
@@ -3880,8 +3885,8 @@ export default function StockDetailModal({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{
-                        background: isOverextended ? '#f59e0b' : '#10b981',
-                        color: '#0f172a',
+                        background: isVetoed ? '#ef4444' : (isOverextended ? '#f59e0b' : '#10b981'),
+                        color: isVetoed ? '#ffffff' : '#0f172a',
                         fontWeight: 900,
                         fontSize: 11,
                         padding: '3px 8px',
@@ -3889,7 +3894,9 @@ export default function StockDetailModal({
                         letterSpacing: '0.04em',
                         textTransform: 'uppercase'
                       }}>
-                        {isOverextended ? '⚠️ HIGH TRAP RISK / PULLBACK REQUIRED' : '🟢 SAFE OPERATOR ACCUMULATION ZONE'}
+                        {isVetoed
+                          ? '🚨 VETOED BY WHALE DUMP — DO NOT ACCUMULATE'
+                          : (isOverextended ? '⚠️ HIGH TRAP RISK / PULLBACK REQUIRED' : '🟢 SAFE OPERATOR ACCUMULATION ZONE')}
                       </span>
                       <span style={{ fontSize: 13, fontWeight: 800, color: '#f8fafc' }}>
                         Institutional Operator Radar
@@ -3960,8 +3967,8 @@ export default function StockDetailModal({
 
                   {/* Action Banner */}
                   <div style={{
-                    background: isOverextended ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                    borderLeft: isOverextended ? '4px solid #f59e0b' : '4px solid #10b981',
+                    background: isVetoed ? 'rgba(239, 68, 68, 0.20)' : (isOverextended ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)'),
+                    borderLeft: isVetoed ? '4px solid #ef4444' : (isOverextended ? '4px solid #f59e0b' : '4px solid #10b981'),
                     borderRadius: '4px 8px 8px 4px',
                     padding: '10px 14px',
                     display: 'flex',
@@ -3971,26 +3978,29 @@ export default function StockDetailModal({
                     gap: 8
                   }}>
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: isOverextended ? '#fcd34d' : '#6ee7b7', textTransform: 'uppercase' }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: isVetoed ? '#fca5a5' : (isOverextended ? '#fcd34d' : '#6ee7b7'), textTransform: 'uppercase' }}>
                         Safe Entry Action
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', marginTop: 2 }}>
-                        {isOverextended
-                          ? `Pullback Required: Wait for dip between Rs. ${overviewEntryZone?.min || (d.ltp * 0.92).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 0.96).toFixed(1)}. Do NOT chase at Rs. ${fmt(d.ltp)}!`
-                          : `Accumulate between Rs. ${overviewEntryZone?.min || (d.ltp * 0.98).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 1.01).toFixed(1)} (Entry Window: 1:15–2:30 PM • Protected by Operator Floor)`
+                        {isVetoed
+                          ? `Order Flow Veto Law Active: Heavy institutional distribution detected. All accumulation signals are strictly overridden. DO NOT BUY!`
+                          : (isOverextended
+                              ? `Pullback Required: Wait for dip between Rs. ${overviewEntryZone?.min || (d.ltp * 0.92).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 0.96).toFixed(1)}. Do NOT chase at Rs. ${fmt(d.ltp)}!`
+                              : `Accumulate between Rs. ${overviewEntryZone?.min || (d.ltp * 0.98).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 1.01).toFixed(1)} (Entry Window: 1:15–2:30 PM • Protected by Operator Floor)`
+                            )
                         }
                       </div>
                     </div>
                     <div style={{
-                      background: isOverextended ? '#f59e0b22' : '#10b98122',
-                      border: isOverextended ? '1px solid #f59e0b66' : '1px solid #10b98166',
+                      background: isVetoed ? '#ef444422' : (isOverextended ? '#f59e0b22' : '#10b98122'),
+                      border: isVetoed ? '1px solid #ef444466' : (isOverextended ? '1px solid #f59e0b66' : '1px solid #10b98166'),
                       borderRadius: 8,
                       padding: '5px 10px',
                       fontSize: 12,
                       fontWeight: 800,
-                      color: isOverextended ? '#f59e0b' : '#10b981'
+                      color: isVetoed ? '#ef4444' : (isOverextended ? '#f59e0b' : '#10b981')
                     }}>
-                      {isOverextended ? '⚠️ DO NOT CHASE' : '🟢 SAFE TO ACCUMULATE'}
+                      {isVetoed ? '🚨 AVOID ENTRY (VETOED)' : (isOverextended ? '⚠️ DO NOT CHASE' : '🟢 SAFE TO ACCUMULATE')}
                     </div>
                   </div>
                 </div>
