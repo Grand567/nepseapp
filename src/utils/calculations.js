@@ -802,7 +802,7 @@ export function parseBrokerTradeBook(rawText) {
   ]);
 
   const startRow = headerIndex >= 0 ? headerIndex + 1 : 0;
-  const buyTransactionsByScrip = {};
+  const transactionsByScrip = {};
 
   for (let i = startRow; i < parsedRows.length; i++) {
     const row = parsedRows[i];
@@ -873,27 +873,51 @@ export function parseBrokerTradeBook(rawText) {
       }
     }
 
-    if (symbol && symbol.length >= 2 && !IGNORE_WORDS.has(symbol) && isBuy && qty > 0 && rate >= 10 && rate <= 50000) {
-      if (!buyTransactionsByScrip[symbol]) {
-        buyTransactionsByScrip[symbol] = [];
+    if (symbol && symbol.length >= 2 && !IGNORE_WORDS.has(symbol) && qty > 0 && rate >= 10 && rate <= 50000) {
+      if (!transactionsByScrip[symbol]) {
+        transactionsByScrip[symbol] = [];
       }
-      buyTransactionsByScrip[symbol].push({ quantity: qty, price: rate });
+      transactionsByScrip[symbol].push({ type: isBuy ? 'buy' : 'sell', quantity: qty, price: rate });
     }
   }
 
   const holdings = {};
   let totalParsed = 0;
 
-  for (const [sym, txs] of Object.entries(buyTransactionsByScrip)) {
-    const waccResult = calculateWacc(txs);
-    if (waccResult.totalQuantity > 0 && waccResult.wacc > 0) {
+  for (const [sym, txList] of Object.entries(transactionsByScrip)) {
+    let units = 0;
+    let totalCost = 0;
+    let wacc = 0;
+    let validTxCount = 0;
+
+    for (const tx of txList) {
+      if (tx.type === 'buy') {
+        const buyDetails = calculateBuyDetails(tx.quantity, tx.price);
+        units += tx.quantity;
+        totalCost += buyDetails.totalAmount;
+        wacc = units > 0 ? totalCost / units : 0;
+        validTxCount++;
+      } else {
+        // Sell row: reduces net remaining units without altering WACC of existing shares
+        const prevUnits = units;
+        units = Math.max(0, units - tx.quantity);
+        if (prevUnits > 0 && units > 0) {
+          totalCost = units * wacc;
+        } else {
+          totalCost = 0;
+        }
+        validTxCount++;
+      }
+    }
+
+    if (units > 0 && wacc > 0) {
       holdings[sym] = {
         symbol: sym,
-        wacc: Number(waccResult.wacc.toFixed(2)),
-        totalQuantity: waccResult.totalQuantity,
-        totalCost: Number(waccResult.totalCost.toFixed(2)),
+        wacc: Number(wacc.toFixed(2)),
+        totalQuantity: units,
+        totalCost: Number(totalCost.toFixed(2)),
         source: 'BROKER_TMS',
-        transactionsCount: txs.length
+        transactionsCount: validTxCount
       };
       totalParsed++;
     }
