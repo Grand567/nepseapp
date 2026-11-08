@@ -2821,6 +2821,12 @@ export default function StockDetailModal({
   useEffect(() => {
     if (d?.symbol) {
       let active = true;
+      const fallbackNetProfit = d.netProfit
+        ? (Number(d.netProfit) > 1e6 ? fmtCr(d.netProfit) : `Rs. ${d.netProfit} Cr`)
+        : (d.eps && (d.listedShares || d.totalShares)
+            ? fmtCr(Number(d.eps) * Number(d.listedShares || d.totalShares))
+            : '—');
+
       fetchCompanyQuarterlyReports(d.symbol).then(res => {
         if (!active) return;
         const data = res?.data || res;
@@ -2829,25 +2835,25 @@ export default function StockDetailModal({
           setQuarterlyReports(qList.map(q => ({
             quarter: q.quarter || q.fiscalYear || 'Latest',
             eps: q.eps != null ? Number(q.eps).toFixed(2) : (d.eps ? Number(d.eps).toFixed(2) : '—'),
-            netProfit: q.profitCr ? `Rs. ${Number(q.profitCr).toFixed(2)} Cr` : (q.netProfit ? `Rs. ${Number(q.netProfit).toFixed(2)} Cr` : '—'),
+            netProfit: q.profitCr ? `Rs. ${Number(q.profitCr).toFixed(2)} Cr` : (q.netProfit ? (Number(q.netProfit) > 1e6 ? fmtCr(q.netProfit) : `Rs. ${Number(q.netProfit).toFixed(2)} Cr`) : fallbackNetProfit),
             pe: q.pe != null ? Number(q.pe).toFixed(1) : (d.pe ? Number(d.pe).toFixed(1) : '—'),
             bookValue: q.netWorth ? Number(q.netWorth).toFixed(1) : (d.bookValue ? Number(d.bookValue).toFixed(1) : '—')
           })));
         } else if (d.eps != null || d.bookValue != null) {
           setQuarterlyReports([
-            { quarter: 'Latest Reported', eps: d.eps != null ? Number(d.eps).toFixed(2) : '—', netProfit: d.netProfit ? `Rs. ${d.netProfit}` : '—', pe: d.pe != null ? Number(d.pe).toFixed(1) : '—', bookValue: d.bookValue != null ? Number(d.bookValue).toFixed(1) : '—' }
+            { quarter: 'Latest Reported', eps: d.eps != null ? Number(d.eps).toFixed(2) : '—', netProfit: fallbackNetProfit, pe: d.pe != null ? Number(d.pe).toFixed(1) : '—', bookValue: d.bookValue != null ? Number(d.bookValue).toFixed(1) : '—' }
           ]);
         }
       }).catch(() => {
         if (active && (d.eps != null || d.bookValue != null)) {
           setQuarterlyReports([
-            { quarter: 'Latest Reported', eps: d.eps != null ? Number(d.eps).toFixed(2) : '—', netProfit: d.netProfit ? `Rs. ${d.netProfit}` : '—', pe: d.pe != null ? Number(d.pe).toFixed(1) : '—', bookValue: d.bookValue != null ? Number(d.bookValue).toFixed(1) : '—' }
+            { quarter: 'Latest Reported', eps: d.eps != null ? Number(d.eps).toFixed(2) : '—', netProfit: fallbackNetProfit, pe: d.pe != null ? Number(d.pe).toFixed(1) : '—', bookValue: d.bookValue != null ? Number(d.bookValue).toFixed(1) : '—' }
           ]);
         }
       });
       return () => { active = false; };
     }
-  }, [d?.symbol, d?.eps, d?.bookValue, d?.pe]);
+  }, [d?.symbol, d?.eps, d?.bookValue, d?.pe, d?.listedShares, d?.totalShares, d?.netProfit]);
 
   const peerStocks = useMemo(() => getPeerStocks(d, allStocks), [d, allStocks]);
 
@@ -2890,11 +2896,13 @@ export default function StockDetailModal({
   const piotroskiScore = useMemo(() => {
     // Use 0 as a sentinel for missing data (no hardcoded fallbacks)
     const eps = Number(d.eps) || 0;
-    const roe = Number(d.roe) || 0;
     const pe = Number(d.pe) || 0;
     const pb = Number(d.pb) || 0;
-    const bonusPayout = (Number(d.bonusShare) || 0) + (Number(d.cashDiv) || 0);
     const ltp = Number(d.ltp) || 0;
+    const bvpsVal = Number(d.bookValue || (pb > 0 && ltp > 0 ? ltp / pb : 100));
+    const calculatedRoe = (bvpsVal > 0 && eps > 0) ? Number(((eps / bvpsVal) * 100).toFixed(2)) : 0;
+    const roe = Number(d.roe || liveDetail?.roe || calculatedRoe) || 0;
+    const bonusPayout = (Number(d.bonusShare) || 0) + (Number(d.cashDiv) || 0);
     const sma200Ref = history12M.length > 0
       ? (history12M[history12M.length - 1]?.sma200 || null)
       : null;
@@ -2906,7 +2914,6 @@ export default function StockDetailModal({
     const hasPb = pb !== 0;
     const hasDividend = bonusPayout > 0 || (d.bonusShare !== undefined || d.cashDiv !== undefined);
 
-    const bvpsVal = Number(d.bookValue || (pb > 0 && ltp > 0 ? ltp / pb : 100));
     const graham = calculateGrahamIntrinsicValue(eps, bvpsVal, ltp);
     const lynch = calculatePeterLynchMetrics(d, ltp);
     const nrb = evaluateNrbRegulatorySafety(d);

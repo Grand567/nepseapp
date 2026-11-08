@@ -124,7 +124,7 @@ export function DividendHistoryPanel({
       )}
 
       {loading && <Spinner text={`Fetching real dividend history for ${symbol || initialSymbol} from NEPSE sources…`} />}
-      {!loading && error && !result?.dividends?.length && <NoData message={error} />}
+      {!loading && error && !result && <NoData message={error} />}
 
       {!loading && result && (
         <div className="space-y-4">
@@ -137,7 +137,7 @@ export function DividendHistoryPanel({
               </span>
             ) : (
               <span className="flex items-center gap-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 px-3 py-1 text-amber-300 font-semibold">
-                <AlertCircle size={12} /> {error || 'No records found'}
+                <AlertCircle size={12} /> Offline Cache · Fallback data
               </span>
             )}
             {result.fetchedAt && (
@@ -260,7 +260,7 @@ export function DividendHistoryPanel({
           )}
 
           {dividends.length === 0 && result.real === false && (
-            <NoData message={`No dividend or bonus share records found for ${symbol || initialSymbol}. The stock may be newly listed, or records may not be available from the data source.`} />
+            <NoData message={error || `No dividend or bonus share records found for ${symbol || initialSymbol}. The stock may be newly listed, or records may not be available from the data source.`} />
           )}
         </div>
       )}

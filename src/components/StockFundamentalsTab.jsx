@@ -14,14 +14,14 @@ export default function StockFundamentalsTab({ stock = {}, fundamentals = {}, pe
   // Share Hub Fundamental Analysis 4 Sub-Tabs: 'overview' | 'reports' | 'industry' | 'compare'
   const [subTab, setSubTab] = useState('overview');
   const [viewMode, setViewMode] = useState('graph'); // 'graph' | 'tabular'
-  const [selectedQuarter, setSelectedQuarter] = useState('082/083 Q4');
+  const [selectedQuarter, setSelectedQuarter] = useState('082/083 Q1');
   const [compareQuarter, setCompareQuarter] = useState('081/082 Q4');
   const [activeChartQuarters, setActiveChartQuarters] = useState([
     '078/079 Q4',
     '079/080 Q4',
     '080/081 Q4',
     '081/082 Q4',
-    '082/083 Q4'
+    '082/083 Q1'
   ]);
   const [showQuarterModal, setShowQuarterModal] = useState(false);
   const [selectedMetrics, setSelectedMetrics] = useState(['eps', 'profitCr', 'netWorth', 'roe']);
@@ -67,7 +67,7 @@ export default function StockFundamentalsTab({ stock = {}, fundamentals = {}, pe
 
   // Multi-Quarter historical trend data points
   const quartersList = [
-    { id: '082/083 Q4', short: '082/083, q4', label: '082/083 Q4', fiscalYear: '2082/83', period: 'Q4', mult: 1.0 },
+    { id: '082/083 Q1', short: '082/083, q1', label: '082/083 Q1', fiscalYear: '2082/83', period: 'Q1', mult: 1.0 },
     { id: '081/082 Q4', short: '081/082, q4', label: '081/082 Q4', fiscalYear: '2081/82', period: 'Q4', mult: 0.94 },
     { id: '081/082 Q3', short: '081/082, q3', label: '081/082 Q3', fiscalYear: '2081/82', period: 'Q3', mult: 0.88 },
     { id: '080/081 Q4', short: '080/081, q4', label: '080/081 Q4', fiscalYear: '2080/81', period: 'Q4', mult: 0.80 },
@@ -140,7 +140,7 @@ export default function StockFundamentalsTab({ stock = {}, fundamentals = {}, pe
         npl: isBank ? 2.30 : null
       },
       {
-        quarter: '082/083 Q4',
+        quarter: '082/083 Q1',
         eps: +baseEps.toFixed(2),
         profitCr: +baseProfitCr.toFixed(2),
         netWorth: +baseBv.toFixed(1),
