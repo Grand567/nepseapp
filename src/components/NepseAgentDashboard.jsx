@@ -294,30 +294,71 @@ export default function NepseAgentDashboard({
           </button>
         </div>
 
-        {/* Inquiry Prompt Pills */}
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
-          {PRESET_QUERIES.map((q, idx) => (
-            <button
-              key={idx}
-              onClick={() => {
-                setCustomQuery(q);
-                handleRunAnalysis(symbol, q);
+        {/* Custom Query Input & Inquiry Prompt Pills */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              type="text"
+              value={customQuery}
+              onChange={(e) => setCustomQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleRunAnalysis(symbol, customQuery);
               }}
+              placeholder="Ask custom question (e.g., Is 58 dumping into retail? Will it break 52W high?)..."
               style={{
-                background: customQuery === q ? 'rgba(147, 51, 234, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                border: `1px solid ${customQuery === q ? 'rgba(147, 51, 234, 0.4)' : 'rgba(255, 255, 255, 0.06)'}`,
-                color: customQuery === q ? '#c084fc' : '#94a3b8',
-                padding: '4px 10px',
+                flex: 1,
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
                 borderRadius: 8,
+                padding: '7px 12px',
+                color: '#ffffff',
+                fontSize: 12.5,
+                outline: 'none'
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => handleRunAnalysis(symbol, customQuery)}
+              disabled={loading || !customQuery.trim()}
+              style={{
+                background: 'rgba(147, 51, 234, 0.2)',
+                border: '1px solid rgba(147, 51, 234, 0.4)',
+                borderRadius: 8,
+                padding: '7px 14px',
+                color: '#c084fc',
                 fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
+                fontWeight: 700,
+                cursor: loading ? 'not-allowed' : 'pointer',
                 whiteSpace: 'nowrap'
               }}
             >
-              {q}
+              Ask Agent ↵
             </button>
-          ))}
+          </div>
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+            {PRESET_QUERIES.map((q, idx) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  setCustomQuery(q);
+                  handleRunAnalysis(symbol, q);
+                }}
+                style={{
+                  background: customQuery === q ? 'rgba(147, 51, 234, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                  border: `1px solid ${customQuery === q ? 'rgba(147, 51, 234, 0.4)' : 'rgba(255, 255, 255, 0.06)'}`,
+                  color: customQuery === q ? '#c084fc' : '#94a3b8',
+                  padding: '4px 10px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -679,13 +720,22 @@ export default function NepseAgentDashboard({
                   const displayT2 = dossier?.executionPlan?.targets?.[1]?.price
                     ? `Rs. ${dossier.executionPlan.targets[1].price} ${dossier.executionPlan.targets[1].netReturnPct != null ? `(+${dossier.executionPlan.targets[1].netReturnPct}% net)` : ''}`
                     : (agentResult?.executionPlan?.target2 || (dossier?.executionPlan?.available === false ? 'Unavailable — ' + (dossier.executionPlan.reason || 'insufficient data') : 'Unavailable'));
+
+                  const formatTargetStr = (str) => {
+                    if (!str) return 'Unavailable';
+                    const s = String(str).trim();
+                    if (s.startsWith('Rs.') || s.toLowerCase().startsWith('unavailable')) return s;
+                    if (/^\d/.test(s)) return `Rs. ${s}`;
+                    return s;
+                  };
+
                   return (
                     <>
                       <div style={{ fontSize: 14, fontWeight: 900, color: '#f8fafc' }}>
-                        T1: {displayT1.startsWith('Rs.') ? displayT1 : `Rs. ${displayT1}`}
+                        T1: {formatTargetStr(displayT1)}
                       </div>
                       <div style={{ fontSize: 14, fontWeight: 900, color: '#34d399' }}>
-                        T2: {displayT2.startsWith('Rs.') ? displayT2 : `Rs. ${displayT2}`}
+                        T2: {formatTargetStr(displayT2)}
                       </div>
                     </>
                   );
@@ -878,6 +928,25 @@ export default function NepseAgentDashboard({
           </div>
         </>
       )}
+
+      {/* ── Mandatory SEBON Educational Non-Advisory Risk Disclaimer ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+        fontSize: 11.5,
+        color: '#64748b',
+        padding: '12px 14px',
+        background: 'rgba(255, 255, 255, 0.02)',
+        borderRadius: 10,
+        border: '1px solid rgba(255, 255, 255, 0.05)',
+        marginTop: 16
+      }}>
+        <ShieldAlert style={{ width: 15, height: 15, flexShrink: 0, marginTop: 1, color: '#64748b' }} />
+        <p style={{ margin: 0, lineHeight: 1.5 }}>
+          <strong>SEBON Educational & Non-Advisory Disclaimer:</strong> Drabyashree NEPSE Agent analyses and algorithmic outputs are generated strictly for academic research and educational decision support. They do not constitute licensed SEBON investment advice, portfolio management, or solicitations to buy or sell securities. Always verify orders with licensed Nepalese brokers and apply prudent risk management.
+        </p>
+      </div>
     </div>
   );
 }
