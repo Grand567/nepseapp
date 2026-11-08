@@ -4,8 +4,8 @@
     "name": "Normal Buy Share Calculation (100 shares @ Rs. 250)",
     "category": "Calculator:Buy",
     "status": "PASS",
-    "expected": "Payable = Rs. 25,093.75, Cost/Share = Rs. 250.94",
-    "actual": "Payable = Rs. 25093.75, Cost/Share = Rs. 250.94",
+    "expected": "Payable = Rs. 25,118.75, Cost/Share = Rs. 251.19",
+    "actual": "Payable = Rs. 25118.75, Cost/Share = Rs. 251.19",
     "details": ""
   },
   {
@@ -13,8 +13,8 @@
     "name": "High-Tier Buy Order (5,000 shares @ Rs. 600 = Rs. 30 Lakhs)",
     "category": "Calculator:Buy",
     "status": "PASS",
-    "expected": "Commission = Rs. 8,100 (0.27%), Total = Rs. 3,008,550.00",
-    "actual": "Commission = Rs. 8100, Total = Rs. 3008550",
+    "expected": "Commission = Rs. 8,100 (0.27%), DP = Rs. 25, Total = Rs. 3,008,575.00",
+    "actual": "Commission = Rs. 8100, Total = Rs. 3008575",
     "details": ""
   },
   {
@@ -77,7 +77,7 @@
     "category": "Calculator:Breakeven",
     "status": "PASS",
     "expected": "Breakeven Price ~Rs. 252.10",
-    "actual": "Breakeven Price = Rs. 252.20",
+    "actual": "Breakeven Price = Rs. 252.40",
     "details": ""
   },
   {

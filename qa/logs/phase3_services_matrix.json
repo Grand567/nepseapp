@@ -1,7 +1,7 @@
 {
   "total": 125,
-  "passed": 123,
-  "failed": 2,
+  "passed": 125,
+  "failed": 0,
   "results": [
     {
       "id": "tab.services.svc_master_100_profit",
@@ -87,7 +87,7 @@
       "category": "flagship",
       "sourceFile": "src/components/AccumulationDistributionRadar.tsx",
       "status": "PASS",
-      "textLen": 20280,
+      "textLen": 20290,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -120,7 +120,7 @@
       "category": "flagship",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 2063,
+      "textLen": 2064,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -152,10 +152,10 @@
       "name": "Backtest Engine & Walk-Forward Report",
       "category": "flagship",
       "sourceFile": "src/components/BacktestReportScreen.tsx",
-      "status": "FAIL",
-      "textLen": 344,
-      "hasErrorFallback": true,
-      "errorMsg": "ErrorBoundary fallback triggered on render: Backtest Engine & Walk-Forward ReportNEPSE Feed•flagshipLatest Session⚠️Backtest Engine & Walk-Forward Report Telemetry NoticeAn unexpected render issue was safely caught in Backtest Engine & Walk-Forward Report. Other t"
+      "status": "PASS",
+      "textLen": 1113,
+      "hasErrorFallback": false,
+      "errorMsg": null
     },
     {
       "id": "tab.services.svc_paper_trading_journal",
@@ -208,7 +208,7 @@
       "category": "flagship",
       "sourceFile": "src/components/NepseAgentDashboard.jsx",
       "status": "PASS",
-      "textLen": 2823,
+      "textLen": 3219,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -219,7 +219,7 @@
       "category": "flagship",
       "sourceFile": "src/components/AlgorithmicSignalTrackRecord.tsx",
       "status": "PASS",
-      "textLen": 1275,
+      "textLen": 4835,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -241,7 +241,7 @@
       "category": "smart-money",
       "sourceFile": "src/components/AccumulationDistributionRadar.tsx",
       "status": "PASS",
-      "textLen": 4323,
+      "textLen": 4333,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -252,7 +252,7 @@
       "category": "smart-money",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1537,
+      "textLen": 1538,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -263,7 +263,7 @@
       "category": "smart-money",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1933,
+      "textLen": 1934,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -373,7 +373,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1572,
+      "textLen": 1573,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -384,7 +384,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1552,
+      "textLen": 1553,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -395,7 +395,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1568,
+      "textLen": 1569,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -406,7 +406,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1542,
+      "textLen": 1543,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -417,7 +417,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1477,
+      "textLen": 1478,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -428,7 +428,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1600,
+      "textLen": 1601,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -439,7 +439,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1779,
+      "textLen": 1780,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -450,7 +450,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1588,
+      "textLen": 1589,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -461,7 +461,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1666,
+      "textLen": 1667,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -472,7 +472,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1948,
+      "textLen": 1949,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -483,7 +483,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1452,
+      "textLen": 1453,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -494,7 +494,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1981,
+      "textLen": 1982,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -505,7 +505,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 2039,
+      "textLen": 2040,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -516,7 +516,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1983,
+      "textLen": 1984,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -527,7 +527,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 2161,
+      "textLen": 2162,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -538,7 +538,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1985,
+      "textLen": 1986,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -549,7 +549,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1700,
+      "textLen": 1701,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -560,7 +560,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1578,
+      "textLen": 1579,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -571,7 +571,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1585,
+      "textLen": 1586,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -582,7 +582,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1511,
+      "textLen": 1512,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -593,7 +593,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1605,
+      "textLen": 1606,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -615,7 +615,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1708,
+      "textLen": 1709,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -626,7 +626,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1619,
+      "textLen": 1620,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -637,7 +637,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1605,
+      "textLen": 1606,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -648,7 +648,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1454,
+      "textLen": 1455,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -659,7 +659,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1715,
+      "textLen": 1716,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -681,7 +681,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1593,
+      "textLen": 1594,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -692,7 +692,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1608,
+      "textLen": 1609,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -703,7 +703,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1589,
+      "textLen": 1590,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -714,7 +714,7 @@
       "category": "trading",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1558,
+      "textLen": 1559,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -736,7 +736,7 @@
       "category": "valuation",
       "sourceFile": "src/components/DividendHistoryPanel.tsx",
       "status": "PASS",
-      "textLen": 582,
+      "textLen": 385,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -747,7 +747,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1496,
+      "textLen": 1497,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -758,7 +758,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1476,
+      "textLen": 1477,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -769,7 +769,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1490,
+      "textLen": 1491,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -780,7 +780,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1465,
+      "textLen": 1466,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -791,7 +791,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1684,
+      "textLen": 1685,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -802,7 +802,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1577,
+      "textLen": 1578,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -813,7 +813,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1553,
+      "textLen": 1554,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -846,7 +846,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1738,
+      "textLen": 1739,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -857,7 +857,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1645,
+      "textLen": 1646,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -868,7 +868,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1529,
+      "textLen": 1530,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -879,7 +879,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1556,
+      "textLen": 1557,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -890,7 +890,7 @@
       "category": "valuation",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1390,
+      "textLen": 1391,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -923,7 +923,7 @@
       "category": "regulatory",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1433,
+      "textLen": 1434,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -978,7 +978,7 @@
       "category": "market",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1483,
+      "textLen": 1484,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -1011,7 +1011,7 @@
       "category": "market",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 2208,
+      "textLen": 2206,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -1088,7 +1088,7 @@
       "category": "market",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1566,
+      "textLen": 1567,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -1099,7 +1099,7 @@
       "category": "market",
       "sourceFile": "src/components/services.tsx",
       "status": "PASS",
-      "textLen": 1575,
+      "textLen": 1576,
       "hasErrorFallback": false,
       "errorMsg": null
     },
@@ -1252,10 +1252,10 @@
       "name": "✂️ Stock Split & Par Value Adjustment",
       "category": "calculators",
       "sourceFile": "src/components/calculators.tsx",
-      "status": "FAIL",
-      "textLen": 430,
+      "status": "PASS",
+      "textLen": 628,
       "hasErrorFallback": false,
-      "errorMsg": "Blank <InfoBanner>: StockSplitCalculator passes title/text props instead of children (calculators.tsx:1253)"
+      "errorMsg": null
     },
     {
       "id": "tab.services.svc_wacc_averaging",
@@ -1264,7 +1264,7 @@
       "category": "calculators",
       "sourceFile": "src/components/calculators.tsx",
       "status": "PASS",
-      "textLen": 429,
+      "textLen": 645,
       "hasErrorFallback": false,
       "errorMsg": null
     },

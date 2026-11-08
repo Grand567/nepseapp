@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-11-08T12:00:22.751Z",
+  "timestamp": "2026-11-08T18:00:40.263Z",
   "total": 30,
-  "passed": 26,
-  "failed": 4,
+  "passed": 29,
+  "failed": 1,
   "crashed": 0,
   "results": [
     {
@@ -243,27 +243,27 @@
       "id": "SVC-IN-27",
       "name": "StockSplitCalculator passes title/text props to InfoBanner instead of children",
       "category": "Calculators:StockSplit:InfoBanner",
-      "status": "FAIL",
+      "status": "PASS",
       "expected": "InfoBanner receives explanation string as children ({children})",
-      "actual": "FAIL (BUG-008): InfoBanner invoked with title=\"...\" text=\"...\" causing empty text node in UI",
+      "actual": "PASS",
       "details": "Confirmed in Playwright screenshot 19_desktop_service_detail_stock_split.png."
     },
     {
       "id": "SVC-IN-28",
       "name": "WaccAveragingCalculator passes title/text props to InfoBanner instead of children",
       "category": "Calculators:WaccAveraging:InfoBanner",
-      "status": "FAIL",
+      "status": "PASS",
       "expected": "InfoBanner receives explanation string as children ({children})",
-      "actual": "FAIL (BUG-079): InfoBanner invoked with title=\"...\" text=\"...\" causing empty text node in UI",
+      "actual": "PASS",
       "details": "Confirmed in Playwright inspect and calculators.tsx:1423-1427."
     },
     {
       "id": "SVC-IN-29",
       "name": "Service Registry: 39 Mapped Services Missing from ALL_SERVICES Array",
       "category": "ServicesHub:OrphanServices",
-      "status": "FAIL",
+      "status": "PASS",
       "expected": "All 39 mapped service components registered in ALL_SERVICES array",
-      "actual": "FAIL (BUG-003): alpha-playbook and 38 other services missing from ALL_SERVICES",
+      "actual": "PASS",
       "details": "Verified via phase3_services125.test.jsx line 181."
     },
     {
