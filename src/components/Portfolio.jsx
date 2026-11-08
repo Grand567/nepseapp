@@ -1692,14 +1692,17 @@ Based on this data, provide a robust analysis using this exact markdown structur
     const { price: effectivePrice, value: currentValue } = resolveScripValuation(h, valuationMode);
     const profitLoss = currentValue - h.totalInvestedCost;
     const plPercent = h.totalInvestedCost > 0 ? (profitLoss / h.totalInvestedCost) * 100 : 0;
-    const signal = classifyHoldingActionSignal(h, marketStock);
-
-    return {
+    const enriched = {
       ...h,
       currentPrice: effectivePrice,
       currentValue,
       profitLoss,
-      plPercent,
+      plPercent
+    };
+    const signal = classifyHoldingActionSignal(enriched, marketStock);
+
+    return {
+      ...enriched,
       stockChange: marketStock?.change || 0,
       stockPchange: marketStock?.pChange || 0,
       signal
@@ -1781,13 +1784,16 @@ Based on this data, provide a robust analysis using this exact markdown structur
       const totalCost = h.totalInvestedCost || (h.units * (h.wacc || 100));
       const profitLoss = currentValue - totalCost;
       const plPercent = totalCost > 0 ? (profitLoss / totalCost) * 100 : 0;
-      const signal = classifyHoldingActionSignal(h, marketStock);
-      return {
+      const enriched = {
         ...h,
         currentPrice: effectivePrice,
         currentValue,
         profitLoss,
-        plPercent,
+        plPercent
+      };
+      const signal = classifyHoldingActionSignal(enriched, marketStock);
+      return {
+        ...enriched,
         stockChange: marketStock?.change || 0,
         stockPchange: marketStock?.pChange || 0,
         sector: marketStock?.sector || 'Other',

@@ -1133,9 +1133,9 @@ export function classifyHoldingActionSignal(holding, marketStock = null, plan = 
   );
   const rsi = Number(marketStock?.rsi || (50 + Math.max(-25, Math.min(25, (pChange * 3.5)))));
 
-  const gainPct = wacc > 0 && currentPrice > 0 
-    ? ((currentPrice - wacc) / wacc) * 100 
-    : Number(holding.plPercent || 0);
+  const gainPct = Number.isFinite(holding.plPercent)
+    ? Number(holding.plPercent)
+    : (wacc > 0 && currentPrice > 0 ? ((currentPrice - wacc) / wacc) * 100 : 0);
 
   // 1. Target 2 Super Gain (Gain >= 25% or above Target 2)
   if (gainPct >= 25.0 || (plan?.levels?.target2?.price && currentPrice >= Number(plan.levels.target2.price))) {
