@@ -1647,7 +1647,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
     chronologicalTxs.forEach(tx => {
       const sym = tx.symbol.trim().toUpperCase();
       if (!holdingsMap[sym]) {
-        holdingsMap[sym] = { symbol: sym, units: 0, totalInvestedCost: 0, wacc: 0 };
+        holdingsMap[sym] = { symbol: sym, units: 0, totalInvestedCost: 0, wacc: 0, waccSource: 'MANUAL_LEDGER', isCustomWacc: true };
       }
       const holding = holdingsMap[sym];
 
@@ -1745,9 +1745,22 @@ Based on this data, provide a robust analysis using this exact markdown structur
     const marketStock = marketStocks.find(s => (s.symbol || '').trim().toUpperCase() === safeSym);
     const base = guessScripBasePrice(safeSym, h.wacc);
 
-    const prevClosePrice = h.prevClose > 0 ? h.prevClose : (h.valueAsOfPrevClose > 0 && h.units > 0 ? (h.valueAsOfPrevClose / h.units) : (h.currentLtp || base));
-    const ltpPrice = h.currentLtp > 0 ? h.currentLtp : (h.valueAsOfLTP > 0 && h.units > 0 ? (h.valueAsOfLTP / h.units) : (h.prevClose || base));
-    const livePrice = (marketStock && marketStock.ltp > 0) ? marketStock.ltp : ltpPrice;
+    const marketPrevClose = marketStock ? (marketStock.prevClose || marketStock.previousClose || marketStock.close || 0) : 0;
+    const marketLtp = marketStock ? (marketStock.ltp || marketStock.lastTradedPrice || marketStock.price || 0) : 0;
+
+    const prevClosePrice = h.prevClose > 0
+      ? h.prevClose
+      : (h.valueAsOfPrevClose > 0 && h.units > 0
+          ? (h.valueAsOfPrevClose / h.units)
+          : (marketPrevClose > 0 ? marketPrevClose : (h.currentLtp || marketLtp || base)));
+
+    const ltpPrice = h.currentLtp > 0
+      ? h.currentLtp
+      : (h.valueAsOfLTP > 0 && h.units > 0
+          ? (h.valueAsOfLTP / h.units)
+          : (marketLtp > 0 ? marketLtp : (h.prevClose || marketPrevClose || base)));
+
+    const livePrice = marketLtp > 0 ? marketLtp : ltpPrice;
 
     if (mode === 'prevClose') {
       const val = h.valueAsOfPrevClose > 0 ? h.valueAsOfPrevClose : Number((h.units * prevClosePrice).toFixed(2));
@@ -1978,6 +1991,8 @@ Based on this data, provide a robust analysis using this exact markdown structur
             {/* CDSC / WACC Origin Badge */}
             {h.waccSource === 'CDSC_MY_HOLDING_DECLARED' ? (
               <span style={{ fontSize: 12, background: 'rgba(16,185,129,0.18)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>✓ MeroShare WACC</span>
+            ) : h.waccSource === 'MANUAL_LEDGER' ? (
+              <span style={{ fontSize: 12, background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.25)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>📖 Manual Ledger</span>
             ) : h.waccSource === 'BROKER_TMS' ? (
               <span style={{ fontSize: 12, background: 'rgba(99,102,241,0.2)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.35)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>🏛️ Broker TMS</span>
             ) : h.waccSource && String(h.waccSource).startsWith('ESTIMATED_') ? (
