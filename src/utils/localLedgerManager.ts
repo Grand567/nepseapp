@@ -776,7 +776,11 @@ export async function getHistoricalSubfileBrokerAnalysis(
         ? Number(flow.lead_accumulator.sell_kitta)
         : (b.sell_kitta !== undefined ? Number(b.sell_kitta) : Math.max(0, buyQty - Number(b.net_kitta || buyQty)));
       const netQty = Number(b.net_kitta !== undefined ? b.net_kitta : (buyQty - sellQty));
-      const vwapRate = Number(b.buy_vwap || quote?.vwap || 0);
+      const buyRate = Number(b.buy_vwap || quote?.vwap || 0);
+      const matchedSeller = (flow.top_5_sellers || []).find((s: any) => String(s.broker_id) === String(b.broker_id));
+      const sellRate = sellQty > 0
+        ? Number(b.sell_vwap || matchedSeller?.sell_vwap || quote?.vwap || buyRate)
+        : 0;
       return {
         broker: String(b.broker_id),
         id: String(b.broker_id),
@@ -784,16 +788,16 @@ export async function getHistoricalSubfileBrokerAnalysis(
         name: `Broker #${b.broker_id}`,
         brokerName: `Broker #${b.broker_id}`,
         buyQty,
-        buyAmt: buyQty * vwapRate,
+        buyAmt: buyQty * buyRate,
         sellQty,
-        sellAmt: sellQty * vwapRate,
+        sellAmt: sellQty * sellRate,
         netQty,
         signedHoldQty: netQty,
         holdQty: Math.max(0, netQty),
-        avgBuyRate: vwapRate,
-        avgBuyPrice: vwapRate,
-        avgSellRate: sellQty > 0 ? vwapRate : 0,
-        avgSellPrice: sellQty > 0 ? vwapRate : 0,
+        avgBuyRate: buyRate,
+        avgBuyPrice: buyRate,
+        avgSellRate: sellRate,
+        avgSellPrice: sellRate,
         retentionPct: b.retention_pct || (buyQty > 0 ? Math.round((netQty / buyQty) * 100) : 100)
       };
     });
@@ -802,7 +806,11 @@ export async function getHistoricalSubfileBrokerAnalysis(
       const sellQty = Number(s.sell_kitta || s.net_dump_kitta || 0);
       const netDump = Number(s.net_dump_kitta || s.sell_kitta || 0);
       const buyQty = s.buy_kitta !== undefined ? Number(s.buy_kitta) : Math.max(0, sellQty - netDump);
-      const vwapRate = Number(s.sell_vwap || quote?.vwap || 0);
+      const sellRate = Number(s.sell_vwap || quote?.vwap || 0);
+      const matchedBuyer = (flow.top_5_buyers || []).find((b: any) => String(b.broker_id) === String(s.broker_id));
+      const buyRate = buyQty > 0
+        ? Number(s.buy_vwap || matchedBuyer?.buy_vwap || quote?.vwap || sellRate)
+        : 0;
       return {
         broker: String(s.broker_id),
         id: String(s.broker_id),
@@ -810,16 +818,16 @@ export async function getHistoricalSubfileBrokerAnalysis(
         name: `Broker #${s.broker_id}`,
         brokerName: `Broker #${s.broker_id}`,
         buyQty,
-        buyAmt: buyQty * vwapRate,
+        buyAmt: buyQty * buyRate,
         sellQty,
-        sellAmt: sellQty * vwapRate,
+        sellAmt: sellQty * sellRate,
         netQty: -netDump,
         signedHoldQty: -netDump,
         holdQty: 0,
-        avgBuyRate: buyQty > 0 ? vwapRate : 0,
-        avgBuyPrice: buyQty > 0 ? vwapRate : 0,
-        avgSellRate: vwapRate,
-        avgSellPrice: vwapRate,
+        avgBuyRate: buyRate,
+        avgBuyPrice: buyRate,
+        avgSellRate: sellRate,
+        avgSellPrice: sellRate,
         retentionPct: 0
       };
     });

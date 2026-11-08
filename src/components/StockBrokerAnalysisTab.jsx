@@ -653,7 +653,8 @@ function StockBrokerAnalysisTabInner({
     }
 
     // Incorporate multi-day cumulative ledger accumulators holding this scrip
-    if (cumulativeHoldingMap && typeof cumulativeHoldingMap === 'object') {
+    const isHistoricalSession = Boolean(effectiveDate && effectiveDate !== 'all' && (allStoredDates.length === 0 || effectiveDate !== allStoredDates[0]));
+    if (!isHistoricalSession && cumulativeHoldingMap && typeof cumulativeHoldingMap === 'object') {
       for (const [id, c] of Object.entries(cumulativeHoldingMap)) {
         const normId = String(id).replace(/^0+/, '');
         if (!map.has(normId) && !map.has(id) && c && (c.totalHeldQty > 0 || c.netQty > 0)) {
@@ -695,12 +696,12 @@ function StockBrokerAnalysisTabInner({
       const cum = cumulativeHoldingMap[idKey] || cumulativeHoldingMap[String(r.id)] || null;
       const rawCumHold = cum ? (cum.totalHeldQty || (cum.netQty > 0 ? cum.netQty : 0)) : 0;
       // Invariant: Total holding till today reflects authentic cumulative multi-year holding from archive
-      // If cumulative map has resolved, use rawCumHold. If not yet resolved, use undefined so it shows "..." instead of falsely echoing session hold
-      const effectiveCumHold = hasCumData ? rawCumHold : (cum ? (cum.totalHeldQty || Math.max(0, cum.netQty || 0)) : undefined);
-      const cumAmt = cum ? (cum.totalHeldAmt || ((effectiveCumHold || 0) * (cum.avgBuyRate || avgBuy || ltp || 100))) : ((effectiveCumHold || 0) * (avgBuy || ltp || 100));
-      const cumBuyPx = cum && cum.avgBuyRate > 0 ? cum.avgBuyRate : (avgBuy || 0);
-      const cumSellPx = cum && cum.avgSellRate > 0 ? cum.avgSellRate : (avgSell || 0);
-      const cumRet = cum && cum.retentionPct !== undefined ? cum.retentionPct : (r.buyQty > 0 ? Math.round((Math.max(0, netQty) / r.buyQty) * 100) : 0);
+      // If viewing a historical session, restrict to authentic session values
+      const effectiveCumHold = isHistoricalSession ? holdQty : (hasCumData ? rawCumHold : (cum ? (cum.totalHeldQty || Math.max(0, cum.netQty || 0)) : undefined));
+      const cumAmt = isHistoricalSession ? holdAmt : (cum ? (cum.totalHeldAmt || ((effectiveCumHold || 0) * (cum.avgBuyRate || avgBuy || ltp || 100))) : ((effectiveCumHold || 0) * (avgBuy || ltp || 100)));
+      const cumBuyPx = isHistoricalSession ? (avgBuy || 0) : (cum && cum.avgBuyRate > 0 ? cum.avgBuyRate : (avgBuy || 0));
+      const cumSellPx = isHistoricalSession ? (avgSell || 0) : (cum && cum.avgSellRate > 0 ? cum.avgSellRate : (avgSell || 0));
+      const cumRet = isHistoricalSession ? holdPctOfBuy : (cum && cum.retentionPct !== undefined ? cum.retentionPct : (r.buyQty > 0 ? Math.round((Math.max(0, netQty) / r.buyQty) * 100) : 0));
 
       return {
         ...r,
@@ -727,17 +728,18 @@ function StockBrokerAnalysisTabInner({
 
     // Sort by holdQty descending, then totalTrade descending
     return list.sort((a, b) => b.signedHoldQty - a.signedHoldQty || b.totalTrade - a.totalTrade);
-  }, [floorsheetData, activeBrokerData, ltp, cumulativeHoldingMap]);
+  }, [floorsheetData, activeBrokerData, ltp, cumulativeHoldingMap, effectiveDate, allStoredDates]);
 
   // Top Chart Data (TOP HOLDINGS | TOP BUYERS | TOP SELLERS) dynamically driven by rankingMetric
   const chartItems = useMemo(() => {
     const isAmountMetric = rankingMetric === 'netFlow' || rankingMetric === 'grossAmt';
+    const isHistoricalSession = Boolean(effectiveDate && effectiveDate !== 'all' && (allStoredDates.length === 0 || effectiveDate !== allStoredDates[0]));
 
     if (chartTab === 'holdings') {
       if (rankingMetric === 'netFlow') {
         const enriched = brokerRecords.map(b => ({
           ...b,
-          effectiveHoldAmt: (b.cumHoldAmt !== undefined && b.cumHoldAmt > 0) ? b.cumHoldAmt : Math.max(0, b.netAmt || 0)
+          effectiveHoldAmt: isHistoricalSession ? Math.max(0, b.netAmt || 0) : ((b.cumHoldAmt !== undefined && b.cumHoldAmt > 0) ? b.cumHoldAmt : Math.max(0, b.netAmt || 0))
         })).filter(b => b.effectiveHoldAmt > 0);
         const list = enriched.length > 0 ? enriched : brokerRecords;
         return [...list]
@@ -775,10 +777,10 @@ function StockBrokerAnalysisTabInner({
             color: '#0284c7'
           }));
       }
-      // Default: netQty (Actual Total Kitta Held Till Today!)
+      // Default: netQty (Actual Total Kitta Held Till Today or in this session!)
       const enriched = brokerRecords.map(b => ({
         ...b,
-        effectiveHoldQty: (b.cumHoldQty !== undefined && b.cumHoldQty > 0) ? b.cumHoldQty : (b.signedHoldQty > 0 ? b.signedHoldQty : (b.totalHeldQty || b.buyQty || 0))
+        effectiveHoldQty: isHistoricalSession ? Math.max(0, b.signedHoldQty || 0) : ((b.cumHoldQty !== undefined && b.cumHoldQty > 0) ? b.cumHoldQty : (b.signedHoldQty > 0 ? b.signedHoldQty : (b.totalHeldQty || b.buyQty || 0)))
       })).filter(b => b.effectiveHoldQty > 0);
       const list = enriched.length > 0 ? enriched : brokerRecords;
       return [...list]
@@ -1046,6 +1048,31 @@ function StockBrokerAnalysisTabInner({
 
   // Cumulative Table Sorted List (Total Holding Till Today across all accumulators)
   const sortedCumulativeBrokers = useMemo(() => {
+    const isHistoricalSession = Boolean(effectiveDate && effectiveDate !== 'all' && (allStoredDates.length === 0 || effectiveDate !== allStoredDates[0]));
+
+    if (isHistoricalSession) {
+      let histList = filteredBrokers
+        .filter(b => (b.signedHoldQty || b.netQty || 0) > 0)
+        .map(b => {
+          const sessNet = Number(b.signedHoldQty || b.netQty || 0);
+          const bAvg = Number(b.avgBuy || b.avgBuyRate || (b.buyAmt && b.buyQty ? b.buyAmt / b.buyQty : 0) || ltp || 100);
+          return {
+            ...b,
+            cumHoldQty: sessNet,
+            holdQty: sessNet,
+            signedHoldQty: sessNet,
+            cumAvgBuy: bAvg,
+            avgBuy: bAvg,
+            cumHoldAmt: b.holdAmt || b.netAmt || (sessNet * bAvg)
+          };
+        });
+      if (filterQuery) {
+        const q = filterQuery.toLowerCase().trim();
+        histList = histList.filter(b => b.id.toLowerCase().includes(q) || b.name.toLowerCase().includes(q));
+      }
+      return histList.sort((a, b) => b.cumHoldQty - a.cumHoldQty);
+    }
+
     const map = new Map();
     // Seed with cumulativeHoldingMap (authoritative multi-day holdings)
     if (cumulativeHoldingMap && Object.keys(cumulativeHoldingMap).length > 0) {
@@ -1136,7 +1163,7 @@ function StockBrokerAnalysisTabInner({
     });
 
     return list;
-  }, [filteredBrokers, cumulativeHoldingMap, filterQuery, tableSortField, tableSortOrder, ltp]);
+  }, [filteredBrokers, cumulativeHoldingMap, filterQuery, tableSortField, tableSortOrder, ltp, effectiveDate, allStoredDates]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 10 }}>
