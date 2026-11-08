@@ -86,12 +86,17 @@ export async function callGuruMarketOutlook(options = {}) {
   const glmApiKey = options.glmApiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || '') : '') || DEFAULT_AI_KEY;
   const openrouterApiKey = options.openrouterApiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_openrouter_api_key') || localStorage.getItem('openrouter_api_key') || '') : '') || DEFAULT_OPENROUTER_KEY;
 
-  const url = new URL(`${PROXY_BASE}/api/guru/market-outlook`);
-  if (openrouterApiKey) url.searchParams.set('openrouterApiKey', openrouterApiKey);
-  if (apiKey) url.searchParams.set('apiKey', apiKey);
-  if (glmApiKey) url.searchParams.set('glmApiKey', glmApiKey);
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+  if (apiKey) headers['x-api-key'] = apiKey;
+  if (openrouterApiKey) headers['x-openrouter-key'] = openrouterApiKey;
+  if (glmApiKey) headers['x-glm-key'] = glmApiKey;
 
-  const res = await fetch(url.toString(), {
+  const res = await fetch(`${PROXY_BASE}/api/guru/market-outlook`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ apiKey, glmApiKey, openrouterApiKey, ...options }),
     signal: AbortSignal.timeout(60000)
   });
 

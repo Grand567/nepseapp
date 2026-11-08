@@ -11033,7 +11033,7 @@ Analyze this NEPSE portfolio and respond ONLY in this exact JSON format:
 });
 
 // ── GURU MARKET OUTLOOK ───────────────────────────────────────
-app.get('/api/guru/market-outlook', async (req, res) => {
+app.all('/api/guru/market-outlook', async (req, res) => {
   try {
     // Fetch real market data for AI context
     const [nepseData, sectorIndices, gainers, losers] = await Promise.allSettled([
@@ -11095,10 +11095,10 @@ Provide market outlook in this exact JSON:
 }`;
 
     let result = null;
-    // ✅ FIXED: accept client-sent API keys from query/body params
-    const clientGeminiKey = (req.query.apiKey || req.body?.apiKey || '').trim();
-    const clientOpenRouterKey = (req.query.openrouterApiKey || req.body?.openrouterApiKey || '').trim();
-    const clientGlmKey = (req.query.glmApiKey || req.body?.glmApiKey || '').trim();
+    // ✅ FIXED: accept client-sent API keys from headers, body, or query
+    const clientGeminiKey = String(req.headers['x-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '') || req.body?.apiKey || req.query?.apiKey || '').trim();
+    const clientOpenRouterKey = String(req.headers['x-openrouter-key'] || req.body?.openrouterApiKey || req.query?.openrouterApiKey || '').trim();
+    const clientGlmKey = String(req.headers['x-glm-key'] || req.body?.glmApiKey || req.query?.glmApiKey || '').trim();
 
     const geminiKey = clientGeminiKey || AI_KEYS.gemini;
     const openrouterKey = clientOpenRouterKey || AI_KEYS.openrouter;
