@@ -1939,7 +1939,7 @@ Live headless Chromium automated crawl conducted on Vite dev server (`http://loc
 
 | Bug ID | Severity | Module / View | Defect Description | Native Risk / Impact | Status |
 | :--- | :---: | :--- | :--- | :--- | :---: |
-| **BUG-080** | **High** | `BreakoutAlertDialog.jsx` | Missing `useBackHandler` registration in dialog. | Hardware back-press dismisses parent `StockDetailModal` instead of closing alert dialog. | **New Finding** |
+| **BUG-080** | **High** | `BreakoutAlertDialog.jsx` | Missing `useBackHandler` registration in dialog. | Hardware back-press dismisses parent `StockDetailModal` instead of closing alert dialog. | **Fixed** |
 | **BUG-081** | **High** | `AccumulationDistributionRadar.tsx`, `PreferencesSettingsService.tsx` | File downloads use `<a download>` instead of `window.NepseAndroidDownloader.saveFile()`. | Exporting Whale Archive or Desk Settings backup fails silently on native Android WebView. | **Fixed** |
 | **BUG-082** | **Medium** | `App.jsx`, `liveData.js` | Lack of `CapacitorApp.addListener('appStateChange')` resume listener. | Resuming app after 30+ minutes retains stale market quotes until manual refresh or polling tick. | **New Finding** |
 | **BUG-083** | **Medium** | `AndroidManifest.xml` | `android:windowSoftInputMode` is missing and `@capacitor/keyboard` not installed. | Soft keyboard opens in `adjustPan` mode, covering inputs in bottom sheets and modal forms. | **New Finding** |

@@ -21,6 +21,7 @@ import {
   calculateStockRvol
 } from '../utils/watchlistAlerts';
 import { addToWatchlist } from '../utils/watchlist';
+import { useBackHandler } from '../context/NavigationContext';
 
 export default function BreakoutAlertDialog({
   isOpen,
@@ -78,6 +79,14 @@ export default function BreakoutAlertDialog({
       setSyncedBadge(true);
     }
   }, [isOpen, sym, stock, entryExitPlan]);
+
+  useBackHandler(() => {
+    if (isOpen) {
+      if (typeof onClose === 'function') onClose();
+      return true;
+    }
+    return false;
+  }, Boolean(isOpen && symbol), 120);
 
   if (!isOpen || !symbol) return null;
 
