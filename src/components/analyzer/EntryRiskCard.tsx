@@ -63,8 +63,6 @@ interface EntryRiskCardProps {
 const CAPITAL_PRESETS = [50000, 100000, 250000, 500000, 1000000];
 
 export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, setupScore, riskGate, isAvoid }: EntryRiskCardProps) {
-  if (!levels) return null;
-
   const isSetupGated = Boolean(
     isAvoid ||
     (verdict && (
@@ -106,9 +104,9 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
   };
 
   // ── Derived Friction-Adjusted Position Sizing Calculations ──
-  const entryPx = currentPrice || levels.entryZone?.low || 100;
-  const stopPx = levels.stopLoss?.price || +(entryPx * 0.945).toFixed(1);
-  const chaseCapPx = (levels as any).chaseCap || +(Number(levels.entryZone?.high || entryPx * 1.01) * 1.025).toFixed(1);
+  const entryPx = currentPrice || levels?.entryZone?.low || 100;
+  const stopPx = levels?.stopLoss?.price || +(entryPx * 0.945).toFixed(1);
+  const chaseCapPx = (levels as any)?.chaseCap || +(Number(levels?.entryZone?.high || entryPx * 1.01) * 1.025).toFixed(1);
   const isChaseExceeded = Boolean(currentPrice && currentPrice > chaseCapPx);
 
   // Enforce max 1.5% - 2.0% portfolio risk ceiling across all tiers
@@ -124,12 +122,12 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
   const rawQuantity = Math.floor(Math.max(0, maxCapitalAtRisk - 50) / effectiveRiskPerShare);
 
   // Maximum single-stock allocation cap (25% of portfolio) AND 5% of 20-day median turnover cap
-  const median20DTurnover = Number((levels as any).median20DayTurnover || (levels as any).t2Risk?.median20DayTurnover || 8000000);
+  const median20DTurnover = Number((levels as any)?.median20DayTurnover || (levels as any)?.t2Risk?.median20DayTurnover || 8000000);
   const maxLiquidityOrderValue = Math.floor(0.05 * median20DTurnover);
   const maxSlotValue = Math.min(portfolioCapital * 0.25, maxLiquidityOrderValue);
   const maxAllocationShares = Math.floor(Math.max(0, maxSlotValue - 25) / (entryPx * (1 + estBrokerRate + 0.00015)));
 
-  const t2Multiplier = levels.t2Risk?.recommendedPositionMultiplier ?? levels.recommendedPositionMultiplier ?? 1.0;
+  const t2Multiplier = levels?.t2Risk?.recommendedPositionMultiplier ?? levels?.recommendedPositionMultiplier ?? 1.0;
   const scaledShares = Math.floor((Math.min(rawQuantity, maxAllocationShares) * t2Multiplier) / 10) * 10;
 
   // Verify 10-kitta minimum lot does not breach 2.0% hard portfolio loss cap
@@ -148,40 +146,40 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
   const actualRiskRupees = finalShares > 0 ? Math.round(finalShares * effectiveRiskPerShare + 50) : 0;
   const actualRiskPctOfCapital = portfolioCapital > 0 ? +((actualRiskRupees / portfolioCapital) * 100).toFixed(2) : 0;
 
-  const statutoryBePx = levels.statutoryBreakeven?.breakevenPrice || +(entryPx * 1.0085).toFixed(1);
+  const statutoryBePx = levels?.statutoryBreakeven?.breakevenPrice || +(entryPx * 1.0085).toFixed(1);
   const scaleOutShares = finalShares >= 20 ? Math.floor((finalShares * 0.5) / 10) * 10 : Math.floor(finalShares * 0.5);
   const runnerShares = Math.max(0, finalShares - scaleOutShares);
 
   // Expected Net Return in Rupees at Target 1
-  const t1NetGainPerShare = levels.target1?.netGainPerShare || (levels.target1?.price ? levels.target1.price - entryPx : entryPx * 0.08);
+  const t1NetGainPerShare = levels?.target1?.netGainPerShare || (levels?.target1?.price ? levels.target1.price - entryPx : entryPx * 0.08);
   const target1NetGainRupees = Math.round(finalShares * t1NetGainPerShare);
 
   // ── E-batch: Net P&L Calculator State ──
   const [showNetCalc, setShowNetCalc] = useState(false);
 
   // Real levels only — no invented %-of-price fallbacks.
-  const effPrice = Number(currentPrice || levels.entryZone?.low || levels.entryZone?.high || 0) || null;
-  const effStop = levels.stopLoss?.price != null ? Number(levels.stopLoss.price) : null;
-  const effT1 = levels.target1?.price != null ? Number(levels.target1.price) : null;
-  const effT2 = levels.target2?.price != null ? Number(levels.target2.price) : null;
+  const effPrice = Number(currentPrice || levels?.entryZone?.low || levels?.entryZone?.high || 0) || null;
+  const effStop = levels?.stopLoss?.price != null ? Number(levels.stopLoss.price) : null;
+  const effT1 = levels?.target1?.price != null ? Number(levels.target1.price) : null;
+  const effT2 = levels?.target2?.price != null ? Number(levels.target2.price) : null;
 
-  const displayRisk = levels.riskPerShare != null
+  const displayRisk = levels?.riskPerShare != null
     ? levels.riskPerShare
     : (effPrice != null && effStop != null && effPrice > effStop ? +(effPrice - effStop).toFixed(1) : +(Math.max(1.0, entryPx - stopPx)).toFixed(1));
 
-  const displayRewardT1 = levels.rewardToTarget1 != null
+  const displayRewardT1 = levels?.rewardToTarget1 != null
     ? levels.rewardToTarget1
     : (effPrice != null && effT1 != null && effT1 > effPrice ? +(effT1 - effPrice).toFixed(1) : +(Math.max(1.0, (effT1 || entryPx * 1.08) - entryPx)).toFixed(1));
 
-  const displayRewardT2 = levels.rewardToTarget2 != null
+  const displayRewardT2 = levels?.rewardToTarget2 != null
     ? levels.rewardToTarget2
     : (effPrice != null && effT2 != null && effT2 > effPrice ? +(effT2 - effPrice).toFixed(1) : +(Math.max(2.0, (effT2 || entryPx * 1.16) - entryPx)).toFixed(1));
 
-  const displayRrr1 = levels.rrr1 != null
+  const displayRrr1 = levels?.rrr1 != null
     ? `${levels.rrr1} : 1`
     : `${+(displayRewardT1 / Math.max(0.5, displayRisk)).toFixed(1)} : 1`;
 
-  const displayRrr2 = levels.rrr2 != null
+  const displayRrr2 = levels?.rrr2 != null
     ? `${levels.rrr2} : 1`
     : `${+(displayRewardT2 / Math.max(0.5, displayRisk)).toFixed(1)} : 1`;
   const [calcSellPrice, setCalcSellPrice] = useState<number>(0);
@@ -189,9 +187,9 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
   const [calcHoldingType, setCalcHoldingType] = useState<'short' | 'long'>('short');
 
   // Sync calc inputs when levels/entryPx change
-  const t1Price = levels.target1?.price || entryPx * 1.10;
+  const t1Price = levels?.target1?.price || entryPx * 1.10;
   const netCalcResult = useMemo(() => {
-    if (!showNetCalc || !entryPx || !calcSellPrice || !calcShares) return null;
+    if (!levels || !showNetCalc || !entryPx || !calcSellPrice || !calcShares) return null;
     try {
       return calculateNetProfit({
         shares: calcShares || finalShares,
@@ -201,9 +199,11 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
         investorType: 'individual',
       });
     } catch { return null; }
-  }, [showNetCalc, entryPx, calcSellPrice, calcShares, calcHoldingType, finalShares, t1Price]);
+  }, [levels, showNetCalc, entryPx, calcSellPrice, calcShares, calcHoldingType, finalShares, t1Price]);
 
-  const t2Risk = levels.t2Risk;
+  const t2Risk = levels?.t2Risk;
+
+  if (!levels) return null;
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-[#090d16] p-4 sm:p-5 text-slate-100 shadow-xl space-y-4">
