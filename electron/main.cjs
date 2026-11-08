@@ -92,6 +92,9 @@ if (!gotTheLock) {
     const req = http.get('http://localhost:5000/api/market-summary', (res) => {
       // Local proxy already responsive
     });
+    req.setTimeout(2000, () => {
+      req.destroy();
+    });
     req.on('error', () => {
       try {
         const serverFile = app.isPackaged

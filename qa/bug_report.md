@@ -1946,3 +1946,139 @@ Live headless Chromium automated crawl conducted on Vite dev server (`http://loc
 | **BUG-084** | **Medium** | `capacitor.config.json` | `server.allowNavigation` contains 40+ external domains without `@capacitor/browser` isolation. | Clicking external news/broker link can replace root WebView, trapping user in third-party website. | **Fixed** |
 | **BUG-085** | **Low** | `watchlistAlerts.js` | Uses Web `new Notification()` and un-gestured `new AudioContext()`. | System notification fails in WebView and alert chime is blocked by mobile autoplay policies. | **Fixed** |
 | **BUG-086** | **Low** | `Master100ProfitWorkstation.tsx` | Uses `window.open('/NEPSE_...pdf', '_blank')` to open local PDF guide. | Android WebView cannot render PDF via `window.open()`, resulting in blank view or unhandled intent. | **Fixed** |
+
+---
+
+## 17. Phase 8 — Electron Desktop Deep Audit Report
+
+Generated: 2026-11-09T05:20:00+05:45  
+**Audit Scope:** Verification of desktop architecture in `electron/main.cjs`, `electron-builder.json`, `index.html`, `vite.config.mjs`, and `proxy/server.mjs`.  
+**Desktop Focus Areas:** `contextIsolation`, `nodeIntegration`, `sandbox`, `webSecurity`, Content Security Policy (CSP), `preload.cjs` & secure IPC channels, input validation, window lifecycle (resize, minimum dimensions, minimize/restore, single-instance lock), external link handling & in-page navigation hijacking (`will-navigate`), offline resilience & embedded local proxy server lifecycle, auto-updater configuration, packaged build asset loading (`file://`), and file system permissions in packaged distribution.
+
+---
+
+### 17.1 Security Architecture Audit (`webPreferences`)
+- **Node Integration (`nodeIntegration: false`):**
+  - **Verdict:** **PASSED.** Direct Node.js runtime primitives (`fs`, `child_process`, `crypto`) are strictly blocked in the renderer process.
+- **Context Isolation (`contextIsolation: true`):**
+  - **Verdict:** **PASSED.** Chromium DOM context is segregated from the main process.
+- **Renderer Sandbox (`sandbox: true`):**
+  - **Verdict:** **PASSED.** Chromium process-level sandbox is explicitly enforced.
+- **Same-Origin Enforcement (`webSecurity: true`):**
+  - **Verdict:** **PASSED.** Standard browser web security and CORS restrictions are active.
+- **Insecure Content Execution (`allowRunningInsecureContent`):**
+  - **Verdict:** **PASSED.** Defaults to `false`; no mixed content is loaded.
+
+---
+
+### 17.2 Preload Script & IPC Isolation Audit
+- **Preload Script Declaration (`electron/main.cjs:28-34`):**
+  - **Finding:** In `electron/main.cjs`, `webPreferences` omits the `preload` property entirely. No `preload.cjs` or `preload.js` script exists in the `electron/` directory.
+  - **Bridge Defect:** `src/utils/proxyBase.js:36` inspects `typeof window.electron !== 'undefined'` to detect desktop mode. However, without a preload script utilizing `contextBridge.exposeInMainWorld('electron', ...)`, `window.electron` is permanently `undefined` at runtime.
+  - **IPC Channels & Input Validation:** No IPC channels (`ipcRenderer` / `ipcMain`) exist. The desktop application currently provides zero IPC communication for version inspection, window minimize/maximize, or update checks. Without an IPC layer, no IPC validation or rate-limiting exists (`BUG-087`).
+
+---
+
+### 17.3 Content Security Policy (CSP) Assessment
+- **Meta Tag & Response Headers:**
+  - `index.html` lacks a `<meta http-equiv="Content-Security-Policy" content="...">` header.
+  - In `electron/main.cjs:56`:
+    ```javascript
+    delete responseHeaders['content-security-policy'];
+    ```
+    The main process strips CSP headers from remote market proxy responses, but **does not declare an explicit CSP** for the local application shell (`file://` or `localhost`).
+  - **Security Warning:** Electron emits a DevTools security advisory (*"Insecure Content-Security-Policy: This renderer process has either no Content Security Policy set or a policy that is too permissive."*). Any potential XSS in dynamic data feeds (news RSS, user journal notes, scrip broker remarks) has unrestricted execution and exfiltration scope (`BUG-088`).
+
+---
+
+### 17.4 Window Lifecycle, Resizing, Minimize/Restore & Single-Instance Lock
+- **Single-Instance Lock (`app.requestSingleInstanceLock()`):**
+  - **Verdict:** **PASSED.** Duplicate process creation is prevented. When a second instance is launched, the primary window restores from a minimized state (`mainWindow.restore()`) and focuses (`mainWindow.focus()`).
+- **Minimum Dimensions & Bounds (`minWidth: 420, minHeight: 600`):**
+  - **Verdict:** **PASSED.** Window enforces a minimum footprint preventing UI component collapse on smaller displays, with an institutional default size of 1280x850.
+- **Menu Bar Auto-Hide (`autoHideMenuBar: true`):**
+  - **Verdict:** **PASSED.** Default menu bar is tucked away, preserving native Windows minimize, maximize, and close controls in the title bar.
+- **Window Geometry Persistence:**
+  - Window position and dimensions are not persisted across launches. Reopening the app always resets to 1280x850 at the center of the display (minor observation, non-critical).
+
+---
+
+### 17.5 External Links & Navigation Protection
+- **Window Open Delegation (`setWindowOpenHandler`):**
+  - **Verdict:** **PASSED.** Clicks triggering `window.open` or `<a target="_blank">` with `http:` / `https:` protocols are intercepted and routed to the default OS browser via `shell.openExternal(url)`, with `{ action: 'deny' }` returned to Electron.
+- **In-Page Navigation Hijack Risk (`will-navigate`):**
+  - **Defect:** `mainWindow.webContents.on('will-navigate')` is **NOT registered**.
+  - **Impact:** If an in-app click or unexpected redirect navigates the top-level window (e.g. an unhandled `<a href="https://example.com">` without `target="_blank"`, or `window.location.href = ...`), Electron will navigate the main BrowserWindow to that external site, destroying the React single-page application shell. The user is trapped without a browser address bar or back button (`BUG-089`).
+
+---
+
+### 17.6 Offline Resilience & Embedded Local Proxy Server Lifecycle
+- **Frontend Offline State:**
+  - `src/App.jsx` provides global offline banners and IndexedDB/localStorage fallback data (`nepse_enriched_v3`).
+- **Embedded Proxy Startup (`ensureLocalProxy()` in `electron/main.cjs:91-108`):**
+  - `ensureLocalProxy()` attempts `http.get('http://localhost:5000/api/market-summary')`.
+  - **Defect:** The request has no socket timeout. If port 5000 is occupied by an unresponsive socket or hangs, the error handler never fires.
+  - Furthermore, when offline, `server.mjs` background workers (started upon import) repeatedly attempt remote socket connections to external market endpoints, logging unhandled network errors.
+  - When packaged, `server.mjs` fails to start entirely due to missing dependency resolution (see 17.8 below).
+
+---
+
+### 17.7 Auto-Update Configuration Audit
+- **Updater Dependency:**
+  - `electron-updater` is **NOT installed** in `package.json`.
+- **Builder Publish Configuration:**
+  - `electron-builder.json` contains no `"publish"` configuration (no GitHub Releases provider, S3 bucket, or generic feed URL).
+- **Update Checking Logic:**
+  - `electron/main.cjs` has no auto-updater check listeners (`autoUpdater.checkForUpdatesAndNotify()`).
+  - **Defect:** Packaged desktop applications cannot discover, download, or apply background differential updates; users must manually download new installer binaries (`BUG-091`).
+
+---
+
+### 17.8 Packaged Build Asset Resolution & Dependency Packaging
+- **Vite Base Configuration (`vite.config.mjs:11`):**
+  - `base: './'` is configured.
+  - Build output in `dist/index.html` references relative assets:
+    - `<script type="module" crossorigin src="./assets/index-CIuwwvEq.js"></script>`
+    - `<link rel="stylesheet" crossorigin href="./assets/index-DPWYbZ-o.css">`
+    - `<img src="./logo.png" />`
+  - When loaded via `mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))`, Chromium resolves static assets from local disk.
+- **Embedded Proxy Dependency Packaging Defect (`electron-builder.json:57`):**
+  - In `electron-builder.json`, the `extraResources` rule for `proxy/` explicitly declares:
+    ```json
+    "!node_modules/**/*"
+    ```
+  - In packaged production builds (`app.isPackaged === true`), `electron/main.cjs` executes:
+    ```javascript
+    const serverFile = path.join(process.resourcesPath, 'proxy', 'server.mjs');
+    import('file://' + serverFile.replace(/\\/g, '/'))
+    ```
+  - **Impact:** Node ESM fails to resolve bare specifiers (`import express from 'express'`, `import cors from 'cors'`, `import Database from 'better-sqlite3'`, etc.) because no `node_modules` exists in `resources/proxy/` or `resources/`. The embedded proxy crashes immediately with `ERR_MODULE_NOT_FOUND` in packaged production installs (`BUG-090`).
+
+---
+
+### 17.9 Writable User Data Storage in Packaged Environment
+- **File System Permissions in `C:\Program Files`:**
+  - In `proxy/db/ledgerStore.js:23-40`, `resolveDataDir()` resolves the SQLite database path:
+    ```javascript
+    const candidates = [
+      path.resolve(__dirname, "..", "data"),
+      path.join(process.cwd(), "data"),
+      path.join(asarUnpacked, "..", "data"),
+      path.join(process.resourcesPath || '', "app.asar.unpacked", "proxy", "data"),
+    ];
+    ```
+  - When installed via NSIS into `C:\Program Files\Drabyashree NEPSE`, `process.resourcesPath` and `__dirname` are **strictly read-only** for standard non-administrator users.
+  - **Impact:** Attempting to write `drabyashree_ledger.db` or create `raw_floorsheet_backups/` inside the installation folder throws an `EPERM` read-only filesystem crash. Packaged desktop apps must store writable application state in `app.getPath('userData')` (e.g. `%APPDATA%\Drabyashree NEPSE`) (`BUG-092`).
+
+---
+
+### 17.10 Phase 8 New Bug Inventory Table (Bugs BUG-087 to BUG-092)
+
+| Bug ID | Severity | Module / File | Defect Description | Desktop Risk / Impact | Status |
+| :--- | :---: | :--- | :--- | :--- | :---: |
+| **BUG-087** | **Medium** | `electron/main.cjs` | Missing `preload.cjs` script and secure `contextBridge` IPC bridge. | `window.electron` is undefined in renderer; no secure IPC channel for app version, controls, or proxy telemetry. | **Pending** |
+| **BUG-088** | **Medium** | `index.html`, `electron/main.cjs` | Missing Content Security Policy (CSP) declaration for the desktop app. | Violates Electron security model; exposes renderer to unrestricted script execution and data exfiltration on potential XSS. | **Pending** |
+| **BUG-089** | **High** | `electron/main.cjs` | Missing `will-navigate` interception handler on `mainWindow.webContents`. | In-app external links without `target="_blank"` hijack the main window, trapping the user inside the external website. | **Pending** |
+| **BUG-090** | **High** | `electron-builder.json`, `electron/main.cjs` | Packaged `extraResources` excludes `node_modules`, crashing embedded proxy on `server.mjs` import. | Embedded backend fails with `ERR_MODULE_NOT_FOUND` in packaged production desktop builds. | **Fixed** |
+| **BUG-091** | **Low** | `package.json`, `electron-builder.json`, `electron/main.cjs` | Missing auto-update mechanism (`electron-updater` and publish feed configuration). | Desktop users cannot receive background differential updates; manual re-download required for every release. | **Pending** |
+| **BUG-092** | **Medium** | `proxy/db/ledgerStore.js` | Packaged database path resolves to read-only `resourcesPath` instead of writable `app.getPath('userData')`. | Non-admin users encounter `EPERM` file system crashes when writing SQLite database in `C:\Program Files`. | **Pending** |
