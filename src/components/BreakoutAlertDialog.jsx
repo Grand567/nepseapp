@@ -30,21 +30,19 @@ export default function BreakoutAlertDialog({
   entryExitPlan = null,
   onSaved = null
 }) {
-  if (!isOpen || !symbol) return null;
-
-  const sym = String(symbol).trim().toUpperCase();
+  const sym = symbol ? String(symbol).trim().toUpperCase() : '';
   const ltp = Number(stock?.ltp || entryExitPlan?.ltp || 100);
   const currentRvol = calculateStockRvol(stock);
 
   // Initialize config
-  const existingConfig = getWatchlistAlertConfig(sym);
+  const existingConfig = sym ? getWatchlistAlertConfig(sym) : null;
   const defaultConfig = deriveDefaultBreakoutPlan(stock, entryExitPlan);
 
   const [breakoutPrice, setBreakoutPrice] = useState(
-    existingConfig?.breakoutPrice != null ? existingConfig.breakoutPrice : defaultConfig.breakoutPrice
+    existingConfig?.breakoutPrice != null ? existingConfig.breakoutPrice : defaultConfig?.breakoutPrice
   );
   const [rvolThreshold, setRvolThreshold] = useState(
-    existingConfig?.rvolThreshold != null ? existingConfig.rvolThreshold : defaultConfig.rvolThreshold
+    existingConfig?.rvolThreshold != null ? existingConfig.rvolThreshold : defaultConfig?.rvolThreshold
   );
   const [alertEnabled, setAlertEnabled] = useState(
     existingConfig?.alertEnabled !== undefined ? existingConfig.alertEnabled : true
@@ -62,6 +60,7 @@ export default function BreakoutAlertDialog({
   );
 
   useEffect(() => {
+    if (!isOpen || !sym) return;
     if (existingConfig) {
       setBreakoutPrice(existingConfig.breakoutPrice);
       setRvolThreshold(existingConfig.rvolThreshold);
@@ -71,14 +70,16 @@ export default function BreakoutAlertDialog({
       setSyncedBadge(Boolean(existingConfig.autoSyncFromPlan));
     } else {
       const def = deriveDefaultBreakoutPlan(stock, entryExitPlan);
-      setBreakoutPrice(def.breakoutPrice);
-      setRvolThreshold(def.rvolThreshold);
+      setBreakoutPrice(def?.breakoutPrice);
+      setRvolThreshold(def?.rvolThreshold);
       setAlertEnabled(true);
       setSoundEnabled(true);
       setPushEnabled(true);
       setSyncedBadge(true);
     }
-  }, [sym, stock, entryExitPlan]);
+  }, [isOpen, sym, stock, entryExitPlan]);
+
+  if (!isOpen || !symbol) return null;
 
   const handleTakeFromPlan = () => {
     const planDefaults = deriveDefaultBreakoutPlan(stock, entryExitPlan);
