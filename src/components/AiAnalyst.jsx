@@ -1500,13 +1500,14 @@ export default function AiAnalyst({
       return data;
     } catch (err) {
       try {
-        const text = await generateNepseAiContent(prompt, '');
-        if (text) {
-          const match = text.match(/\{[\s\S]*\}/);
+        const resp = await generateNepseAiContent(prompt, '');
+        const rawStr = typeof resp === 'string' ? resp : (resp?.text || (resp?.data ? (typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data)) : ''));
+        if (rawStr) {
+          const match = rawStr.match(/\{[\s\S]*\}/);
           if (match) {
             try { return { success: true, data: JSON.parse(match[0]) }; } catch {}
           }
-          return { success: true, data: text };
+          return { success: true, data: rawStr };
         }
       } catch (_) {}
       throw new Error(err.message);
