@@ -1547,7 +1547,7 @@ export async function checkBoidAlreadyApplied(account, companyShareId) {
   const cleanCompanyShareId = Number(String(companyShareId || '').replace(/\D+/g, '')) || Number(companyShareId);
   const auth = await authenticateMeroShare(account);
   if (!auth.success) {
-    return { success: false, applied: false, message: `Login failed: ${auth.messageEn}` };
+    return { success: false, applied: false, error: true, message: `Login failed: ${auth.messageEn || auth.messageNe || 'Invalid credentials'}` };
   }
 
   const rawToken = auth.token.trim().replace(/^Bearer\s+/i, '');
@@ -1580,12 +1580,13 @@ export async function checkBoidAlreadyApplied(account, companyShareId) {
         applied,
         message: applied ? 'Already applied for this issue (पहिले नै आवेदन दिइसकिएको छ)' : 'Ready to Apply (आवेदन दिन तयार)'
       };
+    } else {
+      return { success: false, applied: false, error: true, message: res.data?.message || `HTTP ${res.status} verification failure` };
     }
   } catch (err) {
     console.warn('[MeroShare] checkBoidAlreadyApplied:', err.message);
+    return { success: false, applied: false, error: true, message: `Verification failed: ${err.message}` };
   }
-
-  return { success: true, applied: false, message: 'Ready to Apply' };
 }
 
 // ─── Direct C-ASBA IPO Apply ──────────────────────────────────────────────

@@ -903,7 +903,18 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
       try {
         const check = await checkBoidAlreadyApplied(profile, selectedIpo);
-        if (check.applied) {
+        if (!check.success || check.error) {
+          setAppliedCheckResults(prev => [
+            ...prev.filter(r => r.id !== profile.id),
+            {
+              id: profile.id,
+              name: profile.name,
+              boid: profile.boid,
+              status: 'failed',
+              resultText: `🔴 ${check.message || 'Authentication / Verification Failed'}`
+            }
+          ]);
+        } else if (check.applied) {
           setAppliedCheckResults(prev => [
             ...prev.filter(r => r.id !== profile.id),
             {
@@ -912,9 +923,10 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               boid: profile.boid,
               status: 'applied',
               resultText: '✅ Already Applied for this IPO',
-              units: 10
+              units: check.units || 10
             }
           ]);
+          successCount++;
         } else {
           setAppliedCheckResults(prev => [
             ...prev.filter(r => r.id !== profile.id),
@@ -927,8 +939,8 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               units: 0
             }
           ]);
+          successCount++;
         }
-        successCount++;
       } catch (err) {
         console.error('Check already applied error:', err);
         setAppliedCheckResults(prev => [
