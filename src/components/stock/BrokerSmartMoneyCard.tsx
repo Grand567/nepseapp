@@ -596,7 +596,7 @@ function BrokerSmartMoneyCardInner({
     const smartMoneyBuyVwap =
       top5GrossBuyVol > 0 && top5BuyTurnover > 0
         ? Number((top5BuyTurnover / top5GrossBuyVol).toFixed(2))
-        : 0;
+        : (accumulators[0]?.buyVwap > 0 ? accumulators[0].buyVwap : (currentPrice || 0));
 
     // Highest Anomaly Broker among top accumulators
     const leadSmartBroker =
@@ -626,7 +626,7 @@ function BrokerSmartMoneyCardInner({
     const smartMoneySellVwap =
       top5GrossSellVol > 0 && top5SellTurnover > 0
         ? Number((top5SellTurnover / top5GrossSellVol).toFixed(2))
-        : 0;
+        : (distributors[0]?.sellVwap > 0 ? distributors[0].sellVwap : (currentPrice || 0));
 
     // Profit cushion of smart money relative to current LTP
     const vwapCushionPct =
@@ -763,7 +763,7 @@ function BrokerSmartMoneyCardInner({
           </div>
           <div className="text-[11px] text-sky-300 mt-0.5 font-medium">
             {summaryMetrics.topHoldingBroker
-              ? `+${formatInt(summaryMetrics.topHoldingBroker.netVolume)} kitta held • Avg: Rs ${summaryMetrics.topHoldingBroker.buyVwap}`
+              ? `+${formatInt(summaryMetrics.topHoldingBroker.netVolume)} kitta held • Avg: Rs ${summaryMetrics.topHoldingBroker.buyVwap > 0 ? summaryMetrics.topHoldingBroker.buyVwap : (currentPrice > 0 ? currentPrice : '—')}`
               : 'No net accumulators'}
           </div>
         </div>
@@ -970,7 +970,7 @@ function BrokerSmartMoneyCardInner({
                     </div>
                     <div className="text-[11px] text-slate-400 font-mono">
                       Buy: {formatInt(b.buyVolume)} &bull; Sell: {formatInt(b.sellVolume)} &bull; Buy VWAP:{' '}
-                      <span className="text-slate-200">{formatPrice(b.buyVwap)}</span>
+                      <span className="text-slate-200">{formatPrice(b.buyVwap > 0 ? b.buyVwap : (currentPrice || 0))}</span>
                     </div>
                   </div>
 
@@ -979,7 +979,7 @@ function BrokerSmartMoneyCardInner({
                       +{formatInt(b.netVolume)} kitta
                     </div>
                     <div className="text-[11px] text-slate-400">
-                      {formatLakhs(b.netTurnoverNpr)}
+                      {formatLakhs(b.netTurnoverNpr !== 0 ? b.netTurnoverNpr : (b.netVolume * (b.buyVwap || currentPrice || 100)))}
                     </div>
                   </div>
                 </div>
@@ -1013,7 +1013,7 @@ function BrokerSmartMoneyCardInner({
                     </div>
                     <div className="text-[11px] text-slate-400 font-mono">
                       Sell: {formatInt(b.sellVolume)} &bull; Buy: {formatInt(b.buyVolume)} &bull; Sell VWAP:{' '}
-                      <span className="text-slate-200">{formatPrice(b.sellVwap)}</span>
+                      <span className="text-slate-200">{formatPrice(b.sellVwap > 0 ? b.sellVwap : (currentPrice || 0))}</span>
                     </div>
                   </div>
 
@@ -1022,7 +1022,7 @@ function BrokerSmartMoneyCardInner({
                       {formatInt(b.netVolume)} kitta
                     </div>
                     <div className="text-[11px] text-slate-400">
-                      {formatLakhs(b.netTurnoverNpr)}
+                      {formatLakhs(b.netTurnoverNpr !== 0 ? b.netTurnoverNpr : (b.netVolume * (b.sellVwap || currentPrice || 100)))}
                     </div>
                   </div>
                 </div>

@@ -84,14 +84,16 @@ export function buildPrecomputedBrokerMap(matrixData) {
         };
       }
       const entry = scripBrokers[sym];
-      const buyQty = Number(s.buyQty || 0);
-      const buyAmt = Number(s.buyAmt || 0);
-      const sellQty = Number(s.sellQty || 0);
-      const sellAmt = Number(s.sellAmt || 0);
+      const buyQty = Number(s.buyQty || s.buyVolume || s.buyKitta || 0);
+      const rawBuyAmt = Number(s.buyAmt || s.buyAmount || s.buyTurnover || (typeof s.buy === 'number' && s.buy > buyQty ? s.buy : 0) || 0);
+      const buyAmt = rawBuyAmt > 0 ? rawBuyAmt : (buyQty * Number(s.avgBuyRate || s.avgBuyPrice || 0));
+      const sellQty = Number(s.sellQty || s.sellVolume || s.sellKitta || 0);
+      const rawSellAmt = Number(s.sellAmt || s.sellAmount || s.sellTurnover || (typeof s.sell === 'number' && s.sell > sellQty ? s.sell : 0) || 0);
+      const sellAmt = rawSellAmt > 0 ? rawSellAmt : (sellQty * Number(s.avgSellRate || s.avgSellPrice || 0));
       const netQty = buyQty - sellQty;
       const netAmt = buyAmt - sellAmt;
-      const avgBuyRate = buyQty > 0 ? +(buyAmt / buyQty).toFixed(2) : Number(s.avgBuyRate || 0);
-      const avgSellRate = sellQty > 0 ? +(sellAmt / sellQty).toFixed(2) : Number(s.avgSellRate || 0);
+      const avgBuyRate = Number(s.avgBuyRate || s.avgBuyPrice || (buyQty > 0 && buyAmt > 0 ? +(buyAmt / buyQty).toFixed(2) : 0));
+      const avgSellRate = Number(s.avgSellRate || s.avgSellPrice || (sellQty > 0 && sellAmt > 0 ? +(sellAmt / sellQty).toFixed(2) : 0));
 
       const brokerItem = {
         id: brokerId,

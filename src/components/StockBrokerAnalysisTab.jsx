@@ -474,9 +474,13 @@ function StockBrokerAnalysisTabInner({
         const id = String(b.brokerId || b.broker || b.brokerNo || b.id || b.memberId || '').trim();
         if (!id || id === '?') continue;
         const buyQty = Number(b.buyQty ?? b.buyVol ?? b.volume ?? b.kitta ?? b.shares ?? 0);
-        const buyAmt = Number(b.buyAmt ?? b.buyAmount ?? b.buyTurnover ?? b.amount ?? (buyQty * (b.avgBuyRate || ltp || 100)) ?? 0);
+        const rawBuyAmt = Number(b.buyAmt ?? b.buyAmount ?? b.buyTurnover ?? b.amount ?? 0);
+        const buyAmt = rawBuyAmt > 0 ? rawBuyAmt : (buyQty * (Number(b.avgBuyRate || b.avgBuyPrice || ltp || 100) || 100));
         const sellQty = Number(b.sellQty ?? b.sellVol ?? b.shares ?? 0);
-        const sellAmt = Number(b.sellAmt ?? b.sellAmount ?? b.sellTurnover ?? b.amount ?? (sellQty * (b.avgSellRate || ltp || 100)) ?? 0);
+        const rawSellAmt = Number(b.sellAmt ?? b.sellAmount ?? b.sellTurnover ?? b.amount ?? 0);
+        const sellAmt = rawSellAmt > 0 ? rawSellAmt : (sellQty * (Number(b.avgSellRate || b.avgSellPrice || ltp || 100) || 100));
+        const avgBuy = Number(b.avgBuyRate || b.avgBuyPrice || (buyQty > 0 && buyAmt > 0 ? +(buyAmt / buyQty).toFixed(2) : (ltp || 0)));
+        const avgSell = Number(b.avgSellRate || b.avgSellPrice || (sellQty > 0 && sellAmt > 0 ? +(sellAmt / sellQty).toFixed(2) : (ltp || 0)));
         const matchedQty = Number(b.matchedQty ?? 0);
         const matchedAmt = Number(b.matchedAmt ?? 0);
         const trades = Number(b.trades ?? b.totalTrades ?? 0);
@@ -488,6 +492,10 @@ function StockBrokerAnalysisTabInner({
           buyAmt,
           sellQty,
           sellAmt,
+          avgBuy,
+          avgSell,
+          avgBuyRate: avgBuy,
+          avgSellRate: avgSell,
           matchedQty,
           matchedAmt,
           trades
@@ -503,13 +511,21 @@ function StockBrokerAnalysisTabInner({
         const id = String(b.brokerId || b.broker || b.brokerNo || b.id || b.memberId || '').trim();
         if (!id || id === '?') continue;
         if (!map.has(id)) {
-          map.set(id, { id, name: b.name || b.brokerName || getBrokerName(id), buyQty: 0, buyAmt: 0, sellQty: 0, sellAmt: 0, matchedQty: 0, trades: 0 });
+          map.set(id, { id, name: b.name || b.brokerName || getBrokerName(id), buyQty: 0, buyAmt: 0, sellQty: 0, sellAmt: 0, matchedQty: 0, trades: 0, avgBuy: 0, avgSell: 0 });
         }
         const rec = map.get(id);
-        rec.buyQty += Number(b.buyQty ?? b.buyVol ?? b.volume ?? b.kitta ?? b.shares ?? 0);
-        rec.buyAmt += Number(b.buyAmt ?? b.buyAmount ?? b.buyTurnover ?? b.amount ?? (rec.buyQty * (b.avgBuyRate || ltp || 100)) ?? 0);
+        const bQty = Number(b.buyQty ?? b.buyVol ?? b.volume ?? b.kitta ?? b.shares ?? 0);
+        const bRawAmt = Number(b.buyAmt ?? b.buyAmount ?? b.buyTurnover ?? b.amount ?? 0);
+        const bAmt = bRawAmt > 0 ? bRawAmt : (bQty * (Number(b.avgBuyRate || b.avgBuyPrice || ltp || 100) || 100));
+        rec.buyQty += bQty;
+        rec.buyAmt += bAmt;
+        rec.avgBuy = Number(b.avgBuyRate || b.avgBuyPrice || (rec.buyQty > 0 ? +(rec.buyAmt / rec.buyQty).toFixed(2) : (ltp || 0)));
+        rec.avgBuyRate = rec.avgBuy;
         if ((b.sellQty !== undefined || b.sellVol !== undefined) && rec.sellQty === 0) rec.sellQty = Number(b.sellQty ?? b.sellVol ?? 0);
-        if ((b.sellAmt !== undefined || b.sellTurnover !== undefined) && rec.sellAmt === 0) rec.sellAmt = Number(b.sellAmt ?? b.sellTurnover ?? (rec.sellQty * (b.avgSellRate || ltp || 100)) ?? 0);
+        if ((b.sellAmt !== undefined || b.sellTurnover !== undefined) && rec.sellAmt === 0) {
+          const sRaw = Number(b.sellAmt ?? b.sellTurnover ?? 0);
+          rec.sellAmt = sRaw > 0 ? sRaw : (rec.sellQty * (Number(b.avgSellRate || b.avgSellPrice || ltp || 100) || 100));
+        }
         if (b.matchedQty !== undefined && rec.matchedQty === 0) rec.matchedQty = Number(b.matchedQty || 0);
       }
 
@@ -517,15 +533,23 @@ function StockBrokerAnalysisTabInner({
         const id = String(s.brokerId || s.broker || s.brokerNo || s.id || s.memberId || '').trim();
         if (!id || id === '?') continue;
         if (!map.has(id)) {
-          map.set(id, { id, name: s.name || s.brokerName || getBrokerName(id), buyQty: 0, buyAmt: 0, sellQty: 0, sellAmt: 0, matchedQty: 0, trades: 0 });
+          map.set(id, { id, name: s.name || s.brokerName || getBrokerName(id), buyQty: 0, buyAmt: 0, sellQty: 0, sellAmt: 0, matchedQty: 0, trades: 0, avgBuy: 0, avgSell: 0 });
         }
         const rec = map.get(id);
+        const sQty = Number(s.sellQty ?? s.sellVol ?? s.volume ?? s.kitta ?? s.shares ?? 0);
+        const sRawAmt = Number(s.sellAmt ?? s.sellAmount ?? s.sellTurnover ?? s.amount ?? 0);
+        const sAmt = sRawAmt > 0 ? sRawAmt : (sQty * (Number(s.avgSellRate || s.avgSellPrice || ltp || 100) || 100));
         if (rec.sellQty === 0) {
-          rec.sellQty += Number(s.sellQty ?? s.sellVol ?? s.volume ?? s.kitta ?? s.shares ?? 0);
-          rec.sellAmt += Number(s.sellAmt ?? s.sellAmount ?? s.sellTurnover ?? s.amount ?? (rec.sellQty * (s.avgSellRate || ltp || 100)) ?? 0);
+          rec.sellQty += sQty;
+          rec.sellAmt += sAmt;
         }
+        rec.avgSell = Number(s.avgSellRate || s.avgSellPrice || (rec.sellQty > 0 ? +(rec.sellAmt / rec.sellQty).toFixed(2) : (ltp || 0)));
+        rec.avgSellRate = rec.avgSell;
         if ((s.buyQty !== undefined || s.buyVol !== undefined) && rec.buyQty === 0) rec.buyQty = Number(s.buyQty ?? s.buyVol ?? 0);
-        if ((s.buyAmt !== undefined || s.buyTurnover !== undefined) && rec.buyAmt === 0) rec.buyAmt = Number(s.buyAmt ?? s.buyTurnover ?? (rec.buyQty * (s.avgBuyRate || ltp || 100)) ?? 0);
+        if ((s.buyAmt !== undefined || s.buyTurnover !== undefined) && rec.buyAmt === 0) {
+          const bRaw = Number(s.buyAmt ?? s.buyTurnover ?? 0);
+          rec.buyAmt = bRaw > 0 ? bRaw : (rec.buyQty * (Number(s.avgBuyRate || s.avgBuyPrice || ltp || 100) || 100));
+        }
         if (s.matchedQty !== undefined && rec.matchedQty === 0) rec.matchedQty = Number(s.matchedQty || 0);
       }
 
@@ -852,7 +876,7 @@ function StockBrokerAnalysisTabInner({
 
   // Summary Totals (Share Hub strip: Total Amount | Total Quantity | Total Broker Holding | Transactions)
   const totalVolume = Number(activeBrokerData?.totalVolume) || brokerRecords.reduce((s, b) => s + b.buyQty, 0);
-  const totalAmount = Number(activeBrokerData?.totalAmount) || brokerRecords.reduce((s, b) => s + b.buyAmt, 0);
+  const totalAmount = Number(activeBrokerData?.totalAmount) || brokerRecords.reduce((s, b) => s + b.buyAmt, 0) || (totalVolume * (Number(activeBrokerData?.vwap || ltp || 100)));
   const totalTransactions = Number(activeBrokerData?.totalTrades) || (Array.isArray(floorsheetData?.rows) ? floorsheetData.totalElements || floorsheetData.rows.length : (Array.isArray(floorsheetData) ? floorsheetData.length : brokerRecords.reduce((s, b) => s + (b.trades || 0), 0)));
   const totalHold = brokerRecords.reduce((s, b) => s + b.holdQty, 0);
 
@@ -1012,14 +1036,21 @@ function StockBrokerAnalysisTabInner({
             existing.holdQty = sessNet;
             existing.signedHoldQty = sessNet;
           }
+          if ((!existing.cumAvgBuy || existing.cumAvgBuy <= 0) && (b.avgBuy || b.avgBuyRate)) {
+            existing.cumAvgBuy = Number(b.avgBuy || b.avgBuyRate || 0);
+            existing.avgBuy = existing.cumAvgBuy;
+          }
         } else {
+          const bAvg = Number(b.avgBuy || b.avgBuyRate || (b.buyAmt && b.buyQty ? b.buyAmt / b.buyQty : 0) || ltp || 100);
           map.set(normId, {
             ...b,
             id: normId,
             cumHoldQty: sessNet,
             holdQty: sessNet,
             signedHoldQty: sessNet,
-            cumHoldAmt: b.cumHoldAmt || (sessNet * (b.cumAvgBuy || b.avgBuy || ltp || 100)),
+            cumAvgBuy: bAvg,
+            avgBuy: bAvg,
+            cumHoldAmt: b.cumHoldAmt || (sessNet * bAvg),
           });
         }
       }
@@ -1228,7 +1259,7 @@ function StockBrokerAnalysisTabInner({
           fontSize: 11.5,
           fontWeight: 700
         }}>
-          <span>Sessions Analyzed: {activeBrokerData?.tradingDays || effectiveDays || 1} Trading Days ({activeBrokerData?.fromDate || 'Latest'} → {activeBrokerData?.toDate || 'Latest'}) • Total Volume: {(activeBrokerData?.totalVolume || 0).toLocaleString()} Shares</span>
+          <span>{effectiveDate ? `Trading Session: ${effectiveDate}` : `Sessions Analyzed: ${activeBrokerData?.tradingDays || effectiveDays || 1} Trading Days (${activeBrokerData?.fromDate || 'Latest'} → ${activeBrokerData?.toDate || 'Latest'})`} • Total Volume: {(totalVolume || activeBrokerData?.totalVolume || 0).toLocaleString()} Shares</span>
         </div>
 
         {/* Date-Wise Picker & Custom Date Range */}
@@ -1486,13 +1517,17 @@ function StockBrokerAnalysisTabInner({
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 22 }}>🏆</span>
+                <span style={{ fontSize: 22 }}>{effectiveDate ? '📅' : '🏆'}</span>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', letterSpacing: '-0.01em' }}>
-                    Total Holding Till Today: Multi-Year Accumulator Pool ({symbol})
+                    {effectiveDate
+                      ? `Session Broker Flow Footprint (${effectiveDate}) — ${symbol}`
+                      : `Total Holding Till Today: Multi-Year Accumulator Pool (${symbol})`}
                   </div>
                   <div style={{ fontSize: 11.5, color: '#94a3b8' }}>
-                    Authentic NEPSE Floorsheet Archive • Full Session History since 2022
+                    {effectiveDate
+                      ? `Authentic exchange session flow for ${effectiveDate}`
+                      : 'Authentic NEPSE Floorsheet Archive • Full Session History since 2022'}
                   </div>
                 </div>
               </div>
@@ -1505,10 +1540,10 @@ function StockBrokerAnalysisTabInner({
                   textAlign: 'right'
                 }}>
                   <div style={{ fontSize: 10, color: '#a7f3d0', fontWeight: 800, textTransform: 'uppercase' }}>
-                    Total Locked by Accumulators
+                    {effectiveDate ? 'Session Net Traded Volume' : 'Total Locked by Accumulators'}
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                    +{(totalCumulativeHoldingKitta > 0 ? totalCumulativeHoldingKitta : (brokerHoldingTotals.cumHold || 0)).toLocaleString()} <span style={{ fontSize: 11, color: '#6ee7b7' }}>kitta</span>
+                    +{((effectiveDate ? totalVolume : (totalCumulativeHoldingKitta > 0 ? totalCumulativeHoldingKitta : (brokerHoldingTotals.cumHold || 0))) || 0).toLocaleString()} <span style={{ fontSize: 11, color: '#6ee7b7' }}>kitta</span>
                   </div>
                 </div>
                 <button
@@ -1542,7 +1577,7 @@ function StockBrokerAnalysisTabInner({
                 const totalHeld = safeNum(b?.cumHoldQty || b?.holdQty, 0);
                 const poolTotal = safeNum(brokerHoldingTotals?.cumHold || totalCumulativeHoldingKitta, 1);
                 const sharePct = poolTotal > 0 ? ((totalHeld / poolTotal) * 100).toFixed(1) : '0.0';
-                const avgBuy = safeNum(b?.cumAvgBuy || b?.avgBuy, 0);
+                const avgBuy = safeNum(b?.cumAvgBuy || b?.avgBuy || (totalHeld > 0 && b?.cumHoldAmt ? b.cumHoldAmt / totalHeld : 0) || (b?.avgBuyRate || ltp), 0);
                 return (
                   <div
                     key={b?.id || idx}

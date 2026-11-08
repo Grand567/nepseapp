@@ -411,73 +411,78 @@ export default function ShareHubChart({
         if (hasIntraday) intradaySource = rawHistory;
       }
 
-      if (activeMode === 'candle') {
-        const aggregated = aggregateToIntradayCandles(intradaySource, 5);
-        if (stock?.ltp && Number(stock.ltp) > 0 && aggregated.length > 0) {
-          const last = aggregated[aggregated.length - 1];
-          const target = Number(stock.ltp);
-          last.close = target;
-          last.high = Math.max(Number(last.high || target), target);
-          last.low = Math.min(Number(last.low || target), target);
-        }
-        return aggregated;
-      }
-
-      const sDate = getDatasetSessionDate(intradaySource, rawHistory);
-      const sorted = [];
-      for (const pt of intradaySource) {
-        let ts = null;
-        if (pt.timestamp && pt.timestamp > 1e8) {
-          const sec = pt.timestamp > 1e11 ? Math.floor(pt.timestamp / 1000) : Math.floor(pt.timestamp);
-          ts = sec + NPT_OFFSET_SEC;
-        } else if (typeof pt.time === 'number' && pt.time > 1e8) {
-          const sec = pt.time > 1e11 ? Math.floor(pt.time / 1000) : Math.floor(pt.time);
-          ts = sec + NPT_OFFSET_SEC;
-        } else if (pt.time || pt.date) {
-          const timeStr = String(pt.time || pt.date).trim();
-          const match = timeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
-          if (match) {
-            let hrs = parseInt(match[1], 10);
-            const mins = parseInt(match[2], 10);
-            const secs = match[3] ? parseInt(match[3], 10) : 0;
-            const ampm = (match[4] || '').toUpperCase();
-            if (ampm === 'PM' && hrs < 12) hrs += 12;
-            if (ampm === 'AM' && hrs === 12) hrs = 0;
-            ts = Math.floor(Date.UTC(sDate.year, sDate.month, sDate.day, hrs, mins, secs) / 1000);
+      // If we have actual intraday tick source data, aggregate and return
+      if (intradaySource.length > 0) {
+        if (activeMode === 'candle') {
+          const aggregated = aggregateToIntradayCandles(intradaySource, 5);
+          if (stock?.ltp && Number(stock.ltp) > 0 && aggregated.length > 0) {
+            const last = aggregated[aggregated.length - 1];
+            const target = Number(stock.ltp);
+            last.close = target;
+            last.high = Math.max(Number(last.high || target), target);
+            last.low = Math.min(Number(last.low || target), target);
           }
-        }
-        const val = Number(pt.close ?? pt.value ?? pt.open ?? 0);
-        if (ts && !isNaN(ts) && val > 0) {
-          sorted.push({
-            time: ts,
-            value: val,
-            open: Number(pt.open || val),
-            high: Number(pt.high || val),
-            low: Number(pt.low || val),
-            close: val,
-            volume: Number(pt.volume || 0),
-            epochSec: ts
-          });
+          if (aggregated.length > 0) return aggregated;
+        } else {
+          const sDate = getDatasetSessionDate(intradaySource, rawHistory);
+          const sorted = [];
+          for (const pt of intradaySource) {
+            let ts = null;
+            if (pt.timestamp && pt.timestamp > 1e8) {
+              const sec = pt.timestamp > 1e11 ? Math.floor(pt.timestamp / 1000) : Math.floor(pt.timestamp);
+              ts = sec + NPT_OFFSET_SEC;
+            } else if (typeof pt.time === 'number' && pt.time > 1e8) {
+              const sec = pt.time > 1e11 ? Math.floor(pt.time / 1000) : Math.floor(pt.time);
+              ts = sec + NPT_OFFSET_SEC;
+            } else if (pt.time || pt.date) {
+              const timeStr = String(pt.time || pt.date).trim();
+              const match = timeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+              if (match) {
+                let hrs = parseInt(match[1], 10);
+                const mins = parseInt(match[2], 10);
+                const secs = match[3] ? parseInt(match[3], 10) : 0;
+                const ampm = (match[4] || '').toUpperCase();
+                if (ampm === 'PM' && hrs < 12) hrs += 12;
+                if (ampm === 'AM' && hrs === 12) hrs = 0;
+                ts = Math.floor(Date.UTC(sDate.year, sDate.month, sDate.day, hrs, mins, secs) / 1000);
+              }
+            }
+            const val = Number(pt.close ?? pt.value ?? pt.open ?? 0);
+            if (ts && !isNaN(ts) && val > 0) {
+              sorted.push({
+                time: ts,
+                value: val,
+                open: Number(pt.open || val),
+                high: Number(pt.high || val),
+                low: Number(pt.low || val),
+                close: val,
+                volume: Number(pt.volume || 0),
+                epochSec: ts
+              });
+            }
+          }
+          sorted.sort((a, b) => a.time - b.time);
+          const unique = [];
+          const seen = new Set();
+          for (const item of sorted) {
+            if (!seen.has(item.time)) {
+              seen.add(item.time);
+              unique.push(item);
+            }
+          }
+          if (stock?.ltp && Number(stock.ltp) > 0 && unique.length > 0) {
+            const last = unique[unique.length - 1];
+            const target = Number(stock.ltp);
+            last.close = target;
+            last.value = target;
+            last.high = Math.max(Number(last.high || target), target);
+            last.low = Math.min(Number(last.low || target), target);
+          }
+          if (unique.length > 0) return unique;
         }
       }
-      sorted.sort((a, b) => a.time - b.time);
-      const unique = [];
-      const seen = new Set();
-      for (const item of sorted) {
-        if (!seen.has(item.time)) {
-          seen.add(item.time);
-          unique.push(item);
-        }
-      }
-      if (stock?.ltp && Number(stock.ltp) > 0 && unique.length > 0) {
-        const last = unique[unique.length - 1];
-        const target = Number(stock.ltp);
-        last.close = target;
-        last.value = target;
-        last.high = Math.max(Number(last.high || target), target);
-        last.low = Math.min(Number(last.low || target), target);
-      }
-      return unique;
+      // If no intraday tick data exists (e.g. after-hours / weekend / single equity offline),
+      // fall through to daily session candles so the chart never renders blank!
     }
 
     if (!Array.isArray(rawHistory) || rawHistory.length === 0) return [];
@@ -526,7 +531,9 @@ export default function ShareHubChart({
     const latestDate = new Date(allSorted[allSorted.length - 1].time + 'T00:00:00Z');
 
     let sliced = allSorted;
-    if (tf === '1W' || tf === '7') {
+    if (tf === '1D') {
+      sliced = allSorted.slice(-Math.min(5, allSorted.length));
+    } else if (tf === '1W' || tf === '7') {
       const oneWeekAgo = new Date(latestDate.getTime() - 7 * 24 * 3600 * 1000);
       const weekBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= oneWeekAgo);
       sliced = weekBars.length >= 4 ? weekBars : allSorted.slice(-Math.min(5, allSorted.length));

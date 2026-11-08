@@ -51,8 +51,11 @@ export async function idbGet(key, allowExpired = false) {
   try {
     const db = await getDB();
     if (!db) {
-      const raw = localStorage.getItem('idb_fallback_' + key);
-      return raw ? JSON.parse(raw) : null;
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('idb_fallback_' + key);
+        return raw ? JSON.parse(raw) : null;
+      }
+      return null;
     }
 
     return new Promise((resolve) => {
@@ -95,9 +98,11 @@ export async function idbSet(key, value, ttlMs = 0) {
     };
 
     if (!db) {
-      try {
-        localStorage.setItem('idb_fallback_' + key, JSON.stringify(value));
-      } catch (_) {}
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem('idb_fallback_' + key, JSON.stringify(value));
+        } catch (_) {}
+      }
       return;
     }
 

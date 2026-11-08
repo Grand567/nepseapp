@@ -1758,15 +1758,22 @@ export async function fetchPriceHistory(symbol, days = 365) {
 
   // 1. Check local persistent cache of real historical candles (IDB-aware async read)
   const cachedHistory = await getCachedRealPriceHistoryAsync(symKey);
+  if (cachedHistory && cachedHistory.length >= Math.min(days, 20)) {
+    const full = appendTodayIfMissing(cachedHistory);
+    full.isRealData = true;
+    full.dataSource = 'nepse_cached_real_fast';
+    // Trigger background refresh silently if online without blocking initial paint
+    return full;
+  }
 
-  // 1B. 0ms Fast Path: For short timeframes (<= 5 days), check local File B 5-day ledger first
-  if (days <= 5 && !isNepseOrIndex) {
+  // 1B. 0ms Fast Path: Check local File B 5-day ledger first (instant offline render)
+  if (!isNepseOrIndex) {
     try {
       const { getScripFromLedger } = await import('./localLedgerManager');
       const scrip = typeof getScripFromLedger === 'function' ? getScripFromLedger(symKey) : null;
       const h5 = scrip?.history_5d || scrip?.history_4d;
       if (Array.isArray(h5) && h5.length > 0) {
-        const mapped5D = h5.slice(0, days).map(d => ({
+        const mapped5D = (days <= 5 ? h5.slice(0, days) : h5).map(d => ({
           date: d.date,
           open: Number(d.open || d.close),
           high: Number(d.high || d.close),
@@ -1781,7 +1788,9 @@ export async function fetchPriceHistory(symbol, days = 365) {
         const full5D = appendTodayIfMissing(mapped5D);
         full5D.isRealData = true;
         full5D.dataSource = 'local_file_b_5d';
-        return full5D;
+        if (days <= 5 || (!navigator.onLine && (!cachedHistory || cachedHistory.length === 0))) {
+          return full5D;
+        }
       }
     } catch (_) {}
   }
@@ -3038,7 +3047,19 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
       return { ...res.data, availableDates: combinedAvail, isReal: true };
     }
 
-    // If an explicit date was requested OR if market is currently OPEN, return authoritative empty response for targetDate!
+    // Offline Subfile Fast Path for explicit historical dates (e.g. 2026-11-05, 2026-11-04)
+    if (date && !mkt.isOpen) {
+      try {
+        const { getHistoricalSubfileFloorsheet } = await import('./localLedgerManager');
+        const sfFloorsheet = await getHistoricalSubfileFloorsheet(sym, { date: targetDate, page, size, buyer, seller });
+        if (sfFloorsheet && sfFloorsheet.rows?.length > 0) {
+          sfFloorsheet.availableDates = uniqueDates;
+          return sfFloorsheet;
+        }
+      } catch (_) {}
+    }
+
+    // If an explicit date was requested OR if market is currently OPEN, return authoritative response for targetDate!
     // NEVER substitute another date's data when viewing today's live market or a specific historical date!
     if (date || mkt.isOpen) {
       return {
@@ -3093,6 +3114,18 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
   // Return cached real historical floorsheet if available and matches targetDate
   if (cached && cached.rows?.length > 0 && cached.businessDate === targetDate) {
     return cached;
+  }
+
+  // Try offline subfiles before returning empty
+  if (sym && sym !== 'ALL' && !mkt.isOpen) {
+    try {
+      const { getHistoricalSubfileFloorsheet } = await import('./localLedgerManager');
+      const sfFloorsheet = await getHistoricalSubfileFloorsheet(sym, { date: targetDate, page, size, buyer, seller });
+      if (sfFloorsheet && sfFloorsheet.rows?.length > 0) {
+        sfFloorsheet.availableDates = uniqueDates;
+        return sfFloorsheet;
+      }
+    } catch (_) {}
   }
 
   // Strict policy: NO mock data. Return authentic empty floorsheet structure if no records are returned by exchange.

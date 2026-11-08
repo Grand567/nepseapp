@@ -179,26 +179,31 @@ export function BrokerFootprintCard({ footprint, compact = false }) {
           </div>
           {netAccumulators.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {netAccumulators.map((b) => (
-                <div key={b.broker} style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  background: 'rgba(255,255,255,0.02)',
-                  padding: '6px 8px',
-                  borderRadius: 6,
-                  fontSize: 12
-                }}>
-                  <div>
-                    <span style={{ fontWeight: 800, color: '#ffffff' }}>#{b.broker}</span>
-                    <span style={{ color: '#94a3b8', marginLeft: 5, fontSize: 12 }}>{b.brokerName}</span>
+              {netAccumulators.map((b, idx) => {
+                const bId = b.broker || b.brokerId || String(idx + 1);
+                const q = Number(b.netQty ?? b.netKitta ?? 0);
+                const amt = Number(b.netAmount ?? b.netAmt ?? 0);
+                return (
+                  <div key={bId} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'rgba(255,255,255,0.02)',
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    fontSize: 12
+                  }}>
+                    <div>
+                      <span style={{ fontWeight: 800, color: '#ffffff' }}>#{bId}</span>
+                      <span style={{ color: '#94a3b8', marginLeft: 5, fontSize: 12 }}>{b.brokerName}</span>
+                    </div>
+                    <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                      <div style={{ color: 'var(--bull)', fontWeight: 800 }}>+{q.toLocaleString()} shares</div>
+                      <div style={{ color: '#64748b', fontSize: 12 }}>Rs. {formatLakhs(amt)}</div>
+                    </div>
                   </div>
-                  <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                    <div style={{ color: 'var(--bull)', fontWeight: 800 }}>+{b.netQty.toLocaleString()} shares</div>
-                    <div style={{ color: '#64748b', fontSize: 12 }}>Rs. {formatLakhs(b.netAmount)}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div style={{ fontSize: 12, color: '#64748b', padding: '10px 0', textAlign: 'center' }}>
@@ -219,26 +224,31 @@ export function BrokerFootprintCard({ footprint, compact = false }) {
           </div>
           {netDistributors.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {netDistributors.map((b) => (
-                <div key={b.broker} style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  background: 'rgba(255,255,255,0.02)',
-                  padding: '6px 8px',
-                  borderRadius: 6,
-                  fontSize: 12
-                }}>
-                  <div>
-                    <span style={{ fontWeight: 800, color: '#ffffff' }}>#{b.broker}</span>
-                    <span style={{ color: '#94a3b8', marginLeft: 5, fontSize: 12 }}>{b.brokerName}</span>
+              {netDistributors.map((b, idx) => {
+                const bId = b.broker || b.brokerId || String(idx + 1);
+                const q = Number(b.netQty ?? b.netKitta ?? 0);
+                const amt = Number(b.netAmount ?? b.netAmt ?? 0);
+                return (
+                  <div key={bId} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'rgba(255,255,255,0.02)',
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    fontSize: 12
+                  }}>
+                    <div>
+                      <span style={{ fontWeight: 800, color: '#ffffff' }}>#{bId}</span>
+                      <span style={{ color: '#94a3b8', marginLeft: 5, fontSize: 12 }}>{b.brokerName}</span>
+                    </div>
+                    <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                      <div style={{ color: '#f87171', fontWeight: 800 }}>{q.toLocaleString()} shares</div>
+                      <div style={{ color: '#64748b', fontSize: 12 }}>Rs. {formatLakhs(amt)}</div>
+                    </div>
                   </div>
-                  <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                    <div style={{ color: '#f87171', fontWeight: 800 }}>{b.netQty.toLocaleString()} shares</div>
-                    <div style={{ color: '#64748b', fontSize: 12 }}>Rs. {formatLakhs(b.netAmount)}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div style={{ fontSize: 12, color: '#64748b', padding: '10px 0', textAlign: 'center' }}>
