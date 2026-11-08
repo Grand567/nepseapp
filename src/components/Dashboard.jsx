@@ -5124,7 +5124,7 @@ function Dashboard({
                   background: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24',
                   border: '1px solid rgba(251, 191, 36, 0.4)'
                 }}>
-                  {watchedOrAlertSymbols.length}
+                  {topSearch.trim() ? `${watchedStocks.length} / ${watchedOrAlertSymbols.length}` : watchedOrAlertSymbols.length}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
