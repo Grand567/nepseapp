@@ -5,10 +5,7 @@ const traverse = require('@babel/traverse').default;
 
 const ROOT = path.resolve(__dirname, '..');
 const TARGET_DIRS = [
-  path.join(ROOT, 'src', 'components'),
-  path.join(ROOT, 'src', 'services'),
-  path.join(ROOT, 'src', 'views'),
-  path.join(ROOT, 'src', 'utils'),
+  path.join(ROOT, 'src'),
 ];
 
 const STANDARD_GLOBALS = new Set([
@@ -35,6 +32,7 @@ const STANDARD_GLOBALS = new Set([
   'WebSocket', 'Worker', 'SharedWorker', 'ServiceWorker', 'MessageChannel', 'Audio', 'Image',
   'CanvasRenderingContext2D', 'HTMLCanvasElement', 'HTMLElement', 'Element', 'Node', 'Document',
   'DOMParser', 'XMLSerializer', 'MutationRecord', 'XPathResult', 'TextEncoder', 'TextDecoder',
+  'ReadableStream', 'WritableStream', 'TransformStream',
   // Node globals
   'process', 'global', 'Buffer', 'module', 'exports', 'require', '__dirname', '__filename',
   // React / Vite globals

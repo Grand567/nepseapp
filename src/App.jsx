@@ -717,10 +717,11 @@ function AppInner() {
       let isMarketOpen = false;
       let isPreOpen = false;
       let hadError = false;
+      let currentCalStatus = getDetailedMarketStatus();
 
       try {
         // Immediate synchronous calendar status so data polling starts at millisecond 0
-        const status = getDetailedMarketStatus();
+        const status = currentCalStatus;
         if (isMounted && status) {
           setMarketStatus(status);
           isMarketOpen = Boolean(status.isOpen);
@@ -869,7 +870,7 @@ function AppInner() {
       // - Pre-Open Session (10:30 - 11:00 AM NPT): 3.5s
       // - Post-Close Reconciliation (3:00 - 3:30 PM NPT): 4.0s
       // - Off-Hours / Evening / Weekend: 6.0s
-      const isRecon = !isMarketOpen && (status?.isPostCloseReconciling || (status?.nptTotalMinutes >= 15 * 60 && status?.nptTotalMinutes < 16 * 60));
+      const isRecon = !isMarketOpen && (currentCalStatus?.isPostCloseReconciling || (currentCalStatus?.nptTotalMinutes >= 15 * 60 && currentCalStatus?.nptTotalMinutes < 16 * 60));
       const baseInterval = isMarketOpen ? 2500 : (isPreOpen ? 3500 : (isRecon ? 4000 : 6000));
       let nextInterval = baseInterval;
       if (hadError || consecutiveErrors > 0) {
