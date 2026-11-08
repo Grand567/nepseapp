@@ -1042,106 +1042,6 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SCANNERS MODAL
-═══════════════════════════════════════════════════════════════════════════ */
-function ScannerModal({ filterKey, stocks, onClose, onSelectStock }) {
-  const meta = {
-    breakout:       { title: "Breakout Stocks", icon: Flame, desc: "Stocks breaking above moving averages with high volume & momentum." },
-    circuit_up:     { title: "Circuit Setup (+ve)", icon: Target, desc: "Stocks hitting Upper 15% Circuit limit." },
-    circuit_down:   { title: "Circuit Setup (-ve)", icon: Target, desc: "Stocks hitting Lower 15% Circuit limit." },
-    fresh_signals:  { title: "Fresh Indicator Signals", icon: Zap, desc: "RSI oversold rebound (<38) or MACD Bullish Golden Crossover." },
-    support_res:    { title: "Support & Resistance Rebounds", icon: Shield, desc: "Stocks trading near 52-week support floors." },
-    candlestick:    { title: "Candlestick Patterns", icon: Compass, desc: "Bullish Engulfing and Hammer candle setups." },
-    buyers_choice:  { title: "Buyers' Choice & High Demand", icon: Users, desc: "Stocks with heaviest buy orders and turnover volume." },
-    unusual_trades: { title: "Unusual Trades & Volume", icon: BarChart2, desc: "Spike in trading activity 2x-5x above 30-day average." },
-  }[filterKey] || { title: "Market Scanner", icon: Sparkles, desc: "Algorithmic screening results." };
-
-  const matched = useMemo(() => runStockScanners(stocks, filterKey), [stocks, filterKey]);
-
-  const drawerEl = (
-    <div className="drawer-overlay" onClick={onClose}>
-      <div className="drawer" style={{ maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-        <div className="drawer-handle" />
-
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <meta.icon style={{ width: 20, height: 20, color: 'var(--primary-light)' }} />
-              <h3 style={{ fontSize: 17, fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>{meta.title}</h3>
-            </div>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>{meta.desc}</p>
-          </div>
-          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 8, padding: 6, cursor: 'pointer', color: 'var(--text-muted)' }}>
-            <X style={{ width: 16, height: 16 }} />
-          </button>
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-          {matched.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)' }}>
-              <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                <meta.icon style={{ width: 22, height: 22, color: 'var(--text-muted)' }} />
-              </div>
-              <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px' }}>No Active Candidates Found</h4>
-              <p style={{ fontSize: 12, lineHeight: 1.5, margin: 0, maxWidth: 300, marginInline: 'auto' }}>
-                No securities triggered this specific scanner filter in the current market session.
-              </p>
-            </div>
-          ) : (
-            matched.map(s => {
-              const isBull = (s.pChange || 0) >= 0;
-              return (
-                <div
-                  key={s.symbol}
-                  onClick={() => { onSelectStock(s); onClose(); }}
-                  style={{
-                    background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border)',
-                    borderRadius: 12, padding: 12, marginBottom: 8, cursor: 'pointer',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                  }}
-                >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>{s.symbol}</span>
-                      <span className="badge badge-primary" style={{ fontSize: 12 }}>{s.sector}</span>
-                      {/* C3: Liquidity badge */}
-                      {s.isIlliquid && (
-                        <span style={{ fontSize: 12, fontWeight: 800, padding: '1px 6px', borderRadius: 8, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }} title={s.liquidityWarning}>⚠ ILLIQUID</span>
-                      )}
-                      {!s.isIlliquid && s.liquidityClass === 'LOW' && (
-                        <span style={{ fontSize: 12, fontWeight: 700, padding: '1px 6px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', color: '#fbbf24' }} title={s.liquidityWarning}>LOW LIQ</span>
-                      )}
-                    </div>
-
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      Vol: {s.volume?.toLocaleString() || '—'} · RSI: {s.rsi?.toFixed(1) || '—'}
-                    </div>
-                  </div>
-
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 14, fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-                      Rs. {fmt(s.ltp)}
-                    </div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: isBull ? 'var(--bull)' : '#F43F5E' }}>
-                      {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  if (typeof document !== 'undefined') {
-    return createPortal(drawerEl, document.body);
-  }
-  return drawerEl;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
    SUB-INDICES SELECTION MODAL
 ═══════════════════════════════════════════════════════════════════════════ */
 function SubIndicesModal({ indices, selectedIndex, onSelectIndex, onClose }) {
@@ -1481,7 +1381,6 @@ function Dashboard({
   const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const indices = (rawIndices && typeof rawIndices === 'object') ? rawIndices : {};
   const [selectedStock, setSelectedStock] = useState(null);
-  const [activeScanner, setActiveScanner] = useState(null);
   const [breadthModalTab, setBreadthModalTab] = useState(null);
   const [breadthFilter, setBreadthFilter] = useState(null); // 'advanced' | 'declined' | 'unchanged' | 'circuit_pos' | 'circuit_neg'
   const [showIntelligence, setShowIntelligence] = useState(false);
@@ -1759,12 +1658,11 @@ function Dashboard({
 
   // Hook back handlers for local modals
   useBackHandler(() => {
-    if (activeScanner) { setActiveScanner(null); return true; }
     if (breadthModalTab) { setBreadthModalTab(null); return true; }
     if (showSubIndicesModal) { setShowSubIndicesModal(false); return true; }
     if (showTVModal) { setShowTVModal(false); return true; }
     return false;
-  }, Boolean(activeScanner || breadthModalTab || showSubIndicesModal || showTVModal), 30);
+  }, Boolean(breadthModalTab || showSubIndicesModal || showTVModal), 30);
 
   const primeDailyPickRef = useRef(null);
 
@@ -2120,53 +2018,6 @@ function Dashboard({
     return { score, label, color, desc };
   }, [advancedCount, declinedCount, unchangedCount, currentHeroValue, stocks, heroHistory]);
 
-  // ── Sector Rotation & Momentum ──
-  const [sectorTf, setSectorTf] = useState('1D'); // '1D' | '1W' | '1M'
-  const sectorRotationData = useMemo(() => {
-    const sectorMap = {};
-    stocks.forEach(s => {
-      const sec = s.sector || 'Others';
-      if (!sectorMap[sec]) sectorMap[sec] = { count: 0, sumPChange: 0, sum1W: 0, sum1M: 0, count1W: 0, count1M: 0, turnover: 0 };
-      sectorMap[sec].count++;
-      sectorMap[sec].sumPChange += Number(s.pChange) || 0;
-      sectorMap[sec].turnover += Number(s.turnover) || (Number(s.ltp || 100) * Number(s.volume || 1000));
-
-      const hist = getCachedRealPriceHistory(s.symbol);
-      if (Array.isArray(hist) && hist.length >= 6) {
-        const last = Number(hist[hist.length - 1]?.close || s.ltp || 0);
-        const prev5 = Number(hist[hist.length - 6]?.close || 0);
-        if (last > 0 && prev5 > 0) {
-          sectorMap[sec].sum1W += ((last - prev5) / prev5) * 100;
-          sectorMap[sec].count1W++;
-        }
-        if (hist.length >= 21) {
-          const prev20 = Number(hist[hist.length - 21]?.close || 0);
-          if (last > 0 && prev20 > 0) {
-            sectorMap[sec].sum1M += ((last - prev20) / prev20) * 100;
-            sectorMap[sec].count1M++;
-          }
-        }
-      }
-    });
-
-    const list = Object.entries(sectorMap).map(([sector, data]) => {
-      let avgChange = data.count > 0 ? (data.sumPChange / data.count) : 0;
-      if (sectorTf === '1W' && data.count1W > 0) {
-        avgChange = data.sum1W / data.count1W;
-      } else if (sectorTf === '1M' && data.count1M > 0) {
-        avgChange = data.sum1M / data.count1M;
-      }
-      return {
-        sector,
-        avgChange: Number(avgChange.toFixed(2)),
-        turnover: data.turnover,
-        stockCount: data.count
-      };
-    });
-
-    return list.sort((a, b) => b.avgChange - a.avgChange);
-  }, [stocks, sectorTf]);
-
   // Robust Movers Data Lists
   const isDebentureOrBond = (s) => {
     if (!s) return false;
@@ -2217,25 +2068,6 @@ function Dashboard({
         return (Number(b.volume) || 0) - (Number(a.volume) || 0);
       })
       .slice(0, 8);
-  }, [stocks]);
-
-  const topDemandStocks = useMemo(() => {
-    return [...stocks]
-      .sort((a, b) => {
-        const vB = (Number(b.volume) || 0) * ((Number(b.pChange) || 0) >= 0 ? 1.5 : 0.7);
-        const vA = (Number(a.volume) || 0) * ((Number(a.pChange) || 0) >= 0 ? 1.5 : 0.7);
-        return vB - vA;
-      })
-      .slice(0, 8);
-  }, [stocks]);
-
-  const circuitStocks = useMemo(() => {
-    const hits = stocks.filter(s => isCircuitStock(s)).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
-    if (hits.length >= 4) return hits.slice(0, 8);
-    const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 6.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
-    const combined = [...hits, ...nearHits.filter(s => !hits.some(h => h.symbol === s.symbol))];
-    if (combined.length > 0) return combined.slice(0, 8);
-    return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 8);
   }, [stocks]);
 
   const slowAccumulationStocks = useMemo(() => {
@@ -5803,14 +5635,6 @@ function Dashboard({
         />
       )}
 
-      {activeScanner && (
-        <ScannerModal
-          filterKey={activeScanner}
-          stocks={stocks}
-          onClose={() => setActiveScanner(null)}
-          onSelectStock={s => handleStockClick(s)}
-        />
-      )}
 
       {showSubIndicesModal && (
         <SubIndicesModal
