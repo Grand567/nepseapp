@@ -19,7 +19,7 @@ import {
   Crown, Heart, Scale, SlidersHorizontal, Clock, Bell, Lock,
   LayoutGrid, Gauge, Crosshair, Brain, Gem, Banknote, Filter, Settings,
   GitBranch, BellRing, ScanLine, LayoutDashboard, ShieldCheck, Bot, BarChart3,
-  ExternalLink,
+  ExternalLink, AlertTriangle,
 } from 'lucide-react';
 import NepseAgentDashboard from './NepseAgentDashboard';
 import { AlgorithmicSignalTrackRecord } from './AlgorithmicSignalTrackRecord';
@@ -255,6 +255,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'watchlist-entry-alerts',     name: 'Watchlist Entry & Risk Alerts',                icon: BellRing,           color: 'rose',    cat: 'flagship', star: true },
   { id: 'ai-agent-dossier',           name: 'Autonomous AI Scrip Intelligence Agent',      icon: Bot,                color: 'emerald', cat: 'flagship', star: true },
   { id: 'signals-track-record',       name: 'Algorithmic Signal Track Record & Audit',       icon: ShieldCheck,        color: 'teal',    cat: 'flagship', star: true },
+  { id: 'alpha-playbook',             name: '⚡ Alpha Playbook: 5-Step Edge Execution Plan',  icon: BookOpen,           color: 'emerald', cat: 'flagship', star: true },
 
   // ── 2. Smart Money & Institutional Flow (10 Flagship Tools) ──
   { id: 'broker-smart-flow',          name: '⚡ Broker Smart Flow & Early Ignition Workstation', icon: Zap,    color: 'emerald', cat: 'smart-money', star: true },
@@ -263,6 +264,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'players-choices',            name: 'Smart Money / Big Players Choices',            icon: Crown,              color: 'yellow',  cat: 'smart-money', star: true },
   { id: 'broker-analysis',            name: 'Broker A/D Flow Analysis',                     icon: Users,              color: 'purple',  cat: 'smart-money', star: true },
   { id: 'broker-dominance',           name: 'Broker Dominance & Cornering (BCR3)',          icon: Award,              color: 'blue',    cat: 'smart-money', star: true },
+  { id: 'distribution-leaders',       name: '🚨 Distribution Leaders & Smart Money Exit Radar', icon: AlertTriangle, color: 'rose', cat: 'smart-money', star: true },
   { id: 'broker-top10',               name: 'Broker Top 10 Stocks (Brokers 58, 45, 34)',    icon: BarChart3,          color: 'amber',   cat: 'smart-money', star: true },
   { id: 'broker-heatmap',             name: 'Broker Network Heatmap',                       icon: LayoutGrid,         color: 'purple',  cat: 'smart-money', star: true },
   { id: 'broker-favourites',          name: 'Broker Historical Favourites',                 icon: Heart,              color: 'pink',    cat: 'smart-money', star: true },
@@ -1320,6 +1322,17 @@ function SessionDateDropdown({
   );
 }
 
+function resolveServiceDef(sId: string | null | undefined): ServiceDef | null {
+  if (!sId) return null;
+  const found = ALL_SERVICES.find((s) => s.id === sId);
+  if (found) return found;
+  if (SERVICE_COMPONENTS[sId]) {
+    const formattedName = sId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    return { id: sId, name: formattedName, icon: Activity, color: 'emerald', cat: 'flagship', star: false };
+  }
+  return null;
+}
+
 export default function ServicesHub({
   stocks = [],
   indices,
@@ -1443,7 +1456,7 @@ export default function ServicesHub({
     try {
       const openId = typeof window !== 'undefined' ? localStorage.getItem('open_service_id') : null;
       if (openId) {
-        const found = ALL_SERVICES.find((s) => s.id === openId);
+        const found = resolveServiceDef(openId);
         if (found) {
           localStorage.removeItem('open_service_id');
           return found;
@@ -1470,7 +1483,7 @@ export default function ServicesHub({
       const sId = e?.detail?.serviceId || (typeof window !== 'undefined' ? localStorage.getItem('open_service_id') : null);
       const sym = e?.detail?.symbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '');
       if (sId) {
-        const found = ALL_SERVICES.find((s) => s.id === sId);
+        const found = resolveServiceDef(sId);
         if (found) {
           setSelectedService(found);
           if (sym) setServiceInitialSymbol(sym);
