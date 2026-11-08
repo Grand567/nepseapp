@@ -174,10 +174,12 @@ export default function AccountManager({ userId = 'guest_local' }) {
         console.warn('[AccountManager Sync]:', localErr.message);
       }
 
-      // Sync with cloud vault
+      // Sync with cloud vault (sanitize: zero credentials uploaded to cloud)
       if (userId && !userId.startsWith('guest')) {
         try {
-          syncUserDataToCloud(userId, { profiles: updatedProfiles, bulkAccounts: updated });
+          const sanitizedProfiles = (updatedProfiles || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
+          const sanitizedBulk = (updated || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
+          syncUserDataToCloud(userId, { profiles: sanitizedProfiles, bulkAccounts: sanitizedBulk });
         } catch (_) {}
       }
 
@@ -247,22 +249,25 @@ export default function AccountManager({ userId = 'guest_local' }) {
         // Update bulk accounts
         const existing = loadLocalAccounts(userId);
         const updatedAccounts = existing.map(a => a.id === acc.id ? updatedAccount : a);
-        saveLocalAccounts(updatedAccounts);
+        saveLocalAccounts(updatedAccounts, userId);
         setAccounts(updatedAccounts);
 
-        // Update profiles
+        // Update profiles with encrypted credentials in localStorage
         const profileKey = `nepse_hub_${userId}_profiles`;
         const saved = localStorage.getItem(profileKey) || '[]';
         const existingProfiles = JSON.parse(saved);
         const updatedProfiles = existingProfiles.map(p => p.boid === acc.boid || p.id === acc.id ? updatedAccount : p);
-        safeStorageSetItem(profileKey, JSON.stringify(updatedProfiles));
-        window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(updatedProfiles) }));
-        window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: updatedProfiles } }));
+        const encryptedProfiles = updatedProfiles.map(p => encryptProfileCredentials(p, userId));
+        safeStorageSetItem(profileKey, JSON.stringify(encryptedProfiles));
+        window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(encryptedProfiles) }));
+        window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: encryptedProfiles } }));
 
-        // Sync with cloud vault
+        // Sync with cloud vault (sanitize: zero credentials uploaded to cloud)
         if (userId && !userId.startsWith('guest')) {
           try {
-            syncUserDataToCloud(userId, { profiles: updatedProfiles, bulkAccounts: updatedAccounts });
+            const sanitizedProfiles = (updatedProfiles || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
+            const sanitizedBulk = (updatedAccounts || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
+            syncUserDataToCloud(userId, { profiles: sanitizedProfiles, bulkAccounts: sanitizedBulk });
           } catch (_) {}
         }
 
@@ -304,10 +309,12 @@ export default function AccountManager({ userId = 'guest_local' }) {
       }
     } catch (_) {}
 
-    // Sync with cloud vault
+    // Sync with cloud vault (sanitize: zero credentials uploaded to cloud)
     if (userId && !userId.startsWith('guest')) {
       try {
-        syncUserDataToCloud(userId, { profiles: filteredProfiles, bulkAccounts: updated });
+        const sanitizedProfiles = (filteredProfiles || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
+        const sanitizedBulk = (updated || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
+        syncUserDataToCloud(userId, { profiles: sanitizedProfiles, bulkAccounts: sanitizedBulk });
       } catch (_) {}
     }
 

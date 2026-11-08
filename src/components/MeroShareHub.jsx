@@ -535,7 +535,8 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: newProfiles } }));
     } catch (_) {}
     try {
-      syncUserDataToCloud(userId, { profiles: encryptedForStorage, bulkAccounts: encryptedForStorage }, userEmail);
+      const sanitizedProfiles = (newProfiles || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
+      syncUserDataToCloud(userId, { profiles: sanitizedProfiles, bulkAccounts: sanitizedProfiles }, userEmail);
     } catch (_) {}
   };
 

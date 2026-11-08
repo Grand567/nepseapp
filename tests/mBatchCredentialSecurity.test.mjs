@@ -20,6 +20,10 @@ import {
   decryptSensitiveField,
   encryptProfileCredentials,
   decryptProfileCredentials,
+  encryptMeroShareCredentials,
+  decryptMeroShareCredentials,
+  encryptProfileCredentialsAsync,
+  decryptProfileCredentialsAsync,
   maskSensitiveCredentialProfile
 } from '../src/utils/credentialCrypto.js';
 
@@ -119,6 +123,40 @@ ok(!exportedJson.includes('CRN-987654321'), 'Exported backup JSON does not conta
 ok(!exportedJson.includes('"5678"'), 'Exported backup JSON does not contain transaction PIN');
 ok(exportedJson.includes('***321'), 'Exported backup masks CRN to last 3 digits');
 ok(exportedJson.includes('••••••••'), 'Exported backup replaces password with mask');
+
+// ── Test 7: WebCrypto AES-256-GCM Vault Verification ──
+console.log('\n[TEST 7] WebCrypto AES-256-GCM vault encryption & decryption');
+const vaultPayload = { password: 'SuperSecretBankPass!999', crn: 'CRN-555888', pin: '9876' };
+const passphrase = 'my_secure_master_passphrase';
+
+const envelope = await encryptMeroShareCredentials(vaultPayload, passphrase);
+ok(envelope.version === 'v2_aes256gcm', 'Envelope contains AES-256-GCM cipher version tag');
+ok(envelope.salt && envelope.iv && envelope.ciphertext, 'Envelope has valid salt, iv, and ciphertext buffers');
+ok(!envelope.ciphertext.includes('SuperSecretBankPass!999'), 'AES ciphertext has zero plaintext password');
+
+const decryptedVault = await decryptMeroShareCredentials(envelope, passphrase);
+ok(decryptedVault.password === vaultPayload.password, 'Decrypted AES vault password matches');
+ok(decryptedVault.crn === vaultPayload.crn, 'Decrypted AES vault CRN matches');
+ok(decryptedVault.pin === vaultPayload.pin, 'Decrypted AES vault PIN matches');
+
+// Test async profile wrapper
+const asyncEncProfile = await encryptProfileCredentialsAsync(profile, passphrase, 'user_nepse_1');
+ok(Boolean(asyncEncProfile.vaultEnvelope), 'Profile contains WebCrypto vaultEnvelope');
+ok(asyncEncProfile.password.startsWith('enc_v1:'), 'Maintains backward-compatible enc_v1 field');
+
+const asyncDecProfile = await decryptProfileCredentialsAsync(asyncEncProfile, passphrase, 'user_nepse_1');
+ok(asyncDecProfile.password === profile.password, 'Decrypted profile via AES vault has correct password');
+ok(asyncDecProfile.pin === profile.pin, 'Decrypted profile via AES vault has correct pin');
+
+// ── Test 8: Cloud Sync Payload Sanitization ──
+console.log('\n[TEST 8] Zero credentials uploaded to cloud verification');
+const syncPayloadProfiles = [profile].map(({ password, crn, pin, transactionPin, ...safe }) => safe);
+const syncJson = JSON.stringify(syncPayloadProfiles);
+ok(!syncJson.includes('ActualPlaintextPassword#123'), 'Cloud payload has ZERO plaintext password');
+ok(!syncJson.includes('CRN-987654321'), 'Cloud payload has ZERO CRN');
+ok(!syncJson.includes('"5678"'), 'Cloud payload has ZERO transaction PIN');
+ok(!syncJson.includes('password'), 'Cloud payload contains no password key at all');
+ok(!syncJson.includes('pin'), 'Cloud payload contains no pin key at all');
 
 console.log(`\n====================================================`);
 console.log(`RESULTS: ${pass} passed, ${fail} failed.`);

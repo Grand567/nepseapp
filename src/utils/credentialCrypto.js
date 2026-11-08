@@ -189,3 +189,43 @@ export function decryptProfileCredentials(profile, userId = 'guest_local') {
     pin: decryptSensitiveField(profile.pin, userId),
   };
 }
+
+/**
+ * Asynchronous profile encryption using WebCrypto AES-256-GCM + PBKDF2-SHA256 vault.
+ */
+export async function encryptProfileCredentialsAsync(profile, masterPassphrase = 'drabyashree_nepse_vault_passphrase', userId = 'guest_local') {
+  if (!profile) return profile;
+  const sensitive = {
+    password: profile.password || '',
+    crn: profile.crn || '',
+    pin: profile.pin || ''
+  };
+  const envelope = await encryptMeroShareCredentials(sensitive, masterPassphrase);
+  return {
+    ...profile,
+    vaultEnvelope: envelope,
+    // Keep backward-compatible enc_v1 for sync code
+    password: encryptSensitiveField(profile.password, userId),
+    crn: encryptSensitiveField(profile.crn, userId),
+    pin: encryptSensitiveField(profile.pin, userId)
+  };
+}
+
+/**
+ * Asynchronous profile decryption using WebCrypto AES-256-GCM + PBKDF2-SHA256 vault.
+ */
+export async function decryptProfileCredentialsAsync(profile, masterPassphrase = 'drabyashree_nepse_vault_passphrase', userId = 'guest_local') {
+  if (!profile) return profile;
+  if (profile.vaultEnvelope && profile.vaultEnvelope.version === CIPHER_VERSION) {
+    try {
+      const decrypted = await decryptMeroShareCredentials(profile.vaultEnvelope, masterPassphrase);
+      return {
+        ...profile,
+        password: decrypted.password || '',
+        crn: decrypted.crn || '',
+        pin: decrypted.pin || ''
+      };
+    } catch (_) {}
+  }
+  return decryptProfileCredentials(profile, userId);
+}

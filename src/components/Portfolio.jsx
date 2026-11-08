@@ -9,6 +9,7 @@ import {
 import { calculateBuyDetails, calculateSellDetails, sanitizeMeroShareHoldings, guessScripBasePrice, getCustomWaccMap, setScripCustomWacc, saveCustomWaccMap, applyDiscoveredWaccMap, classifyHoldingActionSignal, stripHoldingForStorage, safeStorageSetItem, parseBrokerTradeBook } from '../utils/calculations';
 import { getProxyBase } from '../utils/liveData';
 import { syncUserDataToCloud } from '../utils/firebase';
+import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
 import { pullMeroShareLivePortfolio, authenticateMeroShare, MEROSHARE_DP_LIST, pullMeroShareWaccBatch } from '../services/meroShareService';
 import { Capacitor } from '@capacitor/core';
 import { DEFAULT_AI_KEY, callGlmAi, generateNepseAiContent } from '../services/aiService';
@@ -348,7 +349,8 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
       if (savedProfiles) {
         try {
           const parsed = JSON.parse(savedProfiles);
-          const sanitized = (Array.isArray(parsed) ? parsed : []).map(p => ({
+          const decrypted = (Array.isArray(parsed) ? parsed : []).map(p => decryptProfileCredentials(p, userId));
+          const sanitized = decrypted.map(p => ({
             ...p,
             holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid)
           }));
@@ -400,8 +402,9 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
           }
         });
         if (changed) {
-          safeStorageSetItem(profileKey, JSON.stringify(merged));
-          setMeroshareProfiles(merged);
+          const encryptedMerged = merged.map(p => encryptProfileCredentials(p, userId));
+          safeStorageSetItem(profileKey, JSON.stringify(encryptedMerged));
+          setMeroshareProfiles(merged.map(p => decryptProfileCredentials(p, userId)));
         }
       } catch (_) {}
     };
@@ -414,7 +417,8 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
       if (e.key === profileKey) {
         try {
           const updated = JSON.parse(e.newValue || '[]');
-          setMeroshareProfiles(Array.isArray(updated) ? updated : []);
+          const decrypted = (Array.isArray(updated) ? updated : []).map(p => decryptProfileCredentials(p, userId));
+          setMeroshareProfiles(decrypted);
         } catch (_) {}
       }
       if (e.key === txKey) {
@@ -429,7 +433,8 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
     const handleBulkAccountsChanged = (e) => {
       try {
         if (e.detail && Array.isArray(e.detail.profiles)) {
-          setMeroshareProfiles(e.detail.profiles);
+          const decrypted = e.detail.profiles.map(p => decryptProfileCredentials(p, userId));
+          setMeroshareProfiles(decrypted);
         } else {
           loadData();
           mergeBulkAccounts();
@@ -470,15 +475,17 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
     }));
 
     setMeroshareProfiles(cleanedProfiles);
-    safeStorageSetItem(profileKey, cleanedProfiles);
+    const encryptedForStorage = cleanedProfiles.map(p => encryptProfileCredentials(p, userId));
+    safeStorageSetItem(profileKey, encryptedForStorage);
     
     try {
-      window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(cleanedProfiles) }));
+      window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(encryptedForStorage) }));
     } catch (_) {}
 
-    // Cloud Sync
+    // Cloud Sync (Zero Credentials to Cloud)
     try {
-      syncUserDataToCloud(userId, { profiles: cleanedProfiles }, userEmail);
+      const sanitizedForCloud = cleanedProfiles.map(({ password, crn, pin, transactionPin, ...safe }) => safe);
+      syncUserDataToCloud(userId, { profiles: sanitizedForCloud }, userEmail);
     } catch (_) {}
   };
 
