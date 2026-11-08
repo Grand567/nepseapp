@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, session } = require('electron');
+const { app, BrowserWindow, shell, session, ipcMain } = require('electron');
 const path = require('path');
 
 // Ensure Node supports ES module require where required by subdependencies
@@ -6,6 +6,35 @@ if (!process.env.NODE_OPTIONS || !process.env.NODE_OPTIONS.includes('--experimen
   process.env.NODE_OPTIONS = ((process.env.NODE_OPTIONS || '') + ' --experimental-require-module').trim();
 }
 app.commandLine.appendSwitch('js-flags', '--experimental-require-module');
+
+// Safe, validated IPC Handlers
+ipcMain.handle('app:version', () => app.getVersion());
+
+ipcMain.handle('shell:openExternal', async (event, url) => {
+  if (typeof url === 'string' && (url.startsWith('http:') || url.startsWith('https:'))) {
+    await shell.openExternal(url);
+    return true;
+  }
+  return false;
+});
+
+ipcMain.on('window:minimize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.minimize();
+});
+
+ipcMain.on('window:maximize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  }
+});
+
+ipcMain.on('window:close', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.close();
+});
 
 // Ensure single instance of the application
 const gotTheLock = app.requestSingleInstanceLock();
@@ -32,6 +61,7 @@ if (!gotTheLock) {
       icon: path.join(__dirname, '../public/logo.png'),
       autoHideMenuBar: true,
       webPreferences: {
+        preload: path.join(__dirname, 'preload.cjs'),
         nodeIntegration: false,
         contextIsolation: true,
         webSecurity: true,
