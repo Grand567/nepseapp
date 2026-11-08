@@ -177,6 +177,7 @@ export default function ShareHubChart({
   chartTimeframe = '1M',
   height,
   isIntraday = false,
+  isIndex = false,
   stock = null,
   showTimeframeBar = true,
   showAdvancedChartBtn = true,
@@ -204,7 +205,16 @@ export default function ShareHubChart({
   const [hoverData, setHoverData] = useState(null);
 
   // ── Technical Indicator Toggles for Analyst Workstation (Active in Fullscreen) ──
-  const isIndividualStock = symbol && symbol !== 'NEPSE' && symbol !== 'NEPSE Index';
+  const isMarketIndex = Boolean(
+    isIndex ||
+    !symbol ||
+    symbol === 'NEPSE' ||
+    symbol === 'NEPSE Index' ||
+    String(symbol).toLowerCase().includes('index') ||
+    String(symbol).toLowerCase().includes('subindex')
+  );
+  const isIndividualStock = !isMarketIndex;
+  const currencyPrefix = isMarketIndex ? '' : 'Rs. ';
   const [showEma20, setShowEma20] = useState(true);
   const [showEma50, setShowEma50] = useState(true);
   const [showEma200, setShowEma200] = useState(false);
@@ -1169,7 +1179,7 @@ export default function ShareHubChart({
             lineWidth: 2,
             lineStyle: LineStyle.SparseDotted,
             axisLabelVisible: true,
-            title: `52W High: Rs. ${high52w}`
+            title: `52W High: ${currencyPrefix}${high52w}`
           });
         }
         if (low52w > 0) {
@@ -1179,7 +1189,7 @@ export default function ShareHubChart({
             lineWidth: 2,
             lineStyle: LineStyle.SparseDotted,
             axisLabelVisible: true,
-            title: `52W Low: Rs. ${low52w}`
+            title: `52W Low: ${currencyPrefix}${low52w}`
           });
         }
       }
@@ -1251,7 +1261,7 @@ export default function ShareHubChart({
             lineWidth: 2,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: `POC: Rs. ${pocPrice}`
+            title: `POC: ${currencyPrefix}${pocPrice}`
           });
         } catch (_) {}
       }
@@ -1265,7 +1275,7 @@ export default function ShareHubChart({
             lineWidth: 2,
             lineStyle: LineStyle.LargeDashed,
             axisLabelVisible: true,
-            title: `Inst. VWAP: Rs. ${instVwap}`
+            title: `Inst. VWAP: ${currencyPrefix}${instVwap}`
           });
         } catch (_) {}
       }
@@ -1563,7 +1573,7 @@ export default function ShareHubChart({
                   fontWeight: 900,
                   color: isUp ? '#10B981' : '#F43F5E'
                 }}>
-                  Rs. {Number(hoverData.close || hoverData.value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {currencyPrefix}{Number(hoverData.close || hoverData.value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
                 {hudTimeLabel && (
                   <span style={{ fontSize: 11, color: '#94a3b8' }}>({hudTimeLabel})</span>
@@ -1576,7 +1586,7 @@ export default function ShareHubChart({
                   fontWeight: 900,
                   color: isUp ? '#10B981' : '#F43F5E'
                 }}>
-                  Rs. {Number(authoritativeLtp).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {currencyPrefix}{Number(authoritativeLtp).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
                 <span style={{
                   fontSize: 11,
@@ -1679,7 +1689,7 @@ export default function ShareHubChart({
               fontWeight: 900,
               color: isUp ? '#10B981' : '#F43F5E'
             }}>
-              Rs. {Number(activeHud.close || activeHud.value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {currencyPrefix}{Number(activeHud.close || activeHud.value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <span style={{
               fontSize: 11,
@@ -1709,8 +1719,8 @@ export default function ShareHubChart({
             {activeHud.ema200 != null && <span style={{ color: '#a855f7' }}>EMA200: {activeHud.ema200}</span>}
             {activeHud.vwap != null && <span style={{ color: '#fbbf24' }}>VWAP: {activeHud.vwap}</span>}
             {activeHud.rsi != null && <span style={{ color: '#f472b6' }}>RSI: {activeHud.rsi}</span>}
-            {instVwap != null && <span style={{ color: '#06b6d4' }}>Whale: Rs. {instVwap}</span>}
-            {pocPrice != null && <span style={{ color: '#f59e0b' }}>POC: Rs. {pocPrice}</span>}
+            {instVwap != null && <span style={{ color: '#06b6d4' }}>Whale: {currencyPrefix}{instVwap}</span>}
+            {pocPrice != null && <span style={{ color: '#f59e0b' }}>POC: {currencyPrefix}{pocPrice}</span>}
           </div>
 
           {onToggleFullscreen && (

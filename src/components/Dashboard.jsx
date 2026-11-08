@@ -2905,9 +2905,11 @@ function Dashboard({
     if (heroTimeframe === '1D' || !slicedHeroHistory || slicedHeroHistory.length < 2) {
       const c = Number(heroVal.change != null ? heroVal.change : (indices?.nepse?.change != null ? indices.nepse.change : 0));
       const prevC = Number(heroVal.prevClose || (heroVal.value && c ? heroVal.value - c : 0));
-      const pc = (prevC > 0 && c != null)
-        ? +((c / prevC) * 100).toFixed(2)
-        : Number(heroVal.pChange != null ? heroVal.pChange : (indices?.nepse?.pChange != null ? indices.nepse.pChange : 0));
+      const pc = heroVal.pChange != null
+        ? Number(heroVal.pChange)
+        : (indices?.nepse?.pChange != null
+          ? Number(indices.nepse.pChange)
+          : (prevC > 0 && c != null ? +((c / prevC) * 100).toFixed(2) : 0));
       return {
         change: c,
         pChange: pc,
@@ -3632,6 +3634,7 @@ function Dashboard({
         <ShareHubChart
           history={slicedHeroHistory}
           symbol={activeHeroIndex?.symbol || activeHeroIndex.name}
+          isIndex={true}
           isIntraday={heroTimeframe === '1D'}
           mode={heroChartMode}
           stock={{
@@ -5804,15 +5807,15 @@ function Dashboard({
               <span style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>
                 {activeHeroIndex.name}
               </span>
-              <span style={{ fontSize: 15, fontWeight: 900, color: isHeroBull ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ fontSize: 15, fontWeight: 900, color: heroTfStats.isBull ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>
                 {fmt(heroVal.value)}
               </span>
               <span style={{
                 fontSize: 12, fontWeight: 800,
-                color: isHeroBull ? 'var(--bull)' : '#F43F5E',
+                color: heroTfStats.isBull ? 'var(--bull)' : '#F43F5E',
                 fontFamily: 'var(--font-mono)'
               }}>
-                {isHeroBull ? '+' : ''}{fmt(heroVal.change)} ({(heroVal.pChange || 0).toFixed(2)}%)
+                {heroTfStats.isBull ? '+' : ''}{fmt(heroTfStats.change)} ({heroTfStats.isBull ? '+' : ''}{(heroTfStats.pChange != null ? heroTfStats.pChange : heroVal.pChange || 0).toFixed(2)}%)
               </span>
               <button 
                 type="button"
@@ -5929,9 +5932,16 @@ function Dashboard({
             <ShareHubChart
               history={slicedHeroHistory}
               symbol={activeHeroIndex.name}
+              isIndex={true}
               isIntraday={heroTimeframe === '1D'}
               mode={heroChartMode}
-              stock={{ ltp: heroVal.value, change: heroVal.change, pChange: heroVal.pChange }}
+              stock={{
+                symbol: activeHeroIndex?.symbol || activeHeroIndex.name,
+                ltp: heroVal.value,
+                change: heroTfStats.change,
+                pChange: heroTfStats.pChange,
+                prevClose: heroVal.prevClose || indices?.nepse?.prevClose || indices?.nepse?.previousClose
+              }}
               chartTimeframe={heroTimeframe}
               onTimeframeChange={handleHeroTimeframeChange}
               showTimeframeBar={false}

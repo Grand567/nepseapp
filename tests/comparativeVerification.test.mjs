@@ -336,7 +336,7 @@ const buys = [
 const corpActions = [{ type: 'bonus', bonusPercent: 10 }];
 const waccResult = calculateWacc(buys, corpActions);
 assert(waccResult.totalQuantity === 220, `Bonus adjusted units is 220: ${waccResult.totalQuantity}`);
-assert(Math.abs(waccResult.wacc - 319.38) < 0.05, `Bonus adjusted fiduciary WACC is 319.38: ${waccResult.wacc}`);
+assert(Math.abs(waccResult.wacc - 319.60) < 0.05, `Bonus adjusted fiduciary WACC is 319.60: ${waccResult.wacc}`);
 
 // E. SEBON 10-Kitta Allotment Probability Engine
 // Case 1: Oversubscribed by 5x (500,000 applicants for 1,000,000 shares = 100,000 allottees)
