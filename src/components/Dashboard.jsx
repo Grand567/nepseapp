@@ -2837,6 +2837,33 @@ function Dashboard({
         );
       })()}
 
+      {/* ── Live Market Sync Bar ── */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '0 4px 6px',
+        fontSize: 11,
+        color: '#94a3b8'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            background: apiStatus === 'live' ? '#10b981' : '#f59e0b',
+            boxShadow: apiStatus === 'live' ? '0 0 6px rgba(16, 185, 129, 0.6)' : 'none'
+          }} />
+          <span style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 11.5 }}>
+            {apiStatus === 'live' ? 'Live Market Feed' : 'Closing Snapshot'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'monospace', fontSize: 11 }}>
+          <Clock style={{ width: 11, height: 11, opacity: 0.7 }} />
+          <span>Last updated: {formattedTimestamp}</span>
+        </div>
+      </div>
+
       {/* ── 1. PROMINENT TOP SEARCH BAR (Decoupled 0ms Latency Component) ── */}
       <TopSearchBar
         onSearchChange={handleSearchChange}

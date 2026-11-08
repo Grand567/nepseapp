@@ -30,6 +30,8 @@ import { NotificationCenterDrawer } from './components/NotificationCenterDrawer'
 import { initPushNotifications, fetchActiveSmartAlerts, triggerTestAlert, getUnreadNotificationCount } from './utils/pushNotificationService';
 import { NavigationProvider, useNavigation, useBackHandler } from './context/NavigationContext';
 import { SubscriptionProvider, useSubscription } from './context/SubscriptionContext';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { fetchHolidays, fetchNepseIntradayGraph } from './utils/servicesApi.js';
 import { getUpcomingHolidays, toNepaliDigits } from './utils/bikramSambat.js';
 
@@ -70,6 +72,21 @@ function AppInner() {
   const [marketTrend, setMarketTrend] = useState('flat');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(new Date());
+
+  const formattedSyncTime = useMemo(() => {
+    const d = lastSyncTime ? new Date(lastSyncTime) : new Date();
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Kathmandu',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      }).format(d);
+    } catch (_) {
+      return d.toLocaleTimeString();
+    }
+  }, [lastSyncTime]);
 
   // ── Core Market data state (declared early to prevent TDZ in event handlers) ──
   const [stocks,       setStocks]       = useState(initialStocks);
@@ -1087,6 +1104,35 @@ function AppInner() {
     }
   };
 
+  // ── Native App Resume Refresh (Capacitor Mobile) ──
+  useEffect(() => {
+    const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+    if (!isNative) return;
+
+    let appListenerHandle = null;
+    try {
+      CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) {
+          console.log('[App] Resumed from background — refreshing live quotes & market depth');
+          triggerTick();
+          setLastSyncTime(new Date());
+        }
+      }).then(handle => {
+        appListenerHandle = handle;
+      }).catch(err => {
+        console.warn('[App] appStateChange listener registration error:', err);
+      });
+    } catch (e) {
+      console.warn('[App] CapacitorApp.addListener error:', e);
+    }
+
+    return () => {
+      if (appListenerHandle && typeof appListenerHandle.remove === 'function') {
+        appListenerHandle.remove();
+      }
+    };
+  }, []);
+
   const handleSignOut = async () => {
     setShowUserMenu(false);
     try {
@@ -1231,8 +1277,8 @@ function AppInner() {
                 )}
                 {marketStatus?.isOpen ? 'Market Open' : marketStatus?.isPreOpen ? 'Pre-Open' : 'Market Closed'}
               </span>
-              <span className="text-[10px] font-mono text-slate-400">
-                {marketStatus?.nptTime ? `${marketStatus.nptTime} NPT` : ''}
+              <span className="text-[10px] font-mono text-slate-400" title={`Last synced: ${formattedSyncTime} NPT`}>
+                {formattedSyncTime ? `Updated: ${formattedSyncTime} NPT` : (marketStatus?.nptTime ? `${marketStatus.nptTime} NPT` : '')}
               </span>
             </div>
           </div>
