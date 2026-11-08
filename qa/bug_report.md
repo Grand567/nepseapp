@@ -1774,3 +1774,175 @@ Live headless Chromium automated crawl conducted on Vite dev server (`http://loc
 | **Service Hub** | `ServicesHub`, 8 Categories, 125 Services | 1440x900, 820x1180, 390x844 | 5 / 5 PASSED | 125 Services & Orphan parity | InfoBanner text, Backtest engine | 0 | **VERIFIED (100%)** |
 | **Header Utilities** | `Calculator`, `Resources`, `StitchHub` | 1440x900, 820x1180, 390x844 | 4 / 4 PASSED | Official TMS URLs | Mobile visibility, Devanagari `.००` | 0 | **VERIFIED (100%)** |
 | **TOTAL** | **862 Inventory Items** | **3 Viewports Crawled** | **21 / 21 PASSED** | **37 / 37 SUITES PASSED** | **120 / 120 INPUTS PASSED** | **0** | **AUDIT COMPLETE (0 REGRESSIONS)** |
+
+
+## 16. Phase 7 — Capacitor Mobile & Native Android Deep Audit Report
+
+### 16.1 Native Platform & Sync Verification (`npx cap sync`)
+- **Capacitor CLI:** v8.1.1 (`@capacitor/core`, `@capacitor/cli`, `@capacitor/android`).
+- **Command Output:**
+  ```text
+  > npx cap sync
+  [info] Copying web assets from dist to android\app\src\main\assets\public in 69.83ms
+  [info] Creating capacitor.config.json in android\app\src\main\assets in 1.48ms
+  [info] Scanning for native plugins
+  [info] Found 2 native Android plugins:
+         @capacitor/app@8.1.1
+         @capacitor/push-notifications@8.1.3
+  [info] Updating Android plugins in 1.94ms
+  [info] Updating Android native dependencies with gradle in 607.72ms
+  [info] Sync finished in 0.697s
+  ```
+- **Sync Status:** **PASSED (Clean)**. Web distribution directory (`dist`) mirrored to native Android assets without build errors.
+- **Platform Availability:**
+  - `android/` directory is present and fully integrated.
+  - `ios/` directory is **ABSENT** in this repository. `Info.plist` is therefore **N/A (iOS platform not initialized)**.
+
+---
+
+### 16.2 AndroidManifest.xml, Permissions & Network Security Audit
+- **Permissions Declared (`android/app/src/main/AndroidManifest.xml`):**
+  - `android.permission.INTERNET` (Required for live market streams and backend sync) — **Valid**
+  - `android.permission.ACCESS_NETWORK_STATE` (Network connectivity status) — **Valid**
+  - `android.permission.USE_BIOMETRIC` (App biometric lock authentication) — **Valid**
+  - `android.permission.VIBRATE` (Haptic alert feedback) — **Valid**
+  - `android.permission.POST_NOTIFICATIONS` (Android 13+ / API 33+ push and status bar notifications) — **Valid**
+  - `android.permission.WRITE_EXTERNAL_STORAGE` (`maxSdkVersion=28`) — **Valid (Scoped storage compliant)**
+  - `android.permission.READ_EXTERNAL_STORAGE` — **Valid**
+- **Android Target SDK & Compilation:**
+  - `compileSdkVersion`: **36** (Android 16 / latest)
+  - `targetSdkVersion`: **36**
+  - `minSdkVersion`: **24** (Android 7.0 Nougat+)
+  - `JavaVersion`: **VERSION_17**
+- **Network Security Configuration (`network_security_config.xml`):**
+  - `<base-config cleartextTrafficPermitted="false" />`: Strictly enforces HTTPS across all external endpoints.
+  - `<domain-config cleartextTrafficPermitted="true">`: Restricts cleartext HTTP exclusively to development IP hosts (`localhost`, `127.0.0.1`, `10.0.2.2`, `192.168.1.11`, `192.168.100.54`).
+  - **Verdict:** Compliant with Google Play Store 2026 security guidelines.
+
+---
+
+### 16.3 Native Plugins Inventory Audit (Installed vs Missing)
+- **Currently Installed Native Plugins:**
+  1. `@capacitor/core` (v8.1.1)
+  2. `@capacitor/android` (v8.1.1)
+  3. `@capacitor/app` (v8.1.1) — App exit and back-button listeners.
+  4. `@capacitor/push-notifications` (v8.1.3) — FCM token acquisition and foreground push handling.
+- **Missing Recommended Capacitor Plugins & Mobile Impact:**
+  1. **`@capacitor/keyboard` (MISSING):** Soft virtual keyboard open/close cannot be intercepted by React. When users edit inputs in modals or sheets, the WebView does not resize smoothly.
+  2. **`@capacitor/status-bar` (MISSING):** Status bar cannot dynamically toggle icon styles (dark/light) or translucent edge-to-edge drawing.
+  3. **`@capacitor/haptics` (MISSING):** Web `navigator.vibrate()` is frequently blocked or suppressed in modern Android WebViews without direct user gesture.
+  4. **`@capacitor/browser` (MISSING):** External broker links (`tms*.nepalstock.com.np`), news articles, and PDF guides rely on `window.open()`, which risks hijacking the main WebView.
+  5. **`@capacitor/network` (MISSING):** Offline detection relies on DOM `navigator.onLine`, which is unreliable across mobile network interface transitions.
+
+---
+
+### 16.4 Web-Only Code & Native WebView Compatibility Audit
+- **File Exports & Downloads (`AccumulationDistributionRadar.tsx:999`, `PreferencesSettingsService.tsx:177`):**
+  - **Issue:** Uses web-standard `<a download>` and `URL.createObjectURL(blob)`.
+  - **Native Failure:** Android WebView does NOT support HTML5 `<a download>` without a custom `DownloadListener`. While `floorsheetExport.js` correctly uses the native Java bridge `window.NepseAndroidDownloader.saveFile()`, `AccumulationDistributionRadar` and `PreferencesSettingsService` bypass it, causing silent export failures on native devices (`BUG-081`).
+- **Local PDF Viewing (`Master100ProfitWorkstation.tsx:502`):**
+  - **Issue:** Invokes `window.open('/NEPSE_100_Percent_Profit_Master_Guide.pdf', '_blank')`.
+  - **Native Failure:** Android WebView cannot render PDF files internally via `window.open()`. It results in a blank view or unhandled download request (`BUG-086`).
+- **Web Notification API (`watchlistAlerts.js:224`):**
+  - **Issue:** Invokes `new Notification(title, { body, ... })`.
+  - **Native Failure:** Web `Notification` constructor is unsupported in standard Android WebView and throws an `Illegal constructor` error or fails silently (`BUG-085`).
+- **Web Audio API Autoplay (`watchlistAlerts.js:47`):**
+  - **Issue:** `playBreakoutChime()` instantiates `new AudioContext()` and calls `.resume()`.
+  - **Native Failure:** Mobile Chromium requires direct user touch gesture to resume an `AudioContext`. Asynchronous alerts arriving while the screen is idle cannot sound the chime (`BUG-085`).
+- **Permissive Navigation (`capacitor.config.json`):**
+  - **Issue:** `server.allowNavigation` includes 40+ wildcards (e.g. `*.nepalipaisa.com`, `*.sharesansar.com`, `*.cdsc.com.np`, `*.merolagani.com`).
+  - **Native Risk:** Clicking any unhandled anchor link to these domains navigates the native container away from the app shell, trapping the user without a browser URL bar or back button (`BUG-084`).
+
+---
+
+### 16.5 Hardware Back Button Audit (`NavigationContext.jsx`)
+- **Debounce & Priority Queue:**
+  - Back button listener registered via `CapacitorApp.addListener('backButton')` with 280ms debounce.
+  - Root back-press triggers double-tap exit toast (`"Press back again to exit Drabyashree NEPSE"`) with a 2000ms expiration window.
+  - Priority dispatch closes active modals (`StockDetailModal`, `AdvancedChartModal`, `InAppNewsReaderModal`, `ServicesHub`, `showNotificationCenter`, `showUserMenu`) in descending priority order.
+- **Stacking Gap Detected:**
+  - `BreakoutAlertDialog.jsx` mounts on top of `StockDetailModal` (`zIndex: 100005`), but does **NOT** register a `useBackHandler`.
+  - **Defect:** When hardware back is pressed with `BreakoutAlertDialog` open, the event skips the dialog and triggers `StockDetailModal`'s handler (`priority: 100`), unmounting the entire stock detail modal behind the user (`BUG-080`).
+
+---
+
+### 16.6 Lifecycle State & App Resume Refresh Audit
+- **Lifecycle Listeners:**
+  - Neither `App.jsx`, `liveData.js`, nor `NavigationContext.jsx` subscribes to `CapacitorApp.addListener('appStateChange', ({ isActive }) => ...)`.
+- **Defect:**
+  - If a user sends the app to the background during live market hours (11:00 AM – 3:00 PM NPT) and returns 30+ minutes later, the app displays stale prices, obsolete market breadth, and outdated orderbooks until manually refreshed or until the 60-second polling interval triggers (`BUG-082`).
+
+---
+
+### 16.7 Safe-Area Insets & Viewport Display Audit
+- **Viewport Meta:**
+  - `index.html` line 6: `<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />` — **Compliant (`viewport-fit=cover` active)**.
+- **Top Header Bar (`src/index.css:322`):**
+  - `padding-top: max(14px, calc(env(safe-area-inset-top, 0px) + 8px));`
+  - Prevents top header and status bar content from being clipped by device notch, camera punch-hole, or Dynamic Island.
+- **Bottom Navigation Bar (`src/index.css:723`):**
+  - `padding: 6px 4px calc(env(safe-area-inset-bottom, 0px) + 6px);`
+  - Prevents bottom navigation tabs from overlapping the Android gesture pill or home indicator.
+- **Landscape Orientation (`src/index.css:1183-1184`):**
+  - `padding-left: env(safe-area-inset-left, 0px);`
+  - `padding-right: env(safe-area-inset-right, 0px);`
+  - **Verdict:** Safe-area CSS implementation is robust.
+
+---
+
+### 16.8 Soft Keyboard Behavior & Input Visibility Audit
+- **Activity Manifest Configuration:**
+  - `<activity>` in `AndroidManifest.xml` **omits** `android:windowSoftInputMode`.
+  - On modern Android with `WindowCompat.setDecorFitsSystemWindows(window, true)`, omitting this attribute defaults to `adjustPan`.
+- **Defect:**
+  - When opening the virtual keyboard in deep forms (e.g. Portfolio manual trade entry, Screener custom metric filter, Guru AI chat input, Breakout price alert config), the WebView is not resized. Bottom sheets, sticky footers, or the input field itself risk being covered by the soft keyboard (`BUG-083`).
+  - Lack of `@capacitor/keyboard` prevents programmatic keyboard dismissal on submit or scroll.
+
+---
+
+### 16.9 Offline Handling & Network Resilience Audit
+- **Offline UI Notice:**
+  - `App.jsx` features a global offline banner:
+    `तपाईं अफलाइन हुनुहुन्छ — सुरक्षित क्यास डाटा देखाइँदै छ (Offline Mode - Displaying Cached Data)`
+  - Displays automatically when network connectivity is interrupted.
+- **Offline Caching Engine:**
+  - Real-time quote cache stored in IndexedDB (`idbSet`/`idbGet`) and localStorage (`nepse_enriched_v3`).
+  - AI Analyst displays an explicit offline banner (`"Offline Quant Synthesis (Offline / Sample Data — Not Live Market Stream)"`) with last updated timestamp when offline.
+- **Mobile Limitation:**
+  - Network state detection uses browser `window.addEventListener('online'/'offline')` and `navigator.onLine`. Inside native Android WebView, these events do not reliably trigger during Wi-Fi to cellular data transitions without `@capacitor/network`.
+
+---
+
+### 16.10 Production Backend Proxy & Cleartext Enforcement
+- **Backend Host Resolution (`src/utils/proxyBase.js`):**
+  - Native platform detection via `Capacitor.isNativePlatform()`.
+  - Resolves to production Render server: `https://nepseapp.onrender.com`.
+  - Production URL uses strict TLS (`https://`), compliant with Android `network_security_config.xml` (`cleartextTrafficPermitted="false"`).
+- **Cold-Start Handling:**
+  - `warmUpServer()` pre-pings `https://nepseapp.onrender.com` on app boot to mitigate Render free-tier cold-start latency.
+  - SSE real-time alert stream connects cleanly to `https://nepseapp.onrender.com/api/smart-alerts/events`.
+
+---
+
+### 16.11 Device & Emulator Testing Telemetry
+- **Connected Devices Check (`adb devices`):**
+  - `29091JEGR06495 unauthorized`
+  - Device unauthorized (requires RSA key acceptance on phone screen).
+  - No active Android Virtual Device (AVD) emulator found in PATH.
+- **Device-Only Testing Status:**
+  - **Marked: `Not-Tested`**
+  - **Technical Rationale:** Physical device `29091JEGR06495` is connected via USB in `unauthorized` state, and no headless Android Virtual Device (AVD) emulator is currently configured or booted in the system PATH. Runtime touch-event validation and hardware frame-rate telemetry are deferred until device authorization is completed.
+
+---
+
+### 16.12 Phase 7 New Bug Inventory Table (Bugs BUG-080 to BUG-086)
+
+| Bug ID | Severity | Module / View | Defect Description | Native Risk / Impact | Status |
+| :--- | :---: | :--- | :--- | :--- | :---: |
+| **BUG-080** | **High** | `BreakoutAlertDialog.jsx` | Missing `useBackHandler` registration in dialog. | Hardware back-press dismisses parent `StockDetailModal` instead of closing alert dialog. | **New Finding** |
+| **BUG-081** | **High** | `AccumulationDistributionRadar.tsx`, `PreferencesSettingsService.tsx` | File downloads use `<a download>` instead of `window.NepseAndroidDownloader.saveFile()`. | Exporting Whale Archive or Desk Settings backup fails silently on native Android WebView. | **Fixed** |
+| **BUG-082** | **Medium** | `App.jsx`, `liveData.js` | Lack of `CapacitorApp.addListener('appStateChange')` resume listener. | Resuming app after 30+ minutes retains stale market quotes until manual refresh or polling tick. | **New Finding** |
+| **BUG-083** | **Medium** | `AndroidManifest.xml` | `android:windowSoftInputMode` is missing and `@capacitor/keyboard` not installed. | Soft keyboard opens in `adjustPan` mode, covering inputs in bottom sheets and modal forms. | **New Finding** |
+| **BUG-084** | **Medium** | `capacitor.config.json` | `server.allowNavigation` contains 40+ external domains without `@capacitor/browser` isolation. | Clicking external news/broker link can replace root WebView, trapping user in third-party website. | **New Finding** |
+| **BUG-085** | **Low** | `watchlistAlerts.js` | Uses Web `new Notification()` and un-gestured `new AudioContext()`. | System notification fails in WebView and alert chime is blocked by mobile autoplay policies. | **New Finding** |
+| **BUG-086** | **Low** | `Master100ProfitWorkstation.tsx` | Uses `window.open('/NEPSE_...pdf', '_blank')` to open local PDF guide. | Android WebView cannot render PDF via `window.open()`, resulting in blank view or unhandled intent. | **New Finding** |

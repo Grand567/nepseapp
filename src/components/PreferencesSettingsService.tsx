@@ -16,6 +16,7 @@ import {
 import { formatNptDateIso } from '../utils/nepseCalendar';
 import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
 import { triggerHaptic } from '../utils/haptics';
+import { triggerFileDownload } from '../utils/fileExport';
 
 interface Props {
   initialTab?: 'credentials' | 'preferences' | 'system-health';
@@ -170,13 +171,8 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
           crn: a.crn ? `***${String(a.crn).slice(-3)}` : ''
         })), // Redact passwords, PINs, and CRNs for safety
       };
-      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `nepse-personal-desk-backup-${formatNptDateIso(new Date())}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const filename = `nepse-personal-desk-backup-${formatNptDateIso(new Date())}.json`;
+      triggerFileDownload(JSON.stringify(backup, null, 2), filename, 'application/json;charset=utf-8;');
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 3000);
     } catch (_) {}

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, fetchRealBrokerAnalysis, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchMarketWideBrokerSummaryMap, fetchPrecomputedRadar, fetchPrecomputedDiagnostic, fetchAvailableTradingDates, getCachedStocks } from '../utils/liveData';
 import { BUNDLED_BROKER_DATE, bundledBrokerMap } from '../utils/historyCache.js';
+import { triggerFileDownload } from '../utils/fileExport';
 import {
   calculateChaikinADL,
   calculateCMF,
@@ -992,15 +993,8 @@ export function AccumulationDistributionRadar({
   const handleExportBackup = () => {
     try {
       const jsonStr = exportWhaleArchiveJSON();
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `drabyashree_whale_archive_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const filename = `drabyashree_whale_archive_${new Date().toISOString().split('T')[0]}.json`;
+      triggerFileDownload(jsonStr, filename, 'application/json;charset=utf-8;');
     } catch (e) {
       console.error('[WhaleArchive] Export failed:', e);
     }
