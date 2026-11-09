@@ -20,7 +20,7 @@ Generated: 2026-11-08T08:37:17.399Z | Post-Phase 8 Full Re-Audit Completed (Phas
   - **Critical:** 5 (`BUG-001`, `BUG-002`, `BUG-018`, `BUG-038`, `BUG-051`) — **All 5 Fixed & Re-Audit Verified (100%)**
   - **High:** 36 (`BUG-003`–`BUG-006`, `BUG-011`, `BUG-017`, `BUG-019`–`BUG-022`, `BUG-029`, `BUG-030`–`BUG-032`, `BUG-039`–`BUG-044`, `BUG-050`, `BUG-052`, `BUG-062`, `BUG-064`, `BUG-067`, `BUG-068`, `BUG-070`, `BUG-071`, `BUG-076`, `BUG-077`, `BUG-080`, `BUG-081`, `BUG-089`, `BUG-090`, `BUG-093`, `BUG-094`) — **All 36 Fixed & Re-Audit Verified (100%)**
   - **Medium:** 41 (`BUG-007`–`BUG-010`, `BUG-012`, `BUG-014`, `BUG-016`, `BUG-023`–`BUG-026`, `BUG-033`–`BUG-036`, `BUG-045`–`BUG-048`, `BUG-053`–`BUG-058`, `BUG-060`, `BUG-063`, `BUG-065`, `BUG-066`, `BUG-072`, `BUG-073`, `BUG-075`, `BUG-079`, `BUG-082`, `BUG-083`, `BUG-084`, `BUG-087`, `BUG-088`, `BUG-092`, `BUG-095`, `BUG-096`) — **All 41 Fixed & Re-Audit Verified (100%)**
-  - **Low:** 15 (`BUG-013`, `BUG-015`, `BUG-027`, `BUG-028`, `BUG-037`, `BUG-049`, `BUG-059`, `BUG-061`, `BUG-069`, `BUG-074`, `BUG-078`, `BUG-085`, `BUG-086`, `BUG-091`, `BUG-097`) — **12 Fixed & Re-Audit Verified, 3 Deferred (`BUG-013`, `BUG-015`, `BUG-091`)**
+  - **Low:** 15 (`BUG-013`, `BUG-015`, `BUG-027`, `BUG-028`, `BUG-037`, `BUG-049`, `BUG-059`, `BUG-061`, `BUG-069`, `BUG-074`, `BUG-078`, `BUG-085`, `BUG-086`, `BUG-091`, `BUG-097`) — **12 Fixed & Re-Audit Verified, 3 Deferred (`BUG-015`, `BUG-037`, `BUG-091`)**
 - **Full Post-Phase 9 Verification Results:**
   - **Phase 3 Vitest Suite:** 3/3 test files passed, **21/21 unit/RTL tests passed** (0 failed).
   - **Phase 3 Root Hubs & Stock Tabs:** `tests/audit5RootHubsVerification.test.mjs` (6/6 passed), `tests/audit13TabsVerification.test.mjs` (14/14 passed across all 13 stock modal tabs).
@@ -2362,7 +2362,7 @@ Live automated headless crawl conducted on production preview build (`http://127
 ========================================================================================
   Total Bugs Logged to Date        : 92 (BUG-001 through BUG-092)
   Bugs Successfully Fixed & Passed : 89
-  Bugs Formally Deferred           : 3 (BUG-013, BUG-015, BUG-091 — rationale documented)
+  Bugs Formally Deferred           : 3 (BUG-015, BUG-037, BUG-091 — rationale documented)
   Critical Bugs Remaining          : 0
   High Bugs Remaining              : 0
   Medium Bugs Remaining            : 0
