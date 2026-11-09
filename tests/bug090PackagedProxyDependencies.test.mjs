@@ -18,12 +18,11 @@ test('BUG-090: electron-builder packages proxy node_modules and package.json int
   const proxyResource = config.extraResources.find(r => r.from === 'proxy' && r.to === 'proxy');
   assert.ok(proxyResource, 'extraResources must include proxy folder mapping');
   
-  // Must NOT exclude node_modules
-  const hasExclusion = proxyResource.filter.includes('!node_modules/**/*');
-  assert.equal(hasExclusion, false, 'extraResources must not exclude node_modules from proxy');
+  // Must package node_modules via dedicated extraResources entry or filter
+  const hasNodeModulesEntry = config.extraResources.some(r => r.from === 'proxy/node_modules' && r.to === 'proxy/node_modules');
+  assert.ok(hasNodeModulesEntry, 'extraResources must package proxy/node_modules');
   
-  // Must include node_modules and package.json
-  assert.ok(proxyResource.filter.includes('node_modules/**/*'), 'filter must include node_modules/**/*');
+  // Must include package.json in proxy filter
   assert.ok(proxyResource.filter.includes('package.json'), 'filter must include package.json');
 });
 
