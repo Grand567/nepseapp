@@ -50,7 +50,8 @@ const testFiles = [
   'akBatchColdStartWarmupStatus.test.mjs',
   'alBatchPortfolioAuthenticationGuard.test.mjs',
   'amBatchNotificationDiagnosticTest.test.mjs',
-  'anBatchStatutoryCircuitRules.test.mjs'
+  'anBatchStatutoryCircuitRules.test.mjs',
+  'aoBatchPushNotificationVerification.test.mjs'
 ];
 
 console.log('====================================================');

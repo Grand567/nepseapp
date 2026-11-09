@@ -48,6 +48,8 @@ import {
   getSmartAlertHistory, 
   getSmartAlertSystemStatus, 
   registerPushToken, 
+  deletePushToken,
+  dispatchFcmNotification,
   testTriggerAlert, 
   testTriggerBroker58Alert,
   detectBroker58EarlyIgnition,
@@ -11890,6 +11892,17 @@ app.post('/api/smart-alerts/register-token', async (req, res) => {
   }
 });
 
+app.post('/api/smart-alerts/unregister-token', async (req, res) => {
+  try {
+    const { token } = req.body || {};
+    if (!token) return res.status(400).json({ success: false, error: 'Push token required' });
+    const ok = await deletePushToken(token);
+    res.json({ success: ok, message: 'Push token removed successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Unified Live Notification Center Feed (General vs PRO)
 app.get('/api/notifications', (req, res) => {
   try {
@@ -11965,12 +11978,14 @@ app.post('/api/notifications/test-dispatch', requireAdminSecret, async (req, res
     };
 
     const dispatched = broadcastAlert(testAlert);
+    const fcmResult = await dispatchFcmNotification(testAlert).catch(e => ({ success: false, error: e.message }));
 
     res.json({
       success: true,
-      message: 'Admin test notification successfully dispatched to notification pipeline.',
+      message: 'Admin test notification successfully dispatched to notification pipeline and FCM.',
       alert: testAlert,
-      dispatched
+      dispatched,
+      fcm: fcmResult
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

@@ -259,6 +259,15 @@ export async function initDB() {
         sync_version    INT DEFAULT 1
       );
       CREATE INDEX IF NOT EXISTS idx_cloud_sync_vaults_lookup ON cloud_sync_vaults(app, email);
+
+      CREATE TABLE IF NOT EXISTS push_tokens (
+        token             TEXT PRIMARY KEY,
+        platform          VARCHAR(50) DEFAULT 'android',
+        portfolio_symbols JSONB DEFAULT '[]'::jsonb,
+        registered_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        last_active_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_push_tokens_platform ON push_tokens(platform);
     `);
 
     // Seed initial macro baseline if none exists

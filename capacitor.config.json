@@ -15,12 +15,15 @@
       "enabled": true
     },
     "PushNotifications": {
-      "presentationOptions": ["badge", "sound", "alert"]
+      "presentationOptions": ["badge", "sound", "alert"],
+      "iconColor": "#10B981"
     }
   },
   "server": {
     "cleartext": false,
     "allowNavigation": [
+      "drabyashree-nepse-hub6936.vercel.app",
+      "*.vercel.app",
       "nepseapp.onrender.com",
       "*.onrender.com",
       "drabyashree-nepse-hub-11ef9.firebaseapp.com",

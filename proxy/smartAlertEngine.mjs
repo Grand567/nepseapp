@@ -50,6 +50,7 @@ import {
   calculateNetExpectancyAndSizing
 } from './institutionalAlertEngine.mjs';
 import { auditAntiDematDumpGuard } from './db/ledgerStore.js';
+import { pool, query } from './db.mjs';
 
 export {
   evaluateInstitutionalAlert,
@@ -323,6 +324,68 @@ export function broadcastAlert(alertPayload) {
 
 export const userTrackedSymbolsSet = new Set();
 
+/**
+ * Hydrate push tokens from PostgreSQL on server startup so ephemeral Render
+ * disk restarts don't lose registered device tokens.
+ */
+export async function hydratePushTokensFromDb() {
+  try {
+    if (!pool) return;
+    const res = await query('SELECT token, platform, portfolio_symbols, registered_at, last_active_at FROM push_tokens');
+    if (res && res.rows && res.rows.length > 0) {
+      const dbTokens = res.rows.map(r => ({
+        token: r.token,
+        platform: r.platform || 'android',
+        portfolioSymbols: Array.isArray(r.portfolio_symbols) ? r.portfolio_symbols : (typeof r.portfolio_symbols === 'string' ? JSON.parse(r.portfolio_symbols) : []),
+        registeredAt: r.registered_at ? new Date(r.registered_at).toISOString() : new Date().toISOString(),
+        lastActiveAt: r.last_active_at ? new Date(r.last_active_at).toISOString() : new Date().toISOString()
+      }));
+      const map = new Map();
+      pushTokens.forEach(t => map.set(t.token, t));
+      dbTokens.forEach(t => map.set(t.token, t));
+      pushTokens = Array.from(map.values());
+      saveJson(TOKENS_FILE, pushTokens);
+      console.log(`[SmartAlertEngine] Successfully restored ${dbTokens.length} push token(s) from PostgreSQL database.`);
+    }
+  } catch (err) {
+    console.warn('[SmartAlertEngine] Database hydration of push tokens notice:', err.message);
+  }
+}
+hydratePushTokensFromDb().catch(() => {});
+
+export async function deletePushToken(token) {
+  if (!token || typeof token !== 'string') return false;
+  const cleanToken = token.trim();
+  pushTokens = pushTokens.filter(p => p.token !== cleanToken);
+  saveJson(TOKENS_FILE, pushTokens);
+  try {
+    if (pool) {
+      await query('DELETE FROM push_tokens WHERE token = $1', [cleanToken]);
+    }
+  } catch (err) {
+    console.warn('[SmartAlertEngine] Error removing token from PostgreSQL:', err.message);
+  }
+  return true;
+}
+
+export async function pruneDeadPushTokens(tokens) {
+  if (!Array.isArray(tokens) || tokens.length === 0) return 0;
+  const tokenSet = new Set(tokens.map(t => String(t).trim()));
+  const beforeCount = pushTokens.length;
+  pushTokens = pushTokens.filter(p => !tokenSet.has(p.token));
+  saveJson(TOKENS_FILE, pushTokens);
+  try {
+    if (pool) {
+      await query('DELETE FROM push_tokens WHERE token = ANY($1)', [Array.from(tokenSet)]);
+    }
+  } catch (err) {
+    console.warn('[SmartAlertEngine] Error pruning dead push tokens from DB:', err.message);
+  }
+  const pruned = beforeCount - pushTokens.length;
+  console.log(`[SmartAlertEngine] 🧹 Pruned ${pruned} invalid/unregistered FCM push token(s). Active tokens remaining: ${pushTokens.length}`);
+  return pruned;
+}
+
 export async function registerPushToken(token, platform = 'android', portfolioSymbols = []) {
   if (!token || typeof token !== 'string') return false;
   const cleanToken = token.trim();
@@ -351,6 +414,23 @@ export async function registerPushToken(token, platform = 'android', portfolioSy
   }
 
   saveJson(TOKENS_FILE, pushTokens);
+
+  // Persist into PostgreSQL so tokens survive Render service restarts
+  try {
+    if (pool) {
+      await query(`
+        INSERT INTO push_tokens (token, platform, portfolio_symbols, registered_at, last_active_at)
+        VALUES ($1, $2, $3, NOW(), NOW())
+        ON CONFLICT (token) DO UPDATE SET
+          platform = EXCLUDED.platform,
+          portfolio_symbols = EXCLUDED.portfolio_symbols,
+          last_active_at = NOW();
+      `, [cleanToken, platform, JSON.stringify(portfolioSymbols || [])]);
+    }
+  } catch (dbErr) {
+    console.warn('[SmartAlertEngine] Failed persisting push token to PostgreSQL:', dbErr.message);
+  }
+
   console.log(`[SmartAlertEngine] Push token registered (${platform}). Tracked portfolio symbols: ${userTrackedSymbolsSet.size}. Total tokens: ${pushTokens.length}`);
 
   // Subscribe token to 'institutional_alerts' and 'general_alerts' topics if FCM is active
@@ -452,12 +532,14 @@ export async function dispatchFcmNotification(alertItem) {
     return { success: true, count: 0, notice: 'Alert saved to live notification feed (Native Android WorkManager and SSE handle dispatch)' };
   }
 
+  let topicSuccess = false;
   try {
     // 1. Send to topic 'institutional_alerts'
     const topicRes = await fcmMessaging.send({
       ...fcmPayload,
       topic: 'institutional_alerts'
     });
+    topicSuccess = true;
     console.log('[SmartAlertEngine] FCM topic message sent successfully:', topicRes);
   } catch (topicErr) {
     console.warn('[SmartAlertEngine] FCM topic send error:', topicErr.message);
@@ -465,20 +547,47 @@ export async function dispatchFcmNotification(alertItem) {
 
   // 2. Multicast to registered individual device tokens
   const activeTokens = pushTokens.map(p => p.token).filter(Boolean);
+  let multicastResult = null;
   if (activeTokens.length > 0) {
     try {
+      const tokensToSend = activeTokens.slice(-500); // batch of up to 500
       const response = await fcmMessaging.sendEachForMulticast({
         ...fcmPayload,
-        tokens: activeTokens.slice(-500) // batch of up to 500
+        tokens: tokensToSend
       });
       console.log(`[SmartAlertEngine] Multicast sent: ${response.successCount} success, ${response.failureCount} failed.`);
-      return { success: true, successCount: response.successCount, failureCount: response.failureCount };
+      multicastResult = { successCount: response.successCount, failureCount: response.failureCount };
+
+      // Handle invalid or expired tokens by deleting them
+      if (response.failureCount > 0 && Array.isArray(response.responses)) {
+        const deadTokens = [];
+        response.responses.forEach((resp, idx) => {
+          if (!resp.success && resp.error) {
+            const errCode = String(resp.error.code || resp.error.message || '');
+            if (
+              errCode.includes('registration-token-not-registered') ||
+              errCode.includes('invalid-registration-token') ||
+              errCode.includes('mismatched-credential') ||
+              errCode.includes('UNREGISTERED') ||
+              errCode.includes('invalid-argument')
+            ) {
+              deadTokens.push(tokensToSend[idx]);
+            }
+          }
+        });
+        if (deadTokens.length > 0) {
+          const prunedCount = await pruneDeadPushTokens(deadTokens);
+          multicastResult.prunedCount = prunedCount;
+        }
+      }
+      return { success: true, topicSent: topicSuccess, ...multicastResult };
     } catch (multiErr) {
       console.warn('[SmartAlertEngine] Multicast error:', multiErr.message);
+      return { success: topicSuccess, error: multiErr.message, topicSent: topicSuccess };
     }
   }
 
-  return { success: true, topicSent: true };
+  return { success: true, topicSent: topicSuccess };
 }
 
 // ── 4. QUANTITATIVE CONDITION EVALUATION ─────────────────────────────────────

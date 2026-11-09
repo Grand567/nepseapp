@@ -283,7 +283,7 @@ public class MainActivity extends BridgeActivity {
                 Uri defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
 
                 NotificationCompat.Builder builder = new NotificationCompat.Builder(MainActivity.this, safeChannel)
-                        .setSmallIcon(R.mipmap.ic_launcher)
+                        .setSmallIcon(R.drawable.ic_stat_notification)
                         .setContentTitle(safeTitle)
                         .setContentText(safeBody)
                         .setStyle(new NotificationCompat.BigTextStyle().bigText(safeBody))

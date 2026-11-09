@@ -31,7 +31,7 @@ const InAppNewsReaderModal = React.lazy(() => import('./components/InAppNewsRead
 const BatteryOptimizationModal = React.lazy(() => import('./components/BatteryOptimizationModal').then(m => ({ default: m.BatteryOptimizationModal })));
 const SmartAlertBanner = React.lazy(() => import('./components/SmartAlertBanner').then(m => ({ default: m.SmartAlertBanner })));
 const NotificationCenterDrawer = React.lazy(() => import('./components/NotificationCenterDrawer').then(m => ({ default: m.NotificationCenterDrawer })));
-import { initPushNotifications, fetchActiveSmartAlerts, triggerTestAlert, getUnreadNotificationCount } from './utils/pushNotificationService';
+import { initPushNotifications, syncDevicePushToken, fetchActiveSmartAlerts, triggerTestAlert, getUnreadNotificationCount } from './utils/pushNotificationService';
 import { NavigationProvider, useNavigation, useBackHandler } from './context/NavigationContext';
 import { SubscriptionProvider, useSubscription } from './context/SubscriptionContext';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -1167,6 +1167,7 @@ function AppInner() {
           console.log('[App] Resumed from background — refreshing live quotes & market depth');
           triggerTick();
           setLastSyncTime(new Date());
+          syncDevicePushToken().catch(() => {});
         }
       }).then(handle => {
         appListenerHandle = handle;

@@ -448,6 +448,60 @@ const getApiBase = () => {
 };
 
 /**
+ * Standalone synchronization function: POSTs the FCM token and user's tracked
+ * portfolio & watchlist symbols to the backend. Re-called on launch, resume, and refresh.
+ */
+export async function syncDevicePushToken(tokenParam = null) {
+  try {
+    const token = tokenParam || (typeof localStorage !== 'undefined' ? localStorage.getItem(PUSH_REGISTERED_KEY) : null);
+    if (!token) return false;
+
+    let portfolioSymbols = [];
+    try {
+      const rawProfs = localStorage.getItem('nepse_portfolio_profiles') || '[]';
+      const profs = JSON.parse(rawProfs);
+      if (Array.isArray(profs)) {
+        profs.forEach(p => (p.holdings || []).forEach(h => {
+          const s = h.symbol || h.scrip;
+          if (s) portfolioSymbols.push(String(s).toUpperCase().trim());
+        }));
+      }
+      const rawWl = localStorage.getItem('nepse_user_watchlist') || '[]';
+      const wl = JSON.parse(rawWl);
+      if (Array.isArray(wl)) {
+        wl.forEach(w => {
+          const s = typeof w === 'string' ? w : (w.symbol || w.scrip);
+          if (s) portfolioSymbols.push(String(s).toUpperCase().trim());
+        });
+      }
+      portfolioSymbols = Array.from(new Set(portfolioSymbols));
+    } catch (_) {}
+
+    const platform = typeof Capacitor !== 'undefined' && typeof Capacitor.getPlatform === 'function' 
+      ? Capacitor.getPlatform() 
+      : 'android';
+
+    const apiBase = getApiBase();
+    const res = await fetch(`${apiBase}/api/smart-alerts/register-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token,
+        platform,
+        portfolioSymbols
+      })
+    });
+    if (res.ok) {
+      console.log('[PushService] ✅ Device push token & tracked symbols successfully registered with Dravyashree backend.');
+      return true;
+    }
+  } catch (syncErr) {
+    console.warn('[PushService] Error saving token to backend:', syncErr.message);
+  }
+  return false;
+}
+
+/**
  * Initialize Push Notifications on Mobile (Android) and Web
  */
 export async function initPushNotifications() {
@@ -470,6 +524,12 @@ export async function initPushNotifications() {
 
       // 2. Register with Apple / Google APNs / FCM
       await PushNotifications.register();
+
+      // Proactively sync existing cached token immediately on launch (rebuilds Render list if backend restarted)
+      const existingToken = localStorage.getItem(PUSH_REGISTERED_KEY);
+      if (existingToken) {
+        syncDevicePushToken(existingToken).catch(() => {});
+      }
 
       // Create high-importance Android Notification Channels (PRO vs General)
       try {
@@ -506,50 +566,13 @@ export async function initPushNotifications() {
         console.warn('[PushService] Channel creation notice:', chErr);
       }
 
-      // 3. Listen for token registration
+      // 3. Listen for token registration & token refresh
       PushNotifications.addListener('registration', async (tokenObj) => {
         const token = tokenObj?.value;
         if (!token) return;
         console.log('[PushService] Received native device push token:', token);
         localStorage.setItem(PUSH_REGISTERED_KEY, token);
-
-        // Sync token and portfolio symbols with backend
-        try {
-          let portfolioSymbols = [];
-          try {
-            const rawProfs = localStorage.getItem('nepse_portfolio_profiles') || '[]';
-            const profs = JSON.parse(rawProfs);
-            if (Array.isArray(profs)) {
-              profs.forEach(p => (p.holdings || []).forEach(h => {
-                const s = h.symbol || h.scrip;
-                if (s) portfolioSymbols.push(String(s).toUpperCase().trim());
-              }));
-            }
-            const rawWl = localStorage.getItem('nepse_user_watchlist') || '[]';
-            const wl = JSON.parse(rawWl);
-            if (Array.isArray(wl)) {
-              wl.forEach(w => {
-                const s = typeof w === 'string' ? w : (w.symbol || w.scrip);
-                if (s) portfolioSymbols.push(String(s).toUpperCase().trim());
-              });
-            }
-            portfolioSymbols = Array.from(new Set(portfolioSymbols));
-          } catch (_) {}
-
-          const apiBase = getApiBase();
-          await fetch(`${apiBase}/api/smart-alerts/register-token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              token,
-              platform: Capacitor.getPlatform() || 'android',
-              portfolioSymbols
-            })
-          });
-          console.log('[PushService] Device push token & tracked symbols successfully registered with Dravyashree backend.');
-        } catch (syncErr) {
-          console.warn('[PushService] Error saving token to backend:', syncErr.message);
-        }
+        await syncDevicePushToken(token);
       });
 
       // 4. Registration errors

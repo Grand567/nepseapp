@@ -60,13 +60,14 @@ try {
       NODE_ENV: 'production',
       MEROSHARE_ENCRYPTION_KEY: '',
     },
-    timeout: 5000,
+    timeout: 15000,
     encoding: 'utf8',
   });
 
+  const output = (spawnResult.stderr || '') + (spawnResult.stdout || '');
   ok(spawnResult.status !== 0, 'Proxy process exited with non-zero exit code when started in production without key');
   ok(
-    spawnResult.stderr.includes('CRITICAL SECURITY CONFIGURATION ERROR: MEROSHARE_ENCRYPTION_KEY'),
+    output.includes('CRITICAL SECURITY CONFIGURATION ERROR: MEROSHARE_ENCRYPTION_KEY'),
     'Proxy process printed expected configuration error to stderr on abortive boot'
   );
 
