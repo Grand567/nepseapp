@@ -40,7 +40,7 @@ import { fetchHolidays, fetchNepseIntradayGraph } from './utils/servicesApi.js';
 import { getUpcomingHolidays, toNepaliDigits } from './utils/bikramSambat.js';
 
 import { initLocalLedger } from './utils/localLedgerManager';
-import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices, warmUpServer } from './utils/liveData';
+import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices, warmUpServer, getServerWarmupInfo, subscribeServerWarmup } from './utils/liveData';
 import { getDetailedMarketStatus, clearDynamicMarketHalt, setLiveMarketOverride, clearLiveMarketOverride } from './utils/nepseCalendar';
 // MOCK_DATA_DISABLED — mock data is permanently disabled; import removed.
 import { onAuthChange, signOut, checkRedirectResult, fetchUserDataFromCloud, syncUserDataToCloud, getLocalSession } from './utils/firebase';
@@ -103,6 +103,16 @@ function AppInner() {
   const [marketStatus, setMarketStatus] = useState(() => getDetailedMarketStatus());
   const [aiTargetStock, setAiTargetStock] = useState(null);
   const liveStocksRef = useRef(initialStocks);
+
+  // ── Proxy Cold-Start & Cache Warm-Up Status ──
+  const [serverWarmup, setServerWarmup] = useState(() => getServerWarmupInfo());
+
+  useEffect(() => {
+    const unsub = subscribeServerWarmup(info => {
+      setServerWarmup(info);
+    });
+    return unsub;
+  }, []);
 
   // ── Tab Keep-Alive for Instant 0ms Switching ──
   const [visitedTabs, setVisitedTabs] = useState(() => new Set(['dashboard']));
@@ -1869,7 +1879,37 @@ function AppInner() {
     </header>
 
     {/* ── Sub-Millisecond Progress Bar Shimmer Line ── */}
-    <LoadingShimmerBar active={Boolean(isRefreshing || apiStatus === 'connecting')} />
+    <LoadingShimmerBar active={Boolean(isRefreshing || apiStatus === 'connecting' || serverWarmup?.warmingUp)} />
+
+    {/* ── Friendly Cold-Start / Warm-Up Waiting State ── */}
+    {serverWarmup?.warmingUp && (
+      <div 
+        className="fade-in"
+        role="status"
+        aria-live="polite"
+        style={{
+          background: 'linear-gradient(90deg, rgba(30, 58, 138, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%)',
+          borderBottom: '1px solid rgba(59, 130, 246, 0.35)',
+          padding: '8px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10,
+          fontSize: 13,
+          color: '#93c5fd',
+          fontWeight: 600,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          zIndex: 90
+        }}
+      >
+        <span style={{ fontSize: 16 }}>⚡</span>
+        <span>
+          <strong>Warming Up:</strong> {serverWarmup.message || 'Restoring database & market cache.'}
+          {serverWarmup.retryAfterSec > 0 && ` Ready in ~${serverWarmup.retryAfterSec}s...`}
+        </span>
+        <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2, borderColor: '#93c5fd', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
+      </div>
+    )}
 
       {/* ── Font Size / Readability Accessibility Modal ── */}
       {showFontModal && (

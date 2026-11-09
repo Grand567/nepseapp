@@ -79,6 +79,30 @@ let _serverWarmTs = 0;      // timestamp of the last warm-up ping response
 let _serverWarmPending = false;
 let _localProxyState = 'unknown'; // 'unknown' | 'alive' | 'dead'
 
+let _serverWarmupInfo = { warmingUp: false, message: '', retryAfterSec: 0, stage: '' };
+const _warmupListeners = new Set();
+
+export function isServerWarmingUp() {
+  return Boolean(_serverWarmupInfo?.warmingUp);
+}
+
+export function getServerWarmupInfo() {
+  return _serverWarmupInfo;
+}
+
+export function subscribeServerWarmup(listener) {
+  _warmupListeners.add(listener);
+  try { listener(_serverWarmupInfo); } catch (_) {}
+  return () => _warmupListeners.delete(listener);
+}
+
+function updateWarmupState(info) {
+  _serverWarmupInfo = { ...info };
+  _warmupListeners.forEach(fn => {
+    try { fn(_serverWarmupInfo); } catch (_) {}
+  });
+}
+
 export async function warmUpServer() {
   if (_serverWarmPending) return; // already in flight
   _serverWarmPending = true;
@@ -91,8 +115,28 @@ export async function warmUpServer() {
       const pingUrl = url ? `${url}/api/ping` : '/api/ping';
       const r = await fetch(pingUrl, { signal: ctrl.signal, cache: 'no-store' });
       clearTimeout(tid);
+      if (r.status === 503) {
+        try {
+          const body = await r.json();
+          if (body && body.warmingUp) {
+            updateWarmupState({
+              warmingUp: true,
+              message: body.message || 'Server is warming up...',
+              retryAfterSec: body.retryAfterSec || 5,
+              stage: body.stage || 'Restoring database & cache'
+            });
+            console.log(`[warmUp] Proxy warming up (${url || 'relative'}): ${body.message}`);
+            const delay = Math.max(2, body.retryAfterSec || 5) * 1000;
+            setTimeout(() => warmUpServer(), delay);
+            return false;
+          }
+        } catch (_) {}
+      }
       if (r.ok) {
         _serverWarmTs = Date.now();
+        if (_serverWarmupInfo.warmingUp) {
+          updateWarmupState({ warmingUp: false, message: '', retryAfterSec: 0, stage: 'Ready' });
+        }
         console.log(`[warmUp] Proxy ready (${url || 'relative'}) in ${Date.now() - started}ms`);
         return true;
       }

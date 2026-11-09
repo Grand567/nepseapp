@@ -529,11 +529,58 @@ app.use('/cdsc-ipo', handleCdscReverseProxy);
 
 const PORT = process.env.PORT || 5000;
 
+// Cold-Start & Cache Warm-Up Lifecycle State
+let isWarmingUp = true;
+let warmupStage = 'Initializing SQLite ledger & disk vaults';
+const warmupStartTime = Date.now();
+const ESTIMATED_WARMUP_SEC = 8;
+
+export function getProxyWarmupState() {
+  return {
+    isWarmingUp,
+    warmupStage,
+    warmupStartTime,
+    estimatedWarmupSec: ESTIMATED_WARMUP_SEC
+  };
+}
+
+export function setProxyWarmupState(warmingUp, stage = 'Ready') {
+  isWarmingUp = Boolean(warmingUp);
+  warmupStage = stage;
+}
+
 app.get('/api/ping', (req, res) => {
-  res.json({ ok: true, version: '2.1.0', routes: ['intraday-graph', 'index-history', 'price-history'] });
+  if (isWarmingUp) {
+    const elapsedSec = Math.floor((Date.now() - warmupStartTime) / 1000);
+    const retryAfter = Math.max(1, ESTIMATED_WARMUP_SEC - elapsedSec);
+    res.setHeader('Retry-After', String(retryAfter));
+    return res.status(503).json({
+      status: 'WARMING_UP',
+      warmingUp: true,
+      stage: warmupStage,
+      retryAfterSec: retryAfter,
+      message: `Proxy is warming up (${warmupStage}), retry in ${retryAfter} seconds.`,
+      uptimeSec: Math.floor(process.uptime())
+    });
+  }
+  res.json({ ok: true, version: '2.1.0', warmingUp: false, routes: ['intraday-graph', 'index-history', 'price-history'] });
 });
 
 app.get(['/health', '/api/health'], (req, res) => {
+  if (isWarmingUp) {
+    const elapsedSec = Math.floor((Date.now() - warmupStartTime) / 1000);
+    const retryAfter = Math.max(1, ESTIMATED_WARMUP_SEC - elapsedSec);
+    res.setHeader('Retry-After', String(retryAfter));
+    return res.status(503).json({
+      status: 'WARMING_UP',
+      warmingUp: true,
+      stage: warmupStage,
+      retryAfterSec: retryAfter,
+      message: `Proxy is warming up (${warmupStage}), retry in ${retryAfter} seconds.`,
+      uptimeSec: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString()
+    });
+  }
   let ledgerStatus = null;
   try {
     ledgerStatus = getLedgerStatusInfo();
@@ -541,6 +588,7 @@ app.get(['/health', '/api/health'], (req, res) => {
   const isHealthy = ledgerStatus?.success ?? true;
   res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? 'HEALTHY' : 'DEGRADED',
+    warmingUp: false,
     uptimeSec: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     nepseConnected: true,
@@ -13543,8 +13591,10 @@ app.get('/api/company/:symbol/industry-comparison', async (req, res) => {
 
 app.listen(PORT, '0.0.0.0', async () => {
     try {
+        warmupStage = 'Initializing SQLite database & schema';
         await initDB();
         try {
+          warmupStage = 'Restoring floorsheet vault & rebuilding hot cache';
           seedFromDiskVault();
           rebuildHotCache();
           // Warm up popular brokers asynchronously in background to avoid blocking event loop
@@ -13557,6 +13607,9 @@ app.listen(PORT, '0.0.0.0', async () => {
         } catch (cacheErr) {
           console.warn('[ledgerStore] Initial hot cache build error:', cacheErr.message);
         }
+        isWarmingUp = false;
+        warmupStage = 'Ready';
+        console.log(`[Proxy] ⚡ Warmup complete in ${Math.round((Date.now() - warmupStartTime)/1000)}s! Server fully operational.`);
         // Inject dependencies so workers can run full-universe Entry/Exit Analyzer scan and live News/IPO alerts
         initWorkerDependencies({
           getPriceHistoryInternal,

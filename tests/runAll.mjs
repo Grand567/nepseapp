@@ -46,7 +46,8 @@ const testFiles = [
   'agBatchKathmanduSchedule.test.mjs',
   'ahBatchIpoFallbackStaleLabeling.test.mjs',
   'aiBatchTelegramUnauthorizedLoopGuard.test.mjs',
-  'ajBatchCdscTlsVerification.test.mjs'
+  'ajBatchCdscTlsVerification.test.mjs',
+  'akBatchColdStartWarmupStatus.test.mjs'
 ];
 
 console.log('====================================================');

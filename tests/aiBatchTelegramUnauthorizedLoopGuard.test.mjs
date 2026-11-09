@@ -22,8 +22,16 @@ const ok = (condition, message) => {
 
 console.log('▶ [SUITE] aiBatchTelegramUnauthorizedLoopGuard.test.mjs\n');
 
+const dummyBadToken = '9999999999:AAFakeTokenForTestOnly9999999999';
+
 try {
   console.log('[TEST 1] Initial Clean State');
+  saveTelegramConfig({
+    botToken: dummyBadToken,
+    chatId: '12345678',
+    enabled: true,
+    isTestServer: false
+  });
   resetTelegramAuthError();
   ok(isTelegramTokenInvalid() === false, 'Notifier starts with isTokenInvalid: false');
 
@@ -35,17 +43,28 @@ try {
     origWarn(...args);
   };
 
-  const dummyBadToken = '9999999999:AAFakeTokenForTestOnly9999999999';
-
-  // Force live call with invalid token
+  // Force live call with invalid token & mock 401 from Telegram API to prevent external network flakiness
   process.env.TEST_LIVE_TELEGRAM = 'true';
   process.env.TELEGRAM_BOT_TOKEN = dummyBadToken;
   process.env.TELEGRAM_CHAT_ID = '12345678';
+
+  const origFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('api.telegram.org')) {
+      return {
+        ok: false,
+        status: 401,
+        json: async () => ({ ok: false, error_code: 401, description: 'Unauthorized: invalid bot token' })
+      };
+    }
+    return origFetch ? origFetch(url) : { ok: false, json: async () => ({}) };
+  };
 
   // First poll with bad token -> will encounter 401 Unauthorized
   await pollIncomingTelegramCommands();
 
   console.warn = origWarn;
+  global.fetch = origFetch;
 
   ok(isTelegramTokenInvalid() === true, 'isTokenInvalid flagged true after 401 Unauthorized');
   ok(loggedWarnings.length === 1, `Logged exactly one warning on 401 Unauthorized (count: ${loggedWarnings.length})`);
@@ -77,11 +96,14 @@ try {
   ok(sendRes.reason.includes('HTTP 401 Unauthorized'), 'sendTelegramMessage returned clear suspension reason');
 
   console.log('\n[TEST 4] Configuration Update & Error State Recovery');
-  saveTelegramConfig({ botToken: '123456:NewTokenTest', chatId: '123456', enabled: true });
+  saveTelegramConfig({ botToken: '123456:NewTokenTest', chatId: '123456', enabled: true, isTestServer: false });
   ok(isTelegramTokenInvalid() === false, 'Updating telegram config resets isTokenInvalid flag to allow clean recovery');
 
-  // Cleanup test env
+  // Clean up test artifacts and environment (keeping enabled: true as default)
+  saveTelegramConfig({ botToken: '', chatId: '', enabled: true, isTestServer: false });
   delete process.env.TEST_LIVE_TELEGRAM;
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_CHAT_ID;
 
   console.log(`\n======================================================`);
   console.log(` RESULTS: ${pass} PASSED, ${fail} FAILED`);
