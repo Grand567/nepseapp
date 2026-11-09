@@ -79,9 +79,9 @@ export function evaluateStockSelection({
     hardFilterResults.flags.push('FAIL_MIN_LIQUIDITY');
   }
 
-  // 2. Circuit Band Lock Gates
-  const isCeilingLocked = (ltp >= circuitCeiling * 0.995) || (askQty !== null && askQty === 0 && ltp >= prevClose * 1.09);
-  const isFloorLocked = (ltp <= circuitFloor * 1.005) || (bidQty !== null && bidQty === 0 && ltp <= prevClose * 0.91);
+  // 2. Circuit Band Lock Gates (Uses ±15% statutory bounds under Fourth Amendment 2082)
+  const isCeilingLocked = (ltp >= circuitCeiling * 0.995) || (askQty !== null && askQty === 0 && ltp >= prevClose * (1 + (hardFilters.nepseCircuitBandPct - 1.0) / 100));
+  const isFloorLocked = (ltp <= circuitFloor * 1.005) || (bidQty !== null && bidQty === 0 && ltp <= prevClose * (1 - (hardFilters.nepseCircuitBandPct - 1.0) / 100));
 
   if (hardFilters.excludeCircuitCeilingLocked && isCeilingLocked) {
     hardFilterResults.circuitPassed = false;

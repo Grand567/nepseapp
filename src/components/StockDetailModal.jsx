@@ -58,6 +58,7 @@ import { DividendHistoryPanel } from './DividendHistoryPanel';
 import { toggleWatchlist, isWatched } from '../utils/watchlist';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { isActionableBuySignal } from '../utils/guruEngine';
+import { NEPSE_RULES, getCircuitLimits } from '../utils/nepseRules.js';
 import { FundamentalValuationCard } from './analyzer/FundamentalValuationCard';
 import { getSectorBenchmark } from '../utils/fundamentals';
 import { adjustPricesForCorporateActions } from '../utils/priceAdjustment';
@@ -951,7 +952,7 @@ function BeginnerConfidenceCard({
     validPositive(lv?.breakoutPivot) ??
     +(ltp * 1.02).toFixed(1)
   );
-  const isCircuitTrap = Boolean(entryExitPlan?.riskGate?.isCircuitTrap || pChange >= 10);
+  const isCircuitTrap = Boolean(entryExitPlan?.riskGate?.isCircuitTrap || pChange >= NEPSE_RULES.CIRCUIT_NEAR_THRESHOLD_PCT);
 
   const fallbackPullbackTarget = (whaleVwap && Number(whaleVwap) > 0)
     ? Number(whaleVwap)
@@ -3642,8 +3643,7 @@ export default function StockDetailModal({
           const span52 = Math.max(0.1, high52 - low52);
           const w52RangePct = Math.min(100, Math.max(0, ((d.ltp - low52) / span52) * 100));
 
-          const circuitCeiling = prevClose > 0 ? +(prevClose * 1.15).toFixed(1) : null;
-          const circuitFloor = prevClose > 0 ? +(prevClose * 0.85).toFixed(1) : null;
+          const { ceiling: circuitCeiling, floor: circuitFloor } = getCircuitLimits(prevClose);
           const overviewOrderFlowVeto = evaluateOrderFlowVeto(realBrokerAnalysis || d?.realBrokerAnalysis, d);
           const overviewOffloadWarning = realBrokerAnalysis?.operatorOffloadWarning || evaluateOperatorOffloadWarning(d.symbol, realBrokerAnalysis || d?.realBrokerAnalysis, d);
 

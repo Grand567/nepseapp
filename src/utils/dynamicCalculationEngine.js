@@ -15,64 +15,21 @@
  */
 
 import { normalizeLiveQuote, normalizeCandleSeries, normalizeQuarterlyFinancials, normalizeShareStructure } from './nepseAdapterLayer.js';
+import {
+  NEPSE_RULES,
+  NEPSE_CIRCUIT_BAND_PCT,
+  getCircuitLimits,
+  clampToDailyCircuitBand,
+  clampReturnIntervalToCircuit
+} from './nepseRules.js';
 
-// ── 1. CIRCUIT BAND CONSTRAINT ENFORCEMENT (MANDATORY 15%) ──────────────────
-
-export const NEPSE_CIRCUIT_BAND_PCT = 15.0; // Enacted under Fourth Amendment Regulations 2082
-
-/**
- * Calculates absolute floor and ceiling bounded strictly by the 15% daily circuit limit.
- * @param {number} prevClose 
- * @param {number} [circuitPct=15.0]
- */
-export function getCircuitLimits(prevClose, circuitPct = NEPSE_CIRCUIT_BAND_PCT) {
-  const p = Number(prevClose) || 0;
-  if (p <= 0) return { floor: null, ceiling: null, circuitPct };
-  const ceiling = +(p * (1 + circuitPct / 100)).toFixed(1);
-  const floor = +(p * (1 - circuitPct / 100)).toFixed(1);
-  return { floor, ceiling, circuitPct };
-}
-
-/**
- * Clamps a single-session projected price strictly to the ±15% circuit band from prevClose.
- * @param {number} projectedPrice 
- * @param {number} prevClose 
- * @param {number} [circuitPct=15.0]
- * @returns {number} Clamped price
- */
-export function clampToDailyCircuitBand(projectedPrice, prevClose, circuitPct = NEPSE_CIRCUIT_BAND_PCT) {
-  const price = Number(projectedPrice);
-  const prev = Number(prevClose);
-  if (isNaN(price) || isNaN(prev) || prev <= 0) return price;
-
-  const floor = +(prev * (1 - circuitPct / 100)).toFixed(1);
-  const ceiling = +(prev * (1 + circuitPct / 100)).toFixed(1);
-
-  return Math.max(floor, Math.min(ceiling, price));
-}
-
-/**
- * Bounds statistical confidence intervals and return distributions strictly within ±15% daily limit.
- * @param {number} lowerPct 
- * @param {number} upperPct 
- * @param {number} [circuitPct=15.0]
- * @returns {{ lower: number, upper: number, isCapped: boolean }}
- */
-export function clampReturnIntervalToCircuit(lowerPct, upperPct, circuitPct = NEPSE_CIRCUIT_BAND_PCT) {
-  const rawLower = Number(lowerPct) || 0;
-  const rawUpper = Number(upperPct) || 0;
-
-  const clampedLower = Math.max(-circuitPct, rawLower);
-  const clampedUpper = Math.min(circuitPct, rawUpper);
-  const isCapped = clampedLower !== rawLower || clampedUpper !== rawUpper;
-
-  return {
-    lower: +clampedLower.toFixed(2),
-    upper: +clampedUpper.toFixed(2),
-    isCapped,
-    circuitPct
-  };
-}
+export {
+  NEPSE_RULES,
+  NEPSE_CIRCUIT_BAND_PCT,
+  getCircuitLimits,
+  clampToDailyCircuitBand,
+  clampReturnIntervalToCircuit
+};
 
 // ── 2. DYNAMIC TECHNICAL INDICATORS & SCRIP BETA ─────────────────────────────
 

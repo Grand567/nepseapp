@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { fetchAgentScripDossier, runAgentAnalysis } from '../services/nepseAgentTools';
 import { getProxyBase } from '../utils/liveData';
+import { getCircuitLimits, NEPSE_RULES } from '../utils/nepseRules.js';
 import { StockSearchSelect } from './ui';
 
 const POPULAR_SCRIPS = ['KBL', 'NABIL', 'HDL', 'SHIVM', 'GBIME', 'CHCL', 'CIT', 'NLIC'];
@@ -464,7 +465,7 @@ export default function NepseAgentDashboard({
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                  Limits: Floor Rs. {dossier?.quote?.circuitFloor || (dossier?.quote?.prevClose ? +(dossier.quote.prevClose * 0.85).toFixed(1) : 'N/A')} | Ceiling Rs. {dossier?.quote?.circuitCeiling || (dossier?.quote?.prevClose ? +(dossier.quote.prevClose * 1.15).toFixed(1) : 'N/A')}
+                  Limits: Floor Rs. {dossier?.quote?.circuitFloor || (dossier?.quote?.prevClose ? getCircuitLimits(dossier.quote.prevClose).floor : 'N/A')} | Ceiling Rs. {dossier?.quote?.circuitCeiling || (dossier?.quote?.prevClose ? getCircuitLimits(dossier.quote.prevClose).ceiling : 'N/A')}
                 </div>
               </div>
 

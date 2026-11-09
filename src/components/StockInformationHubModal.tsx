@@ -20,6 +20,7 @@ import { fetchFromBackend, fetchRealBrokerAnalysis, fetchRealFloorsheet, subscri
 import { getProxyBase } from "@/utils/proxyBase";
 import { getBrokerName } from "@/utils/accumulationDistributionEngine";
 import { calculateMACD } from "@/utils/indicators";
+import { getCircuitLimits, NEPSE_RULES } from "@/utils/nepseRules";
 import {
   Users,
   Search,
@@ -586,8 +587,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     historicalCandles?.[historicalCandles.length - 2]?.close ??
     (ltp > 0 ? ltp : 500)
   );
-  const dailyLowerCircuit = Number((ltp * 0.85).toFixed(2));
-  const dailyUpperCircuit = Number((ltp * 1.15).toFixed(2));
+  const { floor: dailyLowerCircuit, ceiling: dailyUpperCircuit } = getCircuitLimits(ltp);
 
   // Statutory NEPSE Rupee Profit Simulator:
   // - 5 SEBON Commission Slabs (0.36%, 0.33%, 0.31%, 0.27%, 0.24% with Rs. 10 floor)

@@ -74,7 +74,7 @@ const incompleteDossier = {
   symbol: 'INCOMPLETE',
   companyName: 'Incomplete Test Co',
   sector: 'Others',
-  quote: { ltp: 100, pChange: 0, prevClose: 100, circuitFloor: 90, circuitCeiling: 110 },
+  quote: { ltp: 100, pChange: 0, prevClose: 100, circuitFloor: 85, circuitCeiling: 115 },
   technicals: { rsi14: null, macd: null, ema20: null, ema50: null, trendStructure: 'Unknown' },
   brokerFlow: { available: false, smartMoneyBias: 'Neutral' },
   fundamentals: { pe: null, eps: null, bookValue: null },

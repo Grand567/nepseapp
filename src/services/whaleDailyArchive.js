@@ -14,6 +14,7 @@
 
 import { calculateBrokerConcentration, calculateQuietAccumulationIndex, estimateTradablePublicFloat } from '../utils/accumulationDistributionEngine.ts';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse.js';
+import { getCircuitLimits, NEPSE_RULES } from '../utils/nepseRules.js';
 
 const STORAGE_KEY = 'drabyashree_whale_daily_archive';
 const MAX_ARCHIVE_DAYS = 30; // Keep up to 30 trading sessions
@@ -201,7 +202,7 @@ export function captureDailyWhaleSnapshot(stocks = [], floorsheet = [], customDa
 
     // Upper circuit (+15%) ceiling proximity guard (SEBON Fourth Amendment 15% rule)
     const prevClose = Number(s.previousClose || s.prevClose || (s.ltp ? s.ltp / (1 + (s.pChange || 0) / 100) : 0));
-    const upperCeiling = prevClose > 0 ? +(prevClose * 1.15).toFixed(1) : 0;
+    const upperCeiling = getCircuitLimits(prevClose).ceiling || 0;
     const isNearUpperCircuit = upperCeiling > 0 && s.ltp >= upperCeiling * 0.985; // within 1.5% of +15% limit
 
     // 4. Intraday High/Low/Open/Close Range and Upper Shadow Rejection Check

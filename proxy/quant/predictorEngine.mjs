@@ -17,6 +17,7 @@ import {
 import { pool } from '../db.mjs';
 import { getNewsCache, hasNewsCache } from './newsCache.mjs';
 import { isExcludedInstrument } from '../db/signalTrackerStore.js';
+import { getCircuitLimits, NEPSE_RULES } from '../utils/nepseRules.mjs';
 
 export const ROUND_TRIP_FRICTION_HURDLE = 0.0085; // 0.85% statutory round-trip hurdle
 
@@ -331,10 +332,9 @@ export async function predictIndexDirection(options = {}) {
 
   // ── 15% MANDATORY DAILY CIRCUIT BAND ENFORCEMENT ──────────────────
   // Next-session targets are bounded by ±15% from today's closing level (Fourth Amendment 2082)
-  const circuitLimitPct = 15.0;
+  const circuitLimitPct = NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT;
   const circuitReferenceClose = close > 0 ? close : Number(features.prev_close || 2650);
-  const circuitCeiling = +(circuitReferenceClose * (1 + circuitLimitPct / 100)).toFixed(1);
-  const circuitFloor = +(circuitReferenceClose * (1 - circuitLimitPct / 100)).toFixed(1);
+  const { floor: circuitFloor, ceiling: circuitCeiling } = getCircuitLimits(circuitReferenceClose, circuitLimitPct);
 
   if (direction === 'up') {
     target1 = +(close + atr * 1.5).toFixed(1);

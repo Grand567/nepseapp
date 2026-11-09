@@ -14,7 +14,7 @@
  *   [J4] Walk-Forward Setup Score Backtest Engine (backtest.js)
  *        - Point-in-time walk-forward simulation (T+1 open entry, no lookahead bias)
  *        - Multi-horizon tracking (T+5, T+10, T+20), MFE/MAE excursions
- *        - Score bucketing (<50, 50-69, 70-84, 85-100) & NEPSE ±10% circuit limit enforcement
+ *        - Score bucketing (<50, 50-69, 70-84, 85-100) & NEPSE ±15% circuit limit enforcement
  *
  * Run: node tests/jBatchAdvancedEngines.test.mjs
  */

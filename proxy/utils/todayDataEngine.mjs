@@ -19,6 +19,7 @@ import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
 import Database from 'better-sqlite3';
+import { getCircuitLimits, NEPSE_RULES } from './nepseRules.mjs';
 
 export const tickEventEmitter = new EventEmitter();
 tickEventEmitter.setMaxListeners(500);
@@ -80,8 +81,8 @@ export const STATUTORY_RULES = {
   sebon_fee_description: 'SEBON regulatory fee: 0.015% of transaction value',
   dp_charge_npr: 25.0,
   dp_charge_description: 'Depository Participant (CDSC) fee: Rs. 25 flat per sold company per day',
-  circuit_limit_pct: 15.0,
-  circuit_limit_description: 'Exchange circuit breaker limit: ±15% of previous session close (April 2026 regulation)',
+  circuit_limit_pct: NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT,
+  circuit_limit_description: `Exchange circuit breaker limit: ±${NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT}% of previous session close (April 2026 regulation)`,
   cgt_individual_short_term_pct: 7.5,
   cgt_individual_long_term_pct: 5.0,
   cgt_corporate_pct: 10.0,
@@ -259,9 +260,8 @@ export function compileTodayStaticAnalytics(options = {}) {
       isBbSqueeze = bbBandwidth < 6.5;
     }
 
-    // Circuit limits (Post April 2026: 15%)
-    const circuitCeiling = Number((prevClose * 1.15).toFixed(1));
-    const circuitFloor = Number((prevClose * 0.85).toFixed(1));
+    // Circuit limits (Post April 2026: ±15%)
+    const { ceiling: circuitCeiling, floor: circuitFloor } = getCircuitLimits(prevClose);
 
     // ── SHORT TERM STATIC: 4. 5-Day Smart Money Broker Ledger & Wyckoff Phase ──
     const bList = brokerBySymbol.get(symbol) || [];
@@ -666,8 +666,8 @@ export function ingestLiveTick(symbol, tickPayload) {
       total_turnover: Number(tickPayload.turnover || prevTick.quote?.total_turnover || 0),
       total_trades: Number(tickPayload.trades || prevTick.quote?.total_trades || 0),
       rvol_live: Number(tickPayload.rvol || 1.0),
-      circuit_ceiling: Number((prevClose * 1.15).toFixed(1)),
-      circuit_floor: Number((prevClose * 0.85).toFixed(1))
+      circuit_ceiling: getCircuitLimits(prevClose).ceiling,
+      circuit_floor: getCircuitLimits(prevClose).floor
     },
     level2_depth: {
       bids: bids.slice(0, 5),
@@ -680,7 +680,7 @@ export function ingestLiveTick(symbol, tickPayload) {
     },
     recent_contract_stream: updatedContracts,
     live_signals: {
-      is_circuit_locked: ltp >= Number((prevClose * 1.15).toFixed(1)) || ltp <= Number((prevClose * 0.85).toFixed(1)),
+      is_circuit_locked: ltp >= getCircuitLimits(prevClose).ceiling || ltp <= getCircuitLimits(prevClose).floor,
       order_flow_veto: orderBookImbalancePct < -40.0 && pChange < -2.0,
       safe_entry_status: pChange > 8.0 ? 'OVEREXTENDED_DO_NOT_CHASE' : (orderBookImbalancePct > 20.0 ? 'SAFE_TO_ACCUMULATE' : 'NEUTRAL')
     }

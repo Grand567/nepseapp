@@ -19,9 +19,10 @@
  */
 
 import { calculateBrokerCommission, calculateSebonFee, DP_CHARGE } from './calculations.js';
+import { NEPSE_RULES, NEPSE_CIRCUIT_PCT } from './nepseRules.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
-export const NEPSE_CIRCUIT_PCT = 15.0;     // ±15% daily circuit limit
+export { NEPSE_CIRCUIT_PCT, NEPSE_RULES };
 export const CGT_SHORT_TERM   = 0.075;    // 7.5% — individual, holding ≤ 365 days
 export const CGT_LONG_TERM    = 0.050;    // 5.0% — individual, holding > 365 days
 export const CGT_INSTITUTIONAL = 0.100;   // 10.0% — corporate / institutional

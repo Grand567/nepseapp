@@ -75,6 +75,7 @@ import { analyzePriceAction } from './priceActionEngine.js';
 import { calculateStockRvol } from './watchlistAlerts.js';
 import { getCachedRealPriceHistory } from './historyCache.js';
 import { evaluateOrderFlowVeto } from './sharedBrokerAggregationEngine.js';
+import { NEPSE_RULES, getCircuitLimits } from './nepseRules.js';
 
 function getSafeCachedBrokerData(symbol) {
   if (!symbol || typeof window === 'undefined' || !window.localStorage) return null;
@@ -91,7 +92,7 @@ function getSafeCachedBrokerData(symbol) {
 // 0.  CONSTANTS
 // ══════════════════════════════════════════════════════════════════
 
-const NEPSE_DAILY_CIRCUIT_PCT = 15;  // ±15% max intraday move (since April 20, 2026; previously ±10%)
+const NEPSE_DAILY_CIRCUIT_PCT = NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT;  // ±15% max intraday move under Fourth Amendment 2082 (previously ±10%)
 const MIN_HISTORY_DAYS        = 20;  // minimum candles for analysis (14-day RSI + 20-day EMA)
 
 // ══════════════════════════════════════════════════════════════════
@@ -1960,12 +1961,12 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
 
   // ── Risk & Execution Gate (Section 1, 6.2, 6.3) ───────────────
   const prevClose = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
-  const upperCeiling = +(prevClose * 1.15).toFixed(1); // Standard individual stock daily circuit limit is ±15%
-  const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : 15;
+  const upperCeiling = +(prevClose * NEPSE_RULES.CIRCUIT_UPPER_MULTIPLIER).toFixed(1); // Standard individual stock daily circuit limit is ±15%
+  const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT;
   const currentPChange = pChange || (prevClose > 0 ? (((ltp - prevClose) / prevClose) * 100) : 0);
-  const isNearCircuit = currentPChange >= 12.5;
-  const isCircuitLocked = currentPChange >= 14.8;
-  const isCircuitTrap = distToCeilingPct <= 2.0 || isNearCircuit || isCircuitLocked;
+  const isNearCircuit = currentPChange >= NEPSE_RULES.CIRCUIT_NEAR_THRESHOLD_PCT;
+  const isCircuitLocked = currentPChange >= NEPSE_RULES.CIRCUIT_LOCKED_THRESHOLD_PCT;
+  const isCircuitTrap = distToCeilingPct <= NEPSE_RULES.CIRCUIT_CHASE_DISTANCE_PCT || isNearCircuit || isCircuitLocked;
 
   const target1UpsidePct = ltp > 0 ? ((levels.target1.price - ltp) / ltp) * 100 : 0;
   const target2UpsidePct = ltp > 0 ? ((levels.target2.price - ltp) / ltp) * 100 : 0;

@@ -13,6 +13,7 @@ import {
 import { calculateATR } from '../src/utils/quantEngine.js';
 import { generateEntryExitPlan } from '../src/utils/setupAnalyzer.js';
 import { getOrFetchBrokerAnalysis, isNonEquityInstrument } from './brokerVault.mjs';
+import { getCircuitLimits, NEPSE_RULES } from './utils/nepseRules.mjs';
 
 const STATUTORY_SEBON_SLABS = [
   { max: 50_000, rate: 0.0036 },
@@ -236,8 +237,7 @@ export async function assembleScripDossier(symbol, helpers) {
 
   // Statutory ±15.0% Circuit Limits (Fourth Amendment 2082)
   const refCloseForCircuit = prevClose > 0 ? prevClose : ltp;
-  const circuitFloor = refCloseForCircuit > 0 ? +(refCloseForCircuit * 0.85).toFixed(2) : null;
-  const circuitCeiling = refCloseForCircuit > 0 ? +(refCloseForCircuit * 1.15).toFixed(2) : null;
+  const { floor: circuitFloor, ceiling: circuitCeiling } = getCircuitLimits(refCloseForCircuit);
 
   let rsi = null;
   if (closes.length >= 15) {

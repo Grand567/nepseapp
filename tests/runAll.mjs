@@ -49,7 +49,8 @@ const testFiles = [
   'ajBatchCdscTlsVerification.test.mjs',
   'akBatchColdStartWarmupStatus.test.mjs',
   'alBatchPortfolioAuthenticationGuard.test.mjs',
-  'amBatchNotificationDiagnosticTest.test.mjs'
+  'amBatchNotificationDiagnosticTest.test.mjs',
+  'anBatchStatutoryCircuitRules.test.mjs'
 ];
 
 console.log('====================================================');

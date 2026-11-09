@@ -20,6 +20,7 @@ import { fileURLToPath } from 'url';
 import { getBrokerName } from './brokerVault.mjs';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 import { adToBs } from '../src/utils/bikramSambat.js';
+import { NEPSE_RULES, getCircuitLimits } from './utils/nepseRules.mjs';
 import {
   calculateDynamicPositionSizing,
   getCapitalTierConfig,
@@ -740,18 +741,18 @@ export function evaluateVetoFilters({
   const prevClose = Number(previousClose || (currentLtp > 0 ? currentLtp : 0));
   const pChange = prevClose > 0 ? ((currentLtp - prevClose) / prevClose) * 100 : 0;
 
-  const upperCircuitCeiling = prevClose > 0 ? +(prevClose * 1.15).toFixed(2) : +(currentLtp * 1.15).toFixed(2);
+  const upperCircuitCeiling = prevClose > 0 ? getCircuitLimits(prevClose).ceiling : getCircuitLimits(currentLtp).ceiling;
   const distanceToUpperCircuitPct = upperCircuitCeiling > 0
     ? +(((upperCircuitCeiling - currentLtp) / upperCircuitCeiling) * 100).toFixed(2)
-    : 15.0;
+    : NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT;
 
   const vetoTriggers = [];
 
   // HARD VETO 1: ±15% Circuit Ceiling Chase (Within 2.0% of upper circuit ceiling)
-  if (distanceToUpperCircuitPct <= 2.0 || (prevClose > 0 && currentLtp >= prevClose * 1.127) || pChange >= 12.7) {
+  if (distanceToUpperCircuitPct <= NEPSE_RULES.CIRCUIT_CHASE_DISTANCE_PCT || (prevClose > 0 && currentLtp >= prevClose * (1 + (NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT - 2.3) / 100)) || pChange >= (NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT - 2.3)) {
     vetoTriggers.push({
       code: 'VETO_CIRCUIT_CEILING',
-      reason: `±15% Circuit-Ceiling Guard: Within ${distanceToUpperCircuitPct.toFixed(2)}% (<= 2.0%) of +15% circuit ceiling Rs. ${upperCircuitCeiling} (Up +${pChange.toFixed(1)}% today — Do not chase)`
+      reason: `±${NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT}% Circuit-Ceiling Guard: Within ${distanceToUpperCircuitPct.toFixed(2)}% (<= ${NEPSE_RULES.CIRCUIT_CHASE_DISTANCE_PCT}%) of +${NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT}% circuit ceiling Rs. ${upperCircuitCeiling} (Up +${pChange.toFixed(1)}% today — Do not chase)`
     });
   }
 
@@ -788,12 +789,12 @@ export function evaluateVetoFilters({
     });
   }
 
-  // HARD VETO 5: Pre-Open Gap Trap (> 4.5% pre-open gap-up vetoed from morning buy recommendations)
+  // HARD VETO 5: Pre-Open Gap Trap (>= 4.5% pre-open gap-up approaching ±5% limit vetoed from morning buy recommendations)
   const gapPct = Number(preOpenGapPct || 0);
-  if (gapPct >= 4.0 && !isPreOpenGapRetested) {
+  if (gapPct >= NEPSE_RULES.PRE_OPEN_GAP_TRAP_THRESHOLD_PCT && !isPreOpenGapRetested) {
     vetoTriggers.push({
       code: 'VETO_UNFILLED_PREOPEN_GAP',
-      reason: `Pre-Open Gap Trap: Stock gapped up +${gapPct.toFixed(2)}% in pre-open session without confirmed VWAP retest`
+      reason: `Pre-Open Gap Trap: Stock gapped up +${gapPct.toFixed(2)}% in pre-open session (>= ${NEPSE_RULES.PRE_OPEN_GAP_TRAP_THRESHOLD_PCT}%) without confirmed VWAP retest`
     });
   }
 
@@ -811,10 +812,10 @@ export function evaluateVetoFilters({
 
   // HARD VETO 7: Market-Wide Index Circuit & Sector/Lock-In Fundamental Traps
   const idxChange = Number(nepseIndexChangePct || 0);
-  if ((idxChange >= 4.5 && idxChange <= 5.5) || idxChange <= -4.0) {
+  if ((idxChange >= (NEPSE_RULES.INDEX_CIRCUIT_LEVEL_1_PCT - NEPSE_RULES.INDEX_CIRCUIT_RADAR_PROXIMITY_PCT) && idxChange <= (NEPSE_RULES.INDEX_CIRCUIT_LEVEL_1_PCT + 0.5)) || idxChange <= -4.0) {
     vetoTriggers.push({
       code: 'VETO_INDEX_CIRCUIT_RISK',
-      reason: `Market-Wide Index Circuit Guard: NEPSE Index ${idxChange >= 0 ? '+' : ''}${idxChange.toFixed(1)}% is near 5% halt threshold or down <= -4.0%`
+      reason: `Market-Wide Index Circuit Guard: NEPSE Index ${idxChange >= 0 ? '+' : ''}${idxChange.toFixed(1)}% is near ${NEPSE_RULES.INDEX_CIRCUIT_LEVEL_1_PCT}% halt threshold or down <= -4.0%`
     });
   }
 

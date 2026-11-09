@@ -6,7 +6,7 @@
  *   G2  EMA/SMA within the window's min/max
  *   G3  pullbackHigh < LTP ≤ pivot < chaseCap (via generateEntryExitPlan)
  *   G4  histogram = macd − signal
- *   G5  circuit = prevClose × (1 ± 0.10)
+ *   G5  circuit = prevClose × (1 ± 0.15)
  */
 
 import assert from 'node:assert/strict';
