@@ -229,7 +229,9 @@ const CORS_DEFAULTS = [
   'http://127.0.0.1:3000',
   'capacitor://localhost',  // Capacitor Android WebView
   'http://localhost',
+  'https://localhost',
   'http://127.0.0.1',
+  'https://127.0.0.1',
   'null'
 ];
 
@@ -242,7 +244,7 @@ const corsOptions = {
       !origin ||
       origin === 'null' ||
       ALL_ALLOWED.some(o => origin === o || origin.startsWith(o)) ||
-      /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin)
+      /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin)
     ) {
       return cb(null, true);
     }
