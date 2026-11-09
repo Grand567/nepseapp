@@ -44,7 +44,8 @@ const testFiles = [
   'aeBatchCrossTabInvariants.test.mjs',
   'afBatchMeroshareKeyMigration.test.mjs',
   'agBatchKathmanduSchedule.test.mjs',
-  'ahBatchIpoFallbackStaleLabeling.test.mjs'
+  'ahBatchIpoFallbackStaleLabeling.test.mjs',
+  'aiBatchTelegramUnauthorizedLoopGuard.test.mjs'
 ];
 
 console.log('====================================================');

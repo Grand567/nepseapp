@@ -70,6 +70,7 @@ function loadConfig() {
 }
 
 export function saveTelegramConfig({ botToken, chatId, enabled = true, isTestServer }) {
+  resetTelegramAuthError();
   const current = loadConfig();
   const nextConfig = {
     botToken: botToken !== undefined ? String(botToken).trim() : current.botToken,
@@ -167,10 +168,28 @@ async function callTelegramApi(endpoint, payload = null) {
   }
 }
 
+let isTokenInvalid = false;
+let hasLoggedUnauthorizedWarning = false;
+
+export function resetTelegramAuthError() {
+  isTokenInvalid = false;
+  hasLoggedUnauthorizedWarning = false;
+}
+
+export function isTelegramTokenInvalid() {
+  return isTokenInvalid;
+}
+
 /**
  * Standard Telegram Bot API caller with automatic Test DC failover
+ * Detects 401 Unauthorized once, logs a single clear warning, and halts retry loop.
+ * Never logs or prints the secret token.
  */
 async function callBotApi(token, method, payload = null) {
+  if (isTokenInvalid) {
+    return { ok: false, error_code: 401, description: 'Telegram Bot Token is invalid or revoked. Retries suspended.' };
+  }
+
   const cfg = loadConfig();
   const primaryEndpoint = cfg.isTestServer ? `/bot${token}/test/${method}` : `/bot${token}/${method}`;
   let res = await callTelegramApi(primaryEndpoint, payload);
@@ -184,6 +203,14 @@ async function callBotApi(token, method, payload = null) {
       saveTelegramConfig({ ...cfg, isTestServer: !cfg.isTestServer });
       return fallbackRes;
     }
+
+    // Both primary and fallback returned 401 Unauthorized -> Token is genuinely invalid or revoked
+    if (!hasLoggedUnauthorizedWarning) {
+      console.warn('[TelegramNotifier] ⚠️ Telegram Bot Token is invalid or revoked (HTTP 401 Unauthorized). Automated Telegram polling and retries have been suspended. Verify TELEGRAM_BOT_TOKEN.');
+      hasLoggedUnauthorizedWarning = true;
+    }
+    isTokenInvalid = true;
+    return res;
   }
 
   return res;
@@ -206,6 +233,10 @@ export function escapeHtml(str) {
  * Sends a raw HTML/Markdown message to Telegram with automatic plain-text fallback
  */
 export async function sendTelegramMessage(text, parseMode = 'HTML') {
+  if (isTokenInvalid) {
+    return { success: false, reason: 'Telegram Bot Token is invalid or revoked (HTTP 401 Unauthorized). Retries suspended.' };
+  }
+
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
   if (isTestEnv && process.env.TEST_LIVE_TELEGRAM !== 'true') {
     return { success: true, messageId: 999999, mocked: true };
@@ -2551,6 +2582,7 @@ export async function pollIncomingTelegramCommands({
   onGetTrackedHoldings,
   getLatestStockPrice
 } = {}) {
+  if (isTokenInvalid) return;
   if (isPollingInProgress) return;
   const cfg = loadConfig();
   if (!cfg.enabled || !cfg.botToken) return;
