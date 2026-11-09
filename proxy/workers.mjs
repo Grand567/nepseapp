@@ -347,7 +347,7 @@ let isPostMarketAnalysisRunning = false;
 
 /**
  * Synchronizes daily price records and floorsheet contracts into persistent SQLite storage.
- * Enforces Sunday-to-Thursday execution, contract deduplication, and completeness validation.
+ * Enforces Monday-to-Friday execution, contract deduplication, and completeness validation.
  */
 export async function syncDailyFloorsheetAndPrices(targetDate) {
   console.log(`[DataLayerSync] Synchronizing daily prices & floorsheet for session: ${targetDate}...`);
@@ -698,14 +698,14 @@ export function startWorkers() {
     }
   }, 60 * 1000);
 
-  // 2. Check every 5 minutes: after 3:15 PM NPT (915 mins) on NEPSE trading days (Sun-Thu), run post-market close analysis ONCE
+  // 2. Check every 5 minutes: after 3:15 PM NPT (915 mins) on NEPSE trading days (Mon-Fri), run post-market close analysis ONCE
   setInterval(() => {
     try {
       const kt = getKathmanduTradingStatus();
       const status = getDetailedMarketStatus();
       const sessionDate = kt.isTradingDay ? kt.dateIso : (status.lastClosedSessionDate || status.targetSessionDate || kt.dateIso);
 
-      // STRICT TIMING: Run AFTER market close (>= 15:15 NPT on Sunday to Thursday)
+      // STRICT TIMING: Run AFTER market close (>= 15:15 NPT on Monday to Friday, excl. holidays)
       // Once analyzed, remains locked for sessionDate until next trading session.
       if (kt.isEodWindow) {
         if (lastPostMarketSessionAnalyzed !== sessionDate) {

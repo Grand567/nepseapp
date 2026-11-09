@@ -234,7 +234,7 @@ export function getLatestReconciliation() {
 /**
  * Start the automated 3:15 PM EOD reconciliation scheduler
  * Timezone-independent: strictly evaluates Nepal Standard Time (Asia/Kathmandu)
- * Runs on NEPSE trading days (Sunday to Thursday, 15:15 NPT onwards).
+ * Runs on NEPSE trading days (Monday to Friday, 15:15 NPT onwards).
  */
 let _reconciliationInterval = null;
 let _lastReconciledDate = null;
@@ -242,14 +242,14 @@ let _lastReconciledDate = null;
 export function startEodReconciliationScheduler() {
   if (_reconciliationInterval) return;
 
-  console.log('[EodReconciliationEngine] ⏰ Initializing 3:15 PM Automated EOD Bhavsani Reconciliation Scheduler (Sun-Thu 15:15 NPT)...');
+  console.log('[EodReconciliationEngine] ⏰ Initializing 3:15 PM Automated EOD Bhavsani Reconciliation Scheduler (Mon-Fri 15:15 NPT)...');
 
   const checkAndRunEod = () => {
     try {
       const now = new Date();
       const kt = getKathmanduTradingStatus(now);
 
-      // Guard: EOD reconciliation runs strictly on NEPSE trading days (Sunday to Thursday)
+      // Guard: EOD reconciliation runs strictly on NEPSE trading days (Monday to Friday)
       if (!kt.isTradingDay) return;
 
       // Check for public holiday

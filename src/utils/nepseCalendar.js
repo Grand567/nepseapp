@@ -527,11 +527,11 @@ export const getT2SettlementSchedule = calculateT2SettlementDate;
  * - Weekly Market Holidays: Saturday and Sunday (strictly 0 trading sessions elapsed).
  * - Excludes all official festival/public holidays listed in NEPSE_PUBLIC_HOLIDAYS.
  *
- * Example (Standard Week):
+ * Example (Standard Mon-Fri Week):
  * - Thursday to Thursday: 0 trading sessions (Entry Day T)
- * - Thursday to Friday:   0 trading sessions (Friday Weekend)
- * - Thursday to Saturday: 0 trading sessions (Saturday Weekend)
- * - Thursday to Sunday:   1 trading session  (Day T+1, Locked in Demat settlement)
+ * - Thursday to Friday:   1 trading session  (Day T+1, Locked in Demat settlement)
+ * - Thursday to Saturday: 1 trading session  (Saturday Weekend - 0 sessions elapsed)
+ * - Thursday to Sunday:   1 trading session  (Sunday Weekend - 0 sessions elapsed)
  * - Thursday to Monday:   2 trading sessions (Day T+2, Settled in Demat, Unlocked)
  *
  * @param {string|Date} startDate - Entry or anchor date (YYYY-MM-DD or Date object)

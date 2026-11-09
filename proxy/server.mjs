@@ -7223,16 +7223,27 @@ app.get('/api/news/all', async (req, res) => {
 
 app.get('/api/market/calendar', (req, res) => {
   try {
-    const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
-    const dayOfWeek = new Date().getDay();
-    const isWeekend = (dayOfWeek === 5 || dayOfWeek === 6);
+    const kt = getKathmanduTradingStatus();
+    let marketState = 'REGULAR_SESSION';
+    if (kt.isHoliday) {
+      marketState = 'CLOSED_HOLIDAY';
+    } else if (kt.isWeekend) {
+      marketState = 'CLOSED_WEEKEND';
+    } else if (!kt.isTradingHours) {
+      marketState = kt.totalMinutes < 660 ? 'PRE_MARKET' : 'AFTER_HOURS';
+    }
+
     return res.json({
       success: true,
       data: {
-        currentDate: todayIso,
-        isTradingDay: !isWeekend,
-        marketState: isWeekend ? 'CLOSED_WEEKEND' : 'REGULAR_SESSION',
-        tradingHours: '11:00 AM - 3:00 PM NPT (Sun - Thu)',
+        currentDate: kt.dateIso,
+        dayName: kt.dayName,
+        isTradingDay: kt.isTradingDay,
+        isWeekend: kt.isWeekend,
+        isHoliday: kt.isHoliday,
+        holidayName: kt.holidayName,
+        marketState,
+        tradingHours: '11:00 AM - 3:00 PM NPT (Mon - Fri)',
         upcomingHolidays: []
       }
     });
@@ -13751,14 +13762,14 @@ app.listen(PORT, '0.0.0.0', async () => {
     console.log(`   🔸 UDF History:     /api/udf/history`);
 
     // Single Source of Truth Keep-Alive Heartbeat for Render Container
-    // Strictly aligned to single source of truth: Sunday to Thursday, 10:45 AM - 3:15 PM NPT (getKathmanduTradingStatus).
-    // Conserves Render free monthly hours outside market hours, Friday, and Saturday.
+    // Strictly aligned to single source of truth: Monday to Friday, 10:45 AM - 3:15 PM NPT (getKathmanduTradingStatus).
+    // Conserves Render free monthly hours outside market hours, Saturday, Sunday, and public holidays.
     const KEEP_ALIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
     const keepAliveUrl = process.env.RENDER_EXTERNAL_URL
       ? `${process.env.RENDER_EXTERNAL_URL}/api/ping`
       : (process.env.APP_URL ? `${process.env.APP_URL}/api/ping` : `http://127.0.0.1:${PORT}/api/ping`);
 
-    console.log(`📡 Trading hours auto keep-alive enabled: Pinging ${keepAliveUrl} every 10 min (Sun-Thu 10:45-15:15 NPT)`);
+    console.log(`📡 Trading hours auto keep-alive enabled: Pinging ${keepAliveUrl} every 10 min (Mon-Fri 10:45-15:15 NPT, excl. weekends & holidays)`);
     const keepAliveTimer = setInterval(async () => {
       try {
         const kt = getKathmanduTradingStatus();

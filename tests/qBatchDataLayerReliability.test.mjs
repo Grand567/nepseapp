@@ -3,7 +3,7 @@
  * Verification Test Suite for STEP 1: DATA LAYER RELIABILITY
  *
  * Verifies:
- * 1. Sunday-to-Thursday trading day schedule adherence & holiday skipping
+ * 1. Monday-to-Friday trading day schedule adherence & holiday skipping
  * 2. Contract number deduplication & schema normalization
  * 3. Exponential backoff retry engine for transient network failures
  * 4. Daily completeness auditing (stored vs exchange reported trades)
@@ -66,7 +66,7 @@ console.log(' STEP 1: DATA LAYER RELIABILITY VERIFICATION SUITE');
 console.log('======================================================================\n');
 
 // ─── TEST 1: TRADING DAY SCHEDULE & HOLIDAY SKIPPING ──────────────────────
-console.log('[TEST 1] Sunday-to-Thursday Trading Day Schedule & Holiday Skipping');
+console.log('[TEST 1] Monday-to-Friday Trading Day Schedule & Holiday Skipping');
 
 it('Monday (1) to Friday (5) are recognized as NEPSE trading days', () => {
   // Test non-holiday regular dates

@@ -1,5 +1,5 @@
 // tests/agBatchKathmanduSchedule.test.mjs
-import { getKathmanduTradingStatus } from '../proxy/utils/kathmanduTime.mjs';
+import { getKathmanduTradingStatus, getNextTradingDay, calculateT2Settlement, isNepseHoliday } from '../proxy/utils/kathmanduTime.mjs';
 
 let pass = 0;
 let fail = 0;
@@ -17,100 +17,120 @@ const ok = (condition, message) => {
 console.log('▶ [SUITE] agBatchKathmanduSchedule.test.mjs\n');
 
 try {
-  console.log('[TEST 1] NEPSE Trading Days: Sunday through Thursday');
-  // Sunday 2026-11-08 11:30 NPT (UTC = 05:45)
-  const sunTrading = getKathmanduTradingStatus(new Date('2026-11-08T05:45:00Z'));
-  ok(sunTrading.isTradingDay === true, 'Sunday is an active NEPSE trading day');
-  ok(sunTrading.isTradingHours === true, 'Sunday 11:30 NPT is within continuous trading hours (11:00 - 15:00)');
-  ok(sunTrading.dayName === 'Sun', 'Sunday mapped to Sun weekday');
+  console.log('[TEST 1] NEPSE Statutory Trading Days: Monday through Friday');
+  // Monday 2026-11-23 11:30 NPT (UTC = 05:45)
+  const monTrading = getKathmanduTradingStatus(new Date('2026-11-23T05:45:00Z'));
+  ok(monTrading.isTradingDay === true, 'Monday is an active NEPSE trading day');
+  ok(monTrading.isTradingHours === true, 'Monday 11:30 NPT is within continuous trading hours (11:00 - 15:00)');
+  ok(monTrading.dayName === 'Mon', 'Monday mapped to Mon weekday');
 
-  // Thursday 2026-11-12 14:00 NPT (UTC = 08:15)
-  const thuTrading = getKathmanduTradingStatus(new Date('2026-11-12T08:15:00Z'));
-  ok(thuTrading.isTradingDay === true, 'Thursday is an active NEPSE trading day');
-  ok(thuTrading.isTradingHours === true, 'Thursday 14:00 NPT is within trading hours');
-  ok(thuTrading.dayName === 'Thu', 'Thursday mapped to Thu weekday');
+  // Friday 2026-11-20 11:30 NPT (UTC = 05:45)
+  const friTrading = getKathmanduTradingStatus(new Date('2026-11-20T05:45:00Z'));
+  ok(friTrading.isTradingDay === true, 'Friday is an active NEPSE trading day');
+  ok(friTrading.isTradingHours === true, 'Friday 11:30 NPT is within trading hours');
+  ok(friTrading.dayName === 'Fri', 'Friday mapped to Fri weekday');
 
-  console.log('\n[TEST 2] NEPSE Weekend Days: Friday and Saturday Closed');
-  // Friday 2026-11-13 12:00 NPT (UTC = 06:15)
-  const friWeekend = getKathmanduTradingStatus(new Date('2026-11-13T06:15:00Z'));
-  ok(friWeekend.isTradingDay === false, 'Friday is a weekend / closed non-trading day');
-  ok(friWeekend.isTradingHours === false, 'Friday noon is NOT within trading hours');
-  ok(friWeekend.dayName === 'Fri', 'Friday mapped to Fri weekday');
-
-  // Saturday 2026-11-14 12:00 NPT (UTC = 06:15)
-  const satWeekend = getKathmanduTradingStatus(new Date('2026-11-14T06:15:00Z'));
+  console.log('\n[TEST 2] NEPSE Statutory Weekend: Saturday and Sunday Closed');
+  // Saturday 2026-11-21 12:00 NPT (UTC = 06:15)
+  const satWeekend = getKathmanduTradingStatus(new Date('2026-11-21T06:15:00Z'));
   ok(satWeekend.isTradingDay === false, 'Saturday is a weekend / closed non-trading day');
+  ok(satWeekend.isWeekend === true, 'Saturday is flagged as weekend');
   ok(satWeekend.isTradingHours === false, 'Saturday noon is NOT within trading hours');
+  ok(satWeekend.dayName === 'Sat', 'Saturday mapped to Sat weekday');
 
-  console.log('\n[TEST 3] Trading Hours Boundary Enforcement (11:00 - 15:00 NPT)');
-  // Sunday 10:59 NPT (UTC = 05:14) -> before open
-  const preOpen = getKathmanduTradingStatus(new Date('2026-11-08T05:14:00Z'));
+  // Sunday 2026-11-22 12:00 NPT (UTC = 06:15)
+  const sunWeekend = getKathmanduTradingStatus(new Date('2026-11-22T06:15:00Z'));
+  ok(sunWeekend.isTradingDay === false, 'Sunday is a weekend / closed non-trading day');
+  ok(sunWeekend.isWeekend === true, 'Sunday is flagged as weekend');
+  ok(sunWeekend.isTradingHours === false, 'Sunday noon is NOT within trading hours');
+  ok(sunWeekend.dayName === 'Sun', 'Sunday mapped to Sun weekday');
+
+  console.log('\n[TEST 3] Central Holiday Calendar: Tihar 2026 Closure');
+  // Monday 2026-11-09 is Tihar (Govardhan Puja / Mha Puja)
+  const tiharGovardhan = getKathmanduTradingStatus(new Date('2026-11-09T06:00:00Z'));
+  ok(tiharGovardhan.isHoliday === true, '2026-11-09 identified as public holiday');
+  ok(tiharGovardhan.isTradingDay === false, 'Trading day is FALSE on public holiday even if Monday');
+  ok(tiharGovardhan.holidayName && tiharGovardhan.holidayName.includes('Govardhan'), 'Holiday name correctly matches Govardhan Puja');
+
+  console.log('\n[TEST 4] Trading Hours Boundary Enforcement (11:00 - 15:00 NPT)');
+  // Friday 10:59 NPT (UTC = 05:14) -> before open
+  const preOpen = getKathmanduTradingStatus(new Date('2026-11-20T05:14:00Z'));
   ok(preOpen.isTradingHours === false, '10:59 NPT is outside 11:00-15:00 trading hours');
 
-  // Sunday 11:00 NPT (UTC = 05:15) -> market opens
-  const openBell = getKathmanduTradingStatus(new Date('2026-11-08T05:15:00Z'));
+  // Friday 11:00 NPT (UTC = 05:15) -> market opens
+  const openBell = getKathmanduTradingStatus(new Date('2026-11-20T05:15:00Z'));
   ok(openBell.isTradingHours === true, '11:00 NPT opening bell is inside trading hours');
 
-  // Sunday 15:00 NPT (UTC = 09:15) -> market close
-  const closeBell = getKathmanduTradingStatus(new Date('2026-11-08T09:15:00Z'));
+  // Friday 15:00 NPT (UTC = 09:15) -> market close
+  const closeBell = getKathmanduTradingStatus(new Date('2026-11-20T09:15:00Z'));
   ok(closeBell.isTradingHours === true, '15:00 NPT closing bell is inside trading hours');
 
-  // Sunday 15:01 NPT (UTC = 09:16) -> after close
-  const postClose = getKathmanduTradingStatus(new Date('2026-11-08T09:16:00Z'));
+  // Friday 15:01 NPT (UTC = 09:16) -> after close
+  const postClose = getKathmanduTradingStatus(new Date('2026-11-20T09:16:00Z'));
   ok(postClose.isTradingHours === false, '15:01 NPT is after market close');
 
-  console.log('\n[TEST 4] Automated EOD Reconciliation Window (15:15 NPT Onwards)');
-  // Sunday 15:10 NPT (UTC = 09:25) -> before 15:15 EOD window
-  const preEod = getKathmanduTradingStatus(new Date('2026-11-08T09:25:00Z'));
+  console.log('\n[TEST 5] Automated EOD Reconciliation Window (15:15 NPT Onwards)');
+  // Friday 15:10 NPT (UTC = 09:25) -> before 15:15 EOD window
+  const preEod = getKathmanduTradingStatus(new Date('2026-11-20T09:25:00Z'));
   ok(preEod.isEodWindow === false, '15:10 NPT is before EOD window');
 
-  // Sunday 15:15 NPT (UTC = 09:30) -> start of 15:15 EOD window
-  const eodTrigger = getKathmanduTradingStatus(new Date('2026-11-08T09:30:00Z'));
-  ok(eodTrigger.isEodWindow === true, '15:15 NPT triggers EOD reconciliation window');
+  // Friday 15:15 NPT (UTC = 09:30) -> start of 15:15 EOD window
+  const eodTrigger = getKathmanduTradingStatus(new Date('2026-11-20T09:30:00Z'));
+  ok(eodTrigger.isEodWindow === true, '15:15 NPT triggers EOD reconciliation window on Friday');
 
-  // Friday 15:30 NPT (UTC = 09:45) -> Friday is not a trading day
-  const friPostMarket = getKathmanduTradingStatus(new Date('2026-11-13T09:45:00Z'));
-  ok(friPostMarket.isEodWindow === false, 'Friday post-market does NOT trigger EOD reconciliation');
+  // Saturday 15:30 NPT (UTC = 09:45) -> Saturday is weekend
+  const satPostMarket = getKathmanduTradingStatus(new Date('2026-11-21T09:45:00Z'));
+  ok(satPostMarket.isEodWindow === false, 'Saturday post-market does NOT trigger EOD reconciliation');
 
-  console.log('\n[TEST 5] Timezone Independence: Explicit Asia/Kathmandu UTC+5:45 Mapping');
-  const now = new Date();
-  const currentKt = getKathmanduTradingStatus(now);
-  ok(typeof currentKt.dateIso === 'string' && currentKt.dateIso.length === 10, 'Generates valid YYYY-MM-DD date in NPT');
-  ok(currentKt.hours >= 0 && currentKt.hours < 24, 'NPT hour is valid (0-23)');
-  ok(currentKt.minutes >= 0 && currentKt.minutes < 60, 'NPT minute is valid (0-59)');
+  // Sunday 15:30 NPT (UTC = 09:45) -> Sunday is weekend
+  const sunPostMarket = getKathmanduTradingStatus(new Date('2026-11-22T09:45:00Z'));
+  ok(sunPostMarket.isEodWindow === false, 'Sunday post-market does NOT trigger EOD reconciliation');
 
-  console.log('\n[TEST 6] Single Source of Truth Keep-Alive Window (10:45 - 15:15 NPT Sun-Thu)');
-  // Sunday 10:44 NPT (UTC = 04:59) -> 1 minute before warm-up window
-  const sunPreWarmup = getKathmanduTradingStatus(new Date('2026-11-08T04:59:00Z'));
-  ok(sunPreWarmup.isKeepAliveWindow === false, 'Sunday 10:44 NPT is outside keep-alive window');
+  console.log('\n[TEST 6] Single Source of Truth Keep-Alive Window (10:45 - 15:15 NPT Mon-Fri)');
+  // Friday 10:44 NPT (UTC = 04:59) -> 1 minute before warm-up window
+  const friPreWarmup = getKathmanduTradingStatus(new Date('2026-11-20T04:59:00Z'));
+  ok(friPreWarmup.isKeepAliveWindow === false, 'Friday 10:44 NPT is outside keep-alive window');
 
-  // Sunday 10:45 NPT (UTC = 05:00) -> start of keep-alive window
-  const sunWarmupStart = getKathmanduTradingStatus(new Date('2026-11-08T05:00:00Z'));
-  ok(sunWarmupStart.isKeepAliveWindow === true, 'Sunday 10:45 NPT triggers keep-alive window');
+  // Friday 10:45 NPT (UTC = 05:00) -> start of keep-alive window
+  const friWarmupStart = getKathmanduTradingStatus(new Date('2026-11-20T05:00:00Z'));
+  ok(friWarmupStart.isKeepAliveWindow === true, 'Friday 10:45 NPT triggers keep-alive window');
 
-  // Sunday 13:00 NPT (UTC = 07:15) -> midday trading
-  const sunMidday = getKathmanduTradingStatus(new Date('2026-11-08T07:15:00Z'));
-  ok(sunMidday.isKeepAliveWindow === true, 'Sunday 13:00 NPT is inside keep-alive window');
+  // Friday 13:00 NPT (UTC = 07:15) -> midday trading
+  const friMidday = getKathmanduTradingStatus(new Date('2026-11-20T07:15:00Z'));
+  ok(friMidday.isKeepAliveWindow === true, 'Friday 13:00 NPT is inside keep-alive window');
 
-  // Sunday 15:15 NPT (UTC = 09:30) -> end of keep-alive window
-  const sunKeepAliveEnd = getKathmanduTradingStatus(new Date('2026-11-08T09:30:00Z'));
-  ok(sunKeepAliveEnd.isKeepAliveWindow === true, 'Sunday 15:15 NPT is the last minute of keep-alive window');
+  // Friday 15:15 NPT (UTC = 09:30) -> end of keep-alive window
+  const friKeepAliveEnd = getKathmanduTradingStatus(new Date('2026-11-20T09:30:00Z'));
+  ok(friKeepAliveEnd.isKeepAliveWindow === true, 'Friday 15:15 NPT is the last minute of keep-alive window');
 
-  // Sunday 15:16 NPT (UTC = 09:31) -> 1 minute after keep-alive window
-  const sunPostKeepAlive = getKathmanduTradingStatus(new Date('2026-11-08T09:31:00Z'));
-  ok(sunPostKeepAlive.isKeepAliveWindow === false, 'Sunday 15:16 NPT is outside keep-alive window');
+  // Friday 15:16 NPT (UTC = 09:31) -> 1 minute after keep-alive window
+  const friPostKeepAlive = getKathmanduTradingStatus(new Date('2026-11-20T09:31:00Z'));
+  ok(friPostKeepAlive.isKeepAliveWindow === false, 'Friday 15:16 NPT is outside keep-alive window');
 
-  // Thursday 11:30 NPT (UTC = 05:45) -> valid trading day inside window
-  const thuTradingKeepAlive = getKathmanduTradingStatus(new Date('2026-11-12T05:45:00Z'));
-  ok(thuTradingKeepAlive.isKeepAliveWindow === true, 'Thursday 11:30 NPT is inside keep-alive window');
+  // Saturday 12:00 NPT -> non-trading day
+  const satKeepAlive = getKathmanduTradingStatus(new Date('2026-11-21T06:15:00Z'));
+  ok(satKeepAlive.isKeepAliveWindow === false, 'Saturday 12:00 NPT is outside keep-alive window (weekend)');
 
-  // Friday 12:00 NPT (UTC = 06:15) -> non-trading day
-  const friWeekendKeepAlive = getKathmanduTradingStatus(new Date('2026-11-13T06:15:00Z'));
-  ok(friWeekendKeepAlive.isKeepAliveWindow === false, 'Friday 12:00 NPT is outside keep-alive window (weekend)');
+  // Sunday 12:00 NPT -> non-trading day
+  const sunKeepAlive = getKathmanduTradingStatus(new Date('2026-11-22T06:15:00Z'));
+  ok(sunKeepAlive.isKeepAliveWindow === false, 'Sunday 12:00 NPT is outside keep-alive window (weekend)');
 
-  // Saturday 12:00 NPT (UTC = 06:15) -> non-trading day
-  const satWeekendKeepAlive = getKathmanduTradingStatus(new Date('2026-11-14T06:15:00Z'));
-  ok(satWeekendKeepAlive.isKeepAliveWindow === false, 'Saturday 12:00 NPT is outside keep-alive window (weekend)');
+  // Public Holiday 12:00 NPT -> non-trading day
+  const holidayKeepAlive = getKathmanduTradingStatus(new Date('2026-11-09T06:15:00Z'));
+  ok(holidayKeepAlive.isKeepAliveWindow === false, 'Holiday 12:00 NPT is outside keep-alive window (Tihar closure)');
+
+  console.log('\n[TEST 7] T+2 Settlement & Next Trading Day Skipping Saturday, Sunday & Holidays');
+  // Trade on Thursday 2026-11-19 -> T+1 is Friday 2026-11-20 -> T+2 is Monday 2026-11-23 (skips Sat & Sun)
+  const thuTrade = calculateT2Settlement(new Date('2026-11-19T06:00:00Z'));
+  ok(thuTrade.t1DayName === 'Fri', 'Thu trade T+1 is Friday');
+  ok(thuTrade.settlementDayName === 'Mon', 'Thu trade T+2 settlement skips Sat/Sun and lands on Monday');
+  ok(thuTrade.dematSellableDayName === 'Tue', 'Thu trade Demat sellable T+3 lands on Tuesday');
+
+  // Trade on Friday 2026-11-20 -> T+1 is Monday 2026-11-23 -> T+2 is Tuesday 2026-11-24 (skips Sat & Sun)
+  const friTrade = calculateT2Settlement(new Date('2026-11-20T06:00:00Z'));
+  ok(friTrade.t1DayName === 'Mon', 'Fri trade T+1 skips Sat/Sun and lands on Monday');
+  ok(friTrade.settlementDayName === 'Tue', 'Fri trade T+2 settlement lands on Tuesday');
+  ok(friTrade.dematSellableDayName === 'Wed', 'Fri trade Demat sellable T+3 lands on Wednesday');
 
   console.log(`\n======================================================`);
   console.log(` RESULTS: ${pass} PASSED, ${fail} FAILED`);
