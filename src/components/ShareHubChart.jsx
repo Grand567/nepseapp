@@ -1600,12 +1600,12 @@ export default function ShareHubChart({
                   padding: '1px 6px',
                   borderRadius: 4,
                   background: isUp ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
-                  color: isUp ? '#10B981' : '#F43F5E'
+                  color: isUp ? '#10B981' : '#fb7185'
                 }}>
                   {hudMetrics.change > 0 ? '▲ +' : hudMetrics.change < 0 ? '▼ -' : (hudMetrics.pChange >= 0 ? '▲ +' : '▼ -')}{Math.abs(hudMetrics.change).toFixed(2)} ({hudMetrics.pChange > 0 ? '+' : ''}{hudMetrics.pChange.toFixed(2)}%)
                 </span>
                 {latestBar && (
-                  <span style={{ fontSize: 11, color: '#64748b' }} className="hidden sm:inline">
+                  <span style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)' }} className="hidden sm:inline">
                     H: {latestBar.high != null ? Number(latestBar.high).toFixed(1) : '—'} • L: {latestBar.low != null ? Number(latestBar.low).toFixed(1) : '—'}
                   </span>
                 )}

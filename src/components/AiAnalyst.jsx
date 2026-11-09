@@ -871,7 +871,7 @@ const GuruResponse = ({ data, type, onDeployPaperTrade }) => {
           ))}
         </div>
 
-        <div style={{ fontSize: 12, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6, paddingTop: 2 }}>
+        <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6, paddingTop: 2 }}>
           <span>Tip: Type any company name or ticker in the search bar above, then tap <strong>Run Guru AI</strong>.</span>
         </div>
       </div>
@@ -1339,7 +1339,7 @@ const ChatMessage = ({ msg, onDeployPaperTrade }) => {
                   Real NEPSE Feed
                 </span>
               </div>
-              <span style={{ fontSize: 12, color: '#64748b', fontFamily: 'var(--font-mono)' }}>{msg.timestamp}</span>
+              <span style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>{msg.timestamp}</span>
             </div>
             <GuruResponse data={msg.guruData} type={msg.analysisType} onDeployPaperTrade={onDeployPaperTrade} />
           </div>
@@ -1410,8 +1410,11 @@ const AiChatInputBar = React.memo(function AiChatInputBar({ onSend, loading, ext
         }}
       />
       <button
+        type="button"
         onClick={handleSend}
         disabled={!text.trim() || loading}
+        aria-label="Send message to Guru AI"
+        title="Send message"
         style={{
           width: 40,
           height: 40,
@@ -2308,7 +2311,7 @@ Format as plain text (not JSON) for this conversational response.`;
               <BarChart2 size={14} style={{ color: '#60a5fa' }} />
               Select Security for Quant Analysis
             </span>
-            <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#64748b' }}>
+            <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#94a3b8' }}>
               540 Listed Securities
             </span>
           </div>
@@ -2677,7 +2680,7 @@ Format as plain text (not JSON) for this conversational response.`;
           {/* Quick Prompts Bar */}
           {messages.length <= 2 && (
             <div style={{ width: '100%', maxWidth: '100%', margin: '0 auto', padding: '0 10px 12px', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#64748b' }}>Suggested Inquiries</div>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#94a3b8' }}>Suggested Inquiries</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {QUICK_ACTIONS.map((qa, i) => (
                   <button
@@ -2754,7 +2757,9 @@ Format as plain text (not JSON) for this conversational response.`;
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setPaperModalScrip(null)}
+                aria-label="Close paper trade dialog"
                 className="cursor-pointer rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
               >
                 <X size={16} />
@@ -2916,6 +2921,7 @@ Format as plain text (not JSON) for this conversational response.`;
               <button
                 type="button"
                 onClick={() => setShowKeyModal(false)}
+                aria-label="Close API key dialog"
                 style={{
                   background: 'none', border: 'none', color: '#94a3b8',
                   cursor: 'pointer', padding: '4px'
@@ -2955,7 +2961,7 @@ Format as plain text (not JSON) for this conversational response.`;
                     boxSizing: 'border-box'
                   }}
                 />
-                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#64748b' }}>
+                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#94a3b8' }}>
                   Powers deep quantitative neural predictions via bigmodel.cn / z.ai
                 </p>
               </div>

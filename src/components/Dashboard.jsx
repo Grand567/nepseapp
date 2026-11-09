@@ -2951,19 +2951,19 @@ function Dashboard({
               marginBottom: 10, fontSize: 12
             }}>
               <div>
-                <div style={{ color: '#64748b' }}>High</div>
+                <div style={{ color: '#94a3b8' }}>High</div>
                 <div style={{ fontWeight: 800, color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>Rs. {fmt(topStock.high || topStock.ltp)}</div>
               </div>
               <div>
-                <div style={{ color: '#64748b' }}>Low</div>
+                <div style={{ color: '#94a3b8' }}>Low</div>
                 <div style={{ fontWeight: 800, color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>Rs. {fmt(topStock.low || topStock.ltp)}</div>
               </div>
               <div>
-                <div style={{ color: '#64748b' }}>Volume</div>
+                <div style={{ color: '#94a3b8' }}>Volume</div>
                 <div style={{ fontWeight: 800, color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{fmt(topStock.volume)}</div>
               </div>
               <div>
-                <div style={{ color: '#64748b' }}>Turnover</div>
+                <div style={{ color: '#94a3b8' }}>Turnover</div>
                 <div style={{ fontWeight: 800, color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{fmtCr(topStock.turnover)}</div>
               </div>
             </div>
@@ -3386,7 +3386,7 @@ function Dashboard({
               fontSize: 12, fontWeight: 800, padding: '4px 9px', borderRadius: 7,
               background: heroTfStats.isBull ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
               border: heroTfStats.isBull ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(244, 63, 94, 0.4)',
-              color: heroTfStats.isBull ? '#10B981' : '#F43F5E',
+              color: heroTfStats.isBull ? '#10B981' : '#fb7185',
               fontFamily: 'var(--font-mono)',
               display: 'inline-flex',
               alignItems: 'center',
@@ -4802,7 +4802,7 @@ function Dashboard({
                     <span style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8' }}>
                       Bids: {fmt(preOpenGate.totalBidQty)} ({preOpenGate.bidDominancePct}%)
                     </span>
-                    <span style={{ fontSize: 12, color: '#64748b' }}>vs</span>
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>vs</span>
                     <span style={{ fontSize: 12, fontWeight: 800, color: '#f87171' }}>
                       Asks: {fmt(preOpenGate.totalAskQty)} ({preOpenGate.askDominancePct}%)
                     </span>
@@ -4940,7 +4940,7 @@ function Dashboard({
                   </div>
                   {t1NetPct != null && (
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#34d399', marginTop: 1 }}>
-                      Net: +{t1NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
+                      Net: +{t1NetPct}% <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
                     </div>
                   )}
                 </div>
@@ -4952,7 +4952,7 @@ function Dashboard({
                   </div>
                   {t2NetPct != null && (
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#c084fc', marginTop: 1 }}>
-                      Net: +{t2NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
+                      Net: +{t2NetPct}% <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
                     </div>
                   )}
                 </div>

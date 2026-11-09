@@ -2020,7 +2020,7 @@ export default function ServicesHub({
                 <span style={{ fontSize: 12, color: 'var(--text-muted, #94a3b8)' }}>Quick Launch</span>
               </div>
 
-              <div className="services-featured-carousel">
+              <div className="services-featured-carousel" tabIndex={0} role="region" aria-label="Featured analytical suites carousel">
                 {quickAccessServices.map((qs) => {
                   const qStyle = COLORS[qs.color] || COLORS.blue;
                   const QIcon = qs.icon;
