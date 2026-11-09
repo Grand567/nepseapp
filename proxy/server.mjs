@@ -217,6 +217,8 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
 const CORS_DEFAULTS = [
   'https://nepseapp.onrender.com',
   'https://nepse-app.vercel.app',
+  'https://drabyashree-nepse-hub-11ef9.firebaseapp.com',
+  'https://drabyashree-nepse-hub-11ef9.web.app',
   'http://localhost:5173',  // Vite dev server
   'http://127.0.0.1:5173',
   'http://localhost:5000',  // local proxy dev
@@ -233,7 +235,7 @@ const CORS_DEFAULTS = [
 
 const ALL_ALLOWED = [...new Set([...CORS_DEFAULTS, ...ALLOWED_ORIGINS])];
 
-app.use(cors({
+const corsOptions = {
   origin: (origin, cb) => {
     // Allow server-to-server (no origin), Electron/WebView null, local origins and LAN subnets
     if (
@@ -248,7 +250,24 @@ app.use(cors({
     cb(new Error(`CORS policy: origin '${origin}' not allowed`));
   },
   credentials: true,
-}));
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'x-api-key',
+    'x-openrouter-key',
+    'x-glm-key',
+    'x-no-compression',
+    'Cache-Control',
+    'Pragma',
+    'X-Requested-With',
+    'Accept',
+    'Origin'
+  ],
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
 
 // ── High-Performance Streaming Gzip Compression Middleware ──
 // Compresses all JSON and text responses >= 1KB using streaming deflate/gzip
@@ -10784,10 +10803,14 @@ app.post('/api/guru/analyze', async (req, res) => {
     let providerUsed = null;
     let providerError = null;
 
-    const geminiKeyToUse = (apiKey || req.body.geminiApiKey || AI_KEYS.gemini || '').trim();
-    const glmKeyToUse = (glmApiKey || AI_KEYS.glm || '').trim();
-    // ✅ FIXED: properly read openrouterApiKey from request body (client sends it from aiService.js)
-    const openrouterKeyToUse = (req.body.openrouterApiKey || AI_KEYS.openrouter || '').trim();
+    const clientGeminiHeader = req.headers['x-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '');
+    const clientOpenRouterHeader = req.headers['x-openrouter-key'];
+    const clientGlmHeader = req.headers['x-glm-key'];
+
+    const geminiKeyToUse = (clientGeminiHeader || apiKey || req.body.geminiApiKey || AI_KEYS.gemini || '').trim();
+    const glmKeyToUse = (clientGlmHeader || glmApiKey || AI_KEYS.glm || '').trim();
+    // ✅ FIXED: properly read openrouterApiKey from request headers or body
+    const openrouterKeyToUse = (clientOpenRouterHeader || req.body.openrouterApiKey || AI_KEYS.openrouter || '').trim();
 
     // ── Try Provider 1: Gemini ──────────────────────────────
     if (geminiKeyToUse) {
@@ -10976,18 +10999,30 @@ Analyze this NEPSE portfolio and respond ONLY in this exact JSON format:
 
     let result = null;
 
-    // Try Gemini first, then GLM, then Pollinations
-    if (AI_KEYS.gemini) {
+    const pGeminiKey = String(req.headers['x-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '') || req.body?.apiKey || req.body?.geminiApiKey || AI_KEYS.gemini || '').trim();
+    const pOpenRouterKey = String(req.headers['x-openrouter-key'] || req.body?.openrouterApiKey || AI_KEYS.openrouter || '').trim();
+    const pGlmKey = String(req.headers['x-glm-key'] || req.body?.glmApiKey || AI_KEYS.glm || '').trim();
+
+    // Try Gemini first, then OpenRouter, then GLM, then Pollinations
+    if (pGeminiKey) {
       try {
-        result = await callGemini(prompt, 'portfolio');
+        result = await callGemini(prompt, 'portfolio', pGeminiKey);
       } catch (e) {
         console.warn('Gemini portfolio failed:', e.message);
       }
     }
 
-    if (!result && AI_KEYS.glm) {
+    if (!result && pOpenRouterKey) {
       try {
-        result = await callGLM(prompt);
+        result = await callOpenRouter(prompt, 'portfolio', pOpenRouterKey);
+      } catch (e) {
+        console.warn('OpenRouter portfolio failed:', e.message);
+      }
+    }
+
+    if (!result && pGlmKey) {
+      try {
+        result = await callGLM(prompt, 'glm-4-flash', pGlmKey);
       } catch (e) {
         console.warn('GLM portfolio failed:', e.message);
       }
@@ -11033,6 +11068,10 @@ Analyze this NEPSE portfolio and respond ONLY in this exact JSON format:
 });
 
 // ── GURU MARKET OUTLOOK ───────────────────────────────────────
+// NOTE (DEPRECATION): Accepts both POST (standard) and legacy GET for backward compatibility
+// with older mobile/desktop/web client builds. Query string keys (apiKey, openrouterApiKey, glmApiKey)
+// are extracted without logging or echoing in server responses.
+// TODO: Deprecate and remove legacy GET query-param support in next major release after all clients migrate to POST.
 app.all('/api/guru/market-outlook', async (req, res) => {
   try {
     // Fetch real market data for AI context
@@ -11095,10 +11134,33 @@ Provide market outlook in this exact JSON:
 }`;
 
     let result = null;
-    // ✅ FIXED: accept client-sent API keys from headers, body, or query
-    const clientGeminiKey = String(req.headers['x-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '') || req.body?.apiKey || req.query?.apiKey || '').trim();
-    const clientOpenRouterKey = String(req.headers['x-openrouter-key'] || req.body?.openrouterApiKey || req.query?.openrouterApiKey || '').trim();
-    const clientGlmKey = String(req.headers['x-glm-key'] || req.body?.glmApiKey || req.query?.glmApiKey || '').trim();
+    // Backward-compatible key resolution: headers (preferred) -> body (POST) -> query (legacy GET)
+    // Never log or echo these keys in logs or responses.
+    const clientGeminiKey = String(
+      req.headers['x-api-key'] ||
+      req.headers['authorization']?.replace(/^Bearer\s+/i, '') ||
+      req.body?.apiKey ||
+      req.body?.geminiApiKey ||
+      req.query?.apiKey ||
+      req.query?.geminiApiKey ||
+      ''
+    ).trim();
+    const clientOpenRouterKey = String(
+      req.headers['x-openrouter-key'] ||
+      req.body?.openrouterApiKey ||
+      req.body?.openrouterKey ||
+      req.query?.openrouterApiKey ||
+      req.query?.openrouterKey ||
+      ''
+    ).trim();
+    const clientGlmKey = String(
+      req.headers['x-glm-key'] ||
+      req.body?.glmApiKey ||
+      req.body?.glmKey ||
+      req.query?.glmApiKey ||
+      req.query?.glmKey ||
+      ''
+    ).trim();
 
     const geminiKey = clientGeminiKey || AI_KEYS.gemini;
     const openrouterKey = clientOpenRouterKey || AI_KEYS.openrouter;
@@ -11348,10 +11410,29 @@ Respond ONLY in this exact JSON format:
     let result = null;
     let lastErr = null;
 
-    // ✅ FIXED: use client-sent API keys (frontend sends them via request body)
-    const saGeminiKey = (req.body.apiKey || req.body.geminiApiKey || AI_KEYS.gemini || '').trim();
-    const saOpenRouterKey = (req.body.openrouterApiKey || AI_KEYS.openrouter || '').trim();
-    const saGlmKey = (req.body.glmApiKey || AI_KEYS.glm || '').trim();
+    // Support client-sent API keys from headers or body
+    const saGeminiKey = String(
+      req.headers['x-api-key'] ||
+      req.headers['authorization']?.replace(/^Bearer\s+/i, '') ||
+      req.body?.apiKey ||
+      req.body?.geminiApiKey ||
+      AI_KEYS.gemini ||
+      ''
+    ).trim();
+    const saOpenRouterKey = String(
+      req.headers['x-openrouter-key'] ||
+      req.body?.openrouterApiKey ||
+      req.body?.openrouterKey ||
+      AI_KEYS.openrouter ||
+      ''
+    ).trim();
+    const saGlmKey = String(
+      req.headers['x-glm-key'] ||
+      req.body?.glmApiKey ||
+      req.body?.glmKey ||
+      AI_KEYS.glm ||
+      ''
+    ).trim();
 
     if (saGeminiKey) {
       try { result = await callGemini(prompt, 'stock', saGeminiKey); }
