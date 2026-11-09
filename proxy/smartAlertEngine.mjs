@@ -50,7 +50,7 @@ import {
   calculateNetExpectancyAndSizing
 } from './institutionalAlertEngine.mjs';
 import { auditAntiDematDumpGuard } from './db/ledgerStore.js';
-import { pool, query } from './db.mjs';
+import { pool, query, ensurePushTokensTable } from './db.mjs';
 
 export {
   evaluateInstitutionalAlert,
@@ -327,18 +327,23 @@ export const userTrackedSymbolsSet = new Set();
 /**
  * Hydrate push tokens from PostgreSQL on server startup so ephemeral Render
  * disk restarts don't lose registered device tokens.
+ * Executes startup migration first (ensurePushTokensTable) to guarantee the table exists.
  */
 export async function hydratePushTokensFromDb() {
   try {
     if (!pool) return;
-    const res = await query('SELECT token, platform, portfolio_symbols, registered_at, last_active_at FROM push_tokens');
+    await ensurePushTokensTable();
+    const res = await query('SELECT token, platform, app_version, portfolio_symbols, created_at, last_seen_at FROM push_tokens');
     if (res && res.rows && res.rows.length > 0) {
       const dbTokens = res.rows.map(r => ({
         token: r.token,
         platform: r.platform || 'android',
+        appVersion: r.app_version || '1.0.6',
         portfolioSymbols: Array.isArray(r.portfolio_symbols) ? r.portfolio_symbols : (typeof r.portfolio_symbols === 'string' ? JSON.parse(r.portfolio_symbols) : []),
-        registeredAt: r.registered_at ? new Date(r.registered_at).toISOString() : new Date().toISOString(),
-        lastActiveAt: r.last_active_at ? new Date(r.last_active_at).toISOString() : new Date().toISOString()
+        createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+        lastSeenAt: r.last_seen_at ? new Date(r.last_seen_at).toISOString() : new Date().toISOString(),
+        registeredAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+        lastActiveAt: r.last_seen_at ? new Date(r.last_seen_at).toISOString() : new Date().toISOString()
       }));
       const map = new Map();
       pushTokens.forEach(t => map.set(t.token, t));
@@ -360,6 +365,7 @@ export async function deletePushToken(token) {
   saveJson(TOKENS_FILE, pushTokens);
   try {
     if (pool) {
+      await ensurePushTokensTable();
       await query('DELETE FROM push_tokens WHERE token = $1', [cleanToken]);
     }
   } catch (err) {
@@ -376,6 +382,7 @@ export async function pruneDeadPushTokens(tokens) {
   saveJson(TOKENS_FILE, pushTokens);
   try {
     if (pool) {
+      await ensurePushTokensTable();
       await query('DELETE FROM push_tokens WHERE token = ANY($1)', [Array.from(tokenSet)]);
     }
   } catch (err) {
@@ -386,7 +393,7 @@ export async function pruneDeadPushTokens(tokens) {
   return pruned;
 }
 
-export async function registerPushToken(token, platform = 'android', portfolioSymbols = []) {
+export async function registerPushToken(token, platform = 'android', portfolioSymbols = [], appVersion = '1.0.6') {
   if (!token || typeof token !== 'string') return false;
   const cleanToken = token.trim();
   const existingIdx = pushTokens.findIndex(p => p.token === cleanToken);
@@ -400,38 +407,46 @@ export async function registerPushToken(token, platform = 'android', portfolioSy
   }
 
   if (existingIdx >= 0) {
+    pushTokens[existingIdx].lastSeenAt = now;
     pushTokens[existingIdx].lastActiveAt = now;
     pushTokens[existingIdx].platform = platform;
+    pushTokens[existingIdx].appVersion = appVersion;
     if (portfolioSymbols.length > 0) pushTokens[existingIdx].portfolioSymbols = portfolioSymbols;
   } else {
     pushTokens.push({
       token: cleanToken,
       platform,
+      appVersion,
+      createdAt: now,
+      lastSeenAt: now,
       registeredAt: now,
       lastActiveAt: now,
       portfolioSymbols: Array.isArray(portfolioSymbols) ? portfolioSymbols : []
     });
   }
 
+  // Fallback storage on local disk
   saveJson(TOKENS_FILE, pushTokens);
 
-  // Persist into PostgreSQL so tokens survive Render service restarts
+  // Primary persistence in PostgreSQL database with startup auto-migration
   try {
     if (pool) {
+      await ensurePushTokensTable();
       await query(`
-        INSERT INTO push_tokens (token, platform, portfolio_symbols, registered_at, last_active_at)
-        VALUES ($1, $2, $3, NOW(), NOW())
+        INSERT INTO push_tokens (token, platform, app_version, portfolio_symbols, created_at, last_seen_at)
+        VALUES ($1, $2, $3, $4, NOW(), NOW())
         ON CONFLICT (token) DO UPDATE SET
           platform = EXCLUDED.platform,
+          app_version = COALESCE(EXCLUDED.app_version, push_tokens.app_version),
           portfolio_symbols = EXCLUDED.portfolio_symbols,
-          last_active_at = NOW();
-      `, [cleanToken, platform, JSON.stringify(portfolioSymbols || [])]);
+          last_seen_at = NOW();
+      `, [cleanToken, platform, appVersion, JSON.stringify(portfolioSymbols || [])]);
     }
   } catch (dbErr) {
     console.warn('[SmartAlertEngine] Failed persisting push token to PostgreSQL:', dbErr.message);
   }
 
-  console.log(`[SmartAlertEngine] Push token registered (${platform}). Tracked portfolio symbols: ${userTrackedSymbolsSet.size}. Total tokens: ${pushTokens.length}`);
+  console.log(`[SmartAlertEngine] Push token registered (${platform}, v${appVersion}). Tracked portfolio symbols: ${userTrackedSymbolsSet.size}. Total tokens: ${pushTokens.length}`);
 
   // Subscribe token to 'institutional_alerts' and 'general_alerts' topics if FCM is active
   if (isFcmInitialized && fcmMessaging) {

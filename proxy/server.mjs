@@ -11883,9 +11883,9 @@ app.get('/api/smart-alerts/status', (req, res) => {
 
 app.post('/api/smart-alerts/register-token', async (req, res) => {
   try {
-    const { token, platform, portfolioSymbols } = req.body || {};
+    const { token, platform, portfolioSymbols, appVersion, version } = req.body || {};
     if (!token) return res.status(400).json({ success: false, error: 'Push token required' });
-    const ok = await registerPushToken(token, platform || 'android', portfolioSymbols || []);
+    const ok = await registerPushToken(token, platform || 'android', portfolioSymbols || [], appVersion || version || '1.0.6');
     res.json({ success: ok, message: 'Push token and portfolio symbols registered successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

@@ -131,6 +131,9 @@ try {
 
   const dbCode = fs.readFileSync(path.join(ROOT_DIR, 'proxy/db.mjs'), 'utf8');
   ok(dbCode.includes("CREATE TABLE IF NOT EXISTS push_tokens"), 'db.mjs defines PostgreSQL push_tokens table schema');
+  ok(dbCode.includes("ensurePushTokensTable"), 'db.mjs exports ensurePushTokensTable startup migration');
+  ok(dbCode.includes("app_version"), 'push_tokens schema includes app_version column');
+  ok(dbCode.includes("last_seen_at"), 'push_tokens schema includes last_seen_at column');
 
   const mockAlert = {
     symbol: 'NABIL',

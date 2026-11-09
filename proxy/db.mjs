@@ -32,6 +32,29 @@ export const query = (text, params) => {
   return pool.query(text, params);
 };
 
+export async function ensurePushTokensTable() {
+  if (!pool) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS push_tokens (
+        token             TEXT PRIMARY KEY,
+        platform          VARCHAR(50) DEFAULT 'android',
+        app_version       VARCHAR(50),
+        portfolio_symbols JSONB DEFAULT '[]'::jsonb,
+        created_at        TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        last_seen_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_push_tokens_platform ON push_tokens(platform);
+      ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS app_version VARCHAR(50);
+      ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+      ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+      ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS portfolio_symbols JSONB DEFAULT '[]'::jsonb;
+    `);
+  } catch (err) {
+    console.warn('[db] ensurePushTokensTable notice:', err.message);
+  }
+}
+
 export async function initDB() {
   if (!pool) {
     console.log('[db] PostgreSQL disabled (no DATABASE_URL configured). Running proxy in lightweight memory mode.');
@@ -263,9 +286,10 @@ export async function initDB() {
       CREATE TABLE IF NOT EXISTS push_tokens (
         token             TEXT PRIMARY KEY,
         platform          VARCHAR(50) DEFAULT 'android',
+        app_version       VARCHAR(50),
         portfolio_symbols JSONB DEFAULT '[]'::jsonb,
-        registered_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        last_active_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        created_at        TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        last_seen_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_push_tokens_platform ON push_tokens(platform);
     `);
