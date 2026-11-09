@@ -250,6 +250,7 @@ function AppInner() {
   // Initialize Push Notifications (Capacitor FCM on Android + Web SSE)
   useEffect(() => {
     initPushNotifications().catch(() => {});
+    syncDevicePushToken().catch(() => {});
   }, []);
 
   // Track unread alerts badge

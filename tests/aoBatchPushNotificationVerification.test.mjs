@@ -91,6 +91,8 @@ try {
   const appCode = fs.readFileSync(path.join(ROOT_DIR, 'src/App.jsx'), 'utf8');
   ok(appCode.includes("import { initPushNotifications, syncDevicePushToken"), 'App.jsx imports syncDevicePushToken');
   ok(appCode.includes("syncDevicePushToken().catch"), 'App.jsx re-synchronizes push token on app resume (appStateChange isActive)');
+  ok(pushServiceCode.includes("visibilitychange"), 'pushNotificationService listens for visibilitychange to sync token');
+  ok(pushServiceCode.includes("appVersion"), 'pushNotificationService attaches appVersion to token registration payload');
 
   // ─── TEST 4: Server Push Token Registration & PostgreSQL / JSON Storage ─────
   console.log('\n[TEST 4] Server Token Registration, Persistence & Pruning');

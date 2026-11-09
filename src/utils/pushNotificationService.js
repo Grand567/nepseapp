@@ -447,12 +447,19 @@ const getApiBase = () => {
   return import.meta.env.VITE_PROXY_URL || 'https://nepseapp.onrender.com';
 };
 
+let lastSyncedTimestamp = 0;
+
 /**
  * Standalone synchronization function: POSTs the FCM token and user's tracked
  * portfolio & watchlist symbols to the backend. Re-called on launch, resume, and refresh.
  */
-export async function syncDevicePushToken(tokenParam = null) {
+export async function syncDevicePushToken(tokenParam = null, force = false) {
   try {
+    const now = Date.now();
+    if (!force && (now - lastSyncedTimestamp < 3000)) {
+      return true; // Throttle redundant rapid invocations
+    }
+
     const token = tokenParam || (typeof localStorage !== 'undefined' ? localStorage.getItem(PUSH_REGISTERED_KEY) : null);
     if (!token) return false;
 
@@ -488,10 +495,12 @@ export async function syncDevicePushToken(tokenParam = null) {
       body: JSON.stringify({
         token,
         platform,
+        appVersion: '1.0.6',
         portfolioSymbols
       })
     });
     if (res.ok) {
+      lastSyncedTimestamp = Date.now();
       console.log('[PushService] ✅ Device push token & tracked symbols successfully registered with Dravyashree backend.');
       return true;
     }
@@ -499,6 +508,20 @@ export async function syncDevicePushToken(tokenParam = null) {
     console.warn('[PushService] Error saving token to backend:', syncErr.message);
   }
   return false;
+}
+
+// Lifecycle listener: automatically syncs token on visibility change or window focus
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', () => {
+    syncDevicePushToken().catch(() => {});
+  });
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        syncDevicePushToken().catch(() => {});
+      }
+    });
+  }
 }
 
 /**
