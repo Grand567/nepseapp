@@ -5,8 +5,11 @@ import {
   BarChart3, Wifi, WifiOff, Clock, LogOut, User, Settings, Cpu, RefreshCw,
   Calendar, X, Info, Crown, Zap, Smartphone, Copy, Bell, Sparkles
 } from 'lucide-react';
-import Dashboard      from './components/Dashboard';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import DashboardSkeleton from './components/DashboardSkeleton';
+
+// ── Dynamic Code-Splitting for Lightning-Fast Initial Launch & Sub-Second LCP ──
+const Dashboard        = React.lazy(() => import('./components/Dashboard'));
 
 // ── Dynamic Code-Splitting for Lightning-Fast Initial Launch ──
 const ServicesHub      = React.lazy(() => import('./components/ServicesHub'));
@@ -20,13 +23,13 @@ const TestSuite        = React.lazy(() => import('./components/TestSuite'));
 const StockDetailModal = React.lazy(() => import('./components/StockDetailModal'));
 const StitchHub        = React.lazy(() => import('./views/StitchHub'));
 import PullToRefresh from './components/PullToRefresh';
-import SubscriptionModal from './components/SubscriptionModal';
+const SubscriptionModal = React.lazy(() => import('./components/SubscriptionModal'));
 import { RiskDisclaimer } from './components/DataQualityBanner'; // A1: Global disclaimer
-import { InstitutionalAlertCardModal } from './components/InstitutionalAlertCardModal';
-import { InAppNewsReaderModal } from './components/InAppNewsReaderModal';
-import { BatteryOptimizationModal } from './components/BatteryOptimizationModal';
-import { SmartAlertBanner } from './components/SmartAlertBanner';
-import { NotificationCenterDrawer } from './components/NotificationCenterDrawer';
+const InstitutionalAlertCardModal = React.lazy(() => import('./components/InstitutionalAlertCardModal').then(m => ({ default: m.InstitutionalAlertCardModal })));
+const InAppNewsReaderModal = React.lazy(() => import('./components/InAppNewsReaderModal').then(m => ({ default: m.InAppNewsReaderModal })));
+const BatteryOptimizationModal = React.lazy(() => import('./components/BatteryOptimizationModal').then(m => ({ default: m.BatteryOptimizationModal })));
+const SmartAlertBanner = React.lazy(() => import('./components/SmartAlertBanner').then(m => ({ default: m.SmartAlertBanner })));
+const NotificationCenterDrawer = React.lazy(() => import('./components/NotificationCenterDrawer').then(m => ({ default: m.NotificationCenterDrawer })));
 import { initPushNotifications, fetchActiveSmartAlerts, triggerTestAlert, getUnreadNotificationCount } from './utils/pushNotificationService';
 import { NavigationProvider, useNavigation, useBackHandler } from './context/NavigationContext';
 import { SubscriptionProvider, useSubscription } from './context/SubscriptionContext';
@@ -126,8 +129,20 @@ function AppInner() {
   const userMenuRef = useRef(null);
   const avatarBtnRef = useRef(null);
 
-  // ── Render cold-start warm-up — fire ASAP so server is ready before fetchMarket runs ──
-  useEffect(() => { warmUpServer().catch(() => {}); initLocalLedger().catch(() => {}); }, []);
+  // ── Render cold-start warm-up — deferred after first paint to maximize FCP & LCP ──
+  useEffect(() => {
+    const runDeferredBootstrap = () => {
+      warmUpServer().catch(() => {});
+      initLocalLedger().catch(() => {});
+    };
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      const handle = window.requestIdleCallback(runDeferredBootstrap, { timeout: 8000 });
+      return () => window.cancelIdleCallback(handle);
+    } else {
+      const timer = setTimeout(runDeferredBootstrap, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Close account menu on any click or touch outside
   useEffect(() => {
@@ -897,7 +912,7 @@ function AppInner() {
       scheduleNext(nextInterval);
     };
 
-    fetchMarket();
+    timerId = setTimeout(fetchMarket, 350);
 
     return () => {
       isMounted = false;
@@ -1909,10 +1924,12 @@ function AppInner() {
       )}
 
       {/* ── Background Battery Whitelist Modal ── */}
+      <React.Suspense fallback={null}>
       <BatteryOptimizationModal
         isOpen={showBatteryModal}
         onClose={() => setShowBatteryModal(false)}
       />
+      </React.Suspense>
 
       {/* ── Global Offline Banner ── */}
       {isOffline && (
@@ -1943,6 +1960,7 @@ function AppInner() {
               {visitedTabs.has('dashboard') && (
                 <div style={{ display: activeTab === 'dashboard' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
                   <ErrorBoundary activeTab={activeTab} moduleName="Market Dashboard" onNavigateDashboard={() => setActiveTab('dashboard')}>
+                    <React.Suspense fallback={<DashboardSkeleton />}>
                     <PullToRefresh onRefresh={triggerTick} isRefreshing={isRefreshing}>
                       <Dashboard
                         stocks={stocks}
@@ -1957,6 +1975,7 @@ function AppInner() {
                         onOpenCalendar={() => setShowCalendarModal(true)}
                       />
                     </PullToRefresh>
+                    </React.Suspense>
                   </ErrorBoundary>
                 </div>
               )}
@@ -2060,6 +2079,7 @@ function AppInner() {
               </React.Suspense>
 
               {/* ── Dravyashree Smart Institutional Alert Banner & Modal ── */}
+              <React.Suspense fallback={null}>
               <SmartAlertBanner onOpenCard={(alert) => setSmartAlertModal({ isOpen: true, alert })} />
 
               <InstitutionalAlertCardModal
@@ -2086,6 +2106,7 @@ function AppInner() {
                 userPortfolioSymbols={userPortfolioSymbols}
                 userWatchlistSymbols={userWatchlistSymbols}
               />
+              </React.Suspense>
 
               {/* ── Global ShareHub-Style Stock Detail Modal ── */}
               {synchronizedSelectedStock && (
@@ -2489,7 +2510,9 @@ function AppInner() {
       )}
 
       {/* ── Global Subscription & Pro Pass Modal ── */}
-      <SubscriptionModal />
+      <React.Suspense fallback={null}>
+        <SubscriptionModal />
+      </React.Suspense>
     </div>
   );
 }

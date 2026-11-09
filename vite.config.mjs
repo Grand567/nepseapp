@@ -125,10 +125,13 @@ export default defineConfig({
           if (id.includes('nepse_cumulative_broker_ledger')) return 'broker-cumulative-ledger';
           if (id.includes('firebase')) return 'firebase';
           // React + UI libs — vendor chunk (364 kB)
-          if (id.includes('node_modules/react') ||
-              id.includes('node_modules/react-dom') ||
-              id.includes('lucide-react') ||
-              id.includes('lightweight-charts')) return 'vendor';
+          // Split heavy vendor libraries
+          if (id.includes('lightweight-charts')) return 'charts-vendor';
+          if (id.includes('lucide-react')) return 'icons-vendor';
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/scheduler')) return 'react-core';
+          if (id.includes('src/components/Dashboard.jsx') || id.includes('src/components/MarketOverview')) return 'market-dashboard';
+          if (id.includes('src/components/StockDetailModal')) return 'stock-detail-modal';
+          if (id.includes('src/utils/localLedgerManager')) return 'local-ledger';
           // Core quantitative & technical analysis engines
           if (id.includes('quantEngine') ||
               id.includes('/utils/indicators') ||
