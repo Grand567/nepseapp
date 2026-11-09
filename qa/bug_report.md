@@ -2571,6 +2571,23 @@ node_modules/uuid
 
 ---
 
+### 19.5 Firebase 13 Live Connection & Cloud Sync Audit
+
+Audited live Firebase 13 SDK (`firebase@^13.2.0`, `@grpc/grpc-js@^1.14.5`) against the project configured in `.env` (`drabyashree-nepse-hub-11ef9`):
+
+- **Target Project:** `drabyashree-nepse-hub-11ef9` (configured via `VITE_FIREBASE_API_KEY` & `VITE_FIREBASE_PROJECT_ID`)
+- **Automated Test Suite:** `tests/firebase13LiveVerification.test.mjs`
+
+| Subsystem / Operation | Attempted Action | Live Network Result | Final Audit Status |
+| :--- | :--- | :--- | :---: |
+| **Firebase Auth (Login)** | `signInAnonymously(auth)` | Error `auth/admin-restricted-operation` (Anonymous sign-in provider is disabled in Firebase / GCP Console for project `drabyashree-nepse-hub-11ef9`) | **Not-Tested** |
+| **Cloud Firestore (Read/Write)** | `setDoc()` / `getDoc()` on test document | Error `7 PERMISSION_DENIED: Cloud Firestore API has not been used in project drabyashree-nepse-hub-11ef9 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=drabyashree-nepse-hub-11ef9 then retry.` | **Not-Tested** |
+| **Cloud Sync Bridge** | Secondary remote sync via Firestore | Blocked by disabled GCP Firestore API; application gracefully falls back to local storage and proxy sync endpoints (`proxy/syncRouter.mjs`) | **Not-Tested** |
+
+**Audit Conclusion:** As instructed, because live Firestore read/write and anonymous/automated login cannot be completed in this environment due to GCP project-side API deactivation, Firebase 13 live operations are formally marked **Not-Tested (Pending GCP Project Firestore Activation)**. The package-level vulnerability resolution (BUG-094) and modular code-splitting remain 100% verified.
+
+---
+
 ## 20. Phase 9 Remediation & Verification Report (BUG-093 to BUG-097)
 
 ### 20.1 Remediation Summary Table
@@ -2578,7 +2595,7 @@ node_modules/uuid
 | Bug ID | Severity | Area / Files | Defect & Root Cause | Implemented Solution | Verification Outcome | Status |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: |
 | **BUG-093** | **High** | `src/App.jsx`, `vite.config.mjs`, `index.html` | Giant initial root entry chunk (1.42 MB) causing cold-start delay and high TBT (950 ms). | Applied `React.lazy` tab & modal splitting with `DashboardSkeleton` fallback; deferred WASM/SQLite & proxy warmup via `requestIdleCallback`; separated Rollup vendor chunks. | Root entry chunk shrank 94.2% to **81.47 kB**; Mobile FCP: **2.1 s** (-52.1% faster); Desktop LCP: **2.5 s** (beating <4s target); Desktop TBT: **30 ms**. | **Fixed** |
-| **BUG-094** | **High** | `package.json`, `package-lock.json` | 4 High severity vulnerabilities in `@grpc/grpc-js` (CVE-2024-37890, etc.) from older Firebase transitive dependencies. | Upgraded `firebase` to `^13.2.0` with `"overrides": { "@grpc/grpc-js": "^1.14.5" }` instead of breaking downgrade to `firebase@9.14.0`. | `npm audit --omit=dev` confirms **0 High vulnerabilities**; all 37 test suites and Firebase modular auth/firestore APIs verified 100% compatible. | **Fixed** |
+| **BUG-094** | **High** | `package.json`, `package-lock.json` | 4 High severity vulnerabilities in `@grpc/grpc-js` (CVE-2024-37890, etc.) from older Firebase transitive dependencies. | Upgraded `firebase` to `^13.2.0` with `"overrides": { "@grpc/grpc-js": "^1.14.5" }` instead of breaking downgrade to `firebase@9.14.0`. | `npm audit --omit=dev` confirms **0 High vulnerabilities**; modular APIs verified. Live cloud Auth & Firestore marked **Not-Tested** due to project-level GCP API deactivation. | **Fixed** |
 | **BUG-095** | **Medium** | `src/components/servicesHub.css` | Unvirtualized rendering of 127+ service cards causing layout calculation overhead during scrolling. | Added `content-visibility: auto` and `contain-intrinsic-size: 0 72px` to `.services-graceful-card`. | Browser skips layout/paint for offscreen cards; smooth scroll and live search filter re-renders in **2 ms**. | **Fixed** |
 | **BUG-096** | **Medium** | `index.html`, `AiAnalyst.jsx`, `ServicesHub.tsx`, `Dashboard.jsx`, `src/index.css` | WCAG 2.1 AA accessibility issues: viewport zoom disabling (`user-scalable=no`), missing `aria-label` on Guru AI button, non-focusable carousel, and < 4.5:1 text contrast. | Removed zoom restrictions; added `aria-label` and `tabIndex={0}` to buttons & carousel; tuned `--primary` to `#2563eb` and muted text to `#94a3b8` / `#fb7185`. | Axe-core accessibility audit achieved **0 violations across all 7 core tabs** (Market, Portfolio, IPO, Stocks, Predictor, Guru AI, Service Hub). | **Fixed** |
 | **BUG-097** | **Low** | `scripts/phase9Runner.cjs` | Memory stress test previously only logged heap every 10 iterations without reporting per-switch tab names. | Updated runner to execute and log cyclical 50-switch traversal with exact tab names across all 6 main hubs. | Proved 100% tab traversal; heap contracted by **-1.52 MB (-2.1%)** post-GC with zero detached nodes or memory leaks. | **Fixed** |
