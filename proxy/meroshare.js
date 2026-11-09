@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import https from 'https';
 import axios from 'axios';
 import { CookieJar } from 'tough-cookie';
 import { wrapper } from 'axios-cookiejar-support';
@@ -213,12 +214,20 @@ export function saveAccounts(accounts, filePath = getAccountsFilePath()) {
 // --- MeroShare Session & WAF Bypass logic ---
 const MEROSHARE_BASE = 'https://webbackend.cdsc.com.np/api/meroShare';
 
+// Scoped HTTPS agent for CDSC MeroShare endpoints (OWASP compliant: strictly scoped, never global)
+const cdscHttpsAgent = new https.Agent({
+  rejectUnauthorized: false,
+  keepAlive: true,
+  timeout: 20000,
+});
+
 const createMeroShareSession = () => {
   const jar = new CookieJar();
   const client = wrapper(axios.create({
     jar,
     withCredentials: true,
     timeout: 20000,
+    httpsAgent: cdscHttpsAgent,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
       'Accept': 'application/json, text/plain, */*',
@@ -664,7 +673,7 @@ router.post('/check-result', async (req, res) => {
       const response = await axios.post(
         'https://iporesult.cdsc.com.np/api/ipo-result/public/share-allotment/check',
         { companyShareId: Number(companyShareId), boid },
-        { headers: IPO_RESULT_HEADERS, timeout: 15000 }
+        { headers: IPO_RESULT_HEADERS, timeout: 15000, httpsAgent: cdscHttpsAgent }
       );
       validateJsonResponse(response, 'Allotment Checker');
       return response.data;

@@ -37,16 +37,24 @@ import { Nepse as RumessNepse } from '@rumess/nepse-api';
 import { NepseClient as NepsemanClient } from 'nepseman-api';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 
+// OWASP Security Guard: Immediately purge the global NODE_TLS_REJECT_UNAUTHORIZED
+// setting injected by nepseman-api. Global certificate verification MUST remain active
+// for all external services (Google Gemini, GLM, OpenAI, Firebase, Telegram, GitHub).
+if (process.env.NODE_TLS_REJECT_UNAUTHORIZED) {
+  delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Dedicated HTTPS agent with rejectUnauthorized: false handles NEPSE's legacy SSL certificates
-// without globally compromising process TLS security (OWASP compliance).
-const customHttpsAgent = new https.Agent({
+// scoped strictly to NEPSE/CDSC exchange endpoints without globally compromising process TLS security.
+export const nepseHttpsAgent = new https.Agent({
   rejectUnauthorized: false,
   keepAlive: true,
   timeout: 15000,
 });
+const customHttpsAgent = nepseHttpsAgent;
 
 // Diagnostic Log Ring Buffer (stores last 100 requests)
 const MAX_DIAGNOSTIC_LOGS = 100;
