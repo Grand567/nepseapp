@@ -41,11 +41,12 @@ const testFiles = [
   'abBatchTelegramMorningDigest.test.mjs',
   'acItem1LookAheadFix.test.mjs',
   'adBrokerFloorsheetAudit.test.mjs',
-  'aeBatchCrossTabInvariants.test.mjs'
+  'aeBatchCrossTabInvariants.test.mjs',
+  'afBatchMeroshareKeyMigration.test.mjs'
 ];
 
 console.log('====================================================');
-console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (37 SUITES)  ');
+console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (38 SUITES)  ');
 console.log('====================================================\n');
 
 let totalFailures = 0;

@@ -15,17 +15,44 @@ const __dirname = path.dirname(__filename);
 const router = express.Router();
 const ACCOUNTS_FILE = path.join(__dirname, 'meroshare_accounts.json');
 
-// AES-256-CBC configuration for secure credential storage
-const ENCRYPTION_KEY = process.env.MEROSHARE_ENCRYPTION_KEY || 'd3@bya$hr33_n3ps3_hub_s3cr3t_k3y'; // 32 chars
+// Legacy fallback encryption key (used in dev and for backward-compatible migration only)
+export const OLD_DEFAULT_KEY = 'd3@bya$hr33_n3ps3_hub_s3cr3t_k3y';
 const IV_LENGTH = 16;
 
-function getSHA256Key() {
-  return crypto.createHash('sha256').update(String(ENCRYPTION_KEY)).digest();
+/**
+ * Validates encryption configuration.
+ * In production (NODE_ENV=production), MEROSHARE_ENCRYPTION_KEY MUST be set.
+ * Outside production (development, test), an insecure dev fallback is permitted.
+ */
+export function validateEncryptionConfig(env = process.env) {
+  const isProduction = env.NODE_ENV === 'production';
+  const primaryKey = env.MEROSHARE_ENCRYPTION_KEY;
+
+  if (!primaryKey) {
+    if (isProduction) {
+      throw new Error(
+        'CRITICAL SECURITY CONFIGURATION ERROR: MEROSHARE_ENCRYPTION_KEY environment variable is required in production (NODE_ENV=production). Proxy refusing to start with insecure default.'
+      );
+    }
+    return OLD_DEFAULT_KEY;
+  }
+  return primaryKey;
 }
 
-function encrypt(text) {
+// Immediate startup check: refuse to boot if in production without a key configured
+validateEncryptionConfig(process.env);
+
+export function getActiveKey() {
+  return validateEncryptionConfig(process.env);
+}
+
+function getSHA256Key(rawKey) {
+  return crypto.createHash('sha256').update(String(rawKey)).digest();
+}
+
+export function encrypt(text, rawKey = getActiveKey()) {
   if (!text) return '';
-  const key = getSHA256Key();
+  const key = getSHA256Key(rawKey);
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
   let encrypted = cipher.update(text, 'utf8');
@@ -33,27 +60,137 @@ function encrypt(text) {
   return iv.toString('hex') + ':' + encrypted.toString('hex');
 }
 
-function decrypt(text) {
-  if (!text) return '';
+function tryDecryptWithKey(parts, rawKey) {
+  if (!rawKey || !parts || parts.length !== 2) return null;
+  if (parts[0].length !== 32) return null; // 16 bytes = 32 hex chars
+  try {
+    const iv = Buffer.from(parts[0], 'hex');
+    const encryptedText = Buffer.from(parts[1], 'hex');
+    if (iv.length !== 16 || encryptedText.length === 0) return null;
+
+    const key = getSHA256Key(rawKey);
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+    let decrypted = decipher.update(encryptedText);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+    const utf8Str = decrypted.toString('utf8');
+    if (/[\x00-\x08\x0E-\x1F]/.test(utf8Str)) {
+      return null;
+    }
+    return utf8Str;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decrypts a field, trying primary key first, then previous key (if configured),
+ * and finally the legacy hardcoded default key (for migration).
+ */
+export function decryptField(text) {
+  if (!text) return { text: '', usedPreviousKey: false };
   const parts = text.split(':');
-  if (parts.length !== 2) return text; // fallback if plaintext
-  const iv = Buffer.from(parts[0], 'hex');
-  const encryptedText = Buffer.from(parts[1], 'hex');
-  const key = getSHA256Key();
-  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-  let decrypted = decipher.update(encryptedText);
-  decrypted = Buffer.concat([decrypted, decipher.final()]);
-  return decrypted.toString('utf8');
+  if (parts.length !== 2) return { text, usedPreviousKey: false }; // fallback if plaintext
+
+  const primaryKey = getActiveKey();
+  const primaryResult = tryDecryptWithKey(parts, primaryKey);
+  if (primaryResult !== null) {
+    return { text: primaryResult, usedPreviousKey: false };
+  }
+
+  // Check optional MEROSHARE_ENCRYPTION_KEY_PREVIOUS
+  const previousKey = process.env.MEROSHARE_ENCRYPTION_KEY_PREVIOUS;
+  if (previousKey && previousKey !== primaryKey) {
+    const prevResult = tryDecryptWithKey(parts, previousKey);
+    if (prevResult !== null) {
+      return { text: prevResult, usedPreviousKey: true };
+    }
+  }
+
+  // Fallback to legacy default key if neither primary nor previous matches it
+  if (primaryKey !== OLD_DEFAULT_KEY && previousKey !== OLD_DEFAULT_KEY) {
+    const legacyResult = tryDecryptWithKey(parts, OLD_DEFAULT_KEY);
+    if (legacyResult !== null) {
+      return { text: legacyResult, usedPreviousKey: true };
+    }
+  }
+
+  return { text, usedPreviousKey: false, failed: true };
+}
+
+export function decrypt(text) {
+  return decryptField(text).text;
+}
+
+/**
+ * Decrypts an account's sensitive credentials and indicates whether
+ * any field was decrypted using an old/previous key requiring re-encryption.
+ */
+export function decryptAccount(acc) {
+  if (!acc) return { password: '', crn: '', pin: '', needsReEncrypt: false, account: acc };
+
+  const passRes = decryptField(acc.password);
+  const crnRes = decryptField(acc.crn);
+  const pinRes = decryptField(acc.transactionPin);
+
+  const needsReEncrypt = Boolean(passRes.usedPreviousKey || crnRes.usedPreviousKey || pinRes.usedPreviousKey);
+
+  return {
+    password: passRes.text,
+    crn: crnRes.text,
+    pin: pinRes.text,
+    needsReEncrypt,
+    account: needsReEncrypt ? {
+      ...acc,
+      password: passRes.text ? encrypt(passRes.text) : acc.password,
+      crn: crnRes.text ? encrypt(crnRes.text) : acc.crn,
+      transactionPin: pinRes.text ? encrypt(pinRes.text) : acc.transactionPin,
+    } : acc
+  };
+}
+
+/**
+ * Migrates a single account to the current active encryption key if needed.
+ */
+export function migrateAccount(acc, primaryKey = getActiveKey()) {
+  if (!acc) return { account: acc, migrated: false };
+
+  const passRes = decryptField(acc.password);
+  const crnRes = decryptField(acc.crn);
+  const pinRes = decryptField(acc.transactionPin);
+
+  const needsReEncrypt = Boolean(passRes.usedPreviousKey || crnRes.usedPreviousKey || pinRes.usedPreviousKey);
+  if (!needsReEncrypt) {
+    return { account: acc, migrated: false };
+  }
+
+  const updatedAcc = {
+    ...acc,
+    password: passRes.text ? encrypt(passRes.text, primaryKey) : acc.password,
+    crn: crnRes.text ? encrypt(crnRes.text, primaryKey) : acc.crn,
+    transactionPin: pinRes.text ? encrypt(pinRes.text, primaryKey) : acc.transactionPin,
+  };
+
+  return { account: updatedAcc, migrated: true };
+}
+
+function getAccountsFilePath() {
+  return process.env.MEROSHARE_ACCOUNTS_FILE || ACCOUNTS_FILE;
 }
 
 // Ensure accounts file exists
 if (!fs.existsSync(ACCOUNTS_FILE)) {
-  fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify([], null, 2), 'utf8');
+  try {
+    fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify([], null, 2), 'utf8');
+  } catch (_) {}
 }
 
-function loadAccounts() {
+export function loadAccounts(filePath = getAccountsFilePath()) {
   try {
-    const data = fs.readFileSync(ACCOUNTS_FILE, 'utf8');
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, JSON.stringify([], null, 2), 'utf8');
+      return [];
+    }
+    const data = fs.readFileSync(filePath, 'utf8');
     return JSON.parse(data);
   } catch (e) {
     console.error('[meroshare-bulk] Error loading accounts:', e.message);
@@ -61,9 +198,13 @@ function loadAccounts() {
   }
 }
 
-function saveAccounts(accounts) {
+export function saveAccounts(accounts, filePath = getAccountsFilePath()) {
   try {
-    fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2), 'utf8');
+    const migratedAccounts = (accounts || []).map(acc => {
+      const { account } = migrateAccount(acc);
+      return account;
+    });
+    fs.writeFileSync(filePath, JSON.stringify(migratedAccounts, null, 2), 'utf8');
   } catch (e) {
     console.error('[meroshare-bulk] Error saving accounts:', e.message);
   }
@@ -285,7 +426,10 @@ router.get('/ipos', async (req, res) => {
     await primeSession(client);
 
     const clientId = await getRealClientId(acc.boid, acc.dpCode, client);
-    const password = decrypt(acc.password);
+    const { password, needsReEncrypt } = decryptAccount(acc);
+    if (needsReEncrypt) {
+      saveAccounts(accounts);
+    }
 
     // 1. Silent login
     const loginRes = await client.post(`${MEROSHARE_BASE}/auth/`, {
@@ -382,9 +526,10 @@ router.post('/apply', requireAdminSecret, async (req, res) => {
       await primeSession(client);
 
       const clientId = await getRealClientId(acc.boid, acc.dpCode, client);
-      const password = decrypt(acc.password);
-      const crn = decrypt(acc.crn);
-      const pin = decrypt(acc.transactionPin);
+      const { password, crn, pin, needsReEncrypt } = decryptAccount(acc);
+      if (needsReEncrypt) {
+        saveAccounts(loadAccounts());
+      }
 
       // A. Login
       const loginResponse = await client.post(`${MEROSHARE_BASE}/auth/`, {

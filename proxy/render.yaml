@@ -25,3 +25,7 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: MEROSHARE_ENCRYPTION_KEY
+        sync: false
+      - key: MEROSHARE_ENCRYPTION_KEY_PREVIOUS
+        sync: false
