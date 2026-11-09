@@ -378,7 +378,7 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
         let changed = false;
         const merged = [...existingProfiles];
         bulkAccounts.forEach(acc => {
-          const existing = merged.find(p => p.boid === acc.boid);
+          const existing = merged.find(p => (acc.boid && p.boid === acc.boid) || (acc.id && p.id === acc.id));
           if (!existing) {
             merged.push({
               id: acc.id,
@@ -575,7 +575,7 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
         const bulkRaw = localStorage.getItem('nepse_hub_bulk_ipo_accounts');
         if (bulkRaw) {
           const bulkAccounts = JSON.parse(bulkRaw);
-          const updatedBulk = bulkAccounts.map(a => (a.boid === profile.boid || a.id === profile.id) ? {
+          const updatedBulk = bulkAccounts.map(a => ((profile.boid && a.boid === profile.boid) || (profile.id && a.id === profile.id)) ? {
             ...a,
             name: (result.name && result.name !== 'Unknown') ? result.name : a.name,
             holdings: parsedHoldings,

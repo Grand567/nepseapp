@@ -131,19 +131,44 @@ function AppInner() {
   const avatarBtnRef = useRef(null);
 
   // ── Render cold-start warm-up — deferred after first paint to maximize FCP & LCP ──
+  const bootstrappedRef = useRef(false);
   useEffect(() => {
+    let idleHandle = null;
+    let timer = null;
+
     const runDeferredBootstrap = () => {
+      if (bootstrappedRef.current) return;
+      bootstrappedRef.current = true;
+      if (idleHandle && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleHandle);
+      }
+      if (timer) clearTimeout(timer);
       warmUpServer().catch(() => {});
       initLocalLedger().catch(() => {});
     };
-    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      const handle = window.requestIdleCallback(runDeferredBootstrap, { timeout: 8000 });
-      return () => window.cancelIdleCallback(handle);
-    } else {
-      const timer = setTimeout(runDeferredBootstrap, 3500);
-      return () => clearTimeout(timer);
+
+    // If user navigates immediately to portfolio, bulk IPO, or risk simulator, warm up instantly
+    if (activeTab === 'portfolio' || activeTab === 'bulk_ipo' || activeTab === 'simulator') {
+      runDeferredBootstrap();
+      return;
     }
-  }, []);
+
+    if (bootstrappedRef.current) return;
+
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      idleHandle = window.requestIdleCallback(runDeferredBootstrap, { timeout: 8000 });
+      return () => {
+        if (idleHandle && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+          window.cancelIdleCallback(idleHandle);
+        }
+      };
+    } else {
+      timer = setTimeout(runDeferredBootstrap, 3500);
+      return () => {
+        if (timer) clearTimeout(timer);
+      };
+    }
+  }, [activeTab]);
 
   // Close account menu on any click or touch outside
   useEffect(() => {
@@ -533,7 +558,7 @@ function AppInner() {
 
         if (cloudBulkAccounts && Array.isArray(cloudBulkAccounts)) {
           cloudBulkAccounts.forEach(cb => {
-            const idx = mergedBulk.findIndex(mb => mb.boid === cb.boid || mb.id === cb.id);
+            const idx = mergedBulk.findIndex(mb => (cb.boid && mb.boid === cb.boid) || (cb.id && mb.id === cb.id));
             if (idx === -1) {
               mergedBulk.push(cb);
             } else if (cb.holdings?.length > 0 && (!mergedBulk[idx].holdings || mergedBulk[idx].holdings.length === 0)) {
@@ -543,7 +568,7 @@ function AppInner() {
         }
         if (cloudProfiles && Array.isArray(cloudProfiles)) {
           cloudProfiles.forEach(cp => {
-            const idx = mergedBulk.findIndex(mb => mb.boid === cp.boid || mb.id === cp.id);
+            const idx = mergedBulk.findIndex(mb => (cp.boid && mb.boid === cp.boid) || (cp.id && mb.id === cp.id));
             if (idx === -1) {
               mergedBulk.push(cp);
             }
@@ -559,7 +584,7 @@ function AppInner() {
 
         if (cloudProfiles && Array.isArray(cloudProfiles)) {
           cloudProfiles.forEach(cp => {
-            const idx = mergedProfiles.findIndex(mp => mp.boid === cp.boid || mp.id === cp.id);
+            const idx = mergedProfiles.findIndex(mp => (cp.boid && mp.boid === cp.boid) || (cp.id && mp.id === cp.id));
             if (idx === -1) {
               mergedProfiles.push(cp);
             } else if (cp.holdings?.length > 0 && (!mergedProfiles[idx].holdings || mergedProfiles[idx].holdings.length === 0)) {
@@ -596,7 +621,7 @@ function AppInner() {
         });
 
         mergedBulk.forEach(mb => {
-          const idx = mergedProfiles.findIndex(mp => mp.boid === mb.boid || mp.id === mb.id);
+          const idx = mergedProfiles.findIndex(mp => (mb.boid && mp.boid === mb.boid) || (mb.id && mp.id === mb.id));
           if (idx === -1) {
             mergedProfiles.push(mb);
           }

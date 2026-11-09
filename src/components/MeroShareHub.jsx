@@ -336,8 +336,9 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
       if (changed || (parsed.length > 0 && !saved)) {
         try {
-          safeStorageSetItem(profileKey, parsed);
-          safeStorageSetItem('nepse_hub_bulk_ipo_accounts', parsed);
+          const encrypted = parsed.map(p => encryptProfileCredentials(p, userId));
+          safeStorageSetItem(profileKey, encrypted);
+          safeStorageSetItem('nepse_hub_bulk_ipo_accounts', encrypted);
         } catch (_) {}
       }
 
@@ -357,8 +358,9 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               const cloudAccs = cloudData.profiles || cloudData.bulkAccounts || [];
               if (cloudAccs.length > 0) {
                 const sanitized = cloudAccs.map(p => ({ ...p, holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid) }));
-                safeStorageSetItem(profileKey, sanitized);
-                safeStorageSetItem('nepse_hub_bulk_ipo_accounts', sanitized);
+                const encrypted = sanitized.map(p => encryptProfileCredentials(p, userId));
+                safeStorageSetItem(profileKey, encrypted);
+                safeStorageSetItem('nepse_hub_bulk_ipo_accounts', encrypted);
                 setProfiles(sanitized);
                 setSelectedProfileId(sanitized[0].id);
               }
@@ -1184,7 +1186,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
         const bulkRaw = localStorage.getItem('nepse_hub_bulk_ipo_accounts');
         if (bulkRaw) {
           const bulkAccounts = JSON.parse(bulkRaw);
-          const updatedBulk = bulkAccounts.map(a => (a.boid === profile.boid || a.id === profile.id) ? {
+          const updatedBulk = bulkAccounts.map(a => ((profile.boid && a.boid === profile.boid) || (profile.id && a.id === profile.id)) ? {
             ...a,
             name: (result.name && result.name !== 'Unknown') ? result.name : a.name,
             holdings: storedHoldings,
