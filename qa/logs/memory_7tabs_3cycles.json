@@ -1,0 +1,114 @@
+{
+  "timestamp": "2026-11-09T04:07:43.026Z",
+  "initialHeapMB": 38.23,
+  "cycles": [
+    {
+      "cycle": 1,
+      "tabTraversals": [
+        {
+          "tab": "Market",
+          "heapMB": 72.64
+        },
+        {
+          "tab": "Portfolio",
+          "heapMB": 78.81
+        },
+        {
+          "tab": "IPO",
+          "heapMB": 76.26
+        },
+        {
+          "tab": "Stocks",
+          "heapMB": 60.45
+        },
+        {
+          "tab": "Predictor",
+          "heapMB": 69.28
+        },
+        {
+          "tab": "Guru AI",
+          "heapMB": 61.37
+        },
+        {
+          "tab": "Service Hub",
+          "heapMB": 78.8
+        }
+      ],
+      "postGcHeapMB": 77.21
+    },
+    {
+      "cycle": 2,
+      "tabTraversals": [
+        {
+          "tab": "Market",
+          "heapMB": 77.54
+        },
+        {
+          "tab": "Portfolio",
+          "heapMB": 79.58
+        },
+        {
+          "tab": "IPO",
+          "heapMB": 79.96
+        },
+        {
+          "tab": "Stocks",
+          "heapMB": 80.37
+        },
+        {
+          "tab": "Predictor",
+          "heapMB": 81.42
+        },
+        {
+          "tab": "Guru AI",
+          "heapMB": 98.08
+        },
+        {
+          "tab": "Service Hub",
+          "heapMB": 97.93
+        }
+      ],
+      "postGcHeapMB": 93.86
+    },
+    {
+      "cycle": 3,
+      "tabTraversals": [
+        {
+          "tab": "Market",
+          "heapMB": 93.97
+        },
+        {
+          "tab": "Portfolio",
+          "heapMB": 94.29
+        },
+        {
+          "tab": "IPO",
+          "heapMB": 94.45
+        },
+        {
+          "tab": "Stocks",
+          "heapMB": 94.74
+        },
+        {
+          "tab": "Predictor",
+          "heapMB": 94.77
+        },
+        {
+          "tab": "Guru AI",
+          "heapMB": 94.82
+        },
+        {
+          "tab": "Service Hub",
+          "heapMB": 103.76
+        }
+      ],
+      "postGcHeapMB": 94.11
+    }
+  ],
+  "cycle1PostGcHeapMB": 77.21,
+  "cycle2PostGcHeapMB": 93.86,
+  "cycle3PostGcHeapMB": 94.11,
+  "growthCycle1ToCycle2MB": 16.65,
+  "growthCycle2ToCycle3MB": 0.25,
+  "growthCycle2ToCycle3Pct": 0.27
+}

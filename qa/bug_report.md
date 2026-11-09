@@ -2437,9 +2437,25 @@ Audited live in production build across all 7 core tabs with real active session
 
 ---
 
-### 19.2 Memory Growth: 50-Switch Stress Test
+### 19.2 Memory Growth: 7-Tab 3 Full Cycles & 50-Switch Stress Test
 
-Evaluated by rapidly and cyclically switching between all 7 core tabs 50 consecutive times, measuring V8 heap consumption via `performance.memory` before, during (every 10 switches), and after forced garbage collection (`window.gc()`):
+#### 1. 7-Tab 3 Full Cycles Steady-State Audit (Including Stocks Modal)
+Audited on production preview (`http://localhost:4173`) in Electron with `--expose-gc`. Each cycle navigates consecutively through all 7 core tabs in sequence:
+`Market -> Portfolio -> IPO Hub -> Stocks (NABIL modal mount & unmount) -> Predictor -> Guru AI -> Service Hub`.
+Following each 7-tab traversal cycle, the engine settles and forces full V8 garbage collection (`window.gc()`), logging the retained heap:
+
+| Cycle / Checkpoint | Sequence of Tabs Traversed | Retained JS Heap Post-GC | Cycle-over-Cycle Growth | Status |
+| :--- | :--- | :---: | :---: | :--- |
+| **Initial Settled Baseline** | App boot & guest auth settled | **38.23 MB** | — | Initial baseline |
+| **Cycle 1 (Post-GC)** | Market → Portfolio → IPO → Stocks → Predictor → Guru AI → Service Hub | **77.21 MB** | +38.98 MB | Initial module caches & DOM instantiation |
+| **Cycle 2 (Post-GC)** | Market → Portfolio → IPO → Stocks → Predictor → Guru AI → Service Hub | **93.86 MB** | +16.65 MB | Warm subfile & analysis cache saturation |
+| **Cycle 3 (Post-GC)** | Market → Portfolio → IPO → Stocks → Predictor → Guru AI → Service Hub | **94.11 MB** | **+0.25 MB (+0.27%)** | ✅ **Flat Steady-State (Zero Memory Leak)** |
+
+- **Reported Growth between Cycle 2 and Cycle 3:** **+0.25 MB (+0.27%)**
+- **Steady-State Stability Assessment:** **PASS — Zero Memory Leak.** After module caches reach saturation in Cycle 2, traversing all 7 tabs (including opening and closing the heavy `StockDetailModal` with 13 sub-tabs) results in negligible **0.25 MB** heap delta, proving that tab transitions, charting canvases, and modals are safely garbage collected.
+- **Telemetry Artifact:** `qa/logs/memory_7tabs_3cycles.json`
+
+#### 2. Rapid 50-Switch Stress Test
 
 | Iteration / Checkpoint | Active Tab Switched | Used JS Heap (MB) | Delta from Baseline |
 | :---: | :--- | :---: | :---: |
