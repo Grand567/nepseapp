@@ -13634,22 +13634,37 @@ app.listen(PORT, '0.0.0.0', async () => {
     console.log(`   🔸 Price History:   /api/price-history/:symbol`);
     console.log(`   🔸 UDF History:     /api/udf/history`);
 
-    // Auto self-ping on Render production during NEPSE trading hours (Sunday to Thursday, 11:00 AM - 3:00 PM NPT)
-    // Guarantees zero cold-starts during live market hours while conserving Render free monthly hours at night & weekends
-    if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
-      const pingUrl = process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/api/ping` : 'https://nepseapp.onrender.com/api/ping';
-      console.log(`📡 Trading hours auto keep-alive enabled: Pinging ${pingUrl} every 10 minutes (Sun-Thu 11:00-15:00 NPT)`);
-      setInterval(() => {
+    // Single Source of Truth Keep-Alive Heartbeat for Render Container
+    // Strictly aligned to single source of truth: Sunday to Thursday, 10:45 AM - 3:15 PM NPT (getKathmanduTradingStatus).
+    // Conserves Render free monthly hours outside market hours, Friday, and Saturday.
+    const KEEP_ALIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+    const keepAliveUrl = process.env.RENDER_EXTERNAL_URL
+      ? `${process.env.RENDER_EXTERNAL_URL}/api/ping`
+      : (process.env.APP_URL ? `${process.env.APP_URL}/api/ping` : `http://127.0.0.1:${PORT}/api/ping`);
+
+    console.log(`📡 Trading hours auto keep-alive enabled: Pinging ${keepAliveUrl} every 10 min (Sun-Thu 10:45-15:15 NPT)`);
+    const keepAliveTimer = setInterval(async () => {
+      try {
+        const kt = getKathmanduTradingStatus();
+        if (!kt.isKeepAliveWindow) {
+          return;
+        }
         try {
-          const kt = getKathmanduTradingStatus();
-          if (kt.isKeepAliveWindow) {
-            import('https').then(https => {
-              https.default.get(pingUrl, (res) => res.resume()).on('error', () => {});
-            }).catch(() => {});
-          }
-        } catch (_) {}
-      }, 10 * 60 * 1000);
-    }
+          const client = keepAliveUrl.startsWith('https') ? (await import('https')).default : (await import('http')).default;
+          client.get(keepAliveUrl, (res) => {
+            if (res.statusCode === 200) {
+              console.log(`[KeepAlive] Heartbeat ping successful (${kt.dayName} ${kt.timeStr}) -> HTTP 200 OK`);
+            }
+            res.resume();
+          }).on('error', (err) => {
+            console.log(`[KeepAlive] Heartbeat ping notice: ${err.message}`);
+          });
+        } catch (innerErr) {
+          console.log(`[KeepAlive] Heartbeat ping notice: ${innerErr.message}`);
+        }
+      } catch (_) {}
+    }, KEEP_ALIVE_INTERVAL_MS);
+    keepAliveTimer.unref();
 
     // ── Proactive Background Market Data Warm-Up ──────────────────────────────
     // Pre-fetch live market data into cache immediately on startup and every 25s
@@ -13821,20 +13836,4 @@ app.listen(PORT, '0.0.0.0', async () => {
       }
     };
     setTimeout(autoWarmupCloudLedger, 3000);
-
-    // Keep-Alive Heartbeat for Render Free-Tier Container (prevents cold-start sleep)
-    const KEEP_ALIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
-    const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || `http://127.0.0.1:${PORT}`;
-    const keepAliveTimer = setInterval(async () => {
-      try {
-        const pingRes = await axios.get(`${keepAliveUrl}/api/health`, { timeout: 8000 });
-        if (pingRes.status === 200) {
-          console.log(`[KeepAlive] Heartbeat ping successful: uptime ${pingRes.data.uptimeSec || Math.floor(process.uptime())}s`);
-        }
-      } catch (pingErr) {
-        // Fallback internal self-ping if external URL not reachable from within container
-        console.log(`[KeepAlive] Heartbeat ping notice: ${pingErr.message}`);
-      }
-    }, KEEP_ALIVE_INTERVAL_MS);
-    keepAliveTimer.unref();
 });

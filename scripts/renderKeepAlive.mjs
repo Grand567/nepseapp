@@ -12,7 +12,7 @@ const forcePing = process.argv.includes('--force');
 async function pingServer(force = forcePing) {
   const kt = getKathmanduTradingStatus();
   if (!force && !kt.isKeepAliveWindow) {
-    console.log(`[KeepAlive] ⏸️ Skipped: Outside NEPSE trading window (${kt.dayName} ${kt.timeStr}, ${kt.dateIso}). Active: Sunday–Thursday 11:00–15:00 NPT.`);
+    console.log(`[KeepAlive] ⏸️ Skipped: Outside NEPSE trading window (${kt.dayName} ${kt.timeStr}, ${kt.dateIso}). Active: Sunday–Thursday 10:45–15:15 NPT.`);
     return true;
   }
 

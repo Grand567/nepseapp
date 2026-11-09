@@ -1,6 +1,6 @@
 // proxy/keepalive.mjs
 // Timezone-independent Keep-Alive heartbeat for Render deployment.
-// Strictly matches NEPSE trading days (Sunday to Thursday, 11:00-15:00 NPT, Asia/Kathmandu time).
+// Strictly matches NEPSE trading days (Sunday to Thursday, 10:45-15:15 NPT, Asia/Kathmandu time).
 // Conserves Render free monthly quota during nights, Fridays, and Saturdays.
 
 import https from 'https';
@@ -13,10 +13,10 @@ const forcePing = process.argv.includes('--force');
 export function executeKeepAlivePing(force = forcePing) {
   const kt = getKathmanduTradingStatus();
 
-  // Guard: Only ping during NEPSE trading days (Sunday to Thursday, 11:00-15:00 NPT)
+  // Guard: Only ping during NEPSE trading days (Sunday to Thursday, 10:45-15:15 NPT)
   // unless explicitly forced via --force
   if (!force && !kt.isKeepAliveWindow) {
-    console.log(`[KeepAlive] ⏸️ Skipped: Outside NEPSE trading schedule (${kt.dayName} ${kt.timeStr}, Date: ${kt.dateIso}). Active: Sunday–Thursday 11:00–15:00 NPT.`);
+    console.log(`[KeepAlive] ⏸️ Skipped: Outside NEPSE trading schedule (${kt.dayName} ${kt.timeStr}, Date: ${kt.dateIso}). Active: Sunday–Thursday 10:45–15:15 NPT.`);
     return false;
   }
 
@@ -38,7 +38,7 @@ export function executeKeepAlivePing(force = forcePing) {
 
 console.log('🔄 NEPSE Keep-Alive service initialized');
 console.log(`📡 Target URL: ${RENDER_URL}/api/ping`);
-console.log('⏰ Active Schedule: Sunday to Thursday, 11:00 AM – 3:00 PM NPT (Asia/Kathmandu)');
+console.log('⏰ Active Schedule: Sunday to Thursday, 10:45 AM – 3:15 PM NPT (Asia/Kathmandu)');
 
 // Initial run
 executeKeepAlivePing();

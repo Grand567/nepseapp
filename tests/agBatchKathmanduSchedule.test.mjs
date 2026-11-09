@@ -79,6 +79,39 @@ try {
   ok(currentKt.hours >= 0 && currentKt.hours < 24, 'NPT hour is valid (0-23)');
   ok(currentKt.minutes >= 0 && currentKt.minutes < 60, 'NPT minute is valid (0-59)');
 
+  console.log('\n[TEST 6] Single Source of Truth Keep-Alive Window (10:45 - 15:15 NPT Sun-Thu)');
+  // Sunday 10:44 NPT (UTC = 04:59) -> 1 minute before warm-up window
+  const sunPreWarmup = getKathmanduTradingStatus(new Date('2026-11-08T04:59:00Z'));
+  ok(sunPreWarmup.isKeepAliveWindow === false, 'Sunday 10:44 NPT is outside keep-alive window');
+
+  // Sunday 10:45 NPT (UTC = 05:00) -> start of keep-alive window
+  const sunWarmupStart = getKathmanduTradingStatus(new Date('2026-11-08T05:00:00Z'));
+  ok(sunWarmupStart.isKeepAliveWindow === true, 'Sunday 10:45 NPT triggers keep-alive window');
+
+  // Sunday 13:00 NPT (UTC = 07:15) -> midday trading
+  const sunMidday = getKathmanduTradingStatus(new Date('2026-11-08T07:15:00Z'));
+  ok(sunMidday.isKeepAliveWindow === true, 'Sunday 13:00 NPT is inside keep-alive window');
+
+  // Sunday 15:15 NPT (UTC = 09:30) -> end of keep-alive window
+  const sunKeepAliveEnd = getKathmanduTradingStatus(new Date('2026-11-08T09:30:00Z'));
+  ok(sunKeepAliveEnd.isKeepAliveWindow === true, 'Sunday 15:15 NPT is the last minute of keep-alive window');
+
+  // Sunday 15:16 NPT (UTC = 09:31) -> 1 minute after keep-alive window
+  const sunPostKeepAlive = getKathmanduTradingStatus(new Date('2026-11-08T09:31:00Z'));
+  ok(sunPostKeepAlive.isKeepAliveWindow === false, 'Sunday 15:16 NPT is outside keep-alive window');
+
+  // Thursday 11:30 NPT (UTC = 05:45) -> valid trading day inside window
+  const thuTradingKeepAlive = getKathmanduTradingStatus(new Date('2026-11-12T05:45:00Z'));
+  ok(thuTradingKeepAlive.isKeepAliveWindow === true, 'Thursday 11:30 NPT is inside keep-alive window');
+
+  // Friday 12:00 NPT (UTC = 06:15) -> non-trading day
+  const friWeekendKeepAlive = getKathmanduTradingStatus(new Date('2026-11-13T06:15:00Z'));
+  ok(friWeekendKeepAlive.isKeepAliveWindow === false, 'Friday 12:00 NPT is outside keep-alive window (weekend)');
+
+  // Saturday 12:00 NPT (UTC = 06:15) -> non-trading day
+  const satWeekendKeepAlive = getKathmanduTradingStatus(new Date('2026-11-14T06:15:00Z'));
+  ok(satWeekendKeepAlive.isKeepAliveWindow === false, 'Saturday 12:00 NPT is outside keep-alive window (weekend)');
+
   console.log(`\n======================================================`);
   console.log(` RESULTS: ${pass} PASSED, ${fail} FAILED`);
   console.log(`======================================================`);
