@@ -798,3 +798,76 @@ export async function triggerTestAlert(symbol = 'GHL', ltp = 269.50) {
   }
   return null;
 }
+
+/**
+ * Admin-protected test notification dispatch for hardware & notification tray diagnostics.
+ * Differentiates whether the failure is server-side (Render API/auth/dispatch)
+ * or client-side (Android status bar/permission/OEM battery kill).
+ */
+export async function sendAdminTestNotification({ title, body, symbol, category } = {}) {
+  const result = {
+    server: { success: false, error: null, alertId: null, status: null },
+    phoneNative: { success: false, error: null, method: null }
+  };
+
+  // 1. Trigger Server Dispatch
+  try {
+    const apiBase = getApiBase();
+    const adminKey = (typeof localStorage !== 'undefined' && (
+      localStorage.getItem('nepse_admin_key') ||
+      localStorage.getItem('nepse_portfolio_key')
+    )) || (import.meta?.env?.VITE_ADMIN_API_KEY || '');
+
+    const res = await fetch(`${apiBase}/api/notifications/test-dispatch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(adminKey ? { 'x-admin-key': adminKey, 'Authorization': `Bearer ${adminKey}` } : {})
+      },
+      body: JSON.stringify({
+        title: title || '🧪 [DIAGNOSTIC TEST] Dravyashree Alert',
+        body: body || 'Real-time alert delivery verified across system status bar.',
+        symbol: symbol || 'NABIL',
+        category: category || 'pro'
+      })
+    });
+
+    result.server.status = res.status;
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.success) {
+      result.server.success = true;
+      result.server.alertId = json.alert?.id;
+    } else {
+      result.server.error = json.error || `HTTP ${res.status}`;
+    }
+  } catch (err) {
+    result.server.error = err.message;
+  }
+
+  // 2. Trigger Phone Native Status Bar (Direct Device Bridge)
+  try {
+    if (typeof window !== 'undefined' && window.NepseNativeNotifier?.postStatusBarNotification) {
+      window.NepseNativeNotifier.postStatusBarNotification(
+        title || '🧪 [DIAGNOSTIC TEST] Dravyashree Alert',
+        body || 'Real-time alert delivery verified across system status bar.',
+        'dravyashree-pro-signals',
+        symbol || 'NABIL',
+        'ADMIN_TEST_ALERT',
+        'OPEN_STOCK'
+      );
+      result.phoneNative.success = true;
+      result.phoneNative.method = 'NepseNativeNotifier (Android Bridge)';
+    } else if (Capacitor.isNativePlatform()) {
+      result.phoneNative.error = 'Native bridge unavailable';
+    } else {
+      result.phoneNative.method = 'Browser web environment (Native status bar N/A)';
+      // Play audio chime and vibration in web browser for test feedback
+      playBreakoutChime();
+      triggerBreakoutVibration();
+    }
+  } catch (err) {
+    result.phoneNative.error = err.message;
+  }
+
+  return result;
+}

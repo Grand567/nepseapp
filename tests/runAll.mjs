@@ -48,7 +48,8 @@ const testFiles = [
   'aiBatchTelegramUnauthorizedLoopGuard.test.mjs',
   'ajBatchCdscTlsVerification.test.mjs',
   'akBatchColdStartWarmupStatus.test.mjs',
-  'alBatchPortfolioAuthenticationGuard.test.mjs'
+  'alBatchPortfolioAuthenticationGuard.test.mjs',
+  'amBatchNotificationDiagnosticTest.test.mjs'
 ];
 
 console.log('====================================================');

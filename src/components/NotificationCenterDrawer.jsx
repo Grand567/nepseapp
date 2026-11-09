@@ -25,7 +25,8 @@ import {
   markNotificationAsRead, 
   markAllNotificationsAsRead, 
   clearNotificationCache,
-  triggerTestAlert 
+  triggerTestAlert,
+  sendAdminTestNotification
 } from '../utils/pushNotificationService';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -42,6 +43,7 @@ export function NotificationCenterDrawer({
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [diagnosticMsg, setDiagnosticMsg] = useState(null);
 
   // Combine user symbols for portfolio/watchlist filtering
   const userTrackedSet = useMemo(() => {
@@ -127,11 +129,44 @@ export function NotificationCenterDrawer({
 
   const handleSendTestAlert = async () => {
     setIsTesting(true);
+    setDiagnosticMsg(null);
     try {
-      await triggerTestAlert('GHL', 269.50);
+      // Check for admin key if prompt needed
+      let adminKey = (typeof localStorage !== 'undefined' && (
+        localStorage.getItem('nepse_admin_key') || 
+        localStorage.getItem('nepse_portfolio_key')
+      )) || (import.meta?.env?.VITE_ADMIN_API_KEY || '');
+
+      if (!adminKey && typeof window !== 'undefined') {
+        const inputKey = window.prompt("Enter ADMIN_API_KEY to authorize server test broadcast (or click Cancel to test phone status bar directly):");
+        if (inputKey && inputKey.trim()) {
+          adminKey = inputKey.trim();
+          localStorage.setItem('nepse_admin_key', adminKey);
+        }
+      }
+
+      const diag = await sendAdminTestNotification({
+        symbol: 'NABIL',
+        title: '🧪 [DIAGNOSTIC TEST] Status Bar Alert',
+        body: 'Real-time alert delivery verified across system status bar.'
+      });
+
+      const serverStatus = diag.server.success 
+        ? `✅ Server: Dispatched (ID: ${diag.server.alertId})`
+        : `❌ Server: ${diag.server.error || 'Failed'}`;
+
+      const phoneStatus = diag.phoneNative.success
+        ? `✅ Phone Tray: Status Bar Notification Posted`
+        : `ℹ️ Phone Tray: ${diag.phoneNative.method || diag.phoneNative.error || 'Handled'}`;
+
+      setDiagnosticMsg(`${serverStatus}\n${phoneStatus}`);
       await loadNotifications();
-    } catch (_) {}
-    setIsTesting(false);
+      setTimeout(() => setDiagnosticMsg(null), 12000);
+    } catch (err) {
+      setDiagnosticMsg(`Error: ${err.message}`);
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   const formatTime = (ts) => {
@@ -251,6 +286,17 @@ export function NotificationCenterDrawer({
             सेटअप
           </button>
         </div>
+
+        {/* ── DIAGNOSTIC NOTIFICATION FEEDBACK ── */}
+        {diagnosticMsg && (
+          <div className="mx-3 mt-2 p-3 rounded-xl bg-slate-900 border border-cyan-500/40 text-xs text-slate-200 whitespace-pre-line font-mono shadow-lg">
+            <div className="flex items-center justify-between pb-1 mb-1 border-b border-slate-800">
+              <span className="font-bold text-cyan-400">🔔 Delivery Diagnostics</span>
+              <button onClick={() => setDiagnosticMsg(null)} className="text-slate-400 hover:text-white text-[10px]">Close</button>
+            </div>
+            {diagnosticMsg}
+          </div>
+        )}
 
         {/* ── TAB SELECTOR ── */}
         <div className="px-3 pt-3 flex items-center gap-1 border-b border-slate-800/80 bg-[#080d1a]/50">
@@ -476,7 +522,7 @@ export function NotificationCenterDrawer({
             className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1"
           >
             <Sparkles className="w-3 h-3" />
-            {isTesting ? 'Sending...' : 'Test Buzz'}
+            {isTesting ? 'Testing...' : 'Send Test Notification'}
           </button>
         </div>
 

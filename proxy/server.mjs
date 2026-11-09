@@ -55,7 +55,8 @@ import {
   subscribeAlertEvents,
   trackCustomHolding,
   untrackCustomHolding,
-  getUserTrackedHoldings
+  getUserTrackedHoldings,
+  broadcastAlert
 } from './smartAlertEngine.mjs';
 import { 
   getTelegramStatus, 
@@ -11919,6 +11920,47 @@ app.post('/api/notifications/test', async (req, res) => {
     const { symbol } = req.body || {};
     const alert = await testTriggerAlert(symbol || 'NABIL');
     res.json({ success: true, message: 'Test alert triggered and dispatched', alert });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin-protected test notification dispatch for hardware & notification tray diagnostics
+app.post('/api/notifications/test-dispatch', requireAdminSecret, async (req, res) => {
+  try {
+    const { title, body, symbol, category, type } = req.body || {};
+    const sym = String(symbol || 'NABIL').toUpperCase().trim();
+    const alertTitle = title || `🧪 [DIAGNOSTIC TEST] Status Bar Alert: ${sym}`;
+    const alertBody = body || `Live status bar test notification from Dravyashree NEPSE Admin. Delivery pipeline active.`;
+    const alertCategory = category || 'pro';
+    const alertType = type || 'ADMIN_TEST_ALERT';
+
+    const testAlert = {
+      id: `test_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      type: alertType,
+      category: alertCategory,
+      title: alertTitle,
+      body: alertBody,
+      symbol: sym,
+      action: 'OPEN_STOCK_DETAIL',
+      url: `/stock/${sym}`,
+      triggeredAt: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      created_at_ms: Date.now(),
+      timestamp: new Date().toISOString(),
+      ttl_ms: 3600000,
+      isTest: true,
+      forceDispatch: true
+    };
+
+    const dispatched = broadcastAlert(testAlert);
+
+    res.json({
+      success: true,
+      message: 'Admin test notification successfully dispatched to notification pipeline.',
+      alert: testAlert,
+      dispatched
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
