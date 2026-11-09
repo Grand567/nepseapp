@@ -1,12 +1,23 @@
 {
-  "version": 2,
-  "experimentalServices": {
-    "nepse-proxy": {
-      "type": "web",
-      "root": "proxy",
-      "entrypoint": "server.mjs",
-      "routePrefix": "/",
-      "buildCommand": "npm install"
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://nepseapp.onrender.com/api/:path*"
+    },
+    {
+      "source": "/cdsc-ipo/:path*",
+      "destination": "https://nepseapp.onrender.com/cdsc-ipo/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://nepseapp.onrender.com/health"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
-  }
+  ]
 }
