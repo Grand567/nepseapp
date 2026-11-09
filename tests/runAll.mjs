@@ -42,7 +42,8 @@ const testFiles = [
   'acItem1LookAheadFix.test.mjs',
   'adBrokerFloorsheetAudit.test.mjs',
   'aeBatchCrossTabInvariants.test.mjs',
-  'afBatchMeroshareKeyMigration.test.mjs'
+  'afBatchMeroshareKeyMigration.test.mjs',
+  'agBatchKathmanduSchedule.test.mjs'
 ];
 
 console.log('====================================================');

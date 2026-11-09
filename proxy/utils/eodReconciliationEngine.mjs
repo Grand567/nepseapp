@@ -17,7 +17,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { db } from '../db/ledgerStore.js';
 import { getArchiveIndex } from './dailyFloorsheetCollector.mjs';
-import { isNepseTradingDay, formatNptDateIso } from '../../src/utils/nepseCalendar.js';
+import { isNepseTradingDay, isNepsePublicHoliday, formatNptDateIso } from '../../src/utils/nepseCalendar.js';
+import { getKathmanduTradingStatus } from './kathmanduTime.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -232,7 +233,8 @@ export function getLatestReconciliation() {
 
 /**
  * Start the automated 3:15 PM EOD reconciliation scheduler
- * Runs every 60 seconds and triggers at 15:15–15:25 NPT on Monday–Friday trading sessions
+ * Timezone-independent: strictly evaluates Nepal Standard Time (Asia/Kathmandu)
+ * Runs on NEPSE trading days (Sunday to Thursday, 15:15 NPT onwards).
  */
 let _reconciliationInterval = null;
 let _lastReconciledDate = null;
@@ -240,33 +242,29 @@ let _lastReconciledDate = null;
 export function startEodReconciliationScheduler() {
   if (_reconciliationInterval) return;
 
-  console.log('[EodReconciliationEngine] ⏰ Initializing 3:15 PM Automated EOD Bhavsani Reconciliation Scheduler...');
+  console.log('[EodReconciliationEngine] ⏰ Initializing 3:15 PM Automated EOD Bhavsani Reconciliation Scheduler (Sun-Thu 15:15 NPT)...');
 
   const checkAndRunEod = () => {
     try {
       const now = new Date();
-      // Compute NPT time (UTC + 5:45)
-      const nptMs = now.getTime() + (5 * 60 + 45) * 60 * 1000;
-      const nptDate = new Date(nptMs);
-      const hours = nptDate.getUTCHours();
-      const minutes = nptDate.getUTCMinutes();
-      const todayIso = formatNptDateIso(now);
+      const kt = getKathmanduTradingStatus(now);
 
-      // Check if trading day (Monday–Friday)
-      if (!isNepseTradingDay(now)) return;
+      // Guard: EOD reconciliation runs strictly on NEPSE trading days (Sunday to Thursday)
+      if (!kt.isTradingDay) return;
 
-      // Anytime from 3:15 PM (15:15 NPT) onwards until midnight
-      const isPostMarketReconcileWindow = (hours > 15) || (hours === 15 && minutes >= 15);
+      // Check for public holiday
+      if (isNepsePublicHoliday(now).isHoliday) return;
 
-      if (isPostMarketReconcileWindow && _lastReconciledDate !== todayIso) {
+      // Automated 3:15 PM EOD Bhavsani reconciliation window (>= 15:15 NPT)
+      if (kt.isEodWindow && _lastReconciledDate !== kt.dateIso) {
         const history = getReconciliationHistory();
-        const alreadyReconciledToday = history.some(h => h.tradeDate === todayIso && h.status === 'CERTIFIED_AUTHENTIC');
+        const alreadyReconciledToday = history.some(h => h.tradeDate === kt.dateIso && h.status === 'CERTIFIED_AUTHENTIC');
         if (!alreadyReconciledToday) {
-          console.log(`[EodReconciliationEngine] 🔔 3:15 PM NPT Reconcile triggered on ${todayIso}. Executing automated EOD parity check...`);
-          _lastReconciledDate = todayIso;
-          runEodReconciliation(todayIso);
+          console.log(`[EodReconciliationEngine] 🔔 3:15 PM NPT Reconcile triggered on ${kt.dateIso} (${kt.dayName}). Executing automated EOD parity check...`);
+          _lastReconciledDate = kt.dateIso;
+          runEodReconciliation(kt.dateIso);
         } else {
-          _lastReconciledDate = todayIso;
+          _lastReconciledDate = kt.dateIso;
         }
       }
     } catch (err) {

@@ -1,35 +1,47 @@
 // proxy/keepalive.mjs
-// Prevents Render free tier from sleeping by pinging every 12 minutes.
-// Render free tier sleeps after 15 minutes of inactivity — 12 min is safely within the window.
+// Timezone-independent Keep-Alive heartbeat for Render deployment.
+// Strictly matches NEPSE trading days (Sunday to Thursday, 11:00-15:00 NPT, Asia/Kathmandu time).
+// Conserves Render free monthly quota during nights, Fridays, and Saturdays.
 
 import https from 'https';
+import { getKathmanduTradingStatus } from './utils/kathmanduTime.mjs';
 
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL || 'https://nepseapp.onrender.com';
-const PING_INTERVAL = 12 * 60 * 1000; // Every 12 minutes (< 15-minute Render sleep threshold)
+const PING_INTERVAL = 10 * 60 * 1000; // Ping every 10 minutes (safely inside Render 15-min sleep threshold)
+const forcePing = process.argv.includes('--force');
 
-function ping() {
-  // Use /api/ping — always returns { ok: true } instantly
-  const url = `${RENDER_URL}/api/ping`;
+export function executeKeepAlivePing(force = forcePing) {
+  const kt = getKathmanduTradingStatus();
+
+  // Guard: Only ping during NEPSE trading days (Sunday to Thursday, 11:00-15:00 NPT)
+  // unless explicitly forced via --force
+  if (!force && !kt.isKeepAliveWindow) {
+    console.log(`[KeepAlive] ⏸️ Skipped: Outside NEPSE trading schedule (${kt.dayName} ${kt.timeStr}, Date: ${kt.dateIso}). Active: Sunday–Thursday 11:00–15:00 NPT.`);
+    return false;
+  }
+
+  const url = `${RENDER_URL.replace(/\/$/, '')}/api/ping`;
   
   https.get(url, (res) => {
-    const now = new Date().toLocaleTimeString();
     if (res.statusCode === 200) {
-      console.log(`✅ [${now}] Keep-alive ping successful`);
+      console.log(`[KeepAlive] ✅ Ping successful (${kt.dayName} ${kt.timeStr}) -> HTTP 200 OK`);
     } else {
-      console.log(`⚠️ [${now}] Keep-alive ping: HTTP ${res.statusCode}`);
+      console.log(`[KeepAlive] ⚠️ Ping returned HTTP ${res.statusCode} (${kt.dayName} ${kt.timeStr})`);
     }
     res.resume();
   }).on('error', (err) => {
-    const now = new Date().toLocaleTimeString();
-    console.log(`❌ [${now}] Keep-alive ping failed: ${err.message}`);
+    console.log(`[KeepAlive] ❌ Ping failed: ${err.message} (${kt.dayName} ${kt.timeStr})`);
   });
+
+  return true;
 }
 
-console.log('🔄 Keep-alive service started');
-console.log(`📡 Pinging ${RENDER_URL}/api/ping every 12 minutes`);
+console.log('🔄 NEPSE Keep-Alive service initialized');
+console.log(`📡 Target URL: ${RENDER_URL}/api/ping`);
+console.log('⏰ Active Schedule: Sunday to Thursday, 11:00 AM – 3:00 PM NPT (Asia/Kathmandu)');
 
-// Ping immediately
-ping();
+// Initial run
+executeKeepAlivePing();
 
-// Then ping every 12 minutes
-setInterval(ping, PING_INTERVAL);
+// Periodic timer
+setInterval(() => executeKeepAlivePing(), PING_INTERVAL);

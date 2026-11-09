@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { query } from './db.mjs';
 import { isNepseTradingDay, getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
+import { getKathmanduTradingStatus } from './utils/kathmanduTime.mjs';
 import { 
   sendTelegramPrimePickAlert, 
   sendTelegramPreMarketScan,
@@ -697,21 +698,16 @@ export function startWorkers() {
     }
   }, 60 * 1000);
 
-  // 2. Check every 5 minutes: after 3:15 PM NPT (915 mins), run post-market close analysis ONCE
+  // 2. Check every 5 minutes: after 3:15 PM NPT (915 mins) on NEPSE trading days (Sun-Thu), run post-market close analysis ONCE
   setInterval(() => {
     try {
+      const kt = getKathmanduTradingStatus();
       const status = getDetailedMarketStatus();
-      const nptMins = status.nptTotalMinutes;
-      const isTradingDay = status.isTradingDay;
-      const now = new Date();
-      const nowNpt = new Date(now.getTime() + (5 * 60 + 45) * 60 * 1000);
-      const todayIso = nowNpt.toISOString().split('T')[0];
-      const sessionDate = isTradingDay ? todayIso : (status.lastClosedSessionDate || status.targetSessionDate || todayIso);
+      const sessionDate = kt.isTradingDay ? kt.dateIso : (status.lastClosedSessionDate || status.targetSessionDate || kt.dateIso);
 
-      // STRICT TIMING: Run AFTER market close with at least 10-15 minutes for data collection
-      // & floorsheet reconciliation (>= 15:15 NPT = 915 mins).
-      // Once picked, it stays locked for sessionDate until tomorrow!
-      if (isTradingDay && nptMins >= 915 && nptMins <= 1439) {
+      // STRICT TIMING: Run AFTER market close (>= 15:15 NPT on Sunday to Thursday)
+      // Once analyzed, remains locked for sessionDate until next trading session.
+      if (kt.isEodWindow) {
         if (lastPostMarketSessionAnalyzed !== sessionDate) {
           runPostMarketCloseAnalysis();
         }

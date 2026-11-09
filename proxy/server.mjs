@@ -83,6 +83,7 @@ import {
 } from './discordNotifier.mjs';
 import { assembleScripDossier, buildAgentAnalysisPrompt } from './agentTools.mjs';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseTradingDay, formatNptDateIso, setLiveMarketOverride, generateTradingDaysSequence, getLastValidTradingDay } from '../src/utils/nepseCalendar.js';
+import { getKathmanduTradingStatus } from './utils/kathmanduTime.mjs';
 import { 
   getArchiveIndex, 
   downloadAndArchiveDailyFloorsheet, 
@@ -13624,16 +13625,15 @@ app.listen(PORT, '0.0.0.0', async () => {
     console.log(`   🔸 Price History:   /api/price-history/:symbol`);
     console.log(`   🔸 UDF History:     /api/udf/history`);
 
-    // Auto self-ping on Render production during NEPSE trading hours (Monday to Friday, 10:15 AM - 3:45 PM NPT)
+    // Auto self-ping on Render production during NEPSE trading hours (Sunday to Thursday, 11:00 AM - 3:00 PM NPT)
     // Guarantees zero cold-starts during live market hours while conserving Render free monthly hours at night & weekends
     if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
       const pingUrl = process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/api/ping` : 'https://nepseapp.onrender.com/api/ping';
-      console.log(`📡 Trading hours auto keep-alive enabled: Pinging ${pingUrl} every 10 minutes (Mon-Fri 10:15-15:45 NPT)`);
+      console.log(`📡 Trading hours auto keep-alive enabled: Pinging ${pingUrl} every 10 minutes (Sun-Thu 11:00-15:00 NPT)`);
       setInterval(() => {
         try {
-          const status = getDetailedMarketStatus();
-          const nptMins = status.nptTotalMinutes || 0;
-          if (status.isTradingDay && nptMins >= 615 && nptMins <= 945) {
+          const kt = getKathmanduTradingStatus();
+          if (kt.isKeepAliveWindow) {
             import('https').then(https => {
               https.default.get(pingUrl, (res) => res.resume()).on('error', () => {});
             }).catch(() => {});
