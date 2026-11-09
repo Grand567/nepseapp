@@ -5635,7 +5635,16 @@ app.get('/api/ipo/live-listings', async (req, res) => {
   const refresh = req.query.refresh === 'true' || req.headers['cache-control'] === 'no-cache';
   try {
     const issues = await getLiveIpoListings(refresh);
-    res.json({ success: true, data: issues, count: issues.length });
+    const isStale = Boolean(issues.some(i => i.isStale));
+    const staleWarning = isStale ? 'Exchange source returned HTTP 403 Forbidden. Showing last verified cached IPO data.' : null;
+    res.json({
+      success: true,
+      data: issues,
+      count: issues.length,
+      isStale,
+      staleWarning,
+      asOf: new Date().toISOString()
+    });
   } catch (err) {
     console.error('[ipo/live-listings] Error:', err.message);
     res.status(500).json({ success: false, error: err.message });

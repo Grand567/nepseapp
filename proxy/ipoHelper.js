@@ -1,5 +1,14 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 import * as cheerio from 'cheerio';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const SNAPSHOT_FILE = path.join(__dirname, 'data', 'last_known_ipo_listings.json');
+const SEBON_PIPELINE_FILE = path.join(__dirname, '..', 'src', 'data', 'sebonPipelineData.json');
 
 let ipoCache = null;
 let lastCacheTime = 0;
@@ -13,6 +22,74 @@ const HEADERS = {
 function parseMoney(str) {
   if (!str) return 0;
   return parseFloat(String(str).replace(/[^\d.-]/g, '')) || 0;
+}
+
+function loadIpoSnapshot() {
+  try {
+    if (fs.existsSync(SNAPSHOT_FILE)) {
+      const raw = fs.readFileSync(SNAPSHOT_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.data) && parsed.data.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('[ipoHelper] Failed to read disk IPO snapshot:', err.message);
+  }
+  return null;
+}
+
+function saveIpoSnapshot(data) {
+  try {
+    const dir = path.dirname(SNAPSHOT_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(SNAPSHOT_FILE, JSON.stringify({
+      savedAt: new Date().toISOString(),
+      timestamp: Date.now(),
+      count: data.length,
+      data
+    }, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('[ipoHelper] Failed to write disk IPO snapshot:', err.message);
+  }
+}
+
+function loadSebonFallback() {
+  try {
+    if (fs.existsSync(SEBON_PIPELINE_FILE)) {
+      const raw = fs.readFileSync(SEBON_PIPELINE_FILE, 'utf8');
+      const pipeline = JSON.parse(raw);
+      if (Array.isArray(pipeline) && pipeline.length > 0) {
+        return pipeline.slice(0, 15).map((item, i) => {
+          const rawSym = (item.scrip || item.symbol || '').toUpperCase().trim();
+          return {
+            id: `sebon-${item.sn || i + 1}`,
+            companyShareId: 900 + (item.sn || i + 1),
+            shareId: String(900 + (item.sn || i + 1)),
+            name: item.name || '',
+            scrip: rawSym,
+            type: (item.type || 'IPO').toUpperCase(),
+            units: Number(item.units) || 1000000,
+            issuePrice: 100,
+            minKitta: 10,
+            maxKitta: 10000,
+            openDate: '',
+            closeDate: '',
+            status: item.status || 'Upcoming',
+            rating: '',
+            issueManager: item.issueManager || '',
+            sector: item.sector || 'General',
+            source: 'sebon-pipeline-fallback',
+            isStale: true,
+            staleWarning: '⚠️ Cached Record: Live exchange scrapers returned 403 Forbidden. Showing official SEBON pipeline listing.'
+          };
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[ipoHelper] Failed to load SEBON pipeline fallback:', err.message);
+  }
+  return [];
 }
 
 export async function getLiveIpoListings(forceRefresh = false) {
@@ -40,7 +117,7 @@ export async function getLiveIpoListings(forceRefresh = false) {
         'X-Requested-With': 'XMLHttpRequest',
         'Referer': 'https://www.nepalipaisa.com/ipo'
       },
-      timeout: 8000
+      timeout: 5000
     });
     const dataList = npRes.data?.result?.data;
     if (Array.isArray(dataList) && dataList.length > 0) {
@@ -56,9 +133,7 @@ export async function getLiveIpoListings(forceRefresh = false) {
         const compOpenDate = (item.openingDateAD || '').split('T')[0];
         const compCloseDate = (item.extendedDateAD || item.closingDateAD || '').split('T')[0];
 
-        // Verified rule for Nepal capital markets
         if (isBeni) {
-          // Beni Hydropower Project Limited general public IPO closes Bhadra 26, 2083 (September 11, 2026) up to 5:00 PM NPT
           closeDate = '2026-09-11';
           status = isBefore5pmNpt ? 'Open' : 'Closed';
         } else if (compOpenDate && compOpenDate > todayNptStr) {
@@ -94,20 +169,21 @@ export async function getLiveIpoListings(forceRefresh = false) {
           rating: item.rating || '',
           issueManager: item.shareRegistrar || '',
           sector: item.sectorName || 'Hydro Power',
-          source: 'nepalipaisa'
+          source: 'nepalipaisa',
+          isStale: false
         });
       });
     }
   } catch (e) {
-    console.warn('[ipoHelper] NepaliPaisa error:', e.message);
+    console.warn('[ipoHelper] NepaliPaisa notice:', e.message);
   }
 
-  // Source 2: ShareSansar IPO page
+  // Source 2: ShareSansar IPO page (with resilient 403 handling)
   if (issues.length === 0) {
     try {
       const resp = await axios.get('https://www.sharesansar.com/ipo', {
         headers: HEADERS,
-        timeout: 12000
+        timeout: 6000
       });
       const $ = cheerio.load(resp.data);
       $('table tbody tr').each((i, row) => {
@@ -135,13 +211,18 @@ export async function getLiveIpoListings(forceRefresh = false) {
               openDate,
               closeDate,
               status: statusRaw || 'Open',
-              source: 'sharesansar'
+              source: 'sharesansar',
+              isStale: false
             });
           }
         }
       });
     } catch (e) {
-      console.warn('[ipoHelper] ShareSansar error:', e.message);
+      if (e.response?.status === 403) {
+        console.warn('[ipoHelper] ⚠️ ShareSansar returned HTTP 403 Forbidden (Cloudflare WAF bot filter). Gracefully falling over to cached IPO snapshot.');
+      } else {
+        console.warn('[ipoHelper] ShareSansar error:', e.message);
+      }
     }
   }
 
@@ -150,7 +231,7 @@ export async function getLiveIpoListings(forceRefresh = false) {
     try {
       const resp = await axios.get('https://merolagani.com/IPO.aspx', {
         headers: HEADERS,
-        timeout: 10000
+        timeout: 5000
       });
       const $ = cheerio.load(resp.data);
       $('table tbody tr, .ipo-list tr').each((i, row) => {
@@ -173,20 +254,57 @@ export async function getLiveIpoListings(forceRefresh = false) {
               maxKitta: 10000,
               issuePrice: 100,
               status: 'Open',
-              source: 'merolagani'
+              source: 'merolagani',
+              isStale: false
             });
           }
         }
       });
     } catch (e) {
-      console.warn('[ipoHelper] Merolagani error:', e.message);
+      console.warn('[ipoHelper] Merolagani notice:', e.message);
     }
   }
 
+  // ── Successful Live Ingestion ──────────────────────────────────────────────
   if (issues.length > 0) {
+    saveIpoSnapshot(issues);
     ipoCache = issues;
     lastCacheTime = now;
+    return issues;
   }
 
-  return issues;
+  // ── Resilient Fallback: Memory Cache ────────────────────────────────────────
+  if (ipoCache && ipoCache.length > 0) {
+    console.log('[ipoHelper] 🛡️ Serving memory cached IPO data with stale labeling (ShareSansar 403 fallback).');
+    return ipoCache.map(item => ({
+      ...item,
+      isStale: true,
+      staleWarning: '⚠️ Cached Record: Live scrapers returned 403 Forbidden. Showing last verified in-memory IPO data.'
+    }));
+  }
+
+  // ── Resilient Fallback: Persistent On-Disk Snapshot ────────────────────────
+  const diskSnapshot = loadIpoSnapshot();
+  if (diskSnapshot && diskSnapshot.data?.length > 0) {
+    console.log(`[ipoHelper] 🛡️ Serving persistent disk IPO snapshot (${diskSnapshot.data.length} issues, saved: ${diskSnapshot.savedAt}) with stale labeling.`);
+    const labeled = diskSnapshot.data.map(item => ({
+      ...item,
+      isStale: true,
+      staleWarning: `⚠️ Cached Record: Live scrapers returned 403 Forbidden. Showing persistent snapshot from ${diskSnapshot.savedAt}.`
+    }));
+    ipoCache = labeled;
+    lastCacheTime = now;
+    return labeled;
+  }
+
+  // ── Resilient Fallback: Official SEBON Gazette Pipeline ────────────────────
+  console.log('[ipoHelper] 🛡️ Serving official SEBON gazette pipeline fallback with stale labeling.');
+  const sebonFallback = loadSebonFallback();
+  if (sebonFallback.length > 0) {
+    ipoCache = sebonFallback;
+    lastCacheTime = now;
+    return sebonFallback;
+  }
+
+  return [];
 }

@@ -43,7 +43,8 @@ const testFiles = [
   'adBrokerFloorsheetAudit.test.mjs',
   'aeBatchCrossTabInvariants.test.mjs',
   'afBatchMeroshareKeyMigration.test.mjs',
-  'agBatchKathmanduSchedule.test.mjs'
+  'agBatchKathmanduSchedule.test.mjs',
+  'ahBatchIpoFallbackStaleLabeling.test.mjs'
 ];
 
 console.log('====================================================');

@@ -174,6 +174,7 @@ export default function IPOList({ initialTab = 'apply' }) {
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [staleWarning, setStaleWarning] = useState('');
 
   const isNative = Capacitor.isNativePlatform();
   const proxyBase = getProxyBase();
@@ -252,6 +253,10 @@ export default function IPOList({ initialTab = 'apply' }) {
             const liveData = await safeFetch(`${proxyBase}/api/ipo/live-listings`);
             const liveListing = Array.isArray(liveData?.data) ? liveData.data : [];
             if (liveListing.length > 0) {
+              const isStale = Boolean(liveData?.isStale || liveListing.some(i => i.isStale));
+              if (isStale) {
+                setStaleWarning(liveData?.staleWarning || 'Live exchange source returned 403 Forbidden. Showing last verified cached IPO data.');
+              }
               // Map live-listings format to IPO list format
               list = liveListing.map(item => ({
                 id: item.id || item.companyShareId,
@@ -265,6 +270,8 @@ export default function IPOList({ initialTab = 'apply' }) {
                 amountPerShare: item.issuePrice || item.amountPerShare || 100,
                 openDate: item.openDate || item.issueOpenDate || '',
                 closeDate: item.closeDate || item.issueCloseDate || '',
+                isStale: Boolean(item.isStale || isStale),
+                staleWarning: item.staleWarning || liveData?.staleWarning || ''
               }));
             }
           } catch (_) {}
@@ -280,6 +287,10 @@ export default function IPOList({ initialTab = 'apply' }) {
         const liveData = await safeFetch(`${proxyBase}/api/ipo/live-listings`);
         const liveListing = Array.isArray(liveData?.data) ? liveData.data : [];
         if (liveListing.length > 0) {
+          const isStale = Boolean(liveData?.isStale || liveListing.some(i => i.isStale));
+          if (isStale) {
+            setStaleWarning(liveData?.staleWarning || 'Live exchange source returned 403 Forbidden. Showing last verified cached IPO data.');
+          }
           const list = liveListing.map(item => ({
             id: item.id || item.companyShareId,
             name: item.name || item.companyName,
@@ -292,6 +303,8 @@ export default function IPOList({ initialTab = 'apply' }) {
             amountPerShare: item.issuePrice || 100,
             openDate: item.openDate || '',
             closeDate: item.closeDate || '',
+            isStale: Boolean(item.isStale || isStale),
+            staleWarning: item.staleWarning || liveData?.staleWarning || ''
           }));
           setIpos(list);
           if (list.length > 0) setSelectedIpo(String(list[0].id));
@@ -831,10 +844,28 @@ export default function IPOList({ initialTab = 'apply' }) {
               </p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {staleWarning && (
+                  <div style={{
+                    background: 'rgba(245, 158, 11, 0.08)',
+                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                    borderRadius: 8,
+                    padding: '8px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    color: '#f59e0b',
+                    fontSize: 11.5
+                  }}>
+                    <AlertCircle style={{ width: 15, height: 15, flexShrink: 0 }} />
+                    <span><strong>Cached Data:</strong> {staleWarning}</span>
+                  </div>
+                )}
                 <select value={selectedIpo} onChange={e => setSelectedIpo(e.target.value)}
                   className="select-input" style={{ padding: '10px 12px', fontSize: 13.5 }}>
                   {ipos.map(ipo => (
-                    <option key={ipo.id} value={ipo.id}>{ipo.name} ({ipo.scrip})</option>
+                    <option key={ipo.id} value={ipo.id}>
+                      {ipo.isStale ? `[CACHED] ` : ''}{ipo.name} ({ipo.scrip || ipo.type})
+                    </option>
                   ))}
                 </select>
 
@@ -848,6 +879,14 @@ export default function IPOList({ initialTab = 'apply' }) {
                   });
                   return (
                     <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
+                      {ipo.isStale && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 6, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <span style={{ color: '#f59e0b', fontWeight: 600, fontSize: 11 }}>Data Source Status:</span>
+                          <span style={{ padding: '2px 6px', background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
+                            CACHED / STALE (ShareSansar 403 Fallback)
+                          </span>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-muted)' }}>Min Quantity:</span>
                         <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{ipo.minKitta} Shares</span>
