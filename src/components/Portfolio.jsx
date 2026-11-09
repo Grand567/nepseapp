@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { calculateBuyDetails, calculateSellDetails, sanitizeMeroShareHoldings, guessScripBasePrice, getCustomWaccMap, setScripCustomWacc, saveCustomWaccMap, applyDiscoveredWaccMap, classifyHoldingActionSignal, stripHoldingForStorage, safeStorageSetItem, parseBrokerTradeBook } from '../utils/calculations';
 import { getProxyBase } from '../utils/liveData';
-import { syncUserDataToCloud } from '../utils/firebase';
+import { syncUserDataToCloud, getCurrentAuthToken } from '../utils/firebase';
 import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
 import { pullMeroShareLivePortfolio, authenticateMeroShare, MEROSHARE_DP_LIST, pullMeroShareWaccBatch } from '../services/meroShareService';
 import { Capacitor } from '@capacitor/core';
@@ -170,12 +170,39 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
   const [telegramSyncMsg, setTelegramSyncMsg] = useState(null);
   const [trackedSymbols, setTrackedSymbols] = useState(new Set());
 
+  // Helper to attach portfolio authorization headers
+  const getPortfolioAuthHeaders = async () => {
+    const headers = {};
+    try {
+      const customKey = (typeof localStorage !== 'undefined' && (
+        localStorage.getItem('nepse_portfolio_key') ||
+        localStorage.getItem('nepse_admin_key') ||
+        localStorage.getItem('portfolio_api_key')
+      )) || (import.meta?.env?.VITE_PORTFOLIO_AUTH_KEY || import.meta?.env?.VITE_ADMIN_API_KEY || '');
+
+      if (customKey) {
+        headers['x-portfolio-key'] = customKey;
+        headers['x-admin-key'] = customKey;
+        headers['Authorization'] = `Bearer ${customKey}`;
+      } else if (typeof getCurrentAuthToken === 'function') {
+        const fbToken = await getCurrentAuthToken();
+        if (fbToken) {
+          headers['Authorization'] = `Bearer ${fbToken}`;
+        }
+      }
+    } catch (_) {}
+    return headers;
+  };
+
   // Fetch currently tracked holdings from backend on mount
   useEffect(() => {
     const fetchTracked = async () => {
       try {
         const proxyBase = getProxyBase();
-        const res = await fetch(`${proxyBase}/api/portfolio/tracked-holdings`);
+        const authHeaders = await getPortfolioAuthHeaders();
+        const res = await fetch(`${proxyBase}/api/portfolio/tracked-holdings`, {
+          headers: authHeaders
+        });
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
           setTrackedSymbols(new Set(json.data.map(h => (h.symbol || '').toUpperCase())));
@@ -212,9 +239,13 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
       });
 
       const proxyBase = getProxyBase();
+      const authHeaders = await getPortfolioAuthHeaders();
       const res = await fetch(`${proxyBase}/api/portfolio/sync-holdings`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders
+        },
         body: JSON.stringify({ holdings: syncPayload })
       });
       const data = await res.json();
@@ -238,12 +269,16 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
     if (!sym) return;
     const isCurrentlyTracked = trackedSymbols.has(sym);
     const proxyBase = getProxyBase();
+    const authHeaders = await getPortfolioAuthHeaders();
 
     try {
       if (isCurrentlyTracked) {
         const res = await fetch(`${proxyBase}/api/portfolio/untrack-holding`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders
+          },
           body: JSON.stringify({ symbol: sym })
         });
         const data = await res.json();
@@ -264,7 +299,10 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
         const t2 = Math.round(ltp * 1.25 * 10) / 10;
         const res = await fetch(`${proxyBase}/api/portfolio/track-holding`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders
+          },
           body: JSON.stringify({
             symbol: sym,
             buyPrice: buy,

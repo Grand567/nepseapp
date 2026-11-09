@@ -583,6 +583,15 @@ export const signOut = async () => {
 
 export const isConfigured = () => isFirebaseConfigured;
 
+export const getCurrentAuthToken = async () => {
+  if (isFirebaseConfigured && auth && auth.currentUser) {
+    try {
+      return await auth.currentUser.getIdToken();
+    } catch (_) {}
+  }
+  return null;
+};
+
 export const checkRedirectResult = async () => {
   if (!auth) return null;
   try {

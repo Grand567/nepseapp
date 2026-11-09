@@ -20,7 +20,13 @@ export function requireAdminSecret(req, res, next) {
     });
   }
 
-  const providedKey = req.headers['x-admin-key'] || req.headers['x-cron-secret'] || req.query?.adminKey;
+  const authHeader = req.headers['authorization'];
+  let bearerToken = null;
+  if (authHeader && typeof authHeader === 'string' && /^Bearer\s+/i.test(authHeader)) {
+    bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+  }
+
+  const providedKey = req.headers['x-admin-key'] || req.headers['x-cron-secret'] || bearerToken || req.query?.adminKey;
   if (!providedKey) {
     // If request originates from authenticated localhost, allow
     if (isLocalhost && !process.env.ENFORCE_STRICT_ADMIN_KEY) {

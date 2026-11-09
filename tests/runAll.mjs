@@ -47,7 +47,8 @@ const testFiles = [
   'ahBatchIpoFallbackStaleLabeling.test.mjs',
   'aiBatchTelegramUnauthorizedLoopGuard.test.mjs',
   'ajBatchCdscTlsVerification.test.mjs',
-  'akBatchColdStartWarmupStatus.test.mjs'
+  'akBatchColdStartWarmupStatus.test.mjs',
+  'alBatchPortfolioAuthenticationGuard.test.mjs'
 ];
 
 console.log('====================================================');

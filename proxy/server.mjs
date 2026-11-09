@@ -22,6 +22,7 @@ import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
 import { requireAdminSecret } from './middleware/requireAdminSecret.mjs';
+import { requirePortfolioAuth } from './middleware/requirePortfolioAuth.mjs';
 import radarRouter from './routes/radarRoutes.js';
 import aiGuruRouter from './routes/aiGuruRoutes.mjs';
 import floorsheetHubRouter, { broadcastSseContracts } from './routes/floorsheetHubRoutes.mjs';
@@ -217,7 +218,9 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
 
 const CORS_DEFAULTS = [
   'https://nepseapp.onrender.com',
-  'https://nepse-app.vercel.app',
+  'https://drabyashree-nepse-hub6936.vercel.app',
+  'https://nepse-hub.vercel.app',
+  'https://drabyashree-nepse-hub-2347.vercel.app',
   'https://drabyashree-nepse-hub-11ef9.firebaseapp.com',
   'https://drabyashree-nepse-hub-11ef9.web.app',
   'http://localhost:5173',  // Vite dev server
@@ -11976,7 +11979,7 @@ app.get('/api/smart-alerts/events', (req, res) => {
 });
 
 // ── PERSONAL PORTFOLIO STOP-LOSS & TARGET MONITORING ROUTES ──
-app.get('/api/portfolio/tracked-holdings', (req, res) => {
+app.get('/api/portfolio/tracked-holdings', requirePortfolioAuth, (req, res) => {
   try {
     const holdings = getUserTrackedHoldings();
     res.json({ success: true, count: holdings.length, data: holdings });
@@ -11985,7 +11988,7 @@ app.get('/api/portfolio/tracked-holdings', (req, res) => {
   }
 });
 
-app.post('/api/portfolio/track-holding', (req, res) => {
+app.post('/api/portfolio/track-holding', requirePortfolioAuth, (req, res) => {
   try {
     const { symbol, buyPrice, stopLoss, target1, target2, kitta } = req.body || {};
     if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
@@ -12036,7 +12039,7 @@ app.post('/api/portfolio/track-holding', (req, res) => {
   }
 });
 
-app.post('/api/portfolio/untrack-holding', (req, res) => {
+app.post('/api/portfolio/untrack-holding', requirePortfolioAuth, (req, res) => {
   try {
     const { symbol } = req.body || {};
     if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
@@ -12052,7 +12055,7 @@ app.post('/api/portfolio/untrack-holding', (req, res) => {
   }
 });
 
-app.post('/api/portfolio/sync-holdings', (req, res) => {
+app.post('/api/portfolio/sync-holdings', requirePortfolioAuth, (req, res) => {
   try {
     const { holdings } = req.body || {};
     if (!Array.isArray(holdings)) return res.status(400).json({ success: false, error: 'Holdings array required' });
