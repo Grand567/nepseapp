@@ -7,7 +7,7 @@ dotenv.config();
 test('Firebase 13 Live Connection: Real credentials, Auth, Firestore, and Cloud Sync audit', async () => {
   const { initializeApp, getApps } = await import('firebase/app');
   const { getAuth, signInAnonymously } = await import('firebase/auth');
-  const { getFirestore, doc, setDoc, getDoc } = await import('firebase/firestore');
+  const { getFirestore, doc, setDoc, getDoc, terminate } = await import('firebase/firestore');
 
   const config = {
     apiKey: process.env.VITE_FIREBASE_API_KEY,
@@ -63,6 +63,12 @@ test('Firebase 13 Live Connection: Real credentials, Auth, Firestore, and Cloud 
       message: err.message,
       rationale: 'Cloud Firestore API has not been used or is disabled in project drabyashree-nepse-hub-11ef9 (gRPC 7 PERMISSION_DENIED)'
     };
+  } finally {
+    try {
+      await terminate(db);
+    } catch {
+      // Ignore terminate error
+    }
   }
 
   console.log('\n--- Firebase 13 Live Connection Audit Results ---');

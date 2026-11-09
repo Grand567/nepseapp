@@ -2588,6 +2588,20 @@ Audited live Firebase 13 SDK (`firebase@^13.2.0`, `@grpc/grpc-js@^1.14.5`) again
 
 ---
 
+### 19.6 Lazy Tab Error Boundary & Failed Dynamic Chunk Load Recovery
+
+To ensure total client-side fault tolerance in flaky mobile network environments (e.g., cellular handoff, temporary tunnel drop, or CDN cache purge):
+
+1. **Per-Tab Boundary Isolation:** Every code-split module (`Market Dashboard`, `Portfolio & IPO Hub`, `Predictor & Quant Hub`, `Services & Tools Hub`, `Calculator Hub`, `Guru AI Analyst`, `Resources & Education`, `Stitch UI System`, and `Stock Details Modal`) in `src/App.jsx` is wrapped in an isolated `<ErrorBoundary>`. A crash or network failure inside one tab or modal never crashes the rest of the application or stops live market telemetry feeds.
+2. **Interactive Retry Button:** `ErrorBoundary.jsx` displays a branded telemetry notice with error details, a **"🔄 Retry Render"** action (`handleReset()`), and a **"🏠 Return to Market"** fallback.
+3. **Chunk Load Retry Mechanics (`src/utils/retryableLazy.js`):** React's standard `React.lazy()` permanently latches onto a rejected promise (`_payload._status = 2`). `retryableLazy` intercepts the rejection and resets `_payload._status = -1` and `_payload._result = load` upon failure. When the user clicks "Retry", the browser re-triggers the dynamic chunk network fetch instead of throwing the cached error.
+4. **Automated Verification (`tests/failedChunkLoadErrorBoundary.test.mjs`):**
+   - Verified 100% of lazy tabs and modals in `src/App.jsx` use `retryableLazy` and are guarded by `<ErrorBoundary>`.
+   - Verified `ErrorBoundary.jsx` implements `handleReset`, state clearing, and `onReset` callback.
+   - Simulated dynamic chunk load failure (`TypeError: Failed to fetch dynamically imported module`) and proved that retry successfully invokes the chunk factory a second time and resolves cleanly (Passed 4/4 subtests).
+
+---
+
 ## 20. Phase 9 Remediation & Verification Report (BUG-093 to BUG-097)
 
 ### 20.1 Remediation Summary Table

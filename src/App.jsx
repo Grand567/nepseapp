@@ -7,21 +7,22 @@ import {
 } from 'lucide-react';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import DashboardSkeleton from './components/DashboardSkeleton';
+import { retryableLazy } from './utils/retryableLazy';
 
 // ── Dynamic Code-Splitting for Lightning-Fast Initial Launch & Sub-Second LCP ──
-const Dashboard        = React.lazy(() => import('./components/Dashboard'));
+const Dashboard        = retryableLazy(() => import('./components/Dashboard'));
 
 // ── Dynamic Code-Splitting for Lightning-Fast Initial Launch ──
-const ServicesHub      = React.lazy(() => import('./components/ServicesHub'));
-const PredictorHub     = React.lazy(() => import('./components/PredictorHub'));
-const PortfolioHub     = React.lazy(() => import('./components/PortfolioHub'));
-const Calculator       = React.lazy(() => import('./components/Calculator'));
-const AiAnalyst        = React.lazy(() => import('./components/AiAnalyst'));
-const Resources        = React.lazy(() => import('./components/Resources'));
-const LoginScreen      = React.lazy(() => import('./components/LoginScreen'));
-const TestSuite        = React.lazy(() => import('./components/TestSuite'));
-const StockDetailModal = React.lazy(() => import('./components/StockDetailModal'));
-const StitchHub        = React.lazy(() => import('./views/StitchHub'));
+const ServicesHub      = retryableLazy(() => import('./components/ServicesHub'));
+const PredictorHub     = retryableLazy(() => import('./components/PredictorHub'));
+const PortfolioHub     = retryableLazy(() => import('./components/PortfolioHub'));
+const Calculator       = retryableLazy(() => import('./components/Calculator'));
+const AiAnalyst        = retryableLazy(() => import('./components/AiAnalyst'));
+const Resources        = retryableLazy(() => import('./components/Resources'));
+const LoginScreen      = retryableLazy(() => import('./components/LoginScreen'));
+const TestSuite        = retryableLazy(() => import('./components/TestSuite'));
+const StockDetailModal = retryableLazy(() => import('./components/StockDetailModal'));
+const StitchHub        = retryableLazy(() => import('./views/StitchHub'));
 import PullToRefresh from './components/PullToRefresh';
 const SubscriptionModal = React.lazy(() => import('./components/SubscriptionModal'));
 import { RiskDisclaimer } from './components/DataQualityBanner'; // A1: Global disclaimer
@@ -2067,13 +2068,15 @@ function AppInner() {
                 {/* Tab 8: Stitch UI Design System (7 Screens) */}
                 {activeTab === 'stitch' && (
                   <div style={{ position: 'fixed', inset: 0, zIndex: 9999, overflowY: 'auto', background: '#070A10' }}>
-                    <StitchHub
-                      onExit={() => setActiveTab('dashboard')}
-                      stocks={stocks}
-                      indices={indices}
-                      marketStatus={marketStatus}
-                      apiStatus={apiStatus}
-                    />
+                    <ErrorBoundary activeTab={activeTab} moduleName="Stitch UI System" onNavigateDashboard={() => setActiveTab('dashboard')}>
+                      <StitchHub
+                        onExit={() => setActiveTab('dashboard')}
+                        stocks={stocks}
+                        indices={indices}
+                        marketStatus={marketStatus}
+                        apiStatus={apiStatus}
+                      />
+                    </ErrorBoundary>
                   </div>
                 )}
               </React.Suspense>
@@ -2110,16 +2113,18 @@ function AppInner() {
 
               {/* ── Global ShareHub-Style Stock Detail Modal ── */}
               {synchronizedSelectedStock && (
-                <React.Suspense fallback={null}>
-                  <StockDetailModal
-                    stock={synchronizedSelectedStock}
-                    allStocks={stocks}
-                    selectedDate={synchronizedSelectedStock?.sessionDate || synchronizedSelectedStock?.date || ''}
-                    sessionDate={synchronizedSelectedStock?.sessionDate || synchronizedSelectedStock?.date || ''}
-                    onClose={closeStockDetail}
-                    marketStatus={marketStatus}
-                  />
-                </React.Suspense>
+                <ErrorBoundary activeTab={activeTab} moduleName="Stock Details Modal" onNavigateDashboard={closeStockDetail} onReset={closeStockDetail}>
+                  <React.Suspense fallback={<div style={{ position: 'fixed', inset: 0, zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }}><div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', animation: 'spin 0.8s linear infinite' }} /></div>}>
+                    <StockDetailModal
+                      stock={synchronizedSelectedStock}
+                      allStocks={stocks}
+                      selectedDate={synchronizedSelectedStock?.sessionDate || synchronizedSelectedStock?.date || ''}
+                      sessionDate={synchronizedSelectedStock?.sessionDate || synchronizedSelectedStock?.date || ''}
+                      onClose={closeStockDetail}
+                      marketStatus={marketStatus}
+                    />
+                  </React.Suspense>
+                </ErrorBoundary>
               )}
             </div>
           </ErrorBoundary>
