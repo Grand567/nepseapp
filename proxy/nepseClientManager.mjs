@@ -47,8 +47,11 @@ if (process.env.NODE_TLS_REJECT_UNAUTHORIZED) {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Dedicated HTTPS agent with rejectUnauthorized: false handles NEPSE's legacy SSL certificates
-// scoped strictly to NEPSE/CDSC exchange endpoints without globally compromising process TLS security.
+// Dedicated HTTPS agent with rejectUnauthorized: false scoped exclusively to NEPSE exchange NOTS endpoints.
+// ARCHITECTURAL RATIONALE: NEPSE exchange servers (nepalstock.com.np) historically serve intermittent
+// or incomplete intermediate CA bundles during exchange maintenance, triggering UNABLE_TO_VERIFY_LEAF_SIGNATURE
+// in minimal container environments. By contrast, CDSC MeroShare (*.cdsc.com.np), Google Gemini, GLM,
+// OpenAI, Firebase Admin, Telegram, and GitHub enforce 100% strict CA certificate verification.
 export const nepseHttpsAgent = new https.Agent({
   rejectUnauthorized: false,
   keepAlive: true,

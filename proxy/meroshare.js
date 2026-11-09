@@ -214,9 +214,10 @@ export function saveAccounts(accounts, filePath = getAccountsFilePath()) {
 // --- MeroShare Session & WAF Bypass logic ---
 const MEROSHARE_BASE = 'https://webbackend.cdsc.com.np/api/meroShare';
 
-// Scoped HTTPS agent for CDSC MeroShare endpoints (OWASP compliant: strictly scoped, never global)
+// Verified: CDSC endpoints (*.cdsc.com.np) have authentic, valid wildcard SSL certificates
+// issued by DigiCert / Thawte TLS RSA CA G1. Strict certificate verification is enabled (rejectUnauthorized: true).
 const cdscHttpsAgent = new https.Agent({
-  rejectUnauthorized: false,
+  rejectUnauthorized: true,
   keepAlive: true,
   timeout: 20000,
 });

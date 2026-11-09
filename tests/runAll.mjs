@@ -45,7 +45,8 @@ const testFiles = [
   'afBatchMeroshareKeyMigration.test.mjs',
   'agBatchKathmanduSchedule.test.mjs',
   'ahBatchIpoFallbackStaleLabeling.test.mjs',
-  'aiBatchTelegramUnauthorizedLoopGuard.test.mjs'
+  'aiBatchTelegramUnauthorizedLoopGuard.test.mjs',
+  'ajBatchCdscTlsVerification.test.mjs'
 ];
 
 console.log('====================================================');
