@@ -4,14 +4,24 @@
  * Run: node tests/akBatchColdStartWarmupStatus.test.mjs
  * 
  * Verifies:
- * 1. /api/ping returns HTTP 503 with Retry-After header and "warming up, retry in N seconds" while warming up.
- * 2. /health returns HTTP 503 with Retry-After header and clear warming up message while warming up.
- * 3. Both endpoints transition cleanly to HTTP 200 OK once warm-up sequence completes.
- * 4. Frontend subscription engine in src/utils/liveData.js receives and delivers warm-up events for friendly waiting state.
+ * 1. Render healthCheckPath in render.yaml is explicitly /health.
+ * 2. /health returns HTTP 200 during warm-up with {"status":"WARMING_UP","warmingUp":true,...}
+ *    so Render's health prober marks the service healthy and avoids deployment failures/timeouts.
+ * 3. Data endpoints (e.g. /api/ping, /api/ledger, /api/floorsheet via warmupDataGuard) return
+ *    HTTP 503 + Retry-After header during warm-up because data cannot answer yet.
+ * 4. Ready state transition: /health returns HEALTHY (200), /api/ping returns ok: true (200),
+ *    and data endpoints execute downstream handlers (next() called).
+ * 5. Frontend subscription engine in src/utils/liveData.js receives and delivers warm-up events.
  */
 
-import { getProxyWarmupState, setProxyWarmupState } from '../proxy/server.mjs';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { getProxyWarmupState, setProxyWarmupState, warmupDataGuard } from '../proxy/server.mjs';
 import { getServerWarmupInfo, subscribeServerWarmup } from '../src/utils/liveData.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let pass = 0;
 let fail = 0;
@@ -29,16 +39,57 @@ const ok = (condition, message) => {
 console.log('▶ [SUITE] akBatchColdStartWarmupStatus.test.mjs\n');
 
 try {
-  console.log('[TEST 1] Cold-Start Warmup Lifecycle State & Invariants');
-  // Initialize to warming up state
+  console.log('[TEST 1] Render Config Audit: healthCheckPath in render.yaml');
+  const renderYamlPath = path.join(__dirname, '../render.yaml');
+  ok(fs.existsSync(renderYamlPath), 'render.yaml exists in repository root');
+  const renderYamlContent = fs.readFileSync(renderYamlPath, 'utf8');
+  const healthCheckMatch = renderYamlContent.match(/healthCheckPath:\s*(\S+)/);
+  ok(Boolean(healthCheckMatch), 'render.yaml specifies healthCheckPath directive');
+  ok(healthCheckMatch && healthCheckMatch[1] === '/health', `healthCheckPath is explicitly '/health' (actual: '${healthCheckMatch?.[1]}')`);
+
+  console.log('\n[TEST 2] Cold-Start Warmup Lifecycle State & Invariants');
   setProxyWarmupState(true, 'Restoring floorsheet vault & rebuilding cache');
   const warmupState = getProxyWarmupState();
   ok(warmupState.isWarmingUp === true, 'Proxy indicates isWarmingUp: true during cold start');
   ok(typeof warmupState.warmupStage === 'string' && warmupState.warmupStage.includes('vault'), 'Proxy reports descriptive warmup stage');
   ok(warmupState.estimatedWarmupSec > 0, 'Proxy defines positive estimated warmup duration');
 
-  console.log('\n[TEST 2] Cold-Start Response Simulation: /api/ping & /health');
-  // Helper to simulate endpoint responses using the exact server logic
+  console.log('\n[TEST 3] Render Health Check: /health returns HTTP 200 with WARMING_UP');
+  function simulateHealthResponse() {
+    const state = getProxyWarmupState();
+    if (state.isWarmingUp) {
+      const elapsedSec = Math.floor((Date.now() - state.warmupStartTime) / 1000);
+      const retryAfter = Math.max(1, state.estimatedWarmupSec - elapsedSec);
+      return {
+        statusCode: 200,
+        headers: {},
+        body: {
+          status: 'WARMING_UP',
+          warmingUp: true,
+          stage: state.warmupStage,
+          retryAfterSec: retryAfter,
+          message: `Proxy is warming up (${state.warmupStage}), ready in ${retryAfter} seconds.`,
+          uptimeSec: Math.floor(process.uptime()),
+          timestamp: new Date().toISOString()
+        }
+      };
+    }
+    return {
+      statusCode: 200,
+      headers: {},
+      body: { status: 'HEALTHY', warmingUp: false, uptimeSec: 120 }
+    };
+  }
+
+  const healthCold = simulateHealthResponse();
+  ok(healthCold.statusCode === 200, '/health returns HTTP 200 OK during warm-up so Render marks service healthy');
+  ok(healthCold.body.status === 'WARMING_UP', '/health payload returns status: "WARMING_UP"');
+  ok(healthCold.body.warmingUp === true, '/health payload flags warmingUp: true');
+  ok(typeof healthCold.body.retryAfterSec === 'number' && healthCold.body.retryAfterSec > 0, '/health includes positive retryAfterSec');
+  ok(healthCold.body.message.includes('ready in') || healthCold.body.message.includes('warming up'), '/health payload provides clear ready message');
+
+  console.log('\n[TEST 4] Data Endpoints Protection: HTTP 503 + Retry-After for Unready Endpoints');
+  // 4a: /api/ping check
   function simulatePingResponse() {
     const state = getProxyWarmupState();
     if (state.isWarmingUp) {
@@ -63,44 +114,35 @@ try {
     };
   }
 
-  function simulateHealthResponse() {
-    const state = getProxyWarmupState();
-    if (state.isWarmingUp) {
-      const elapsedSec = Math.floor((Date.now() - state.warmupStartTime) / 1000);
-      const retryAfter = Math.max(1, state.estimatedWarmupSec - elapsedSec);
-      return {
-        statusCode: 503,
-        headers: { 'Retry-After': String(retryAfter) },
-        body: {
-          status: 'WARMING_UP',
-          warmingUp: true,
-          stage: state.warmupStage,
-          retryAfterSec: retryAfter,
-          message: `Proxy is warming up (${state.warmupStage}), retry in ${retryAfter} seconds.`
-        }
-      };
-    }
-    return {
-      statusCode: 200,
-      headers: {},
-      body: { status: 'HEALTHY', warmingUp: false, uptimeSec: 120 }
-    };
-  }
-
   const pingCold = simulatePingResponse();
   ok(pingCold.statusCode === 503, '/api/ping returns HTTP 503 Service Unavailable during warm-up');
   ok(Boolean(pingCold.headers['Retry-After']), '/api/ping includes Retry-After header');
   ok(pingCold.body.warmingUp === true, '/api/ping payload flags warmingUp: true');
-  ok(typeof pingCold.body.retryAfterSec === 'number' && pingCold.body.retryAfterSec > 0, '/api/ping specifies positive retryAfterSec');
-  ok(pingCold.body.message.includes('retry in') && pingCold.body.message.includes('seconds'), '/api/ping payload provides clear "warming up, retry in N seconds" message');
+  ok(pingCold.body.retryAfterSec > 0, '/api/ping specifies positive retryAfterSec');
 
-  const healthCold = simulateHealthResponse();
-  ok(healthCold.statusCode === 503, '/health returns HTTP 503 Service Unavailable during warm-up');
-  ok(healthCold.body.status === 'WARMING_UP', '/health payload returns status: "WARMING_UP"');
-  ok(healthCold.body.warmingUp === true, '/health payload flags warmingUp: true');
-  ok(healthCold.body.message.includes('retry in'), '/health payload provides clear user-facing retry instruction');
+  // 4b: warmupDataGuard middleware for data routes (/api/ledger, /api/floorsheet)
+  let guardedStatus = null;
+  let guardedHeaders = {};
+  let guardedBody = null;
+  let nextCalled = false;
 
-  console.log('\n[TEST 3] Warm-Up Completion & Ready State Transition');
+  const mockRes = {
+    setHeader: (key, val) => { guardedHeaders[key] = val; },
+    status: (code) => {
+      guardedStatus = code;
+      return {
+        json: (data) => { guardedBody = data; return mockRes; }
+      };
+    }
+  };
+
+  warmupDataGuard({ path: '/api/ledger/5day-history' }, mockRes, () => { nextCalled = true; });
+  ok(guardedStatus === 503, 'warmupDataGuard returns HTTP 503 for data endpoints while proxy is warming up');
+  ok(Boolean(guardedHeaders['Retry-After']), 'warmupDataGuard sets Retry-After header on data endpoints');
+  ok(guardedBody && guardedBody.warmingUp === true, 'warmupDataGuard payload flags warmingUp: true');
+  ok(nextCalled === false, 'warmupDataGuard halts execution and prevents accessing uninitialized data');
+
+  console.log('\n[TEST 5] Warm-Up Completion & Ready State Transition');
   setProxyWarmupState(false, 'Ready');
   const readyState = getProxyWarmupState();
   ok(readyState.isWarmingUp === false, 'isWarmingUp becomes false after warmup completion');
@@ -113,7 +155,12 @@ try {
   ok(healthReady.statusCode === 200, '/health returns HTTP 200 OK once warm-up completes');
   ok(healthReady.body.status === 'HEALTHY' && healthReady.body.warmingUp === false, '/health returns status: "HEALTHY" and warmingUp: false');
 
-  console.log('\n[TEST 4] Frontend Warm-Up Event Subscription Engine');
+  // Data guard passes through once warm-up completes
+  let dataNextCalled = false;
+  warmupDataGuard({ path: '/api/ledger/5day-history' }, mockRes, () => { dataNextCalled = true; });
+  ok(dataNextCalled === true, 'warmupDataGuard allows requests through (next() called) when warm-up completes');
+
+  console.log('\n[TEST 6] Frontend Warm-Up Event Subscription Engine');
   let receivedEvents = [];
   const unsubscribe = subscribeServerWarmup(info => {
     receivedEvents.push(info);

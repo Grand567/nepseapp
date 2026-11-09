@@ -549,6 +549,25 @@ export function setProxyWarmupState(warmingUp, stage = 'Ready') {
   warmupStage = stage;
 }
 
+// Middleware to guard data endpoints that cannot answer until DB/cache warm-up finishes
+export function warmupDataGuard(req, res, next) {
+  if (isWarmingUp) {
+    const elapsedSec = Math.floor((Date.now() - warmupStartTime) / 1000);
+    const retryAfter = Math.max(1, ESTIMATED_WARMUP_SEC - elapsedSec);
+    res.setHeader('Retry-After', String(retryAfter));
+    return res.status(503).json({
+      status: 'WARMING_UP',
+      warmingUp: true,
+      stage: warmupStage,
+      retryAfterSec: retryAfter,
+      message: `Data service is warming up (${warmupStage}), retry in ${retryAfter} seconds.`
+    });
+  }
+  if (typeof next === 'function') next();
+}
+
+app.use(['/api/ledger', '/api/floorsheet'], warmupDataGuard);
+
 app.get('/api/ping', (req, res) => {
   if (isWarmingUp) {
     const elapsedSec = Math.floor((Date.now() - warmupStartTime) / 1000);
@@ -570,13 +589,12 @@ app.get(['/health', '/api/health'], (req, res) => {
   if (isWarmingUp) {
     const elapsedSec = Math.floor((Date.now() - warmupStartTime) / 1000);
     const retryAfter = Math.max(1, ESTIMATED_WARMUP_SEC - elapsedSec);
-    res.setHeader('Retry-After', String(retryAfter));
-    return res.status(503).json({
+    return res.status(200).json({
       status: 'WARMING_UP',
       warmingUp: true,
       stage: warmupStage,
       retryAfterSec: retryAfter,
-      message: `Proxy is warming up (${warmupStage}), retry in ${retryAfter} seconds.`,
+      message: `Proxy is warming up (${warmupStage}), ready in ${retryAfter} seconds.`,
       uptimeSec: Math.floor(process.uptime()),
       timestamp: new Date().toISOString()
     });
