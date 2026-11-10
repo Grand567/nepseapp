@@ -65,7 +65,7 @@ function loadConfig() {
     botToken: cleanBotToken(process.env.TELEGRAM_BOT_TOKEN || fileConfig.botToken || ''),
     chatId: String(process.env.TELEGRAM_CHAT_ID || fileConfig.chatId || '').trim(),
     enabled: fileConfig.enabled !== false, // default true if token & chatId present
-    isTestServer: Boolean(fileConfig.isTestServer || process.env.TELEGRAM_TEST_SERVER === 'true')
+    isTestServer: Boolean(process.env.TELEGRAM_TEST_SERVER === 'true') // Strictly require explicit env var; never auto-trap in test DC!
   };
 }
 
@@ -76,7 +76,7 @@ export function saveTelegramConfig({ botToken, chatId, enabled = true, isTestSer
     botToken: botToken !== undefined ? String(botToken).trim() : current.botToken,
     chatId: chatId !== undefined ? String(chatId).trim() : current.chatId,
     enabled: Boolean(enabled),
-    isTestServer: isTestServer !== undefined ? Boolean(isTestServer) : current.isTestServer,
+    isTestServer: Boolean(process.env.TELEGRAM_TEST_SERVER === 'true' || isTestServer === true),
     updatedAt: new Date().toISOString()
   };
 
@@ -170,10 +170,12 @@ async function callTelegramApi(endpoint, payload = null) {
 
 let isTokenInvalid = false;
 let hasLoggedUnauthorizedWarning = false;
+let tokenInvalidSince = 0;
 
 export function resetTelegramAuthError() {
   isTokenInvalid = false;
   hasLoggedUnauthorizedWarning = false;
+  tokenInvalidSince = 0;
 }
 
 export function isTelegramTokenInvalid() {
@@ -181,35 +183,30 @@ export function isTelegramTokenInvalid() {
 }
 
 /**
- * Standard Telegram Bot API caller with automatic Test DC failover
+ * Standard Telegram Bot API caller with 401 Unauthorized protection.
  * Detects 401 Unauthorized once, logs a single clear warning, and halts retry loop.
  * Never logs or prints the secret token.
  */
 async function callBotApi(token, method, payload = null) {
   if (isTokenInvalid) {
-    return { ok: false, error_code: 401, description: 'Telegram Bot Token is invalid or revoked. Retries suspended.' };
+    if (Date.now() - tokenInvalidSince > 60000) {
+      resetTelegramAuthError();
+    } else {
+      return { ok: false, error_code: 401, description: 'Telegram Bot Token is invalid or revoked. Retries suspended.' };
+    }
   }
 
   const cfg = loadConfig();
-  const primaryEndpoint = cfg.isTestServer ? `/bot${token}/test/${method}` : `/bot${token}/${method}`;
-  let res = await callTelegramApi(primaryEndpoint, payload);
+  const endpoint = cfg.isTestServer ? `/bot${token}/test/${method}` : `/bot${token}/${method}`;
+  let res = await callTelegramApi(endpoint, payload);
 
-  // If primary returns 401 Unauthorized, automatically try alternate DC environment
   if (!res.ok && (res.error_code === 401 || String(res.description || '').toLowerCase().includes('unauthorized'))) {
-    const fallbackEndpoint = cfg.isTestServer ? `/bot${token}/${method}` : `/bot${token}/test/${method}`;
-    const fallbackRes = await callTelegramApi(fallbackEndpoint, payload);
-    if (fallbackRes.ok) {
-      console.log(`[TelegramNotifier] Auto-detected Telegram DC switch (isTestServer: ${!cfg.isTestServer})`);
-      saveTelegramConfig({ ...cfg, isTestServer: !cfg.isTestServer });
-      return fallbackRes;
-    }
-
-    // Both primary and fallback returned 401 Unauthorized -> Token is genuinely invalid or revoked
     if (!hasLoggedUnauthorizedWarning) {
       console.warn('[TelegramNotifier] ⚠️ Telegram Bot Token is invalid or revoked (HTTP 401 Unauthorized). Automated Telegram polling and retries have been suspended. Verify TELEGRAM_BOT_TOKEN.');
       hasLoggedUnauthorizedWarning = true;
     }
     isTokenInvalid = true;
+    tokenInvalidSince = Date.now();
     return res;
   }
 
@@ -230,9 +227,20 @@ export function escapeHtml(str) {
 }
 
 /**
- * Sends a raw HTML/Markdown message to Telegram with automatic plain-text fallback
+ * Sends a raw HTML/Markdown message to Telegram with automatic plain-text fallback.
+ * Supports passing options object { parseMode, chatId } or string parseMode ('HTML'/'Markdown').
  */
-export async function sendTelegramMessage(text, parseMode = 'HTML') {
+export async function sendTelegramMessage(text, optionsOrParseMode = 'HTML') {
+  let parseMode = 'HTML';
+  let targetChatId = null;
+
+  if (typeof optionsOrParseMode === 'object' && optionsOrParseMode !== null) {
+    parseMode = optionsOrParseMode.parseMode || 'HTML';
+    targetChatId = optionsOrParseMode.chatId || null;
+  } else if (typeof optionsOrParseMode === 'string') {
+    parseMode = optionsOrParseMode;
+  }
+
   if (isTokenInvalid) {
     return { success: false, reason: 'Telegram Bot Token is invalid or revoked (HTTP 401 Unauthorized). Retries suspended.' };
   }
@@ -243,12 +251,14 @@ export async function sendTelegramMessage(text, parseMode = 'HTML') {
   }
 
   const cfg = loadConfig();
-  if (!cfg.enabled || !cfg.botToken || !cfg.chatId) {
+  const effectiveChatId = targetChatId || cfg.chatId;
+
+  if (!cfg.enabled || !cfg.botToken || !effectiveChatId) {
     return { success: false, reason: 'Telegram notifications not configured or disabled' };
   }
 
   const payload = {
-    chat_id: cfg.chatId,
+    chat_id: effectiveChatId,
     text,
     parse_mode: parseMode,
     disable_web_page_preview: true
@@ -275,7 +285,7 @@ export async function sendTelegramMessage(text, parseMode = 'HTML') {
           .replace(/&#39;/g, "'");
 
         const fallbackData = await callBotApi(cfg.botToken, 'sendMessage', {
-          chat_id: cfg.chatId,
+          chat_id: effectiveChatId,
           text: plainText,
           disable_web_page_preview: true
         });
@@ -778,10 +788,11 @@ export async function ensureTodaySessionIngested() {
   }
 }
 
-export async function runBroker58RadarAndDispatch(symbolFilter = null) {
+export async function runBroker58RadarAndDispatch(symbolFilter = null, options = {}) {
   await ensureTodaySessionIngested();
   let setups = [];
   let targetDate = '';
+  const targetChatId = options?.chatId || null;
 
   // 1. Single Symbol Audit mode
   if (symbolFilter) {
@@ -820,7 +831,7 @@ export async function runBroker58RadarAndDispatch(symbolFilter = null) {
             operatorVwap: row.operator_vwap || row.ltp,
             companyName: stockUniverseMap[sym]?.name || sym
           });
-          const res = await sendTelegramMessage(auditHtml, 'HTML');
+          const res = await sendTelegramMessage(auditHtml, { chatId: targetChatId });
           return { success: res.success, setupsCount: 1, telegramResult: res };
         } else {
           const noActivityMsg = [
@@ -831,7 +842,7 @@ export async function runBroker58RadarAndDispatch(symbolFilter = null) {
             `──────────────────────────`,
             `💡 Type <code>/b58</code> to view active setups, or <code>/b58 playbook</code> for criteria.`
           ].join('\n');
-          const res = await sendTelegramMessage(noActivityMsg, 'HTML');
+          const res = await sendTelegramMessage(noActivityMsg, { chatId: targetChatId });
           return { success: res.success, setupsCount: 0, telegramResult: res };
         }
       }
@@ -890,16 +901,16 @@ export async function runBroker58RadarAndDispatch(symbolFilter = null) {
   }
 
   const html = formatBroker58RadarHtml(setups, targetDate);
-  const res = await sendTelegramMessage(html, 'HTML');
+  const res = await sendTelegramMessage(html, { chatId: targetChatId });
   return { success: res.success, setupsCount: setups.length, telegramResult: res };
 }
 
 /**
  * Dispatches the Full Broker #58 Empirical Research Findings & Playbook to Telegram
  */
-export async function sendTelegramBroker58Playbook() {
+export async function sendTelegramBroker58Playbook(options = {}) {
+  const targetChatId = options?.chatId || null;
   const msg = [
-    `⚡ <b>DRAVYASHREE OPERATOR PLAYBOOK: BROKER #58 EARLY IGNITION</b>`,
     `──────────────────────────`,
     `<b>Empirical Research Findings (2,013,915 Contracts Analyzed):</b>`,
     `• <b>Dominant Whales:</b> Broker #58 (Naasa Securities) controls <b>8.13% of all NEPSE turnover</b> (Rs. 3,005.6 Crores) and drives <b>&gt;65% of mid-cap hydro &amp; commercial bank breakouts</b>.`,
@@ -927,13 +938,14 @@ export async function sendTelegramBroker58Playbook() {
     `<i>"Follow the whale footprint before the tide rises; exit with profit before the trap springs."</i>`
   ].join('\n');
 
-  return await sendTelegramMessage(msg);
+  return await sendTelegramMessage(msg, { chatId: targetChatId });
 }
 
 /**
  * Dispatches the Full Investor Educational Briefing & High-Reward Playbook directly to Telegram
  */
-export async function sendTelegramInvestorPlaybook() {
+export async function sendTelegramInvestorPlaybook(options = {}) {
+  const targetChatId = options?.chatId || null;
   const msg = [
     `📚 <b>DRAVYASHREE INVESTOR PLAYBOOK: THE "GREAT ALERT" MATRIX</b>`,
     `──────────────────────────`,
@@ -963,7 +975,7 @@ export async function sendTelegramInvestorPlaybook() {
     `<i>"Protect your downside with discipline; the upside will take care of itself."</i>`
   ].join('\n');
 
-  return await sendTelegramMessage(msg);
+  return await sendTelegramMessage(msg, { chatId: targetChatId });
 }
 
 // ── AUTOMATED METHOD 1 & 2 INSTITUTIONAL PLAYBOOK SELECTOR & DISPATCHER ──
@@ -1103,7 +1115,7 @@ export function selectPlaybookMidStagePick(stocks = []) {
 /**
  * Dispatches an automated Playbook Mid-Stage Accumulation Alert to Telegram
  */
-export async function sendTelegramPlaybookPickAlert(pick) {
+export async function sendTelegramPlaybookPickAlert(pick, options = {}) {
   if (!pick || !pick.symbol) {
     return { success: false, error: 'No valid playbook pick provided' };
   }
@@ -1173,14 +1185,15 @@ export async function sendTelegramPlaybookPickAlert(pick) {
     `<i>Time: ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' })} NPT | Generated via Drabyashree Quant Engine</i>`
   ].join('\n');
 
-  return await sendTelegramMessage(msg);
+  return await sendTelegramMessage(msg, { chatId: options?.chatId });
 }
 
 /**
  * High-level auto-select & dispatch runner for Method 1 & 2
  */
-export async function autoSelectAndDispatchPlaybookPick(customStocks = null) {
+export async function autoSelectAndDispatchPlaybookPick(customStocks = null, options = {}) {
   let stocks = customStocks;
+  const targetChatId = options?.chatId || null;
   if (!stocks || !Array.isArray(stocks) || stocks.length === 0) {
     if (typeof _getEnrichedStockUniverse === 'function') {
       try {
@@ -1205,7 +1218,7 @@ export async function autoSelectAndDispatchPlaybookPick(customStocks = null) {
     return { success: false, reason: 'No equity currently satisfies all strict Method 1 & 2 accumulation criteria.' };
   }
 
-  const result = await sendTelegramPlaybookPickAlert(pick);
+  const result = await sendTelegramPlaybookPickAlert(pick, { chatId: targetChatId });
   return {
     success: Boolean(result.success),
     pick,
@@ -1617,7 +1630,7 @@ export async function select5StepSwingPicks() {
  * Formats and dispatches the 5-Step 10–15 Day Swing Stock Alert to Telegram
  * and automatically registers the top pick in the Exit Guard (trackCustomHolding).
  */
-export async function run5StepSwingSelectionAndDispatch({ onTrackHolding } = {}) {
+export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId } = {}) {
   const { topPick, runnerUps, allQualified, vetoedTraps } = await select5StepSwingPicks();
   if (!allQualified || allQualified.length === 0) {
     return {
@@ -1723,7 +1736,7 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding } = {})
     `🔔 <i>Exit Guard auto-armed for all ${primaryPicks.length} picks! Send <code>/swing</code>, <code>/list</code>, or <code>/track SYMBOL</code> anytime.</i>`,
   ].join('\n');
 
-  const telegramResult = await sendTelegramMessage(html, 'HTML');
+  const telegramResult = await sendTelegramMessage(html, { chatId });
   return {
     success: Boolean(telegramResult?.success),
     topPick: primaryPicks[0] || topPick,
@@ -2234,12 +2247,12 @@ async function handleTelegramCommand(text, {
       `──────────────────────────`,
       `<i>All alerts strictly factor in NEPSE T+2 settlement rules and ±15% circuit limits.</i>`
     ].join('\n');
-    return await sendTelegramMessage(helpMsg);
+    return await sendTelegramMessage(helpMsg, { chatId });
   }
 
   // 2. PING
   if (lower === '/ping' || lower === 'ping') {
-    return await sendTelegramMessage(`🏓 <b>Pong!</b> Drabyashree server is online and actively watching NEPSE live market.`);
+    return await sendTelegramMessage(`🏓 <b>Pong!</b> Drabyashree server is online and actively watching NEPSE live market.`, { chatId });
   }
 
   // 2.4 BROKER 58 / OPERATOR EARLY IGNITION RADAR & AUDIT
@@ -2249,17 +2262,17 @@ async function handleTelegramCommand(text, {
     const lowerArg = rawArg.toLowerCase();
 
     if (!rawArg || lowerArg === 'radar' || lowerArg === 'today' || lowerArg === 'scan' || lowerArg === 'list') {
-      const radarRes = await runBroker58RadarAndDispatch();
+      const radarRes = await runBroker58RadarAndDispatch(null, { chatId });
       return radarRes.telegramResult;
     }
 
     if (lowerArg === 'playbook' || lowerArg === 'guide' || lowerArg === 'rules' || lowerArg === 'research' || lowerArg === 'findings' || lowerArg === 'help') {
-      return await sendTelegramBroker58Playbook();
+      return await sendTelegramBroker58Playbook({ chatId });
     }
 
     // Specific stock symbol e.g. /b58 GHL or /broker58 DORDI
     const cleanSym = rawArg.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const radarRes = await runBroker58RadarAndDispatch(cleanSym);
+    const radarRes = await runBroker58RadarAndDispatch(cleanSym, { chatId });
     return radarRes.telegramResult;
   }
 
@@ -2273,20 +2286,20 @@ async function handleTelegramCommand(text, {
     lower === '/midstage' || lower === 'midstage' ||
     lower === '/playbook_pick' || lower === 'playbook_pick'
   ) {
-    const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding });
+    const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId });
     if (swingRes.success) {
       return swingRes.telegramResult;
     }
-    const res = await autoSelectAndDispatchPlaybookPick();
+    const res = await autoSelectAndDispatchPlaybookPick(null, { chatId });
     if (res.success) {
       return res.telegramResult;
     }
-    return await sendTelegramMessage(`ℹ️ <b>Market Scanning Complete:</b> ${swingRes.reason || res.reason || 'No stock currently passes all strict 5-Step accumulation filters.'}`);
+    return await sendTelegramMessage(`ℹ️ <b>Market Scanning Complete:</b> ${swingRes.reason || res.reason || 'No stock currently passes all strict 5-Step accumulation filters.'}`, { chatId });
   }
 
   // 2.6 PLAYBOOK / GUIDE MATRIX
   if (lower === '/playbook' || lower === '/guide' || lower === 'playbook' || lower === 'guide') {
-    return await sendTelegramInvestorPlaybook();
+    return await sendTelegramInvestorPlaybook({ chatId });
   }
 
   // 2.7 LIVE NEPSE MARKET INDICES & STATUS
@@ -2324,17 +2337,17 @@ async function handleTelegramCommand(text, {
       `──────────────────────────`,
       `<i>Verified real exchange session data. Trading: Mon–Fri (Sat & Sun weekend closed).</i>`
     ].join('\n');
-    return await sendTelegramMessage(indexMsg);
+    return await sendTelegramMessage(indexMsg, { chatId });
   }
 
   // 3. LIST / STATUS
   if (lower === '/list' || lower === '/status' || lower === '/holdings' || lower === 'list' || lower === 'status' || lower === 'holdings') {
     if (typeof onGetTrackedHoldings !== 'function') {
-      return await sendTelegramMessage(`ℹ️ Holdings engine initializing. Try again shortly.`);
+      return await sendTelegramMessage(`ℹ️ Holdings engine initializing. Try again shortly.`, { chatId });
     }
     const holdings = onGetTrackedHoldings();
     if (!holdings || holdings.length === 0) {
-      return await sendTelegramMessage(`📭 <b>No stocks actively tracked right now.</b>\nSend <code>/track SYMBOL [BUY_PRICE] [STOP_LOSS]</code> to start monitoring!`);
+      return await sendTelegramMessage(`📭 <b>No stocks actively tracked right now.</b>\nSend <code>/track SYMBOL [BUY_PRICE] [STOP_LOSS]</code> to start monitoring!`, { chatId });
     }
 
     const lines = [
@@ -2371,7 +2384,7 @@ async function handleTelegramCommand(text, {
     }
 
     lines.push(`<i>To remove any stock: <code>/remove SYMBOL</code></i>`);
-    return await sendTelegramMessage(lines.join('\n'));
+    return await sendTelegramMessage(lines.join('\n'), { chatId });
   }
 
   // 4. UNTRACK / REMOVE
@@ -2389,7 +2402,7 @@ async function handleTelegramCommand(text, {
         results.push(`ℹ️ <code>${cleanSym}</code> was not in active tracked list.`);
       }
     }
-    return await sendTelegramMessage(results.join('\n') || 'Please specify a symbol, e.g. <code>/remove SHIVM</code>');
+    return await sendTelegramMessage(results.join('\n') || 'Please specify a symbol, e.g. <code>/remove SHIVM</code>', { chatId });
   }
 
   // 5. TRACK
@@ -2430,14 +2443,14 @@ async function handleTelegramCommand(text, {
         `──────────────────────────`,
         `<i>Anchored to verified NEPSE closing prices. Monitoring live ticks (11 AM–3 PM)!</i>`
       ].filter(Boolean).join('\n');
-      return await sendTelegramMessage(resp);
+      return await sendTelegramMessage(resp, { chatId });
     }
 
     // Single stock format: /track SYMBOL [BUY] [SL] [KITTA]
     const parts = content.split(/\s+/).filter(Boolean);
     const sym = parts[0]?.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!sym) {
-      return await sendTelegramMessage(`⚠️ Please specify symbol: e.g. <code>/track SHIVM 512 489</code>`);
+      return await sendTelegramMessage(`⚠️ Please specify symbol: e.g. <code>/track SHIVM 512 489</code>`, { chatId });
     }
 
     // 1. Validate against official NEPSE listed universe
@@ -2448,7 +2461,7 @@ async function handleTelegramCommand(text, {
         `──────────────────────────`,
         `This stock is not registered on the Nepal Stock Exchange (NEPSE).`,
         `Please check the spelling. Examples: <code>SHIVM</code>, <code>GHL</code>, <code>NABIL</code>, <code>HATHY</code>, <code>CIT</code>.`
-      ].join('\n'));
+      ].join('\n'), { chatId });
     }
 
     const companyName = stockMeta?.name || sym;
@@ -2461,7 +2474,7 @@ async function handleTelegramCommand(text, {
         `──────────────────────────`,
         `Could not retrieve the verified last closing price from the live NEPSE feed.`,
         `Please open Drabyashree ➔ My Portfolio ➔ tap <b>"🔔 Sync to Telegram"</b> to sync directly from your Demat data!`
-      ].join('\n'));
+      ].join('\n'), { chatId });
     }
 
     let inputBuyPrice = parseFloat(parts[1]);
@@ -2498,7 +2511,7 @@ async function handleTelegramCommand(text, {
         `──────────────────────────`,
         `<i>Anchored strictly to real NEPSE closing market data & ±15% circuit limits.</i>`
       ].join('\n');
-      return await sendTelegramMessage(msg);
+      return await sendTelegramMessage(msg, { chatId });
     }
 
     // Scenario B: User provided an explicit purchase price
@@ -2542,7 +2555,7 @@ async function handleTelegramCommand(text, {
         `──────────────────────────`,
         `💡 <i>Notice: Anchored to current NEPSE close (Rs. ${realLtp.toFixed(2)}) within ±15% daily circuit band. Higher multi-week targets (+25%+) require multi-session T+2 swing holds.</i>`
       ].join('\n');
-      return await sendTelegramMessage(msg);
+      return await sendTelegramMessage(msg, { chatId });
     } else {
       // Recent trade within normal swing range
       effectiveSl = !isNaN(inputStopLoss) && inputStopLoss > 0 && inputStopLoss < realLtp 
@@ -2580,13 +2593,13 @@ async function handleTelegramCommand(text, {
         `──────────────────────────`,
         `<i>I will alert you instantly if price touches Stop-Loss or Targets!</i>`
       ].join('\n');
-      return await sendTelegramMessage(msg);
+      return await sendTelegramMessage(msg, { chatId });
     }
   }
 
   // Friendly fallback for unrecognized commands
   if (raw.startsWith('/')) {
-    return await sendTelegramMessage(`❓ Unrecognized command: <code>${raw}</code>\nType <code>/help</code> to see available commands.`);
+    return await sendTelegramMessage(`❓ Unrecognized command: <code>${raw}</code>\nType <code>/help</code> to see available commands.`, { chatId });
   }
 }
 
@@ -2599,7 +2612,13 @@ export async function pollIncomingTelegramCommands({
   onGetTrackedHoldings,
   getLatestStockPrice
 } = {}) {
-  if (isTokenInvalid) return;
+  if (isTokenInvalid) {
+    if (Date.now() - tokenInvalidSince > 60000) {
+      resetTelegramAuthError();
+    } else {
+      return;
+    }
+  }
   if (isPollingInProgress) return;
   const cfg = loadConfig();
   if (!cfg.enabled || !cfg.botToken) return;
@@ -2624,15 +2643,25 @@ export async function pollIncomingTelegramCommands({
       const msg = u.message || u.edited_message || u.channel_post;
       if (!msg || !msg.text) continue;
 
-      const chatId = String(msg.chat?.id || '');
-      // If user chat_id is configured, only respond to this authorized user
-      if (cfg.chatId && chatId !== cfg.chatId) {
-        console.warn(`[TelegramNotifier] Ignored command from unauthorized chat ID: ${chatId}`);
+      const chatId = String(msg.chat?.id || '').trim();
+      if (!chatId) continue;
+
+      // Auto-bind chatId if not set, so bot broadcasts reach this user
+      if (!cfg.chatId) {
+        console.log(`[TelegramNotifier] Auto-bound Telegram Chat ID: ${chatId}`);
+        saveTelegramConfig({ ...cfg, chatId });
+        cfg.chatId = chatId;
+      }
+
+      // Authorization guard: Allow owner (cfg.chatId) OR private direct messages
+      const isAuthorized = (chatId === cfg.chatId) || (msg.chat?.type === 'private');
+      if (!isAuthorized) {
+        console.warn(`[TelegramNotifier] Ignored command from unauthorized group/channel ID: ${chatId}`);
         continue;
       }
 
       const text = String(msg.text).trim();
-      console.log(`[TelegramNotifier] 📩 Incoming user command: "${text}" from ${msg.from?.first_name || 'User'}`);
+      console.log(`[TelegramNotifier] 📩 Incoming user command: "${text}" from ${msg.from?.first_name || 'User'} (Chat: ${chatId})`);
 
       await handleTelegramCommand(text, {
         chatId,
