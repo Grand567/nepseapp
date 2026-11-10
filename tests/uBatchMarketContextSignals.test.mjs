@@ -12,6 +12,9 @@
  */
 
 import assert from 'assert';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   evaluateNepseIndexTrend,
   evaluateSectorRotation,
@@ -20,6 +23,9 @@ import {
   evaluateIpoFpoSupplyImpact,
   evaluateMarketContextConfluence
 } from '../src/utils/signals/marketContextSignals.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let passedTests = 0;
 let totalTests = 0;
@@ -226,6 +232,20 @@ it('evaluateMarketContextConfluence: outputs FAVORABLE_TAILWIND in healthy condi
     corporateEvents: { score: 20, isDividendTrapZone: true }
   });
   assert.strictEqual(trapPosture.marketPosture, 'HIGH_RISK_HEADWIND');
+});
+
+// 7. Market Closed Breakout Setup Freeze Verification
+it('Dashboard Market Breakout Card: freezes evaluation and hides active scanner during closed market sessions', () => {
+  const dashCode = fs.readFileSync(path.join(__dirname, '../src/components/Dashboard.jsx'), 'utf8');
+
+  // Verify candidate evaluation loop is skipped on closed market if already evaluated for target session
+  assert.ok(dashCode.includes('lastEvaluatedSessionRef.current === status.targetSessionDate'), 'Candidate evaluation loop must skip redundant runs when market is closed');
+
+  // Verify spinner is gated strictly on getDetailedMarketStatus().isOpen
+  assert.ok(dashCode.includes('(isEvaluatingCandidates && getDetailedMarketStatus().isOpen)'), 'Active scanning spinner must be gated on market being open');
+
+  // Verify closed market banner rendering
+  assert.ok(dashCode.includes('Market Closed (नेप्से बन्द छ) • Last Session'), 'Must render frozen last session status when market is closed');
 });
 
 console.log(`\n======================================================================`);

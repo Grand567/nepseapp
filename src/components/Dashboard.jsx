@@ -2168,6 +2168,7 @@ function Dashboard({
 
   // ── 🏆 MASTER AMALGAMATED BREAKOUT & PRIME PICK PIPELINE ──
   const verifiedSymbolsRef = useRef(new Set());
+  const lastEvaluatedSessionRef = useRef(null);
   const [isEvaluatingCandidates, setIsEvaluatingCandidates] = useState(false);
 
   // Initialize hydratedPrimePick from localStorage if a clean BUY/ACCUMULATE plan exists
@@ -2314,6 +2315,12 @@ function Dashboard({
     if (primeDailyPick?.isPlanVerified && primeDailyPick?.isLockedForSession && primeDailyPick?.sessionDate === status.targetSessionDate && isActionableBuySignal(primeDailyPick)) {
       return;
     }
+
+    // When market is closed (e.g. Sat, Sun, public holidays, or closed off-hours), avoid continuous re-evaluations
+    if (!status.isOpen && lastEvaluatedSessionRef.current === status.targetSessionDate) {
+      return;
+    }
+    lastEvaluatedSessionRef.current = status.targetSessionDate;
 
     // Collect top candidates in strict priority order to verify against quantitative setup engine
     const prioritySymbols = [];
@@ -4456,7 +4463,7 @@ function Dashboard({
           <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 600 }}>Analyzing 350+ NEPSE stocks via Entry/Exit Analyzer...</span>
         </div>
       ) : (!primeDailyPick || !isActionableBuySignal(primeDailyPick)) ? (
-        isEvaluatingCandidates ? (
+        (isEvaluatingCandidates && getDetailedMarketStatus().isOpen) ? (
           <div style={{
             borderRadius: 18,
             background: 'rgba(15, 23, 42, 0.7)',
@@ -4496,10 +4503,14 @@ function Dashboard({
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#f43f5e' }}>
-                  {cashDefenseActive ? 'Systemic Risk Filter • Cash Defense Mode Active' : 'Quantitative Risk Filter • Capital Defense Active'}
+                  {!getDetailedMarketStatus().isOpen
+                    ? `Market Closed (नेप्से बन्द छ) • Last Session ${getDetailedMarketStatus().targetSessionDate} Frozen`
+                    : (cashDefenseActive ? 'Systemic Risk Filter • Cash Defense Mode Active' : 'Quantitative Risk Filter • Capital Defense Active')}
                 </div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff' }}>
-                  Capital Preservation Protocol: No Breakout Buys Issued Today
+                  {!getDetailedMarketStatus().isOpen
+                    ? `Session Completed: Capital Preservation Active (${getDetailedMarketStatus().targetSessionDate})`
+                    : 'Capital Preservation Protocol: No Breakout Buys Issued Today'}
                 </div>
               </div>
             </div>
@@ -4507,15 +4518,19 @@ function Dashboard({
               fontSize: 12, fontWeight: 800, padding: '4px 10px', borderRadius: 99,
               background: 'rgba(244, 63, 94, 0.15)', color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.3)'
             }}>
-              {(masterBreakoutPipeline?.breadthCheck?.breadth50 < 40)
-                ? `Market Breadth: ${masterBreakoutPipeline?.breadthCheck?.breadth50}% (< 40% Threshold)`
-                : '100% Capital Defense: 0 Passing Setups'}
+              {!getDetailedMarketStatus().isOpen
+                ? `Session: ${getDetailedMarketStatus().targetSessionDate} (Closed)`
+                : ((masterBreakoutPipeline?.breadthCheck?.breadth50 < 40)
+                  ? `Market Breadth: ${masterBreakoutPipeline?.breadthCheck?.breadth50}% (< 40% Threshold)`
+                  : '100% Capital Defense: 0 Passing Setups')}
             </span>
           </div>
           <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
-            {(masterBreakoutPipeline?.breadthCheck?.breadth50 < 40)
-              ? 'Fewer than 40% of NEPSE equities are trading above their 50-day moving average. In this market regime, breakout failure rates exceed 75% due to lack of broad institutional participation. The quantitative engine has activated Cash Defense Mode to protect your capital. Avoid new swing entries until breadth recovers.'
-              : 'All evaluated screener candidates failed the 500-session Entry/Exit Analyzer risk/reward verification (must have ≥55% historical analog win-rate, ≤10% downside risk, and a positive momentum setup). The quantitative engine enforced 100% capital preservation rather than issuing high-risk, low-conviction picks.'}
+            {!getDetailedMarketStatus().isOpen
+              ? `The Nepal Stock Exchange is currently closed (weekend/holiday/off-hours). The Entry/Exit Analyzer setup is locked to the last concluded session (${getDetailedMarketStatus().targetSessionDate}). No active live breakout triggers will be executed until the next official trading window opens.`
+              : ((masterBreakoutPipeline?.breadthCheck?.breadth50 < 40)
+                ? 'Fewer than 40% of NEPSE equities are trading above their 50-day moving average. In this market regime, breakout failure rates exceed 75% due to lack of broad institutional participation. The quantitative engine has activated Cash Defense Mode to protect your capital. Avoid new swing entries until breadth recovers.'
+                : 'All evaluated screener candidates failed the 500-session Entry/Exit Analyzer risk/reward verification (must have ≥55% historical analog win-rate, ≤10% downside risk, and a positive momentum setup). The quantitative engine enforced 100% capital preservation rather than issuing high-risk, low-conviction picks.')}
           </div>
           <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
             <button
