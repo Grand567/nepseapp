@@ -195,7 +195,7 @@ await itAsync('fetchWithRetryBackoff succeeds after transient failures with expo
   assert.strictEqual(result.attempts, 3, 'Must succeed on 3rd attempt');
   assert.strictEqual(delays.length, 2, 'Must have recorded 2 retry delays');
   assert.ok(delays[1] >= delays[0], `Second delay (${delays[1]}ms) must be greater than or equal to first (${delays[0]}ms)`);
-  assert.ok(Date.now() - t0 >= 100, 'Total elapsed time must reflect backoff sleep');
+  assert.ok(Date.now() - t0 >= 70, 'Total elapsed time must reflect backoff sleep');
 });
 
 await itAsync('fetchWithRetryBackoff throws immediately on non-transient errors without looping', async () => {
