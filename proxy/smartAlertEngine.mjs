@@ -547,25 +547,14 @@ export async function dispatchFcmNotification(alertItem) {
     return { success: true, count: 0, notice: 'Alert saved to live notification feed (Native Android WorkManager and SSE handle dispatch)' };
   }
 
-  let topicSuccess = false;
-  try {
-    // 1. Send to topic 'institutional_alerts'
-    const topicRes = await fcmMessaging.send({
-      ...fcmPayload,
-      topic: 'institutional_alerts'
-    });
-    topicSuccess = true;
-    console.log('[SmartAlertEngine] FCM topic message sent successfully:', topicRes);
-  } catch (topicErr) {
-    console.warn('[SmartAlertEngine] FCM topic send error:', topicErr.message);
-  }
-
-  // 2. Multicast to registered individual device tokens
+  // 1. Multicast to registered individual device tokens (primary path)
   const activeTokens = pushTokens.map(p => p.token).filter(Boolean);
   let multicastResult = null;
+  let topicSuccess = false;
+
   if (activeTokens.length > 0) {
+    const tokensToSend = activeTokens.slice(-500); // batch of up to 500
     try {
-      const tokensToSend = activeTokens.slice(-500); // batch of up to 500
       const response = await fcmMessaging.sendEachForMulticast({
         ...fcmPayload,
         tokens: tokensToSend
@@ -595,14 +584,26 @@ export async function dispatchFcmNotification(alertItem) {
           multicastResult.prunedCount = prunedCount;
         }
       }
-      return { success: true, topicSent: topicSuccess, ...multicastResult };
+      return { success: true, topicSent: false, ...multicastResult };
     } catch (multiErr) {
       console.warn('[SmartAlertEngine] Multicast error:', multiErr.message);
-      return { success: topicSuccess, error: multiErr.message, topicSent: topicSuccess };
+      return { success: false, error: multiErr.message, topicSent: false };
+    }
+  } else {
+    // 2. Fallback to topic only if no individual device tokens are registered
+    try {
+      const topicRes = await fcmMessaging.send({
+        ...fcmPayload,
+        topic: 'institutional_alerts'
+      });
+      topicSuccess = true;
+      console.log('[SmartAlertEngine] FCM topic message sent successfully:', topicRes);
+      return { success: true, topicSent: true };
+    } catch (topicErr) {
+      console.warn('[SmartAlertEngine] FCM topic send error:', topicErr.message);
+      return { success: false, error: topicErr.message, topicSent: false };
     }
   }
-
-  return { success: true, topicSent: topicSuccess };
 }
 
 // ── 4. QUANTITATIVE CONDITION EVALUATION ─────────────────────────────────────
@@ -1917,6 +1918,23 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
     }
 
     if (Array.isArray(articles) && articles.length > 0) {
+      // Cold boot guard: When the server first boots with an empty seenNewsKeys set,
+      // seed all currently scraped news into memory/disk so we NEVER blast old news
+      // as repeated push notifications upon deployment restarts.
+      if (seenNewsKeys.size === 0) {
+        for (const item of articles) {
+          const title = String(item.title || '').trim();
+          if (!title) continue;
+          const itemKey = (item.id && !String(item.id).startsWith('ss-') && !String(item.id).startsWith('ml-'))
+            ? `news_${item.id}`
+            : generateNewsContentKey(title, item.url || item.link);
+          seenNewsKeys.add(itemKey);
+        }
+        saveSeenNewsKeys();
+        console.log(`[SmartAlertEngine] Cold boot guard: seeded ${seenNewsKeys.size} historical news articles to suppress restart notification spam.`);
+        return;
+      }
+
       const impactKeywords = [
         'लाभांश', 'बोनस', 'हकप्रद', 'साधारण सभा', 'वित्तीय विवरण', 'आइपिओ', 'म्युचुअल फन्ड', 'बुक क्लोज', 'बुकक्लोज',
         'dividend', 'bonus', 'right share', 'rights issue', 'agm', 'quarterly', 'financial report', 'ipo', 'circuit', 'halt', 'monetary policy', 'ब्याजदर', 'राष्ट्र बैंक', 'धितोपत्र बोर्ड'
