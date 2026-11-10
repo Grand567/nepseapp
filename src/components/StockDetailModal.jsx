@@ -1661,6 +1661,26 @@ export default function StockDetailModal({
     let rawLow = Number(liveQuote?.low || s.low || s.lowPrice || liveDetail?.lowPrice || ltp);
     let livePrevClose = Number(liveQuote?.previousClose || s.prevClose || s.previousClose || liveDetail?.prevClose || (ltp > 0 ? ltp - liveChange : ltp));
 
+    // Historical candle fallbacks when live quote/summary lacks session High/Low/Open/PrevClose
+    const latestHistCandle = (Array.isArray(realPriceHistory) && realPriceHistory.length > 0) ? realPriceHistory[realPriceHistory.length - 1] : null;
+    const prevHistCandle = (Array.isArray(realPriceHistory) && realPriceHistory.length > 1) ? realPriceHistory[realPriceHistory.length - 2] : null;
+
+    if (!modalSessionDate && latestHistCandle) {
+      if ((!liveQuote?.high && !s.high && !s.highPrice && !liveDetail?.highPrice) || (rawHigh === ltp && rawLow === ltp && Number(latestHistCandle.high) > ltp)) {
+        if (Number(latestHistCandle.high) > 0) rawHigh = Number(latestHistCandle.high);
+      }
+      if ((!liveQuote?.low && !s.low && !s.lowPrice && !liveDetail?.lowPrice) || (rawHigh === ltp && rawLow === ltp && Number(latestHistCandle.low) < ltp)) {
+        if (Number(latestHistCandle.low) > 0) rawLow = Number(latestHistCandle.low);
+      }
+      if ((!liveQuote?.open && !s.open && !s.openPrice && !liveDetail?.openPrice) || (liveOpen === ltp && Number(latestHistCandle.open) > 0)) {
+        if (Number(latestHistCandle.open) > 0) liveOpen = Number(latestHistCandle.open);
+      }
+      if (!liveQuote?.previousClose && !s.prevClose && !s.previousClose && !liveDetail?.prevClose) {
+        const fallbackPc = Number(prevHistCandle?.close || latestHistCandle.prevClose || 0);
+        if (fallbackPc > 0) livePrevClose = fallbackPc;
+      }
+    }
+
     if (liveChange === 0 && livePrevClose > 0 && ltp > 0 && ltp !== livePrevClose) {
       liveChange = Number((ltp - livePrevClose).toFixed(2));
       livePChange = Number(((liveChange / livePrevClose) * 100).toFixed(2));
@@ -1726,7 +1746,8 @@ export default function StockDetailModal({
       s.trades || s.totalTrades || s.totalTransactions || s.transactions ||
       liveDetail?.totalTransactions || liveDetail?.trades ||
       (realFloorsheet?.totalElements || (Array.isArray(realFloorsheet?.rows) ? realFloorsheet.rows.length : 0)) ||
-      realBrokerAnalysis?.totalTransactions || 0
+      realBrokerAnalysis?.totalTransactions ||
+      latestHistCandle?.trades || 0
     ) || undefined;
 
     const effectiveSector = (s.sector && s.sector !== 'Unknown') ? s.sector : (liveDetail?.sector || 'Others');
@@ -1762,12 +1783,14 @@ export default function StockDetailModal({
     const quoteVol = Number(liveQuote?.volume || 0);
     const stockVol = quoteVol > 0 ? quoteVol : Number(s.volume || s.totalTradedQuantity || 0);
     const liveVol = Number(liveDetail?.volume || liveDetail?.totalTradedQuantity || 0);
-    const volume = sessionCandle ? Number(sessionCandle.volume || 0) : (stockVol > 0 ? stockVol : liveVol);
+    const histVol = Number(latestHistCandle?.volume || 0);
+    const volume = sessionCandle ? Number(sessionCandle.volume || 0) : (stockVol > 0 ? stockVol : (liveVol > 0 ? liveVol : histVol));
 
     const quoteTurnover = Number(liveQuote?.turnover || 0);
     const stockTurnover = quoteTurnover > 0 ? quoteTurnover : Number(s.turnover || s.totalTradedValue || 0);
     const liveTurnover = Number(liveDetail?.turnover || liveDetail?.totalTradedValue || 0);
-    const turnover = sessionCandle ? Number(sessionCandle.turnover || 0) : (stockTurnover > 0 ? stockTurnover : liveTurnover);
+    const histTurnover = Number(latestHistCandle?.turnover || 0);
+    const turnover = sessionCandle ? Number(sessionCandle.turnover || 0) : (stockTurnover > 0 ? stockTurnover : (liveTurnover > 0 ? liveTurnover : histTurnover));
 
     const rvol = Number(s.rvol || s.volumeSurgeRatio || liveDetail?.rvol || 0) || undefined;
     const avgVolume20D = Number(s.avgVolume20D || liveDetail?.avgVolume20D || 0) || undefined;
@@ -2480,15 +2503,10 @@ export default function StockDetailModal({
     }
   }, [activeTab, d?.symbol, showHubModal]);
 
-  // Synchronize 1D intraday data whenever 1D timeframe is selected
+  // Note: ShareHubChart autonomously manages 1D intraday data fetching and rendering.
+  // We strictly preserve multi-day daily candles in `history` to avoid clobbering chart history.
   useEffect(() => {
-    if (chartTimeframe === '1D' && d?.symbol) {
-      fetchNepseIntradayGraph(d.symbol).then(intraday => {
-        if (intraday && Array.isArray(intraday) && intraday.length > 0) {
-          setHistory(intraday);
-        }
-      }).catch(() => {});
-    }
+    // Intraday fetching handled by ShareHubChart
   }, [chartTimeframe, d?.symbol]);
 
   const handleTimeframeChange = async (tf) => {
@@ -2497,15 +2515,7 @@ export default function StockDetailModal({
     if (!d?.symbol) return;
 
     if (tf === '1D') {
-      try {
-        const intraday = await fetchNepseIntradayGraph(d.symbol);
-        if (intraday && Array.isArray(intraday) && intraday.length > 0) {
-          setHistory(intraday);
-          return;
-        }
-      } catch (err) {
-        console.warn('[StockDetailModal] Failed to fetch intraday for ' + d.symbol, err);
-      }
+      return; // ShareHubChart autonomously switches to intraday ticks
     } else if (tf === '2Y' || tf === 'ALL' || tf === 'MAX') {
       const daysNeeded = tf === '2Y' ? 730 : 3650;
       // If we don't already have enough data, fetch more from the proxy

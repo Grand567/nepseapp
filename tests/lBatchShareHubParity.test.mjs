@@ -282,7 +282,54 @@ assert(!modalSrc.includes('stockFundamentals'), 'Zero undeclared stockFundamenta
 assert(modalSrc.includes("id: 'market_depth'") && modalSrc.includes("id: 'floorsheet'") && modalSrc.includes("id: 'broker_analysis'"), 'Separate Market Depth, Floorsheet, and Broker Analysis tabs present in StockDetailModal.jsx');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// [S5] Summary
+// [S5] Single Stock Overview High/Low & Chart Non-Clobbering Parity (SOHL Test)
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n[S5] Single Stock Overview High/Low & Chart Non-Clobbering Parity');
+
+// Test SOHL fallback simulation
+const mockHist = [
+  { date: '2026-11-05', close: 627.7 },
+  { date: '2026-11-06', open: 628, high: 635, low: 625, close: 628, volume: 47867, trades: 333, prevClose: 627.7 }
+];
+const mockQuote = { symbol: 'SOHL', ltp: 628 }; // No high/low in live quote
+const latestHistCandle = mockHist[mockHist.length - 1];
+const prevHistCandle = mockHist[mockHist.length - 2];
+
+let rawHigh = Number(mockQuote.high || mockQuote.ltp);
+let rawLow = Number(mockQuote.low || mockQuote.ltp);
+let liveOpen = Number(mockQuote.open || mockQuote.ltp);
+let livePrevClose = Number(mockQuote.previousClose || mockQuote.ltp);
+
+if (latestHistCandle) {
+  if (!mockQuote.high || (rawHigh === mockQuote.ltp && rawLow === mockQuote.ltp && Number(latestHistCandle.high) > mockQuote.ltp)) {
+    if (Number(latestHistCandle.high) > 0) rawHigh = Number(latestHistCandle.high);
+  }
+  if (!mockQuote.low || (rawHigh === mockQuote.ltp && rawLow === mockQuote.ltp && Number(latestHistCandle.low) < mockQuote.ltp)) {
+    if (Number(latestHistCandle.low) > 0) rawLow = Number(latestHistCandle.low);
+  }
+  if (!mockQuote.open || (liveOpen === mockQuote.ltp && Number(latestHistCandle.open) > 0)) {
+    if (Number(latestHistCandle.open) > 0) liveOpen = Number(latestHistCandle.open);
+  }
+  if (!mockQuote.previousClose) {
+    const fallbackPc = Number(prevHistCandle?.close || latestHistCandle.prevClose || 0);
+    if (fallbackPc > 0) livePrevClose = fallbackPc;
+  }
+}
+
+assert(rawHigh === 635, `SOHL high correctly falls back to historical candle high 635: got ${rawHigh}`);
+assert(rawLow === 625, `SOHL low correctly falls back to historical candle low 625: got ${rawLow}`);
+assert(liveOpen === 628, `SOHL open correctly falls back to historical candle open 628: got ${liveOpen}`);
+assert(livePrevClose === 627.7, `SOHL prevClose correctly falls back to prev candle close 627.7: got ${livePrevClose}`);
+const todaySpan = Math.max(0.1, rawHigh - rawLow);
+assert(todaySpan === 10, `Day's range span is 10 Rs, preventing collapsed 0.1 bar: got ${todaySpan}`);
+const todayRangePct = ((mockQuote.ltp - rawLow) / todaySpan) * 100;
+assert(todayRangePct === 30, `LTP 628 position is accurately 30% within 625-635 range: got ${todayRangePct}%`);
+
+// Ensure StockDetailModal does NOT overwrite history state with intraday ticks
+assert(!modalSrc.includes('setHistory(intraday)'), 'Zero setHistory(intraday) clobbering in StockDetailModal.jsx');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [S6] Summary
 // ─────────────────────────────────────────────────────────────────────────────
 console.log('\n====================================================================');
 console.log(` AUDIT COMPLETE: ${pass} PASSED, ${fail} FAILED`);

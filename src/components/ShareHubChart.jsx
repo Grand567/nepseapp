@@ -1449,9 +1449,9 @@ export default function ShareHubChart({
 
   const activeHud = hoverData || (latestBar ? {
     time: latestBar.time,
-    open: latestBar.open ?? latestBar.value,
-    high: Math.max(latestBar.high ?? authoritativeLtp, authoritativeLtp),
-    low: Math.min(latestBar.low ?? authoritativeLtp, authoritativeLtp),
+    open: (isTrulyIntraday && Number(stock?.open) > 0) ? Number(stock.open) : (latestBar.open ?? latestBar.value),
+    high: (isTrulyIntraday && Number(stock?.high) > 0) ? Number(stock.high) : Math.max(latestBar.high ?? authoritativeLtp, authoritativeLtp),
+    low: (isTrulyIntraday && Number(stock?.low) > 0) ? Number(stock.low) : Math.min(latestBar.low ?? authoritativeLtp, authoritativeLtp),
     close: authoritativeLtp,
     value: authoritativeLtp
   } : null);
@@ -1604,11 +1604,19 @@ export default function ShareHubChart({
                 }}>
                   {hudMetrics.change > 0 ? '▲ +' : hudMetrics.change < 0 ? '▼ -' : (hudMetrics.pChange >= 0 ? '▲ +' : '▼ -')}{Math.abs(hudMetrics.change).toFixed(2)} ({hudMetrics.pChange > 0 ? '+' : ''}{hudMetrics.pChange.toFixed(2)}%)
                 </span>
-                {latestBar && (
-                  <span style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)' }} className="hidden sm:inline">
-                    H: {latestBar.high != null ? Number(latestBar.high).toFixed(1) : '—'} • L: {latestBar.low != null ? Number(latestBar.low).toFixed(1) : '—'}
-                  </span>
-                )}
+                {latestBar && (() => {
+                  const dayHigh = (isTrulyIntraday || activeTf === '1D')
+                    ? (Number(stock?.high) > 0 ? Number(stock.high) : Math.max(...processedChartData.map(p => Number(p.high || p.value || p.close || 0))))
+                    : (latestBar.high != null ? Number(latestBar.high) : Number(stock?.high || 0));
+                  const dayLow = (isTrulyIntraday || activeTf === '1D')
+                    ? (Number(stock?.low) > 0 ? Number(stock.low) : Math.min(...processedChartData.map(p => Number(p.low || p.value || p.close || Infinity)).filter(p => p > 0)))
+                    : (latestBar.low != null ? Number(latestBar.low) : Number(stock?.low || 0));
+                  return (
+                    <span style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)' }} className="hidden sm:inline">
+                      H: {dayHigh > 0 ? dayHigh.toFixed(1) : '—'} • L: {dayLow > 0 && dayLow < Infinity ? dayLow.toFixed(1) : '—'}
+                    </span>
+                  );
+                })()}
               </>
             )}
           </div>
