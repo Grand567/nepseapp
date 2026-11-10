@@ -216,8 +216,11 @@ export function isTelegramTokenInvalid() {
  * Detects 401 Unauthorized once, logs a single clear warning, and halts retry loop.
  * Never logs or prints the secret token.
  */
-async function callBotApi(token, method, payload = null) {
-  if (isTokenInvalid) {
+async function callBotApi(token, method, payload = null, bypassGuard = false) {
+  const cfg = loadConfig();
+  const isDifferentToken = Boolean(token && cfg.botToken && token !== cfg.botToken);
+
+  if (isTokenInvalid && !bypassGuard && !isDifferentToken) {
     if (Date.now() - tokenInvalidSince > 60000) {
       resetTelegramAuthError();
     } else {
@@ -225,11 +228,12 @@ async function callBotApi(token, method, payload = null) {
     }
   }
 
-  const cfg = loadConfig();
   const endpoint = cfg.isTestServer ? `/bot${token}/test/${method}` : `/bot${token}/${method}`;
   let res = await callTelegramApi(endpoint, payload);
 
-  if (!res.ok && (res.error_code === 401 || String(res.description || '').toLowerCase().includes('unauthorized'))) {
+  if (res.ok) {
+    resetTelegramAuthError();
+  } else if (!res.ok && (res.error_code === 401 || String(res.description || '').toLowerCase().includes('unauthorized'))) {
     if (!hasLoggedUnauthorizedWarning) {
       console.warn('[TelegramNotifier] ⚠️ Telegram Bot Token is invalid or revoked (HTTP 401 Unauthorized). Automated Telegram polling and retries have been suspended. Verify TELEGRAM_BOT_TOKEN.');
       hasLoggedUnauthorizedWarning = true;
@@ -345,6 +349,9 @@ export async function testTelegramConnection(customToken, customChatId) {
     return { success: false, error: 'Both Bot Token and Chat ID are required.' };
   }
 
+  // Always reset auth error on explicit user test to allow fresh verification
+  resetTelegramAuthError();
+
   const text = `🔔 <b>Drabyashree NEPSE Alert System</b>\n\n✅ <b>Connection Test Successful!</b>\nYour smartphone is now configured to receive real-time institutional alerts and 3:45 PM Daily Post-Market Setups.\n\n<i>Time: ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' })} NPT</i>`;
 
   try {
@@ -352,8 +359,11 @@ export async function testTelegramConnection(customToken, customChatId) {
       chat_id: chat,
       text,
       parse_mode: 'HTML'
-    });
+    }, true);
     if (data.ok) {
+      resetTelegramAuthError();
+      // Auto-save working config so subsequent alerts immediately succeed
+      saveTelegramConfig({ botToken: token, chatId: chat, enabled: true });
       return { success: true, message: 'Test message sent successfully to your Telegram!' };
     } else {
       if (data.error_code === 401 || data.description?.toLowerCase().includes('unauthorized')) {
@@ -395,8 +405,8 @@ export async function autoDetectChatId(customToken) {
     }
     botUsername = meRes.result?.username || '';
 
-    // 2. Poll getUpdates to retrieve the user's incoming message
-    const data = await callBotApi(token, 'getUpdates');
+    // 2. Poll getUpdates to retrieve the user's incoming message (bypass throttle guard on explicit user action)
+    const data = await callBotApi(token, 'getUpdates', { timeout: 0 }, true);
     if (!data.ok) {
       return { success: false, error: data.description || 'Failed to fetch messages from Telegram.' };
     }
