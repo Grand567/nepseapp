@@ -381,22 +381,36 @@ export async function autoDetectChatId(customToken) {
   }
 
   try {
-    const data = await callBotApi(token, 'getUpdates');
-    if (!data.ok) {
-      if (data.error_code === 401 || data.description?.toLowerCase().includes('unauthorized')) {
+    // 1. Check bot identity and get username via getMe
+    let botUsername = '';
+    const meRes = await callTelegramApi(`/bot${token}/getMe`);
+    if (!meRes.ok) {
+      if (meRes.error_code === 401 || String(meRes.description || '').toLowerCase().includes('unauthorized')) {
         return {
           success: false,
           error: 'Telegram returned "Unauthorized". The Bot Token entered is invalid or revoked. Please open @BotFather on Telegram, send /token, copy the token, and paste it into the Bot Token field.'
         };
       }
-      return { success: false, error: data.description || 'Invalid Bot Token. Check token from @BotFather.' };
+      return { success: false, error: meRes.description || 'Invalid Bot Token. Check token from @BotFather.' };
+    }
+    botUsername = meRes.result?.username || '';
+
+    // 2. Poll getUpdates to retrieve the user's incoming message
+    const data = await callBotApi(token, 'getUpdates');
+    if (!data.ok) {
+      return { success: false, error: data.description || 'Failed to fetch messages from Telegram.' };
     }
 
     const updates = data.result || [];
     if (updates.length === 0) {
+      const promptText = botUsername
+        ? `No messages received yet for @${botUsername}!\n\nOpen https://t.me/${botUsername} on Telegram, tap START (or send "hello"), then tap Auto-Detect again.`
+        : 'No messages received yet! Open your bot in Telegram and tap START or send "hello", then tap Auto-Detect again.';
       return { 
         success: false, 
-        error: 'No messages received yet! Open your bot in Telegram and tap START or send "hello", then tap Auto-Detect again.' 
+        botUsername,
+        botLink: botUsername ? `https://t.me/${botUsername}` : null,
+        error: promptText 
       };
     }
 
@@ -409,12 +423,19 @@ export async function autoDetectChatId(customToken) {
           success: true, 
           chatId: String(chat.id), 
           username: chat.username || fromName,
+          botUsername,
+          botLink: botUsername ? `https://t.me/${botUsername}` : null,
           message: `Found Chat ID: ${chat.id} (${fromName})` 
         };
       }
     }
 
-    return { success: false, error: 'Could not extract chat ID from messages. Send a message to your bot in Telegram and try again.' };
+    return { 
+      success: false, 
+      botUsername,
+      botLink: botUsername ? `https://t.me/${botUsername}` : null,
+      error: 'Could not extract chat ID from messages. Send a message to your bot in Telegram and try again.' 
+    };
   } catch (err) {
     return { success: false, error: err.message };
   }

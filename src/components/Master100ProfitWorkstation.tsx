@@ -70,7 +70,7 @@ export function Master100ProfitWorkstation({
     }
   });
   const [telegramTesting, setTelegramTesting] = useState(false);
-  const [telegramTestMsg, setTelegramTestMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [telegramTestMsg, setTelegramTestMsg] = useState<{ type: 'success' | 'error'; text: string; link?: string; linkText?: string } | null>(null);
   const [telegramSaving, setTelegramSaving] = useState(false);
 
   const cleanBotToken = (raw: string) => {
@@ -291,7 +291,12 @@ export function Master100ProfitWorkstation({
           text: `🎯 Successfully detected Chat ID: ${strId}! Click "Save Settings" below.`
         });
       } else if (data && data.error) {
-        setTelegramTestMsg({ type: 'error', text: data.error });
+        setTelegramTestMsg({
+          type: 'error',
+          text: data.error,
+          link: data.botLink || undefined,
+          linkText: data.botUsername ? `👉 Open @${data.botUsername} in Telegram` : undefined
+        });
       } else {
         setTelegramTestMsg({
           type: 'error',
@@ -2123,9 +2128,31 @@ export function Master100ProfitWorkstation({
                     fontWeight: 700,
                     background: telegramTestMsg.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                     color: telegramTestMsg.type === 'success' ? '#34d399' : '#f87171',
-                    border: telegramTestMsg.type === 'success' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
+                    border: telegramTestMsg.type === 'success' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
+                    whiteSpace: 'pre-line'
                   }}>
-                    {telegramTestMsg.text}
+                    <div>{telegramTestMsg.text}</div>
+                    {telegramTestMsg.link && (
+                      <div style={{ marginTop: 8 }}>
+                        <a
+                          href={telegramTestMsg.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: 'inline-block',
+                            padding: '6px 12px',
+                            background: '#38bdf8',
+                            color: '#0f172a',
+                            borderRadius: 6,
+                            fontWeight: 800,
+                            textDecoration: 'none',
+                            fontSize: 12
+                          }}
+                        >
+                          {telegramTestMsg.linkText || 'Open Bot in Telegram'}
+                        </a>
+                      </div>
+                    )}
                   </div>
                 )}
 
