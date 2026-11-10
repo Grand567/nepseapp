@@ -14,6 +14,21 @@
 
 import { Capacitor, CapacitorHttp, CapacitorCookies } from '@capacitor/core';
 import { getProxyBase } from '../utils/liveData.js';
+import {
+  normalizeScripSymbol,
+  verifyWaccMath,
+  parseMeroShareWaccDetailsResponse,
+  matchWaccRecordsToHoldings,
+  classifyWaccSyncFailure
+} from './meroShareWaccService.js';
+
+export {
+  normalizeScripSymbol,
+  verifyWaccMath,
+  parseMeroShareWaccDetailsResponse,
+  matchWaccRecordsToHoldings,
+  classifyWaccSyncFailure
+};
 
 // ─── Platform Detection ────────────────────────────────────────────────────
 export const isNativeMobile = Capacitor.isNativePlatform();
@@ -1954,12 +1969,20 @@ export async function pullMeroShareWaccBatch(account, holdings = [], onProgress 
 
     if (Array.isArray(hList) && hList.length > 0) {
       hList.forEach(item => {
-        const sym = String(item.scrip || item.script || item.symbol || '').toUpperCase().trim();
-        const rate = Number(item.wacc || item.userPrice || item.rate || item.purchasePrice || item.costPrice || item.buyPrice || item.price || 0);
+        const sym = normalizeScripSymbol(item.scrip || item.script || item.symbol || item.scripName || '');
+        const rate = Number(item.wacc || item.waccRate || item.userPrice || item.rate || item.purchasePrice || item.costPrice || item.buyPrice || item.price || 0);
+        const waccQty = Number(item.waccCalculatedQuantity || item.calculatedQuantity || item.quantity || item.units || item.kitta || 0);
+        const totalCost = Number(item.totalCostOfCapital || item.totalCost || item.totalAmount || (rate * (waccQty || 1)));
+        const modDate = item.lastModificationDate || item.lastModifiedDate || item.modifiedDate || '';
+
         if (sym && rate > 0) {
           waccResultMap[sym] = {
             wacc: Number(rate.toFixed(2)),
-            source: 'CDSC_MY_HOLDING_DECLARED',
+            waccRate: rate,
+            source: 'CDSC_WACC',
+            waccCalculatedQuantity: waccQty,
+            totalCostOfCapital: totalCost,
+            lastModifiedDate: modDate,
             holdingDays: Number(item.holdingDays || item.days || 0),
             holdingType: item.holdingType || (Number(item.holdingDays || 0) >= 365 ? 'LONG_TERM' : 'SHORT_TERM')
           };

@@ -51,7 +51,8 @@ const testFiles = [
   'alBatchPortfolioAuthenticationGuard.test.mjs',
   'amBatchNotificationDiagnosticTest.test.mjs',
   'anBatchStatutoryCircuitRules.test.mjs',
-  'aoBatchPushNotificationVerification.test.mjs'
+  'aoBatchPushNotificationVerification.test.mjs',
+  'testMeroShareWaccDetails.test.mjs'
 ];
 
 console.log('====================================================');
