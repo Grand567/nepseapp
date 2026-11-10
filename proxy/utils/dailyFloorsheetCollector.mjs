@@ -61,6 +61,14 @@ export function exportCumulativeBrokerLedger(databaseInstance = db) {
       `SELECT DISTINCT symbol FROM daily_broker_ledger WHERE symbol IS NOT NULL AND symbol != ''`
     ).all().map(r => r.symbol);
 
+    const coverageRow = databaseInstance.prepare(`
+      SELECT MIN(trade_date) as startDate, MAX(trade_date) as endDate, COUNT(DISTINCT trade_date) as sessionCount
+      FROM daily_broker_ledger
+    `).get();
+    const startDate = coverageRow?.startDate || '2026-08-27';
+    const endDate = coverageRow?.endDate || '2026-11-06';
+    const sessionCount = coverageRow?.sessionCount || 42;
+
     const ledgerMap = {};
 
     const queryBrokersForSymbol = databaseInstance.prepare(`
@@ -140,9 +148,36 @@ export function exportCumulativeBrokerLedger(databaseInstance = db) {
       const scr3Cumulative = +(Math.min(100, (top3SellVol / totalHalfVol) * 100)).toFixed(1);
       const smartMoneyNetFlowPct = +(bcr3Cumulative - scr3Cumulative).toFixed(1);
 
+      const totalSharesHeldTillNow = accumulators.reduce((sum, a) => sum + a.netQty, 0);
+      const allHoldings = accumulators.map(a => ({
+        broker: a.broker,
+        id: a.broker,
+        brokerId: a.broker,
+        netQty: a.netQty,
+        holdQty: a.netQty,
+        totalHeldQty: a.netQty,
+        buyVol: a.buyVol,
+        sellVol: a.sellVol,
+        avgBuyRate: a.avgBuyRate,
+        holdingSharePct: totalSharesHeldTillNow > 0 ? Number(((a.netQty / totalSharesHeldTillNow) * 100).toFixed(2)) : 0
+      }));
+      const allDistributors = distributors.map(d => ({
+        broker: d.broker,
+        id: d.broker,
+        brokerId: d.broker,
+        netQty: d.netQty,
+        holdQty: 0,
+        totalHeldQty: 0,
+        buyVol: d.buyVol,
+        sellVol: d.sellVol,
+        avgSellRate: d.avgSellRate
+      }));
+
       ledgerMap[sym] = {
         symbol: sym,
         totalVolume: Math.round(totalVol / 2),
+        totalSharesHeldTillNow,
+        totalHoldQty: totalSharesHeldTillNow,
         bcr3Cumulative,
         scr3Cumulative,
         smartMoneyNetFlowPct,
@@ -155,13 +190,27 @@ export function exportCumulativeBrokerLedger(databaseInstance = db) {
           sellVol: a.sellVol,
           avgBuyRate: a.avgBuyRate
         })),
+        allHoldings,
+        topHoldings: allHoldings.slice(0, 15),
         topDistributors: topDist.map(d => ({
           broker: d.broker,
           netQty: d.netQty,
           buyVol: d.buyVol,
           sellVol: d.sellVol,
           avgSellRate: d.avgSellRate
-        }))
+        })),
+        allDistributors,
+        coverage: {
+          startDate,
+          endDate,
+          sessionCount,
+          tradingDays: sessionCount,
+          isLifetime: false,
+          label: `Since ${startDate} (${sessionCount} sessions)`,
+          disclaimer: `Covered from ${startDate} to ${endDate} (${sessionCount} sessions). Pre-${startDate} baseline unknown. Unadjusted for corporate actions.`,
+          isLiveIncomplete: false,
+          lastUpdated: new Date().toISOString()
+        }
       };
     }
 
@@ -282,15 +331,17 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
 
     const totalInserted = tx(trades);
 
-    // Ingest aggregated broker ledger
+    // Ingest aggregated broker ledger (Idempotent: wipe prior records for session before inserting)
     if (brokerSummaryMap.size > 0) {
+      const deleteBroker = db.prepare(`DELETE FROM daily_broker_ledger WHERE trade_date = ?`);
       const insertBroker = db.prepare(`
-        INSERT OR REPLACE INTO daily_broker_ledger (
+        INSERT INTO daily_broker_ledger (
           trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt, cross_vol,
           is_quarantined, calendar_status, tape_scope, source
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'VALID', 'FULL_TAPE', 'DAILY_COLLECTOR')
       `);
       const brokerTx = db.transaction(() => {
+        deleteBroker.run(cleanDate);
         for (const [key, data] of brokerSummaryMap.entries()) {
           const [sym, bIdStr] = key.split(':');
           insertBroker.run(cleanDate, sym, parseInt(bIdStr, 10), data.buyVol, data.sellVol, data.buyAmt, data.sellAmt, data.crossVol);
@@ -299,15 +350,17 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
       brokerTx();
     }
 
-    // Ingest aggregated stock summary
+    // Ingest aggregated stock summary (Idempotent: wipe prior records for session before inserting)
     if (stockSummaryMap.size > 0) {
+      const deleteStock = db.prepare(`DELETE FROM daily_stock_summary WHERE trade_date = ?`);
       const insertStock = db.prepare(`
-        INSERT OR REPLACE INTO daily_stock_summary (
+        INSERT INTO daily_stock_summary (
           trade_date, symbol, open_price, high_price, low_price, close_price, total_volume, total_turnover,
           is_quarantined, calendar_status, tape_scope, source
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'VALID', 'FULL_TAPE', 'DAILY_COLLECTOR')
       `);
       const stockTx = db.transaction(() => {
+        deleteStock.run(cleanDate);
         for (const [sym, s] of stockSummaryMap.entries()) {
           insertStock.run(cleanDate, sym, s.open, s.high, s.low, s.close, s.volume, s.turnover);
         }
