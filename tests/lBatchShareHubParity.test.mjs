@@ -329,7 +329,36 @@ assert(todayRangePct === 30, `LTP 628 position is accurately 30% within 625-635 
 assert(!modalSrc.includes('setHistory(intraday)'), 'Zero setHistory(intraday) clobbering in StockDetailModal.jsx');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// [S6] Summary
+// [S6] Broker Flow Sub-Tab Total Held Kitta & All-Time View Parity (Bugs 6 & 7)
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n[S6] Broker Flow Sub-Tab Total Held Kitta & All-Time View Parity');
+
+const { getHistoricalSubfileBrokerAnalysis } = await import('../src/utils/localLedgerManager.ts');
+const { getCumulativeBrokerData } = await import('../src/utils/historyCache.js');
+
+const akjclCum = getCumulativeBrokerData('AKJCL');
+assert(akjclCum != null, 'getCumulativeBrokerData returns authentic cumulative ledger for AKJCL');
+const akjclExpectedHeld = (akjclCum.allHoldings || akjclCum.topHoldings || akjclCum.topAccumulators || []).reduce((s, b) => s + (Number(b.netQty || 0) > 0 ? Number(b.netQty || 0) : 0), 0);
+assert(akjclExpectedHeld === 465765, `AKJCL cumulative total held kitta is 465,765 (got ${akjclExpectedHeld})`);
+
+const akjclAll = await getHistoricalSubfileBrokerAnalysis('AKJCL', { days: 'all' });
+assert(akjclAll != null, 'getHistoricalSubfileBrokerAnalysis returns all-time broker object for AKJCL');
+assert(akjclAll.timeframe === 'ALL', `All-time broker analysis has timeframe: 'ALL' (got ${akjclAll.timeframe})`);
+assert(akjclAll.totalSharesHeldTillNow === 465765, `All-time totalSharesHeldTillNow is 465,765 (got ${akjclAll.totalSharesHeldTillNow})`);
+assert(Array.isArray(akjclAll.topHoldings) && akjclAll.topHoldings.length > 0, 'All-time topHoldings is non-empty array');
+assert(akjclAll.topHoldingBroker?.broker === '58' && akjclAll.topHoldingBroker?.netQty === 216471, 'Top holding broker is Broker #58 with 216,471 netQty');
+
+const akjcl1D = await getHistoricalSubfileBrokerAnalysis('AKJCL', { days: 1 });
+assert(akjcl1D != null, 'getHistoricalSubfileBrokerAnalysis returns 1D broker object for AKJCL');
+assert(akjcl1D.totalSharesHeldTillNow === 465765, `1D response also exposes cumulative pool totalSharesHeldTillNow = 465,765 (got ${akjcl1D.totalSharesHeldTillNow})`);
+
+const brokerTabSrc = fs.readFileSync(new URL('../src/components/StockBrokerAnalysisTab.jsx', import.meta.url), 'utf8');
+assert(brokerTabSrc.includes('getCumulativeBrokerData'), 'StockBrokerAnalysisTab imports getCumulativeBrokerData');
+assert(brokerTabSrc.includes('totalCumulativeHoldingKitta') && !brokerTabSrc.includes('totalCumulativeHoldingKitta = 0;'), 'StockBrokerAnalysisTab tracks totalCumulativeHoldingKitta');
+assert(modalSrc.includes("if (newDays === 'all' || newDays === 'ALL')") && modalSrc.includes('setRealBrokerAnalysis(allTimeBrokerAnalysis)'), 'StockDetailModal immediately switches to allTimeBrokerAnalysis when all-time requested');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [S7] Summary
 // ─────────────────────────────────────────────────────────────────────────────
 console.log('\n====================================================================');
 console.log(` AUDIT COMPLETE: ${pass} PASSED, ${fail} FAILED`);

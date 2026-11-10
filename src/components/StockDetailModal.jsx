@@ -1451,7 +1451,59 @@ export default function StockDetailModal({
     return null;
   });
   const [allTimeBrokerAnalysis, setAllTimeBrokerAnalysis] = useState(() => {
-    return getCachedRealBrokerAnalysis(initialSym, 'all') || null;
+    const cached = getCachedRealBrokerAnalysis(initialSym, 'all');
+    if (cached) return cached;
+    const cum = getCumulativeBrokerData(initialSym);
+    if (!cum) return null;
+    const topAccs = (cum.allHoldings || cum.topHoldings || cum.topAccumulators || []).map(a => ({
+      broker: String(a.broker || a.brokerId || a.id),
+      id: String(a.broker || a.brokerId || a.id),
+      brokerId: String(a.broker || a.brokerId || a.id),
+      name: getBrokerName(String(a.broker || a.brokerId || a.id)),
+      netQty: Number(a.netQty || 0),
+      signedHoldQty: Number(a.netQty || 0),
+      totalHeldQty: Math.max(0, Number(a.netQty || 0)),
+      holdQty: Math.max(0, Number(a.netQty || 0)),
+      buyQty: Number(a.buyVol || a.buyQty || a.netQty || 0),
+      sellQty: Number(a.sellVol || a.sellQty || 0),
+      avgBuyRate: Number(a.avgBuyRate || a.avgBuyPrice || 0),
+      avgBuyPrice: Number(a.avgBuyRate || a.avgBuyPrice || 0)
+    }));
+    const topDists = (cum.allDistributors || cum.topDistributors || []).map(d => ({
+      broker: String(d.broker || d.brokerId || d.id),
+      id: String(d.broker || d.brokerId || d.id),
+      brokerId: String(d.broker || d.brokerId || d.id),
+      name: getBrokerName(String(d.broker || d.brokerId || d.id)),
+      netQty: Number(d.netQty || 0),
+      signedHoldQty: Number(d.netQty || 0),
+      holdQty: 0,
+      totalHeldQty: 0,
+      sellQty: Number(d.sellVol || d.sellQty || Math.abs(d.netQty || 0)),
+      avgSellRate: Number(d.avgSellRate || d.avgSellPrice || 0)
+    }));
+    const totalHeld = Number(cum.totalSharesHeldTillNow || 0) || topAccs.reduce((s, a) => s + (a.netQty > 0 ? a.netQty : 0), 0);
+    return {
+      symbol: initialSym,
+      timeframe: 'ALL',
+      timeframeDays: 38,
+      tradingDays: 38,
+      totalSharesHeldTillNow: totalHeld,
+      totalHoldQty: totalHeld,
+      topHoldings: topAccs,
+      allHoldings: topAccs,
+      topBuyers: topAccs,
+      topSellers: topDists,
+      topAccumulators: topAccs,
+      topDistributors: topDists,
+      allDistributors: topDists,
+      topHoldingBroker: topAccs[0] || null,
+      topAccumulator: topAccs[0] || null,
+      brokers: [...topAccs, ...topDists],
+      allBrokers: [...topAccs, ...topDists],
+      avgBuyingPrice: cum.institutionalCostBasis || topAccs[0]?.avgBuyRate || 0,
+      avgAccumulatorBuyPrice: cum.institutionalCostBasis || topAccs[0]?.avgBuyRate || 0,
+      isReal: true
+    };
   });
   const [overviewBrokerTapeMode, setOverviewBrokerTapeMode] = useState('1D_LIVE'); // '1D_LIVE' | '5D_SWING' | 'ALL_TIME'
   const [brokerAnalysisLoading, setBrokerAnalysisLoading] = useState(() => {
@@ -2031,7 +2083,65 @@ export default function StockDetailModal({
 
     // Reset all symbol-scoped states immediately to prevent cross-stock state leakage
     setLiveQuote(null);
-    setAllTimeBrokerAnalysis(null);
+    const cachedAll = getCachedRealBrokerAnalysis(d.symbol, 'all');
+    if (cachedAll) {
+      setAllTimeBrokerAnalysis(cachedAll);
+    } else {
+      const cum = getCumulativeBrokerData(d.symbol);
+      if (cum) {
+        const topAccs = (cum.allHoldings || cum.topHoldings || cum.topAccumulators || []).map(a => ({
+          broker: String(a.broker || a.brokerId || a.id),
+          id: String(a.broker || a.brokerId || a.id),
+          brokerId: String(a.broker || a.brokerId || a.id),
+          name: getBrokerName(String(a.broker || a.brokerId || a.id)),
+          netQty: Number(a.netQty || 0),
+          signedHoldQty: Number(a.netQty || 0),
+          totalHeldQty: Math.max(0, Number(a.netQty || 0)),
+          holdQty: Math.max(0, Number(a.netQty || 0)),
+          buyQty: Number(a.buyVol || a.buyQty || a.netQty || 0),
+          sellQty: Number(a.sellVol || a.sellQty || 0),
+          avgBuyRate: Number(a.avgBuyRate || a.avgBuyPrice || 0),
+          avgBuyPrice: Number(a.avgBuyRate || a.avgBuyPrice || 0)
+        }));
+        const topDists = (cum.allDistributors || cum.topDistributors || []).map(dt => ({
+          broker: String(dt.broker || dt.brokerId || dt.id),
+          id: String(dt.broker || dt.brokerId || dt.id),
+          brokerId: String(dt.broker || dt.brokerId || dt.id),
+          name: getBrokerName(String(dt.broker || dt.brokerId || dt.id)),
+          netQty: Number(dt.netQty || 0),
+          signedHoldQty: Number(dt.netQty || 0),
+          holdQty: 0,
+          totalHeldQty: 0,
+          sellQty: Number(dt.sellVol || dt.sellQty || Math.abs(dt.netQty || 0)),
+          avgSellRate: Number(dt.avgSellRate || dt.avgSellPrice || 0)
+        }));
+        const totalHeld = Number(cum.totalSharesHeldTillNow || 0) || topAccs.reduce((s, a) => s + (a.netQty > 0 ? a.netQty : 0), 0);
+        setAllTimeBrokerAnalysis({
+          symbol: d.symbol,
+          timeframe: 'ALL',
+          tradingDays: 38,
+          timeframeDays: 38,
+          totalSharesHeldTillNow: totalHeld,
+          totalHoldQty: totalHeld,
+          topHoldings: topAccs,
+          allHoldings: topAccs,
+          topBuyers: topAccs,
+          topSellers: topDists,
+          topAccumulators: topAccs,
+          topDistributors: topDists,
+          allDistributors: topDists,
+          topHoldingBroker: topAccs[0] || null,
+          topAccumulator: topAccs[0] || null,
+          brokers: [...topAccs, ...topDists],
+          allBrokers: [...topAccs, ...topDists],
+          avgBuyingPrice: cum.institutionalCostBasis || topAccs[0]?.avgBuyRate || 0,
+          avgAccumulatorBuyPrice: cum.institutionalCostBasis || topAccs[0]?.avgBuyRate || 0,
+          isReal: true
+        });
+      } else {
+        setAllTimeBrokerAnalysis(null);
+      }
+    }
     setBrokerAccumData(null);
     setDividendHistory(null);
     setQuarterlyReports([]);
@@ -2363,8 +2473,15 @@ export default function StockDetailModal({
     setBrokerDays(newDays);
     setBrokerDate('');
     setBrokerAnalysisLoading(true);
+    if (newDays === 'all' || newDays === 'ALL') {
+      if (allTimeBrokerAnalysis) {
+        setRealBrokerAnalysis(allTimeBrokerAnalysis);
+        setBrokerAnalysisLoading(false);
+        return;
+      }
+    }
     fetchBrokerAnalysisData(newDays, '', { refresh: false });
-  }, [fetchBrokerAnalysisData]);
+  }, [fetchBrokerAnalysisData, allTimeBrokerAnalysis]);
 
   const handleBrokerDateChange = useCallback((newDate) => {
     handleModalSessionDateChange(newDate);

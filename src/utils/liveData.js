@@ -3426,6 +3426,18 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
     };
   };
 
+  // Tier -1 Fast Path for 'all': 0ms Offline All-Time Ledger synthesis
+  if (isAllTime && !refresh) {
+    try {
+      const { getHistoricalSubfileBrokerAnalysis } = await getLocalLedger();
+      const allTimeBa = await getHistoricalSubfileBrokerAnalysis(sym, { days: 'all' });
+      if (allTimeBa && (allTimeBa.brokers?.length > 0 || allTimeBa.topAccumulators?.length > 0 || allTimeBa.totalSharesHeldTillNow > 0)) {
+        setCachedRealBrokerAnalysis(sym, allTimeBa, 'all', options);
+        return allTimeBa;
+      }
+    } catch (_) {}
+  }
+
   // Tier 0 Fast Path: 0ms Offline Subfile synthesis for 1D, 5D, or selected dates
   if (!isAllTime && !refresh && (date || numDays === 5 || numDays === 1)) {
     try {

@@ -12,6 +12,7 @@ import { formatNptDateIso } from '../utils/nepseCalendar';
 import { SessionDateDropdown } from './SessionDateDropdown';
 import { triggerHaptic } from '../utils/haptics';
 import LoadingShimmerBar from './LoadingShimmerBar';
+import { getCumulativeBrokerData } from '../utils/historyCache.js';
 
 function safeNum(val, fallback = 0) {
   const n = Number(val);
@@ -72,8 +73,45 @@ function StockBrokerAnalysisTabInner({
   const [internalBrokerData, setInternalBrokerData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
   const [tableHoldingView, setTableHoldingView] = useState('cumulative'); // 'session' | 'cumulative' (default to cumulative holding till today)
-  const [cumulativeHoldingMap, setCumulativeHoldingMap] = useState({});
-  const [totalCumulativeHoldingKitta, setTotalCumulativeHoldingKitta] = useState(0);
+  const [cumulativeHoldingMap, setCumulativeHoldingMap] = useState(() => {
+    const cum = getCumulativeBrokerData(symbol);
+    if (!cum) return {};
+    const map = {};
+    const list = cum.allHoldings || cum.topHoldings || cum.topAccumulators || [];
+    for (const b of list) {
+      const id = String(b.brokerId || b.broker || b.id || b.brokerNo || '').replace(/^0+/, '');
+      if (!id) continue;
+      const buyQty = Number(b.buyQty ?? b.buyVol ?? b.buyKitta ?? b.volume ?? 0);
+      const sellQty = Number(b.sellQty ?? b.sellVol ?? b.sellKitta ?? 0);
+      const netQty = Number(b.netQty ?? b.netKitta ?? b.signedHoldQty ?? b.netVol ?? b.remainingQty ?? b.holdKitta ?? (buyQty - sellQty));
+      const buyAmt = Number(b.buyAmt ?? b.buyAmount ?? b.buyTurnoverNpr ?? 0);
+      const sellAmt = Number(b.sellAmt ?? b.sellAmount ?? b.sellTurnoverNpr ?? 0);
+      const avgBuy = Number(b.avgBuyRate ?? b.avgBuyPrice ?? (buyQty > 0 ? buyAmt / buyQty : 0));
+      const avgSell = Number(b.avgSellRate ?? b.avgSellPrice ?? (sellQty > 0 ? sellAmt / sellQty : 0));
+      const holdAmt = netQty > 0 ? (b.holdAmt || b.totalHeldAmt || (buyAmt - sellAmt > 0 ? buyAmt - sellAmt : netQty * (avgBuy || ltp || 100))) : 0;
+      const retention = buyQty > 0 ? Number(((Math.max(0, netQty) / buyQty) * 100).toFixed(1)) : (b.retentionPct !== undefined ? Number(b.retentionPct) : 0);
+      map[id] = {
+        id,
+        name: b.name || b.brokerName || getBrokerName(id),
+        totalHeldQty: Math.max(0, netQty),
+        netQty,
+        totalHeldAmt: holdAmt,
+        avgBuyRate: +avgBuy.toFixed(2),
+        avgSellRate: +avgSell.toFixed(2),
+        retentionPct: retention,
+        totalBuyQty: buyQty,
+        totalSellQty: sellQty,
+      };
+    }
+    return map;
+  });
+  const [totalCumulativeHoldingKitta, setTotalCumulativeHoldingKitta] = useState(() => {
+    const cum = getCumulativeBrokerData(symbol);
+    if (!cum) return 0;
+    if (cum.totalSharesHeldTillNow) return Number(cum.totalSharesHeldTillNow);
+    const list = cum.allHoldings || cum.topHoldings || cum.topAccumulators || [];
+    return list.reduce((sum, b) => sum + (Number(b.netQty || b.totalHeldQty || 0) > 0 ? Number(b.netQty || b.totalHeldQty || 0) : 0), 0);
+  });
   const [allStoredDates, setAllStoredDates] = useState([]);
   const [multiDayDailyFlow, setMultiDayDailyFlow] = useState([]);
   const [dateSortOrder, setDateSortOrder] = useState('desc'); // 'desc' | 'asc'
@@ -152,7 +190,7 @@ function StockBrokerAnalysisTabInner({
       return false;
     };
 
-    // Immediate hydration from allTimeHoldingData prop if provided
+    // Immediate hydration from allTimeHoldingData prop or bundled cumulative ledger
     const allTimeProp = allTimeHoldingData?.data || allTimeHoldingData;
     if (allTimeProp) {
       const propBrokers = (Array.isArray(allTimeProp.allHoldings) && allTimeProp.allHoldings.length > 0)
@@ -165,8 +203,20 @@ function StockBrokerAnalysisTabInner({
       if (propBrokers.length > 0) {
         parseAndSetHoldings(propBrokers, propDates, propFlow);
       }
-      if (allTimeProp.totalSharesHeldTillNow) {
-        setTotalCumulativeHoldingKitta(Number(allTimeProp.totalSharesHeldTillNow));
+      const sumPropHeld = propBrokers.reduce((sum, b) => sum + (Number(b.totalHeldQty || b.netQty || 0) > 0 ? Number(b.totalHeldQty || b.netQty || 0) : 0), 0);
+      const effectivePropHeld = Number(allTimeProp.totalSharesHeldTillNow || sumPropHeld || 0);
+      if (effectivePropHeld > 0) {
+        setTotalCumulativeHoldingKitta(effectivePropHeld);
+      }
+    } else {
+      const cum = getCumulativeBrokerData(symbol);
+      if (cum) {
+        const cumList = cum.allHoldings || cum.topHoldings || cum.topAccumulators || [];
+        if (cumList.length > 0) {
+          parseAndSetHoldings(cumList);
+          const sumCumHeld = cumList.reduce((sum, b) => sum + (Number(b.netQty || b.totalHeldQty || 0) > 0 ? Number(b.netQty || b.totalHeldQty || 0) : 0), 0);
+          setTotalCumulativeHoldingKitta(Number(cum.totalSharesHeldTillNow || sumCumHeld || 0));
+        }
       }
     }
 
@@ -430,6 +480,81 @@ function StockBrokerAnalysisTabInner({
       }
       // When an explicit date is selected, NEVER return another date's data!
       return null;
+    }
+
+    if (effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300) {
+      if (internalBrokerData && (internalBrokerData.timeframe === 'ALL' || internalBrokerData.tradingDays >= 30)) {
+        return internalBrokerData;
+      }
+      if (brokerData && (brokerData.timeframe === 'ALL' || brokerData.tradingDays >= 30)) {
+        return brokerData;
+      }
+      if (allTimeHoldingData && (Array.isArray(allTimeHoldingData.topHoldings) || Array.isArray(allTimeHoldingData.allHoldings) || Array.isArray(allTimeHoldingData.brokers))) {
+        return allTimeHoldingData;
+      }
+      const cum = getCumulativeBrokerData(symbol);
+      if (cum) {
+        const topAccs = (cum.allHoldings || cum.topHoldings || cum.topAccumulators || []).map((a) => ({
+          broker: String(a.broker || a.brokerId || a.id),
+          id: String(a.broker || a.brokerId || a.id),
+          brokerId: String(a.broker || a.brokerId || a.id),
+          name: a.name || a.brokerName || getBrokerName(String(a.broker || a.brokerId || a.id)),
+          netQty: Number(a.netQty || 0),
+          signedHoldQty: Number(a.netQty || 0),
+          holdQty: Math.max(0, Number(a.netQty || 0)),
+          totalHeldQty: Math.max(0, Number(a.netQty || 0)),
+          buyQty: Number(a.buyVol || a.buyQty || a.netQty || 0),
+          sellQty: Number(a.sellVol || a.sellQty || 0),
+          buyAmt: (Number(a.buyVol || a.buyQty || a.netQty || 0)) * (Number(a.avgBuyRate || a.avgBuyPrice || cum.institutionalCostBasis || 100)),
+          sellAmt: (Number(a.sellVol || a.sellQty || 0)) * (Number(a.avgBuyRate || a.avgBuyPrice || cum.institutionalCostBasis || 100)),
+          avgBuyRate: Number(a.avgBuyRate || a.avgBuyPrice || cum.institutionalCostBasis || 0),
+          avgBuyPrice: Number(a.avgBuyRate || a.avgBuyPrice || cum.institutionalCostBasis || 0),
+          retentionPct: a.buyVol > 0 ? Math.round((Number(a.netQty || 0) / Number(a.buyVol)) * 100) : 100
+        }));
+        const topDists = (cum.allDistributors || cum.topDistributors || []).map((d) => ({
+          broker: String(d.broker || d.brokerId || d.id),
+          id: String(d.broker || d.brokerId || d.id),
+          brokerId: String(d.broker || d.brokerId || d.id),
+          name: d.name || d.brokerName || getBrokerName(String(d.broker || d.brokerId || d.id)),
+          netQty: Number(d.netQty || 0),
+          signedHoldQty: Number(d.netQty || 0),
+          holdQty: 0,
+          totalHeldQty: 0,
+          buyQty: Number(d.buyVol || d.buyQty || 0),
+          sellQty: Number(d.sellVol || d.sellQty || Math.abs(d.netQty || 0)),
+          avgSellRate: Number(d.avgSellRate || d.avgSellPrice || cum.institutionalCostBasis || 0),
+          avgSellPrice: Number(d.avgSellRate || d.avgSellPrice || cum.institutionalCostBasis || 0)
+        }));
+        const totalHeld = Number(cum.totalSharesHeldTillNow || 0) || topAccs.reduce((s, a) => s + (a.netQty > 0 ? a.netQty : 0), 0);
+        return {
+          symbol,
+          timeframe: 'ALL',
+          timeframeDays: 38,
+          tradingDays: 38,
+          totalSharesHeldTillNow: totalHeld,
+          totalHoldQty: totalHeld,
+          totalVolume: cum.totalVolume || 0,
+          totalTurnover: (cum.totalVolume || 0) * (cum.institutionalCostBasis || 100),
+          vwap: cum.institutionalCostBasis || 0,
+          topHoldings: topAccs,
+          allHoldings: topAccs,
+          topBuyers: topAccs,
+          topSellers: topDists,
+          topAccumulators: topAccs,
+          topDistributors: topDists,
+          topHoldingBroker: topAccs[0] || null,
+          topAccumulator: topAccs[0] || null,
+          brokers: [...topAccs, ...topDists],
+          allBrokers: [...topAccs, ...topDists],
+          avgAccumulatorBuyPrice: cum.institutionalCostBasis || topAccs[0]?.avgBuyRate || 0,
+          bcr3BuyPct: cum.bcr3Cumulative || 0,
+          scr3SellPct: cum.scr3Cumulative || 0,
+          smartMoneyNetFlowPct: cum.smartMoneyNetFlowPct || 0,
+          adSignal: (cum.smartMoneyNetFlowPct || 0) > 5 ? 'Accumulation' : (cum.smartMoneyNetFlowPct || 0) < -5 ? 'Distribution' : 'Neutral',
+          isReal: true,
+          source: 'cumulative_broker_ledger_baseline'
+        };
+      }
     }
 
     if (internalBrokerData && (
@@ -974,6 +1099,10 @@ function StockBrokerAnalysisTabInner({
     let sessionHold = 0;
     let cumHold = 0;
     let cumHoldAmt = 0;
+    let cumTotalBuyAmt = 0;
+    let cumTotalBuyVol = 0;
+    let cumTotalSellAmt = 0;
+    let cumTotalSellVol = 0;
     let totalBuyAmt = 0;
     let totalSellAmt = 0;
 
@@ -997,6 +1126,10 @@ function StockBrokerAnalysisTabInner({
           const qty = c.totalHeldQty || Math.max(0, c.netQty || 0);
           cumHold += qty;
           cumHoldAmt += (c.totalHeldAmt || (qty * (c.avgBuyRate || ltp || 100)));
+          cumTotalBuyVol += (c.totalBuyQty || qty);
+          cumTotalBuyAmt += (c.totalBuyQty || qty) * (c.avgBuyRate || ltp || 100);
+          cumTotalSellVol += (c.totalSellQty || 0);
+          cumTotalSellAmt += (c.totalSellQty || 0) * (c.avgSellRate || c.avgBuyRate || ltp || 100);
         }
       }
     } else {
@@ -1005,6 +1138,10 @@ function StockBrokerAnalysisTabInner({
         if (cH > 0) {
           cumHold += cH;
           cumHoldAmt += (b.cumHoldAmt || (cH * (b.cumAvgBuy || b.avgBuy || ltp || 100)));
+          cumTotalBuyVol += (b.buyQty || cH);
+          cumTotalBuyAmt += (b.buyAmt || (cH * (b.avgBuy || ltp || 100)));
+          cumTotalSellVol += (b.sellQty || 0);
+          cumTotalSellAmt += (b.sellAmt || 0);
         }
       }
     }
@@ -1016,6 +1153,10 @@ function StockBrokerAnalysisTabInner({
     const weightedAvgBuy = sessionBuy > 0 ? +(totalBuyAmt / sessionBuy).toFixed(2) : 0;
     const weightedAvgSell = sessionSell > 0 ? +(totalSellAmt / sessionSell).toFixed(2) : 0;
     const overallRetention = sessionBuy > 0 ? Math.round((sessionHold / sessionBuy) * 100) : 0;
+
+    const cumulativeWeightedAvgBuy = cumTotalBuyVol > 0 ? +(cumTotalBuyAmt / cumTotalBuyVol).toFixed(2) : 0;
+    const cumulativeWeightedAvgSell = cumTotalSellVol > 0 ? +(cumTotalSellAmt / cumTotalSellVol).toFixed(2) : 0;
+    const cumulativeRetention = cumTotalBuyVol > 0 ? Math.round((cumHold / cumTotalBuyVol) * 100) : 0;
 
     // Total locked by accumulators is the authentic cumulative pool (distinct from today's session activity)
     const effectiveTotalCumHold = (totalCumulativeHoldingKitta > 0 ? totalCumulativeHoldingKitta : (cumHold > 0 ? cumHold : sessionHold || 0));
@@ -1029,7 +1170,10 @@ function StockBrokerAnalysisTabInner({
       cumHoldAmt,
       weightedAvgBuy,
       weightedAvgSell,
-      overallRetention
+      overallRetention,
+      cumulativeWeightedAvgBuy,
+      cumulativeWeightedAvgSell,
+      cumulativeRetention
     };
   }, [brokerRecords, cumulativeHoldingMap, totalCumulativeHoldingKitta, ltp]);
 
@@ -1651,11 +1795,16 @@ function StockBrokerAnalysisTabInner({
                   textAlign: 'right'
                 }}>
                   <div style={{ fontSize: 10, color: '#a7f3d0', fontWeight: 800, textTransform: 'uppercase' }}>
-                    {effectiveDate ? 'Session Net Traded Volume' : 'Total Locked by Accumulators'}
+                    {tableHoldingView === 'session' ? 'Session Net Accumulated' : 'Total Locked by Accumulators'}
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                    +{((effectiveDate ? totalVolume : (totalCumulativeHoldingKitta > 0 ? totalCumulativeHoldingKitta : (brokerHoldingTotals.cumHold || 0))) || 0).toLocaleString()} <span style={{ fontSize: 11, color: '#6ee7b7' }}>kitta</span>
+                    +{((tableHoldingView === 'session' ? brokerHoldingTotals.sessionHold : (brokerHoldingTotals.cumHold || totalCumulativeHoldingKitta || 0)) || 0).toLocaleString()} <span style={{ fontSize: 11, color: '#6ee7b7' }}>kitta</span>
                   </div>
+                  {tableHoldingView === 'session' && (
+                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 1 }}>
+                      All-Time: +{safeFmtInt(brokerHoldingTotals.cumHold)} kitta
+                    </div>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -2461,9 +2610,9 @@ function StockBrokerAnalysisTabInner({
                       <td style={{ padding: '10px 6px', color: '#10b981' }}>TOTAL ACCUMULATED (Till Today)</td>
                       <td style={{ padding: '10px 6px', textAlign: 'right', color: '#10b981', fontWeight: 900, fontFamily: 'var(--font-mono)' }}>+{safeFmtInt(brokerHoldingTotals?.cumHold)} kitta</td>
                       <td style={{ padding: '10px 6px', textAlign: 'right', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>{formatShareHubCurrency(brokerHoldingTotals?.cumHoldAmt || 0)}</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{safeNum(brokerHoldingTotals?.weightedAvgBuy) > 0 ? 'Rs. ' + safeNum(brokerHoldingTotals?.weightedAvgBuy).toFixed(2) : '—'}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{safeNum(brokerHoldingTotals?.cumulativeWeightedAvgBuy) > 0 ? 'Rs. ' + safeNum(brokerHoldingTotals?.cumulativeWeightedAvgBuy).toFixed(2) : (safeNum(brokerHoldingTotals?.weightedAvgBuy) > 0 ? 'Rs. ' + safeNum(brokerHoldingTotals?.weightedAvgBuy).toFixed(2) : '—')}</td>
                       <td style={{ padding: '10px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>{safeNum(brokerHoldingTotals?.weightedAvgSell) > 0 ? 'Rs. ' + safeNum(brokerHoldingTotals?.weightedAvgSell).toFixed(2) : '—'}</td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#a78bfa', fontFamily: 'var(--font-mono)' }}>{safeNum(brokerHoldingTotals?.overallRetention)}%</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#a78bfa', fontFamily: 'var(--font-mono)' }}>{safeNum(brokerHoldingTotals?.cumulativeRetention || brokerHoldingTotals?.overallRetention)}%</td>
                     </tr>
                   </tfoot>
                 )}
@@ -2710,10 +2859,20 @@ function StockBrokerAnalysisTabInner({
               </div>
             </div>
             <div style={{ padding: 10, borderRadius: 12, background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-              <div style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700 }}>Total Net Held Float</div>
-              <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                {totalHold.toLocaleString()} kitta
+              <div style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700 }}>
+                {effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300 ? 'Total Shares Held Till Today' : 'Total Net Held Float'}
               </div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                {((effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300)
+                  ? (brokerHoldingTotals?.cumHold || totalHold)
+                  : totalHold
+                ).toLocaleString()} kitta
+              </div>
+              {effectiveDays !== 'all' && effectiveDays !== 'ALL' && Number(effectiveDays) < 300 && (
+                <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 1 }}>
+                  Till Today: +{safeFmtInt(brokerHoldingTotals?.cumHold)} kitta
+                </div>
+              )}
             </div>
             <div style={{ padding: 10, borderRadius: 12, background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
               <div style={{ fontSize: 11, color: '#c084fc', fontWeight: 700 }}>Market VWAP</div>

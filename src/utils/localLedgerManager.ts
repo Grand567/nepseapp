@@ -13,6 +13,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { idbGet, idbSet } from './indexedDb.js';
 import { fetchFromBackend } from './liveData.js';
 import { getProxyBase } from './proxyBase.js';
+import { getCumulativeBrokerData } from './historyCache.js';
 
 export interface ScripTacticalLevels {
   limit_buy_min: number;
@@ -758,7 +759,77 @@ export async function getHistoricalSubfileBrokerAnalysis(
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return null;
   const rawDays = typeof options === 'object' && options !== null ? options.days : options;
-  const numDays = rawDays === 'all' ? 5 : (parseInt(String(rawDays || 1), 10) || 1);
+  const isAll = (rawDays === 'all' || rawDays === 'ALL' || rawDays === 'all-time' || Number(rawDays) >= 300);
+  if (isAll) {
+    const cum = getCumulativeBrokerData(sym);
+    if (cum) {
+      const topAccs = (cum.allHoldings || cum.topHoldings || cum.topAccumulators || []).map((a: any) => ({
+        broker: String(a.broker || a.brokerId || a.id),
+        id: String(a.broker || a.brokerId || a.id),
+        brokerId: String(a.broker || a.brokerId || a.id),
+        name: `Broker #${a.broker || a.brokerId || a.id}`,
+        brokerName: `Broker #${a.broker || a.brokerId || a.id}`,
+        netQty: Number(a.netQty || a.netKitta || 0),
+        signedHoldQty: Number(a.netQty || a.netKitta || 0),
+        holdQty: Math.max(0, Number(a.netQty || a.netKitta || 0)),
+        totalHeldQty: Math.max(0, Number(a.netQty || a.netKitta || 0)),
+        buyQty: Number(a.buyVol || a.buyQty || a.netQty || a.volume || 0),
+        sellQty: Number(a.sellVol || a.sellQty || 0),
+        buyAmt: (Number(a.buyVol || a.buyQty || a.netQty || a.volume || 0)) * (Number(a.avgBuyRate || a.avgBuyPrice || cum.institutionalCostBasis || 100)),
+        sellAmt: (Number(a.sellVol || a.sellQty || 0)) * (Number(a.avgBuyRate || a.avgBuyPrice || cum.institutionalCostBasis || 100)),
+        avgBuyRate: Number(a.avgBuyRate || a.avgBuyPrice || cum.institutionalCostBasis || 0),
+        avgBuyPrice: Number(a.avgBuyRate || a.avgBuyPrice || cum.institutionalCostBasis || 0),
+        retentionPct: a.buyVol > 0 ? Math.round((Number(a.netQty || 0) / Number(a.buyVol)) * 100) : (a.retentionPct !== undefined ? Number(a.retentionPct) : 100)
+      }));
+      const topDists = (cum.allDistributors || cum.topDistributors || []).map((d: any) => ({
+        broker: String(d.broker || d.brokerId || d.id),
+        id: String(d.broker || d.brokerId || d.id),
+        brokerId: String(d.broker || d.brokerId || d.id),
+        name: `Broker #${d.broker || d.brokerId || d.id}`,
+        brokerName: `Broker #${d.broker || d.brokerId || d.id}`,
+        netQty: Number(d.netQty || d.netKitta || 0),
+        signedHoldQty: Number(d.netQty || d.netKitta || 0),
+        holdQty: 0,
+        totalHeldQty: 0,
+        buyQty: Number(d.buyVol || d.buyQty || 0),
+        sellQty: Number(d.sellVol || d.sellQty || Math.abs(d.netQty || d.netKitta || 0)),
+        sellAmt: (Number(d.sellVol || d.sellQty || Math.abs(d.netQty || d.netKitta || 0))) * (Number(d.avgSellRate || d.avgSellPrice || cum.institutionalCostBasis || 100)),
+        avgSellRate: Number(d.avgSellRate || d.avgSellPrice || cum.institutionalCostBasis || 0),
+        avgSellPrice: Number(d.avgSellRate || d.avgSellPrice || cum.institutionalCostBasis || 0)
+      }));
+      const totalHeld = Number(cum.totalSharesHeldTillNow || 0) || topAccs.reduce((s: number, a: any) => s + (a.netQty > 0 ? a.netQty : 0), 0);
+      return {
+        symbol: sym,
+        timeframe: 'ALL',
+        timeframeDays: 38,
+        tradingDays: 38,
+        totalSharesHeldTillNow: totalHeld,
+        totalHoldQty: totalHeld,
+        totalVolume: cum.totalVolume || 0,
+        totalTurnover: (cum.totalVolume || 0) * (cum.institutionalCostBasis || 100),
+        vwap: cum.institutionalCostBasis || 0,
+        topHoldings: topAccs,
+        allHoldings: topAccs,
+        topBuyers: topAccs,
+        topSellers: topDists,
+        topAccumulators: topAccs,
+        topDistributors: topDists,
+        topHoldingBroker: topAccs[0] || null,
+        topAccumulator: topAccs[0] || null,
+        brokers: [...topAccs, ...topDists],
+        allBrokers: [...topAccs, ...topDists],
+        avgAccumulatorBuyPrice: cum.institutionalCostBasis || topAccs[0]?.avgBuyRate || 0,
+        bcr3BuyPct: cum.bcr3Cumulative || 0,
+        scr3SellPct: cum.scr3Cumulative || 0,
+        smartMoneyNetFlowPct: cum.smartMoneyNetFlowPct || 0,
+        adSignal: (cum.smartMoneyNetFlowPct || 0) > 5 ? 'Accumulation' : (cum.smartMoneyNetFlowPct || 0) < -5 ? 'Distribution' : 'Neutral',
+        isReal: true,
+        source: 'cumulative_broker_ledger_baseline'
+      };
+    }
+  }
+
+  const numDays = parseInt(String(rawDays || 1), 10) || 1;
   const targetDate = typeof options === 'object' && options !== null && options.date ? String(options.date).trim() : null;
 
   if (targetDate || numDays === 1) {
@@ -840,6 +911,9 @@ export async function getHistoricalSubfileBrokerAnalysis(
     const scr3 = Number(flow.concentration?.scr3_sell_pct || 0);
     const singleAdSignal = bcr3 > scr3 + 5 ? 'Accumulation' : (scr3 > bcr3 + 5 ? 'Distribution' : 'Neutral');
     const singleAdStrength = singleAdSignal === 'Accumulation' ? `${bcr3}%` : singleAdSignal === 'Distribution' ? `${scr3}%` : `${bcr3}% / ${scr3}%`;
+    const totalHoldQty = buyers.reduce((sum: number, b: any) => sum + (Number(b.netQty || 0) > 0 ? Number(b.netQty || 0) : 0), 0);
+    const cum = getCumulativeBrokerData(sym);
+    const cumHeld = cum ? (Number(cum.totalSharesHeldTillNow || 0) || (cum.topAccumulators || []).reduce((s: number, a: any) => s + (a.netQty > 0 ? a.netQty : 0), 0)) : totalHoldQty;
 
     return {
       symbol: sym,
@@ -851,6 +925,11 @@ export async function getHistoricalSubfileBrokerAnalysis(
       totalTurnover: quote?.turnover || 0,
       totalAmount: quote?.turnover || 0,
       vwap: quote?.vwap || (quote?.turnover && quote?.volume ? +(quote.turnover / quote.volume).toFixed(2) : 0),
+      totalSharesHeldTillNow: cumHeld || totalHoldQty,
+      totalHoldQty,
+      topHoldings: buyers,
+      allHoldings: buyers,
+      summary: { totalHoldQty, totalBuyVol: quote?.volume || 0, totalSharesHeldTillNow: cumHeld || totalHoldQty },
       bcr3BuyPct: bcr3,
       scr3SellPct: scr3,
       bcr3SellPct: scr3,
@@ -1074,6 +1153,9 @@ export async function getHistoricalSubfileBrokerAnalysis(
   const topAccNet = accumulators.slice(0, 3).reduce((sum, b) => sum + b.netQty, 0);
   const topDistNet = distributors.slice(0, 3).reduce((sum, b) => sum + Math.abs(b.netQty), 0);
   const smartMoneyNetFlowPct = totalVol > 0 ? +(((topAccNet - topDistNet) / totalVol) * 100).toFixed(1) : 0;
+  const total5dHoldQty = accumulators.reduce((sum: number, b) => sum + (Number(b.netQty || 0) > 0 ? Number(b.netQty || 0) : 0), 0);
+  const cum5d = getCumulativeBrokerData(sym);
+  const cum5dHeld = cum5d ? (Number(cum5d.totalSharesHeldTillNow || 0) || (cum5d.topAccumulators || []).reduce((s: number, a: any) => s + (a.netQty > 0 ? a.netQty : 0), 0)) : total5dHoldQty;
 
   return {
     symbol: sym,
@@ -1084,6 +1166,11 @@ export async function getHistoricalSubfileBrokerAnalysis(
     totalAmount: totalAmt,
     vwap: marketVwap,
     bigBrokerVWAP: whaleVwap,
+    totalSharesHeldTillNow: cum5dHeld || total5dHoldQty,
+    totalHoldQty: total5dHoldQty,
+    topHoldings: accumulators,
+    allHoldings: accumulators,
+    summary: { totalHoldQty: total5dHoldQty, totalBuyVol: totalVol, totalSharesHeldTillNow: cum5dHeld || total5dHoldQty },
     topAccumulator: topAcc,
     topDistributor: topDist,
     leadAccumulator: topAcc,
