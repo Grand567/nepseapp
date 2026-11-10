@@ -5653,8 +5653,8 @@ function Dashboard({
         <StockDetailModal
           stock={selectedStock}
           allStocks={stocks}
-          selectedDate={selectedStock?.sessionDate || selectedStock?.date || ''}
-          sessionDate={selectedStock?.sessionDate || selectedStock?.date || ''}
+          selectedDate={selectedStock?.isHistoricalSession ? (selectedStock?.sessionDate || selectedStock?.date || '') : ''}
+          sessionDate={selectedStock?.isHistoricalSession ? (selectedStock?.sessionDate || selectedStock?.date || '') : ''}
           onClose={() => setSelectedStock(null)}
           marketStatus={marketStatus}
         />

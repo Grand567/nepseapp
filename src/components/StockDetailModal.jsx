@@ -1348,7 +1348,9 @@ export default function StockDetailModal({
   sessionDate: propSessionDate = '',
   date: propDate = '',
 }) {
-  const initialEffectiveDate = propSelectedDate || propSessionDate || propDate || (typeof stock === 'object' ? (stock?.sessionDate || stock?.businessDate || stock?.date) : '') || '';
+  const initialEffectiveDate = (typeof stock === 'object' && stock?.isHistoricalSession)
+    ? (propSelectedDate || propSessionDate || propDate || stock?.sessionDate || stock?.businessDate || stock?.date || '')
+    : (propSelectedDate && propSelectedDate !== getLatestTradingDateStr() && propSelectedDate !== 'latest' && propSelectedDate !== '' ? propSelectedDate : '');
   const marketStatus = useMemo(() => propMarketStatus || getDetailedMarketStatus(), [propMarketStatus]);
   const { setActiveTab: setGlobalActiveTab } = useNavigation();
   const [activeTab, setActiveTab] = useState(() => (typeof stock === 'object' && stock?.initialTab) || initialTab || 'overview');
@@ -2368,7 +2370,9 @@ export default function StockDetailModal({
     handleModalSessionDateChange(newDate);
   }, [handleModalSessionDateChange]);
 
-  const propEffectiveDate = propSelectedDate || propSessionDate || propDate || (typeof stock === 'object' ? (stock?.sessionDate || stock?.businessDate || stock?.date) : '') || '';
+  const propEffectiveDate = (typeof stock === 'object' && stock?.isHistoricalSession)
+    ? (propSelectedDate || propSessionDate || propDate || stock?.sessionDate || stock?.businessDate || stock?.date || '')
+    : (propSelectedDate && propSelectedDate !== getLatestTradingDateStr() && propSelectedDate !== 'latest' && propSelectedDate !== '' ? propSelectedDate : '');
   const prevPropDateRef = useRef(propEffectiveDate);
 
   useEffect(() => {

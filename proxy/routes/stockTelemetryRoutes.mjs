@@ -973,6 +973,8 @@ export async function handleStockSmartMoney(req, res) {
     return res.json({
       success: true,
       symbol: validSymbol,
+      date: targetDates[0] || (availableDates[0] || ''),
+      businessDate: targetDates[0] || (availableDates[0] || ''),
       timeframe: requestedTf,
       days: requestedDays,
       availableDates,

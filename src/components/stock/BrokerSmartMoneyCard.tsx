@@ -679,12 +679,24 @@ function BrokerSmartMoneyCardInner({
               30D Baseline Normalized
             </span>
             {(() => {
-              const pDate = (rawPayload as any)?.date || (rawPayload as any)?.businessDate || (rawPayload as any)?.startDate || (rawPayload as any)?.toDate || (initialData as any)?.date || (initialData as any)?.startDate || '';
-              if (!pDate) return null;
+              const latestDateStr = '2026-11-06';
+              const pDate = (rawPayload as any)?.date || (rawPayload as any)?.businessDate || (rawPayload as any)?.toDate || (initialData as any)?.date || (initialData as any)?.businessDate || latestDateStr;
+              const fromDate = (rawPayload as any)?.fromDate || (rawPayload as any)?.startDate || '';
+              const toDate = (rawPayload as any)?.toDate || (rawPayload as any)?.endDate || pDate;
+
+              let badgeText = `Session: ${pDate}`;
+              if (timeframe === 'ALL') {
+                badgeText = `All-Time Ledger (Through ${toDate})`;
+              } else if ((timeframe === '5D' || timeframe === '1M') && fromDate && toDate && fromDate !== toDate) {
+                badgeText = `Window: ${fromDate} → ${toDate}`;
+              } else if (timeframe !== '1D') {
+                badgeText = `${timeframe} Flow (Latest: ${toDate})`;
+              }
+
               return (
                 <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-800/90 text-cyan-300 border border-cyan-800/40 flex items-center gap-1.5 shadow-inner">
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-                  Session: {pDate}
+                  {badgeText}
                 </span>
               );
             })()}
