@@ -55,6 +55,65 @@ export async function ensurePushTokensTable() {
   }
 }
 
+export async function ensureTelegramConfigTable() {
+  if (!pool) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS telegram_bot_config (
+        id             VARCHAR(50) PRIMARY KEY DEFAULT 'default',
+        bot_token      TEXT,
+        chat_id        VARCHAR(100),
+        enabled        BOOLEAN DEFAULT TRUE,
+        is_test_server BOOLEAN DEFAULT FALSE,
+        updated_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+  } catch (err) {
+    console.warn('[db] ensureTelegramConfigTable notice:', err.message);
+  }
+}
+
+export async function getTelegramConfigFromDb() {
+  if (!pool) return null;
+  try {
+    await ensureTelegramConfigTable();
+    const res = await query('SELECT bot_token, chat_id, enabled, is_test_server FROM telegram_bot_config WHERE id = $1', ['default']);
+    if (res && res.rows && res.rows.length > 0) {
+      const r = res.rows[0];
+      return {
+        botToken: r.bot_token,
+        chatId: r.chat_id,
+        enabled: r.enabled !== false,
+        isTestServer: Boolean(r.is_test_server)
+      };
+    }
+  } catch (err) {
+    console.warn('[db] getTelegramConfigFromDb notice:', err.message);
+  }
+  return null;
+}
+
+export async function saveTelegramConfigToDb({ botToken, chatId, enabled = true, isTestServer = false }) {
+  if (!pool) return false;
+  try {
+    await ensureTelegramConfigTable();
+    await query(`
+      INSERT INTO telegram_bot_config (id, bot_token, chat_id, enabled, is_test_server, updated_at)
+      VALUES ('default', $1, $2, $3, $4, NOW())
+      ON CONFLICT (id) DO UPDATE SET
+        bot_token = COALESCE(EXCLUDED.bot_token, telegram_bot_config.bot_token),
+        chat_id = COALESCE(EXCLUDED.chat_id, telegram_bot_config.chat_id),
+        enabled = EXCLUDED.enabled,
+        is_test_server = EXCLUDED.is_test_server,
+        updated_at = NOW();
+    `, [botToken, chatId, enabled !== false, Boolean(isTestServer)]);
+    return true;
+  } catch (err) {
+    console.warn('[db] saveTelegramConfigToDb notice:', err.message);
+    return false;
+  }
+}
+
 export async function initDB() {
   if (!pool) {
     console.log('[db] PostgreSQL disabled (no DATABASE_URL configured). Running proxy in lightweight memory mode.');

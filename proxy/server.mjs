@@ -63,6 +63,7 @@ import {
 import { 
   getTelegramStatus, 
   saveTelegramConfig, 
+  hydrateTelegramConfigFromDb,
   testTelegramConnection, 
   verifyTelegramToken,
   cleanBotToken,
@@ -13815,6 +13816,7 @@ app.listen(PORT, '0.0.0.0', async () => {
     try {
         warmupStage = 'Initializing SQLite database & schema';
         await initDB();
+        await hydrateTelegramConfigFromDb().catch(() => {});
         try {
           warmupStage = 'Restoring floorsheet vault & rebuilding hot cache';
           seedFromDiskVault();

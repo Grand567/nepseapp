@@ -21,6 +21,7 @@ import https from 'https';
 import { fileURLToPath } from 'url';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 import { auditAntiDematDumpGuard } from './db/ledgerStore.js';
+import { getTelegramConfigFromDb, saveTelegramConfigToDb } from './db.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -94,12 +95,41 @@ export function saveTelegramConfig({ botToken, chatId, enabled = true, isTestSer
 
   try {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(nextConfig, null, 2), 'utf8');
+    saveTelegramConfigToDb(nextConfig).catch(() => {});
     console.log('[TelegramNotifier] Configuration saved successfully.');
     return { success: true };
   } catch (err) {
     console.error('[TelegramNotifier] Failed to save config:', err.message);
     return { success: false, error: err.message };
   }
+}
+
+/**
+ * Hydrates verified Telegram configuration from PostgreSQL database on server startup.
+ * Prevents ephemeral Render container redeployments from wiping the bot token or falling back
+ * to stale environment variables.
+ */
+export async function hydrateTelegramConfigFromDb() {
+  try {
+    const dbCfg = await getTelegramConfigFromDb();
+    if (dbCfg && dbCfg.botToken) {
+      const current = loadConfig();
+      const nextConfig = {
+        botToken: cleanBotToken(dbCfg.botToken),
+        chatId: dbCfg.chatId ? String(dbCfg.chatId).trim() : current.chatId,
+        enabled: dbCfg.enabled !== false,
+        isTestServer: Boolean(dbCfg.isTestServer),
+        updatedAt: new Date().toISOString()
+      };
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(nextConfig, null, 2), 'utf8');
+      resetTelegramAuthError();
+      console.log(`[TelegramNotifier] ✅ Restored verified Telegram bot configuration from PostgreSQL database (Bot: ${nextConfig.botToken.slice(0, 6)}...${nextConfig.botToken.slice(-4)}, Chat ID: ${nextConfig.chatId || 'pending'}).`);
+      return nextConfig;
+    }
+  } catch (err) {
+    console.warn('[TelegramNotifier] PostgreSQL config hydration notice:', err.message);
+  }
+  return null;
 }
 
 export function getTelegramStatus() {
