@@ -1001,7 +1001,22 @@ export async function handleStockSmartMoney(req, res) {
       bcr3BuyPct: agg.bcr3BuyPct,
       scr3SellPct: agg.scr3SellPct,
       marketVWAP: agg.marketVWAP,
-      bigBrokerVWAP: agg.bigBrokerVWAP
+      bigBrokerVWAP: agg.bigBrokerVWAP,
+      coverage: {
+        startDate: targetDates[targetDates.length - 1] || (availableDates[availableDates.length - 1] || ''),
+        endDate: targetDates[0] || (availableDates[0] || ''),
+        sessionCount: targetDates.length,
+        tradingDays: targetDates.length,
+        isLifetime: false,
+        label: isAllTimeRequest
+          ? `Since ${targetDates[targetDates.length - 1] || availableDates[availableDates.length - 1] || '2026-08-27'} (${targetDates.length} sessions)`
+          : `${targetDates.length} Sessions (${targetDates[targetDates.length - 1] || ''} to ${targetDates[0] || ''})`,
+        disclaimer: isAllTimeRequest
+          ? `Covered from ${targetDates[targetDates.length - 1] || availableDates[availableDates.length - 1] || '2026-08-27'} (${targetDates.length} sessions). Pre-start baseline unknown. Unadjusted for corporate actions.`
+          : `Session range: ${targetDates.length} sessions. Unadjusted for corporate actions.`,
+        isLiveIncomplete: false,
+        lastUpdated: new Date().toISOString()
+      }
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
