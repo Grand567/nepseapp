@@ -52,7 +52,8 @@ const testFiles = [
   'amBatchNotificationDiagnosticTest.test.mjs',
   'anBatchStatutoryCircuitRules.test.mjs',
   'aoBatchPushNotificationVerification.test.mjs',
-  'testMeroShareWaccDetails.test.mjs'
+  'testMeroShareWaccDetails.test.mjs',
+  'testCumulativeBrokerHolding.test.mjs'
 ];
 
 console.log('====================================================');
