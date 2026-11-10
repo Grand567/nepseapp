@@ -2052,9 +2052,10 @@ export async function pullMeroShareWaccBatch(account, holdings = [], onProgress 
 
   // Step 3: Identify scrips needing transaction-level purchase source query
   const pendingScrips = (holdings || []).filter(h => {
-    const sym = String(h.symbol || h.scrip || '').toUpperCase().trim();
+    const rawSym = String(h.symbol || h.scrip || '');
+    const sym = normalizeScripSymbol(rawSym);
     if (!sym) return false;
-    if (waccResultMap[sym]) return false;
+    if (waccResultMap[sym] || waccResultMap[rawSym.toUpperCase().trim()]) return false;
     if (sIsDebentureOrFund(sym)) return false;
     return true;
   });
@@ -2168,7 +2169,7 @@ export async function pullMeroShareWaccBatch(account, holdings = [], onProgress 
   let declaredCount = 0;
   let purchaseSourceCount = 0;
   Object.values(waccResultMap).forEach(v => {
-    if (v.source === 'CDSC_MY_HOLDING_DECLARED') declaredCount++;
+    if (v.source === 'CDSC_WACC' || v.source === 'CDSC_MY_HOLDING_DECLARED') declaredCount++;
     else purchaseSourceCount++;
   });
 
