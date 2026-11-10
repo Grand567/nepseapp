@@ -1481,14 +1481,27 @@ export default function StockDetailModal({
       sellQty: Number(d.sellVol || d.sellQty || Math.abs(d.netQty || 0)),
       avgSellRate: Number(d.avgSellRate || d.avgSellPrice || 0)
     }));
-    const totalHeld = Number(cum.totalSharesHeldTillNow || 0) || topAccs.reduce((s, a) => s + (a.netQty > 0 ? a.netQty : 0), 0);
+    const totalHeld = Number(cum.totalSharesHeldTillNow || cum.totalHoldQty || 0) || topAccs.reduce((s, a) => s + (a.netQty > 0 ? a.netQty : 0), 0);
+    const tradingSessions = Number(cum.coverage?.sessionCount || cum.coverage?.tradingDays || cum.tradingDays || cum.timeframeDays || 42);
+    const coverageObj = cum.coverage || {
+      startDate: '2026-08-27',
+      endDate: '2026-11-06',
+      sessionCount: tradingSessions,
+      tradingDays: tradingSessions,
+      isLifetime: false,
+      label: `Since 2026-08-27 (${tradingSessions} sessions)`,
+      disclaimer: `Covered from 2026-08-27 (${tradingSessions} sessions). Pre-2026-08-27 baseline unknown. Unadjusted for corporate actions.`,
+      isLiveIncomplete: false,
+      lastUpdated: new Date().toISOString()
+    };
     return {
       symbol: initialSym,
       timeframe: 'ALL',
-      timeframeDays: 38,
-      tradingDays: 38,
+      timeframeDays: tradingSessions,
+      tradingDays: tradingSessions,
       totalSharesHeldTillNow: totalHeld,
       totalHoldQty: totalHeld,
+      coverage: coverageObj,
       topHoldings: topAccs,
       allHoldings: topAccs,
       topBuyers: topAccs,
@@ -2115,14 +2128,27 @@ export default function StockDetailModal({
           sellQty: Number(dt.sellVol || dt.sellQty || Math.abs(dt.netQty || 0)),
           avgSellRate: Number(dt.avgSellRate || dt.avgSellPrice || 0)
         }));
-        const totalHeld = Number(cum.totalSharesHeldTillNow || 0) || topAccs.reduce((s, a) => s + (a.netQty > 0 ? a.netQty : 0), 0);
+        const totalHeld = Number(cum.totalSharesHeldTillNow || cum.totalHoldQty || 0) || topAccs.reduce((s, a) => s + (a.netQty > 0 ? a.netQty : 0), 0);
+        const tradingSessions = Number(cum.coverage?.sessionCount || cum.coverage?.tradingDays || cum.tradingDays || cum.timeframeDays || 42);
+        const coverageObj = cum.coverage || {
+          startDate: '2026-08-27',
+          endDate: '2026-11-06',
+          sessionCount: tradingSessions,
+          tradingDays: tradingSessions,
+          isLifetime: false,
+          label: `Since 2026-08-27 (${tradingSessions} sessions)`,
+          disclaimer: `Covered from 2026-08-27 (${tradingSessions} sessions). Pre-2026-08-27 baseline unknown. Unadjusted for corporate actions.`,
+          isLiveIncomplete: false,
+          lastUpdated: new Date().toISOString()
+        };
         setAllTimeBrokerAnalysis({
           symbol: d.symbol,
           timeframe: 'ALL',
-          tradingDays: 38,
-          timeframeDays: 38,
+          tradingDays: tradingSessions,
+          timeframeDays: tradingSessions,
           totalSharesHeldTillNow: totalHeld,
           totalHoldQty: totalHeld,
+          coverage: coverageObj,
           topHoldings: topAccs,
           allHoldings: topAccs,
           topBuyers: topAccs,
@@ -4832,7 +4858,7 @@ export default function StockDetailModal({
                           cursor: 'pointer'
                         }}
                       >
-                        ALL-TIME CUMULATIVE
+                        {allTimeBrokerAnalysis?.coverage?.sessionCount ? `NET ACCUMULATION (${allTimeBrokerAnalysis.coverage.sessionCount}S)` : 'NET ACCUMULATION (42S)'}
                       </button>
                     </div>
                   </div>
@@ -4913,7 +4939,9 @@ export default function StockDetailModal({
                   </div>
 
                   <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
-                    <div style={{ fontSize: 10, fontWeight: 800, color: '#10b981', textTransform: 'uppercase' }}>Total Shares Traded / Held</div>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#10b981', textTransform: 'uppercase' }}>
+                      {overviewBrokerTapeMode === 'ALL_TIME' ? "Net Accumulation Till Today" : "Total Shares Traded / Held"}
+                    </div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: '#10b981', marginTop: 2 }}>
                       {(() => {
                         if (overviewBrokerTapeMode === '1D_LIVE') {
@@ -4924,8 +4952,9 @@ export default function StockDetailModal({
                           return `${vol5D.toLocaleString()} sh`;
                         }
                         const totalAllTime = Number(allTimeBrokerAnalysis?.totalSharesHeldTillNow || 0);
-                        if (totalAllTime > 0) return `${totalAllTime.toLocaleString()} sh`;
-                        return `${Number(realBrokerAnalysis?.totalSharesHeldTillNow || realBrokerAnalysis?.summary?.totalHoldQty || 0).toLocaleString()} sh`;
+                        if (totalAllTime > 0) return `+${totalAllTime.toLocaleString()} kitta`;
+                        const fallbackVal = Number(realBrokerAnalysis?.totalSharesHeldTillNow || realBrokerAnalysis?.summary?.totalHoldQty || 0);
+                        return fallbackVal > 0 ? `+${fallbackVal.toLocaleString()} kitta` : '—';
                       })()}
                     </div>
                   </div>
@@ -4985,6 +5014,37 @@ export default function StockDetailModal({
                     </div>
                   </div>
                 </div>
+
+                {/* Explicit Coverage & Corporate Actions Notice for All-Time / Cumulative Mode */}
+                {overviewBrokerTapeMode === 'ALL_TIME' && (
+                  <div style={{
+                    marginTop: 2,
+                    marginBottom: 12,
+                    padding: '8px 12px',
+                    background: 'rgba(99, 102, 241, 0.08)',
+                    border: '1px solid rgba(99, 102, 241, 0.25)',
+                    borderRadius: 8,
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    fontSize: 10.5,
+                    color: '#94a3b8'
+                  }}>
+                    <div>
+                      <span style={{ color: '#a5b4fc', fontWeight: 800 }}>
+                        {allTimeBrokerAnalysis?.coverage?.label || 'Since 2026-08-27 (42 sessions)'}
+                      </span>
+                      <span style={{ marginLeft: 6 }}>
+                        • Pre-{allTimeBrokerAnalysis?.coverage?.startDate || '2026-08-27'} baseline unknown • Unadjusted for splits / bonus shares
+                      </span>
+                    </div>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#64748b' }}>
+                      {allTimeBrokerAnalysis?.coverage?.lastUpdated ? `Updated: ${new Date(allTimeBrokerAnalysis.coverage.lastUpdated).toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })}` : ''}
+                    </div>
+                  </div>
+                )}
 
                 {/* 2-column quick snapshot */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>

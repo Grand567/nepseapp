@@ -797,12 +797,24 @@ export async function getHistoricalSubfileBrokerAnalysis(
         avgSellRate: Number(d.avgSellRate || d.avgSellPrice || cum.institutionalCostBasis || 0),
         avgSellPrice: Number(d.avgSellRate || d.avgSellPrice || cum.institutionalCostBasis || 0)
       }));
-      const totalHeld = Number(cum.totalSharesHeldTillNow || 0) || topAccs.reduce((s: number, a: any) => s + (a.netQty > 0 ? a.netQty : 0), 0);
+      const totalHeld = Number(cum.totalSharesHeldTillNow || cum.totalHoldQty || 0) || topAccs.reduce((s: number, a: any) => s + (a.netQty > 0 ? a.netQty : 0), 0);
+      const tradingSessions = Number(cum.coverage?.sessionCount || cum.coverage?.tradingDays || cum.tradingDays || cum.timeframeDays || 42);
+      const coverageObj = cum.coverage || {
+        startDate: '2026-08-27',
+        endDate: '2026-11-06',
+        sessionCount: tradingSessions,
+        tradingDays: tradingSessions,
+        isLifetime: false,
+        label: `Since 2026-08-27 (${tradingSessions} sessions)`,
+        disclaimer: `Covered from 2026-08-27 (${tradingSessions} sessions). Pre-2026-08-27 baseline unknown. Unadjusted for corporate actions.`,
+        isLiveIncomplete: false,
+        lastUpdated: new Date().toISOString()
+      };
       return {
         symbol: sym,
         timeframe: 'ALL',
-        timeframeDays: 38,
-        tradingDays: 38,
+        timeframeDays: tradingSessions,
+        tradingDays: tradingSessions,
         totalSharesHeldTillNow: totalHeld,
         totalHoldQty: totalHeld,
         totalVolume: cum.totalVolume || 0,
@@ -824,7 +836,8 @@ export async function getHistoricalSubfileBrokerAnalysis(
         smartMoneyNetFlowPct: cum.smartMoneyNetFlowPct || 0,
         adSignal: (cum.smartMoneyNetFlowPct || 0) > 5 ? 'Accumulation' : (cum.smartMoneyNetFlowPct || 0) < -5 ? 'Distribution' : 'Neutral',
         isReal: true,
-        source: 'cumulative_broker_ledger_baseline'
+        source: 'cumulative_broker_ledger_baseline',
+        coverage: coverageObj
       };
     }
   }

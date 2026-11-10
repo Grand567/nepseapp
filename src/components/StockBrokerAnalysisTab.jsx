@@ -112,6 +112,10 @@ function StockBrokerAnalysisTabInner({
     const list = cum.allHoldings || cum.topHoldings || cum.topAccumulators || [];
     return list.reduce((sum, b) => sum + (Number(b.netQty || b.totalHeldQty || 0) > 0 ? Number(b.netQty || b.totalHeldQty || 0) : 0), 0);
   });
+  const [holdingCoverage, setHoldingCoverage] = useState(() => {
+    const cum = getCumulativeBrokerData(symbol);
+    return cum?.coverage || allTimeHoldingData?.coverage || null;
+  });
   const [allStoredDates, setAllStoredDates] = useState([]);
   const [multiDayDailyFlow, setMultiDayDailyFlow] = useState([]);
   const [dateSortOrder, setDateSortOrder] = useState('desc'); // 'desc' | 'asc'
@@ -233,11 +237,14 @@ function StockBrokerAnalysisTabInner({
       const res30 = rawRes30?.data || rawRes30;
       const resSm = rawResSm?.data || rawResSm;
 
+      if (resAll?.coverage) setHoldingCoverage(resAll.coverage);
+      else if (resSm?.coverage) setHoldingCoverage(resSm.coverage);
+      else if (allTimeProp?.coverage) setHoldingCoverage(allTimeProp.coverage);
+
       const now = new Date();
-      const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
-      const isOngoingMarketSession = (nptMins % 1440) < (15 * 60 + 30);
-      const nptDateObj = new Date(now.getTime() + 345 * 60 * 1000);
-      const todayNpt = nptDateObj.toISOString().slice(0, 10);
+      const nptMinutesOfDay = (now.getUTCHours() * 60 + now.getUTCMinutes() + 345) % 1440;
+      const isOngoingMarketSession = (nptMinutesOfDay >= 11 * 60 && nptMinutesOfDay < 15 * 60 + 30);
+      const todayNpt = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
 
       // Extract daily session flow (30 completed trading days merged with 5 authentic local subfiles)
       const localFlow = Array.isArray(resLocal?.dailyFlow) ? resLocal.dailyFlow : [];
@@ -2860,17 +2867,19 @@ function StockBrokerAnalysisTabInner({
             </div>
             <div style={{ padding: 10, borderRadius: 12, background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
               <div style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700 }}>
-                {effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300 ? 'Total Shares Held Till Today' : 'Total Net Held Float'}
+                {effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300
+                  ? `Net Broker Accumulation (${holdingCoverage?.sessionCount ? `${holdingCoverage.sessionCount} Sessions` : '42 Sessions'})`
+                  : 'Total Net Held Float'}
               </div>
               <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                 {((effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300)
-                  ? (brokerHoldingTotals?.cumHold || totalHold)
+                  ? (totalCumulativeHoldingKitta || brokerHoldingTotals?.cumHold || totalHold)
                   : totalHold
                 ).toLocaleString()} kitta
               </div>
               {effectiveDays !== 'all' && effectiveDays !== 'ALL' && Number(effectiveDays) < 300 && (
                 <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 1 }}>
-                  Till Today: +{safeFmtInt(brokerHoldingTotals?.cumHold)} kitta
+                  Covered Accumulation: +{safeFmtInt(totalCumulativeHoldingKitta || brokerHoldingTotals?.cumHold)} kitta
                 </div>
               )}
             </div>
@@ -2899,6 +2908,37 @@ function StockBrokerAnalysisTabInner({
               </div>
             </div>
           </div>
+
+          {/* Explicit Coverage & Corporate Actions Notice for All-Time / Cumulative Mode */}
+          {(effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300) && (
+            <div style={{
+              marginTop: 10,
+              marginBottom: 12,
+              padding: '8px 12px',
+              background: 'rgba(56, 189, 248, 0.06)',
+              border: '1px solid rgba(56, 189, 248, 0.25)',
+              borderRadius: 8,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              fontSize: 10.5,
+              color: '#94a3b8'
+            }}>
+              <div>
+                <span style={{ color: '#38bdf8', fontWeight: 800 }}>
+                  {holdingCoverage?.label || 'Since 2026-08-27 (42 sessions)'}
+                </span>
+                <span style={{ marginLeft: 6 }}>
+                  • Pre-{holdingCoverage?.startDate || '2026-08-27'} baseline unknown • Unadjusted for splits / bonus shares
+                </span>
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#64748b' }}>
+                {holdingCoverage?.lastUpdated ? `Updated: ${new Date(holdingCoverage.lastUpdated).toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })}` : ''}
+              </div>
+            </div>
+          )}
 
           {/* Top 5 Accumulators vs Top 5 Distributors */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
