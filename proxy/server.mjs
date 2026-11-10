@@ -12284,14 +12284,18 @@ app.all('/api/telegram/config', async (req, res) => {
 
     const testRes = await verifyTelegramToken(token);
     if (!testRes.ok) {
+      const desc = testRes.description || '';
+      const errMsg = desc.includes('SESSION_REVOKED')
+        ? 'Telegram returned "SESSION_REVOKED". In @BotFather, tap "Revoke current token" to get a fresh active token.'
+        : `Telegram rejected token as Unauthorized (${desc || 'Invalid token'}). Please check your token in @BotFather.`;
       return res.status(400).json({
         success: false,
-        error: `Telegram rejected token as Unauthorized (${testRes.description || 'Invalid token'}). Please check your token in @BotFather.`
+        error: errMsg
       });
     }
 
     const botUser = testRes.result?.username ? `@${testRes.result.username}` : (testRes.result?.first_name || 'Bot');
-    const result = saveTelegramConfig({ botToken: token, chatId: rawChatId, enabled });
+    const result = saveTelegramConfig({ botToken: token, chatId: rawChatId, enabled, isTestServer: testRes.isTestServer });
     if (result.success) {
       resetTelegramAuthError();
       return res.json({

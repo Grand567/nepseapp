@@ -77,7 +77,7 @@ function loadConfig() {
     botToken,
     chatId,
     enabled: fileConfig.enabled !== false, // default true if token & chatId present
-    isTestServer: Boolean(process.env.TELEGRAM_TEST_SERVER === 'true') // Strictly require explicit env var; never auto-trap in test DC!
+    isTestServer: Boolean(process.env.TELEGRAM_TEST_SERVER === 'true' || fileConfig.isTestServer === true)
   };
 }
 
@@ -88,7 +88,7 @@ export function saveTelegramConfig({ botToken, chatId, enabled = true, isTestSer
     botToken: botToken !== undefined ? cleanBotToken(botToken) : current.botToken,
     chatId: chatId !== undefined ? String(chatId).trim() : current.chatId,
     enabled: Boolean(enabled),
-    isTestServer: false,
+    isTestServer: isTestServer !== undefined ? Boolean(isTestServer) : current.isTestServer,
     updatedAt: new Date().toISOString()
   };
 
@@ -121,22 +121,31 @@ export function getTelegramStatus() {
     chatId: cfg.chatId || '',
     tokenLength: cfg.botToken ? cfg.botToken.length : 0,
     tokenHasColon: Boolean(cfg.botToken && cfg.botToken.includes(':')),
-    isTokenInvalid
+    isTokenInvalid,
+    isTestServer: cfg.isTestServer
   };
 }
 
 /**
- * Validates a bot token directly against Telegram's getMe endpoint
+ * Validates a bot token with automatic Production & Test DC detection
  */
 export async function verifyTelegramToken(rawToken) {
   const token = cleanBotToken(rawToken);
   if (!token) return { ok: false, description: 'No token provided' };
-  try {
-    const res = await callTelegramApi(`/bot${token}/getMe`);
-    return res;
-  } catch (err) {
-    return { ok: false, description: err.message };
+
+  // 1. Try standard Production DC first
+  let res = await callTelegramApi(`/bot${token}/getMe`);
+  if (res.ok) {
+    return { ...res, isTestServer: false };
   }
+
+  // 2. If Production returns 401 Unauthorized, automatically try Test DC
+  let testRes = await callTelegramApi(`/bot${token}/test/getMe`);
+  if (testRes.ok) {
+    return { ...testRes, isTestServer: true };
+  }
+
+  return (res.description && String(res.description).includes('REVOKED')) ? res : (testRes.description ? testRes : res);
 }
 
 /**
@@ -355,24 +364,48 @@ export async function testTelegramConnection(customToken, customChatId) {
   const text = `🔔 <b>Drabyashree NEPSE Alert System</b>\n\n✅ <b>Connection Test Successful!</b>\nYour smartphone is now configured to receive real-time institutional alerts and 3:45 PM Daily Post-Market Setups.\n\n<i>Time: ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' })} NPT</i>`;
 
   try {
-    const data = await callBotApi(token, 'sendMessage', {
+    let activeIsTest = cfg.isTestServer;
+    let data = await callBotApi(token, 'sendMessage', {
       chat_id: chat,
       text,
       parse_mode: 'HTML'
     }, true);
+
+    // If 401 Unauthorized, automatically try alternate DC environment (Test vs Production)
+    if (!data.ok && (data.error_code === 401 || String(data.description || '').toLowerCase().includes('unauthorized'))) {
+      const alternateIsTest = !activeIsTest;
+      const alternateEndpoint = alternateIsTest ? `/bot${token}/test/sendMessage` : `/bot${token}/sendMessage`;
+      const altRes = await callTelegramApi(alternateEndpoint, {
+        chat_id: chat,
+        text,
+        parse_mode: 'HTML'
+      });
+      if (altRes.ok) {
+        data = altRes;
+        activeIsTest = alternateIsTest;
+      }
+    }
+
     if (data.ok) {
       resetTelegramAuthError();
       // Auto-save working config so subsequent alerts immediately succeed
-      saveTelegramConfig({ botToken: token, chatId: chat, enabled: true });
+      saveTelegramConfig({ botToken: token, chatId: chat, enabled: true, isTestServer: activeIsTest });
       return { success: true, message: 'Test message sent successfully to your Telegram!' };
     } else {
-      if (data.error_code === 401 || data.description?.toLowerCase().includes('unauthorized')) {
+      const desc = data.description || '';
+      if (desc.includes('SESSION_REVOKED')) {
         return {
           success: false,
-          error: 'Telegram returned "Unauthorized". Your Bot Token is invalid or expired. Please check your token in @BotFather.'
+          error: 'Telegram returned "SESSION_REVOKED". In @BotFather, tap "Revoke current token" to get a fresh active token.'
         };
       }
-      return { success: false, error: data.description || 'Failed to authenticate with Telegram.' };
+      if (data.error_code === 401 || desc.toLowerCase().includes('unauthorized')) {
+        return {
+          success: false,
+          error: `Telegram returned "Unauthorized" (${desc || 'Token invalid'}). Please check your token in @BotFather.`
+        };
+      }
+      return { success: false, error: desc || 'Failed to authenticate with Telegram.' };
     }
   } catch (err) {
     return { success: false, error: err.message };
@@ -391,22 +424,37 @@ export async function autoDetectChatId(customToken) {
   }
 
   try {
-    // 1. Check bot identity and get username via getMe
+    // 1. Check bot identity and get username via getMe (with Production & Test DC auto-detection)
     let botUsername = '';
-    const meRes = await callTelegramApi(`/bot${token}/getMe`);
+    let isTestDc = cfg.isTestServer;
+    let meRes = await callTelegramApi(isTestDc ? `/bot${token}/test/getMe` : `/bot${token}/getMe`);
+    if (!meRes.ok && (meRes.error_code === 401 || String(meRes.description || '').toLowerCase().includes('unauthorized'))) {
+      const altRes = await callTelegramApi(!isTestDc ? `/bot${token}/test/getMe` : `/bot${token}/getMe`);
+      if (altRes.ok) {
+        meRes = altRes;
+        isTestDc = !isTestDc;
+        saveTelegramConfig({ botToken: token, isTestServer: isTestDc });
+      }
+    }
+
     if (!meRes.ok) {
-      if (meRes.error_code === 401 || String(meRes.description || '').toLowerCase().includes('unauthorized')) {
+      const desc = meRes.description || '';
+      if (desc.includes('SESSION_REVOKED')) {
         return {
           success: false,
-          error: 'Telegram returned "Unauthorized". The Bot Token entered is invalid or revoked. Please open @BotFather on Telegram, send /token, copy the token, and paste it into the Bot Token field.'
+          error: 'Telegram returned "SESSION_REVOKED". In @BotFather, tap "Revoke current token" to get a fresh active token.'
         };
       }
-      return { success: false, error: meRes.description || 'Invalid Bot Token. Check token from @BotFather.' };
+      return {
+        success: false,
+        error: `Telegram returned "Unauthorized" (${desc || 'Invalid token'}). Please open @BotFather on Telegram, send /token, copy the token, and paste it into the Bot Token field.`
+      };
     }
     botUsername = meRes.result?.username || '';
 
-    // 2. Poll getUpdates to retrieve the user's incoming message (bypass throttle guard on explicit user action)
-    const data = await callBotApi(token, 'getUpdates', { timeout: 0 }, true);
+    // 2. Poll getUpdates to retrieve the user's incoming message
+    const endpoint = isTestDc ? `/bot${token}/test/getUpdates` : `/bot${token}/getUpdates`;
+    const data = await callTelegramApi(endpoint, { timeout: 0 });
     if (!data.ok) {
       return { success: false, error: data.description || 'Failed to fetch messages from Telegram.' };
     }
