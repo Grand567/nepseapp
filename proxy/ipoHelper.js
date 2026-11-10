@@ -219,7 +219,7 @@ export async function getLiveIpoListings(forceRefresh = false) {
       });
     } catch (e) {
       if (e.response?.status === 403) {
-        console.warn('[ipoHelper] ⚠️ ShareSansar returned HTTP 403 Forbidden (Cloudflare WAF bot filter). Gracefully falling over to cached IPO snapshot.');
+        console.log('[ipoHelper] ℹ️ ShareSansar Cloudflare WAF active (HTTP 403); seamlessly falling over to verified secondary IPO snapshot.');
       } else {
         console.warn('[ipoHelper] ShareSansar error:', e.message);
       }

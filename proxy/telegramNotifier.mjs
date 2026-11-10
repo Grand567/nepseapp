@@ -47,9 +47,14 @@ export function cleanBotToken(raw) {
   if (!raw) return '';
   let token = String(raw).trim();
   token = token.replace(/^["']|["']$/g, '').trim();
+  token = token.replace(/^TELEGRAM_BOT_TOKEN\s*=\s*/i, '').trim();
+  token = token.replace(/^BOT_TOKEN\s*=\s*/i, '').trim();
+  token = token.replace(/^TOKEN\s*=\s*/i, '').trim();
   if (token.toLowerCase().startsWith('bot') && token.includes(':')) {
     token = token.slice(3).trim();
   }
+  token = token.replace(/^token[:\s]+/i, '').trim();
+  token = token.replace(/[\r\n\t\s]/g, '');
   return token;
 }
 
@@ -73,10 +78,10 @@ export function saveTelegramConfig({ botToken, chatId, enabled = true, isTestSer
   resetTelegramAuthError();
   const current = loadConfig();
   const nextConfig = {
-    botToken: botToken !== undefined ? String(botToken).trim() : current.botToken,
+    botToken: botToken !== undefined ? cleanBotToken(botToken) : current.botToken,
     chatId: chatId !== undefined ? String(chatId).trim() : current.chatId,
     enabled: Boolean(enabled),
-    isTestServer: Boolean(process.env.TELEGRAM_TEST_SERVER === 'true' || isTestServer === true),
+    isTestServer: Boolean(process.env.TELEGRAM_TEST_SERVER === 'true'),
     updatedAt: new Date().toISOString()
   };
 

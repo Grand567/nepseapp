@@ -41,6 +41,7 @@ proxy/data/telegram_config.json
 proxy/data/telegram_offset.json
 proxy/data/discord_config.json
 proxy/data/*_config.json
+proxy/data/breakout_alert_state.json
 *firebase-service-account*.json
 scratch/
 temp_frames_v3/
