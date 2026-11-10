@@ -112,14 +112,14 @@ export function parseMeroShareWaccDetailsResponse(rawResponse) {
   for (const item of rawList) {
     if (!item || typeof item !== 'object') continue;
 
-    const rawScrip = item.scripName || item.scrip || item.script || item.symbol || item.companyName || '';
+    const rawScrip = item.scrip || item.scripName || item.script || item.symbol || item.companyName || '';
     const normalizedSymbol = normalizeScripSymbol(rawScrip);
     if (!normalizedSymbol) continue;
 
-    const waccRate = Number(item.waccRate ?? item.wacc ?? item.rate ?? item.userPrice ?? item.purchasePrice ?? 0);
-    const waccCalculatedQuantity = Number(item.waccCalculatedQuantity ?? item.calculatedQuantity ?? item.quantity ?? item.kitta ?? item.units ?? 0);
-    const totalCostOfCapital = Number(item.totalCostOfCapital ?? item.totalCost ?? item.totalAmount ?? item.totalPrice ?? (waccRate * waccCalculatedQuantity));
-    const lastModifiedDate = String(item.lastModificationDate || item.lastModifiedDate || item.modifiedDate || item.updateDate || item.date || item.createdDate || '').trim();
+    const waccRate = Number(item.averageBuyRate ?? item.waccRate ?? item.wacc ?? item.rate ?? item.userPrice ?? item.purchasePrice ?? 0);
+    const waccCalculatedQuantity = Number(item.totalQuantity ?? item.waccCalculatedQuantity ?? item.calculatedQuantity ?? item.quantity ?? item.kitta ?? item.units ?? 0);
+    const totalCostOfCapital = Number(item.totalCost ?? item.totalCostOfCapital ?? item.totalAmount ?? item.totalPrice ?? (waccRate * waccCalculatedQuantity));
+    const lastModifiedDate = String(item.lastModifiedDate || item.lastModificationDate || item.modifiedDate || item.updateDate || item.date || item.createdDate || '').trim();
 
     const mathCheck = verifyWaccMath({
       rate: waccRate,

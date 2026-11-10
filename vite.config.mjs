@@ -62,6 +62,27 @@ export default defineConfig({
           });
         }
       },
+      '/api/myPurchase': {
+        target: 'https://webbackend.cdsc.com.np',
+        changeOrigin: true,
+        secure: false,
+        cookieDomainRewrite: '',
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.removeHeader('cookie');
+            proxyReq.setHeader('Origin', 'https://meroshare.cdsc.com.np');
+            proxyReq.setHeader('Referer', 'https://meroshare.cdsc.com.np/');
+          });
+          proxy.on('proxyRes', (proxyRes) => {
+            const authHeader = proxyRes.headers['authorization'];
+            if (authHeader) {
+              proxyRes.headers['authorization'] = authHeader;
+            }
+            proxyRes.headers['access-control-allow-origin'] = '*';
+            proxyRes.headers['access-control-expose-headers'] = 'Authorization';
+          });
+        }
+      },
       '/api/meroShareView': {
         target: 'https://webbackend.cdsc.com.np',
         changeOrigin: true,

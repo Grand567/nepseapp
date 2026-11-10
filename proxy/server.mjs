@@ -535,6 +535,7 @@ const handleCdscReverseProxy = async (req, res) => {
 
 app.use('/api/meroShare', handleCdscReverseProxy);
 app.use('/api/meroShareView', handleCdscReverseProxy);
+app.use('/api/myPurchase', handleCdscReverseProxy);
 app.use('/cdsc-ipo', handleCdscReverseProxy);
 
 const PORT = process.env.PORT || 5000;

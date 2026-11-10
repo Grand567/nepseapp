@@ -52,6 +52,10 @@ export const MEROSHARE_VIEW_BASE = isNativeMobile
   ? 'https://webbackend.cdsc.com.np/api/meroShareView'
   : '/api/meroShareView';
 
+export const MEROSHARE_MYPURCHASE_BASE = isNativeMobile
+  ? 'https://webbackend.cdsc.com.np/api/myPurchase'
+  : '/api/myPurchase';
+
 export const CDSC_IPO_BASE = isNativeMobile
   ? 'https://iporesult.cdsc.com.np'
   : '/cdsc-ipo';
@@ -1914,39 +1918,65 @@ export async function pullMeroShareWaccBatch(account, holdings = [], onProgress 
   const waccResultMap = {};
   const tokenVariants = [`Bearer ${rawToken}`, rawToken];
 
-  // Step 2: Query CDSC My Holding endpoint (Declared & Confirmed WACCs)
-  if (onProgress) onProgress({ status: 'my_holding', current: 0, total: holdings.length, msg: 'Querying declared MeroShare WACC records...' });
+  // Step 2: Query CDSC Official WACC Details Registry (POST /api/myPurchase/waccReport/)
+  // Discovered from MeroShare's "View your WACC details" page with exact payload { demat }
+  if (onProgress) onProgress({ status: 'wacc_report', current: 0, total: holdings.length, msg: 'Querying official MeroShare WACC Report...' });
   try {
     await clearCdscCookies();
-    let holdingRes = null;
+    let waccReportRes = null;
 
-    // Try View endpoint with both Bearer and raw token
     for (const tok of tokenVariants) {
-      holdingRes = await cdscRequest({
-        url: `${MEROSHARE_VIEW_BASE}/myHolding/`,
+      waccReportRes = await cdscRequest({
+        url: `${MEROSHARE_MYPURCHASE_BASE}/waccReport/`,
         method: 'POST',
         headers: { 'Authorization': tok },
         data: {
-          sortBy: 'script',
-          demat: [dematId],
-          clientCode: dpCode,
-          page: 1,
-          size: 500,
-          sortAsc: true
+          demat: String(dematId)
         }
       });
-      if (holdingRes?.ok) break;
+      if (waccReportRes?.ok && waccReportRes.data) break;
     }
 
-    // Fallback to legacy endpoint if View endpoint failed
-    if (!holdingRes?.ok) {
+    if (waccReportRes?.ok && waccReportRes.data) {
+      const parsed = parseMeroShareWaccDetailsResponse(waccReportRes.data);
+      if (parsed.success && Array.isArray(parsed.records) && parsed.records.length > 0) {
+        parsed.records.forEach(rec => {
+          if (rec.normalizedSymbol && rec.waccRate > 0) {
+            waccResultMap[rec.normalizedSymbol] = {
+              wacc: Number(rec.waccRate.toFixed(2)),
+              waccRate: rec.waccRate,
+              source: 'CDSC_WACC',
+              waccCalculatedQuantity: rec.waccCalculatedQuantity,
+              totalCostOfCapital: rec.totalCostOfCapital,
+              lastModifiedDate: rec.lastModifiedDate,
+              isCostMismatch: rec.isCostMismatch,
+              costMismatchNote: rec.costMismatchNote,
+              holdingDays: 0,
+              holdingType: 'UNVERIFIED'
+            };
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[MeroShare WACC Sync] /myPurchase/waccReport/ query warning:', err.message);
+  }
+
+  // Step 2b: Fallback to CDSC My Holding endpoint if waccReport had no records
+  if (Object.keys(waccResultMap).length === 0) {
+    if (onProgress) onProgress({ status: 'my_holding', current: 0, total: holdings.length, msg: 'Checking declared MeroShare holdings...' });
+    try {
+      await clearCdscCookies();
+      let holdingRes = null;
+
+      // Try View endpoint with both Bearer and raw token
       for (const tok of tokenVariants) {
         holdingRes = await cdscRequest({
-          url: `${MEROSHARE_BASE}/myHolding/`,
+          url: `${MEROSHARE_VIEW_BASE}/myHolding/`,
           method: 'POST',
           headers: { 'Authorization': tok },
           data: {
-            sortBy: 'scrip',
+            sortBy: 'script',
             demat: [dematId],
             clientCode: dpCode,
             page: 1,
@@ -1956,41 +1986,61 @@ export async function pullMeroShareWaccBatch(account, holdings = [], onProgress 
         });
         if (holdingRes?.ok) break;
       }
-    }
 
-    const hList = holdingRes?.ok ? (
-      holdingRes.data?.meroShareViewArray ||
-      holdingRes.data?.meroShareMyHolding ||
-      holdingRes.data?.holdingViewArray ||
-      holdingRes.data?.object ||
-      holdingRes.data?.data ||
-      (Array.isArray(holdingRes.data) ? holdingRes.data : [])
-    ) : [];
-
-    if (Array.isArray(hList) && hList.length > 0) {
-      hList.forEach(item => {
-        const sym = normalizeScripSymbol(item.scrip || item.script || item.symbol || item.scripName || '');
-        const rate = Number(item.wacc || item.waccRate || item.userPrice || item.rate || item.purchasePrice || item.costPrice || item.buyPrice || item.price || 0);
-        const waccQty = Number(item.waccCalculatedQuantity || item.calculatedQuantity || item.quantity || item.units || item.kitta || 0);
-        const totalCost = Number(item.totalCostOfCapital || item.totalCost || item.totalAmount || (rate * (waccQty || 1)));
-        const modDate = item.lastModificationDate || item.lastModifiedDate || item.modifiedDate || '';
-
-        if (sym && rate > 0) {
-          waccResultMap[sym] = {
-            wacc: Number(rate.toFixed(2)),
-            waccRate: rate,
-            source: 'CDSC_WACC',
-            waccCalculatedQuantity: waccQty,
-            totalCostOfCapital: totalCost,
-            lastModifiedDate: modDate,
-            holdingDays: Number(item.holdingDays || item.days || 0),
-            holdingType: item.holdingType || (Number(item.holdingDays || 0) >= 365 ? 'LONG_TERM' : 'SHORT_TERM')
-          };
+      // Fallback to legacy endpoint if View endpoint failed
+      if (!holdingRes?.ok) {
+        for (const tok of tokenVariants) {
+          holdingRes = await cdscRequest({
+            url: `${MEROSHARE_BASE}/myHolding/`,
+            method: 'POST',
+            headers: { 'Authorization': tok },
+            data: {
+              sortBy: 'scrip',
+              demat: [dematId],
+              clientCode: dpCode,
+              page: 1,
+              size: 500,
+              sortAsc: true
+            }
+          });
+          if (holdingRes?.ok) break;
         }
-      });
+      }
+
+      const hList = holdingRes?.ok ? (
+        holdingRes.data?.meroShareViewArray ||
+        holdingRes.data?.meroShareMyHolding ||
+        holdingRes.data?.holdingViewArray ||
+        holdingRes.data?.object ||
+        holdingRes.data?.data ||
+        (Array.isArray(holdingRes.data) ? holdingRes.data : [])
+      ) : [];
+
+      if (Array.isArray(hList) && hList.length > 0) {
+        hList.forEach(item => {
+          const sym = normalizeScripSymbol(item.scrip || item.script || item.symbol || item.scripName || '');
+          const rate = Number(item.averageBuyRate || item.wacc || item.waccRate || item.userPrice || item.rate || item.purchasePrice || item.costPrice || item.buyPrice || item.price || 0);
+          const waccQty = Number(item.totalQuantity || item.waccCalculatedQuantity || item.calculatedQuantity || item.quantity || item.units || item.kitta || 0);
+          const totalCost = Number(item.totalCost || item.totalCostOfCapital || item.totalAmount || (rate * (waccQty || 1)));
+          const modDate = item.lastModifiedDate || item.lastModificationDate || item.modifiedDate || '';
+
+          if (sym && rate > 0) {
+            waccResultMap[sym] = {
+              wacc: Number(rate.toFixed(2)),
+              waccRate: rate,
+              source: 'CDSC_WACC',
+              waccCalculatedQuantity: waccQty,
+              totalCostOfCapital: totalCost,
+              lastModifiedDate: modDate,
+              holdingDays: Number(item.holdingDays || item.days || 0),
+              holdingType: item.holdingType || (Number(item.holdingDays || 0) >= 365 ? 'LONG_TERM' : 'SHORT_TERM')
+            };
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('[MeroShare WACC Sync] myHolding search warning:', err.message);
     }
-  } catch (err) {
-    console.warn('[MeroShare WACC Sync] myHolding search warning:', err.message);
   }
 
   // Helper to identify debentures or mutual funds
