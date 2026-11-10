@@ -77,10 +77,15 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
         } else if (companyName && text.toLowerCase().includes(companyName.toLowerCase())) {
           matches = true;
         } else {
-          for (const [npName, s] of Object.entries(NEPALI_NAME_TO_SYMBOL)) {
-            if (s === sym && text.includes(npName)) {
-              matches = true;
-              break;
+          const cleanName = (companyName || '').toLowerCase().replace(/\b(limited|ltd|public limited|company|co\.|pvt|corp|corporation)\b/gi, '').replace(/[^\w\s]/g, ' ').trim();
+          if (cleanName.length >= 4 && text.toLowerCase().includes(cleanName)) {
+            matches = true;
+          } else {
+            for (const [npName, s] of Object.entries(NEPALI_NAME_TO_SYMBOL)) {
+              if (s === sym && text.includes(npName)) {
+                matches = true;
+                break;
+              }
             }
           }
         }
@@ -253,10 +258,10 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
   const announcements = useMemo(() => {
     const list = [];
 
-    // 1. Pull dynamic dividend/right/book-closure announcements from real news
+    // 1. Pull dynamic dividend/right/book-closure/financial announcements from real news
     realNews.forEach(item => {
       const type = item.classification?.type;
-      if (type === 'DIVIDEND' || type === 'RIGHT_SHARE' || type === 'BOOK_CLOSURE') {
+      if (type === 'DIVIDEND' || type === 'RIGHT_SHARE' || type === 'BOOK_CLOSURE' || type === 'FINANCIAL') {
         list.push({
           title: item.displayTitle,
           date: item.pubDate,

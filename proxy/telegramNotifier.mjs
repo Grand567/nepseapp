@@ -388,7 +388,17 @@ export async function sendTelegramSmartAlert(alertItem) {
   if (!alertItem) return { success: false, reason: 'No alert payload provided' };
 
   // Route News and IPO items to their dedicated clean layouts
-  if (alertItem.type === 'NEWS_ALERT' || alertItem.type === 'PORTFOLIO_NEWS_ALERT' || alertItem.category === 'news') {
+  if (
+    alertItem.type === 'NEWS_ALERT' || 
+    alertItem.type === 'PORTFOLIO_NEWS_ALERT' || 
+    alertItem.type === 'DIVIDEND_ALERT' ||
+    alertItem.type === 'RIGHT_SHARE_ALERT' ||
+    alertItem.type === 'BOOK_CLOSURE_ALERT' ||
+    alertItem.type === 'EARNINGS_ALERT' ||
+    alertItem.type === 'NEPSE_MACRO' ||
+    alertItem.category === 'news' ||
+    alertItem.category === 'corporate'
+  ) {
     return await sendTelegramNewsAlert(alertItem);
   }
   if (alertItem.type === 'IPO_ALERT' || alertItem.category === 'ipo') {
@@ -476,8 +486,15 @@ export async function sendTelegramNewsAlert(item) {
   const sym = item.symbol && item.symbol !== 'NEPSE' ? escapeHtml(String(item.symbol).toUpperCase()) : null;
   const timeNpt = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' });
 
+  const header = item.type === 'DIVIDEND_ALERT' ? '💰 <b>DRAVYASHREE DIVIDEND / BONUS ANNOUNCEMENT</b>'
+               : item.type === 'RIGHT_SHARE_ALERT' ? '📈 <b>DRAVYASHREE RIGHT SHARE NOTICE</b>'
+               : item.type === 'BOOK_CLOSURE_ALERT' ? '📅 <b>DRAVYASHREE BOOK CLOSURE / AGM NOTICE</b>'
+               : item.type === 'EARNINGS_ALERT' ? '📊 <b>DRAVYASHREE FINANCIAL REPORT DISCLOSURE</b>'
+               : item.type === 'NEPSE_MACRO' ? '🏛️ <b>DRAVYASHREE MACRO & POLICY ALERT</b>'
+               : '📰 <b>DRAVYASHREE MARKET NEWS</b>';
+
   const msg = [
-    `📰 <b>DRAVYASHREE MARKET NEWS</b>`,
+    header,
     `<b>Source:</b> ${source}`,
     sym ? `<b>Scrip:</b> <code>#${sym}</code>` : '',
     `──────────────────────────`,

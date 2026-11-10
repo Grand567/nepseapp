@@ -85,6 +85,61 @@ try {
   }
 } catch (_) {}
 
+function normalizeCorpName(str) {
+  return String(str || '')
+    .toLowerCase()
+    .replace(/\./g, '')
+    .replace(/\b(limited|ltd|public limited|company|co|pvt|corp|corporation|promoter share|promoter|promotor)\b/gi, '')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const nameMatchers = [];
+if (stockMap && typeof stockMap === 'object') {
+  for (const [sym, info] of Object.entries(stockMap)) {
+    if (!info || !info.name) continue;
+    const isPromoter = sym.endsWith('P') || sym.endsWith('PO') || sym.includes('PROMOTER');
+    const targetSym = isPromoter ? sym.replace(/P$|PO$/, '') : sym;
+    const cleanName = normalizeCorpName(info.name);
+    if (cleanName.length >= 3) {
+      nameMatchers.push({ sym: targetSym, pattern: cleanName, len: cleanName.length });
+    }
+    // Handle microfinance alias
+    if (cleanName.includes('microfinance')) {
+      const alias = cleanName.replace('microfinance', 'laghubitta').trim();
+      nameMatchers.push({ sym: targetSym, pattern: alias, len: alias.length });
+    } else if (cleanName.includes('laghubitta')) {
+      const alias = cleanName.replace('laghubitta', 'microfinance').trim();
+      nameMatchers.push({ sym: targetSym, pattern: alias, len: alias.length });
+    }
+  }
+  // Add direct ticker symbol matchers
+  for (const sym of Object.keys(stockMap)) {
+    if (sym.length >= 3) {
+      nameMatchers.push({ sym, pattern: sym.toLowerCase(), isTicker: true, len: sym.length });
+    }
+  }
+  // Sort longest first
+  nameMatchers.sort((a, b) => b.len - a.len);
+}
+
+export function extractStockSymbolFromText(text) {
+  if (!text || typeof text !== 'string') return null;
+  const normText = normalizeCorpName(text);
+  for (const m of nameMatchers) {
+    if (m.isTicker) {
+      const regex = new RegExp(`(^|\\s)${m.pattern}(\\s|$)`, 'i');
+      if (regex.test(normText)) {
+        return m.sym;
+      }
+    } else if (normText.includes(m.pattern)) {
+      return m.sym;
+    }
+  }
+  return null;
+}
+
 export function getSectorForSymbol(sym) {
   const upper = String(sym || '').toUpperCase().trim();
   return stockMap[upper]?.sector || stockMap[upper]?.sectorName || 'Others';
@@ -263,7 +318,15 @@ export function broadcastAlert(alertPayload) {
   // 3. Dispatch Instant Alert to Telegram Bot (PRO Users: Breakouts, Prime Picks, Accumulation, Watchlist, Exits, News, IPO)
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
   if (!isTestEnv || process.env.TEST_LIVE_TELEGRAM === 'true') {
-    const isNews = alertPayload.type === 'NEWS_ALERT' || alertPayload.type === 'PORTFOLIO_NEWS_ALERT' || alertPayload.category === 'news';
+    const isNews = alertPayload.type === 'NEWS_ALERT' || 
+                   alertPayload.type === 'PORTFOLIO_NEWS_ALERT' || 
+                   alertPayload.type === 'DIVIDEND_ALERT' ||
+                   alertPayload.type === 'RIGHT_SHARE_ALERT' ||
+                   alertPayload.type === 'BOOK_CLOSURE_ALERT' ||
+                   alertPayload.type === 'EARNINGS_ALERT' ||
+                   alertPayload.type === 'NEPSE_MACRO' ||
+                   alertPayload.category === 'news' ||
+                   alertPayload.category === 'corporate';
     const isIpo = alertPayload.type === 'IPO_ALERT' || alertPayload.category === 'ipo';
 
     if (isNews) {
@@ -1903,8 +1966,13 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
       actualIpoFn = fetchNewsFn.getLiveIpoListings || fetchNewsFn.getIpoListingsFn || null;
 
       const scrapers = [];
+      if (typeof fetchNewsFn.scrapeMeroLaganiAnnouncements === 'function') scrapers.push(fetchNewsFn.scrapeMeroLaganiAnnouncements().catch(() => []));
       if (typeof fetchNewsFn.scrapeMeroLaganiNews === 'function') scrapers.push(fetchNewsFn.scrapeMeroLaganiNews().catch(() => []));
       if (typeof fetchNewsFn.scrapeShareSansarNews === 'function') scrapers.push(fetchNewsFn.scrapeShareSansarNews().catch(() => []));
+      if (typeof fetchNewsFn.fetchNepaliPaisaNews === 'function') scrapers.push(fetchNewsFn.fetchNepaliPaisaNews().catch(() => []));
+      if (typeof fetchNewsFn.scrapeBizshalaNews === 'function') scrapers.push(fetchNewsFn.scrapeBizshalaNews().catch(() => []));
+      if (typeof fetchNewsFn.fetchKarobarNews === 'function') scrapers.push(fetchNewsFn.fetchKarobarNews().catch(() => []));
+      if (typeof fetchNewsFn.fetchClickmanduNews === 'function') scrapers.push(fetchNewsFn.fetchClickmanduNews().catch(() => []));
       if (typeof fetchNewsFn.fetchNewsFn === 'function') scrapers.push(fetchNewsFn.fetchNewsFn().catch(() => []));
 
       const settled = await Promise.allSettled(scrapers);
@@ -1937,10 +2005,13 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
 
       const impactKeywords = [
         'लाभांश', 'बोनस', 'हकप्रद', 'साधारण सभा', 'वित्तीय विवरण', 'आइपिओ', 'म्युचुअल फन्ड', 'बुक क्लोज', 'बुकक्लोज',
-        'dividend', 'bonus', 'right share', 'rights issue', 'agm', 'quarterly', 'financial report', 'ipo', 'circuit', 'halt', 'monetary policy', 'ब्याजदर', 'राष्ट्र बैंक', 'धितोपत्र बोर्ड'
+        'dividend', 'bonus', 'bonus share', 'cash dividend', 'unclaimed dividend', 'unclaimed cash dividend',
+        'right share', 'rights issue', 'right issue', 'right offering',
+        'agm', 'annual general meeting', 'book closure', 'quarterly', 'quarter of fy', 'financial statement',
+        'provisional financial', 'financial report', 'ipo', 'circuit', 'halt', 'monetary policy', 'ब्याजदर', 'राष्ट्र बैंक', 'धितोपत्र बोर्ड'
       ];
 
-      for (const item of articles.slice(0, 30)) {
+      for (const item of articles.slice(0, 50)) {
         const title = String(item.title || '').trim();
         if (!title || title.length < 10) continue;
 
@@ -1954,19 +2025,10 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
         const lowerTitle = title.toLowerCase();
         const hasImpact = impactKeywords.some(kw => lowerTitle.includes(kw));
 
-        // Stock Symbol extraction
-        let foundSym = null;
-        if (stockMap && typeof stockMap === 'object') {
-          const uTitle = title.toUpperCase();
-          for (const sym of Object.keys(stockMap)) {
-            if (sym.length >= 3) {
-              const regex = new RegExp(`(^|[\\s\\(\\)\\[\\]\\,\\.\\-])(${sym})([\\s\\(\\)\\[\\]\\,\\.\\-]|$)`, 'i');
-              if (regex.test(uTitle)) {
-                foundSym = sym;
-                break;
-              }
-            }
-          }
+        // Stock Symbol extraction: robust matcher against ticker or official company name
+        let foundSym = extractStockSymbolFromText(title) || (item.body ? extractStockSymbolFromText(item.body) : null);
+        if (!foundSym && item.symbol && item.symbol !== 'NEPSE') {
+          foundSym = String(item.symbol).toUpperCase();
         }
 
         const isPortfolioTracked = foundSym && userTrackedSymbolsSet.has(foundSym);
@@ -1977,10 +2039,10 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
           saveSeenNewsKeys();
 
           // Categorize by impact type
-          const isDividend = ['लाभांश', 'बोनस', 'नगद लाभांश', 'dividend', 'bonus share', 'cash dividend', 'प्रतिशत लाभांश'].some(kw => lowerTitle.includes(kw));
-          const isRightShare = ['हकप्रद', 'right share', 'right issue', 'rights issue', 'हकप्रद सेयर'].some(kw => lowerTitle.includes(kw));
-          const isBookClosure = ['बुक क्लोज', 'बुकक्लोज', 'साधारण सभा', 'book closure', 'agm', 'annual general meeting'].some(kw => lowerTitle.includes(kw));
-          const isFinancial = ['वित्तीय विवरण', 'त्रैमासिक', 'quarterly report', 'financial report', 'earnings', 'खुद नाफा'].some(kw => lowerTitle.includes(kw));
+          const isDividend = ['लाभांश', 'बोनस', 'नगद लाभांश', 'प्रतिशत लाभांश', 'dividend', 'bonus share', 'bonus', 'cash dividend', 'unclaimed cash dividend', 'unclaimed dividend'].some(kw => lowerTitle.includes(kw));
+          const isRightShare = ['हकप्रद', 'right share', 'right issue', 'rights issue', 'right offering', 'हकप्रद सेयर'].some(kw => lowerTitle.includes(kw));
+          const isBookClosure = ['बुक क्लोज', 'बुकक्लोज', 'साधारण सभा', 'book closure', 'agm', 'annual general meeting', 'special general meeting', 'sgm'].some(kw => lowerTitle.includes(kw));
+          const isFinancial = ['वित्तीय विवरण', 'त्रैमासिक', 'quarterly report', 'financial statement', 'financial report', 'provisional financial', 'quarterly', 'quarter of fy', 'earnings', 'खुद नाफा'].some(kw => lowerTitle.includes(kw));
           const isMacro = ['मौद्रिक नीति', 'ब्याजदर', 'धितोपत्र बोर्ड', 'राष्ट्र बैंक', 'सर्कुलर', 'सर्किट', 'monetary policy', 'interest rate', 'sebon', 'nrb', 'halt', 'circuit breaker'].some(kw => lowerTitle.includes(kw));
 
           let notifType = 'NEWS_ALERT';

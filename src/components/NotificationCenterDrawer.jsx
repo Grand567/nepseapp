@@ -95,7 +95,14 @@ export function NotificationCenterDrawer({
       return item.category === 'pro' || item.tier === 'pro' || item.type?.includes('SMART') || item.type?.includes('PROFIT') || item.type?.includes('STOP_LOSS');
     }
     if (activeTab === 'general') {
-      return item.category === 'general' || item.type === 'IPO_ALERT' || item.type === 'NEWS_ALERT' || item.type === 'NEPSE_MACRO';
+      return item.category === 'general' || 
+             item.type === 'IPO_ALERT' || 
+             item.type === 'NEWS_ALERT' || 
+             item.type === 'NEPSE_MACRO' ||
+             item.type === 'DIVIDEND_ALERT' ||
+             item.type === 'RIGHT_SHARE_ALERT' ||
+             item.type === 'BOOK_CLOSURE_ALERT' ||
+             item.type === 'EARNINGS_ALERT';
     }
     if (activeTab === 'portfolio') {
       const sym = String(item.symbol || '').toUpperCase().trim();
@@ -421,6 +428,10 @@ export function NotificationCenterDrawer({
                     ) : item.type === 'BOOK_CLOSURE_ALERT' ? (
                       <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
                         📅 Book Closure
+                      </span>
+                    ) : item.type === 'EARNINGS_ALERT' ? (
+                      <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 flex items-center gap-1">
+                        📊 Financials
                       </span>
                     ) : item.type === 'NEPSE_MACRO' ? (
                       <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">

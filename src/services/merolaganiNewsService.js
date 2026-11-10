@@ -36,6 +36,7 @@ export async function fetchMerolaganiNews() {
   // Attempt 2: Direct multi-category request (Capacitor Native or Direct Web)
   try {
     const urls = [
+      'https://merolagani.com/AnnouncementList.aspx',           // Official Corporate Announcements (Dividends, AGMs, Reports)
       'https://merolagani.com/NewsList.aspx',
       'https://merolagani.com/NewsList.aspx?id=17&type=latest', // Corporate
       'https://merolagani.com/NewsList.aspx?id=25&type=latest', // Current Affairs
@@ -72,22 +73,26 @@ export async function fetchMerolaganiNews() {
     for (const res of htmlResults) {
       if (res.status !== 'fulfilled' || !res.value || res.value.length < 500) continue;
       const html = res.value;
-      const matches = [...html.matchAll(/<a[^>]*href=["']([^"']*NewsDetail\.aspx\?newsID=[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+      const matches = [...html.matchAll(/<a[^>]*href=["']([^"']*(?:NewsDetail\.aspx\?newsID=|AnnouncementDetail\.aspx\?id=)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi)];
       for (const m of matches) {
         const href = m[1];
         const title = m[2].replace(/<[^>]+>/g, '').trim().replace(/\s+/g, ' ');
         if (title.length > 10 && !seen.has(title)) {
           seen.add(title);
+          const isAnn = href.includes('AnnouncementDetail');
+          const idMatch = isAnn ? href.match(/id=(\d+)/) : href.match(/newsID=(\d+)/);
           parsed.push({
-            id: href.match(/newsID=(\d+)/)?.[1] || String(parsed.length),
+            id: idMatch?.[1] ? `${isAnn ? 'ml-ann-' : 'ml-'}${idMatch[1]}` : String(parsed.length),
             title,
             headline: title,
-            source: 'MeroLagani',
+            source: isAnn ? 'MeroLagani Announcements' : 'MeroLagani',
             url: `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`,
             date: 'Today',
             paragraphs: [
               title,
-              'नेपालको पूँजीबजार तथा वित्तीय क्षेत्र सम्बन्धी महत्वपूर्ण पछिल्ला घटनाक्रम र विश्लेषण। विस्तृत विवरणका लागि प्रकाशक पोर्टल हेर्नुहोस्।'
+              isAnn
+                ? 'नेपाल स्टक एक्सचेन्ज (NEPSE) मा सूचीकृत कम्पनीको आधिकारिक नियामक सूचना तथा वित्तीय विवरण।'
+                : 'नेपालको पूँजीबजार तथा वित्तीय क्षेत्र सम्बन्धी महत्वपूर्ण पछिल्ला घटनाक्रम र विश्लेषण। विस्तृत विवरणका लागि प्रकाशक पोर्टल हेर्नुहोस्।'
             ]
           });
         }
@@ -396,11 +401,12 @@ export function detectCorporateActionAlerts(newsArticles = []) {
  */
 export function classifyCorporateArticle(article) {
   const text = `${article.title || article.headline || ''} ${article.summary || article.description || article.body || ''}`.toLowerCase();
+  const artType = String(article.type || '').toUpperCase();
 
-  const isDividend = ['लाभांश', 'बोनस', 'नगद लाभांश', 'प्रतिशत लाभांश', 'dividend', 'bonus share', 'cash dividend', 'शून्य लाभांश'].some(kw => text.includes(kw));
-  const isRightShare = ['हकप्रद', 'right share', 'right issue', 'rights issue', 'हकप्रद सेयर', 'अनुपात हकप्रद'].some(kw => text.includes(kw));
-  const isBookClosure = ['बुक क्लोज', 'बुकक्लोज', 'साधारण सभा', 'book closure', 'agm', 'annual general meeting', 'दर्ता किताब बन्द'].some(kw => text.includes(kw));
-  const isFinancial = ['वित्तीय विवरण', 'त्रैमासिक', 'quarterly report', 'financial report', 'earnings', 'खुद नाफा', 'प्रतिसेयर आम्दानी', 'अपरिष्कृत वित्तीय'].some(kw => text.includes(kw));
+  const isDividend = artType === 'DIVIDEND_ALERT' || ['लाभांश', 'बोनस', 'नगद लाभांश', 'प्रतिशत लाभांश', 'dividend', 'bonus share', 'bonus', 'cash dividend', 'unclaimed cash dividend', 'unclaimed dividend', 'शून्य लाभांश'].some(kw => text.includes(kw));
+  const isRightShare = artType === 'RIGHT_SHARE_ALERT' || ['हकप्रद', 'right share', 'right issue', 'rights issue', 'right offering', 'हकप्रद सेयर', 'अनुपात हकप्रद'].some(kw => text.includes(kw));
+  const isBookClosure = artType === 'BOOK_CLOSURE_ALERT' || ['बुक क्लोज', 'बुकक्लोज', 'साधारण सभा', 'book closure', 'agm', 'annual general meeting', 'special general meeting', 'sgm', 'दर्ता किताब बन्द'].some(kw => text.includes(kw));
+  const isFinancial = artType === 'EARNINGS_ALERT' || ['वित्तीय विवरण', 'त्रैमासिक', 'quarterly report', 'financial statement', 'provisional financial', 'financial report', 'quarterly', 'quarter of fy', 'earnings', 'खुद नाफा', 'प्रतिसेयर आम्दानी', 'अपरिष्कृत वित्तीय'].some(kw => text.includes(kw));
 
   if (isDividend) {
     return {

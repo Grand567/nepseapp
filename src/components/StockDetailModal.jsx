@@ -8924,7 +8924,7 @@ export default function StockDetailModal({
         {/* ════ TAB 9: FINANCIAL REPORTS & REGULATORY ANNOUNCEMENTS ════ */}
         {activeTab === 'reports' && (
           <div style={{ padding: '0 4px' }}>
-            <StockReportsAnnouncementsCard symbol={d.symbol} companyName={d.name} />
+            <StockReportsAnnouncementsCard symbol={d.symbol} companyName={d.name} sector={d.sector} />
           </div>
         )}
 

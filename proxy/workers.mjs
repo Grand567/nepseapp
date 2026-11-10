@@ -117,7 +117,12 @@ let _getDividendHistoryInternal = null;
 let _getMarketIndicesInternal = null;
 let _db = null;
 let _scrapeMeroLaganiNews = null;
+let _scrapeMeroLaganiAnnouncements = null;
 let _scrapeShareSansarNews = null;
+let _fetchNepaliPaisaNews = null;
+let _scrapeBizshalaNews = null;
+let _fetchKarobarNews = null;
+let _fetchClickmanduNews = null;
 let _getLiveIpoListings = null;
 
 export function initWorkerDependencies({
@@ -130,7 +135,12 @@ export function initWorkerDependencies({
   getMarketIndicesInternal,
   db,
   scrapeMeroLaganiNews,
+  scrapeMeroLaganiAnnouncements,
   scrapeShareSansarNews,
+  fetchNepaliPaisaNews,
+  scrapeBizshalaNews,
+  fetchKarobarNews,
+  fetchClickmanduNews,
   getLiveIpoListings,
 }) {
   _getPriceHistoryInternal = getPriceHistoryInternal;
@@ -142,7 +152,12 @@ export function initWorkerDependencies({
   _getMarketIndicesInternal = getMarketIndicesInternal;
   _db = db;
   _scrapeMeroLaganiNews = scrapeMeroLaganiNews;
+  _scrapeMeroLaganiAnnouncements = scrapeMeroLaganiAnnouncements;
   _scrapeShareSansarNews = scrapeShareSansarNews;
+  _fetchNepaliPaisaNews = fetchNepaliPaisaNews;
+  _scrapeBizshalaNews = scrapeBizshalaNews;
+  _fetchKarobarNews = fetchKarobarNews;
+  _fetchClickmanduNews = fetchClickmanduNews;
   _getLiveIpoListings = getLiveIpoListings;
 }
 
@@ -750,14 +765,19 @@ export function startWorkers() {
   }, 4000);
 
   // 4. Live News & IPO Alert Poller (General + Pro Users):
-  // Checks news (ShareSansar + MeroLagani) and IPO pipeline status every 3 minutes.
+  // Checks news (MeroLagani Announcements + News + NepaliPaisa + Bizshala + ShareSansar) and IPO pipeline status every 3 minutes.
   // Sends push notifications, SSE events, and Telegram updates for dividends, right shares, macro alerts, IPOs, and corporate announcements.
   setInterval(async () => {
     try {
-      if (_scrapeMeroLaganiNews || _scrapeShareSansarNews || _getLiveIpoListings) {
+      if (_scrapeMeroLaganiAnnouncements || _scrapeMeroLaganiNews || _scrapeShareSansarNews || _fetchNepaliPaisaNews || _scrapeBizshalaNews || _getLiveIpoListings) {
         await pollLiveNewsAndIpoAlerts({
+          scrapeMeroLaganiAnnouncements: _scrapeMeroLaganiAnnouncements,
           scrapeMeroLaganiNews: _scrapeMeroLaganiNews,
           scrapeShareSansarNews: _scrapeShareSansarNews,
+          fetchNepaliPaisaNews: _fetchNepaliPaisaNews,
+          scrapeBizshalaNews: _scrapeBizshalaNews,
+          fetchKarobarNews: _fetchKarobarNews,
+          fetchClickmanduNews: _fetchClickmanduNews,
           getLiveIpoListings: _getLiveIpoListings
         });
       }
@@ -769,10 +789,15 @@ export function startWorkers() {
   // Initial check 12 seconds after startup
   setTimeout(async () => {
     try {
-      if (_scrapeMeroLaganiNews || _scrapeShareSansarNews || _getLiveIpoListings) {
+      if (_scrapeMeroLaganiAnnouncements || _scrapeMeroLaganiNews || _scrapeShareSansarNews || _fetchNepaliPaisaNews || _scrapeBizshalaNews || _getLiveIpoListings) {
         await pollLiveNewsAndIpoAlerts({
+          scrapeMeroLaganiAnnouncements: _scrapeMeroLaganiAnnouncements,
           scrapeMeroLaganiNews: _scrapeMeroLaganiNews,
           scrapeShareSansarNews: _scrapeShareSansarNews,
+          fetchNepaliPaisaNews: _fetchNepaliPaisaNews,
+          scrapeBizshalaNews: _scrapeBizshalaNews,
+          fetchKarobarNews: _fetchKarobarNews,
+          fetchClickmanduNews: _fetchClickmanduNews,
           getLiveIpoListings: _getLiveIpoListings
         });
       }

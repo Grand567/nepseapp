@@ -9127,6 +9127,40 @@ async function scrapeMeroLaganiNews() {
   }
 }
 
+export async function scrapeMeroLaganiAnnouncements() {
+  try {
+    const res = await axios.get('https://merolagani.com/AnnouncementList.aspx', {
+      headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      timeout: 8000
+    });
+    const $ = cheerio.load(res.data);
+    const items = [];
+    $('.media').each((i, el) => {
+      const linkEl = $(el).find('.media-body a[href*="AnnouncementDetail.aspx"]');
+      if (!linkEl.length) return;
+      const href = linkEl.attr('href') || '';
+      const text = linkEl.text().replace(/\s+/g, ' ').trim();
+      const dateText = $(el).find('small.text-muted').first().text().trim() || 'Latest';
+      const idMatch = href.match(/id=(\d+)/);
+      const id = idMatch ? idMatch[1] : `ann-${i}`;
+      const fullUrl = `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`;
+      items.push({
+        id: `ml-ann-${id}`,
+        title: text,
+        link: fullUrl,
+        url: fullUrl,
+        source: 'MeroLagani Announcements',
+        pubDate: dateText,
+        date: dateText
+      });
+    });
+    return items.slice(0, 50);
+  } catch (err) {
+    console.warn('[news/announcements] MeroLagani Announcements fetch error:', err.message);
+    return [];
+  }
+}
+
 async function fetchClickmanduNews() {
   try {
     const feed = await rssParser.parseURL('https://clickmandu.com/feed');
@@ -9398,6 +9432,7 @@ app.get('/api/news/nepse', async (req, res) => {
 
     // Parallel multi-portal fetch with Promise.allSettled
     const results = await Promise.allSettled([
+      scrapeMeroLaganiAnnouncements(),
       scrapeShareSansarNews(),
       scrapeMeroLaganiNews(),
       fetchClickmanduNews(),
@@ -13713,7 +13748,12 @@ app.listen(PORT, '0.0.0.0', async () => {
           getMarketIndicesInternal,
           db,
           scrapeMeroLaganiNews,
+          scrapeMeroLaganiAnnouncements,
           scrapeShareSansarNews,
+          fetchNepaliPaisaNews,
+          scrapeBizshalaNews,
+          fetchKarobarNews,
+          fetchClickmanduNews,
           getLiveIpoListings,
           fetchTodayPricesInternal: async () => {
             const stockData = getCache('today-prices') || getCache('market-summary');
