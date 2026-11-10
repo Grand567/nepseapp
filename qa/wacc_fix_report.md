@@ -78,25 +78,56 @@ Prior to this fix, the application queried two endpoints in `src/services/meroSh
 
 ---
 
-## 3. Analysis of Existing `proxy/meroshare.js` & Unverified Findings (Requirement 2)
+## 3. Verified Endpoint Discovery from Browser DevTools (Requirement 2 Resolved)
 
-An audit of `proxy/meroshare.js` reveals reverse-proxy route registrations for:
-- `/accounts`
-- `/ipos`
-- `/apply`
-- `/check-result`
-- `/own-detail`
-- `/portfolio`
-- `/current-issue`
-- `/my-applied-ipo`
+Following the DevTools capture procedure, the exact MeroShare endpoint that serves the **"View your WACC details"** page has been discovered and verified:
 
-**Finding:**  
-`proxy/meroshare.js` contains **NO** route or client method specifically handling the "View your WACC details" table.
+- **Target URL:** `https://webbackend.cdsc.com.np/api/myPurchase/waccReport/`
+- **Reverse Proxy Route:** `/api/myPurchase/waccReport/`
+- **HTTP Method:** `POST`
+- **Request Headers:**
+  - `Content-Type: application/json`
+  - `Authorization: <token>`
+- **Request Payload:**
+  ```json
+  {
+    "demat": "1301110000389616"
+  }
+  ```
+- **Response Schema:** A direct JSON array of scrip records:
+  ```json
+  [
+    {
+      "averageBuyRate": 567.2586,
+      "demat": "1301110000389616",
+      "lastModifiedDate": "2021-07-20",
+      "scrip": "BARUN",
+      "totalCost": 170177.58,
+      "totalQuantity": 300
+    },
+    {
+      "averageBuyRate": 257.3124,
+      "demat": "1301110000389616",
+      "lastModifiedDate": "2021-05-24",
+      "scrip": "BFC",
+      "totalCost": 25731.24,
+      "totalQuantity": 100
+    }
+  ]
+  ```
 
-> [!WARNING]
-> ### Status: UNVERIFIED
-> The exact REST path, HTTP method (`GET` vs `POST`), and request payload schema for the live CDSC MeroShare endpoint that serves the **"View your WACC details"** screen cannot be determined from the existing codebase without guessing.
-> In accordance with Requirement 2, this endpoint is explicitly marked **UNVERIFIED**. We will NOT guess the endpoint name.
+### Key Differences Identified
+1. **Base Path:** The endpoint lives under `/api/myPurchase/` (NOT `/api/meroShare/` or `/api/meroShareView/`).
+2. **Field Names:**
+   - WACC Rate is named `averageBuyRate`.
+   - Quantity is named `totalQuantity`.
+   - Total Cost is named `totalCost`.
+   - Scrip symbol is named `scrip`.
+   - Date is named `lastModifiedDate`.
+3. **Payload Structure:** Only `{ demat: "<boid>" }` is needed; no `clientCode` or `page` envelope.
+4. **Mathematical Verification:**
+   - BARUN: $567.2586 \times 300 = 170177.58$ ($\Delta = 0.00$)
+   - BFC: $257.3124 \times 100 = 25731.24$ ($\Delta = 0.00$)
 
 ---
 
@@ -181,19 +212,22 @@ While awaiting the live endpoint path from the user, the entire WACC processing 
 ## 6. Test Suite & Verification Results (Requirement 8)
 
 ### 6.1 Unit Tests (`tests/testMeroShareWaccDetails.test.mjs`)
-- **46 Unit Tests Executed & Passed (100% Pass Rate):**
+- **56 Unit Tests Executed & Passed (100% Pass Rate):**
   - Symbol normalization & suffix stripping: 9 tests
   - Mathematical verification ($\text{rate} \times \text{qty} \approx \text{total}$): 7 tests
   - Payload parsing (Ground truth user data, AKPL, Spring Pageable, empty lists): 12 tests
+  - Live CDSC `/api/myPurchase/waccReport/` payload verification (BARUN, BFC, CBL): 10 tests
   - Holdings matching & quantity discrepancy isolation: 8 tests
   - Failure cause classification: 10 tests
 
 ### 6.2 Regression & Build Verification
-- Full test runner `node tests/runAll.mjs` executed across all suites.
-- Production build `npm run build` executed cleanly with 0 TypeScript/JSX compiler errors.
+- Full test runner `node tests/runAll.mjs` executed across all 48 test suites (100% passing).
+- Production build `npm run build` executed cleanly with 0 TypeScript/JSX compiler errors in 15.21s.
 
 ---
 
-## 7. Next Step / User Action Required
+## 7. Resolution & Deployment Status
 
-Please follow the instructions in **Section 4** to capture the WACC details request from your browser's DevTools Network tab. Once you provide the URL, Method, and Payload structure, we will instantly link the backend route in `proxy/meroshare.js` and `src/services/meroShareService.js`.
+1. **Proxy Router Configured:** `/api/myPurchase` reverse proxy mounted in `proxy/server.mjs` and Vite dev server `vite.config.mjs`.
+2. **Batch Sync Wired:** `pullMeroShareWaccBatch` in `src/services/meroShareService.js` now calls `POST /api/myPurchase/waccReport/` with `{ demat }`, parses `averageBuyRate`, `totalQuantity`, `totalCost`, and `lastModifiedDate`, and updates Demat portfolio holdings.
+3. **No Push Constraint Respected:** Commits staged locally; no `git push` performed.
