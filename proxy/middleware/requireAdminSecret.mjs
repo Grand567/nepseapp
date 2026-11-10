@@ -40,5 +40,9 @@ export function requireAdminSecret(req, res, next) {
   if (isValidAdminRequest(req)) {
     return next();
   }
+  const providedKey = req.headers?.['x-admin-key'] || req.headers?.['x-cron-secret'] || req.headers?.['authorization'] || req.query?.adminKey;
+  if (providedKey) {
+    return res.status(403).json({ success: false, error: 'Forbidden. Invalid admin key.' });
+  }
   return res.status(401).json({ success: false, error: 'Unauthorized. Admin key required.' });
 }

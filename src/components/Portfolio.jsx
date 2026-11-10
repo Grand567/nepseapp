@@ -10,7 +10,7 @@ import { calculateBuyDetails, calculateSellDetails, sanitizeMeroShareHoldings, g
 import { getProxyBase } from '../utils/liveData';
 import { syncUserDataToCloud, getCurrentAuthToken } from '../utils/firebase';
 import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
-import { pullMeroShareLivePortfolio, authenticateMeroShare, MEROSHARE_DP_LIST, pullMeroShareWaccBatch } from '../services/meroShareService';
+import { pullMeroShareLivePortfolio, authenticateMeroShare, MEROSHARE_DP_LIST, pullMeroShareWaccBatch, classifyWaccSyncFailure, normalizeScripSymbol } from '../services/meroShareService';
 import { Capacitor } from '@capacitor/core';
 import { DEFAULT_AI_KEY, callGlmAi, generateNepseAiContent } from '../services/aiService';
 import { syncCapitalWithPortfolio } from '../utils/dynamicCapitalEngine';
@@ -1295,14 +1295,34 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
         const updatedProfiles = meroshareProfiles.map(p => {
           if (p.id === profile.id || p.boid === profile.boid) {
             const newHoldings = (p.holdings || []).map(h => {
-              const sym = (h.symbol || '').toUpperCase().trim();
-              const discovered = discoveredMap[sym];
+              const rawSym = h.symbol || '';
+              const sym = normalizeScripSymbol(rawSym);
+              const discovered = discoveredMap[sym] || discoveredMap[rawSym.toUpperCase().trim()];
               if (discovered) {
+                const heldQty = Number(h.units || h.currentBalance || 0);
+                const waccQty = Number(discovered.waccCalculatedQuantity || heldQty);
+                const hasQtyMismatch = heldQty !== waccQty;
+                let quantityNote = null;
+                if (heldQty > waccQty) {
+                  quantityNote = `⚠️ WACC verified for ${waccQty} of ${heldQty} held shares. Rate Rs. ${Number(discovered.wacc).toFixed(2)} applies only to ${waccQty} shares; remaining ${heldQty - waccQty} shares require purchase confirmation.`;
+                } else if (heldQty < waccQty) {
+                  quantityNote = `ℹ️ WACC calculated for ${waccQty} shares, but Demat currently holds ${heldQty} shares.`;
+                }
+
                 return {
                   ...h,
                   wacc: discovered.wacc,
-                  waccSource: discovered.source,
-                  isCustomWacc: true
+                  waccRate: discovered.waccRate || discovered.wacc,
+                  waccCalculatedQuantity: waccQty,
+                  heldQuantity: heldQty,
+                  totalCostOfCapital: discovered.totalCostOfCapital || Number((waccQty * discovered.wacc).toFixed(2)),
+                  lastModifiedDate: discovered.lastModifiedDate || '',
+                  waccSource: discovered.source || 'CDSC_WACC',
+                  isCustomWacc: true,
+                  hasQuantityMismatch: hasQtyMismatch,
+                  quantityNote,
+                  hasCostMismatch: Boolean(discovered.isCostMismatch),
+                  costMismatchNote: discovered.costMismatchNote || null
                 };
               }
               return h;
@@ -1326,22 +1346,22 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
         });
         setTimeout(() => setWaccSyncResult(null), 6000);
       } else {
-        // CDSC has 0 records because unsold secondary holdings do not have buy rates recorded in CDSC.
-        // Provide rich explanation and instant 1-tap auto-fill actions!
         setWaccSyncResult({
-          type: 'unconfirmed_secondary',
-          msg: 'CDSC MeroShare stores WACC records only after a sale (EDIS). Unsold secondary holdings do not have buy rates in CDSC.',
+          type: 'no_records_found',
+          msg: 'No WACC records found in CDSC for this Demat account. (If you recently updated WACC, verify in MeroShare ➔ My Purchase Source ➔ View your WACC details). Choose a 1-tap option below if needed:',
           accountId
         });
       }
     } catch (err) {
       console.error("[WACC Sync Error]:", err);
+      const failure = classifyWaccSyncFailure(err);
       setWaccSyncResult({
         type: 'error',
-        msg: `WACC Sync Warning: ${err.message || 'Could not complete sync.'}`,
+        failureType: failure.type,
+        msg: failure.userMessageEn,
         accountId: profile.id || profile.boid
       });
-      setTimeout(() => setWaccSyncResult(null), 6000);
+      setTimeout(() => setWaccSyncResult(null), 8000);
     } finally {
       setIsSyncingWacc(false);
       setWaccSyncProgress('');
@@ -1966,8 +1986,8 @@ Based on this data, provide a robust analysis using this exact markdown structur
             )}
 
             {/* CDSC / WACC Origin Badge */}
-            {h.waccSource === 'CDSC_MY_HOLDING_DECLARED' ? (
-              <span style={{ fontSize: 12, background: 'rgba(16,185,129,0.18)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>✓ MeroShare WACC</span>
+            {(h.waccSource === 'CDSC_WACC' || h.waccSource === 'CDSC_MY_HOLDING_DECLARED') ? (
+              <span style={{ fontSize: 12, background: 'rgba(16,185,129,0.18)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>✓ CDSC WACC (MeroShare)</span>
             ) : h.waccSource === 'MANUAL_LEDGER' ? (
               <span style={{ fontSize: 12, background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.25)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>📖 Manual Ledger</span>
             ) : h.waccSource === 'BROKER_TMS' ? (
@@ -2022,7 +2042,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
           </div>
         </div>
 
-        {/* ── ROW 3: Holding Metrics Strip (Units @ LTP • WACC [Edit]) ── */}
+        {/* ── ROW 3: Holding Metrics Strip (Units @ LTP • WACC [Edit] • Total Cost • Last Mod) ── */}
         <div style={{
           fontSize: 12,
           color: 'var(--text-secondary)',
@@ -2035,18 +2055,33 @@ Based on this data, provide a robust analysis using this exact markdown structur
           justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: 6,
-          marginBottom: signal?.advice ? 8 : 10
+          marginBottom: (h.hasQuantityMismatch || h.hasCostMismatch) ? 6 : (signal?.advice ? 8 : 10)
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{h.units} Units</span>
             <span style={{ color: 'var(--text-muted)' }}>@</span>
             <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{formatRs(h.currentPrice)}</span>
+            {h.waccCalculatedQuantity != null && h.waccCalculatedQuantity !== h.units && (
+              <span style={{ fontSize: 11, color: '#fbbf24', background: 'rgba(234,179,8,0.12)', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                WACC Qty: {h.waccCalculatedQuantity}
+              </span>
+            )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ color: 'var(--text-muted)' }}>WACC:</span>
             <strong style={{ color: (h.waccSource === 'FALLBACK_BASE_PRICE') ? '#fbbf24' : 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
-              {formatRs(h.wacc)}
+              {formatRs(h.waccRate || h.wacc)}
             </strong>
+            {h.totalCostOfCapital != null && (
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                (Cost: {formatRs(h.totalCostOfCapital)})
+              </span>
+            )}
+            {h.lastModifiedDate && (
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }} title={`Last modified date in CDSC: ${h.lastModifiedDate}`}>
+                📅 {h.lastModifiedDate}
+              </span>
+            )}
             {h.waccSource === 'FALLBACK_BASE_PRICE' && (
               <button 
                 type="button"
@@ -2098,6 +2133,46 @@ Based on this data, provide a robust analysis using this exact markdown structur
             </button>
           </div>
         </div>
+
+        {/* Quantity difference warning note if held quantity differs from WACC quantity */}
+        {h.hasQuantityMismatch && h.quantityNote && (
+          <div style={{
+            fontSize: 11,
+            color: '#fbbf24',
+            background: 'rgba(234,179,8,0.08)',
+            border: '1px solid rgba(234,179,8,0.25)',
+            borderRadius: 6,
+            padding: '4px 8px',
+            marginBottom: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            lineHeight: 1.4
+          }}>
+            <AlertCircle style={{ width: 13, height: 13, flexShrink: 0, color: '#fbbf24' }} />
+            <span>{h.quantityNote}</span>
+          </div>
+        )}
+
+        {/* Cost calculation mismatch warning if detected */}
+        {h.hasCostMismatch && h.costMismatchNote && (
+          <div style={{
+            fontSize: 11,
+            color: '#f87171',
+            background: 'rgba(244,63,94,0.08)',
+            border: '1px solid rgba(244,63,94,0.25)',
+            borderRadius: 6,
+            padding: '4px 8px',
+            marginBottom: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            lineHeight: 1.4
+          }}>
+            <AlertCircle style={{ width: 13, height: 13, flexShrink: 0, color: '#f87171' }} />
+            <span>{h.costMismatchNote}</span>
+          </div>
+        )}
 
         {/* ── Inline Quick WACC Edit Box (If active for this row) ── */}
         {editingScrip === rowKey && (
@@ -2608,6 +2683,11 @@ Based on this data, provide a robust analysis using this exact markdown structur
           <span style={{ color: 'var(--text-muted)' }}>
             Live Market: <strong style={{ color: 'var(--primary-light)', fontFamily: 'var(--font-mono)' }}>{formatRs(totalLiveVal)}</strong>
           </span>
+        </div>
+
+        {/* Fiduciary / Broker disclaimer banner */}
+        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', opacity: 0.85 }}>
+          ℹ️ Profit/loss and capital-gains figures are estimates, confirm with your broker.
         </div>
       </div>
 
@@ -3311,9 +3391,9 @@ Based on this data, provide a robust analysis using this exact markdown structur
                     marginBottom: 12,
                     padding: '10px 14px',
                     borderRadius: 10,
-                    background: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') ? 'rgba(234,179,8,0.12)' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? 'rgba(244,63,94,0.12)' : 'rgba(16,185,129,0.12)',
-                    border: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') ? '1px solid rgba(234,179,8,0.35)' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? '1px solid rgba(244,63,94,0.35)' : '1px solid rgba(16,185,129,0.35)',
-                    color: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') ? '#fbbf24' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? '#f87171' : '#34d399',
+                    background: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'no_records_found') ? 'rgba(234,179,8,0.12)' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? 'rgba(244,63,94,0.12)' : 'rgba(16,185,129,0.12)',
+                    border: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'no_records_found') ? '1px solid rgba(234,179,8,0.35)' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? '1px solid rgba(244,63,94,0.35)' : '1px solid rgba(16,185,129,0.35)',
+                    color: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'no_records_found') ? '#fbbf24' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? '#f87171' : '#34d399',
                     fontSize: 12,
                     display: 'flex',
                     flexDirection: 'column',
@@ -3321,7 +3401,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                        {(typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') ? (
+                        {(typeof waccSyncResult === 'object' && waccSyncResult.type === 'no_records_found') ? (
                           <AlertCircle style={{ width: 16, height: 16, flexShrink: 0, marginTop: 1, color: '#fbbf24' }} />
                         ) : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? (
                           <AlertCircle style={{ width: 16, height: 16, flexShrink: 0, marginTop: 1, color: '#f87171' }} />
@@ -3329,15 +3409,19 @@ Based on this data, provide a robust analysis using this exact markdown structur
                           <CheckCircle2 style={{ width: 16, height: 16, flexShrink: 0, marginTop: 1, color: '#34d399' }} />
                         )}
                         <div>
-                          {(typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') && (
-                            <strong style={{ color: '#fff', display: 'block', marginBottom: 2 }}>CDSC Has No Unsold Purchase Records</strong>
+                          {typeof waccSyncResult === 'object' && waccSyncResult.type === 'no_records_found' && (
+                            <strong style={{ color: '#fff', display: 'block', marginBottom: 2 }}>No WACC Records Found in CDSC</strong>
+                          )}
+                          {typeof waccSyncResult === 'object' && waccSyncResult.type === 'error' && (
+                            <strong style={{ color: '#fff', display: 'block', marginBottom: 2 }}>WACC Sync Notice</strong>
+                          )}
+                          {typeof waccSyncResult === 'object' && waccSyncResult.type === 'success' && (
+                            <strong style={{ color: '#fff', display: 'block', marginBottom: 2 }}>WACC Verified</strong>
                           )}
                           <span>
                             {typeof waccSyncResult === 'string' 
                               ? waccSyncResult 
-                              : (waccSyncResult.type === 'unconfirmed_secondary' 
-                                  ? 'CDSC MeroShare stores WACC records only after an EDIS transfer (sale). Unsold secondary holdings and IPOs do not have buy rates in CDSC. Choose a 1-tap option below to verify:'
-                                  : waccSyncResult.msg)}
+                              : waccSyncResult.msg}
                           </span>
                         </div>
                       </div>
@@ -3352,7 +3436,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                     </div>
 
                     {/* Quick 1-tap Actions for Secondary Holdings when CDSC has no records */}
-                    {typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary' && (
+                    {typeof waccSyncResult === 'object' && waccSyncResult.type === 'no_records_found' && (
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingTop: 6, borderTop: '1px solid rgba(234,179,8,0.2)' }}>
                         <button
                           type="button"
