@@ -1773,15 +1773,18 @@ export async function testTriggerBroker58Alert(customSymbol = 'GHL', mockParams 
 
 export function getActiveSmartAlerts() {
   const now = Date.now();
-  // Filter alerts triggered within today's session (last 6 hours)
+  // Filter alerts triggered within today's session (last 6 hours), suppressing internal holdings and empty alerts
   return alertHistory.filter(a => {
-    const t = new Date(a.triggeredAt).getTime();
+    if (!a || a.isUserHolding) return false;
+    if (!String(a.title || '').trim() || !String(a.body || '').trim()) return false;
+    const t = new Date(a.triggeredAt || a.timestamp || 0).getTime();
     return (now - t) < (6 * 60 * 60 * 1000);
   });
 }
 
 export function getSmartAlertHistory(limit = 50) {
-  return alertHistory.slice(0, limit);
+  // Exclude internal portfolio tracking records and empty alerts
+  return alertHistory.filter(a => a && !a.isUserHolding && String(a.title || '').trim().length > 0).slice(0, limit);
 }
 
 export function resetSymbolAlertState(symbol) {

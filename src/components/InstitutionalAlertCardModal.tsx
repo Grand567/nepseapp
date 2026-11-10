@@ -44,17 +44,17 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
   onClose,
   onOpenRadar
 }) => {
-  if (!isOpen || !alert) return null;
+  if (!isOpen || !alert || !alert.symbol) return null;
 
-  const sym = alert.symbol || 'GHL';
-  const ltp = Number(alert.ltp || 269.50);
-  const buyLow = Number(alert.buyZone?.low || Math.round(ltp * 0.99));
-  const buyHigh = Number(alert.buyZone?.high || Math.round(ltp * 1.02));
-  const brokersText = alert.dominantBrokersText || 'Broker 58 & 45';
-  const concentration = alert.concentrationPct || 52;
-  const target1 = alert.target1 || Math.round(ltp * 1.15);
-  const target2 = alert.target2 || Math.round(ltp * 1.25);
-  const stopLoss = alert.stopLoss || Math.round(ltp * 0.95);
+  const sym = alert.symbol;
+  const ltp = Number(alert.ltp || 0);
+  const buyLow = Number(alert.buyZone?.low || (ltp > 0 ? Math.round(ltp * 0.99) : 0));
+  const buyHigh = Number(alert.buyZone?.high || (ltp > 0 ? Math.round(ltp * 1.02) : 0));
+  const brokersText = alert.dominantBrokersText || alert.body || 'Smart Money Accumulation Flow';
+  const concentration = alert.concentrationPct || 0;
+  const target1 = alert.target1 || (ltp > 0 ? Math.round(ltp * 1.15) : 0);
+  const target2 = alert.target2 || (ltp > 0 ? Math.round(ltp * 1.25) : 0);
+  const stopLoss = alert.stopLoss || (ltp > 0 ? Math.round(ltp * 0.95) : 0);
   const rr = alert.riskRewardRatio || +((target1 - ltp) / Math.max(1, ltp - stopLoss)).toFixed(2);
 
   const copySummary = () => {

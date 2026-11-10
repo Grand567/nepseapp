@@ -332,7 +332,13 @@ export const clearNotificationCache = () => {
 };
 
 export const normalizeNotificationItem = (raw) => {
+  if (!raw) return null;
   const data = raw.data || raw;
+  if (data.isUserHolding) return null; // Suppress internal tracking objects
+  const rawTitle = String(raw.title || data.title || '').trim();
+  const rawBody = String(raw.body || data.body || '').trim();
+  if (!rawTitle && !rawBody) return null; // Reject blank notifications
+
   const isGeneral = data.category === 'general' || data.type === 'NEWS_ALERT' || data.type === 'IPO_ALERT' || data.type === 'NEPSE_MACRO';
   const category = data.category || (isGeneral ? 'general' : 'pro');
   const id = data.id || raw.id || `notif_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
@@ -346,9 +352,9 @@ export const normalizeNotificationItem = (raw) => {
     type: data.type || (isGeneral ? 'NEWS_ALERT' : 'SMART_INSTITUTIONAL_ENTRY'),
     category,
     tier: category,
-    title: raw.title || data.title || 'Dravyashree Notification',
-    body: raw.body || data.body || '',
-    symbol: data.symbol || raw.title?.split(':')[1]?.trim()?.split(' ')[0] || '',
+    title: rawTitle || 'Dravyashree Notification',
+    body: rawBody,
+    symbol: data.symbol || rawTitle.split(':')[1]?.trim()?.split(' ')[0] || '',
     ltp: Number(data.ltp || 0),
     buyZone: data.buyZone || {
       low: Number(data.entryLow || 0),
@@ -372,7 +378,10 @@ export const normalizeNotificationItem = (raw) => {
 const recentlyTriggeredAlerts = new Set();
 
 export function triggerNativeStatusBarNotification(normalized) {
-  if (!normalized) return;
+  if (!normalized || normalized.isUserHolding) return;
+  const cleanTitle = String(normalized.title || '').trim();
+  const cleanBody = String(normalized.body || '').trim();
+  if (!cleanTitle || !cleanBody) return;
 
   // Stale-notification validation layer: inspect timestamp and enforce 30m TTL
   const validation = validatePushNotificationPayload(normalized, { ttlMs: NOTIFICATION_TTL_MS });
@@ -747,7 +756,7 @@ export async function fetchNotificationsFeed(category = 'all', limit = 50) {
     const res = await fetch(`${apiBase}/api/notifications?category=${category}&limit=${limit}`);
     if (res.ok) {
       const json = await res.json();
-      const serverItems = Array.isArray(json.data) ? json.data.map(normalizeNotificationItem) : [];
+      const serverItems = Array.isArray(json.data) ? json.data.map(normalizeNotificationItem).filter(Boolean) : [];
       
       // Merge unique by ID
       const map = new Map();

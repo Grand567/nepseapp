@@ -11915,6 +11915,10 @@ app.get('/api/notifications', (req, res) => {
     const maxAgeMs = 24 * 60 * 60 * 1000;
 
     let filtered = history.filter(a => {
+      if (!a || a.isUserHolding) return false;
+      const cleanTitle = String(a.title || '').trim();
+      const cleanBody = String(a.body || '').trim();
+      if (!cleanTitle || !cleanBody) return false;
       if (includeExpired) return true;
       const t = a.triggeredAt || a.timestamp || a.date;
       if (!t) return false;

@@ -8,7 +8,7 @@ export function SmartAlertBanner({ onOpenCard }) {
   useEffect(() => {
     const handleAlertReceived = (e) => {
       const alert = e.detail;
-      if (!alert) return;
+      if (!alert || !alert.symbol) return;
       setActiveAlert(alert);
       setVisible(true);
 
@@ -26,9 +26,9 @@ export function SmartAlertBanner({ onOpenCard }) {
     };
   }, []);
 
-  if (!visible || !activeAlert) return null;
+  if (!visible || !activeAlert || !activeAlert.symbol) return null;
 
-  const sym = activeAlert.symbol || 'GHL';
+  const sym = activeAlert.symbol;
   const ltp = Number(activeAlert.ltp || 0);
 
   return (
@@ -53,7 +53,7 @@ export function SmartAlertBanner({ onOpenCard }) {
               <span className="text-xs font-mono font-semibold text-emerald-400">NPR {ltp.toFixed(2)}</span>
             </div>
             <p className="text-xs text-slate-300 truncate mt-0.5">
-              {activeAlert.dominantBrokersText || 'Broker 58 & 45'} absorbing {activeAlert.concentrationPct || 52}% float
+              {activeAlert.dominantBrokersText || activeAlert.body || 'Smart Money Flow detected'}
             </p>
           </div>
         </div>

@@ -106,14 +106,41 @@ public class DravyashreeAlertWorker extends Worker {
 
             // First run guard: if no seen IDs exist yet, record current IDs so we don't spam historical alerts
             boolean isFirstRun = seenIds.isEmpty();
+            if (isFirstRun) {
+                for (int i = 0; i < data.length(); i++) {
+                    JSONObject item = data.optJSONObject(i);
+                    if (item == null) continue;
+                    String id = item.optString("id", "").trim();
+                    String title = item.optString("title", "").trim();
+                    String body = item.optString("body", "").trim();
+                    if (!id.isEmpty()) seenIds.add(id);
+                    if (!title.isEmpty() || !body.isEmpty()) {
+                        seenIds.add("fp_" + Math.abs((title + "_" + body).toLowerCase().hashCode()));
+                    }
+                }
+                prefs.edit().putStringSet(KEY_SEEN_IDS, seenIds).apply();
+                Log.i(TAG, "First background run: recorded " + seenIds.size() + " existing alerts to suppress historical status bar spam.");
+                return Result.success();
+            }
 
             for (int i = 0; i < data.length(); i++) {
                 JSONObject item = data.optJSONObject(i);
                 if (item == null) continue;
 
+                // Never alert for internal portfolio holding objects
+                if (item.optBoolean("isUserHolding", false)) {
+                    continue;
+                }
+
                 String id = item.optString("id", "").trim();
                 String title = item.optString("title", "").trim();
                 String body = item.optString("body", "").trim();
+
+                // Reject blank or incomplete notifications
+                if (title.isEmpty() || body.isEmpty()) {
+                    continue;
+                }
+
                 String contentFingerprint = "fp_" + Math.abs((title + "_" + body).toLowerCase().hashCode());
 
                 if (id.isEmpty()) id = contentFingerprint;
@@ -208,8 +235,12 @@ public class DravyashreeAlertWorker extends Worker {
 
     private void postNativeStatusBarNotification(Context context, JSONObject item) {
         try {
-            String title = item.optString("title", "🔔 Dravyashree Alert");
-            String body = item.optString("body", "");
+            String title = item.optString("title", "").trim();
+            String body = item.optString("body", "").trim();
+            if (title.isEmpty() || body.isEmpty()) {
+                Log.w(TAG, "Suppressed posting native status bar notification with empty title or body");
+                return;
+            }
             String symbol = item.optString("symbol", "");
             String category = item.optString("category", "pro");
             String type = item.optString("type", "");

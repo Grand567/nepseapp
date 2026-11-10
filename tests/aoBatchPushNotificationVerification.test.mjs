@@ -148,6 +148,42 @@ try {
   const dispatchRes = await dispatchFcmNotification(mockAlert);
   ok(dispatchRes.success === true, 'dispatchFcmNotification executes cleanly with fallback notification payload');
 
+  // ─── TEST 6: Notification Spam & Empty Alert Suppression Verification ─────────
+  console.log('\n[TEST 6] Notification Spam & Empty Alert Suppression Verification');
+  const { getActiveSmartAlerts, getSmartAlertHistory, trackCustomHolding, untrackCustomHolding } = await import('../proxy/smartAlertEngine.mjs');
+
+  // Track an internal holding
+  trackCustomHolding('TEST_HOLD', 100, 95, 110, 120, 50);
+
+  const activeAlerts = getActiveSmartAlerts();
+  const historyAlerts = getSmartAlertHistory(100);
+
+  const foundInActive = activeAlerts.some(a => a.symbol === 'TEST_HOLD' || a.isUserHolding);
+  const foundInHistory = historyAlerts.some(a => a.symbol === 'TEST_HOLD' || a.isUserHolding);
+
+  ok(!foundInActive, 'getActiveSmartAlerts strictly suppresses internal user holdings from notification feed');
+  ok(!foundInHistory, 'getSmartAlertHistory strictly suppresses internal user holdings from generic history feed');
+
+  // Cleanup tracked test holding
+  untrackCustomHolding('TEST_HOLD');
+
+  // Verify server.mjs notification endpoint filtering logic
+  ok(serverCode.includes('a.isUserHolding'), 'server.mjs /api/notifications explicitly filters out isUserHolding');
+  ok(serverCode.includes('!cleanTitle || !cleanBody'), 'server.mjs /api/notifications rejects alerts with empty title or body');
+
+  // Verify DravyashreeAlertWorker.java suppression logic
+  const workerCode = fs.readFileSync(path.join(ROOT_DIR, 'android/app/src/main/java/com/smartwealth/nepse/DravyashreeAlertWorker.java'), 'utf8');
+  ok(workerCode.includes('item.optBoolean("isUserHolding", false)'), 'DravyashreeAlertWorker suppresses isUserHolding');
+  ok(workerCode.includes('title.isEmpty() || body.isEmpty()'), 'DravyashreeAlertWorker rejects empty title or body');
+  ok(workerCode.includes('isFirstRun'), 'DravyashreeAlertWorker implements first run suppression guard');
+
+  // Verify UI fallback suppression
+  const bannerCode = fs.readFileSync(path.join(ROOT_DIR, 'src/components/SmartAlertBanner.jsx'), 'utf8');
+  ok(!bannerCode.includes("activeAlert.symbol || 'GHL'"), 'SmartAlertBanner removed arbitrary GHL fallback');
+
+  const modalCode = fs.readFileSync(path.join(ROOT_DIR, 'src/components/InstitutionalAlertCardModal.tsx'), 'utf8');
+  ok(!modalCode.includes("alert.symbol || 'GHL'"), 'InstitutionalAlertCardModal removed arbitrary GHL fallback');
+
   console.log('\n======================================================================');
   console.log(` RESULTS: ${pass} PASSED, ${fail} FAILED`);
   console.log('======================================================================');
