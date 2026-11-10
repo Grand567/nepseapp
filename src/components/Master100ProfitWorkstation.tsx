@@ -122,7 +122,7 @@ export function Master100ProfitWorkstation({
       let data: any = null;
       try { data = text ? JSON.parse(text) : null; } catch {}
       if (data && data.success) {
-        setTelegramTestMsg({ type: 'success', text: '✅ Telegram Bot configuration saved successfully!' });
+        setTelegramTestMsg({ type: 'success', text: data.message || '✅ Telegram Bot configuration saved successfully!' });
         try {
           const sRes = await fetch(`${base}/api/telegram/status`);
           const sText = await sRes.text();
@@ -130,10 +130,11 @@ export function Master100ProfitWorkstation({
           if (sData?.success) setTelegramStatus(sData);
         } catch {}
       } else {
-        setTelegramTestMsg({ type: 'success', text: '✅ Settings saved on this device!' });
+        const errMsg = data?.error || data?.message || 'Failed to save configuration on server.';
+        setTelegramTestMsg({ type: 'error', text: `⚠️ ${errMsg}` });
       }
-    } catch (_) {
-      setTelegramTestMsg({ type: 'success', text: '✅ Settings saved on this device! (Offline cache)' });
+    } catch (err: any) {
+      setTelegramTestMsg({ type: 'error', text: `⚠️ Could not reach server: ${err.message || 'Network error'}` });
     } finally {
       setTelegramSaving(false);
     }

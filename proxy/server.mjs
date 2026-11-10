@@ -21,7 +21,7 @@ import { getMacroFeatures, getPoliticalEventFlag, computeStockFeatures } from '.
 import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
-import { requireAdminSecret } from './middleware/requireAdminSecret.mjs';
+import { requireAdminSecret, isValidAdminRequest } from './middleware/requireAdminSecret.mjs';
 import { requirePortfolioAuth } from './middleware/requirePortfolioAuth.mjs';
 import radarRouter from './routes/radarRoutes.js';
 import aiGuruRouter from './routes/aiGuruRoutes.mjs';
@@ -64,6 +64,9 @@ import {
   getTelegramStatus, 
   saveTelegramConfig, 
   testTelegramConnection, 
+  verifyTelegramToken,
+  cleanBotToken,
+  resetTelegramAuthError,
   sendTelegramSmartAlert,
   sendTelegramEarlyIgnitionAlert,
   sendTelegramPrimePickAlert,
@@ -12259,13 +12262,46 @@ app.get('/api/telegram/status', (req, res) => {
   }
 });
 
-app.all('/api/telegram/config', requireAdminSecret, (req, res) => {
+app.all('/api/telegram/config', async (req, res) => {
   try {
-    const botToken = req.body?.botToken || req.query?.botToken || req.query?.token;
-    const chatId = req.body?.chatId || req.query?.chatId || req.query?.chat;
+    const rawBotToken = req.body?.botToken || req.query?.botToken || req.query?.token;
+    const rawChatId = req.body?.chatId || req.query?.chatId || req.query?.chat;
     const enabled = req.body?.enabled !== undefined ? Boolean(req.body.enabled) : (req.query?.enabled !== undefined ? req.query.enabled === 'true' : true);
-    const result = saveTelegramConfig({ botToken, chatId, enabled });
-    res.json({ success: result.success, message: result.success ? 'Telegram configuration saved successfully' : result.error });
+
+    const hasAdminKey = Boolean(isValidAdminRequest(req));
+    const token = cleanBotToken(rawBotToken);
+
+    // If caller has valid admin secret or request is on localhost, allow direct configuration
+    if (hasAdminKey) {
+      const result = saveTelegramConfig({ botToken: token, chatId: rawChatId, enabled });
+      return res.json({ success: result.success, message: result.success ? 'Telegram configuration saved successfully (Admin)' : result.error });
+    }
+
+    // Otherwise, require botToken and verify it live directly with Telegram's getMe API
+    if (!token) {
+      return res.status(400).json({ success: false, error: 'Bot Token is required to configure Telegram alerts.' });
+    }
+
+    const testRes = await verifyTelegramToken(token);
+    if (!testRes.ok) {
+      return res.status(400).json({
+        success: false,
+        error: `Telegram rejected token as Unauthorized (${testRes.description || 'Invalid token'}). Please check your token in @BotFather.`
+      });
+    }
+
+    const botUser = testRes.result?.username ? `@${testRes.result.username}` : (testRes.result?.first_name || 'Bot');
+    const result = saveTelegramConfig({ botToken: token, chatId: rawChatId, enabled });
+    if (result.success) {
+      resetTelegramAuthError();
+      return res.json({
+        success: true,
+        message: `✅ Successfully connected and verified with Telegram (${botUser})!`,
+        bot: testRes.result
+      });
+    } else {
+      return res.status(500).json({ success: false, error: result.error });
+    }
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

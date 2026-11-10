@@ -66,9 +66,16 @@ function loadConfig() {
     }
   } catch (_) {}
 
+  const fileToken = cleanBotToken(fileConfig.botToken || '');
+  const envToken = cleanBotToken(process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN || process.env.BOT_TOKEN || '');
+
+  // Prefer verified fileConfig if saved by user, otherwise fallback to env
+  const botToken = fileToken || envToken;
+  const chatId = String(fileConfig.chatId || process.env.TELEGRAM_CHAT_ID || process.env.CHAT_ID || '').trim();
+
   return {
-    botToken: cleanBotToken(process.env.TELEGRAM_BOT_TOKEN || fileConfig.botToken || ''),
-    chatId: String(process.env.TELEGRAM_CHAT_ID || fileConfig.chatId || '').trim(),
+    botToken,
+    chatId,
     enabled: fileConfig.enabled !== false, // default true if token & chatId present
     isTestServer: Boolean(process.env.TELEGRAM_TEST_SERVER === 'true') // Strictly require explicit env var; never auto-trap in test DC!
   };
@@ -81,7 +88,7 @@ export function saveTelegramConfig({ botToken, chatId, enabled = true, isTestSer
     botToken: botToken !== undefined ? cleanBotToken(botToken) : current.botToken,
     chatId: chatId !== undefined ? String(chatId).trim() : current.chatId,
     enabled: Boolean(enabled),
-    isTestServer: Boolean(process.env.TELEGRAM_TEST_SERVER === 'true'),
+    isTestServer: false,
     updatedAt: new Date().toISOString()
   };
 
@@ -99,7 +106,7 @@ export function getTelegramStatus() {
   const cfg = loadConfig();
   const hasToken = Boolean(cfg.botToken && cfg.botToken.length > 10);
   const hasChat = Boolean(cfg.chatId && cfg.chatId.length > 3);
-  const isReady = hasToken && hasChat && cfg.enabled;
+  const isReady = hasToken && hasChat && cfg.enabled && !isTokenInvalid;
 
   const maskedToken = hasToken
     ? `${cfg.botToken.slice(0, 6)}...${cfg.botToken.slice(-4)}`
@@ -111,8 +118,25 @@ export function getTelegramStatus() {
     hasToken,
     hasChatId: hasChat,
     maskedToken,
-    chatId: cfg.chatId || ''
+    chatId: cfg.chatId || '',
+    tokenLength: cfg.botToken ? cfg.botToken.length : 0,
+    tokenHasColon: Boolean(cfg.botToken && cfg.botToken.includes(':')),
+    isTokenInvalid
   };
+}
+
+/**
+ * Validates a bot token directly against Telegram's getMe endpoint
+ */
+export async function verifyTelegramToken(rawToken) {
+  const token = cleanBotToken(rawToken);
+  if (!token) return { ok: false, description: 'No token provided' };
+  try {
+    const res = await callTelegramApi(`/bot${token}/getMe`);
+    return res;
+  } catch (err) {
+    return { ok: false, description: err.message };
+  }
 }
 
 /**
