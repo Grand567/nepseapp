@@ -1,60 +1,5 @@
 [
   {
-    "date": "2026-11-06",
-    "tradeCount": 33215,
-    "ingestedCount": 33215,
-    "totalVolume": 10713842,
-    "totalTurnover": 3462059323,
-    "jsonFileSizeKb": 21126.5,
-    "gzFileSizeKb": 2070.9,
-    "savedAt": "2026-11-06T13:44:13.111Z",
-    "status": "COMPLETE"
-  },
-  {
-    "date": "2026-11-05",
-    "tradeCount": 44412,
-    "ingestedCount": 44412,
-    "totalVolume": 12373841,
-    "totalTurnover": 4722236623,
-    "jsonFileSizeKb": 28252.7,
-    "gzFileSizeKb": 2735.6,
-    "savedAt": "2026-11-06T02:25:24.484Z",
-    "status": "COMPLETE"
-  },
-  {
-    "date": "2026-11-04",
-    "tradeCount": 59185,
-    "ingestedCount": 59185,
-    "totalVolume": 21223414,
-    "totalTurnover": 7439366050,
-    "jsonFileSizeKb": 37637.6,
-    "gzFileSizeKb": 3562.3,
-    "savedAt": "2026-11-04T10:58:44.297Z",
-    "status": "COMPLETE"
-  },
-  {
-    "date": "2026-11-03",
-    "tradeCount": 57449,
-    "ingestedCount": 57449,
-    "totalVolume": 15420920,
-    "totalTurnover": 5651142523,
-    "jsonFileSizeKb": 36458.4,
-    "gzFileSizeKb": 3466.5,
-    "savedAt": "2026-11-03T11:23:26.506Z",
-    "status": "COMPLETE"
-  },
-  {
-    "date": "2026-10-30",
-    "tradeCount": 74054,
-    "ingestedCount": 74054,
-    "totalVolume": 22862554,
-    "totalTurnover": 8891595146,
-    "jsonFileSizeKb": 47090.7,
-    "gzFileSizeKb": 4673.5,
-    "savedAt": "2026-10-30T10:54:11.402Z",
-    "status": "COMPLETE"
-  },
-  {
     "date": "2026-08-27",
     "tradeCount": 51912,
     "totalVolume": 9123717,
@@ -377,5 +322,69 @@
     "filePath": "data/daily_floorsheets/floorsheet-2026-10-29.json",
     "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-29.json.gz",
     "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-30",
+    "tradeCount": 74054,
+    "ingestedCount": 74054,
+    "totalVolume": 22862554,
+    "totalTurnover": 8891595146,
+    "jsonFileSizeKb": 47090.7,
+    "gzFileSizeKb": 4673.5,
+    "savedAt": "2026-10-30T10:54:11.402Z",
+    "status": "COMPLETE"
+  },
+  {
+    "date": "2026-11-02",
+    "tradeCount": 70228,
+    "totalVolume": 19822392,
+    "totalTurnover": 7183713047,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-11-02.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-11-02.json.gz",
+    "archivedAt": "2026-11-10T10:00:36.706Z"
+  },
+  {
+    "date": "2026-11-03",
+    "tradeCount": 57449,
+    "ingestedCount": 57449,
+    "totalVolume": 15420920,
+    "totalTurnover": 5651142523,
+    "jsonFileSizeKb": 36458.4,
+    "gzFileSizeKb": 3466.5,
+    "savedAt": "2026-11-03T11:23:26.506Z",
+    "status": "COMPLETE"
+  },
+  {
+    "date": "2026-11-04",
+    "tradeCount": 59185,
+    "ingestedCount": 59185,
+    "totalVolume": 21223414,
+    "totalTurnover": 7439366050,
+    "jsonFileSizeKb": 37637.6,
+    "gzFileSizeKb": 3562.3,
+    "savedAt": "2026-11-04T10:58:44.297Z",
+    "status": "COMPLETE"
+  },
+  {
+    "date": "2026-11-05",
+    "tradeCount": 44412,
+    "ingestedCount": 44412,
+    "totalVolume": 12373841,
+    "totalTurnover": 4722236623,
+    "jsonFileSizeKb": 28252.7,
+    "gzFileSizeKb": 2735.6,
+    "savedAt": "2026-11-06T02:25:24.484Z",
+    "status": "COMPLETE"
+  },
+  {
+    "date": "2026-11-06",
+    "tradeCount": 33215,
+    "ingestedCount": 33215,
+    "totalVolume": 10713842,
+    "totalTurnover": 3462059323,
+    "jsonFileSizeKb": 21126.5,
+    "gzFileSizeKb": 2070.9,
+    "savedAt": "2026-11-06T13:44:13.111Z",
+    "status": "COMPLETE"
   }
 ]
