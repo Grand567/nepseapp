@@ -330,9 +330,17 @@ export function broadcastAlert(alertPayload) {
     const isIpo = alertPayload.type === 'IPO_ALERT' || alertPayload.category === 'ipo';
 
     if (isNews) {
-      sendTelegramNewsAlert(alertPayload).catch(err => {
-        console.warn('[SmartAlertEngine] Telegram news alert dispatch warning:', err.message);
-      });
+      // User Policy: ONLY portfolio holdings news alerts are dispatched to Telegram
+      const isPortfolioHolding = Boolean(
+        alertPayload.isPortfolioTracked ||
+        alertPayload.isUserHolding ||
+        (alertPayload.symbol && userTrackedSymbolsSet.has(alertPayload.symbol))
+      );
+      if (isPortfolioHolding) {
+        sendTelegramNewsAlert(alertPayload).catch(err => {
+          console.warn('[SmartAlertEngine] Telegram news alert dispatch warning:', err.message);
+        });
+      }
     } else if (isIpo) {
       sendTelegramIpoAlert(alertPayload).catch(err => {
         console.warn('[SmartAlertEngine] Telegram IPO alert dispatch warning:', err.message);
@@ -1970,51 +1978,9 @@ export function isNonHoldingPushWindowActive() {
 }
 
 export async function checkAndDispatchScheduledNonHoldingDigest() {
-  const windowCheck = isNonHoldingPushWindowActive();
-  if (!windowCheck.active) return;
-
-  const status = getDetailedMarketStatus();
-  const todayIso = status.targetSessionDate || new Date().toISOString().split('T')[0];
-  const currentWindowKey = `${todayIso}_${windowCheck.windowId}`;
-  if (lastNonHoldingPushWindow === currentWindowKey) return; // already sent for this window today
-
-  // Find recent non-holding announcements in alertHistory from the last 12 hours
-  const now = Date.now();
-  const recentNonHoldings = alertHistory.filter(a => {
-    if (!a || a.isUserHolding || !a.title) return false;
-    const isHolding = a.symbol && userTrackedSymbolsSet.has(a.symbol);
-    if (isHolding) return false;
-    const isNews = a.type === 'NEWS_ALERT' || a.type === 'DIVIDEND_ALERT' || a.type === 'RIGHT_SHARE_ALERT' || a.type === 'BOOK_CLOSURE_ALERT' || a.type === 'EARNINGS_ALERT' || a.type === 'NEPSE_MACRO';
-    if (!isNews) return false;
-    const t = new Date(a.triggeredAt || a.timestamp || 0).getTime();
-    return !isNaN(t) && (now - t <= 12 * 60 * 60 * 1000);
-  });
-
-  if (recentNonHoldings.length === 0) return;
-
-  lastNonHoldingPushWindow = currentWindowKey;
-  const count = recentNonHoldings.length;
-  const top = recentNonHoldings[0];
-  const timeLabel = windowCheck.windowId === '11am' ? '11:00 AM' : '6:00 PM';
-  const digestTitle = `📰 [${timeLabel} Corporate Action Digest] ${count} Announcement${count > 1 ? 's' : ''}`;
-  const digestBody = count === 1 
-    ? `${top.body || top.title}`
-    : `${top.title}\n+ ${count - 1} more corporate notices in Notification Drawer.`;
-
-  console.log(`[SmartAlertEngine] 🚀 Dispatched scheduled ${timeLabel} non-holding digest (${count} announcements).`);
-
-  broadcastAlert({
-    id: `digest_${currentWindowKey}`,
-    type: 'NEWS_ALERT',
-    category: 'general',
-    title: digestTitle,
-    body: digestBody,
-    symbol: top.symbol || 'NEPSE',
-    url: top.url || '',
-    source: 'NEPSE Corporate Feed',
-    action: 'OPEN_NEWS',
-    triggeredAt: new Date().toISOString()
-  });
+  // User policy: Non-holding corporate action alerts are completely suppressed.
+  // Only personal portfolio holdings are alerted.
+  return;
 }
 
 function saveSeenNewsKeys() {
@@ -2165,45 +2131,29 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
             notifTitle = foundSym ? `📰 ${foundSym} Corporate Announcement` : `📰 NEPSE Announcement`;
           }
 
-          // Smart Notification Policy:
-          // 1. Portfolio Holdings (isPortfolioTracked === true):
-          //    Push IMMEDIATELY 24/7 to Android status bar via FCM & Telegram!
-          // 2. Non-Portfolio Holdings (isPortfolioTracked === false):
-          //    Push to Android status bar TWICE A DAY ONLY (11:00 AM and 6:00 PM NPT).
-          //    Outside of these two windows, status bar push is suppressed and the notice is
-          //    silently recorded in the in-app Notification Center drawer feed.
+          // Strict User Policy: "no need to alert corporate news and action, only of my portfolio news are enough"
+          // Non-portfolio notices are silently stored in the in-app drawer only;
+          // zero push notifications to Android status bar or Telegram!
           if (!isPortfolioTracked) {
-            const windowCheck = isNonHoldingPushWindowActive();
-            const status = getDetailedMarketStatus();
-            const todayIso = status.targetSessionDate || new Date().toISOString().split('T')[0];
-            const currentWindowKey = windowCheck.active ? `${todayIso}_${windowCheck.windowId}` : null;
-            const canPushThisWindow = currentWindowKey && (lastNonHoldingPushWindow !== currentWindowKey);
-
-            if (!canPushThisWindow) {
-              console.log(`[SmartAlertEngine] ⏳ Non-holding notice "${title.slice(0, 45)}...": recorded in in-app feed. Status bar push scheduled for 11:00 AM / 6:00 PM NPT.`);
-              const feedItem = {
-                id: itemKey,
-                type: notifType,
-                category: notifCategory,
-                title: notifTitle,
-                body: title,
-                symbol: foundSym || 'NEPSE',
-                url: item.url || item.link || '',
-                source: item.source || 'Financial News',
-                action: 'OPEN_NEWS',
-                triggeredAt: new Date().toISOString()
-              };
-              if (!alertHistory.some(a => a.id === feedItem.id)) {
-                alertHistory.unshift(feedItem);
-                if (alertHistory.length > 200) alertHistory.pop();
-                saveJson(HISTORY_FILE, alertHistory);
-              }
-              continue;
+            console.log(`[SmartAlertEngine] ℹ️ Non-holding corporate notice "${title.slice(0, 45)}...": recorded in-app only (no push/Telegram).`);
+            const feedItem = {
+              id: itemKey,
+              type: notifType,
+              category: notifCategory,
+              title: notifTitle,
+              body: title,
+              symbol: foundSym || 'NEPSE',
+              url: item.url || item.link || '',
+              source: item.source || 'Financial News',
+              action: 'OPEN_NEWS',
+              triggeredAt: new Date().toISOString()
+            };
+            if (!alertHistory.some(a => a.id === feedItem.id)) {
+              alertHistory.unshift(feedItem);
+              if (alertHistory.length > 200) alertHistory.pop();
+              saveJson(HISTORY_FILE, alertHistory);
             }
-
-            // Window is active! Mark window as dispatched for today so at most 1 push per window
-            lastNonHoldingPushWindow = currentWindowKey;
-            notifTitle = `📰 [${windowCheck.windowId === '11am' ? '11:00 AM' : '6:00 PM'} Digest] ${notifTitle}`;
+            continue; // Skip push & skip Telegram
           }
 
           broadcastAlert({
