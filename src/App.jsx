@@ -280,7 +280,9 @@ function AppInner() {
     const url = item.url || '';
 
     // 1. NEWS, Dividends, Right Shares, Macro & Corporate Announcements (In-App Reader Parity)
-    const isNews = action === 'OPEN_NEWS' ||
+    const isExplicitStockAction = action === 'OPEN_STOCK' || action === 'OPEN_STOCK_DETAIL' || action === 'OPEN_ACCUMULATION_CARD' || action === 'OPEN_BROKER';
+    const isNews = !isExplicitStockAction && (
+      action === 'OPEN_NEWS' ||
       category === 'news' ||
       category === 'dividend' ||
       category === 'right_share' ||
@@ -292,7 +294,8 @@ function AppInner() {
       type === 'NEPSE_MACRO' ||
       type === 'PORTFOLIO_NEWS_ALERT' ||
       type.includes('NEWS') ||
-      Boolean(url && !type.includes('BREAKOUT') && !type.includes('STOP_LOSS') && !type.includes('PROFIT') && !type.includes('ENTRY'));
+      Boolean(url && url.startsWith('http') && !type.includes('BREAKOUT') && !type.includes('STOP_LOSS') && !type.includes('PROFIT') && !type.includes('ENTRY'))
+    );
 
     if (isNews) {
       setActiveNewsArticle({
@@ -336,7 +339,7 @@ function AppInner() {
       }
 
       setSmartAlertModal({ isOpen: false, alert: null });
-      setActiveTab('market');
+      setActiveTab('dashboard');
       openStockDetail(targetStock);
       return;
     }
@@ -1211,7 +1214,7 @@ function AppInner() {
     const liveMatch = stocks.find(
       s => String(s.symbol || '').toUpperCase().trim() === targetSym
     );
-    return liveMatch ? { ...baseObj, ...liveMatch } : baseObj;
+    return liveMatch ? { ...liveMatch, ...baseObj, name: liveMatch.name || baseObj.name, ltp: liveMatch.ltp || baseObj.ltp } : baseObj;
   }, [selectedStock, stocks]);
 
   // ── Auth checking splash ──

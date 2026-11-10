@@ -572,6 +572,11 @@ export async function dispatchFcmNotification(alertItem) {
       body,
     },
     data: {
+      from_notification: 'true',
+      title: String(title),
+      body: String(body),
+      url: String(alertItem.url || ''),
+      source: String(alertItem.source || 'Financial News'),
       action: alertItem.action || (isPro ? 'OPEN_ACCUMULATION_CARD' : 'OPEN_NEWS'),
       symbol: String(symbol),
       type: String(type),
@@ -606,52 +611,63 @@ export async function dispatchFcmNotification(alertItem) {
     }
   };
 
+  // Test environment safety guard: never dispatch live FCM pushes during tests or test alerts
+  if (process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true' || alertItem.isTest || String(alertItem.id || '').startsWith('test_')) {
+    return { success: true, count: 0, notice: 'Test alert suppressed from live FCM push' };
+  }
+
   if (!hasValidFcmPrivateKey || !fcmMessaging) {
     return { success: true, count: 0, notice: 'Alert saved to live notification feed (Native Android WorkManager and SSE handle dispatch)' };
   }
 
-  // 1. Multicast to registered individual device tokens (primary path)
+  // 1. Multicast to registered individual device tokens (primary path with chunking)
   const activeTokens = pushTokens.map(p => p.token).filter(Boolean);
   let multicastResult = null;
   let topicSuccess = false;
 
   if (activeTokens.length > 0) {
-    const tokensToSend = activeTokens.slice(-500); // batch of up to 500
-    try {
-      const response = await fcmMessaging.sendEachForMulticast({
-        ...fcmPayload,
-        tokens: tokensToSend
-      });
-      console.log(`[SmartAlertEngine] Multicast sent: ${response.successCount} success, ${response.failureCount} failed.`);
-      multicastResult = { successCount: response.successCount, failureCount: response.failureCount };
+    const CHUNK_SIZE = 500;
+    let totalSuccess = 0;
+    let totalFailure = 0;
 
-      // Handle invalid or expired tokens by deleting them
-      if (response.failureCount > 0 && Array.isArray(response.responses)) {
-        const deadTokens = [];
-        response.responses.forEach((resp, idx) => {
-          if (!resp.success && resp.error) {
-            const errCode = String(resp.error.code || resp.error.message || '');
-            if (
-              errCode.includes('registration-token-not-registered') ||
-              errCode.includes('invalid-registration-token') ||
-              errCode.includes('mismatched-credential') ||
-              errCode.includes('UNREGISTERED') ||
-              errCode.includes('invalid-argument')
-            ) {
-              deadTokens.push(tokensToSend[idx]);
-            }
-          }
+    for (let i = 0; i < activeTokens.length; i += CHUNK_SIZE) {
+      const tokensToSend = activeTokens.slice(i, i + CHUNK_SIZE);
+      try {
+        const response = await fcmMessaging.sendEachForMulticast({
+          ...fcmPayload,
+          tokens: tokensToSend
         });
-        if (deadTokens.length > 0) {
-          const prunedCount = await pruneDeadPushTokens(deadTokens);
-          multicastResult.prunedCount = prunedCount;
+        totalSuccess += response.successCount;
+        totalFailure += response.failureCount;
+
+        // Handle invalid or expired tokens by deleting them
+        if (response.failureCount > 0 && Array.isArray(response.responses)) {
+          const deadTokens = [];
+          response.responses.forEach((resp, idx) => {
+            if (!resp.success && resp.error) {
+              const errCode = String(resp.error.code || resp.error.message || '');
+              if (
+                errCode.includes('registration-token-not-registered') ||
+                errCode.includes('invalid-registration-token') ||
+                errCode.includes('mismatched-credential') ||
+                errCode.includes('UNREGISTERED') ||
+                errCode.includes('invalid-argument')
+              ) {
+                deadTokens.push(tokensToSend[idx]);
+              }
+            }
+          });
+          if (deadTokens.length > 0) {
+            await pruneDeadPushTokens(deadTokens);
+          }
         }
+      } catch (chunkErr) {
+        console.warn('[SmartAlertEngine] Multicast chunk batch warning:', chunkErr.message);
       }
-      return { success: true, topicSent: false, ...multicastResult };
-    } catch (multiErr) {
-      console.warn('[SmartAlertEngine] Multicast error:', multiErr.message);
-      return { success: false, error: multiErr.message, topicSent: false };
     }
+    console.log(`[SmartAlertEngine] Multicast batch completed: ${totalSuccess} success, ${totalFailure} failed across ${activeTokens.length} device(s).`);
+    multicastResult = { successCount: totalSuccess, failureCount: totalFailure };
+    return { success: true, topicSent: false, ...multicastResult };
   } else {
     // 2. Fallback to topic only if no individual device tokens are registered
     try {
@@ -1938,6 +1954,8 @@ export function getUserTrackedHoldings() {
 
 const seenNewsKeys = new Set(loadJson(SEEN_NEWS_FILE, []));
 const seenIpoStatusKeys = new Set();
+let lastGeneralNewsDispatchedAt = 0;
+const GENERAL_NEWS_MIN_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes throttle between general / non-portfolio push notifications
 
 function saveSeenNewsKeys() {
   try {
@@ -2085,6 +2103,36 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
             notifType = 'NEWS_ALERT';
             notifCategory = 'general';
             notifTitle = foundSym ? `📰 ${foundSym} Corporate Announcement` : `📰 NEPSE Announcement`;
+          }
+
+          // Smart Notification Pacing Gate:
+          // For non-portfolio general corporate notices or news, maintain a 30-minute interval between push notifications to prevent notification fatigue.
+          // CRITICAL PORTFOLIO EXCEPTION: If the announcement or news is for a stock the user holds in their portfolio (isPortfolioTracked), bypass throttle completely and push immediately with highest priority!
+          const nowMs = Date.now();
+          if (!isPortfolioTracked && (nowMs - lastGeneralNewsDispatchedAt < GENERAL_NEWS_MIN_INTERVAL_MS)) {
+            console.log(`[SmartAlertEngine] ⏳ Paced general non-holding alert "${title.slice(0, 45)}...": status bar push throttled (${Math.round((nowMs - lastGeneralNewsDispatchedAt) / 60000)}m < 30m interval). Available in app notification feed.`);
+            const feedItem = {
+              id: itemKey,
+              type: notifType,
+              category: notifCategory,
+              title: notifTitle,
+              body: title,
+              symbol: foundSym || 'NEPSE',
+              url: item.url || item.link || '',
+              source: item.source || 'Financial News',
+              action: 'OPEN_NEWS',
+              triggeredAt: new Date().toISOString()
+            };
+            if (!alertHistory.some(a => a.id === feedItem.id)) {
+              alertHistory.unshift(feedItem);
+              if (alertHistory.length > 200) alertHistory.pop();
+              saveJson(HISTORY_FILE, alertHistory);
+            }
+            continue;
+          }
+
+          if (!isPortfolioTracked) {
+            lastGeneralNewsDispatchedAt = nowMs;
           }
 
           broadcastAlert({

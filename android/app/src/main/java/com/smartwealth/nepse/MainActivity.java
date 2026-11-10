@@ -120,39 +120,67 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void handleNotificationDeepLink(Intent intent) {
-        if (intent != null && intent.getBooleanExtra("from_notification", false)) {
-            final String symbol = intent.getStringExtra("symbol");
-            final String type = intent.getStringExtra("type");
-            final String category = intent.getStringExtra("category");
-            final String action = intent.getStringExtra("action");
-            final String url = intent.getStringExtra("url");
-            final String title = intent.getStringExtra("title");
-            final String body = intent.getStringExtra("body");
+        if (intent == null) return;
+        android.os.Bundle extras = intent.getExtras();
+        if (extras == null) return;
 
-            try {
-                org.json.JSONObject payload = new org.json.JSONObject();
-                payload.put("symbol", symbol != null ? symbol : "");
-                payload.put("type", type != null ? type : "");
-                payload.put("category", category != null ? category : "");
-                payload.put("action", action != null ? action : "");
-                payload.put("url", url != null ? url : "");
-                payload.put("title", title != null ? title : "");
-                payload.put("body", body != null ? body : "");
+        boolean isNotification = intent.getBooleanExtra("from_notification", false)
+                || "true".equalsIgnoreCase(intent.getStringExtra("from_notification"))
+                || extras.containsKey("google.message_id")
+                || extras.containsKey("google.sent_time")
+                || extras.containsKey("gcm.n.e")
+                || extras.containsKey("symbol")
+                || extras.containsKey("alert_id")
+                || extras.containsKey("action");
 
-                final String payloadStr = payload.toString();
-                pendingNotificationPayload = payloadStr;
+        if (!isNotification) return;
 
-                if (this.bridge != null && this.bridge.getWebView() != null) {
-                    this.bridge.getWebView().postDelayed(() -> {
-                        try {
-                            String script = "window.dispatchEvent(new CustomEvent('dravyashree_notification_clicked', { detail: " + payloadStr + " }));";
-                            bridge.getWebView().evaluateJavascript(script, null);
-                        } catch (Exception ignored) {}
-                    }, 400);
+        final String symbol = extras.getString("symbol", "");
+        final String type = extras.getString("type", "");
+        final String category = extras.getString("category", "");
+        final String action = extras.getString("action", "");
+        final String url = extras.getString("url", "");
+
+        String title = extras.getString("title", "");
+        if (title == null || title.isEmpty()) title = extras.getString("gcm.notification.title", "");
+        if (title == null || title.isEmpty()) title = extras.getString("google.c.a.c_l", "");
+
+        String body = extras.getString("body", "");
+        if (body == null || body.isEmpty()) body = extras.getString("gcm.notification.body", "");
+
+        try {
+            org.json.JSONObject payload = new org.json.JSONObject();
+            payload.put("symbol", symbol != null ? symbol : "");
+            payload.put("type", type != null ? type : "");
+            payload.put("category", category != null ? category : "");
+            payload.put("action", action != null ? action : "");
+            payload.put("url", url != null ? url : "");
+            payload.put("title", title != null ? title : "");
+            payload.put("body", body != null ? body : "");
+
+            // Copy all extra key-values into payload so custom fields are never omitted
+            for (String key : extras.keySet()) {
+                if (!payload.has(key)) {
+                    Object val = extras.get(key);
+                    if (val != null) {
+                        payload.put(key, String.valueOf(val));
+                    }
                 }
-            } catch (Exception e) {
-                android.util.Log.w("MainActivity", "Error handling notification deep link: " + e.getMessage());
             }
+
+            final String payloadStr = payload.toString();
+            pendingNotificationPayload = payloadStr;
+
+            if (this.bridge != null && this.bridge.getWebView() != null) {
+                this.bridge.getWebView().postDelayed(() -> {
+                    try {
+                        String script = "window.dispatchEvent(new CustomEvent('dravyashree_notification_clicked', { detail: " + payloadStr + " }));";
+                        bridge.getWebView().evaluateJavascript(script, null);
+                    } catch (Exception ignored) {}
+                }, 400);
+            }
+        } catch (Exception e) {
+            android.util.Log.w("MainActivity", "Error handling notification deep link: " + e.getMessage());
         }
     }
 
@@ -266,6 +294,8 @@ public class MainActivity extends BridgeActivity {
                 intent.putExtra("from_notification", true);
                 intent.putExtra("symbol", symbol != null ? symbol : "");
                 intent.putExtra("type", type != null ? type : "");
+                intent.putExtra("category", safeChannel.contains("pro") ? "pro" : "general");
+                intent.putExtra("id", "notif_" + System.currentTimeMillis() + "_" + (symbol != null ? symbol : ""));
                 intent.putExtra("action", action != null ? action : "");
                 intent.putExtra("url", url != null ? url : "");
                 intent.putExtra("title", safeTitle);
@@ -319,22 +349,20 @@ public class MainActivity extends BridgeActivity {
                     if (createdAt.matches("^\\d+$")) {
                         timeMs = Long.parseLong(createdAt);
                         if (createdAt.length() == 10) timeMs *= 1000L;
-                    } else {
-                        // Resilient ISO string parsing with fallback
-                        String clean = createdAt.split("\\.")[0].replace("Z", "");
-                        if (clean.contains("+")) clean = clean.split("\\+")[0];
-                        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US);
-                        sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
-                        java.util.Date d = sdf.parse(clean);
-                        if (d != null) timeMs = d.getTime();
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            timeMs = java.time.Instant.parse(createdAt).toEpochMilli();
+                        } catch (Exception e1) {
+                            try {
+                                timeMs = java.time.OffsetDateTime.parse(createdAt).toInstant().toEpochMilli();
+                            } catch (Exception ignored) {}
+                        }
                     }
-                    // Only drop if timestamp is unequivocally older than 1 hour (allows slight clock drift)
                     if (timeMs > 0 && (System.currentTimeMillis() - timeMs > 60 * 60 * 1000L)) {
                         android.util.Log.d("NepseNativeNotifier", "Suppressed stale notification in native bridge: " + title);
                         return;
                     }
                 } catch (Exception e) {
-                    // If parsing fails, do NOT suppress live notification! Proceed to post with current system time.
                     android.util.Log.d("NepseNativeNotifier", "Timestamp parse notice, proceeding to post: " + e.getMessage());
                 }
             }

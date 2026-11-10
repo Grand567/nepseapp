@@ -653,21 +653,41 @@ export async function initPushNotifications() {
       // 6. User TAPPED on Lockscreen / Status Bar Notification!
       PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
         console.log('[PushService] User tapped lockscreen notification:', action);
-        const notification = action.notification || {};
-        const normalized = normalizeNotificationItem(notification);
-        markNotificationAsRead(normalized.id);
+        const notification = action?.notification || {};
+        const rawData = notification.data || notification || {};
+        let normalized = normalizeNotificationItem(notification);
 
-        // Dispatch unified notification clicked event
-        window.dispatchEvent(new CustomEvent('dravyashree_notification_clicked', { detail: normalized }));
+        // Fallback for FCM payloads where notification title/body might be detached from data payload
+        if (!normalized) {
+          const fallbackTitle = notification.title || rawData.title || (rawData.symbol ? `Alert: ${rawData.symbol}` : 'Market Alert');
+          const fallbackBody = notification.body || rawData.body || 'Tap to view market details';
+          const fallbackSymbol = rawData.symbol || '';
+          const fallbackAction = rawData.action || (fallbackSymbol ? 'OPEN_STOCK' : 'OPEN_NEWS');
+          const fallbackCategory = rawData.category || (fallbackSymbol ? 'pro' : 'general');
+          const fallbackType = rawData.type || (fallbackSymbol ? 'SMART_INSTITUTIONAL_ENTRY' : 'NEWS_ALERT');
 
-        if (normalized.action === 'OPEN_IPO') {
-          window.dispatchEvent(new CustomEvent('dravyashree_open_ipo', { detail: normalized }));
-        } else if (normalized.action === 'OPEN_NEWS') {
-          window.dispatchEvent(new CustomEvent('dravyashree_open_news', { detail: normalized }));
-        } else {
-          // Default: Open smart alert / accumulation card modal
-          window.dispatchEvent(new CustomEvent('dravyashree_open_smart_alert', { detail: normalized }));
+          normalized = {
+            id: rawData.id || notification.id || `notif_${Date.now()}`,
+            title: fallbackTitle,
+            body: fallbackBody,
+            symbol: fallbackSymbol,
+            action: fallbackAction,
+            category: fallbackCategory,
+            type: fallbackType,
+            url: rawData.url || '',
+            source: rawData.source || 'Financial News',
+            ltp: Number(rawData.ltp || 0),
+            created_at: rawData.created_at || new Date().toISOString(),
+            read: true
+          };
         }
+
+        if (normalized?.id) {
+          markNotificationAsRead(normalized.id);
+        }
+
+        // Dispatch unified notification clicked event (App.jsx central router handles modal & tab routing)
+        window.dispatchEvent(new CustomEvent('dravyashree_notification_clicked', { detail: normalized }));
       });
 
     } catch (err) {

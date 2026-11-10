@@ -130,7 +130,7 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
   const handleNavigateToStock = () => {
     if (!currentDetail.symbol) return;
     onClose();
-    if (setActiveTab) setActiveTab('market');
+    if (setActiveTab) setActiveTab('dashboard');
     if (openStockDetail) openStockDetail(currentDetail.symbol);
   };
 

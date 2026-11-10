@@ -9532,6 +9532,30 @@ app.get(['/api/news/read', '/api/news/article'], async (req, res) => {
     return res.status(400).json({ success: false, message: 'Valid article URL parameter is required' });
   }
 
+  // SSRF Protection: Validate against explicit trusted news domain whitelist
+  const ALLOWED_NEWS_DOMAINS = new Set([
+    'sharesansar.com', 'www.sharesansar.com',
+    'merolagani.com', 'www.merolagani.com',
+    'clickmandu.com', 'www.clickmandu.com',
+    'karobardaily.com', 'www.karobardaily.com',
+    'bizshala.com', 'www.bizshala.com',
+    'bikashnews.com', 'www.bikashnews.com',
+    'arthakendra.com', 'www.arthakendra.com',
+    'nepalipaisa.com', 'www.nepalipaisa.com',
+    'arthasarokar.com', 'www.arthasarokar.com'
+  ]);
+
+  let parsedHost;
+  try {
+    parsedHost = new URL(url).hostname.toLowerCase();
+  } catch (_) {
+    return res.status(400).json({ success: false, message: 'Invalid URL format' });
+  }
+
+  if (!ALLOWED_NEWS_DOMAINS.has(parsedHost)) {
+    return res.status(403).json({ success: false, message: 'Untrusted news domain requested' });
+  }
+
   const cacheKey = `news-read-${url}`;
   const cached = getCache(cacheKey);
   if (cached) {
@@ -9629,6 +9653,22 @@ app.get(['/api/news/read', '/api/news/article'], async (req, res) => {
             paragraphs.push(text);
           }
         });
+
+        // Handle MeroLagani corporate announcement details (AnnouncementDetail.aspx tables)
+        if (paragraphs.length === 0) {
+          $('#ctl00_ContentPlaceHolder1_divContent tr, .panel-body tr, table.table tr, .table tr').each((_, row) => {
+            const rowText = $(row).text().replace(/\s+/g, ' ').trim();
+            if (rowText.length > 15 && !paragraphs.includes(rowText)) {
+              paragraphs.push(rowText);
+            }
+          });
+        }
+        if (paragraphs.length === 0) {
+          const mainText = $('#ctl00_ContentPlaceHolder1_divContent, .news-detail, .panel-body').first().text().replace(/\s+/g, ' ').trim();
+          if (mainText.length > 20) {
+            paragraphs.push(mainText);
+          }
+        }
       } else if (isShareSansar) {
         title = $('h1.sub-page-title, .newsdetail h1, h1').first().text().trim();
         date = $('.news-date, .text-muted, time, span.date').first().text().trim();
