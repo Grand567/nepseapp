@@ -65,6 +65,14 @@ export function parseMeroShareWaccDetailsResponse(rawResponse) {
     };
   }
 
+  if (typeof rawResponse === 'string') {
+    try {
+      rawResponse = JSON.parse(rawResponse);
+    } catch {
+      // Keep as is if not JSON
+    }
+  }
+
   // Detect list container
   let rawList = [];
   let page = 1;
@@ -74,7 +82,7 @@ export function parseMeroShareWaccDetailsResponse(rawResponse) {
   if (Array.isArray(rawResponse)) {
     rawList = rawResponse;
     totalElements = rawList.length;
-  } else if (typeof rawResponse === 'object') {
+  } else if (typeof rawResponse === 'object' && rawResponse !== null) {
     if (Array.isArray(rawResponse.content)) {
       rawList = rawResponse.content;
       page = (rawResponse.number ?? 0) + 1;
@@ -95,6 +103,18 @@ export function parseMeroShareWaccDetailsResponse(rawResponse) {
     } else if (Array.isArray(rawResponse.waccDetails)) {
       rawList = rawResponse.waccDetails;
       totalElements = rawList.length;
+    } else if (Array.isArray(rawResponse.waccReport)) {
+      rawList = rawResponse.waccReport;
+      totalElements = rawList.length;
+    } else {
+      // Fallback: check any property on the object that contains an array of records
+      for (const val of Object.values(rawResponse)) {
+        if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
+          rawList = val;
+          totalElements = rawList.length;
+          break;
+        }
+      }
     }
   }
 

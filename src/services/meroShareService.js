@@ -67,9 +67,14 @@ export async function cdscRequest(options) {
 
   if (isNative) {
     // Native Mobile HTTP request via Android OkHttp / Java network stack
-    // Matches official CDSC mobile app network signature
+    // Matches official CDSC mobile/web network signature
+    const isWebEndpoint = options.url?.includes('myPurchase') || options.url?.includes('waccReport');
     const mobileHeaders = {
-      'User-Agent': 'Dart/2.19 (dart:io)',
+      'User-Agent': isWebEndpoint
+        ? 'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+        : 'Dart/2.19 (dart:io)',
+      'Origin': 'https://meroshare.cdsc.com.np',
+      'Referer': 'https://meroshare.cdsc.com.np/',
       'Accept': 'application/json, text/plain, */*',
       ...(options.headers || {})
     };
@@ -734,8 +739,51 @@ export async function pullMeroShareLivePortfolio(account) {
       };
     }
 
-    // Step 2b: Automatically query CDSC My Holding for declared & confirmed WACCs (single fast call)
+    // Step 2b: Automatically query CDSC Official WACC Details Registry (POST /api/myPurchase/waccReport/)
     const declaredWaccMap = {};
+    try {
+      let waccReportRes = await cdscRequest({
+        url: `${MEROSHARE_MYPURCHASE_BASE}/waccReport/`,
+        method: 'POST',
+        headers: {
+          'Authorization': rawToken,
+          'Origin': 'https://meroshare.cdsc.com.np',
+          'Referer': 'https://meroshare.cdsc.com.np/'
+        },
+        data: { demat: boidStr }
+      });
+      if (!waccReportRes?.ok) {
+        waccReportRes = await cdscRequest({
+          url: `${MEROSHARE_MYPURCHASE_BASE}/waccReport/`,
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${rawToken}`,
+            'Origin': 'https://meroshare.cdsc.com.np',
+            'Referer': 'https://meroshare.cdsc.com.np/'
+          },
+          data: { demat: boidStr }
+        });
+      }
+      if (waccReportRes?.ok && waccReportRes.data) {
+        const parsed = parseMeroShareWaccDetailsResponse(waccReportRes.data);
+        if (parsed.success && Array.isArray(parsed.records)) {
+          parsed.records.forEach(rec => {
+            if (rec.normalizedSymbol && rec.waccRate > 0) {
+              declaredWaccMap[rec.normalizedSymbol] = {
+                wacc: Number(rec.waccRate.toFixed(2)),
+                waccRate: rec.waccRate,
+                source: 'CDSC_WACC',
+                waccCalculatedQuantity: rec.waccCalculatedQuantity,
+                totalCostOfCapital: rec.totalCostOfCapital,
+                lastModifiedDate: rec.lastModifiedDate
+              };
+            }
+          });
+        }
+      }
+    } catch {}
+
+    // Step 2c: Fallback to My Holding if waccReport had no records
     try {
       const holdingPayload = {
         sortBy: 'script',
@@ -1910,13 +1958,34 @@ export async function pullMeroShareWaccBatch(account, holdings = [], onProgress 
   }
 
   const rawToken = auth.token.trim().replace(/^Bearer\s+/i, '');
-  const dematId = auth.boid || account.boid;
+  let dematId = auth.boid || auth.demat || account.boid || account.demat || account.dematNo;
+
+  // Resolve Demat ID from /ownDetail/ if not present or incomplete (<16 digits)
+  if (!dematId || String(dematId).trim().length !== 16) {
+    try {
+      const ownRes = await cdscRequest({
+        url: `${MEROSHARE_BASE}/ownDetail/`,
+        method: 'GET',
+        headers: {
+          'Authorization': rawToken,
+          'Origin': 'https://meroshare.cdsc.com.np',
+          'Referer': 'https://meroshare.cdsc.com.np/'
+        }
+      });
+      if (ownRes?.ok && ownRes.data) {
+        dematId = ownRes.data.demat || ownRes.data.dematNo || ownRes.data.boid || dematId;
+      }
+    } catch {}
+  }
+
   const boidStr = String(dematId || '').trim();
   const dpFromBoid = boidStr.length === 16 ? boidStr.substring(3, 8) : '';
   const dpCode = auth.clientCode || dpFromBoid || MEROSHARE_DP_LIST.find(d => d.id === account.dpId)?.code || account.dpCode || '10100';
 
   const waccResultMap = {};
-  const tokenVariants = [`Bearer ${rawToken}`, rawToken];
+  // MeroShare Web Angular client sends raw token without Bearer prefix
+  const tokenVariants = [rawToken, `Bearer ${rawToken}`];
+  let lastWaccError = null;
 
   // Step 2: Query CDSC Official WACC Details Registry (POST /api/myPurchase/waccReport/)
   // Discovered from MeroShare's "View your WACC details" page with exact payload { demat }
@@ -1926,15 +1995,42 @@ export async function pullMeroShareWaccBatch(account, holdings = [], onProgress 
     let waccReportRes = null;
 
     for (const tok of tokenVariants) {
+      // Try string demat
       waccReportRes = await cdscRequest({
         url: `${MEROSHARE_MYPURCHASE_BASE}/waccReport/`,
         method: 'POST',
-        headers: { 'Authorization': tok },
+        headers: {
+          'Authorization': tok,
+          'Origin': 'https://meroshare.cdsc.com.np',
+          'Referer': 'https://meroshare.cdsc.com.np/'
+        },
         data: {
-          demat: String(dematId)
+          demat: boidStr
         }
       });
-      if (waccReportRes?.ok && waccReportRes.data) break;
+      if (waccReportRes?.ok && waccReportRes.data && (Array.isArray(waccReportRes.data) ? waccReportRes.data.length > 0 : true)) break;
+
+      // Try array demat if string yielded no records
+      const altRes = await cdscRequest({
+        url: `${MEROSHARE_MYPURCHASE_BASE}/waccReport/`,
+        method: 'POST',
+        headers: {
+          'Authorization': tok,
+          'Origin': 'https://meroshare.cdsc.com.np',
+          'Referer': 'https://meroshare.cdsc.com.np/'
+        },
+        data: {
+          demat: [boidStr]
+        }
+      });
+      if (altRes?.ok && altRes.data && (Array.isArray(altRes.data) ? altRes.data.length > 0 : true)) {
+        waccReportRes = altRes;
+        break;
+      }
+
+      if (waccReportRes && !waccReportRes.ok) {
+        lastWaccError = waccReportRes;
+      }
     }
 
     if (waccReportRes?.ok && waccReportRes.data) {
@@ -1960,6 +2056,7 @@ export async function pullMeroShareWaccBatch(account, holdings = [], onProgress 
     }
   } catch (err) {
     console.warn('[MeroShare WACC Sync] /myPurchase/waccReport/ query warning:', err.message);
+    lastWaccError = err;
   }
 
   // Step 2b: Fallback to CDSC My Holding endpoint if waccReport had no records
@@ -2180,6 +2277,16 @@ export async function pullMeroShareWaccBatch(account, holdings = [], onProgress 
       total: pendingScrips.length,
       msg: `Completed! Matched ${matchedCount} authentic WACC records (${declaredCount} declared, ${purchaseSourceCount} purchase source).`
     });
+  }
+
+  if (matchedCount === 0 && lastWaccError && lastWaccError.status && lastWaccError.status !== 200) {
+    const errorMsg = lastWaccError.text || lastWaccError.data?.message || lastWaccError.message || `CDSC returned status ${lastWaccError.status}`;
+    return {
+      success: false,
+      error: errorMsg,
+      status: lastWaccError.status,
+      data: {}
+    };
   }
 
   return {
