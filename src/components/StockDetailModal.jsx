@@ -2596,6 +2596,10 @@ export default function StockDetailModal({
         fetchBrokerAnalysisData(brokerDays, brokerDate);
       }
     }
+    if (activeTab === 'reports' && d?.symbol) {
+      fetchMarketNews(true).catch(() => {});
+      fetchCompanyQuarterlyReports(d.symbol).catch(() => {});
+    }
     if (activeTab === 'dividends' && d?.symbol && !dividendHistory && !dividendLoading) {
       setDividendLoading(true);
       fetchDividendHistory(d.symbol)

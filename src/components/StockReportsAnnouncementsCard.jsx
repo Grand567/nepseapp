@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { FileText, ExternalLink, Calendar, Bell, Newspaper, ChevronRight, Filter, AlertCircle, Sparkles } from 'lucide-react';
-import { fetchMarketNews } from '../utils/servicesApi';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { FileText, ExternalLink, Calendar, Bell, Newspaper, ChevronRight, Filter, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
+import { fetchMarketNews, fetchCompanyQuarterlyReports } from '../utils/servicesApi';
 import { NEPALI_NAME_TO_SYMBOL, classifyCorporateArticle } from '../services/merolaganiNewsService.js';
 import { getProxyBase } from '../utils/proxyBase.js';
 import { openExternalUrl } from '../utils/externalLinks';
@@ -9,132 +9,190 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
   const [activeTab, setActiveTab] = useState('news'); // default to 'news' or 'reports'
   const [newsFilter, setNewsFilter] = useState('all'); // 'all' | 'DIVIDEND' | 'RIGHT_SHARE' | 'BOOK_CLOSURE' | 'FINANCIAL'
   const [realNews, setRealNews] = useState([]);
+  const [realReports, setRealReports] = useState([]);
   const [loadingNews, setLoadingNews] = useState(true);
+  const [loadingReports, setLoadingReports] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   const sym = (symbol || 'STOCK').toUpperCase();
   const displayName = companyName || sym;
   const isHydro = String(sector || '').toLowerCase().includes('hydro');
   const isBank = String(sector || '').toLowerCase().includes('bank') || String(sector || '').toLowerCase().includes('finance');
 
-  useEffect(() => {
+  const loadReports = useCallback(async (force = false) => {
     if (!symbol) return;
-    let isCurrent = true;
+    setLoadingReports(true);
+    try {
+      const rep = await fetchCompanyQuarterlyReports(sym);
+      const data = rep?.data || rep;
+      if (data && Array.isArray(data.quarters) && data.quarters.length > 0) {
+        setRealReports(data.quarters);
+      }
+    } catch (_) {}
+    setLoadingReports(false);
+  }, [symbol, sym]);
+
+  const loadNewsAndAlerts = useCallback(async (force = false) => {
+    if (!symbol) return;
     setLoadingNews(true);
 
-    const loadNewsAndAlerts = async () => {
-      try {
-        // 1. Fetch portal news
-        const articlesPromise = fetchMarketNews().catch(() => []);
+    try {
+      // 1. Fetch portal news
+      const articlesPromise = fetchMarketNews(force).catch(() => []);
 
-        // 2. Fetch live broadcast notifications
-        const notifPromise = (async () => {
-          try {
-            const base = getProxyBase();
-            const res = await fetch(`${base}/api/notifications?limit=50`, {
-              headers: { 'Bypass-Tunnel-Reminder': 'true' },
-              signal: AbortSignal.timeout(4000)
-            });
-            const json = await res.json();
-            return (json.success && Array.isArray(json.data)) ? json.data : [];
-          } catch (_) {
-            return [];
-          }
-        })();
+      // 2. Fetch live broadcast notifications
+      const notifPromise = (async () => {
+        try {
+          const base = getProxyBase();
+          const res = await fetch(`${base}/api/notifications?limit=50`, {
+            headers: { 'Bypass-Tunnel-Reminder': 'true' },
+            signal: AbortSignal.timeout(4000)
+          });
+          const json = await res.json();
+          return (json.success && Array.isArray(json.data)) ? json.data : [];
+        } catch (_) {
+          return [];
+        }
+      })();
 
-        const [articles, notifications] = await Promise.all([articlesPromise, notifPromise]);
-        if (!isCurrent) return;
+      const [articles, notifications] = await Promise.all([articlesPromise, notifPromise]);
 
-        const matched = [];
-        const seen = new Set();
+      const matched = [];
+      const seen = new Set();
 
-        const addCandidate = (item) => {
-          const title = (item.title || item.headline || item.body || '').trim();
-          if (!title) return;
-          const key = (item.url || item.link || title).toLowerCase();
-          if (seen.has(key)) return;
+      const addCandidate = (item) => {
+        const title = (item.title || item.headline || item.body || '').trim();
+        if (!title) return;
+        const key = (item.url || item.link || title).toLowerCase();
+        if (seen.has(key)) return;
 
-          const text = `${title} ${item.summary || item.description || ''} ${item.body || ''}`;
-          let matches = false;
+        const text = `${title} ${item.summary || item.description || ''} ${item.body || ''}`;
+        let matches = false;
 
-          if (item.symbol && String(item.symbol).toUpperCase() === sym) {
-            matches = true;
-          } else if (text.includes(sym)) {
-            matches = true;
-          } else if (companyName && text.toLowerCase().includes(companyName.toLowerCase())) {
-            matches = true;
-          } else {
-            for (const [npName, s] of Object.entries(NEPALI_NAME_TO_SYMBOL)) {
-              if (s === sym && text.includes(npName)) {
-                matches = true;
-                break;
-              }
+        if (item.symbol && String(item.symbol).toUpperCase() === sym) {
+          matches = true;
+        } else if (text.includes(sym)) {
+          matches = true;
+        } else if (companyName && text.toLowerCase().includes(companyName.toLowerCase())) {
+          matches = true;
+        } else {
+          for (const [npName, s] of Object.entries(NEPALI_NAME_TO_SYMBOL)) {
+            if (s === sym && text.includes(npName)) {
+              matches = true;
+              break;
             }
           }
+        }
 
-          if (matches) {
-            seen.add(key);
-            const classification = classifyCorporateArticle(item);
-            matched.push({
-              ...item,
-              classification,
-              displayTitle: title,
-              pubDate: item.pubDate || item.date || item.triggeredAt || 'Recent',
-              source: item.source || 'Financial Media'
-            });
-          }
-        };
+        if (matches) {
+          seen.add(key);
+          const classification = classifyCorporateArticle(item);
+          matched.push({
+            ...item,
+            classification,
+            displayTitle: title,
+            pubDate: item.pubDate || item.date || item.triggeredAt || 'Recent',
+            source: item.source || 'Financial Media'
+          });
+        }
+      };
 
-        // First prioritize notifications, then market news articles
-        notifications.forEach(addCandidate);
-        if (Array.isArray(articles)) articles.forEach(addCandidate);
+      // First prioritize notifications, then market news articles
+      notifications.forEach(addCandidate);
+      if (Array.isArray(articles)) articles.forEach(addCandidate);
 
-        setRealNews(matched);
-      } catch (e) {
-        console.warn('[StockReportsAnnouncementsCard] News fetch notice:', e);
-      } finally {
-        if (isCurrent) setLoadingNews(false);
-      }
-    };
-
-    loadNewsAndAlerts();
-    return () => { isCurrent = false; };
+      setRealNews(matched);
+      setLastUpdated(new Date());
+    } catch (e) {
+      console.warn('[StockReportsAnnouncementsCard] News fetch notice:', e);
+    } finally {
+      setLoadingNews(false);
+    }
   }, [symbol, companyName, sym]);
 
-  // Financial Reports grouped by fiscal year (Share Hub Reference frame_046.jpg)
-  const reportYears = [
-    {
-      fiscalYear: '2082/2083 (2025/2026)',
-      reports: [
-        { title: `Third Quarter Report of ${sym} For FY 2082/83. 2025/2026`, date: '2026-05-09', type: 'Q3' },
-        { title: `Second Quarter Report of ${sym} For FY 2082/83. 2025/2026`, date: '2026-02-02', type: 'Q2' },
-        { title: `First Quarter Report of ${sym} For FY 2082/83. 2025/2026`, date: '2025-11-08', type: 'Q1' }
-      ]
-    },
-    {
-      fiscalYear: '2081/2082 (2024/2025)',
-      reports: [
-        { title: `Fourth Quarter Report of ${sym} For FY 2081/82. 2024/2025`, date: '2025-08-12', type: 'Q4' },
-        { title: `Second Quarter Report of ${sym} For FY 2081/82. 2024/2025`, date: '2025-02-04', type: 'Q2' },
-        { title: `First Quarter Report of ${sym} For FY 2081/82. 2024/2025`, date: '2024-11-10', type: 'Q1' }
-      ]
-    },
-    {
-      fiscalYear: '2080/2081 (2023/2024)',
-      reports: [
-        { title: `Fourth Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2024-08-15', type: 'Q4' },
-        { title: `Third Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2024-05-05', type: 'Q3' },
-        { title: `Second Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2024-02-12', type: 'Q2' },
-        { title: `First Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2023-11-10', type: 'Q1' }
-      ]
-    },
-    {
-      fiscalYear: '2079/2080 (2022/2023)',
-      reports: [
-        { title: `Annual Report of ${sym} For FY 2079/80. 2022/2023`, date: '2023-09-20', type: 'Annual' },
-        { title: `Fourth Quarter Report of ${sym} For FY 2079/80. 2022/2023`, date: '2023-08-14', type: 'Q4' }
-      ]
+  // Initial auto-update on symbol mount
+  useEffect(() => {
+    let active = true;
+    loadNewsAndAlerts(false);
+    loadReports(false);
+    return () => { active = false; };
+  }, [loadNewsAndAlerts, loadReports]);
+
+  // Tab switch auto-update: if switching to reports and reports empty, fetch fresh; if news and news empty, fetch fresh
+  const handleTabSwitch = (newTab) => {
+    setActiveTab(newTab);
+    if (newTab === 'reports' && realReports.length === 0) {
+      loadReports(true);
+    } else if (newTab === 'news' && realNews.length === 0) {
+      loadNewsAndAlerts(true);
     }
-  ];
+  };
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([loadNewsAndAlerts(true), loadReports(true)]).catch(() => {});
+    setIsRefreshing(false);
+  };
+
+  // Financial Reports grouped by fiscal year (Dynamic reports + historical Share Hub baseline)
+  const reportYears = useMemo(() => {
+    if (realReports && realReports.length > 0) {
+      const groups = {};
+      for (const q of realReports) {
+        const quarterLabel = q.quarter || q.period || 'Latest Period';
+        const fy = q.fiscalYear || (quarterLabel.includes('FY') ? quarterLabel.split(' ').slice(0, 2).join(' ') : 'Current Fiscal Period');
+        if (!groups[fy]) groups[fy] = [];
+        groups[fy].push({
+          title: `${sym} ${quarterLabel} Financial Report${q.eps != null ? ` (EPS: Rs ${q.eps})` : ''}`,
+          date: q.reportDate || q.filingDate || 'Recently Filed',
+          type: quarterLabel.includes('Q1') ? 'Q1' : (quarterLabel.includes('Q2') ? 'Q2' : (quarterLabel.includes('Q3') ? 'Q3' : (quarterLabel.includes('Q4') ? 'Q4' : 'Quarterly'))),
+          eps: q.eps,
+          netProfit: q.netProfit,
+          paidUp: q.paidUp,
+          netWorth: q.netWorth,
+          npl: q.npl,
+          source: q.source || 'NEPSE Filing'
+        });
+      }
+      return Object.entries(groups).map(([fiscalYear, reports]) => ({ fiscalYear, reports }));
+    }
+
+    return [
+      {
+        fiscalYear: '2082/2083 (2025/2026)',
+        reports: [
+          { title: `Third Quarter Report of ${sym} For FY 2082/83. 2025/2026`, date: '2026-05-09', type: 'Q3' },
+          { title: `Second Quarter Report of ${sym} For FY 2082/83. 2025/2026`, date: '2026-02-02', type: 'Q2' },
+          { title: `First Quarter Report of ${sym} For FY 2082/83. 2025/2026`, date: '2025-11-08', type: 'Q1' }
+        ]
+      },
+      {
+        fiscalYear: '2081/2082 (2024/2025)',
+        reports: [
+          { title: `Fourth Quarter Report of ${sym} For FY 2081/82. 2024/2025`, date: '2025-08-12', type: 'Q4' },
+          { title: `Second Quarter Report of ${sym} For FY 2081/82. 2024/2025`, date: '2025-02-04', type: 'Q2' },
+          { title: `First Quarter Report of ${sym} For FY 2081/82. 2024/2025`, date: '2024-11-10', type: 'Q1' }
+        ]
+      },
+      {
+        fiscalYear: '2080/2081 (2023/2024)',
+        reports: [
+          { title: `Fourth Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2024-08-15', type: 'Q4' },
+          { title: `Third Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2024-05-05', type: 'Q3' },
+          { title: `Second Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2024-02-12', type: 'Q2' },
+          { title: `First Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2023-11-10', type: 'Q1' }
+        ]
+      },
+      {
+        fiscalYear: '2079/2080 (2022/2023)',
+        reports: [
+          { title: `Annual Report of ${sym} For FY 2079/80. 2022/2023`, date: '2023-09-20', type: 'Annual' },
+          { title: `Fourth Quarter Report of ${sym} For FY 2079/80. 2022/2023`, date: '2023-08-14', type: 'Q4' }
+        ]
+      }
+    ];
+  }, [realReports, sym]);
 
   // Fallback curated baseline company news when no external items found
   const fallbackCompanyNews = [
@@ -249,51 +307,79 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
         borderRadius: 14,
         padding: '6px',
         display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         gap: 6,
-        overflowX: 'auto'
+        flexWrap: 'wrap'
       }}>
-        {[
-          { id: 'news', label: 'Company News', count: realNews.length > 0 ? realNews.length : null },
-          { id: 'reports', label: 'Financial Reports', count: null },
-          { id: 'announcements', label: 'Announcements', count: announcements.length > 0 ? announcements.length : null }
-        ].map(t => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setActiveTab(t.id)}
-            style={{
-              flex: 1,
-              whiteSpace: 'nowrap',
-              padding: '9px 12px',
-              borderRadius: 10,
-              border: 'none',
-              fontSize: 12.5,
-              fontWeight: 800,
-              cursor: 'pointer',
-              background: activeTab === t.id ? '#0f766e' : 'transparent',
-              color: activeTab === t.id ? '#ffffff' : '#94a3b8',
-              transition: 'all 0.15s ease',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6
-            }}
-          >
-            <span>{t.label}</span>
-            {t.count != null && (
-              <span style={{
-                fontSize: 10,
-                padding: '1px 6px',
-                borderRadius: 999,
-                background: activeTab === t.id ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
-                color: activeTab === t.id ? '#ffffff' : '#cbd5e1',
-                fontWeight: 800
-              }}>
-                {t.count}
-              </span>
-            )}
-          </button>
-        ))}
+        <div style={{ display: 'flex', gap: 6, flex: 1, overflowX: 'auto' }}>
+          {[
+            { id: 'news', label: 'Company News', count: realNews.length > 0 ? realNews.length : null },
+            { id: 'reports', label: 'Financial Reports', count: realReports.length > 0 ? realReports.length : null },
+            { id: 'announcements', label: 'Announcements', count: announcements.length > 0 ? announcements.length : null }
+          ].map(t => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => handleTabSwitch(t.id)}
+              style={{
+                flex: 1,
+                whiteSpace: 'nowrap',
+                padding: '9px 12px',
+                borderRadius: 10,
+                border: 'none',
+                fontSize: 12.5,
+                fontWeight: 800,
+                cursor: 'pointer',
+                background: activeTab === t.id ? '#0f766e' : 'transparent',
+                color: activeTab === t.id ? '#ffffff' : '#94a3b8',
+                transition: 'all 0.15s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6
+              }}
+            >
+              <span>{t.label}</span>
+              {t.count != null && (
+                <span style={{
+                  fontSize: 10,
+                  padding: '1px 6px',
+                  borderRadius: 999,
+                  background: activeTab === t.id ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+                  color: activeTab === t.id ? '#ffffff' : '#cbd5e1',
+                  fontWeight: 800
+                }}>
+                  {t.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={handleManualRefresh}
+          disabled={loadingNews || loadingReports || isRefreshing}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '7px 12px',
+            borderRadius: 8,
+            border: '1px solid rgba(56, 189, 248, 0.3)',
+            background: 'rgba(56, 189, 248, 0.08)',
+            color: '#38bdf8',
+            fontSize: 11.5,
+            fontWeight: 700,
+            cursor: (loadingNews || loadingReports || isRefreshing) ? 'not-allowed' : 'pointer',
+            opacity: (loadingNews || loadingReports || isRefreshing) ? 0.7 : 1,
+            whiteSpace: 'nowrap'
+          }}
+          title="Auto-update news and quarterly reports"
+        >
+          <RefreshCw className={(loadingNews || loadingReports || isRefreshing) ? 'animate-spin' : ''} style={{ width: 13, height: 13 }} />
+          <span>{(loadingNews || loadingReports || isRefreshing) ? 'Updating...' : 'Update Latest'}</span>
+        </button>
       </div>
 
       {/* Sub-tab 1: Company News & Alerts */}
@@ -461,6 +547,13 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
       {/* Sub-tab 2: Financial Reports View */}
       {activeTab === 'reports' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {loadingReports && (
+            <div style={{ textAlign: 'center', padding: '16px', color: '#94a3b8', fontSize: 12 }}>
+              <div className="inline-block animate-spin mr-2">⏳</div>
+              Fetching latest audited quarterly financial statements for {sym}...
+            </div>
+          )}
+
           {reportYears.map((yr, idx) => (
             <div key={idx}>
               <div style={{
@@ -510,8 +603,21 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
                         <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff', lineHeight: 1.4 }}>
                           {r.title}
                         </div>
-                        <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 3 }}>
-                          📅 {r.date}
+                        <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 3, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span>📅 {r.date}</span>
+                          {r.eps != null && (
+                            <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', fontWeight: 800 }}>
+                              EPS: Rs. {r.eps}
+                            </span>
+                          )}
+                          {r.netWorth != null && (
+                            <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontWeight: 800 }}>
+                              BVPS: Rs. {r.netWorth}
+                            </span>
+                          )}
+                          {r.source && (
+                            <span style={{ color: '#64748b' }}>• {r.source}</span>
+                          )}
                         </div>
                       </div>
                     </div>

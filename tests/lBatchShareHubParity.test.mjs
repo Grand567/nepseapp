@@ -358,7 +358,18 @@ assert(brokerTabSrc.includes('totalCumulativeHoldingKitta') && !brokerTabSrc.inc
 assert(modalSrc.includes("if (newDays === 'all' || newDays === 'ALL')") && modalSrc.includes('setRealBrokerAnalysis(allTimeBrokerAnalysis)'), 'StockDetailModal immediately switches to allTimeBrokerAnalysis when all-time requested');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// [S7] Summary
+// [S7] Automatic News & Reports Dynamic Updating (Bug 8)
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n[S7] Automatic News & Reports Dynamic Updating');
+
+const reportsCardSrc = fs.readFileSync(new URL('../src/components/StockReportsAnnouncementsCard.jsx', import.meta.url), 'utf8');
+assert(reportsCardSrc.includes('fetchCompanyQuarterlyReports'), 'StockReportsAnnouncementsCard imports fetchCompanyQuarterlyReports');
+assert(reportsCardSrc.includes('loadReports') && reportsCardSrc.includes('loadNewsAndAlerts'), 'StockReportsAnnouncementsCard defines loadReports and loadNewsAndAlerts');
+assert(reportsCardSrc.includes('handleManualRefresh') && reportsCardSrc.includes('handleTabSwitch'), 'StockReportsAnnouncementsCard supports manual and tab-switched auto-update');
+assert(modalSrc.includes("activeTab === 'reports'") && modalSrc.includes('fetchCompanyQuarterlyReports(d.symbol)'), 'StockDetailModal auto-triggers news & reports refresh on tab switch');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [S8] Summary
 // ─────────────────────────────────────────────────────────────────────────────
 console.log('\n====================================================================');
 console.log(` AUDIT COMPLETE: ${pass} PASSED, ${fail} FAILED`);
