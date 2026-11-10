@@ -12155,32 +12155,41 @@ app.post('/api/portfolio/track-holding', requirePortfolioAuth, (req, res) => {
       }
     }
 
-    const effectiveBuy = realLtp > 0 ? realLtp : Number(buyPrice || 0);
-    const effectiveSl = Number(stopLoss) > 0 ? Number(stopLoss) : (effectiveBuy > 0 ? Math.round(effectiveBuy * 0.95 * 10) / 10 : 0);
-    const effectiveT1 = Number(target1) > 0 ? Number(target1) : (effectiveBuy > 0 ? Math.round(effectiveBuy * 1.08 * 10) / 10 : 0);
-    const effectiveT2 = Number(target2) > 0 ? Number(target2) : (effectiveBuy > 0 ? Math.round(effectiveBuy * 1.145 * 10) / 10 : 0);
+    const userBuy = Number(buyPrice) > 0 ? Number(buyPrice) : (realLtp > 0 ? realLtp : 0);
+    const curPrice = realLtp > 0 ? realLtp : userBuy;
+    const effectiveSl = Number(stopLoss) > 0 ? Number(stopLoss) : (userBuy > 0 ? Math.round(userBuy * 0.95 * 10) / 10 : 0);
+    const effectiveT1 = Number(target1) > 0 ? Number(target1) : (userBuy > 0 ? Math.round(userBuy * 1.08 * 10) / 10 : 0);
+    const effectiveT2 = Number(target2) > 0 ? Number(target2) : (userBuy > 0 ? Math.round(userBuy * 1.145 * 10) / 10 : 0);
     const effectiveKitta = Number(kitta || 100);
 
     const item = trackCustomHolding({ 
       symbol: sym, 
-      buyPrice: effectiveBuy, 
+      buyPrice: userBuy,
+      currentPrice: curPrice,
       stopLoss: effectiveSl, 
       target1: effectiveT1, 
       target2: effectiveT2, 
       kitta: effectiveKitta 
     });
 
+    const pnlPct = userBuy > 0 && curPrice > 0 ? (((curPrice - userBuy) / userBuy) * 100).toFixed(1) : '0.0';
+    const pnlSign = Number(pnlPct) >= 0 ? `+${pnlPct}` : pnlPct;
+    const pnlEmoji = Number(pnlPct) >= 0 ? '🟢' : '🔴';
+    const rupeePnL = Math.round((curPrice - userBuy) * effectiveKitta);
+    const rupeePnLSign = rupeePnL >= 0 ? `+Rs. ${rupeePnL.toLocaleString('en-IN')}` : `-Rs. ${Math.abs(rupeePnL).toLocaleString('en-IN')}`;
+
     const confirmMsg = [
       `🛡️ <b>APP EXIT GUARD ARMED: <code>${sym}</code></b>`,
       `──────────────────────────`,
-      `• <b>Position:</b> ${effectiveKitta} Shares`,
-      `• <b>LTP / Entry:</b> Rs. ${effectiveBuy.toFixed(2)}`,
-      `• 🛡️ <b>Stop-Loss Floor:</b> Rs. ${effectiveSl.toFixed(2)} (-5.0%)`,
+      `• 💼 <b>Position:</b> ${effectiveKitta} Shares`,
+      `• 💵 <b>Your WACC / Entry:</b> Rs. ${userBuy.toFixed(2)}`,
+      curPrice > 0 ? `• 📊 <b>Live Market LTP:</b> Rs. ${curPrice.toFixed(2)} (${pnlEmoji} ${pnlSign}%, ${rupeePnLSign})` : '',
+      `• 🛡️ <b>Stop-Loss Floor:</b> Rs. ${effectiveSl.toFixed(2)}`,
       `• 🎯 <b>Target 1:</b> Rs. ${effectiveT1.toFixed(2)} (+8.0% Pre-Circuit)`,
       `• 🚀 <b>Target 2:</b> Rs. ${effectiveT2.toFixed(2)} (+14.5% Circuit Ceiling)`,
       `──────────────────────────`,
       `<i>Armed directly from your Drabyashree Portfolio (Live NEPSE Anchored).</i>`
-    ].join('\n');
+    ].filter(Boolean).join('\n');
     sendTelegramMessage(confirmMsg).catch(() => {});
 
     res.json({ success: true, message: `Active Telegram monitoring armed for ${sym}`, item });
@@ -12212,9 +12221,14 @@ app.post('/api/portfolio/sync-holdings', requirePortfolioAuth, (req, res) => {
     const items = holdings.map(h => trackCustomHolding(h)).filter(Boolean);
 
     if (items.length > 0) {
-      const lines = items.slice(0, 8).map(it => 
-        `• <b>${it.symbol}</b>: ${it.kitta} Shares | WACC: Rs. ${it.ltp} | SL: Rs. ${it.stopLoss} | T1: Rs. ${it.target1}`
-      ).join('\n');
+      const lines = items.slice(0, 8).map(it => {
+        const buy = Number(it.buyPrice || it.ltp || 0);
+        const cur = Number(it.currentPrice || it.ltp || buy);
+        const pnl = buy > 0 ? (((cur - buy) / buy) * 100).toFixed(1) : '0.0';
+        const pnlSign = Number(pnl) >= 0 ? `+${pnl}` : pnl;
+        const pnlEmoji = Number(pnl) >= 0 ? '🟢' : '🔴';
+        return `• <b>${it.symbol}</b>: ${it.kitta} Shares | WACC: Rs. ${buy.toFixed(2)} | LTP: Rs. ${cur.toFixed(2)} (${pnlEmoji} ${pnlSign}%) | SL: Rs. ${Number(it.stopLoss).toFixed(2)}`;
+      }).join('\n');
 
       const confirmMsg = [
         `🛡️ <b>PORTFOLIO EXIT GUARDS ARMED (${items.length} Holdings)</b>`,

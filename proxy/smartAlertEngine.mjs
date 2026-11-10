@@ -2119,13 +2119,14 @@ export function getSmartAlertSystemStatus() {
 /**
  * Register personal user holding to be actively monitored for Stop-Loss and Target alerts on Telegram
  */
-export function trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target2, kitta = 100 }) {
+export function trackCustomHolding({ symbol, buyPrice, currentPrice, stopLoss, target1, target2, kitta = 100, ltp }) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return null;
-  const buy = Number(buyPrice || 0);
-  const sl = Number(stopLoss || (buy > 0 ? (buy * 0.95).toFixed(1) : 0));
-  const t1 = Number(target1 || (buy > 0 ? (buy * 1.08).toFixed(1) : 0)); // +8.0% pre-circuit
-  const t2 = Number(target2 || (buy > 0 ? (buy * 1.145).toFixed(1) : 0)); // +14.5% near +15% circuit ceiling
+  const buy = Number(buyPrice || ltp || 0);
+  const cur = Number(currentPrice || ltp || buy || 0);
+  const sl = Number(stopLoss || (buy > 0 ? (buy * 0.95).toFixed(1) : (cur > 0 ? (cur * 0.95).toFixed(1) : 0)));
+  const t1 = Number(target1 || (buy > 0 ? (buy * 1.08).toFixed(1) : (cur > 0 ? (cur * 1.08).toFixed(1) : 0))); // +8.0% pre-circuit
+  const t2 = Number(target2 || (buy > 0 ? (buy * 1.145).toFixed(1) : (cur > 0 ? (cur * 1.145).toFixed(1) : 0))); // +14.5% near +15% circuit ceiling
   const qty = Number(kitta || 100);
 
   // Clear out any existing active records for this symbol to prevent duplicate or conflicting monitoring
@@ -2134,7 +2135,9 @@ export function trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target
   const alertItem = {
     id: `holding_${sym}_${Date.now()}`,
     symbol: sym,
-    ltp: buy,
+    buyPrice: buy,
+    currentPrice: cur > 0 ? cur : buy,
+    ltp: cur > 0 ? cur : buy,
     triggeredAt: new Date().toISOString(),
     stopLoss: sl,
     target1: t1,
@@ -2146,7 +2149,7 @@ export function trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target
 
   alertHistory.unshift(alertItem);
   saveJson(HISTORY_FILE, alertHistory);
-  console.log(`[SmartAlertEngine] 📋 Holding registered for active monitoring: ${sym} (Buy: Rs. ${buy}, SL: Rs. ${sl}, T1: Rs. ${t1}, T2: Rs. ${t2}, Kitta: ${qty})`);
+  console.log(`[SmartAlertEngine] 📋 Holding registered for active monitoring: ${sym} (Buy: Rs. ${buy}, LTP: Rs. ${cur}, SL: Rs. ${sl}, T1: Rs. ${t1}, T2: Rs. ${t2}, Kitta: ${qty})`);
   return alertItem;
 }
 

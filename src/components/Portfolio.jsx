@@ -225,12 +225,14 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
       const syncPayload = processed.map(h => {
         const buy = Number(h.wacc || h.effectiveWacc || h.currentPrice || 0);
         const ltp = Number(h.currentPrice || buy);
-        const sl = Math.round(ltp * 0.95 * 10) / 10;
-        const t1 = Math.round(ltp * 1.15 * 10) / 10;
-        const t2 = Math.round(ltp * 1.25 * 10) / 10;
+        const base = buy > 0 ? buy : ltp;
+        const sl = Math.round(base * 0.95 * 10) / 10;
+        const t1 = Math.round(base * 1.08 * 10) / 10;
+        const t2 = Math.round(base * 1.145 * 10) / 10;
         return {
           symbol: h.symbol,
           buyPrice: buy,
+          currentPrice: ltp,
           kitta: Number(h.units || 100),
           stopLoss: sl,
           target1: t1,
@@ -294,9 +296,10 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
       } else {
         const buy = Number(holding.wacc || holding.effectiveWacc || holding.currentPrice || 0);
         const ltp = Number(holding.currentPrice || buy);
-        const sl = Math.round(ltp * 0.95 * 10) / 10;
-        const t1 = Math.round(ltp * 1.15 * 10) / 10;
-        const t2 = Math.round(ltp * 1.25 * 10) / 10;
+        const base = buy > 0 ? buy : ltp;
+        const sl = Math.round(base * 0.95 * 10) / 10;
+        const t1 = Math.round(base * 1.08 * 10) / 10;
+        const t2 = Math.round(base * 1.145 * 10) / 10;
         const res = await fetch(`${proxyBase}/api/portfolio/track-holding`, {
           method: 'POST',
           headers: {
@@ -306,6 +309,7 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
           body: JSON.stringify({
             symbol: sym,
             buyPrice: buy,
+            currentPrice: ltp,
             kitta: Number(holding.units || 100),
             stopLoss: sl,
             target1: t1,
