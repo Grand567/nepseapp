@@ -1331,12 +1331,14 @@ export async function getOrFetchAllTimeBrokerHoldings(symbol, options = {}) {
     let totalVolume = 0;
     let totalTurnover = 0;
     const now = new Date();
-    const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
-    const isOngoingMarketSession = (nptMins % 1440) < (15 * 60 + 30);
+    const nptMinutesOfDay = (now.getUTCHours() * 60 + now.getUTCMinutes() + 345) % 1440;
+    const isOngoingMarketSession = isNepseTradingDay(now) && (nptMinutesOfDay >= 11 * 60 && nptMinutesOfDay < 15 * 60 + 30);
     const todayIso = formatNptDateIso(now);
-    const dates = Object.keys(rollupObj.dailyRollup || {})
-      .filter(d => (isOngoingMarketSession ? d < todayIso : d <= todayIso))
+    const allRollupDates = Object.keys(rollupObj.dailyRollup || {})
+      .filter(d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= todayIso)
       .sort((a, b) => b.localeCompare(a));
+    const dates = allRollupDates
+      .filter(d => (isOngoingMarketSession ? d < todayIso : d <= todayIso));
 
     for (const dt of dates) {
       const dayData = rollupObj.dailyRollup[dt];
@@ -1411,15 +1413,19 @@ export async function getOrFetchAllTimeBrokerHoldings(symbol, options = {}) {
     const totalSellQtyDist = distributors.reduce((s, b) => s + b.sellQty, 0);
     const avgSellingPrice = totalSellQtyDist > 0 ? Number((totalSellAmtDist / totalSellQtyDist).toFixed(2)) : null;
 
+    const startDate = dates[dates.length - 1] || '';
+    const endDate = dates[0] || '';
+    const sessionCount = dates.length;
+
     return {
       success: true,
       symbol: sym,
       timeframe: 'ALL',
       isCompleteHistory: Boolean(rollupObj.isCompleteHistory),
-      totalSessionsCount: dates.length,
-      tradingDays: dates.length,
-      fromDate: dates[dates.length - 1] || '',
-      toDate: dates[0] || '',
+      totalSessionsCount: sessionCount,
+      tradingDays: sessionCount,
+      fromDate: startDate,
+      toDate: endDate,
       totalSharesHeldTillNow,
       topHoldingBroker: topAcc,
       avgBuyingPrice,
@@ -1431,7 +1437,18 @@ export async function getOrFetchAllTimeBrokerHoldings(symbol, options = {}) {
       allBrokers: brokers,
       data: brokers,
       dailyFlow: (getFastVaultSnapshot(sym, 30)?.dailyFlow || []),
-      availableDates: dates
+      availableDates: dates,
+      coverage: {
+        startDate,
+        endDate,
+        sessionCount,
+        tradingDays: sessionCount,
+        isLifetime: false,
+        label: `Since ${startDate} (${sessionCount} sessions${isOngoingMarketSession ? ', live session incomplete' : ''})`,
+        disclaimer: `Covered from ${startDate} to ${endDate} (${sessionCount} sessions). Pre-${startDate} baseline unknown. Unadjusted for corporate actions.`,
+        isLiveIncomplete: isOngoingMarketSession,
+        lastUpdated: new Date().toISOString()
+      }
     };
   };
 

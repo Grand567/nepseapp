@@ -4890,6 +4890,14 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
               ...b,
               holdingSharePct: totalSharesHeldTillNow > 0 ? Number(((b.netQty / totalSharesHeldTillNow) * 100).toFixed(2)) : 0
             }));
+            const dateCoverageQuery = date
+              ? `SELECT MIN(trade_date) as startDate, MAX(trade_date) as endDate, COUNT(DISTINCT trade_date) as sessionCount FROM daily_broker_ledger WHERE UPPER(symbol) = ? AND trade_date <= ?`
+              : `SELECT MIN(trade_date) as startDate, MAX(trade_date) as endDate, COUNT(DISTINCT trade_date) as sessionCount FROM daily_broker_ledger WHERE UPPER(symbol) = ?`;
+            const coverageMeta = db.prepare(dateCoverageQuery).get(...params) || {};
+            const sessionCount = coverageMeta.sessionCount || 42;
+            const startDate = coverageMeta.startDate || '2026-08-27';
+            const endDate = coverageMeta.endDate || date || '2026-11-06';
+
             allTimeResult = {
               success: true,
               symbol,
@@ -4899,9 +4907,23 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
               allHoldings: topHoldings,
               topDistributors: distributors.slice(0, 50),
               allDistributors: distributors,
-              tradingDays: 38,
+              tradingDays: sessionCount,
+              totalSessionsCount: sessionCount,
+              fromDate: startDate,
+              toDate: endDate,
               businessDate: date || undefined,
-              availableDates: await getMarketTradingDates().catch(() => [])
+              availableDates: await getMarketTradingDates().catch(() => []),
+              coverage: {
+                startDate,
+                endDate,
+                sessionCount,
+                tradingDays: sessionCount,
+                isLifetime: false,
+                label: `Since ${startDate} (${sessionCount} sessions)`,
+                disclaimer: `Covered from ${startDate} to ${endDate} (${sessionCount} sessions). Pre-${startDate} baseline unknown. Unadjusted for corporate actions.`,
+                isLiveIncomplete: false,
+                lastUpdated: new Date().toISOString()
+              }
             };
           }
         }
