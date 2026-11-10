@@ -630,7 +630,8 @@ import {
   trackCustomHolding, 
   untrackCustomHolding, 
   getUserTrackedHoldings,
-  pollLiveNewsAndIpoAlerts
+  pollLiveNewsAndIpoAlerts,
+  checkAndDispatchScheduledNonHoldingDigest
 } from './smartAlertEngine.mjs';
 
 // Start workers
@@ -638,9 +639,12 @@ export function startWorkers() {
   // Run floorsheet aggregation every 1 hour (3600000 ms)
   setInterval(aggregateFloorsheetData, 60 * 60 * 1000);
 
-  // 0. Pre-Market Scan (10:15 AM NPT = 615 mins), Morning Digest (10:45 AM = 645 mins), & Pre-Open Gate (10:50 AM NPT = 650 mins)
+  // 0. Pre-Market Scan (10:15 AM NPT), Morning Digest (10:45 AM), Non-Holding Digest (11:00 AM & 6:00 PM NPT)
   setInterval(() => {
     try {
+      // Check for scheduled 11:00 AM & 6:00 PM non-holding corporate action digest
+      checkAndDispatchScheduledNonHoldingDigest().catch(() => {});
+
       const status = getDetailedMarketStatus();
       const nptMins = status.nptTotalMinutes;
       const isTradingDay = status.isTradingDay;

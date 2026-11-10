@@ -1954,8 +1954,68 @@ export function getUserTrackedHoldings() {
 
 const seenNewsKeys = new Set(loadJson(SEEN_NEWS_FILE, []));
 const seenIpoStatusKeys = new Set();
-let lastGeneralNewsDispatchedAt = 0;
-const GENERAL_NEWS_MIN_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes throttle between general / non-portfolio push notifications
+let lastNonHoldingPushWindow = ''; // e.g. "2026-11-10_11am" or "2026-11-10_6pm"
+
+export function isNonHoldingPushWindowActive() {
+  const status = getDetailedMarketStatus();
+  const nptMins = status.nptTotalMinutes;
+  // Window 1: 11:00 AM NPT (660 to 680 mins, i.e. 11:00 AM - 11:20 AM)
+  const isMorningWindow = nptMins >= 660 && nptMins < 680;
+  // Window 2: 6:00 PM NPT (1080 to 1100 mins, i.e. 6:00 PM - 6:20 PM)
+  const isEveningWindow = nptMins >= 1080 && nptMins < 1100;
+
+  if (isMorningWindow) return { active: true, windowId: '11am', label: '11:00 AM Morning Corporate Action Digest' };
+  if (isEveningWindow) return { active: true, windowId: '6pm', label: '6:00 PM Evening Corporate Action Digest' };
+  return { active: false, windowId: null, label: null };
+}
+
+export async function checkAndDispatchScheduledNonHoldingDigest() {
+  const windowCheck = isNonHoldingPushWindowActive();
+  if (!windowCheck.active) return;
+
+  const status = getDetailedMarketStatus();
+  const todayIso = status.targetSessionDate || new Date().toISOString().split('T')[0];
+  const currentWindowKey = `${todayIso}_${windowCheck.windowId}`;
+  if (lastNonHoldingPushWindow === currentWindowKey) return; // already sent for this window today
+
+  // Find recent non-holding announcements in alertHistory from the last 12 hours
+  const now = Date.now();
+  const recentNonHoldings = alertHistory.filter(a => {
+    if (!a || a.isUserHolding || !a.title) return false;
+    const isHolding = a.symbol && userTrackedSymbolsSet.has(a.symbol);
+    if (isHolding) return false;
+    const isNews = a.type === 'NEWS_ALERT' || a.type === 'DIVIDEND_ALERT' || a.type === 'RIGHT_SHARE_ALERT' || a.type === 'BOOK_CLOSURE_ALERT' || a.type === 'EARNINGS_ALERT' || a.type === 'NEPSE_MACRO';
+    if (!isNews) return false;
+    const t = new Date(a.triggeredAt || a.timestamp || 0).getTime();
+    return !isNaN(t) && (now - t <= 12 * 60 * 60 * 1000);
+  });
+
+  if (recentNonHoldings.length === 0) return;
+
+  lastNonHoldingPushWindow = currentWindowKey;
+  const count = recentNonHoldings.length;
+  const top = recentNonHoldings[0];
+  const timeLabel = windowCheck.windowId === '11am' ? '11:00 AM' : '6:00 PM';
+  const digestTitle = `📰 [${timeLabel} Corporate Action Digest] ${count} Announcement${count > 1 ? 's' : ''}`;
+  const digestBody = count === 1 
+    ? `${top.body || top.title}`
+    : `${top.title}\n+ ${count - 1} more corporate notices in Notification Drawer.`;
+
+  console.log(`[SmartAlertEngine] 🚀 Dispatched scheduled ${timeLabel} non-holding digest (${count} announcements).`);
+
+  broadcastAlert({
+    id: `digest_${currentWindowKey}`,
+    type: 'NEWS_ALERT',
+    category: 'general',
+    title: digestTitle,
+    body: digestBody,
+    symbol: top.symbol || 'NEPSE',
+    url: top.url || '',
+    source: 'NEPSE Corporate Feed',
+    action: 'OPEN_NEWS',
+    triggeredAt: new Date().toISOString()
+  });
+}
 
 function saveSeenNewsKeys() {
   try {
@@ -2105,34 +2165,45 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
             notifTitle = foundSym ? `📰 ${foundSym} Corporate Announcement` : `📰 NEPSE Announcement`;
           }
 
-          // Smart Notification Pacing Gate:
-          // For non-portfolio general corporate notices or news, maintain a 30-minute interval between push notifications to prevent notification fatigue.
-          // CRITICAL PORTFOLIO EXCEPTION: If the announcement or news is for a stock the user holds in their portfolio (isPortfolioTracked), bypass throttle completely and push immediately with highest priority!
-          const nowMs = Date.now();
-          if (!isPortfolioTracked && (nowMs - lastGeneralNewsDispatchedAt < GENERAL_NEWS_MIN_INTERVAL_MS)) {
-            console.log(`[SmartAlertEngine] ⏳ Paced general non-holding alert "${title.slice(0, 45)}...": status bar push throttled (${Math.round((nowMs - lastGeneralNewsDispatchedAt) / 60000)}m < 30m interval). Available in app notification feed.`);
-            const feedItem = {
-              id: itemKey,
-              type: notifType,
-              category: notifCategory,
-              title: notifTitle,
-              body: title,
-              symbol: foundSym || 'NEPSE',
-              url: item.url || item.link || '',
-              source: item.source || 'Financial News',
-              action: 'OPEN_NEWS',
-              triggeredAt: new Date().toISOString()
-            };
-            if (!alertHistory.some(a => a.id === feedItem.id)) {
-              alertHistory.unshift(feedItem);
-              if (alertHistory.length > 200) alertHistory.pop();
-              saveJson(HISTORY_FILE, alertHistory);
-            }
-            continue;
-          }
-
+          // Smart Notification Policy:
+          // 1. Portfolio Holdings (isPortfolioTracked === true):
+          //    Push IMMEDIATELY 24/7 to Android status bar via FCM & Telegram!
+          // 2. Non-Portfolio Holdings (isPortfolioTracked === false):
+          //    Push to Android status bar TWICE A DAY ONLY (11:00 AM and 6:00 PM NPT).
+          //    Outside of these two windows, status bar push is suppressed and the notice is
+          //    silently recorded in the in-app Notification Center drawer feed.
           if (!isPortfolioTracked) {
-            lastGeneralNewsDispatchedAt = nowMs;
+            const windowCheck = isNonHoldingPushWindowActive();
+            const status = getDetailedMarketStatus();
+            const todayIso = status.targetSessionDate || new Date().toISOString().split('T')[0];
+            const currentWindowKey = windowCheck.active ? `${todayIso}_${windowCheck.windowId}` : null;
+            const canPushThisWindow = currentWindowKey && (lastNonHoldingPushWindow !== currentWindowKey);
+
+            if (!canPushThisWindow) {
+              console.log(`[SmartAlertEngine] ⏳ Non-holding notice "${title.slice(0, 45)}...": recorded in in-app feed. Status bar push scheduled for 11:00 AM / 6:00 PM NPT.`);
+              const feedItem = {
+                id: itemKey,
+                type: notifType,
+                category: notifCategory,
+                title: notifTitle,
+                body: title,
+                symbol: foundSym || 'NEPSE',
+                url: item.url || item.link || '',
+                source: item.source || 'Financial News',
+                action: 'OPEN_NEWS',
+                triggeredAt: new Date().toISOString()
+              };
+              if (!alertHistory.some(a => a.id === feedItem.id)) {
+                alertHistory.unshift(feedItem);
+                if (alertHistory.length > 200) alertHistory.pop();
+                saveJson(HISTORY_FILE, alertHistory);
+              }
+              continue;
+            }
+
+            // Window is active! Mark window as dispatched for today so at most 1 push per window
+            lastNonHoldingPushWindow = currentWindowKey;
+            notifTitle = `📰 [${windowCheck.windowId === '11am' ? '11:00 AM' : '6:00 PM'} Digest] ${notifTitle}`;
           }
 
           broadcastAlert({

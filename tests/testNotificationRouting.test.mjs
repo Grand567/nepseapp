@@ -154,34 +154,59 @@ assert.strictEqual(stateD.activeTab, 'services');
 assert.strictEqual(stateD.openedService, 'ipolist');
 console.log('✅ Case D: IPO alert routes to services tab with ipolist');
 
-// 3. Test Smart Notification Pacing Gate Contract
-const GENERAL_INTERVAL = 30 * 60 * 1000;
-let lastGeneralAt = Date.now() - 5 * 60 * 1000; // 5 mins ago
-
-function checkPacingDecision(isPortfolioTracked, now = Date.now()) {
-  if (isPortfolioTracked) return { shouldPush: true, reason: 'PORTFOLIO_HOLDING_BYPASS' };
-  if (now - lastGeneralAt < GENERAL_INTERVAL) {
-    return { shouldPush: false, reason: 'THROTTLED_GENERAL_INTERVAL' };
+// 3. Test Smart Notification Twice-Daily Policy Contract (11 AM & 6 PM for non-holdings, immediate for portfolio holdings)
+function evaluateNotificationPushPolicy({ isPortfolioTracked, nptMinutes, lastDispatchedWindowKey, dateIso = '2026-11-10' }) {
+  if (isPortfolioTracked) {
+    return { shouldPush: true, reason: 'PORTFOLIO_HOLDING_INSTANT' };
   }
-  return { shouldPush: true, reason: 'INTERVAL_ELAPSED' };
+
+  const is11amWindow = nptMinutes >= 660 && nptMinutes < 680; // 11:00 AM - 11:20 AM
+  const is6pmWindow = nptMinutes >= 1080 && nptMinutes < 1100; // 6:00 PM - 6:20 PM
+  const windowId = is11amWindow ? '11am' : (is6pmWindow ? '6pm' : null);
+
+  if (!windowId) {
+    return { shouldPush: false, reason: 'OUTSIDE_TWICE_DAILY_WINDOW', savedToDrawer: true };
+  }
+
+  const currentWindowKey = `${dateIso}_${windowId}`;
+  if (lastDispatchedWindowKey === currentWindowKey) {
+    return { shouldPush: false, reason: 'WINDOW_ALREADY_DISPATCHED', savedToDrawer: true };
+  }
+
+  return { shouldPush: true, reason: 'TWICE_DAILY_WINDOW_ACTIVE', windowKey: currentWindowKey };
 }
 
-// User holding news pushes IMMEDIATELY even if another alert pushed 5 mins ago
-const holdingDecision = checkPacingDecision(true);
-assert.strictEqual(holdingDecision.shouldPush, true);
-assert.strictEqual(holdingDecision.reason, 'PORTFOLIO_HOLDING_BYPASS');
-console.log('✅ Pacing Test 1: Portfolio holding news bypasses throttle immediately');
+// Test A: Portfolio holding at 2:30 PM (870 mins) pushes IMMEDIATELY
+const portRes = evaluateNotificationPushPolicy({ isPortfolioTracked: true, nptMinutes: 870 });
+assert.strictEqual(portRes.shouldPush, true);
+assert.strictEqual(portRes.reason, 'PORTFOLIO_HOLDING_INSTANT');
+console.log('✅ Policy Test 1: Portfolio holding pushes immediately at 2:30 PM');
 
-// Non-portfolio general news is throttled within 30-minute interval
-const generalThrottleDecision = checkPacingDecision(false);
-assert.strictEqual(generalThrottleDecision.shouldPush, false);
-assert.strictEqual(generalThrottleDecision.reason, 'THROTTLED_GENERAL_INTERVAL');
-console.log('✅ Pacing Test 2: Non-holding general news is throttled to prevent spam');
+// Test B: Non-holding notice at 2:30 PM (870 mins) is SUPPRESSED from status bar and saved to drawer
+const nonHoldRes = evaluateNotificationPushPolicy({ isPortfolioTracked: false, nptMinutes: 870 });
+assert.strictEqual(nonHoldRes.shouldPush, false);
+assert.strictEqual(nonHoldRes.reason, 'OUTSIDE_TWICE_DAILY_WINDOW');
+assert.strictEqual(nonHoldRes.savedToDrawer, true);
+console.log('✅ Policy Test 2: Non-holding notice at 2:30 PM suppressed from status bar and saved to in-app drawer');
 
-// Non-portfolio general news allowed after 30 minutes
-const generalElapsedDecision = checkPacingDecision(false, lastGeneralAt + 31 * 60 * 1000);
-assert.strictEqual(generalElapsedDecision.shouldPush, true);
-assert.strictEqual(generalElapsedDecision.reason, 'INTERVAL_ELAPSED');
-console.log('✅ Pacing Test 3: Non-holding general news pushes after 30-minute interval elapses');
+// Test C: Non-holding notice at 11:05 AM (665 mins) pushes as 11 AM Morning Digest
+const morningRes = evaluateNotificationPushPolicy({ isPortfolioTracked: false, nptMinutes: 665, lastDispatchedWindowKey: null });
+assert.strictEqual(morningRes.shouldPush, true);
+assert.strictEqual(morningRes.reason, 'TWICE_DAILY_WINDOW_ACTIVE');
+assert.strictEqual(morningRes.windowKey, '2026-11-10_11am');
+console.log('✅ Policy Test 3: Non-holding notice at 11:05 AM pushes as Morning Digest');
 
-console.log('\n🎉 All Notification Deep Link routing & pacing tests passed cleanly!');
+// Test D: Subsequent non-holding notice at 11:15 AM (675 mins) is saved to drawer without duplicate buzz
+const morningDupRes = evaluateNotificationPushPolicy({ isPortfolioTracked: false, nptMinutes: 675, lastDispatchedWindowKey: '2026-11-10_11am' });
+assert.strictEqual(morningDupRes.shouldPush, false);
+assert.strictEqual(morningDupRes.reason, 'WINDOW_ALREADY_DISPATCHED');
+console.log('✅ Policy Test 4: Second notice in 11 AM window saved to drawer without duplicate status bar buzz');
+
+// Test E: Non-holding notice at 6:05 PM (1085 mins) pushes as 6 PM Evening Digest
+const eveningRes = evaluateNotificationPushPolicy({ isPortfolioTracked: false, nptMinutes: 1085, lastDispatchedWindowKey: '2026-11-10_11am' });
+assert.strictEqual(eveningRes.shouldPush, true);
+assert.strictEqual(eveningRes.reason, 'TWICE_DAILY_WINDOW_ACTIVE');
+assert.strictEqual(eveningRes.windowKey, '2026-11-10_6pm');
+console.log('✅ Policy Test 5: Non-holding notice at 6:05 PM pushes as Evening Digest');
+
+console.log('\n🎉 All Notification Deep Link routing, safety guards & twice-daily pacing tests passed cleanly!');
