@@ -235,7 +235,13 @@ const alertSubscribers = new Set();
 
 export function subscribeAlertEvents(res) {
   alertSubscribers.add(res);
-  return () => alertSubscribers.delete(res);
+  const cleanup = () => alertSubscribers.delete(res);
+  if (res && typeof res.on === 'function') {
+    res.on('close', cleanup);
+    res.on('finish', cleanup);
+    res.on('error', cleanup);
+  }
+  return cleanup;
 }
 
 export function broadcastAlert(alertPayload) {
@@ -395,6 +401,20 @@ export function broadcastAlert(alertPayload) {
 
 export const userTrackedSymbolsSet = new Set();
 
+export function syncTrackedSymbolsFromTokens() {
+  if (Array.isArray(pushTokens)) {
+    pushTokens.forEach(t => {
+      if (Array.isArray(t.portfolioSymbols)) {
+        t.portfolioSymbols.forEach(s => {
+          const clean = String(s || '').toUpperCase().trim();
+          if (clean) userTrackedSymbolsSet.add(clean);
+        });
+      }
+    });
+  }
+}
+syncTrackedSymbolsFromTokens();
+
 /**
  * Hydrate push tokens from PostgreSQL on server startup so ephemeral Render
  * disk restarts don't lose registered device tokens.
@@ -420,6 +440,7 @@ export async function hydratePushTokensFromDb() {
       pushTokens.forEach(t => map.set(t.token, t));
       dbTokens.forEach(t => map.set(t.token, t));
       pushTokens = Array.from(map.values());
+      syncTrackedSymbolsFromTokens();
       saveJson(TOKENS_FILE, pushTokens);
       console.log(`[SmartAlertEngine] Successfully restored ${dbTokens.length} push token(s) from PostgreSQL database.`);
     }
@@ -433,6 +454,8 @@ export async function deletePushToken(token) {
   if (!token || typeof token !== 'string') return false;
   const cleanToken = token.trim();
   pushTokens = pushTokens.filter(p => p.token !== cleanToken);
+  userTrackedSymbolsSet.clear();
+  syncTrackedSymbolsFromTokens();
   saveJson(TOKENS_FILE, pushTokens);
   try {
     if (pool) {
@@ -450,6 +473,8 @@ export async function pruneDeadPushTokens(tokens) {
   const tokenSet = new Set(tokens.map(t => String(t).trim()));
   const beforeCount = pushTokens.length;
   pushTokens = pushTokens.filter(p => !tokenSet.has(p.token));
+  userTrackedSymbolsSet.clear();
+  syncTrackedSymbolsFromTokens();
   saveJson(TOKENS_FILE, pushTokens);
   try {
     if (pool) {
@@ -1117,7 +1142,8 @@ export async function runMarketAlertScanCycle({
       const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
       const shouldDispatchTelegram = !isTestEnv || process.env.TEST_LIVE_TELEGRAM === 'true';
       const dispatchedAlertsThisCycle = new Set();
-      for (const alert of alertHistory) {
+      const activeAlertsSnapshot = [...alertHistory];
+      for (const alert of activeAlertsSnapshot) {
         if (alert.status !== 'ACTIVE' && alert.status !== 'ACTIVE_T2') continue;
 
         const currentStock = stocks.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === alert.symbol);
@@ -1771,11 +1797,11 @@ export async function scanUniverseForBroker58Ignitions({ limit = 5, sessionDate 
           const rows = db.prepare(`
             SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt,
                    (l.buy_vol - l.sell_vol) as net_vol,
-                   ROUND(CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
+                   ROUND(CAST(l.buy_vol AS REAL) / MAX(1, l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
                    s.close_price as ltp, s.open_price, s.total_volume,
-                   ROUND(CAST(l.buy_vol AS REAL) / s.total_volume * 100, 1) as mkt_share,
-                   ROUND((s.close_price - s.open_price) / s.open_price * 100, 1) as day_pchange,
-                   ROUND(l.buy_amt / l.buy_vol, 1) as operator_vwap
+                   ROUND(CAST(l.buy_vol AS REAL) / MAX(1, s.total_volume) * 100, 1) as mkt_share,
+                   ROUND((s.close_price - s.open_price) / MAX(1, s.open_price) * 100, 1) as day_pchange,
+                   ROUND(l.buy_amt / MAX(1, l.buy_vol), 1) as operator_vwap
             FROM daily_broker_ledger l
             JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
             WHERE l.broker_id = 58 AND l.symbol = ? AND l.trade_date = ?
@@ -1785,11 +1811,11 @@ export async function scanUniverseForBroker58Ignitions({ limit = 5, sessionDate 
           const rows = db.prepare(`
             SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt,
                    (l.buy_vol - l.sell_vol) as net_vol,
-                   ROUND(CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
+                   ROUND(CAST(l.buy_vol AS REAL) / MAX(1, l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
                    s.close_price as ltp, s.open_price, s.total_volume,
-                   ROUND(CAST(l.buy_vol AS REAL) / s.total_volume * 100, 1) as mkt_share,
-                   ROUND((s.close_price - s.open_price) / s.open_price * 100, 1) as day_pchange,
-                   ROUND(l.buy_amt / l.buy_vol, 1) as operator_vwap
+                   ROUND(CAST(l.buy_vol AS REAL) / MAX(1, s.total_volume) * 100, 1) as mkt_share,
+                   ROUND((s.close_price - s.open_price) / MAX(1, s.open_price) * 100, 1) as day_pchange,
+                   ROUND(l.buy_amt / MAX(1, l.buy_vol), 1) as operator_vwap
             FROM daily_broker_ledger l
             JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
             WHERE l.broker_id = 58
@@ -1802,13 +1828,86 @@ export async function scanUniverseForBroker58Ignitions({ limit = 5, sessionDate 
                 OR (l.buy_amt >= 10000000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.08)
               )
               AND (l.buy_vol - l.sell_vol) >= 5000
-              AND CAST(l.buy_vol AS REAL) / (l.buy_vol + l.sell_vol) >= 0.70
+              AND CAST(l.buy_vol AS REAL) / MAX(1, l.buy_vol + l.sell_vol) >= 0.70
               AND s.total_volume > 0
               AND (s.close_price - s.open_price) / s.open_price BETWEEN -0.03 AND 0.045
             ORDER BY l.buy_amt DESC
             LIMIT ?
-          `).all(targetDate, limit);
+          `).all(targetDate, limit * 2);
+
+          // Also scan 5-day multi-session stealth accumulators
+          const fiveDates = db.prepare(`
+            SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT 5
+          `).all(targetDate).map(d => d.trade_date);
+          const min5Date = fiveDates[fiveDates.length - 1] || targetDate;
+
+          const multiDayStealthCandidates = db.prepare(`
+            SELECT l.symbol, 
+                   SUM(l.buy_vol) as multi_buy, 
+                   SUM(l.buy_vol - l.sell_vol) as multi_net,
+                   SUM(l.buy_amt) as multi_amt,
+                   ROUND(CAST(SUM(l.buy_vol) AS REAL) / MAX(1, SUM(l.buy_vol + l.sell_vol)) * 100, 1) as multi_ratio
+            FROM daily_broker_ledger l
+            WHERE l.broker_id = 58 AND l.trade_date >= ? AND l.trade_date <= ?
+            GROUP BY l.symbol
+            HAVING multi_net >= 25000 AND multi_ratio >= 65.0
+            ORDER BY multi_net DESC
+            LIMIT 10
+          `).all(min5Date, targetDate);
+
+          const seen = new Set(rows.map(r => r.symbol));
+          for (const mCand of multiDayStealthCandidates) {
+            if (!seen.has(mCand.symbol)) {
+              const todayRow = db.prepare(`
+                SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt,
+                       (l.buy_vol - l.sell_vol) as net_vol,
+                       ROUND(CAST(l.buy_vol AS REAL) / MAX(1, l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
+                       s.close_price as ltp, s.open_price, s.total_volume,
+                       ROUND(CAST(l.buy_vol AS REAL) / MAX(1, s.total_volume) * 100, 1) as mkt_share,
+                       ROUND((s.close_price - s.open_price) / MAX(1, s.open_price) * 100, 1) as day_pchange,
+                       ROUND(l.buy_amt / MAX(1, l.buy_vol), 1) as operator_vwap
+                FROM daily_broker_ledger l
+                JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
+                WHERE l.broker_id = 58 AND l.symbol = ? AND l.trade_date = ?
+              `).get(mCand.symbol, targetDate);
+
+              if (todayRow && todayRow.total_volume > 0) {
+                rows.push(todayRow);
+                seen.add(mCand.symbol);
+              }
+            }
+          }
+
           setups = rows;
+        }
+
+        // Enrich all setups with multi-day stealth accumulation profile
+        for (const r of setups) {
+          const stealth = await getMultiDayBroker58Accumulation(r.symbol, { lookbackDays: 5, sessionDate: targetDate });
+          if (stealth) {
+            r.multiDayNetVol = stealth.netBuyVol;
+            r.multiDayBuyVol = stealth.totalBuyVol;
+            r.multiDayBuyAmtCr = stealth.totalBuyAmtCr;
+            r.multiDayBuyRatio = stealth.windowBuyRatio;
+            r.multiDayMarketShare = stealth.marketSharePct;
+            r.multiDayVwap = stealth.windowVwap;
+            r.multiDayActiveDays = stealth.activeDays;
+            r.rangeCompressionPct = stealth.rangeCompressionPct;
+            r.baseLow = stealth.minLow;
+            r.baseHigh = stealth.maxHigh;
+            r.ignitionHorizon = stealth.ignitionHorizon;
+          }
+        }
+
+        // Prioritize by multi-day accumulation strength + current session buying
+        setups.sort((a, b) => {
+          const scoreA = Number(a.multiDayNetVol || a.net_vol || 0) * 1.5 + Number(a.buy_amt || 0) / 10000;
+          const scoreB = Number(b.multiDayNetVol || b.net_vol || 0) * 1.5 + Number(b.buy_amt || 0) / 10000;
+          return scoreB - scoreA;
+        });
+
+        if (!symbol) {
+          setups = setups.slice(0, limit);
         }
       }
     }
@@ -1819,6 +1918,134 @@ export async function scanUniverseForBroker58Ignitions({ limit = 5, sessionDate 
   return { success: true, sessionDate: targetDate, setups };
 }
 
+/**
+ * Queries multi-day stealth accumulation for Broker #58 across the last N trading sessions.
+ * Returns cumulative kitta, capital outlay in Cr, buy ratio %, market share %, base compression range %,
+ * and an empirical ignition horizon (e.g. "1–3 Days: Poised for Markup").
+ */
+export async function getMultiDayBroker58Accumulation(symbol, { lookbackDays = 5, sessionDate = null } = {}) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!sym) return null;
+
+  try {
+    const { db } = await import('./db/ledgerStore.js');
+    if (!db) return null;
+
+    let targetDate = sessionDate;
+    if (!targetDate) {
+      const dateRow = db.prepare('SELECT MAX(trade_date) as maxDate FROM daily_broker_ledger').get();
+      targetDate = dateRow?.maxDate || '';
+    }
+    if (!targetDate) return null;
+
+    // Get last N distinct trading dates ending at targetDate
+    const sessionDates = db.prepare(`
+      SELECT DISTINCT trade_date 
+      FROM daily_broker_ledger 
+      WHERE trade_date <= ? 
+      ORDER BY trade_date DESC 
+      LIMIT ?
+    `).all(targetDate, lookbackDays).map(r => r.trade_date);
+
+    if (!sessionDates || sessionDates.length === 0) return null;
+
+    const minDate = sessionDates[sessionDates.length - 1];
+    const maxDate = sessionDates[0];
+
+    // Query multi-day broker ledger for Broker 58
+    const brokerRows = db.prepare(`
+      SELECT trade_date, buy_vol, sell_vol, buy_amt, sell_amt,
+             (buy_vol - sell_vol) as net_vol,
+             ROUND(CAST(buy_vol AS REAL) / MAX(1, buy_vol + sell_vol) * 100, 1) as buy_ratio,
+             ROUND(buy_amt / MAX(1, buy_vol), 1) as vwap
+      FROM daily_broker_ledger
+      WHERE broker_id = 58 AND symbol = ? AND trade_date >= ? AND trade_date <= ?
+      ORDER BY trade_date DESC
+    `).all(sym, minDate, maxDate);
+
+    // Query market totals & price movement across the window
+    const mktRow = db.prepare(`
+      SELECT SUM(total_volume) as mkt_total_vol,
+             MIN(low_price) as min_low,
+             MAX(high_price) as max_high,
+             (SELECT close_price FROM daily_stock_summary WHERE symbol = ? AND trade_date = ? LIMIT 1) as ltp,
+             (SELECT open_price FROM daily_stock_summary WHERE symbol = ? AND trade_date = ? LIMIT 1) as window_open
+      FROM daily_stock_summary
+      WHERE symbol = ? AND trade_date >= ? AND trade_date <= ?
+    `).get(sym, maxDate, sym, minDate, sym, minDate, maxDate);
+
+    const activeDays = brokerRows.length;
+    let totalBuyVol = 0;
+    let totalSellVol = 0;
+    let totalBuyAmt = 0;
+    for (const r of brokerRows) {
+      totalBuyVol += Number(r.buy_vol || 0);
+      totalSellVol += Number(r.sell_vol || 0);
+      totalBuyAmt += Number(r.buy_amt || 0);
+    }
+
+    const netBuyVol = totalBuyVol - totalSellVol;
+    const totalBuyAmtCr = +(totalBuyAmt / 10000000).toFixed(2);
+    const windowBuyRatio = (totalBuyVol + totalSellVol) > 0 
+      ? +((totalBuyVol / (totalBuyVol + totalSellVol)) * 100).toFixed(1) 
+      : 0;
+    const windowVwap = totalBuyVol > 0 
+      ? +(totalBuyAmt / totalBuyVol).toFixed(1) 
+      : Number(mktRow?.ltp || 100);
+
+    const mktTotalVol = Number(mktRow?.mkt_total_vol || 0);
+    const marketSharePct = mktTotalVol > 0 
+      ? +((totalBuyVol / mktTotalVol) * 100).toFixed(1) 
+      : 0;
+
+    const minLow = Number(mktRow?.min_low || windowVwap);
+    const maxHigh = Number(mktRow?.max_high || windowVwap);
+    const ltp = Number(mktRow?.ltp || windowVwap);
+    const rangeCompressionPct = minLow > 0 
+      ? +(((maxHigh - minLow) / minLow) * 100).toFixed(1) 
+      : 0;
+    const distFromVwapPct = windowVwap > 0 
+      ? +(((ltp - windowVwap) / windowVwap) * 100).toFixed(1) 
+      : 0;
+
+    // Empirical Ignition Horizon determination
+    let ignitionHorizon = 'Neutral (Accumulation threshold pending)';
+    if (activeDays >= 2 && netBuyVol >= 15000 && windowBuyRatio >= 65) {
+      if (marketSharePct >= 17.0 || netBuyVol >= 80000 || (activeDays >= 3 && windowBuyRatio >= 72)) {
+        ignitionHorizon = '1–3 Days (Supply Vacuum Stage 2 Complete)';
+      } else {
+        ignitionHorizon = '2–4 Days (Stage 1: Stealth Seeding Ongoing)';
+      }
+    }
+
+    return {
+      symbol: sym,
+      targetDate: maxDate,
+      lookbackDays: sessionDates.length,
+      activeDays,
+      totalBuyVol,
+      totalSellVol,
+      netBuyVol,
+      totalBuyAmt,
+      totalBuyAmtCr,
+      windowBuyRatio,
+      windowVwap,
+      mktTotalVol,
+      marketSharePct,
+      minLow,
+      maxHigh,
+      ltp,
+      rangeCompressionPct,
+      distFromVwapPct,
+      ignitionHorizon,
+      dailyBreakdown: brokerRows
+    };
+  } catch (err) {
+    console.warn('[SmartAlertEngine] getMultiDayBroker58Accumulation error:', err.message);
+    return null;
+  }
+}
+
 export async function testTriggerBroker58Alert(customSymbol = 'GHL', mockParams = {}) {
   const sym = String(customSymbol || 'GHL').toUpperCase().trim();
   const ltp = Number(mockParams.ltp || 335.0);
@@ -1826,7 +2053,7 @@ export async function testTriggerBroker58Alert(customSymbol = 'GHL', mockParams 
   const buyVol = Number(mockParams.buyVol || 266203);
   const sellVol = Number(mockParams.sellVol || 67826);
   const netVol = buyVol - sellVol;
-  const buyRatioPct = +((buyVol / (buyVol + sellVol)) * 100).toFixed(1);
+  const buyRatioPct = (buyVol + sellVol) > 0 ? +((buyVol / (buyVol + sellVol)) * 100).toFixed(1) : 0;
   const marketSharePct = Number(mockParams.marketSharePct || 23.6);
   const totalBuyAmount = buyVol * operatorVwap;
   const pChange = Number(mockParams.pChange || 1.5);
@@ -2073,6 +2300,201 @@ export async function processBreakoutAlertTrigger(breakoutEval) {
   return { triggered: true, alert: alertItem };
 }
 
+/**
+ * Calculates Exponential Moving Average (EMA) for an array of numbers.
+ */
+export function computeEma(prices, period = 20) {
+  if (!Array.isArray(prices) || period <= 0 || prices.length < period) return null;
+  const k = 2 / (period + 1);
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += Number(prices[i] || 0);
+  let ema = sum / period;
+  const emaArr = new Array(prices.length);
+  for (let i = 0; i < period - 1; i++) emaArr[i] = null;
+  emaArr[period - 1] = ema;
+  for (let i = period; i < prices.length; i++) {
+    ema = Number(prices[i] || 0) * k + ema * (1 - k);
+    emaArr[i] = ema;
+  }
+  return emaArr;
+}
+
+/**
+ * Scans for stocks that crossed above their 20 EMA with volume expansion in the last 1–10 sessions,
+ * have NOT surged away (distance from 20 EMA within -2.0% to +7.5%), and are coiling tightly
+ * in a sharp consolidation base (range <= 9.0%) poised for a secondary ignition.
+ */
+export async function scanEmaCrossoverAndSharpBase({
+  lookbackSessions = 10,
+  maxSurgePct = 7.5,
+  maxBaseRangePct = 9.0,
+  sessionDate = null,
+  symbol = null,
+  limit = 6
+} = {}) {
+  try {
+    const { db } = await import('./db/ledgerStore.js');
+    if (!db) return [];
+
+    let targetDate = sessionDate;
+    if (!targetDate) {
+      const dateRow = db.prepare('SELECT MAX(trade_date) as maxDate FROM daily_stock_summary').get();
+      targetDate = dateRow?.maxDate || '';
+    }
+    if (!targetDate) return [];
+
+    // Retrieve all dates up to targetDate (at least 35 sessions for 20 EMA + lookback)
+    const allDates = db.prepare(`
+      SELECT DISTINCT trade_date 
+      FROM daily_stock_summary 
+      WHERE trade_date <= ? 
+      ORDER BY trade_date DESC 
+      LIMIT 45
+    `).all(targetDate).map(r => r.trade_date).reverse();
+
+    if (allDates.length < 22) return [];
+
+    const symbols = symbol 
+      ? [String(symbol).toUpperCase().trim()]
+      : db.prepare(`
+          SELECT DISTINCT symbol FROM daily_stock_summary 
+          WHERE trade_date = ? AND total_volume >= 4000 AND close_price >= 100
+        `).all(targetDate).map(r => r.symbol);
+
+    const getHistoryStmt = db.prepare(`
+      SELECT trade_date, close_price, high_price, low_price, total_volume, total_turnover
+      FROM daily_stock_summary
+      WHERE symbol = ? AND trade_date <= ?
+      ORDER BY trade_date ASC
+    `);
+
+    const results = [];
+
+    for (const sym of symbols) {
+      const rows = getHistoryStmt.all(sym, targetDate);
+      if (rows.length < 22) continue;
+
+      const closes = rows.map(r => r.close_price);
+      const volumes = rows.map(r => r.total_volume);
+      const emas = computeEma(closes, 20);
+      if (!emas) continue;
+
+      const n = rows.length - 1;
+      const currentClose = closes[n];
+      const currentEma = emas[n];
+      const currentVol = volumes[n];
+
+      // 20-day historical average volume prior to current session
+      const prev20Vols = volumes.slice(Math.max(0, n - 20), n);
+      const avgVol20 = prev20Vols.reduce((a, b) => a + b, 0) / Math.max(1, prev20Vols.length);
+
+      // Search for crossover within last `lookbackSessions` (n - lookbackSessions to n)
+      let crossIndex = -1;
+      let crossDate = null;
+      let crossVol = 0;
+      let crossAvgVol = 0;
+
+      const minLookback = Math.max(20, n - (lookbackSessions - 1));
+      for (let i = minLookback; i <= n; i++) {
+        const prevClose = closes[i - 1];
+        const prevEma = emas[i - 1];
+        const thisClose = closes[i];
+        const thisEma = emas[i];
+        const thisVol = volumes[i];
+
+        if (prevClose <= prevEma * 1.008 && thisClose > thisEma) {
+          const histVols = volumes.slice(Math.max(0, i - 20), i);
+          const histAvg = histVols.reduce((a, b) => a + b, 0) / Math.max(1, histVols.length);
+          if (thisVol >= 1.2 * histAvg || thisVol >= 20000) {
+            crossIndex = i;
+            crossDate = rows[i].trade_date;
+            crossVol = thisVol;
+            crossAvgVol = histAvg;
+            break;
+          }
+        }
+      }
+
+      if (crossIndex === -1) {
+        // If single symbol query, check if price is already above 20 EMA and holding tight base
+        if (symbol && currentClose >= currentEma * 0.985) {
+          crossIndex = Math.max(20, n - 3);
+          crossDate = rows[crossIndex]?.trade_date || targetDate;
+          crossVol = currentVol;
+          crossAvgVol = avgVol20;
+        } else {
+          continue;
+        }
+      }
+
+      const daysSinceCross = n - crossIndex;
+
+      // 1. "Does not surge high" filter
+      const distFromEmaPct = currentEma > 0 ? +(((currentClose - currentEma) / currentEma) * 100).toFixed(1) : 0;
+      if (distFromEmaPct < -2.0 || distFromEmaPct > maxSurgePct) continue;
+
+      // 2. "Sharp accumulation base" filter
+      const postCrossRows = rows.slice(crossIndex);
+      const postCloses = postCrossRows.map(r => r.close_price);
+      const minPostClose = Math.min(...postCloses);
+      const maxPostClose = Math.max(...postCloses);
+      const consolidationRangePct = +(((maxPostClose - minPostClose) / Math.max(1, minPostClose)) * 100).toFixed(1);
+
+      if (consolidationRangePct > maxBaseRangePct) continue;
+      if (currentClose < currentEma * 0.980) continue;
+
+      const rvolToday = Number((currentVol / Math.max(1, avgVol20)).toFixed(2));
+      const rvolCross = Number((crossVol / Math.max(1, crossAvgVol)).toFixed(2));
+
+      // Execution plan levels
+      const buyLow = Math.floor(currentEma * 0.995);
+      const buyHigh = Math.ceil(currentClose * 1.015);
+      const stopLoss = Math.round(currentEma * 0.955 * 10) / 10;
+      const target1 = Math.round(currentClose * 1.080 * 10) / 10;
+      const target2 = Math.round(currentClose * 1.145 * 10) / 10;
+
+      const statusBadge = daysSinceCross === 0
+        ? '⚡ Fresh 20 EMA Cross Today'
+        : `🔥 20 EMA Cross &amp; Sharp Base (${daysSinceCross}D Coiling)`;
+
+      results.push({
+        symbol: sym,
+        sessionDate: targetDate,
+        ltp: currentClose,
+        ema20: Number(currentEma.toFixed(1)),
+        distFromEmaPct,
+        daysSinceCross,
+        crossDate,
+        rvolCross,
+        rvolToday,
+        todayVolume: currentVol,
+        avgVol20: Math.round(avgVol20),
+        consolidationRangePct,
+        minBasePrice: minPostClose,
+        maxBasePrice: maxPostClose,
+        buyZone: { low: buyLow, high: buyHigh },
+        stopLoss,
+        target1,
+        target2,
+        statusBadge,
+        ignitionVerdict: 'Coiled for Secondary Expansion Wave (Supply Absorbed)'
+      });
+    }
+
+    // Sort by setup quality
+    results.sort((a, b) => {
+      const scoreA = (a.rvolCross * 1.5) + (a.rvolToday * 1.0) - (a.consolidationRangePct * 0.5) + (a.daysSinceCross > 0 ? 3 : 0);
+      const scoreB = (b.rvolCross * 1.5) + (b.rvolToday * 1.0) - (b.consolidationRangePct * 0.5) + (b.daysSinceCross > 0 ? 3 : 0);
+      return scoreB - scoreA;
+    });
+
+    return results.slice(0, limit);
+  } catch (err) {
+    console.warn('[SmartAlertEngine] scanEmaCrossoverAndSharpBase error:', err.message);
+    return [];
+  }
+}
+
 // ── 8. EXPORT PUBLIC STATE QUERIES ──────────────────────────────────────────
 
 export function getActiveSmartAlerts() {
@@ -2204,7 +2626,10 @@ export async function checkAndDispatchScheduledNonHoldingDigest() {
 
 function saveSeenNewsKeys() {
   try {
-    saveJson(SEEN_NEWS_FILE, Array.from(seenNewsKeys).slice(-600));
+    const trimmed = Array.from(seenNewsKeys).slice(-600);
+    seenNewsKeys.clear();
+    trimmed.forEach(k => seenNewsKeys.add(k));
+    saveJson(SEEN_NEWS_FILE, trimmed);
   } catch (_) {}
 }
 
@@ -2401,6 +2826,9 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
       ipos = await actualIpoFn().catch(() => []);
     }
     if (Array.isArray(ipos) && ipos.length > 0) {
+      if (seenIpoStatusKeys.size > 500) {
+        seenIpoStatusKeys.clear();
+      }
       const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
       const todayIso = nowNpt.toISOString().split('T')[0];
 
