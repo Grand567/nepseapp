@@ -1328,6 +1328,29 @@ export async function runMarketAlertScanCycle({
         } catch (b58Err) {
           console.warn(`[SmartAlertEngine] Broker 58 detection notice for ${sym}:`, b58Err.message);
         }
+
+        // ── Check for High-Volume Breakout with 20D Historical Price & Volume Reference ──
+        try {
+          const breakoutEval = detectHistoricalVolumeBreakout({
+            symbol: sym,
+            ltp: stock.ltp || stock.lastTradedPrice,
+            high: stock.highPrice || stock.high,
+            low: stock.lowPrice || stock.low,
+            open: stock.openPrice || stock.open,
+            pChange: stock.pChange ?? stock.perChange,
+            turnover: stock.turnover || stock.totalTradedValue,
+            volume: stock.volume || stock.totalTradedQuantity,
+            floorsheetTrades,
+            priceHistory: history,
+            avgVolume20D: stock.avgVolume20D
+          });
+
+          if (breakoutEval?.qualified) {
+            await processBreakoutAlertTrigger(breakoutEval);
+          }
+        } catch (brkErr) {
+          console.warn(`[SmartAlertEngine] Breakout detection notice for ${sym}:`, brkErr.message);
+        }
       } catch (stockErr) {
         // Continue to next stock
       }
@@ -1852,6 +1875,199 @@ export async function testTriggerBroker58Alert(customSymbol = 'GHL', mockParams 
     forceDispatch: true,
     status: 'ACTIVE'
   };
+
+  broadcastAlert(alertItem);
+  return { triggered: true, alert: alertItem };
+}
+
+// ── 7.5. HIGH-VOLUME BREAKOUT WITH HISTORICAL DATA REFERENCE ────────────────
+
+const BREAKOUT_COOLDOWN_MS = 90 * 60 * 1000;
+const BREAKOUT_STATE_FILE = path.join(DATA_DIR, 'breakout_alert_state.json');
+let breakoutAlertStateMap = {};
+try {
+  breakoutAlertStateMap = loadJson(BREAKOUT_STATE_FILE, {});
+} catch (_) {}
+
+/**
+ * Evaluates whether a stock is staging a legitimate High-Volume Breakout
+ * by referencing historical 20-Day price resistance and average daily volume.
+ */
+export function detectHistoricalVolumeBreakout({
+  symbol,
+  ltp,
+  high,
+  low,
+  open,
+  pChange = null,
+  volume = 0,
+  turnover = 0,
+  floorsheetTrades = [],
+  priceHistory = [],
+  avgVolume20D = 0
+} = {}) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  const currentLtp = Number(ltp || 0);
+  if (!sym || currentLtp <= 0) {
+    return { qualified: false, reason: 'Invalid symbol or price' };
+  }
+
+  // 1. Historical Reference Baseline (Need at least 10 historical sessions)
+  let pastCandles = [];
+  if (Array.isArray(priceHistory) && priceHistory.length >= 10) {
+    // Exclude today's latest candle if included in history
+    pastCandles = priceHistory.slice(-21, -1);
+    if (pastCandles.length < 5) pastCandles = priceHistory.slice(-15);
+  }
+
+  if (pastCandles.length < 5) {
+    return { qualified: false, reason: 'Insufficient historical data to verify 20D resistance and volume' };
+  }
+
+  // 20-Day Resistance: highest high of the previous 20 sessions
+  const resistance20D = Math.max(...pastCandles.map(c => Number(c.high || c.close || c.ltp || 0)).filter(p => p > 0));
+  if (resistance20D <= 0) {
+    return { qualified: false, reason: 'Invalid historical resistance calculation' };
+  }
+
+  // 20-Day Average Daily Volume
+  const sumPastVol = pastCandles.reduce((acc, c) => acc + Number(c.volume || c.totalTradedQuantity || 0), 0);
+  const baselineAvgVol = sumPastVol > 0 ? Math.round(sumPastVol / pastCandles.length) : Number(avgVolume20D || 50000);
+
+  // 2. Relative Volume (RVOL) Surge Calculation
+  const currentVol = Number(volume || 0);
+  const status = getDetailedMarketStatus();
+  const nptMins = status.nptTotalMinutes || 720;
+  let timeScaleFactor = 1.0;
+  if (status.isOpen) {
+    const elapsedTradingMins = Math.max(15, Math.min(240, nptMins - 660)); // 11:00 AM = 660
+    timeScaleFactor = +(240 / elapsedTradingMins).toFixed(2);
+  }
+
+  const projectedDailyVol = Math.round(currentVol * timeScaleFactor);
+  const rvol = baselineAvgVol > 0 ? +(projectedDailyVol / baselineAvgVol).toFixed(2) : 1.0;
+  const currentVolMultiple = baselineAvgVol > 0 ? +(currentVol / baselineAvgVol).toFixed(2) : 0;
+
+  // 3. Breakout Qualification Rules:
+  // Rule A: Price Breakout above 20D Resistance (within 0% to +6.5% buffer; rejects late overextended chase)
+  const isAboveResistance = currentLtp >= resistance20D;
+  const breakoutPct = +(((currentLtp - resistance20D) / resistance20D) * 100).toFixed(2);
+  const isWithinSafeBand = breakoutPct >= 0 && breakoutPct <= 6.5;
+
+  // Rule B: Volume Surge (RVOL >= 1.75x or current volume already >= 1.2x full 20D average)
+  const isVolumeSurging = rvol >= 1.75 || currentVolMultiple >= 1.2;
+
+  // Rule C: Liquidity Floor (Min 5,000 kitta traded & turnover >= 10 Lakhs)
+  const isLiquid = currentVol >= 5000 && Number(turnover || 0) >= 1000000;
+
+  // Rule D: Institutional Buyer Confirmation from Floorsheet (if trades available)
+  let bcr3BuyPct = 50;
+  let dominantBuyerText = 'Institutional Buyers';
+  if (Array.isArray(floorsheetTrades) && floorsheetTrades.length > 0) {
+    const buyerMap = {};
+    let totBuy = 0;
+    floorsheetTrades.forEach(t => {
+      const b = String(t.buyerBroker || t.buyer || '').trim();
+      const q = Number(t.qty || t.quantity || 0);
+      if (b) {
+        buyerMap[b] = (buyerMap[b] || 0) + q;
+        totBuy += q;
+      }
+    });
+    const sorted = Object.entries(buyerMap).sort((a, b) => b[1] - a[1]);
+    const top3Qty = sorted.slice(0, 3).reduce((sum, item) => sum + item[1], 0);
+    if (totBuy > 0) {
+      bcr3BuyPct = Math.round((top3Qty / totBuy) * 100);
+      dominantBuyerText = sorted.slice(0, 2).map(([b]) => `Broker #${b}`).join(' & ');
+    }
+  }
+
+  const qualified = isAboveResistance && isWithinSafeBand && isVolumeSurging && isLiquid;
+
+  // 4. Clean Asymmetric Trading Levels
+  const buyZoneLow = resistance20D;
+  const buyZoneHigh = +(resistance20D * 1.025).toFixed(1);
+  const chaseCap = +(resistance20D * 1.035).toFixed(1);
+  const stopLoss = +(resistance20D * 0.955).toFixed(1); // -4.5% below breakout pivot
+  const target1 = +(currentLtp * 1.080).toFixed(1);     // +8.0% Momentum Target
+  const target2 = +(currentLtp * 1.145).toFixed(1);     // +14.5% Circuit Ceiling
+
+  return {
+    qualified,
+    symbol: sym,
+    companyName: stockMap[sym]?.name || sym,
+    ltp: currentLtp,
+    pChange: pChange != null ? Number(pChange) : breakoutPct,
+    resistance20D,
+    breakoutPct,
+    currentVolume: currentVol,
+    projectedDailyVolume: projectedDailyVol,
+    avgVolume20D: baselineAvgVol,
+    rvol,
+    currentVolMultiple,
+    turnover: Number(turnover || 0),
+    bcr3BuyPct,
+    dominantBuyerText,
+    buyZone: { low: buyZoneLow, high: buyZoneHigh },
+    chaseCap,
+    stopLoss,
+    target1,
+    target2,
+    netRRR: 2.8,
+    reason: qualified 
+      ? `LTP Rs. ${currentLtp} broke 20-day high (Rs. ${resistance20D}) with ${rvol}x volume surge!` 
+      : (!isAboveResistance ? `LTP Rs. ${currentLtp} below 20D resistance Rs. ${resistance20D}` : `Volume ratio ${rvol}x below 1.75x threshold`)
+  };
+}
+
+export async function processBreakoutAlertTrigger(breakoutEval) {
+  const sym = breakoutEval.symbol;
+  const now = Date.now();
+  const lastTriggered = breakoutAlertStateMap[sym]?.lastTriggeredAt || 0;
+
+  if (!breakoutEval.forceDispatch && (now - lastTriggered < BREAKOUT_COOLDOWN_MS)) {
+    return { triggered: false, reason: 'Cooldown active', remainingMins: Math.ceil((BREAKOUT_COOLDOWN_MS - (now - lastTriggered)) / 60000) };
+  }
+
+  breakoutAlertStateMap[sym] = {
+    symbol: sym,
+    lastTriggeredAt: now,
+    lastLtp: breakoutEval.ltp,
+    resistance20D: breakoutEval.resistance20D
+  };
+  saveJson(BREAKOUT_STATE_FILE, breakoutAlertStateMap);
+
+  const alertItem = {
+    id: `breakout_alert_${sym}_${now}`,
+    symbol: sym,
+    companyName: breakoutEval.companyName,
+    type: 'BREAKOUT',
+    category: 'pro',
+    tier: 'pro',
+    isPro: true,
+    title: `🚀 High-Volume Breakout: ${sym}`,
+    body: `Price Rs. ${breakoutEval.ltp} cleared 20-Day Resistance (Rs. ${breakoutEval.resistance20D}) with ${breakoutEval.rvol}x Volume Surge! Lead buyers: ${breakoutEval.dominantBuyerText}.`,
+    action: 'OPEN_STOCK_DETAIL',
+    ltp: breakoutEval.ltp,
+    pChange: breakoutEval.pChange,
+    triggeredAt: new Date(now).toISOString(),
+    resistance20D: breakoutEval.resistance20D,
+    breakoutPct: breakoutEval.breakoutPct,
+    rvol: breakoutEval.rvol,
+    avgVolume20D: breakoutEval.avgVolume20D,
+    currentVolume: breakoutEval.currentVolume,
+    buyZone: breakoutEval.buyZone,
+    chaseCap: breakoutEval.chaseCap,
+    stopLoss: breakoutEval.stopLoss,
+    target1: breakoutEval.target1,
+    target2: breakoutEval.target2,
+    netRRR: breakoutEval.netRRR,
+    status: 'ACTIVE'
+  };
+
+  alertHistory.unshift(alertItem);
+  if (alertHistory.length > 100) alertHistory.pop();
+  saveJson(HISTORY_FILE, alertHistory);
 
   broadcastAlert(alertItem);
   return { triggered: true, alert: alertItem };

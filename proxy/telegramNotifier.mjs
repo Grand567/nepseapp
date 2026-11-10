@@ -456,11 +456,19 @@ export async function sendTelegramSmartAlert(alertItem) {
   const dominantBrokers = escapeHtml(alertItem.dominantBrokersText || alertItem.topBuyerBrokers?.join(', ') || 'Smart Money Syndicate');
   const timeNpt = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' });
 
+  const isBreakout = alertItem.type === 'BREAKOUT';
+  const header = isBreakout
+    ? `🚀 <b>HIGH-VOLUME HISTORICAL BREAKOUT: $${sym}</b>`
+    : `🟢 <b>INSTITUTIONAL ACCUMULATION CONFIRMED: $${sym}</b>`;
+
   const ticketHtml = [
-    `🟢 <b>INSTITUTIONAL ACCUMULATION CONFIRMED: $${sym}</b>`,
+    header,
     companyName ? `<i>${companyName}</i>` : '',
     `Sector: ${sector} (10D RS Rank: #${sectorRank}/13) | Regime: ${regime}`,
     `Live Price: <b>Rs. ${ltp.toFixed(2)}</b> (${pChangeStr})`,
+    isBreakout && alertItem.resistance20D
+      ? `• <b>20D Resistance Broken:</b> <b>Rs. ${alertItem.resistance20D}</b> (+${alertItem.breakoutPct || 0}%) | <b>Volume Surge:</b> <b>${alertItem.rvol || '2.0'}x</b> 20D Avg`
+      : '',
     `──────────────────────────`,
     `🎯 <b>EXECUTION PLAN (T+2 &amp; ±15% Circuit Adjusted)</b>`,
     `• Limit Buy Zone: Rs. ${bLow} – Rs. ${bHigh} (Do NOT chase &gt; Rs. ${cCap})`,
