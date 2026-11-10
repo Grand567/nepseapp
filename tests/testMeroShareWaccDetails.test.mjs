@@ -80,6 +80,46 @@ try {
   ok(parsedDirect.records[1].waccRate === 264.5392, 'Record 1 WACC rate parsed');
   ok(parsedDirect.records[1].lastModifiedDate === '2026-11-04', 'Record 1 date parsed');
 
+  // Ground Truth from live CDSC MeroShare /api/myPurchase/waccReport/
+  const liveWaccReportPayload = [
+    {
+      averageBuyRate: 567.2586,
+      demat: '1301110000389616',
+      lastModifiedDate: '2021-07-20',
+      scrip: 'BARUN',
+      totalCost: 170177.58,
+      totalQuantity: 300
+    },
+    {
+      averageBuyRate: 257.3124,
+      demat: '1301110000389616',
+      lastModifiedDate: '2021-05-24',
+      scrip: 'BFC',
+      totalCost: 25731.24,
+      totalQuantity: 100
+    },
+    {
+      averageBuyRate: 269.737,
+      demat: '1301110000389616',
+      lastModifiedDate: '2022-02-14',
+      scrip: 'CBL',
+      totalCost: 26973.7,
+      totalQuantity: 100
+    }
+  ];
+
+  const parsedLive = parseMeroShareWaccDetailsResponse(liveWaccReportPayload);
+  ok(parsedLive.success === true, 'Parsed live CDSC waccReport response');
+  ok(parsedLive.count === 3, 'Found 3 records from live payload');
+  ok(parsedLive.records[0].normalizedSymbol === 'BARUN', 'Live record 0 symbol is BARUN');
+  ok(parsedLive.records[0].waccRate === 567.2586, 'Live record 0 averageBuyRate parsed as waccRate');
+  ok(parsedLive.records[0].waccCalculatedQuantity === 300, 'Live record 0 totalQuantity parsed');
+  ok(parsedLive.records[0].totalCostOfCapital === 170177.58, 'Live record 0 totalCost parsed');
+  ok(parsedLive.records[0].mathCheck.isValid === true, 'Live record 0 math verified valid');
+  ok(parsedLive.records[1].normalizedSymbol === 'BFC', 'Live record 1 symbol is BFC');
+  ok(parsedLive.records[1].waccRate === 257.3124, 'Live record 1 averageBuyRate parsed');
+  ok(parsedLive.records[1].mathCheck.isValid === true, 'Live record 1 math verified valid');
+
   // ─── TEST 4: Parse Spring Pageable & Wrapped Envelopes ──────────────────────
   console.log('\n[TEST 4] Paging & Envelope variations');
   const fakePageableResponse = {
