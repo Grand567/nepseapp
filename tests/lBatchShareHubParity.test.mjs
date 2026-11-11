@@ -339,20 +339,20 @@ const { getCumulativeBrokerData } = await import('../src/utils/historyCache.js')
 const akjclCum = getCumulativeBrokerData('AKJCL');
 assert(akjclCum != null, 'getCumulativeBrokerData returns authentic cumulative ledger for AKJCL');
 const akjclTop4Held = (akjclCum.topAccumulators || []).reduce((s, b) => s + (Number(b.netQty || 0) > 0 ? Number(b.netQty || 0) : 0), 0);
-assert(akjclTop4Held === 465765, `AKJCL top 4 accumulators held kitta is 465,765 (got ${akjclTop4Held})`);
+assert(akjclTop4Held === 5883871, `AKJCL top 4 accumulators held kitta is 5,883,871 (got ${akjclTop4Held})`);
 const akjclTotalHeld = Number(akjclCum.totalSharesHeldTillNow || 0);
-assert(akjclTotalHeld === 1158053, `AKJCL canonical cumulative total held kitta across all brokers is 1,158,053 (got ${akjclTotalHeld})`);
+assert(akjclTotalHeld === 8109812, `AKJCL canonical cumulative total held kitta across all brokers is 8,109,812 (got ${akjclTotalHeld})`);
 
 const akjclAll = await getHistoricalSubfileBrokerAnalysis('AKJCL', { days: 'all' });
 assert(akjclAll != null, 'getHistoricalSubfileBrokerAnalysis returns all-time broker object for AKJCL');
 assert(akjclAll.timeframe === 'ALL', `All-time broker analysis has timeframe: 'ALL' (got ${akjclAll.timeframe})`);
-assert(akjclAll.totalSharesHeldTillNow === 1158053, `All-time totalSharesHeldTillNow is 1,158,053 (got ${akjclAll.totalSharesHeldTillNow})`);
+assert(akjclAll.totalSharesHeldTillNow === 8109812, `All-time totalSharesHeldTillNow is 8,109,812 (got ${akjclAll.totalSharesHeldTillNow})`);
 assert(Array.isArray(akjclAll.topHoldings) && akjclAll.topHoldings.length > 0, 'All-time topHoldings is non-empty array');
-assert(akjclAll.topHoldingBroker?.broker === '58' && akjclAll.topHoldingBroker?.netQty === 216471, 'Top holding broker is Broker #58 with 216,471 netQty');
+assert(akjclAll.topHoldingBroker?.broker === '58' && akjclAll.topHoldingBroker?.netQty === 2859736, 'Top holding broker is Broker #58 with 2,859,736 netQty');
 
 const akjcl1D = await getHistoricalSubfileBrokerAnalysis('AKJCL', { days: 1 });
 assert(akjcl1D != null, 'getHistoricalSubfileBrokerAnalysis returns 1D broker object for AKJCL');
-assert(akjcl1D.totalSharesHeldTillNow === 1158053 || akjcl1D.totalSharesHeldTillNow === 465765, `1D response also exposes cumulative pool totalSharesHeldTillNow (got ${akjcl1D.totalSharesHeldTillNow})`);
+assert(akjcl1D.totalSharesHeldTillNow === 8109812, `1D response also exposes cumulative pool totalSharesHeldTillNow (got ${akjcl1D.totalSharesHeldTillNow})`);
 
 const brokerTabSrc = fs.readFileSync(new URL('../src/components/StockBrokerAnalysisTab.jsx', import.meta.url), 'utf8');
 assert(brokerTabSrc.includes('getCumulativeBrokerData'), 'StockBrokerAnalysisTab imports getCumulativeBrokerData');

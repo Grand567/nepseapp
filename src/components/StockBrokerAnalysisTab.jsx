@@ -533,11 +533,12 @@ function StockBrokerAnalysisTabInner({
           avgSellPrice: Number(d.avgSellRate || d.avgSellPrice || cum.institutionalCostBasis || 0)
         }));
         const totalHeld = Number(cum.totalSharesHeldTillNow || 0) || topAccs.reduce((s, a) => s + (a.netQty > 0 ? a.netQty : 0), 0);
+        const dynamicSessions = Number(cum.coverage?.sessionCount || cum.coverage?.tradingDays || cum.tradingDays || cum.timeframeDays || 42);
         return {
           symbol,
           timeframe: 'ALL',
-          timeframeDays: 38,
-          tradingDays: 38,
+          timeframeDays: dynamicSessions,
+          tradingDays: dynamicSessions,
           totalSharesHeldTillNow: totalHeld,
           totalHoldQty: totalHeld,
           totalVolume: cum.totalVolume || 0,
@@ -559,7 +560,18 @@ function StockBrokerAnalysisTabInner({
           smartMoneyNetFlowPct: cum.smartMoneyNetFlowPct || 0,
           adSignal: (cum.smartMoneyNetFlowPct || 0) > 5 ? 'Accumulation' : (cum.smartMoneyNetFlowPct || 0) < -5 ? 'Distribution' : 'Neutral',
           isReal: true,
-          source: 'cumulative_broker_ledger_baseline'
+          source: 'cumulative_broker_ledger_baseline',
+          coverage: cum.coverage || {
+            startDate: '2022-01-25',
+            endDate: '2026-11-06',
+            sessionCount: dynamicSessions,
+            tradingDays: dynamicSessions,
+            isLifetime: false,
+            label: `Since 2022-01-25 (${dynamicSessions} sessions)`,
+            disclaimer: `Covered from 2022-01-25 to 2026-11-06 (${dynamicSessions} sessions). Pre-2022-01-25 baseline unknown. Unadjusted for corporate actions.`,
+            isLiveIncomplete: false,
+            lastUpdated: new Date().toISOString()
+          }
         };
       }
     }
@@ -584,13 +596,12 @@ function StockBrokerAnalysisTabInner({
     if (onDateChange) onDateChange('');
     if (onDaysChange) {
       onDaysChange(d);
-    } else {
-      setInternalLoading(true);
-      fetchRealBrokerAnalysis(symbol, d, { date: '', refresh: false })
-        .then(res => { if (res) setInternalBrokerData(res); })
-        .catch(() => {})
-        .finally(() => setInternalLoading(false));
     }
+    setInternalLoading(true);
+    fetchRealBrokerAnalysis(symbol, d, { date: '', refresh: false })
+      .then(res => { if (res) setInternalBrokerData(res); })
+      .catch(() => {})
+      .finally(() => setInternalLoading(false));
   };
 
   const handleDateSelect = (dt) => {

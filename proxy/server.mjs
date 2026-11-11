@@ -4790,7 +4790,7 @@ app.get('/api/broker-analysis/summary-map', async (req, res) => {
   }
 });
 
-app.get('/api/broker-analysis/:symbol', async (req, res) => {
+app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req, res) => {
   if (req.params.symbol === 'summary-map') {
     try {
       const days = Math.min(Math.max(parseInt(req.query.days || '1', 10) || 1, 1), 500);

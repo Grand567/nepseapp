@@ -88,8 +88,50 @@ export function exportCumulativeBrokerLedger(databaseInstance = db) {
     `);
 
     for (const sym of symbols) {
-      const rows = queryBrokersForSymbol.all(sym);
+      let rows = queryBrokersForSymbol.all(sym);
       if (!rows || rows.length === 0) continue;
+
+      let symStartDate = startDate;
+      let symEndDate = endDate;
+      let symSessionCount = sessionCount;
+
+      const alltimePath = path.resolve(process.cwd(), 'proxy', 'data', 'broker_alltime', `${sym}.json`);
+      if (fs.existsSync(alltimePath)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(alltimePath, 'utf8'));
+          if (parsed && parsed.dailyRollup && Object.keys(parsed.dailyRollup).length > sessionCount) {
+            const dates = Object.keys(parsed.dailyRollup).sort();
+            symStartDate = dates[0];
+            symEndDate = dates[dates.length - 1];
+            symSessionCount = dates.length;
+
+            const brokerAggMap = new Map();
+            for (const dt of dates) {
+              const day = parsed.dailyRollup[dt];
+              for (const bId in day) {
+                const [bQty, sQty, bAmt, sAmt] = day[bId];
+                const cur = brokerAggMap.get(bId) || { buy_vol: 0, sell_vol: 0, buy_amt: 0, sell_amt: 0 };
+                cur.buy_vol += bQty;
+                cur.sell_vol += sQty;
+                cur.buy_amt += bAmt;
+                cur.sell_amt += sAmt;
+                brokerAggMap.set(bId, cur);
+              }
+            }
+            rows = Array.from(brokerAggMap.entries()).map(([bId, d]) => ({
+              broker_id: parseInt(bId, 10) || bId,
+              buyVol: d.buy_vol,
+              sellVol: d.sell_vol,
+              buyAmt: d.buy_amt,
+              sellAmt: d.sell_amt,
+              netQty: d.buy_vol - d.sell_vol,
+              netAmt: d.buy_amt - d.sell_amt,
+              avgBuyRate: d.buy_vol > 0 ? Number((d.buy_amt / d.buy_vol).toFixed(1)) : 0,
+              avgSellRate: d.sell_vol > 0 ? Number((d.sell_amt / d.sell_vol).toFixed(1)) : 0
+            }));
+          }
+        } catch (_) {}
+      }
 
       let totalVol = 0;
       let totalBuyAmtAcc = 0;
@@ -201,13 +243,13 @@ export function exportCumulativeBrokerLedger(databaseInstance = db) {
         })),
         allDistributors,
         coverage: {
-          startDate,
-          endDate,
-          sessionCount,
-          tradingDays: sessionCount,
+          startDate: symStartDate,
+          endDate: symEndDate,
+          sessionCount: symSessionCount,
+          tradingDays: symSessionCount,
           isLifetime: false,
-          label: `Since ${startDate} (${sessionCount} sessions)`,
-          disclaimer: `Covered from ${startDate} to ${endDate} (${sessionCount} sessions). Pre-${startDate} baseline unknown. Unadjusted for corporate actions.`,
+          label: `Since ${symStartDate} (${symSessionCount} sessions)`,
+          disclaimer: `Covered from ${symStartDate} to ${symEndDate} (${symSessionCount} sessions). Pre-${symStartDate} baseline unknown. Unadjusted for corporate actions.`,
           isLiveIncomplete: false,
           lastUpdated: new Date().toISOString()
         }

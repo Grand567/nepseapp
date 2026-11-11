@@ -1169,11 +1169,16 @@ export async function getHistoricalSubfileBrokerAnalysis(
   const total5dHoldQty = accumulators.reduce((sum: number, b) => sum + (Number(b.netQty || 0) > 0 ? Number(b.netQty || 0) : 0), 0);
   const cum5d = getCumulativeBrokerData(sym);
   const cum5dHeld = cum5d ? (Number(cum5d.totalSharesHeldTillNow || 0) || (cum5d.topAccumulators || []).reduce((s: number, a: any) => s + (a.netQty > 0 ? a.netQty : 0), 0)) : total5dHoldQty;
+  const isPartialOffline = numDays > subfiles.length;
 
   return {
     symbol: sym,
-    tradingDays: 5,
-    timeframeDays: 5,
+    timeframe: isPartialOffline ? `${subfiles.length}D_PARTIAL` : `${subfiles.length}D`,
+    tradingDays: subfiles.length,
+    timeframeDays: subfiles.length,
+    requestedDays: numDays,
+    isFallbackPartial: isPartialOffline,
+    disclaimer: isPartialOffline ? `Showing ${subfiles.length} recent sessions offline (Requested ${numDays}D). Connect to server for full ${numDays} sessions.` : undefined,
     totalVolume: totalVol,
     totalTurnover: totalAmt,
     totalAmount: totalAmt,
@@ -1207,7 +1212,7 @@ export async function getHistoricalSubfileBrokerAnalysis(
     adPercentage: adSignal === 'Accumulation' ? bcr3 : adSignal === 'Distribution' ? scr3 : Math.max(bcr3, scr3),
     smartMoneyNetFlowPct,
     isReal: true,
-    source: 'offline_subfiles_bundle_5d'
+    source: isPartialOffline ? 'offline_subfiles_partial_fallback' : 'offline_subfiles_bundle_5d'
   };
 }
 
