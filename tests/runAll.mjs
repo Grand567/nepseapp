@@ -54,7 +54,8 @@ const testFiles = [
   'aoBatchPushNotificationVerification.test.mjs',
   'testMeroShareWaccDetails.test.mjs',
   'testCumulativeBrokerHolding.test.mjs',
-  'marketRules.test.mjs'
+  'marketRules.test.mjs',
+  'researchBasis.test.mjs'
 ];
 
 console.log('====================================================');
