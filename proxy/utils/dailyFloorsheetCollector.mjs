@@ -57,9 +57,14 @@ function saveArchiveIndex(indexList) {
 export function exportCumulativeBrokerLedger(databaseInstance = db) {
   if (!databaseInstance) return null;
   try {
-    const symbols = databaseInstance.prepare(
+    const dbSymbols = databaseInstance.prepare(
       `SELECT DISTINCT symbol FROM daily_broker_ledger WHERE symbol IS NOT NULL AND symbol != ''`
     ).all().map(r => r.symbol);
+    const alltimeDir = path.resolve(process.cwd(), 'proxy', 'data', 'broker_alltime');
+    const alltimeFiles = fs.existsSync(alltimeDir)
+      ? fs.readdirSync(alltimeDir).filter(f => f.endsWith('.json') && f !== 'crawler_progress.json').map(f => f.replace('.json', ''))
+      : [];
+    const symbols = Array.from(new Set([...dbSymbols, ...alltimeFiles])).sort();
 
     const coverageRow = databaseInstance.prepare(`
       SELECT MIN(trade_date) as startDate, MAX(trade_date) as endDate, COUNT(DISTINCT trade_date) as sessionCount
@@ -88,8 +93,7 @@ export function exportCumulativeBrokerLedger(databaseInstance = db) {
     `);
 
     for (const sym of symbols) {
-      let rows = queryBrokersForSymbol.all(sym);
-      if (!rows || rows.length === 0) continue;
+      let rows = queryBrokersForSymbol ? queryBrokersForSymbol.all(sym) : [];
 
       let symStartDate = startDate;
       let symEndDate = endDate;
@@ -99,7 +103,7 @@ export function exportCumulativeBrokerLedger(databaseInstance = db) {
       if (fs.existsSync(alltimePath)) {
         try {
           const parsed = JSON.parse(fs.readFileSync(alltimePath, 'utf8'));
-          if (parsed && parsed.dailyRollup && Object.keys(parsed.dailyRollup).length > sessionCount) {
+          if (parsed && parsed.dailyRollup && Object.keys(parsed.dailyRollup).length > (rows.length > 0 ? sessionCount : 0)) {
             const dates = Object.keys(parsed.dailyRollup).sort();
             symStartDate = dates[0];
             symEndDate = dates[dates.length - 1];
@@ -132,6 +136,8 @@ export function exportCumulativeBrokerLedger(databaseInstance = db) {
           }
         } catch (_) {}
       }
+
+      if (!rows || rows.length === 0) continue;
 
       let totalVol = 0;
       let totalBuyAmtAcc = 0;

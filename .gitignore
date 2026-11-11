@@ -57,6 +57,8 @@ audit_screenshots/
 proxy/data/daily_floorsheets/*.json
 proxy/data/daily_floorsheets/*.json.gz
 !proxy/data/daily_floorsheets/archive_index.json
+proxy/data/broker_alltime/*.json.gz
+proxy/data/broker_alltime/crawler_progress.json
 proxy/data/raw_floorsheet_backups/
 *.db
 *.db-shm

@@ -1,0 +1,506 @@
+{
+  "b58TopRecent": [
+    {
+      "symbol": "GHL",
+      "buy_vol": 529543,
+      "sell_vol": 183596,
+      "net_vol": 345947,
+      "buy_amt": 175436580.19999996,
+      "sell_amt": 60326623.599999994,
+      "net_amt": 115109956.59999996,
+      "avg_buy_price": 331.2980819310235
+    },
+    {
+      "symbol": "KBL",
+      "buy_vol": 796541,
+      "sell_vol": 384808,
+      "net_vol": 411733,
+      "buy_amt": 186715433.99999997,
+      "sell_amt": 89604726.4,
+      "net_amt": 97110707.59999996,
+      "avg_buy_price": 234.40781328268096
+    },
+    {
+      "symbol": "SHL",
+      "buy_vol": 171039,
+      "sell_vol": 35989,
+      "net_vol": 135050,
+      "buy_amt": 92764010.80000001,
+      "sell_amt": 19802945.3,
+      "net_amt": 72961065.50000001,
+      "avg_buy_price": 542.3559001163478
+    },
+    {
+      "symbol": "RFPL",
+      "buy_vol": 225159,
+      "sell_vol": 86748,
+      "net_vol": 138411,
+      "buy_amt": 84609448.4,
+      "sell_amt": 32956893,
+      "net_amt": 51652555.400000006,
+      "avg_buy_price": 375.7764442016531
+    },
+    {
+      "symbol": "LBBL",
+      "buy_vol": 122556,
+      "sell_vol": 33649,
+      "net_vol": 88907,
+      "buy_amt": 66305992.3,
+      "sell_amt": 18135165.2,
+      "net_amt": 48170827.099999994,
+      "avg_buy_price": 541.0260803224648
+    },
+    {
+      "symbol": "BPCL",
+      "buy_vol": 151844,
+      "sell_vol": 99675,
+      "net_vol": 52169,
+      "buy_amt": 109728985.3,
+      "sell_amt": 72134887.19999999,
+      "net_amt": 37594098.10000001,
+      "avg_buy_price": 722.6428788756882
+    },
+    {
+      "symbol": "NICA",
+      "buy_vol": 227717,
+      "sell_vol": 144912,
+      "net_vol": 82805,
+      "buy_amt": 79851702.8,
+      "sell_amt": 50559687.60000001,
+      "net_amt": 29292015.199999988,
+      "avg_buy_price": 350.6620182068093
+    },
+    {
+      "symbol": "SAHAS",
+      "buy_vol": 49720,
+      "sell_vol": 13978,
+      "net_vol": 35742,
+      "buy_amt": 35821433.5,
+      "sell_amt": 10093527.8,
+      "net_amt": 25727905.7,
+      "avg_buy_price": 720.4632642799678
+    },
+    {
+      "symbol": "AKJCL",
+      "buy_vol": 129814,
+      "sell_vol": 74376,
+      "net_vol": 55438,
+      "buy_amt": 44677300.699999996,
+      "sell_amt": 25486732.7,
+      "net_amt": 19190567.999999996,
+      "avg_buy_price": 344.16396305483227
+    },
+    {
+      "symbol": "API",
+      "buy_vol": 149651,
+      "sell_vol": 96088,
+      "net_vol": 53563,
+      "buy_amt": 50307550.599999994,
+      "sell_amt": 32511718,
+      "net_amt": 17795832.599999994,
+      "avg_buy_price": 336.1658164663116
+    },
+    {
+      "symbol": "ULHC",
+      "buy_vol": 42466,
+      "sell_vol": 2451,
+      "net_vol": 40015,
+      "buy_amt": 13616479.7,
+      "sell_amt": 784098.3,
+      "net_amt": 12832381.399999999,
+      "avg_buy_price": 320.64427306551124
+    },
+    {
+      "symbol": "UMHL",
+      "buy_vol": 24779,
+      "sell_vol": 1807,
+      "net_vol": 22972,
+      "buy_amt": 13521456.2,
+      "sell_amt": 1008706.8,
+      "net_amt": 12512749.399999999,
+      "avg_buy_price": 545.6820775656806
+    },
+    {
+      "symbol": "SGHC",
+      "buy_vol": 98962,
+      "sell_vol": 61549,
+      "net_vol": 37413,
+      "buy_amt": 31919130.2,
+      "sell_amt": 20214837.1,
+      "net_amt": 11704293.099999998,
+      "avg_buy_price": 322.53925951375277
+    },
+    {
+      "symbol": "LEC",
+      "buy_vol": 98519,
+      "sell_vol": 55581,
+      "net_vol": 42938,
+      "buy_amt": 23108705.1,
+      "sell_amt": 13007288,
+      "net_amt": 10101417.100000001,
+      "avg_buy_price": 234.56089789786742
+    },
+    {
+      "symbol": "SPDL",
+      "buy_vol": 27771,
+      "sell_vol": 2179,
+      "net_vol": 25592,
+      "buy_amt": 9918703.200000001,
+      "sell_amt": 781227.6,
+      "net_amt": 9137475.600000001,
+      "avg_buy_price": 357.16046235281414
+    },
+    {
+      "symbol": "MLBL",
+      "buy_vol": 21751,
+      "sell_vol": 3243,
+      "net_vol": 18508,
+      "buy_amt": 8241676.5,
+      "sell_amt": 1228590.4,
+      "net_amt": 7013086.1,
+      "avg_buy_price": 378.9102340122293
+    },
+    {
+      "symbol": "HDHPC",
+      "buy_vol": 45027,
+      "sell_vol": 13594,
+      "net_vol": 31433,
+      "buy_amt": 9760852.5,
+      "sell_amt": 2950204.2,
+      "net_amt": 6810648.3,
+      "avg_buy_price": 216.77776667332932
+    },
+    {
+      "symbol": "HATHY",
+      "buy_vol": 25507,
+      "sell_vol": 9856,
+      "net_vol": 15651,
+      "buy_amt": 10395229.3,
+      "sell_amt": 4015038.1,
+      "net_amt": 6380191.200000001,
+      "avg_buy_price": 407.54417610851925
+    },
+    {
+      "symbol": "NGPL",
+      "buy_vol": 29788,
+      "sell_vol": 14870,
+      "net_vol": 14918,
+      "buy_amt": 12038492.2,
+      "sell_amt": 5954985,
+      "net_amt": 6083507.199999999,
+      "avg_buy_price": 404.1389888545723
+    },
+    {
+      "symbol": "KDL",
+      "buy_vol": 14923,
+      "sell_vol": 3309,
+      "net_vol": 11614,
+      "buy_amt": 7744689.9,
+      "sell_amt": 1700196.3,
+      "net_amt": 6044493.600000001,
+      "avg_buy_price": 518.9767406017558
+    }
+  ],
+  "b58TopAllTime": [
+    {
+      "symbol": "GHL",
+      "buy_vol": 5331284,
+      "sell_vol": 2648496,
+      "net_vol": 2682788,
+      "buy_amt": 1559275048.7299998,
+      "sell_amt": 792449182.8,
+      "net_amt": 766825865.9299998,
+      "avg_buy_price": 292.47645571498344
+    },
+    {
+      "symbol": "GVL",
+      "buy_vol": 901810,
+      "sell_vol": 382077,
+      "net_vol": 519733,
+      "buy_amt": 510374007.7,
+      "sell_amt": 214104803.9,
+      "net_amt": 296269203.79999995,
+      "avg_buy_price": 565.9440544017033
+    },
+    {
+      "symbol": "PCBL",
+      "buy_vol": 882823,
+      "sell_vol": 425244,
+      "net_vol": 457579,
+      "buy_amt": 232937250.8,
+      "sell_amt": 114313696.39999999,
+      "net_amt": 118623554.40000002,
+      "avg_buy_price": 263.8549865601599
+    },
+    {
+      "symbol": "SOHL",
+      "buy_vol": 1000393,
+      "sell_vol": 836315,
+      "net_vol": 164078,
+      "buy_amt": 650847156.9,
+      "sell_amt": 541766452.2,
+      "net_amt": 109080704.69999993,
+      "avg_buy_price": 650.5914744505409
+    },
+    {
+      "symbol": "SHL",
+      "buy_vol": 311657,
+      "sell_vol": 110727,
+      "net_vol": 200930,
+      "buy_amt": 165872922.20000002,
+      "sell_amt": 58729780,
+      "net_amt": 107143142.20000002,
+      "avg_buy_price": 532.2290922392245
+    },
+    {
+      "symbol": "CHDC",
+      "buy_vol": 57922,
+      "sell_vol": 13393,
+      "net_vol": 44529,
+      "buy_amt": 137897685.3,
+      "sell_amt": 30882895.9,
+      "net_amt": 107014789.4,
+      "avg_buy_price": 2380.7479938538036
+    },
+    {
+      "symbol": "BPCL",
+      "buy_vol": 347793,
+      "sell_vol": 201024,
+      "net_vol": 146769,
+      "buy_amt": 243075454.5,
+      "sell_amt": 141918852.2,
+      "net_amt": 101156602.30000001,
+      "avg_buy_price": 698.9084153505103
+    },
+    {
+      "symbol": "RSML",
+      "buy_vol": 93273,
+      "sell_vol": 59285,
+      "net_vol": 33988,
+      "buy_amt": 261061508.20000002,
+      "sell_amt": 164980262.6,
+      "net_amt": 96081245.60000002,
+      "avg_buy_price": 2798.8968747654735
+    },
+    {
+      "symbol": "NRN",
+      "buy_vol": 452248,
+      "sell_vol": 386279,
+      "net_vol": 65969,
+      "buy_amt": 642612842.4,
+      "sell_amt": 548761027.2,
+      "net_amt": 93851815.19999993,
+      "avg_buy_price": 1420.9302028975253
+    },
+    {
+      "symbol": "HATHY",
+      "buy_vol": 402125,
+      "sell_vol": 188466,
+      "net_vol": 213659,
+      "buy_amt": 177200713.5,
+      "sell_amt": 84225453.4,
+      "net_amt": 92975260.1,
+      "avg_buy_price": 440.6607733913584
+    },
+    {
+      "symbol": "HDL",
+      "buy_vol": 265170,
+      "sell_vol": 195829,
+      "net_vol": 69341,
+      "buy_amt": 340869529.5,
+      "sell_amt": 250471589.3,
+      "net_amt": 90397940.19999999,
+      "avg_buy_price": 1285.4754666817514
+    },
+    {
+      "symbol": "RIDI",
+      "buy_vol": 1046082,
+      "sell_vol": 788387,
+      "net_vol": 257695,
+      "buy_amt": 359582037.1,
+      "sell_amt": 271718793.3,
+      "net_amt": 87863243.80000001,
+      "avg_buy_price": 343.7417306673856
+    },
+    {
+      "symbol": "NHPC",
+      "buy_vol": 1448891,
+      "sell_vol": 1158380,
+      "net_vol": 290511,
+      "buy_amt": 383206905.1,
+      "sell_amt": 304956602.5,
+      "net_amt": 78250302.60000002,
+      "avg_buy_price": 264.4829080310389
+    },
+    {
+      "symbol": "MEN",
+      "buy_vol": 477427,
+      "sell_vol": 353199,
+      "net_vol": 124228,
+      "buy_amt": 305067257,
+      "sell_amt": 226859433.7,
+      "net_amt": 78207823.30000001,
+      "avg_buy_price": 638.9819951531857
+    },
+    {
+      "symbol": "AKJCL",
+      "buy_vol": 1312908,
+      "sell_vol": 1096437,
+      "net_vol": 216471,
+      "buy_amt": 459752750.9,
+      "sell_amt": 382067138.5,
+      "net_amt": 77685612.39999998,
+      "avg_buy_price": 350.1789545802143
+    },
+    {
+      "symbol": "SHIVM",
+      "buy_vol": 548763,
+      "sell_vol": 441186,
+      "net_vol": 107577,
+      "buy_amt": 374848234.4,
+      "sell_amt": 302092424.7,
+      "net_amt": 72755809.69999999,
+      "avg_buy_price": 683.0785501209083
+    },
+    {
+      "symbol": "LEC",
+      "buy_vol": 2813786,
+      "sell_vol": 2546052,
+      "net_vol": 267734,
+      "buy_amt": 694921661.2,
+      "sell_amt": 635284778.7,
+      "net_amt": 59636882.5,
+      "avg_buy_price": 246.97033150353298
+    },
+    {
+      "symbol": "SAGAR",
+      "buy_vol": 53676,
+      "sell_vol": 21222,
+      "net_vol": 32454,
+      "buy_amt": 84858938.2,
+      "sell_amt": 32999543.8,
+      "net_amt": 51859394.400000006,
+      "avg_buy_price": 1580.947503539757
+    },
+    {
+      "symbol": "API",
+      "buy_vol": 784321,
+      "sell_vol": 631685,
+      "net_vol": 152636,
+      "buy_amt": 265444750.2,
+      "sell_amt": 213996418.6,
+      "net_amt": 51448331.599999994,
+      "avg_buy_price": 338.4389174840403
+    },
+    {
+      "symbol": "RFPL",
+      "buy_vol": 272825,
+      "sell_vol": 147063,
+      "net_vol": 125762,
+      "buy_amt": 101677761.7,
+      "sell_amt": 53678110.4,
+      "net_amt": 47999651.300000004,
+      "avg_buy_price": 372.68491413910016
+    },
+    {
+      "symbol": "NICA",
+      "buy_vol": 451182,
+      "sell_vol": 321312,
+      "net_vol": 129870,
+      "buy_amt": 151550683.5,
+      "sell_amt": 107278065.60000001,
+      "net_amt": 44272617.89999999,
+      "avg_buy_price": 335.89700719443596
+    },
+    {
+      "symbol": "SICL",
+      "buy_vol": 90114,
+      "sell_vol": 16825,
+      "net_vol": 73289,
+      "buy_amt": 48742153,
+      "sell_amt": 9134023.3,
+      "net_amt": 39608129.7,
+      "avg_buy_price": 540.8943449408526
+    },
+    {
+      "symbol": "KDL",
+      "buy_vol": 75430,
+      "sell_vol": 19557,
+      "net_vol": 55873,
+      "buy_amt": 43383210.9,
+      "sell_amt": 11433132.1,
+      "net_amt": 31950078.799999997,
+      "avg_buy_price": 575.145312209996
+    },
+    {
+      "symbol": "CHCL",
+      "buy_vol": 351489,
+      "sell_vol": 272829,
+      "net_vol": 78660,
+      "buy_amt": 127187799.6,
+      "sell_amt": 95498517.7,
+      "net_amt": 31689281.89999999,
+      "avg_buy_price": 361.85428164181525
+    },
+    {
+      "symbol": "SHPC",
+      "buy_vol": 124580,
+      "sell_vol": 67880,
+      "net_vol": 56700,
+      "buy_amt": 67797610.89999999,
+      "sell_amt": 36901969.5,
+      "net_amt": 30895641.39999999,
+      "avg_buy_price": 544.2094308877829
+    },
+    {
+      "symbol": "PCIL",
+      "buy_vol": 201026,
+      "sell_vol": 154169,
+      "net_vol": 46857,
+      "buy_amt": 125271823.89999999,
+      "sell_amt": 95921901.6,
+      "net_amt": 29349922.299999997,
+      "avg_buy_price": 623.1622969168167
+    },
+    {
+      "symbol": "MSHL",
+      "buy_vol": 74018,
+      "sell_vol": 22791,
+      "net_vol": 51227,
+      "buy_amt": 40340633.6,
+      "sell_amt": 12508659.11,
+      "net_amt": 27831974.490000002,
+      "avg_buy_price": 545.0111270231565
+    },
+    {
+      "symbol": "ULHC",
+      "buy_vol": 275039,
+      "sell_vol": 195332,
+      "net_vol": 79707,
+      "buy_amt": 89794436.7,
+      "sell_amt": 63459728.7,
+      "net_amt": 26334708,
+      "avg_buy_price": 326.47892371627296
+    },
+    {
+      "symbol": "SAHAS",
+      "buy_vol": 225619,
+      "sell_vol": 190520,
+      "net_vol": 35099,
+      "buy_amt": 157623418.1,
+      "sell_amt": 133582288.10000001,
+      "net_amt": 24041129.999999985,
+      "avg_buy_price": 698.6265256915419
+    },
+    {
+      "symbol": "GBBL",
+      "buy_vol": 182771,
+      "sell_vol": 132098,
+      "net_vol": 50673,
+      "buy_amt": 80334815.10000001,
+      "sell_amt": 56482226.1,
+      "net_amt": 23852589.000000007,
+      "avg_buy_price": 439.5380837222536
+    }
+  ]
+}

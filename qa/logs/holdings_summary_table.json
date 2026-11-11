@@ -1,0 +1,332 @@
+[
+  {
+    "symbol": "AKJCL",
+    "ltp": 343.9,
+    "prevClose": 346,
+    "changePct": "-0.61%",
+    "rsi": "47.2",
+    "ema20": "345.4",
+    "ema50": "349.6",
+    "trend": "BEARISH (Below 20-EMA)",
+    "latestVol": 153871,
+    "avgVol20": 214673,
+    "rvol": "0.72",
+    "bcr3": "12.6%",
+    "bcr5": "16.5%",
+    "topBuyers": "B#58 (+55438k), B#35 (+54010k), B#62 (+52273k), B#96 (+28125k), B#42 (+21304k)",
+    "topSellers": "B#40 (-84235k), B#60 (-60461k), B#83 (-43622k), B#64 (-42845k), B#65 (-35600k)",
+    "b58_5d_net": 55438,
+    "b58_alltime_net": 216471,
+    "b58_avg_price": "350.2",
+    "last5Candles": [
+      {
+        "date": "2026-11-02",
+        "close": 343,
+        "vol": 216585,
+        "pct": "-0.9%"
+      },
+      {
+        "date": "2026-11-03",
+        "close": 341.9,
+        "vol": 190329,
+        "pct": "-0.0%"
+      },
+      {
+        "date": "2026-11-04",
+        "close": 338,
+        "vol": 192751,
+        "pct": "-0.6%"
+      },
+      {
+        "date": "2026-11-05",
+        "close": 346,
+        "vol": 525247,
+        "pct": "4.5%"
+      },
+      {
+        "date": "2026-11-06",
+        "close": 343.9,
+        "vol": 153871,
+        "pct": "-0.6%"
+      }
+    ],
+    "fundamentals": {
+      "sector": "Hydro Power"
+    }
+  },
+  {
+    "symbol": "AKPL",
+    "ltp": 256.2,
+    "prevClose": 258.9,
+    "changePct": "-1.04%",
+    "rsi": "49.8",
+    "ema20": "257.2",
+    "ema50": "255.4",
+    "trend": "BEARISH (Below 20-EMA)",
+    "latestVol": 16023,
+    "avgVol20": 79885,
+    "rvol": "0.20",
+    "bcr3": "32.3%",
+    "bcr5": "42.2%",
+    "topBuyers": "B#44 (+61268k), B#100 (+31426k), B#26 (+26780k), B#49 (+26752k), B#36 (+9661k)",
+    "topSellers": "B#33 (-26290k), B#39 (-23362k), B#71 (-16710k), B#17 (-9976k), B#45 (-9550k)",
+    "b58_5d_net": 1617,
+    "b58_alltime_net": -76783,
+    "b58_avg_price": "253.2",
+    "last5Candles": [
+      {
+        "date": "2026-11-02",
+        "close": 262,
+        "vol": 150517,
+        "pct": "-0.4%"
+      },
+      {
+        "date": "2026-11-03",
+        "close": 260,
+        "vol": 75052,
+        "pct": "-0.8%"
+      },
+      {
+        "date": "2026-11-04",
+        "close": 259.6,
+        "vol": 64702,
+        "pct": "-0.5%"
+      },
+      {
+        "date": "2026-11-05",
+        "close": 258.9,
+        "vol": 63066,
+        "pct": "0.7%"
+      },
+      {
+        "date": "2026-11-06",
+        "close": 256.2,
+        "vol": 16023,
+        "pct": "-1.5%"
+      }
+    ],
+    "fundamentals": {
+      "sector": "Hydro Power"
+    }
+  },
+  {
+    "symbol": "SHEL",
+    "ltp": 304.6,
+    "prevClose": 305,
+    "changePct": "-0.13%",
+    "rsi": "50.0",
+    "ema20": "305.4",
+    "ema50": "303.5",
+    "trend": "BEARISH (Below 20-EMA)",
+    "latestVol": 25710,
+    "avgVol20": 77896,
+    "rvol": "0.33",
+    "bcr3": "25.4%",
+    "bcr5": "28.7%",
+    "topBuyers": "B#6 (+44891k), B#56 (+23301k), B#59 (+18976k), B#44 (+5865k), B#58 (+5348k)",
+    "topSellers": "B#1 (-21999k), B#60 (-20653k), B#26 (-11170k), B#82 (-10010k), B#43 (-8796k)",
+    "b58_5d_net": 5348,
+    "b58_alltime_net": -47056,
+    "b58_avg_price": "307.3",
+    "last5Candles": [
+      {
+        "date": "2026-11-02",
+        "close": 305,
+        "vol": 120556,
+        "pct": "-1.6%"
+      },
+      {
+        "date": "2026-11-03",
+        "close": 308.5,
+        "vol": 60520,
+        "pct": "1.1%"
+      },
+      {
+        "date": "2026-11-04",
+        "close": 306,
+        "vol": 89411,
+        "pct": "-0.5%"
+      },
+      {
+        "date": "2026-11-05",
+        "close": 305,
+        "vol": 46606,
+        "pct": "0.0%"
+      },
+      {
+        "date": "2026-11-06",
+        "close": 304.6,
+        "vol": 25710,
+        "pct": "-0.5%"
+      }
+    ],
+    "fundamentals": {
+      "sector": "Hydro Power"
+    }
+  },
+  {
+    "symbol": "DORDI",
+    "ltp": 273.8,
+    "prevClose": 272,
+    "changePct": "0.66%",
+    "rsi": "56.1",
+    "ema20": "270.5",
+    "ema50": "263.5",
+    "trend": "BULLISH (Above 20-EMA)",
+    "latestVol": 34384,
+    "avgVol20": 67417,
+    "rvol": "0.51",
+    "bcr3": "11.9%",
+    "bcr5": "16.6%",
+    "topBuyers": "B#59 (+15696k), B#48 (+12044k), B#44 (+9563k), B#62 (+7562k), B#101 (+7021k)",
+    "topSellers": "B#53 (-13262k), B#75 (-11093k), B#60 (-9053k), B#84 (-7026k), B#94 (-7010k)",
+    "b58_5d_net": -5165,
+    "b58_alltime_net": -56883,
+    "b58_avg_price": "267.4",
+    "last5Candles": [
+      {
+        "date": "2026-11-02",
+        "close": 276,
+        "vol": 99188,
+        "pct": "-0.4%"
+      },
+      {
+        "date": "2026-11-03",
+        "close": 280.4,
+        "vol": 70703,
+        "pct": "2.3%"
+      },
+      {
+        "date": "2026-11-04",
+        "close": 274,
+        "vol": 68715,
+        "pct": "-3.9%"
+      },
+      {
+        "date": "2026-11-05",
+        "close": 272,
+        "vol": 40319,
+        "pct": "-0.7%"
+      },
+      {
+        "date": "2026-11-06",
+        "close": 273.8,
+        "vol": 34384,
+        "pct": "0.6%"
+      }
+    ],
+    "fundamentals": {
+      "sector": "Hydro Power"
+    }
+  },
+  {
+    "symbol": "MKHC",
+    "ltp": 270.2,
+    "prevClose": 266,
+    "changePct": "1.58%",
+    "rsi": "63.3",
+    "ema20": "258.4",
+    "ema50": "261.8",
+    "trend": "BULLISH (Above 20-EMA)",
+    "latestVol": 39043,
+    "avgVol20": 13159,
+    "rvol": "2.97",
+    "bcr3": "17.0%",
+    "bcr5": "23.5%",
+    "topBuyers": "B#58 (+11873k), B#41 (+8670k), B#39 (+7340k), B#83 (+6560k), B#47 (+4200k)",
+    "topSellers": "B#57 (-25498k), B#10 (-6281k), B#29 (-5570k), B#14 (-4221k), B#60 (-3466k)",
+    "b58_5d_net": 11873,
+    "b58_alltime_net": -16198,
+    "b58_avg_price": "258.8",
+    "last5Candles": [
+      {
+        "date": "2026-11-02",
+        "close": 255,
+        "vol": 11432,
+        "pct": "-0.4%"
+      },
+      {
+        "date": "2026-11-03",
+        "close": 256,
+        "vol": 13410,
+        "pct": "0.4%"
+      },
+      {
+        "date": "2026-11-04",
+        "close": 264,
+        "vol": 71924,
+        "pct": "0.4%"
+      },
+      {
+        "date": "2026-11-05",
+        "close": 266,
+        "vol": 28654,
+        "pct": "0.0%"
+      },
+      {
+        "date": "2026-11-06",
+        "close": 270.2,
+        "vol": 39043,
+        "pct": "1.6%"
+      }
+    ],
+    "fundamentals": {
+      "sector": "Hydro Power"
+    }
+  },
+  {
+    "symbol": "SOHL",
+    "ltp": 628,
+    "prevClose": 627.7,
+    "changePct": "0.05%",
+    "rsi": "45.5",
+    "ema20": "636.5",
+    "ema50": "638.9",
+    "trend": "BEARISH (Below 20-EMA)",
+    "latestVol": 47867,
+    "avgVol20": 132223,
+    "rvol": "0.36",
+    "bcr3": "12.4%",
+    "bcr5": "16.9%",
+    "topBuyers": "B#56 (+30082k), B#66 (+22958k), B#59 (+12633k), B#40 (+11859k), B#43 (+11748k)",
+    "topSellers": "B#58 (-117133k), B#89 (-16566k), B#69 (-11634k), B#49 (-11301k), B#42 (-10684k)",
+    "b58_5d_net": -117133,
+    "b58_alltime_net": 164078,
+    "b58_avg_price": "650.6",
+    "last5Candles": [
+      {
+        "date": "2026-11-02",
+        "close": 648,
+        "vol": 222577,
+        "pct": "-2.1%"
+      },
+      {
+        "date": "2026-11-03",
+        "close": 643,
+        "vol": 125372,
+        "pct": "4.5%"
+      },
+      {
+        "date": "2026-11-04",
+        "close": 632,
+        "vol": 67902,
+        "pct": "-1.3%"
+      },
+      {
+        "date": "2026-11-05",
+        "close": 627.7,
+        "vol": 65034,
+        "pct": "-0.0%"
+      },
+      {
+        "date": "2026-11-06",
+        "close": 628,
+        "vol": 47867,
+        "pct": "0.2%"
+      }
+    ],
+    "fundamentals": {
+      "sector": "Others"
+    }
+  }
+]

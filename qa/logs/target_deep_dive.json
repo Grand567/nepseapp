@@ -1,0 +1,1500 @@
+{
+  "GHL": {
+    "fundamentals": {
+      "symbol": "GHL",
+      "sector": "Hydro Power",
+      "fiscal_quarter": "Q4 2081/82",
+      "paid_up_capital": null,
+      "public_float_kitta": 0,
+      "promoter_share_pct": null,
+      "public_share_pct": null,
+      "eps_ttm": null,
+      "book_value_per_share": 95.05,
+      "roe_pct": null,
+      "npl_pct": null,
+      "car_pct": null,
+      "distributable_eps": null,
+      "promoter_unlock_date": null,
+      "promoter_locked_kitta": 0,
+      "updated_at": "2026-10-30 00:57:59",
+      "release_date": null
+    },
+    "ltp": 323,
+    "ema20": "309.64",
+    "ema50": "281.00",
+    "rsi": "66.89",
+    "macdLine": "18.24",
+    "atr": "13.10",
+    "bbUpper": "349.38",
+    "bbLower": "270.41",
+    "bbBandwidth": "25.48",
+    "recent10Candles": [
+      {
+        "trade_date": "2026-10-26",
+        "open_price": 310.9,
+        "high_price": 319.9,
+        "low_price": 308.8,
+        "close_price": 315.9,
+        "total_volume": 751534,
+        "total_turnover": 236671630
+      },
+      {
+        "trade_date": "2026-10-27",
+        "open_price": 315.2,
+        "high_price": 329,
+        "low_price": 315.2,
+        "close_price": 325,
+        "total_volume": 881480,
+        "total_turnover": 285895720
+      },
+      {
+        "trade_date": "2026-10-28",
+        "open_price": 326,
+        "high_price": 333,
+        "low_price": 325,
+        "close_price": 326,
+        "total_volume": 858708,
+        "total_turnover": 282645435
+      },
+      {
+        "trade_date": "2026-10-29",
+        "open_price": 326,
+        "high_price": 340,
+        "low_price": 326,
+        "close_price": 335,
+        "total_volume": 1064075,
+        "total_turnover": 356168505
+      },
+      {
+        "trade_date": "2026-10-30",
+        "open_price": 335,
+        "high_price": 340,
+        "low_price": 331,
+        "close_price": 332.3,
+        "total_volume": 835840,
+        "total_turnover": 279749524
+      },
+      {
+        "trade_date": "2026-11-02",
+        "open_price": 330,
+        "high_price": 343,
+        "low_price": 324.3,
+        "close_price": 335,
+        "total_volume": 1127089,
+        "total_turnover": 376377451.2
+      },
+      {
+        "trade_date": "2026-11-03",
+        "open_price": 335,
+        "high_price": 340.9,
+        "low_price": 330,
+        "close_price": 333.3,
+        "total_volume": 426518,
+        "total_turnover": 143075235.8
+      },
+      {
+        "trade_date": "2026-11-04",
+        "open_price": 316.7,
+        "high_price": 338,
+        "low_price": 316.7,
+        "close_price": 327,
+        "total_volume": 649556,
+        "total_turnover": 215539797.6
+      },
+      {
+        "trade_date": "2026-11-05",
+        "open_price": 310.7,
+        "high_price": 332,
+        "low_price": 310.7,
+        "close_price": 324,
+        "total_volume": 431613,
+        "total_turnover": 140336732.4
+      },
+      {
+        "trade_date": "2026-11-06",
+        "open_price": 321,
+        "high_price": 326,
+        "low_price": 320,
+        "close_price": 323,
+        "total_volume": 322936,
+        "total_turnover": 104032572.90000002
+      }
+    ],
+    "b58History": [
+      {
+        "trade_date": "2026-10-26",
+        "buy_vol": 166877,
+        "sell_vol": 131530,
+        "net_vol": 35347,
+        "buy_amt": 52571466.7,
+        "sell_amt": 41219544.10000001,
+        "net_amt": 11351922.599999994
+      },
+      {
+        "trade_date": "2026-10-27",
+        "buy_vol": 213517,
+        "sell_vol": 159953,
+        "net_vol": 53564,
+        "buy_amt": 69189385,
+        "sell_amt": 52186589.199999996,
+        "net_amt": 17002795.800000004
+      },
+      {
+        "trade_date": "2026-10-28",
+        "buy_vol": 227946,
+        "sell_vol": 107184,
+        "net_vol": 120762,
+        "buy_amt": 74702162.69999999,
+        "sell_amt": 35404780.6,
+        "net_amt": 39297382.09999999
+      },
+      {
+        "trade_date": "2026-10-29",
+        "buy_vol": 239614,
+        "sell_vol": 180169,
+        "net_vol": 59445,
+        "buy_amt": 80224725.79999998,
+        "sell_amt": 60398506.99999999,
+        "net_amt": 19826218.79999999
+      },
+      {
+        "trade_date": "2026-10-30",
+        "buy_vol": 87842,
+        "sell_vol": 240138,
+        "net_vol": -152296,
+        "buy_amt": 29326145.6,
+        "sell_amt": 80244859.79999998,
+        "net_amt": -50918714.19999998
+      },
+      {
+        "trade_date": "2026-11-02",
+        "buy_vol": 266203,
+        "sell_vol": 67826,
+        "net_vol": 198377,
+        "buy_amt": 88711462.69999997,
+        "sell_amt": 22452418.099999994,
+        "net_amt": 66259044.59999998
+      },
+      {
+        "trade_date": "2026-11-03",
+        "buy_vol": 33281,
+        "sell_vol": 12965,
+        "net_vol": 20316,
+        "buy_amt": 11138502.600000001,
+        "sell_amt": 4349061.700000001,
+        "net_amt": 6789440.9
+      },
+      {
+        "trade_date": "2026-11-04",
+        "buy_vol": 109259,
+        "sell_vol": 30085,
+        "net_vol": 79174,
+        "buy_amt": 36460878.199999996,
+        "sell_amt": 10017322.000000002,
+        "net_amt": 26443556.199999996
+      },
+      {
+        "trade_date": "2026-11-05",
+        "buy_vol": 78238,
+        "sell_vol": 57501,
+        "net_vol": 20737,
+        "buy_amt": 25444018.4,
+        "sell_amt": 18613441.299999997,
+        "net_amt": 6830577.1000000015
+      },
+      {
+        "trade_date": "2026-11-06",
+        "buy_vol": 42562,
+        "sell_vol": 15219,
+        "net_vol": 27343,
+        "buy_amt": 13681718.299999999,
+        "sell_amt": 4894380.500000001,
+        "net_amt": 8787337.799999997
+      }
+    ]
+  },
+  "SHL": {
+    "fundamentals": {
+      "symbol": "SHL",
+      "sector": "Others",
+      "fiscal_quarter": "Q4 2081/82",
+      "paid_up_capital": null,
+      "public_float_kitta": 0,
+      "promoter_share_pct": null,
+      "public_share_pct": null,
+      "eps_ttm": null,
+      "book_value_per_share": null,
+      "roe_pct": null,
+      "npl_pct": null,
+      "car_pct": null,
+      "distributable_eps": null,
+      "promoter_unlock_date": null,
+      "promoter_locked_kitta": 0,
+      "updated_at": "2026-10-30 00:53:15",
+      "release_date": null
+    },
+    "ltp": 545,
+    "ema20": "530.53",
+    "ema50": "518.73",
+    "rsi": "68.77",
+    "macdLine": "9.87",
+    "atr": "15.11",
+    "bbUpper": "555.89",
+    "bbLower": "496.22",
+    "bbBandwidth": "11.34",
+    "recent10Candles": [
+      {
+        "trade_date": "2026-10-26",
+        "open_price": 528,
+        "high_price": 528,
+        "low_price": 516,
+        "close_price": 520,
+        "total_volume": 11640,
+        "total_turnover": 6066289
+      },
+      {
+        "trade_date": "2026-10-27",
+        "open_price": 518.1,
+        "high_price": 527,
+        "low_price": 510.2,
+        "close_price": 517.9,
+        "total_volume": 44617,
+        "total_turnover": 23077541
+      },
+      {
+        "trade_date": "2026-10-28",
+        "open_price": 517.9,
+        "high_price": 520,
+        "low_price": 510,
+        "close_price": 519.8,
+        "total_volume": 50818,
+        "total_turnover": 26246344
+      },
+      {
+        "trade_date": "2026-10-29",
+        "open_price": 525,
+        "high_price": 540,
+        "low_price": 521,
+        "close_price": 538.7,
+        "total_volume": 158058,
+        "total_turnover": 83791582
+      },
+      {
+        "trade_date": "2026-10-30",
+        "open_price": 540,
+        "high_price": 545,
+        "low_price": 535,
+        "close_price": 539.5,
+        "total_volume": 89579,
+        "total_turnover": 48433765
+      },
+      {
+        "trade_date": "2026-11-02",
+        "open_price": 536,
+        "high_price": 545,
+        "low_price": 518.1,
+        "close_price": 544.7,
+        "total_volume": 131627,
+        "total_turnover": 70478732.1
+      },
+      {
+        "trade_date": "2026-11-03",
+        "open_price": 540,
+        "high_price": 560,
+        "low_price": 536.5,
+        "close_price": 555.2,
+        "total_volume": 301699,
+        "total_turnover": 167411571
+      },
+      {
+        "trade_date": "2026-11-04",
+        "open_price": 559.7,
+        "high_price": 559.7,
+        "low_price": 531,
+        "close_price": 547,
+        "total_volume": 110940,
+        "total_turnover": 60896106.1
+      },
+      {
+        "trade_date": "2026-11-05",
+        "open_price": 541,
+        "high_price": 550,
+        "low_price": 523.9,
+        "close_price": 546.9,
+        "total_volume": 88724,
+        "total_turnover": 48260107.699999996
+      },
+      {
+        "trade_date": "2026-11-06",
+        "open_price": 540,
+        "high_price": 560,
+        "low_price": 539,
+        "close_price": 545,
+        "total_volume": 49526,
+        "total_turnover": 26952220.599999998
+      }
+    ],
+    "b58History": [
+      {
+        "trade_date": "2026-10-26",
+        "buy_vol": 822,
+        "sell_vol": 814,
+        "net_vol": 8,
+        "buy_amt": 427041.5,
+        "sell_amt": 425340,
+        "net_amt": 1701.5
+      },
+      {
+        "trade_date": "2026-10-27",
+        "buy_vol": 376,
+        "sell_vol": 1203,
+        "net_vol": -827,
+        "buy_amt": 194511,
+        "sell_amt": 624178,
+        "net_amt": -429667
+      },
+      {
+        "trade_date": "2026-10-28",
+        "buy_vol": 779,
+        "sell_vol": 3895,
+        "net_vol": -3116,
+        "buy_amt": 403802,
+        "sell_amt": 2019423.2000000002,
+        "net_amt": -1615621.2000000002
+      },
+      {
+        "trade_date": "2026-10-29",
+        "buy_vol": 33152,
+        "sell_vol": 2835,
+        "net_vol": 30317,
+        "buy_amt": 17515046.8,
+        "sell_amt": 1512391,
+        "net_amt": 16002655.8
+      },
+      {
+        "trade_date": "2026-10-30",
+        "buy_vol": 11407,
+        "sell_vol": 2796,
+        "net_vol": 8611,
+        "buy_amt": 6183962.899999999,
+        "sell_amt": 1516444.5,
+        "net_amt": 4667518.399999999
+      },
+      {
+        "trade_date": "2026-11-02",
+        "buy_vol": 80764,
+        "sell_vol": 4397,
+        "net_vol": 76367,
+        "buy_amt": 43258148.70000001,
+        "sell_amt": 2354921,
+        "net_amt": 40903227.70000001
+      },
+      {
+        "trade_date": "2026-11-03",
+        "buy_vol": 30458,
+        "sell_vol": 21588,
+        "net_vol": 8870,
+        "buy_amt": 16871480.2,
+        "sell_amt": 11991311.9,
+        "net_amt": 4880168.299999999
+      },
+      {
+        "trade_date": "2026-11-04",
+        "buy_vol": 23030,
+        "sell_vol": 2739,
+        "net_vol": 20291,
+        "buy_amt": 12629076.5,
+        "sell_amt": 1494834.4,
+        "net_amt": 11134242.1
+      },
+      {
+        "trade_date": "2026-11-05",
+        "buy_vol": 19042,
+        "sell_vol": 4020,
+        "net_vol": 15022,
+        "buy_amt": 10352010.2,
+        "sell_amt": 2195632,
+        "net_amt": 8156378.199999999
+      },
+      {
+        "trade_date": "2026-11-06",
+        "buy_vol": 17745,
+        "sell_vol": 3245,
+        "net_vol": 14500,
+        "buy_amt": 9653295.2,
+        "sell_amt": 1766246,
+        "net_amt": 7887049.199999999
+      }
+    ]
+  },
+  "AKJCL": {
+    "fundamentals": {
+      "symbol": "AKJCL",
+      "sector": "Hydro Power",
+      "fiscal_quarter": "Q4 2081/82",
+      "paid_up_capital": null,
+      "public_float_kitta": 0,
+      "promoter_share_pct": null,
+      "public_share_pct": null,
+      "eps_ttm": 3.18,
+      "book_value_per_share": 93.69,
+      "roe_pct": null,
+      "npl_pct": null,
+      "car_pct": null,
+      "distributable_eps": null,
+      "promoter_unlock_date": null,
+      "promoter_locked_kitta": 0,
+      "updated_at": "2026-10-30 00:57:29",
+      "release_date": null
+    },
+    "ltp": 343.9,
+    "ema20": "345.43",
+    "ema50": "349.61",
+    "rsi": "47.16",
+    "macdLine": "-2.09",
+    "atr": "20.02",
+    "bbUpper": "353.81",
+    "bbLower": "337.69",
+    "bbBandwidth": "4.66",
+    "recent10Candles": [
+      {
+        "trade_date": "2026-10-26",
+        "open_price": 342,
+        "high_price": 349.8,
+        "low_price": 339.7,
+        "close_price": 344.6,
+        "total_volume": 210649,
+        "total_turnover": 72205115
+      },
+      {
+        "trade_date": "2026-10-27",
+        "open_price": 344,
+        "high_price": 346,
+        "low_price": 338,
+        "close_price": 343,
+        "total_volume": 214217,
+        "total_turnover": 73035333
+      },
+      {
+        "trade_date": "2026-10-28",
+        "open_price": 343,
+        "high_price": 349.3,
+        "low_price": 340,
+        "close_price": 346,
+        "total_volume": 298252,
+        "total_turnover": 103258679
+      },
+      {
+        "trade_date": "2026-10-29",
+        "open_price": 350,
+        "high_price": 350,
+        "low_price": 343.3,
+        "close_price": 345,
+        "total_volume": 241660,
+        "total_turnover": 83581608
+      },
+      {
+        "trade_date": "2026-10-30",
+        "open_price": 348,
+        "high_price": 348.7,
+        "low_price": 340.6,
+        "close_price": 343,
+        "total_volume": 304121,
+        "total_turnover": 104597483
+      },
+      {
+        "trade_date": "2026-11-02",
+        "open_price": 346,
+        "high_price": 348.3,
+        "low_price": 340,
+        "close_price": 343,
+        "total_volume": 216585,
+        "total_turnover": 74204421
+      },
+      {
+        "trade_date": "2026-11-03",
+        "open_price": 342,
+        "high_price": 344.8,
+        "low_price": 338,
+        "close_price": 341.9,
+        "total_volume": 190329,
+        "total_turnover": 64764544.400000006
+      },
+      {
+        "trade_date": "2026-11-04",
+        "open_price": 340.1,
+        "high_price": 343,
+        "low_price": 191.87,
+        "close_price": 338,
+        "total_volume": 192751,
+        "total_turnover": 64974181.660000004
+      },
+      {
+        "trade_date": "2026-11-05",
+        "open_price": 331,
+        "high_price": 350,
+        "low_price": 331,
+        "close_price": 346,
+        "total_volume": 525247,
+        "total_turnover": 181929603.8
+      },
+      {
+        "trade_date": "2026-11-06",
+        "open_price": 346,
+        "high_price": 349.9,
+        "low_price": 340,
+        "close_price": 343.9,
+        "total_volume": 153871,
+        "total_turnover": 52862809.50000001
+      }
+    ],
+    "b58History": [
+      {
+        "trade_date": "2026-10-26",
+        "buy_vol": 18084,
+        "sell_vol": 45245,
+        "net_vol": -27161,
+        "buy_amt": 6197155.5,
+        "sell_amt": 15420664.5,
+        "net_amt": -9223509
+      },
+      {
+        "trade_date": "2026-10-27",
+        "buy_vol": 22901,
+        "sell_vol": 5517,
+        "net_vol": 17384,
+        "buy_amt": 7799369.5,
+        "sell_amt": 1882813,
+        "net_amt": 5916556.5
+      },
+      {
+        "trade_date": "2026-10-28",
+        "buy_vol": 36590,
+        "sell_vol": 46547,
+        "net_vol": -9957,
+        "buy_amt": 12603466.8,
+        "sell_amt": 16155051.899999999,
+        "net_amt": -3551585.0999999978
+      },
+      {
+        "trade_date": "2026-10-29",
+        "buy_vol": 13070,
+        "sell_vol": 48203,
+        "net_vol": -35133,
+        "buy_amt": 4519113,
+        "sell_amt": 16687503.1,
+        "net_amt": -12168390.1
+      },
+      {
+        "trade_date": "2026-10-30",
+        "buy_vol": 15994,
+        "sell_vol": 26589,
+        "net_vol": -10595,
+        "buy_amt": 5486478.9,
+        "sell_amt": 9140234.7,
+        "net_amt": -3653755.799999999
+      },
+      {
+        "trade_date": "2026-11-02",
+        "buy_vol": 14141,
+        "sell_vol": 5742,
+        "net_vol": 8399,
+        "buy_amt": 4830172.6,
+        "sell_amt": 1973353.9,
+        "net_amt": 2856818.6999999997
+      },
+      {
+        "trade_date": "2026-11-03",
+        "buy_vol": 12831,
+        "sell_vol": 21789,
+        "net_vol": -8958,
+        "buy_amt": 4374678.4,
+        "sell_amt": 7411916.600000001,
+        "net_amt": -3037238.2
+      },
+      {
+        "trade_date": "2026-11-04",
+        "buy_vol": 9976,
+        "sell_vol": 15866,
+        "net_vol": -5890,
+        "buy_amt": 3392466.1,
+        "sell_amt": 5364725.4,
+        "net_amt": -1972259.3000000003
+      },
+      {
+        "trade_date": "2026-11-05",
+        "buy_vol": 87079,
+        "sell_vol": 25472,
+        "net_vol": 61607,
+        "buy_amt": 30099743.599999994,
+        "sell_amt": 8836732.6,
+        "net_amt": 21263010.999999993
+      },
+      {
+        "trade_date": "2026-11-06",
+        "buy_vol": 5787,
+        "sell_vol": 5507,
+        "net_vol": 280,
+        "buy_amt": 1980240,
+        "sell_amt": 1900004.2,
+        "net_amt": 80235.80000000005
+      }
+    ]
+  },
+  "SPDL": {
+    "fundamentals": {
+      "symbol": "SPDL",
+      "sector": "Hydropower",
+      "fiscal_quarter": "Q4 2081/82",
+      "paid_up_capital": null,
+      "public_float_kitta": 0,
+      "promoter_share_pct": null,
+      "public_share_pct": null,
+      "eps_ttm": null,
+      "book_value_per_share": null,
+      "roe_pct": null,
+      "npl_pct": null,
+      "car_pct": null,
+      "distributable_eps": null,
+      "promoter_unlock_date": null,
+      "promoter_locked_kitta": 0,
+      "updated_at": "2026-10-30 00:53:23",
+      "release_date": null
+    },
+    "ltp": 356,
+    "ema20": "356.25",
+    "ema50": "358.25",
+    "rsi": "50.00",
+    "macdLine": "1.31",
+    "atr": "15.71",
+    "bbUpper": "371.74",
+    "bbLower": "335.94",
+    "bbBandwidth": "10.12",
+    "recent10Candles": [
+      {
+        "trade_date": "2026-10-26",
+        "open_price": 345.5,
+        "high_price": 361.5,
+        "low_price": 345.5,
+        "close_price": 361.5,
+        "total_volume": 33667,
+        "total_turnover": 11814133
+      },
+      {
+        "trade_date": "2026-10-27",
+        "open_price": 343.5,
+        "high_price": 362,
+        "low_price": 343.5,
+        "close_price": 361,
+        "total_volume": 50177,
+        "total_turnover": 17924577
+      },
+      {
+        "trade_date": "2026-10-28",
+        "open_price": 361.5,
+        "high_price": 374,
+        "low_price": 361.5,
+        "close_price": 370,
+        "total_volume": 123360,
+        "total_turnover": 45447553
+      },
+      {
+        "trade_date": "2026-10-29",
+        "open_price": 375,
+        "high_price": 375,
+        "low_price": 363.1,
+        "close_price": 370,
+        "total_volume": 69639,
+        "total_turnover": 25622673
+      },
+      {
+        "trade_date": "2026-10-30",
+        "open_price": 362,
+        "high_price": 372,
+        "low_price": 362,
+        "close_price": 366,
+        "total_volume": 82138,
+        "total_turnover": 30133061
+      },
+      {
+        "trade_date": "2026-11-02",
+        "open_price": 360,
+        "high_price": 366,
+        "low_price": 351.7,
+        "close_price": 361.9,
+        "total_volume": 37521,
+        "total_turnover": 13530682.4
+      },
+      {
+        "trade_date": "2026-11-03",
+        "open_price": 358.3,
+        "high_price": 360,
+        "low_price": 355.2,
+        "close_price": 355.2,
+        "total_volume": 22975,
+        "total_turnover": 8226701.699999999
+      },
+      {
+        "trade_date": "2026-11-04",
+        "open_price": 356.2,
+        "high_price": 406.62,
+        "low_price": 349.2,
+        "close_price": 358,
+        "total_volume": 55744,
+        "total_turnover": 20181295.94
+      },
+      {
+        "trade_date": "2026-11-05",
+        "open_price": 340.1,
+        "high_price": 362.1,
+        "low_price": 340.1,
+        "close_price": 354,
+        "total_volume": 24629,
+        "total_turnover": 8729787.399999999
+      },
+      {
+        "trade_date": "2026-11-06",
+        "open_price": 350.3,
+        "high_price": 358.9,
+        "low_price": 345,
+        "close_price": 356,
+        "total_volume": 13794,
+        "total_turnover": 4873366.1
+      }
+    ],
+    "b58History": [
+      {
+        "trade_date": "2026-10-26",
+        "buy_vol": 15439,
+        "sell_vol": 1207,
+        "net_vol": 14232,
+        "buy_amt": 5484858.8,
+        "sell_amt": 432237.8,
+        "net_amt": 5052621
+      },
+      {
+        "trade_date": "2026-10-27",
+        "buy_vol": 11467,
+        "sell_vol": 1101,
+        "net_vol": 10366,
+        "buy_amt": 4106951.8,
+        "sell_amt": 394255,
+        "net_amt": 3712696.8
+      },
+      {
+        "trade_date": "2026-10-28",
+        "buy_vol": 13249,
+        "sell_vol": 9850,
+        "net_vol": 3399,
+        "buy_amt": 4882305,
+        "sell_amt": 3635443.8,
+        "net_amt": 1246861.2000000002
+      },
+      {
+        "trade_date": "2026-10-29",
+        "buy_vol": 3268,
+        "sell_vol": 4710,
+        "net_vol": -1442,
+        "buy_amt": 1196881,
+        "sell_amt": 1719246.4,
+        "net_amt": -522365.3999999999
+      },
+      {
+        "trade_date": "2026-10-30",
+        "buy_vol": 12830,
+        "sell_vol": 12401,
+        "net_vol": 429,
+        "buy_amt": 4721590.1,
+        "sell_amt": 4557156.8,
+        "net_amt": 164433.2999999998
+      },
+      {
+        "trade_date": "2026-11-02",
+        "buy_vol": 977,
+        "sell_vol": 1277,
+        "net_vol": -300,
+        "buy_amt": 351452.7,
+        "sell_amt": 458514,
+        "net_amt": -107061.29999999999
+      },
+      {
+        "trade_date": "2026-11-03",
+        "buy_vol": 1373,
+        "sell_vol": 97,
+        "net_vol": 1276,
+        "buy_amt": 493242.10000000003,
+        "sell_amt": 34735.7,
+        "net_amt": 458506.4
+      },
+      {
+        "trade_date": "2026-11-04",
+        "buy_vol": 22604,
+        "sell_vol": 400,
+        "net_vol": 22204,
+        "buy_amt": 8081134.4,
+        "sell_amt": 142850,
+        "net_amt": 7938284.4
+      },
+      {
+        "trade_date": "2026-11-05",
+        "buy_vol": 217,
+        "sell_vol": 306,
+        "net_vol": -89,
+        "buy_amt": 76751.7,
+        "sell_amt": 110072,
+        "net_amt": -33320.3
+      },
+      {
+        "trade_date": "2026-11-06",
+        "buy_vol": 2600,
+        "sell_vol": 99,
+        "net_vol": 2501,
+        "buy_amt": 916122.3,
+        "sell_amt": 35055.9,
+        "net_amt": 881066.4
+      }
+    ]
+  },
+  "SAHAS": {
+    "fundamentals": {
+      "symbol": "SAHAS",
+      "sector": "Hydropower",
+      "fiscal_quarter": "Q4 2081/82",
+      "paid_up_capital": null,
+      "public_float_kitta": 0,
+      "promoter_share_pct": null,
+      "public_share_pct": null,
+      "eps_ttm": null,
+      "book_value_per_share": null,
+      "roe_pct": null,
+      "npl_pct": null,
+      "car_pct": null,
+      "distributable_eps": null,
+      "promoter_unlock_date": null,
+      "promoter_locked_kitta": 0,
+      "updated_at": "2026-10-30 00:53:08",
+      "release_date": null
+    },
+    "ltp": 722,
+    "ema20": "708.28",
+    "ema50": "695.40",
+    "rsi": "66.80",
+    "macdLine": "8.65",
+    "atr": "14.71",
+    "bbUpper": "732.39",
+    "bbLower": "675.54",
+    "bbBandwidth": "8.08",
+    "recent10Candles": [
+      {
+        "trade_date": "2026-10-26",
+        "open_price": 700,
+        "high_price": 707,
+        "low_price": 696.2,
+        "close_price": 704,
+        "total_volume": 69244,
+        "total_turnover": 48697306
+      },
+      {
+        "trade_date": "2026-10-27",
+        "open_price": 703,
+        "high_price": 709.8,
+        "low_price": 703,
+        "close_price": 705.5,
+        "total_volume": 56120,
+        "total_turnover": 39620643
+      },
+      {
+        "trade_date": "2026-10-28",
+        "open_price": 709,
+        "high_price": 711.9,
+        "low_price": 705.1,
+        "close_price": 709.4,
+        "total_volume": 97885,
+        "total_turnover": 69374805
+      },
+      {
+        "trade_date": "2026-10-29",
+        "open_price": 710,
+        "high_price": 720,
+        "low_price": 707,
+        "close_price": 718,
+        "total_volume": 99073,
+        "total_turnover": 70903236
+      },
+      {
+        "trade_date": "2026-10-30",
+        "open_price": 718.9,
+        "high_price": 725,
+        "low_price": 716,
+        "close_price": 719,
+        "total_volume": 144288,
+        "total_turnover": 104023237
+      },
+      {
+        "trade_date": "2026-11-02",
+        "open_price": 730,
+        "high_price": 732,
+        "low_price": 709,
+        "close_price": 728,
+        "total_volume": 190302,
+        "total_turnover": 138159040.6
+      },
+      {
+        "trade_date": "2026-11-03",
+        "open_price": 725,
+        "high_price": 730,
+        "low_price": 710,
+        "close_price": 727,
+        "total_volume": 56100,
+        "total_turnover": 40639078.599999994
+      },
+      {
+        "trade_date": "2026-11-04",
+        "open_price": 730,
+        "high_price": 732,
+        "low_price": 712,
+        "close_price": 717,
+        "total_volume": 124125,
+        "total_turnover": 89551853.7
+      },
+      {
+        "trade_date": "2026-11-05",
+        "open_price": 717,
+        "high_price": 719.8,
+        "low_price": 705,
+        "close_price": 715,
+        "total_volume": 77215,
+        "total_turnover": 55057672.60000001
+      },
+      {
+        "trade_date": "2026-11-06",
+        "open_price": 715,
+        "high_price": 725,
+        "low_price": 705,
+        "close_price": 722,
+        "total_volume": 67565,
+        "total_turnover": 48617764.69999997
+      }
+    ],
+    "b58History": [
+      {
+        "trade_date": "2026-10-26",
+        "buy_vol": 1286,
+        "sell_vol": 2379,
+        "net_vol": -1093,
+        "buy_amt": 904367.8999999999,
+        "sell_amt": 1672063.9000000001,
+        "net_amt": -767696.0000000002
+      },
+      {
+        "trade_date": "2026-10-27",
+        "buy_vol": 1547,
+        "sell_vol": 2412,
+        "net_vol": -865,
+        "buy_amt": 1094817.5,
+        "sell_amt": 1701934.9000000001,
+        "net_amt": -607117.4000000001
+      },
+      {
+        "trade_date": "2026-10-28",
+        "buy_vol": 1574,
+        "sell_vol": 2735,
+        "net_vol": -1161,
+        "buy_amt": 1116209.5,
+        "sell_amt": 1939561.4000000001,
+        "net_amt": -823351.9000000001
+      },
+      {
+        "trade_date": "2026-10-29",
+        "buy_vol": 1314,
+        "sell_vol": 3336,
+        "net_vol": -2022,
+        "buy_amt": 939433,
+        "sell_amt": 2388966.6000000006,
+        "net_amt": -1449533.6000000006
+      },
+      {
+        "trade_date": "2026-10-30",
+        "buy_vol": 4566,
+        "sell_vol": 25166,
+        "net_vol": -20600,
+        "buy_amt": 3292548.4,
+        "sell_amt": 18111557.8,
+        "net_amt": -14819009.4
+      },
+      {
+        "trade_date": "2026-11-02",
+        "buy_vol": 1364,
+        "sell_vol": 4994,
+        "net_vol": -3630,
+        "buy_amt": 987112.0999999999,
+        "sell_amt": 3629078.0999999996,
+        "net_amt": -2641966
+      },
+      {
+        "trade_date": "2026-11-03",
+        "buy_vol": 1299,
+        "sell_vol": 1628,
+        "net_vol": -329,
+        "buy_amt": 940210.8,
+        "sell_amt": 1179439.6,
+        "net_amt": -239228.80000000005
+      },
+      {
+        "trade_date": "2026-11-04",
+        "buy_vol": 44673,
+        "sell_vol": 4343,
+        "net_vol": 40330,
+        "buy_amt": 32188635.3,
+        "sell_amt": 3131327.6000000006,
+        "net_amt": 29057307.7
+      },
+      {
+        "trade_date": "2026-11-05",
+        "buy_vol": 1541,
+        "sell_vol": 2304,
+        "net_vol": -763,
+        "buy_amt": 1099702.7,
+        "sell_amt": 1642674.1,
+        "net_amt": -542971.4000000001
+      },
+      {
+        "trade_date": "2026-11-06",
+        "buy_vol": 843,
+        "sell_vol": 709,
+        "net_vol": 134,
+        "buy_amt": 605772.6000000001,
+        "sell_amt": 511008.4,
+        "net_amt": 94764.20000000007
+      }
+    ]
+  },
+  "HPPL": {
+    "fundamentals": {
+      "symbol": "HPPL",
+      "sector": "Hydro Power",
+      "fiscal_quarter": "Q4 2081/82",
+      "paid_up_capital": null,
+      "public_float_kitta": 0,
+      "promoter_share_pct": null,
+      "public_share_pct": null,
+      "eps_ttm": 12.57,
+      "book_value_per_share": 130.56,
+      "roe_pct": null,
+      "npl_pct": null,
+      "car_pct": null,
+      "distributable_eps": null,
+      "promoter_unlock_date": null,
+      "promoter_locked_kitta": 0,
+      "updated_at": "2026-10-30 00:58:16",
+      "release_date": null
+    },
+    "ltp": 414,
+    "ema20": "406.90",
+    "ema50": "394.13",
+    "rsi": "63.38",
+    "macdLine": "9.46",
+    "atr": "12.76",
+    "bbUpper": "430.91",
+    "bbLower": "380.08",
+    "bbBandwidth": "12.54",
+    "recent10Candles": [
+      {
+        "trade_date": "2026-10-26",
+        "open_price": 407,
+        "high_price": 407,
+        "low_price": 400.1,
+        "close_price": 403.4,
+        "total_volume": 60125,
+        "total_turnover": 24245672
+      },
+      {
+        "trade_date": "2026-10-27",
+        "open_price": 403.4,
+        "high_price": 413,
+        "low_price": 402.7,
+        "close_price": 412,
+        "total_volume": 168362,
+        "total_turnover": 69029719
+      },
+      {
+        "trade_date": "2026-10-28",
+        "open_price": 415,
+        "high_price": 422,
+        "low_price": 414,
+        "close_price": 419.8,
+        "total_volume": 202802,
+        "total_turnover": 85001575
+      },
+      {
+        "trade_date": "2026-10-29",
+        "open_price": 420,
+        "high_price": 425,
+        "low_price": 416.4,
+        "close_price": 418.9,
+        "total_volume": 252525,
+        "total_turnover": 106190882
+      },
+      {
+        "trade_date": "2026-10-30",
+        "open_price": 410,
+        "high_price": 425,
+        "low_price": 408.4,
+        "close_price": 419,
+        "total_volume": 154970,
+        "total_turnover": 64928287
+      },
+      {
+        "trade_date": "2026-11-02",
+        "open_price": 435,
+        "high_price": 435,
+        "low_price": 411,
+        "close_price": 419,
+        "total_volume": 186743,
+        "total_turnover": 77967787.8
+      },
+      {
+        "trade_date": "2026-11-03",
+        "open_price": 439.9,
+        "high_price": 439.9,
+        "low_price": 415,
+        "close_price": 420,
+        "total_volume": 148355,
+        "total_turnover": 61965737.39999999
+      },
+      {
+        "trade_date": "2026-11-04",
+        "open_price": 420,
+        "high_price": 426.9,
+        "low_price": 415.1,
+        "close_price": 422.4,
+        "total_volume": 240139,
+        "total_turnover": 101388328.30000001
+      },
+      {
+        "trade_date": "2026-11-05",
+        "open_price": 416.2,
+        "high_price": 422,
+        "low_price": 410,
+        "close_price": 415,
+        "total_volume": 142736,
+        "total_turnover": 58996701.699999996
+      },
+      {
+        "trade_date": "2026-11-06",
+        "open_price": 415,
+        "high_price": 419.8,
+        "low_price": 408.3,
+        "close_price": 414,
+        "total_volume": 111350,
+        "total_turnover": 46031534.8
+      }
+    ],
+    "b58History": [
+      {
+        "trade_date": "2026-10-26",
+        "buy_vol": 2850,
+        "sell_vol": 4260,
+        "net_vol": -1410,
+        "buy_amt": 1144255,
+        "sell_amt": 1714358.5,
+        "net_amt": -570103.5
+      },
+      {
+        "trade_date": "2026-10-27",
+        "buy_vol": 3280,
+        "sell_vol": 10280,
+        "net_vol": -7000,
+        "buy_amt": 1341651.5,
+        "sell_amt": 4209542.4,
+        "net_amt": -2867890.9000000004
+      },
+      {
+        "trade_date": "2026-10-28",
+        "buy_vol": 4383,
+        "sell_vol": 5275,
+        "net_vol": -892,
+        "buy_amt": 1832866.7999999998,
+        "sell_amt": 2211173.3,
+        "net_amt": -378306.5
+      },
+      {
+        "trade_date": "2026-10-29",
+        "buy_vol": 5600,
+        "sell_vol": 8975,
+        "net_vol": -3375,
+        "buy_amt": 2351402,
+        "sell_amt": 3770684.1,
+        "net_amt": -1419282.1
+      },
+      {
+        "trade_date": "2026-10-30",
+        "buy_vol": 11666,
+        "sell_vol": 22708,
+        "net_vol": -11042,
+        "buy_amt": 4923615.3,
+        "sell_amt": 9432545.1,
+        "net_amt": -4508929.8
+      },
+      {
+        "trade_date": "2026-11-02",
+        "buy_vol": 9758,
+        "sell_vol": 24687,
+        "net_vol": -14929,
+        "buy_amt": 4090571.8000000003,
+        "sell_amt": 10286709.3,
+        "net_amt": -6196137.5
+      },
+      {
+        "trade_date": "2026-11-03",
+        "buy_vol": 2500,
+        "sell_vol": 10806,
+        "net_vol": -8306,
+        "buy_amt": 1039011,
+        "sell_amt": 4501405,
+        "net_amt": -3462394
+      },
+      {
+        "trade_date": "2026-11-04",
+        "buy_vol": 1530,
+        "sell_vol": 2521,
+        "net_vol": -991,
+        "buy_amt": 640791,
+        "sell_amt": 1066410,
+        "net_amt": -425619
+      },
+      {
+        "trade_date": "2026-11-05",
+        "buy_vol": 5435,
+        "sell_vol": 7595,
+        "net_vol": -2160,
+        "buy_amt": 2249792.5,
+        "sell_amt": 3152031.5,
+        "net_amt": -902239
+      },
+      {
+        "trade_date": "2026-11-06",
+        "buy_vol": 685,
+        "sell_vol": 3667,
+        "net_vol": -2982,
+        "buy_amt": 283049,
+        "sell_amt": 1523525.7,
+        "net_amt": -1240476.7
+      }
+    ]
+  },
+  "API": {
+    "fundamentals": {
+      "symbol": "API",
+      "sector": "Hydro Power",
+      "fiscal_quarter": "Q4 2081/82",
+      "paid_up_capital": null,
+      "public_float_kitta": 0,
+      "promoter_share_pct": null,
+      "public_share_pct": null,
+      "eps_ttm": 15.06,
+      "book_value_per_share": 119.51,
+      "roe_pct": null,
+      "npl_pct": null,
+      "car_pct": null,
+      "distributable_eps": null,
+      "promoter_unlock_date": null,
+      "promoter_locked_kitta": 0,
+      "updated_at": "2026-10-30 00:57:31",
+      "release_date": null
+    },
+    "ltp": 333.7,
+    "ema20": "339.02",
+    "ema50": "337.36",
+    "rsi": "43.05",
+    "macdLine": "0.31",
+    "atr": "12.43",
+    "bbUpper": "349.78",
+    "bbLower": "329.57",
+    "bbBandwidth": "5.95",
+    "recent10Candles": [
+      {
+        "trade_date": "2026-10-26",
+        "open_price": 345,
+        "high_price": 347.8,
+        "low_price": 343,
+        "close_price": 347,
+        "total_volume": 373198,
+        "total_turnover": 129220371
+      },
+      {
+        "trade_date": "2026-10-27",
+        "open_price": 364.3,
+        "high_price": 364.3,
+        "low_price": 344.1,
+        "close_price": 345,
+        "total_volume": 431797,
+        "total_turnover": 149430610
+      },
+      {
+        "trade_date": "2026-10-28",
+        "open_price": 345,
+        "high_price": 352,
+        "low_price": 344,
+        "close_price": 349.8,
+        "total_volume": 550398,
+        "total_turnover": 191708451
+      },
+      {
+        "trade_date": "2026-10-29",
+        "open_price": 350,
+        "high_price": 352.3,
+        "low_price": 346.5,
+        "close_price": 348,
+        "total_volume": 427889,
+        "total_turnover": 149230564
+      },
+      {
+        "trade_date": "2026-10-30",
+        "open_price": 349,
+        "high_price": 349.8,
+        "low_price": 344,
+        "close_price": 344.4,
+        "total_volume": 300658,
+        "total_turnover": 104212920
+      },
+      {
+        "trade_date": "2026-11-02",
+        "open_price": 342,
+        "high_price": 344.5,
+        "low_price": 328,
+        "close_price": 338.3,
+        "total_volume": 323975,
+        "total_turnover": 110174156.9
+      },
+      {
+        "trade_date": "2026-11-03",
+        "open_price": 338.3,
+        "high_price": 340,
+        "low_price": 330,
+        "close_price": 340,
+        "total_volume": 198246,
+        "total_turnover": 67156244.20000002
+      },
+      {
+        "trade_date": "2026-11-04",
+        "open_price": 340,
+        "high_price": 343.9,
+        "low_price": 285.14,
+        "close_price": 336.3,
+        "total_volume": 369298,
+        "total_turnover": 124393976.32000001
+      },
+      {
+        "trade_date": "2026-11-05",
+        "open_price": 336.2,
+        "high_price": 340,
+        "low_price": 331.8,
+        "close_price": 333,
+        "total_volume": 418927,
+        "total_turnover": 139688159.20000002
+      },
+      {
+        "trade_date": "2026-11-06",
+        "open_price": 337,
+        "high_price": 337,
+        "low_price": 324,
+        "close_price": 333.7,
+        "total_volume": 200280,
+        "total_turnover": 66843552.599999994
+      }
+    ],
+    "b58History": [
+      {
+        "trade_date": "2026-10-26",
+        "buy_vol": 22274,
+        "sell_vol": 68544,
+        "net_vol": -46270,
+        "buy_amt": 7718468.600000001,
+        "sell_amt": 23708953.3,
+        "net_amt": -15990484.7
+      },
+      {
+        "trade_date": "2026-10-27",
+        "buy_vol": 31664,
+        "sell_vol": 10226,
+        "net_vol": 21438,
+        "buy_amt": 10960918.700000001,
+        "sell_amt": 3543399.1999999997,
+        "net_amt": 7417519.500000002
+      },
+      {
+        "trade_date": "2026-10-28",
+        "buy_vol": 27831,
+        "sell_vol": 22563,
+        "net_vol": 5268,
+        "buy_amt": 9698719.499999998,
+        "sell_amt": 7855062.4,
+        "net_amt": 1843657.0999999978
+      },
+      {
+        "trade_date": "2026-10-29",
+        "buy_vol": 17559,
+        "sell_vol": 24209,
+        "net_vol": -6650,
+        "buy_amt": 6127905.500000001,
+        "sell_amt": 8424771.399999999,
+        "net_amt": -2296865.8999999976
+      },
+      {
+        "trade_date": "2026-10-30",
+        "buy_vol": 15469,
+        "sell_vol": 26401,
+        "net_vol": -10932,
+        "buy_amt": 5351730.5,
+        "sell_amt": 9167180.4,
+        "net_amt": -3815449.9000000004
+      },
+      {
+        "trade_date": "2026-11-02",
+        "buy_vol": 24295,
+        "sell_vol": 48765,
+        "net_vol": -24470,
+        "buy_amt": 8244943.7,
+        "sell_amt": 16617704.6,
+        "net_amt": -8372760.899999999
+      },
+      {
+        "trade_date": "2026-11-03",
+        "buy_vol": 8092,
+        "sell_vol": 13450,
+        "net_vol": -5358,
+        "buy_amt": 2741261.1,
+        "sell_amt": 4559933.800000001,
+        "net_amt": -1818672.7000000007
+      },
+      {
+        "trade_date": "2026-11-04",
+        "buy_vol": 37125,
+        "sell_vol": 6718,
+        "net_vol": 30407,
+        "buy_amt": 12565686.5,
+        "sell_amt": 2269407,
+        "net_amt": 10296279.5
+      },
+      {
+        "trade_date": "2026-11-05",
+        "buy_vol": 47946,
+        "sell_vol": 14843,
+        "net_vol": 33103,
+        "buy_amt": 15990669.699999997,
+        "sell_amt": 4951230.300000001,
+        "net_amt": 11039439.399999997
+      },
+      {
+        "trade_date": "2026-11-06",
+        "buy_vol": 32193,
+        "sell_vol": 12312,
+        "net_vol": 19881,
+        "buy_amt": 10764989.6,
+        "sell_amt": 4113442.3,
+        "net_amt": 6651547.3
+      }
+    ]
+  }
+}

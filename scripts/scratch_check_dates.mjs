@@ -1,0 +1,10 @@
+import Database from 'better-sqlite3';
+const db = new Database('proxy/data/drabyashree_ledger.db', { readonly: true });
+const dates = db.prepare("SELECT DISTINCT trade_date FROM daily_stock_summary WHERE trade_date >= '2026-04-14' ORDER BY trade_date ASC").all().map(r => r.trade_date);
+console.log('Post-April 2026 dates count:', dates.length);
+console.log('First 5:', dates.slice(0, 5));
+console.log('Last 5:', dates.slice(-5));
+const brokerDates = db.prepare("SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date ASC").all().map(r => r.trade_date);
+console.log('Broker dates count:', brokerDates.length);
+console.log('Broker dates first 3:', brokerDates.slice(0, 3));
+console.log('Broker dates last 3:', brokerDates.slice(-3));

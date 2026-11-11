@@ -1,6 +1,6 @@
 # Comprehensive Strategy Validation & Walk-Forward Audit Report
 
-**Date Generated:** 2026-11-11T06:32:33.061Z  
+**Date Generated:** 2026-11-11T06:39:36.082Z  
 **Official Strategy Verdict:** **`NO EDGE: do not trade this system`**  
 **Fiduciary Operational Mandate:** Validation across 40 closed trades produced a Profit Factor of 0.45x and Net PnL of Rs. -226,739.06 after friction. With sample size below 200 trades and net expectancy negative (-2.27%), the system has NO PROVEN EDGE AFTER COSTS. The app must strictly say 'NO EDGE: do not trade this system' and stay in paper-trading mode.  
 

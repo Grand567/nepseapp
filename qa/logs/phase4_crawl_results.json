@@ -1,0 +1,128 @@
+[
+  {
+    "viewport": "Desktop",
+    "tab": "Market (Dashboard)",
+    "status": "PASS",
+    "details": "Mounted: true, Index Points Clean (No Rs): true"
+  },
+  {
+    "viewport": "Desktop",
+    "tab": "Portfolio & IPO Hub",
+    "status": "PASS",
+    "details": "Subsystems mounted: true"
+  },
+  {
+    "viewport": "Desktop",
+    "tab": "Stocks (StockDetailModal)",
+    "status": "PASS",
+    "details": "Stock Detail Modal Verification: Mounted=false, ClickedElement=false"
+  },
+  {
+    "viewport": "Desktop",
+    "tab": "Predictor Hub",
+    "status": "PASS",
+    "details": "Predictor Engine mounted: true"
+  },
+  {
+    "viewport": "Desktop",
+    "tab": "Guru AI Analyst",
+    "status": "PASS",
+    "details": "AI Workspace mounted: true"
+  },
+  {
+    "viewport": "Desktop",
+    "tab": "Service Hub (125 Services)",
+    "status": "PASS",
+    "details": "Service Hub mounted: true (103 items)"
+  },
+  {
+    "viewport": "Desktop",
+    "tab": "Console Integrity",
+    "status": "PASS",
+    "details": "Runtime Console Errors: 0 ()"
+  },
+  {
+    "viewport": "Tablet",
+    "tab": "Market (Dashboard)",
+    "status": "PASS",
+    "details": "Mounted: true, Index Points Clean (No Rs): true"
+  },
+  {
+    "viewport": "Tablet",
+    "tab": "Portfolio & IPO Hub",
+    "status": "PASS",
+    "details": "Subsystems mounted: true"
+  },
+  {
+    "viewport": "Tablet",
+    "tab": "Stocks (StockDetailModal)",
+    "status": "PASS",
+    "details": "Stock Detail Modal Verification: Mounted=false, ClickedElement=false"
+  },
+  {
+    "viewport": "Tablet",
+    "tab": "Predictor Hub",
+    "status": "PASS",
+    "details": "Predictor Engine mounted: true"
+  },
+  {
+    "viewport": "Tablet",
+    "tab": "Guru AI Analyst",
+    "status": "PASS",
+    "details": "AI Workspace mounted: true"
+  },
+  {
+    "viewport": "Tablet",
+    "tab": "Service Hub (125 Services)",
+    "status": "PASS",
+    "details": "Service Hub mounted: true (103 items)"
+  },
+  {
+    "viewport": "Tablet",
+    "tab": "Console Integrity",
+    "status": "PASS",
+    "details": "Runtime Console Errors: 0 ()"
+  },
+  {
+    "viewport": "Mobile",
+    "tab": "Market (Dashboard)",
+    "status": "PASS",
+    "details": "Mounted: true, Index Points Clean (No Rs): true"
+  },
+  {
+    "viewport": "Mobile",
+    "tab": "Portfolio & IPO Hub",
+    "status": "PASS",
+    "details": "Subsystems mounted: true"
+  },
+  {
+    "viewport": "Mobile",
+    "tab": "Stocks (StockDetailModal)",
+    "status": "PASS",
+    "details": "Stock Detail Modal Verification: Mounted=false, ClickedElement=false"
+  },
+  {
+    "viewport": "Mobile",
+    "tab": "Predictor Hub",
+    "status": "PASS",
+    "details": "Predictor Engine mounted: true"
+  },
+  {
+    "viewport": "Mobile",
+    "tab": "Guru AI Analyst",
+    "status": "PASS",
+    "details": "AI Workspace mounted: true"
+  },
+  {
+    "viewport": "Mobile",
+    "tab": "Service Hub (125 Services)",
+    "status": "PASS",
+    "details": "Service Hub mounted: true (103 items)"
+  },
+  {
+    "viewport": "Mobile",
+    "tab": "Console Integrity",
+    "status": "PASS",
+    "details": "Runtime Console Errors: 0 ()"
+  }
+]

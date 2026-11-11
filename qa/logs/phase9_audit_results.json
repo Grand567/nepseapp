@@ -1,0 +1,430 @@
+{
+  "timestamp": "2026-11-09T02:27:49.440Z",
+  "npmAuditOmitDev": {
+    "total": 11,
+    "moderate": 7,
+    "high": 4,
+    "critical": 0
+  },
+  "tabBenchmarks": {
+    "Market Dashboard": {
+      "mountLatencyMs": 1018,
+      "longTasksCount": 0,
+      "totalLongTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "domCount": 481,
+      "heapMB": 38.2
+    },
+    "Portfolio": {
+      "mountLatencyMs": 1234,
+      "longTasksCount": 1,
+      "totalLongTaskMs": 227,
+      "maxLongTaskMs": 227,
+      "domCount": 648,
+      "heapMB": 58.79
+    },
+    "IPO Hub": {
+      "mountLatencyMs": 1420,
+      "longTasksCount": 0,
+      "totalLongTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "domCount": 533,
+      "heapMB": 39.46
+    },
+    "Stocks (StockDetailModal)": {
+      "mountLatencyMs": 1219,
+      "longTasksCount": 0,
+      "totalLongTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "domCount": 512,
+      "heapMB": 44.27
+    },
+    "Predictor": {
+      "mountLatencyMs": 1011,
+      "longTasksCount": 0,
+      "totalLongTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "domCount": 622,
+      "heapMB": 43.04
+    },
+    "Guru AI": {
+      "mountLatencyMs": 1015,
+      "longTasksCount": 0,
+      "totalLongTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "domCount": 805,
+      "heapMB": 45.92
+    },
+    "Service Hub": {
+      "mountLatencyMs": 1008,
+      "longTasksCount": 2,
+      "totalLongTaskMs": 144,
+      "maxLongTaskMs": 75,
+      "domCount": 2486,
+      "heapMB": 70.6
+    }
+  },
+  "memoryGrowth50Switches": {
+    "initialHeapMB": 70.71,
+    "finalHeapMB": 69.19,
+    "netGrowthMB": -1.52,
+    "percentageGrowth": -2.1,
+    "growthPerSwitchKB": -31.13,
+    "timeline": [
+      {
+        "switchCount": 0,
+        "tab": "Initial (Settled)",
+        "heapMB": 70.71
+      },
+      {
+        "switchCount": 1,
+        "tab": "Market",
+        "heapMB": 71.01
+      },
+      {
+        "switchCount": 2,
+        "tab": "Portfolio",
+        "heapMB": 71.24
+      },
+      {
+        "switchCount": 3,
+        "tab": "IPO",
+        "heapMB": 71.34
+      },
+      {
+        "switchCount": 4,
+        "tab": "Predictor",
+        "heapMB": 71.35
+      },
+      {
+        "switchCount": 5,
+        "tab": "Guru AI",
+        "heapMB": 71.43
+      },
+      {
+        "switchCount": 6,
+        "tab": "Service Hub",
+        "heapMB": 71.44
+      },
+      {
+        "switchCount": 7,
+        "tab": "Market",
+        "heapMB": 71.48
+      },
+      {
+        "switchCount": 8,
+        "tab": "Portfolio",
+        "heapMB": 71.68
+      },
+      {
+        "switchCount": 9,
+        "tab": "IPO",
+        "heapMB": 71.77
+      },
+      {
+        "switchCount": 10,
+        "tab": "Predictor",
+        "heapMB": 71.78
+      },
+      {
+        "switchCount": 11,
+        "tab": "Guru AI",
+        "heapMB": 71.78
+      },
+      {
+        "switchCount": 12,
+        "tab": "Service Hub",
+        "heapMB": 71.79
+      },
+      {
+        "switchCount": 13,
+        "tab": "Market",
+        "heapMB": 71.81
+      },
+      {
+        "switchCount": 14,
+        "tab": "Portfolio",
+        "heapMB": 72.01
+      },
+      {
+        "switchCount": 15,
+        "tab": "IPO",
+        "heapMB": 72.1
+      },
+      {
+        "switchCount": 16,
+        "tab": "Predictor",
+        "heapMB": 72.11
+      },
+      {
+        "switchCount": 17,
+        "tab": "Guru AI",
+        "heapMB": 72.12
+      },
+      {
+        "switchCount": 18,
+        "tab": "Service Hub",
+        "heapMB": 72.13
+      },
+      {
+        "switchCount": 19,
+        "tab": "Market",
+        "heapMB": 72.14
+      },
+      {
+        "switchCount": 20,
+        "tab": "Portfolio",
+        "heapMB": 72.55
+      },
+      {
+        "switchCount": 21,
+        "tab": "IPO",
+        "heapMB": 72.64
+      },
+      {
+        "switchCount": 22,
+        "tab": "Predictor",
+        "heapMB": 72.77
+      },
+      {
+        "switchCount": 23,
+        "tab": "Guru AI",
+        "heapMB": 72.78
+      },
+      {
+        "switchCount": 24,
+        "tab": "Service Hub",
+        "heapMB": 72.79
+      },
+      {
+        "switchCount": 25,
+        "tab": "Market",
+        "heapMB": 72.8
+      },
+      {
+        "switchCount": 26,
+        "tab": "Portfolio",
+        "heapMB": 73
+      },
+      {
+        "switchCount": 27,
+        "tab": "IPO",
+        "heapMB": 73.1
+      },
+      {
+        "switchCount": 28,
+        "tab": "Predictor",
+        "heapMB": 73.1
+      },
+      {
+        "switchCount": 29,
+        "tab": "Guru AI",
+        "heapMB": 73.11
+      },
+      {
+        "switchCount": 30,
+        "tab": "Service Hub",
+        "heapMB": 73.12
+      },
+      {
+        "switchCount": 31,
+        "tab": "Market",
+        "heapMB": 73.12
+      },
+      {
+        "switchCount": 32,
+        "tab": "Portfolio",
+        "heapMB": 73.32
+      },
+      {
+        "switchCount": 33,
+        "tab": "IPO",
+        "heapMB": 73.41
+      },
+      {
+        "switchCount": 34,
+        "tab": "Predictor",
+        "heapMB": 73.41
+      },
+      {
+        "switchCount": 35,
+        "tab": "Guru AI",
+        "heapMB": 73.42
+      },
+      {
+        "switchCount": 36,
+        "tab": "Service Hub",
+        "heapMB": 68.97
+      },
+      {
+        "switchCount": 37,
+        "tab": "Market",
+        "heapMB": 68.99
+      },
+      {
+        "switchCount": 38,
+        "tab": "Portfolio",
+        "heapMB": 69.2
+      },
+      {
+        "switchCount": 39,
+        "tab": "IPO",
+        "heapMB": 69.3
+      },
+      {
+        "switchCount": 40,
+        "tab": "Predictor",
+        "heapMB": 69.31
+      },
+      {
+        "switchCount": 41,
+        "tab": "Guru AI",
+        "heapMB": 69.31
+      },
+      {
+        "switchCount": 42,
+        "tab": "Service Hub",
+        "heapMB": 69.32
+      },
+      {
+        "switchCount": 43,
+        "tab": "Market",
+        "heapMB": 69.33
+      },
+      {
+        "switchCount": 44,
+        "tab": "Portfolio",
+        "heapMB": 69.86
+      },
+      {
+        "switchCount": 45,
+        "tab": "IPO",
+        "heapMB": 69.96
+      },
+      {
+        "switchCount": 46,
+        "tab": "Predictor",
+        "heapMB": 70.18
+      },
+      {
+        "switchCount": 47,
+        "tab": "Guru AI",
+        "heapMB": 70.19
+      },
+      {
+        "switchCount": 48,
+        "tab": "Service Hub",
+        "heapMB": 70.2
+      },
+      {
+        "switchCount": 49,
+        "tab": "Market",
+        "heapMB": 70.21
+      },
+      {
+        "switchCount": 50,
+        "tab": "Portfolio",
+        "heapMB": 70.39
+      },
+      {
+        "switchCount": "post-gc",
+        "heapMB": 69.19
+      }
+    ]
+  },
+  "serviceHubVirtualization": {
+    "totalServiceCardsInDOM": 20,
+    "totalCategoriesInDOM": 1,
+    "totalDomNodesInServicesTab": 1225,
+    "isVirtualized": false,
+    "hasContentVisibilityAuto": true,
+    "filterReRenderLatencyMs": 2,
+    "architecture": "Virtualized Window"
+  },
+  "accessibilityByTab": {
+    "Market Dashboard": {
+      "passesCount": 15,
+      "violationsCount": 0,
+      "totalViolatingNodes": 0,
+      "impactCounts": {
+        "critical": 0,
+        "serious": 0,
+        "moderate": 0,
+        "minor": 0
+      },
+      "topViolations": []
+    },
+    "Portfolio": {
+      "passesCount": 15,
+      "violationsCount": 0,
+      "totalViolatingNodes": 0,
+      "impactCounts": {
+        "critical": 0,
+        "serious": 0,
+        "moderate": 0,
+        "minor": 0
+      },
+      "topViolations": []
+    },
+    "IPO Hub": {
+      "passesCount": 12,
+      "violationsCount": 0,
+      "totalViolatingNodes": 0,
+      "impactCounts": {
+        "critical": 0,
+        "serious": 0,
+        "moderate": 0,
+        "minor": 0
+      },
+      "topViolations": []
+    },
+    "Stocks (StockDetailModal)": {
+      "passesCount": 25,
+      "violationsCount": 0,
+      "totalViolatingNodes": 0,
+      "impactCounts": {
+        "critical": 0,
+        "serious": 0,
+        "moderate": 0,
+        "minor": 0
+      },
+      "topViolations": []
+    },
+    "Predictor": {
+      "passesCount": 12,
+      "violationsCount": 0,
+      "totalViolatingNodes": 0,
+      "impactCounts": {
+        "critical": 0,
+        "serious": 0,
+        "moderate": 0,
+        "minor": 0
+      },
+      "topViolations": []
+    },
+    "Guru AI": {
+      "passesCount": 20,
+      "violationsCount": 0,
+      "totalViolatingNodes": 0,
+      "impactCounts": {
+        "critical": 0,
+        "serious": 0,
+        "moderate": 0,
+        "minor": 0
+      },
+      "topViolations": []
+    },
+    "Service Hub": {
+      "passesCount": 15,
+      "violationsCount": 0,
+      "totalViolatingNodes": 0,
+      "impactCounts": {
+        "critical": 0,
+        "serious": 0,
+        "moderate": 0,
+        "minor": 0
+      },
+      "topViolations": []
+    }
+  }
+}
