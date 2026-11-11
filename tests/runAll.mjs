@@ -55,7 +55,8 @@ const testFiles = [
   'testMeroShareWaccDetails.test.mjs',
   'testCumulativeBrokerHolding.test.mjs',
   'marketRules.test.mjs',
-  'researchBasis.test.mjs'
+  'researchBasis.test.mjs',
+  'swingEngine.test.mjs'
 ];
 
 console.log('====================================================');
