@@ -4487,7 +4487,33 @@ function Dashboard({
                 ? 'Fewer than 40% of NEPSE equities are trading above their 50-day moving average. In this market regime, breakout failure rates exceed 75% due to lack of broad institutional participation. The quantitative engine has activated Cash Defense Mode to protect your capital. Avoid new swing entries until breadth recovers.'
                 : 'All evaluated screener candidates failed the 500-session Entry/Exit Analyzer risk/reward verification (must have ≥55% historical analog win-rate, ≤10% downside risk, and a positive momentum setup). The quantitative engine enforced 100% capital preservation rather than issuing high-risk, low-conviction picks.')}
           </div>
-          <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  localStorage.setItem('open_service_id', 'swing-trade-selector');
+                  window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'swing-trade-selector' } }));
+                } catch (_) {}
+                setActiveTab('services');
+              }}
+              style={{
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                color: '#fca5a5',
+                borderRadius: 8,
+                padding: '6px 12px',
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              <Target size={13} />
+              <span>🎯 Swing Selector & Edge Validator (Paper Mode) →</span>
+            </button>
             <button
               type="button"
               onClick={() => {

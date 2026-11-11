@@ -148,6 +148,67 @@ const reportPath = path.join(process.cwd(), 'qa', 'strategy_report.md');
 fs.writeFileSync(reportPath, reportContent, 'utf8');
 console.log(`Saved strategy report to ${reportPath}`);
 
+// Save structured JSON for frontend UI and audit inspection
+const jsonExportPath = path.join(process.cwd(), 'src', 'data', 'swingBacktestResults.json');
+const jsonExport = {
+  verdict,
+  verdictReason: `Validation across ${fullSystem.totalTrades} closed trades produced a Profit Factor of ${fullSystem.profitFactor}x and Net PnL of Rs. ${fullSystem.netPnLNpr.toLocaleString()} after friction. With sample size below 200 trades and net expectancy negative (${fullSystem.netExpectancyPct}%), the system has NO PROVEN EDGE AFTER COSTS. The app must strictly say 'NO EDGE: do not trade this system' and stay in paper-trading mode.`,
+  generatedAt: new Date().toISOString(),
+  fullSystem: {
+    totalTrades: fullSystem.totalTrades,
+    winningTrades: fullSystem.winningTrades,
+    losingTrades: fullSystem.losingTrades,
+    winRatePct: fullSystem.winRatePct,
+    profitFactor: fullSystem.profitFactor,
+    avgWinPct: fullSystem.avgWinPct,
+    avgLossPct: fullSystem.avgLossPct,
+    netExpectancyPct: fullSystem.netExpectancyPct,
+    grossPnLNpr: fullSystem.grossPnLNpr,
+    netPnLNpr: fullSystem.netPnLNpr,
+    totalFrictionNpr: fullSystem.totalFrictionNpr,
+    totalCgtNpr: fullSystem.totalCgtNpr,
+    maxDrawdownPct: fullSystem.maxDrawdownPct,
+    maxLosingStreak: fullSystem.maxLosingStreak,
+    annualSharpe: fullSystem.annualSharpe,
+    dsr: dsr
+  },
+  ablations: {
+    noRegimeSystem: {
+      totalTrades: noRegimeSystem.totalTrades,
+      winningTrades: noRegimeSystem.winningTrades,
+      losingTrades: noRegimeSystem.losingTrades,
+      winRatePct: noRegimeSystem.winRatePct,
+      profitFactor: noRegimeSystem.profitFactor,
+      avgWinPct: noRegimeSystem.avgWinPct,
+      avgLossPct: noRegimeSystem.avgLossPct,
+      netExpectancyPct: noRegimeSystem.netExpectancyPct,
+      grossPnLNpr: noRegimeSystem.grossPnLNpr,
+      netPnLNpr: noRegimeSystem.netPnLNpr,
+      totalFrictionNpr: noRegimeSystem.totalFrictionNpr,
+      maxDrawdownPct: noRegimeSystem.maxDrawdownPct,
+      maxLosingStreak: noRegimeSystem.maxLosingStreak
+    },
+    noBrokerSystem: {
+      totalTrades: noBrokerSystem.totalTrades,
+      winningTrades: noBrokerSystem.winningTrades,
+      losingTrades: noBrokerSystem.losingTrades,
+      winRatePct: noBrokerSystem.winRatePct,
+      profitFactor: noBrokerSystem.profitFactor,
+      avgWinPct: noBrokerSystem.avgWinPct,
+      avgLossPct: noBrokerSystem.avgLossPct,
+      netExpectancyPct: noBrokerSystem.netExpectancyPct,
+      grossPnLNpr: noBrokerSystem.grossPnLNpr,
+      netPnLNpr: noBrokerSystem.netPnLNpr,
+      totalFrictionNpr: noBrokerSystem.totalFrictionNpr,
+      maxDrawdownPct: noBrokerSystem.maxDrawdownPct,
+      maxLosingStreak: noBrokerSystem.maxLosingStreak
+    }
+  },
+  closedTrades: fullSystem.closedTrades || []
+};
+fs.writeFileSync(jsonExportPath, JSON.stringify(jsonExport, null, 2), 'utf8');
+console.log(`Saved structured backtest data to ${jsonExportPath}`);
+
 // Also update qa/PROGRESS.md
 const progressContent = `# Drabyashree NEPSE Swing Strategy Engineering Progress
 

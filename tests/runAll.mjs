@@ -56,7 +56,9 @@ const testFiles = [
   'testCumulativeBrokerHolding.test.mjs',
   'marketRules.test.mjs',
   'researchBasis.test.mjs',
-  'swingEngine.test.mjs'
+  'swingEngine.test.mjs',
+  'swingGateEvaluator.test.mjs',
+  'swingTradeSelectorView.test.mjs'
 ];
 
 console.log('====================================================');

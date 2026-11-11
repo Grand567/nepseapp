@@ -49,6 +49,7 @@ import { PromoterSharesService } from './PromoterSharesService';
 import { StrategyLabService } from './StrategyLabService';
 import { BacktestReportScreen } from './BacktestReportScreen';
 import { PaperTradingJournalScreen } from './PaperTradingJournalScreen';
+import SwingTradeSelectorView from './swing/SwingTradeSelectorView';
 import { ErrorBoundary } from './ErrorBoundary';
 import { StockSelectionScreener } from './StockSelectionScreener';
 import { BrokerAccumulationView } from './BrokerAccumulationView';
@@ -142,7 +143,7 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 export const getServiceCategory = (s: { id: string; cat: string }): string => {
-  if (['master-100-profit', 'multibagger-hunter', 'minervini-leaderboard', 'daily-prime-pick', 'short-term-profit-plan', 'entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality', 'gdp-vs-nepse', 'strategy-lab', 'backtest-report', 'paper-trading-journal', 'stock-selection-screener', 'stock-screener', 'broker-accumulation-view', 'watchlist-entry-alerts', 'ai-agent-dossier', 'signals-track-record'].includes(s.id)) {
+  if (['swing-trade-selector', 'master-100-profit', 'multibagger-hunter', 'minervini-leaderboard', 'daily-prime-pick', 'short-term-profit-plan', 'entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality', 'gdp-vs-nepse', 'strategy-lab', 'backtest-report', 'paper-trading-journal', 'stock-selection-screener', 'stock-screener', 'broker-accumulation-view', 'watchlist-entry-alerts', 'ai-agent-dossier', 'signals-track-record'].includes(s.id)) {
     return 'flagship';
   }
   if (['regulatory-hub', 'nrb-safety-shield', 'nrb-forex', 'bullion-rates', 'regulatory-circulars', 'nrb-indicators'].includes(s.id)) {
@@ -235,6 +236,7 @@ interface ServiceDef { id: string; name: string; icon: LucideIcon; color: string
 
 const ALL_SERVICES: ServiceDef[] = [
   // ── 1. Flagship Analytical Suites (15 Tools) ──
+  { id: 'swing-trade-selector',       name: '🎯 Short-Term Swing Selector & Edge Validator', icon: Target,             color: 'rose',    cat: 'flagship', star: true },
   { id: 'master-100-profit',          name: '👑 Master Guide: 100% Profit Engine',          icon: Crown,              color: 'emerald', cat: 'flagship', star: true },
   { id: 'multibagger-hunter',         name: '🎯 100% Hunter — 8-Gate Multibagger Screener', icon: Target,             color: 'rose',    cat: 'flagship', star: true },
   { id: 'minervini-leaderboard',      name: '🏆 Minervini Stage 2 Leader Board + OAMI',     icon: Award,              color: 'purple',  cat: 'flagship', star: true },
@@ -381,6 +383,9 @@ const ALL_SERVICES: ServiceDef[] = [
 
 // ── EVERY service wired. No orphan IDs. ──
 const SERVICE_COMPONENTS: Record<string, ComponentType> = {
+  'swing-trade-selector': (({ stocks, onSelectStock }: { stocks?: any[]; onSelectStock?: (s: any) => void }) => (
+    <SwingTradeSelectorView stocks={stocks || []} onSelectStock={onSelectStock} />
+  )) as ComponentType,
   'master-100-profit':     Master100ProfitWorkstation as ComponentType,
   'multibagger-hunter':    MultibaggerHunterService as ComponentType,
   'minervini-leaderboard': MinerviniLeaderboard     as ComponentType,
