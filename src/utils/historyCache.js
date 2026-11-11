@@ -441,13 +441,14 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
   if (!sym || typeof window === 'undefined') return null;
   const rawSym = String(sym).toUpperCase().trim();
   if (!rawSym) return null;
-  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const isAll = days === 'all' || days === 'ALL' || days === 'all-time' || Number(days) >= 300;
+  const numDays = isAll ? 'all' : Math.max(1, parseInt(days || 1, 10) || 1);
   const dateKey = options?.date ? String(options.date).trim() : (numDays === 1 ? BUNDLED_BROKER_DATE : 'latest');
   const fromKey = options?.fromDate ? String(options.fromDate).trim() : '';
   const toKey = options?.toDate ? String(options.toDate).trim() : '';
   const key = `nepse_real_broker_${rawSym}_d${numDays}_${dateKey}_${fromKey}_${toKey}`;
 
-  if (brokerDataCache.has(rawSym) && numDays === 1 && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey) {
+  if (!isAll && brokerDataCache.has(rawSym) && numDays === 1 && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey) {
     return brokerDataCache.get(rawSym);
   }
 
@@ -455,18 +456,18 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
     return memBrokerCache.get(key);
   }
 
-  if (memBrokerCache.has(rawSym) && numDays === 1 && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey) {
+  if (!isAll && memBrokerCache.has(rawSym) && numDays === 1 && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey) {
     return memBrokerCache.get(rawSym);
   }
 
   try {
     if (typeof localStorage !== 'undefined') {
-      const raw = localStorage.getItem(key) || (numDays === 1 && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey ? localStorage.getItem(BROKER_LS_PREFIX + rawSym) : null);
+      const raw = localStorage.getItem(key) || (!isAll && numDays === 1 && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey ? localStorage.getItem(BROKER_LS_PREFIX + rawSym) : null);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && (parsed.topBuyers?.length > 0 || parsed.buyers?.length > 0 || parsed.adRatio !== undefined)) {
-          // Guard: Never return a cached 1D result when multi-day horizon is requested
-          if (numDays > 1 && !options?.date && !options?.fromDate && Number(parsed.tradingDays || 1) <= 1) {
+        if (parsed && (parsed.topBuyers?.length > 0 || parsed.buyers?.length > 0 || parsed.allHoldings?.length > 0 || parsed.topHoldings?.length > 0 || parsed.adRatio !== undefined)) {
+          // Guard: Never return a cached 1D result when multi-day or all-time horizon is requested
+          if ((isAll || numDays > 1) && !options?.date && !options?.fromDate && Number(parsed.tradingDays || 1) <= 1 && parsed.timeframe !== 'ALL') {
             return null;
           }
           // Guard: Never return stale cache from past sessions when today's session is active
@@ -474,11 +475,11 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
           if (options?.date && parsedDate && parsedDate !== options.date) {
             return null;
           }
-          if (!options?.date && parsedDate && parsedDate < BUNDLED_BROKER_DATE) {
+          if (!isAll && !options?.date && parsedDate && parsedDate < BUNDLED_BROKER_DATE) {
             return null;
           }
           memBrokerCache.set(key, parsed);
-          if (numDays === 1 && !options?.date && !fromKey && !toKey) {
+          if (!isAll && numDays === 1 && !options?.date && !fromKey && !toKey) {
             brokerDataCache.set(rawSym, parsed);
           }
           return parsed;
@@ -494,27 +495,28 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
  * Stores broker analysis in memory and localStorage.
  * @param {string} sym - Stock ticker symbol
  * @param {Object} data - Broker analysis data
- * @param {number} [days=1] - Trading days horizon (1, 5, 15, 30, 60)
+ * @param {number|string} [days=1] - Trading days horizon (1, 5, 15, 30, 60, 'all')
  * @param {Object} [options={}] - Additional options { date, fromDate, toDate }
  */
 export function setCachedRealBrokerAnalysis(sym, data, days = 1, options = {}) {
   if (!sym || !data || typeof window === 'undefined') return;
   const rawSym = String(sym).toUpperCase().trim();
   if (!rawSym) return;
-  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const isAll = days === 'all' || days === 'ALL' || days === 'all-time' || Number(days) >= 300;
+  const numDays = isAll ? 'all' : Math.max(1, parseInt(days || 1, 10) || 1);
   const dateKey = options?.date ? String(options.date).trim() : 'latest';
   const fromKey = options?.fromDate ? String(options.fromDate).trim() : '';
   const toKey = options?.toDate ? String(options.toDate).trim() : '';
   const key = `nepse_real_broker_${rawSym}_d${numDays}_${dateKey}_${fromKey}_${toKey}`;
 
   memBrokerCache.set(key, data);
-  if (numDays === 1 && !options?.date && !fromKey && !toKey) {
+  if (!isAll && numDays === 1 && !options?.date && !fromKey && !toKey) {
     memBrokerCache.set(rawSym, data);
     brokerDataCache.set(rawSym, data);
   }
   try {
     localStorage.setItem(key, JSON.stringify(data));
-    if (numDays === 1 && !options?.date && !fromKey && !toKey) {
+    if (!isAll && numDays === 1 && !options?.date && !fromKey && !toKey) {
       localStorage.setItem(BROKER_LS_PREFIX + rawSym, JSON.stringify(data));
     }
   } catch (_) {}

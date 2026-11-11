@@ -52,6 +52,12 @@ function todayKey() {
   }
 }
 
+const isLocalBrowserEnv = () => typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1' ||
+  window.location.hostname === '0.0.0.0'
+);
+
 
 // Universal dynamic importer for local ledger manager (compatible with Vite bundler, browser, and Node ESM)
 const getLocalLedger = async () => import('./localLedgerManager.ts').catch(() => import('./localLedgerManager'));
@@ -156,9 +162,10 @@ export async function warmUpServer() {
     });
   }
 
-  // Always ping production Render backend to guarantee wake up and warm status
-  // Both run fully in background — warmUpServer() returns immediately
-  ping('https://nepseapp.onrender.com', 20000).catch(() => {});
+  // Ping production Render backend on mobile/remote to guarantee wake up and warm status
+  if (typeof window === 'undefined' || (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')) {
+    ping('https://nepseapp.onrender.com', 20000).catch(() => {});
+  }
   const base = getProxyBase();
   if (base !== 'https://nepseapp.onrender.com' && !base.includes('localhost')) {
     ping(base, 15000).catch(() => {});
@@ -406,26 +413,34 @@ async function tryFetchJSON(url, timeoutMs = 15000) {
       return null;
     }
 
+    const isCorsProxy = url.includes('allorigins') || url.includes('corsproxy');
+    const fetchHeaders = {
+      'Accept': 'application/json, text/plain, */*',
+      ...extraHeaders
+    };
+    if (!isCorsProxy) {
+      fetchHeaders['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+      fetchHeaders['Pragma'] = 'no-cache';
+    }
+
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      cache: 'no-store',
-      headers: {
-        'Accept': 'application/json, text/plain, */*',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        ...extraHeaders
-      }
-    });
-    clearTimeout(t);
-    if (!res.ok) return null;
-    const ct = res.headers.get('content-type') || '';
-    if (ct.includes('text/html')) return null;
-    if (ct.includes('application/json')) return await res.json();
-    const txt = await res.text();
-    if (!txt || txt.trim().startsWith('<')) return null;
-    try { return JSON.parse(txt); } catch { return null; }
+    try {
+      const res = await fetch(url, {
+        signal: ctrl.signal,
+        cache: isCorsProxy ? 'default' : 'no-store',
+        headers: fetchHeaders
+      });
+      if (!res.ok) return null;
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('text/html')) return null;
+      if (ct.includes('application/json')) return await res.json();
+      const txt = await res.text();
+      if (!txt || txt.trim().startsWith('<')) return null;
+      try { return JSON.parse(txt); } catch { return null; }
+    } finally {
+      clearTimeout(t);
+    }
   } catch { return null; }
 }
 
@@ -467,10 +482,13 @@ async function tryFetchText(url, timeoutMs = 12000) {
 
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(t);
-    if (!res.ok) return null;
-    return await res.text();
+    try {
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (!res.ok) return null;
+      return await res.text();
+    } finally {
+      clearTimeout(t);
+    }
   } catch {
     return null;
   }
@@ -851,7 +869,7 @@ export const fetchLiveStockDetail = fetchStockFundamentals;
 export async function fetchFromBackend(path, timeoutMs = 12000) {
   const base = getProxyBase();
 
-  const isLocal = base.includes('localhost') || base.includes('127.0.0.1');
+  const isLocal = !base || base.includes('localhost') || base.includes('127.0.0.1');
 
   // 1. Primary: try configured local proxy ONLY if not already marked dead
   if (!isLocal || _localProxyState !== 'dead') {
@@ -886,6 +904,10 @@ export async function fetchFromBackend(path, timeoutMs = 12000) {
   }
 
   // 2. Fallback: Render production backend (if primary is a local/dev proxy that's not the Render URL)
+  // Skip completely on local desktop browser to avoid cross-origin CORS errors
+  if (isLocalBrowserEnv()) {
+    return null;
+  }
   if (base !== 'https://nepseapp.onrender.com') {
     try {
       const renderTimeout = Math.max(timeoutMs, 6000);
@@ -988,7 +1010,7 @@ async function attemptLiveMarket() {
 
   // 2. SECONDARY: Fall back to MeroLagani scrapers if official NOTS feeds fail
   const fallbackTasks = [];
-  if (!isNative) {
+  if (!isNative && !isLocalBrowserEnv()) {
     fallbackTasks.push((async () => {
       try {
         const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`;
@@ -1036,29 +1058,33 @@ async function attemptLiveMarket() {
     return raceWinner;
   }
 
-  // 2. FALLBACK STAGE: If concurrent primary sources missed, directly call production Render
-  for (const endpoint of ['/api/market/live', '/api/today-prices', '/api/mero/market-summary']) {
-    try {
-      const j = await tryFetchJSON(`https://nepseapp.onrender.com${endpoint}`, 6000);
-      const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
-      if (Array.isArray(arr) && arr.length > 20) {
-        const normalized = processLive(arr, null);
-        if (normalized) return normalized;
-      }
-    } catch (_) {}
+  // 2. FALLBACK STAGE: If concurrent primary sources missed, directly call production Render (skip on local browser to prevent CORS)
+  if (!isLocalBrowserEnv()) {
+    for (const endpoint of ['/api/market/live', '/api/today-prices', '/api/mero/market-summary']) {
+      try {
+        const j = await tryFetchJSON(`https://nepseapp.onrender.com${endpoint}`, 6000);
+        const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
+        if (Array.isArray(arr) && arr.length > 20) {
+          const normalized = processLive(arr, null);
+          if (normalized) return normalized;
+        }
+      } catch (_) {}
+    }
   }
 
   // 3. Web Public CORS Proxy fallback for MeroLagani (second attempt with longer timeout)
-  try {
-    const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`;
-    const j = await tryFetchJSON(corsUrl, 8000);
-    if (j && (j.stock?.detail || j.turnover?.detail)) {
-      const parsed = parseMeroLaganiJson(j);
-      if (parsed && parsed.length > 20) {
-        return processLive(parsed, j.overall);
+  if (!isLocalBrowserEnv()) {
+    try {
+      const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`;
+      const j = await tryFetchJSON(corsUrl, 8000);
+      if (j && (j.stock?.detail || j.turnover?.detail)) {
+        const parsed = parseMeroLaganiJson(j);
+        if (parsed && parsed.length > 20) {
+          return processLive(parsed, j.overall);
+        }
       }
-    }
-  } catch (_) {}
+    } catch (_) {}
+  }
 
   return null;
 }
@@ -4171,8 +4197,8 @@ export async function fetchPortfolioShield(items = [], days = 30) {
   let res = await tryPost(base);
   if (res) return res;
 
-  // 2. Fallback to production Render
-  if (base !== 'https://nepseapp.onrender.com') {
+  // 2. Fallback to production Render (skip on local browser to avoid CORS)
+  if (!isLocalBrowserEnv() && base !== 'https://nepseapp.onrender.com') {
     res = await tryPost('https://nepseapp.onrender.com');
     if (res) return res;
   }

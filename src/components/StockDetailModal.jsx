@@ -2526,9 +2526,18 @@ export default function StockDetailModal({
   }, [propEffectiveDate, handleModalSessionDateChange]);
 
   const handleFetchSmartMoney = useCallback(async (sym, tf, days) => {
+    const isAll = tf === 'ALL' || days === 'all' || days === 'ALL';
+    if (isAll && allTimeBrokerAnalysis && (allTimeBrokerAnalysis.topHoldings?.length > 0 || allTimeBrokerAnalysis.brokers?.length > 0)) {
+      return allTimeBrokerAnalysis;
+    }
+    // Instant offline/in-memory cache fast-path (< 1ms)
+    const localFast = await fetchRealBrokerAnalysis(sym, days, { refresh: false }).catch(() => null);
+    if (localFast && (localFast.brokers?.length > 0 || localFast.topBuyers?.length > 0 || localFast.topHoldings?.length > 0)) {
+      return localFast;
+    }
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 6000);
+      const timer = setTimeout(() => controller.abort(), 8000);
       const base = getProxyBase();
       const resp = await fetch(`${base}/api/stocks/${encodeURIComponent(sym)}/smart-money?timeframe=${tf}&days=${days}`, {
         headers: { Accept: 'application/json' },
@@ -2540,12 +2549,8 @@ export default function StockDetailModal({
         if (res?.data && res.data.length > 0) return res;
       }
     } catch (_) {}
-    const fallback = await fetchRealBrokerAnalysis(sym, days, { refresh: false }).catch(() => null);
-    if (fallback?.topBuyers?.length || fallback?.brokers?.length) {
-      return fallback;
-    }
-    return null;
-  }, []);
+    return localFast || null;
+  }, [allTimeBrokerAnalysis]);
 
   const rawFundamentalsForHub = useMemo(() => {
     return {
@@ -2587,13 +2592,14 @@ export default function StockDetailModal({
 
   // Trigger real data fetch when switching to Market Depth, Floorsheet, or Broker Analysis tabs
   useEffect(() => {
+    let isCancelled = false;
     if ((activeTab === 'market_depth' || activeTab === 'depth_broker') && d?.symbol) {
       if (!realMarketDepth && !marketDepthLoading) {
         setMarketDepthLoading(true);
         fetchMarketDepth(d.symbol)
-          .then(data => { if (data) setRealMarketDepth(data); })
+          .then(data => { if (!isCancelled && data) setRealMarketDepth(data); })
           .catch(() => {})
-          .finally(() => setMarketDepthLoading(false));
+          .finally(() => { if (!isCancelled) setMarketDepthLoading(false); });
       }
       // Ensure 1D live broker analysis is always loaded for today's live session
       if ((!realBrokerAnalysis || realBrokerAnalysis.tradingDays !== 1) && !brokerAnalysisLoading) {
@@ -2607,9 +2613,9 @@ export default function StockDetailModal({
       if (!broker5DData && !broker5DLoading) {
         setBroker5DLoading(true);
         fetchRealBrokerAnalysis(d.symbol, 5, { refresh: false })
-          .then(b5 => { if (b5) setBroker5DData(b5); })
+          .then(b5 => { if (!isCancelled && b5) setBroker5DData(b5); })
           .catch(() => {})
-          .finally(() => setBroker5DLoading(false));
+          .finally(() => { if (!isCancelled) setBroker5DLoading(false); });
       }
     }
     if ((activeTab === 'floorsheet' || activeTab === 'depth_broker' || activeTab === 'volume_profile' || showHubModal) && d?.symbol) {
@@ -2629,9 +2635,9 @@ export default function StockDetailModal({
     if (activeTab === 'dividends' && d?.symbol && !dividendHistory && !dividendLoading) {
       setDividendLoading(true);
       fetchDividendHistory(d.symbol)
-        .then(data => { if (data) setDividendHistory(data); })
+        .then(data => { if (!isCancelled && data) setDividendHistory(data); })
         .catch(() => {})
-        .finally(() => setDividendLoading(false));
+        .finally(() => { if (!isCancelled) setDividendLoading(false); });
     }
     if (activeTab === 'compare' && d?.symbol && !comparePeer) {
       const peers = getPeerStocks ? getPeerStocks(d, Array.isArray(allStocks) ? allStocks : []) : [];
@@ -2642,16 +2648,19 @@ export default function StockDetailModal({
         setCompareError('');
         fetchRealPriceHistory(peerSymbol, 365).catch(() => {});
         fetchCompareStocks(d.symbol, peerSymbol).then(res => {
-          if (res) {
+          if (!isCancelled && res) {
             setCompareData(res);
             setComparePeer(res.stock2 || res.data?.[1] || null);
           }
-        }).catch(() => {}).finally(() => setCompareLoading(false));
+        }).catch(() => {}).finally(() => { if (!isCancelled) setCompareLoading(false); });
       }
     }
     if (scrollRef.current) {
       scrollRef.current.scrollTop = 0;
     }
+    return () => {
+      isCancelled = true;
+    };
   }, [activeTab, d?.symbol, showHubModal]);
 
   // Note: ShareHubChart autonomously manages 1D intraday data fetching and rendering.
@@ -4334,7 +4343,7 @@ export default function StockDetailModal({
                   currentPrice={d.ltp}
                   initialData={realBrokerAnalysis}
                   selectedDays={brokerDays}
-                  onTimeframeChange={(tf, days) => handleBrokerDaysChange(typeof days === 'number' ? days : 1)}
+                  onTimeframeChange={(tf, days) => handleBrokerDaysChange(tf === 'ALL' || days === 'all' || days === 'ALL' ? 'all' : (typeof days === 'number' ? days : 1))}
                   onFetchSmartMoney={handleFetchSmartMoney}
                 />
               </CardLocalErrorBoundary>

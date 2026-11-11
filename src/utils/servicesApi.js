@@ -2,25 +2,9 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { idbGet, idbSet, idbDel } from './indexedDb.js';
 import { fetchMerolaganiNews } from '../services/merolaganiNewsService.js';
 import { sortNewsByNepseImpact, deduplicateNews, sortNews } from './newsImpactScorer.js';
+import { getProxyBase } from './proxyBase.js';
 
-const getProxy = () => {
-  try {
-    if (typeof window !== 'undefined') {
-      const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
-      const isLocal = !isNative && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-      if (isLocal) {
-        return '';
-      }
-      const stored = localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base');
-      if (stored && stored.startsWith('http')) return stored.replace(/\/$/, '');
-    }
-    const env = import.meta?.env?.VITE_PROXY_URL;
-    if (env && env.trim()) return env.trim().replace(/\/$/, '');
-    return 'https://nepseapp.onrender.com';
-  } catch {
-    return 'https://nepseapp.onrender.com';
-  }
-};
+const getProxy = () => getProxyBase();
 
 const PROXY = getProxy();
 
@@ -76,8 +60,16 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
     : (ttlMs <= 360000 ? Math.max(ttlMs, 10 * 60 * 1000) : Math.min(ttlMs, 24 * 3600 * 1000));
 
   const primary = getProxy();
+  const isLocal = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '0.0.0.0' ||
+    window.location.protocol === 'file:' ||
+    primary.includes('localhost') ||
+    primary.includes('127.0.0.1')
+  );
   const bases = [primary];
-  if (primary !== 'https://nepseapp.onrender.com') {
+  if (!isLocal && primary !== 'https://nepseapp.onrender.com') {
     bases.push('https://nepseapp.onrender.com');
   }
 

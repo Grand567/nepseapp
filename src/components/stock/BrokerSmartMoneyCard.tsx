@@ -458,6 +458,7 @@ function BrokerSmartMoneyCardInner({
   useEffect(() => {
     if (!cleanSymbol) return;
     let isMounted = true;
+    const abortController = new AbortController();
 
     async function loadTimeframeData() {
       // If returning to 1D and we have cached authentic 1D data, immediately present it to prevent flickering/confusion
@@ -465,9 +466,20 @@ function BrokerSmartMoneyCardInner({
         setRawPayload(cached1DPayload);
       }
 
-      // If initialData already contains the requested timeframe key, use it immediately
+      // If initialData already contains the requested timeframe key or matches requested timeframe, use it immediately
       const tfUpper = timeframe.toUpperCase();
       const tfLower = timeframe.toLowerCase();
+      const matchesTimeframe = initialData && typeof initialData === 'object' && (
+        (timeframe === 'ALL' && ((initialData as any).timeframe === 'ALL' || (initialData as any).tradingDays > 100)) ||
+        (timeframe === '5D' && ((initialData as any).timeframe === '5D' || (initialData as any).timeframeDays === 5 || (initialData as any).tradingDays === 5)) ||
+        (timeframe === '1M' && ((initialData as any).timeframe === '30D' || (initialData as any).timeframeDays === 30 || ((initialData as any).tradingDays >= 20 && (initialData as any).tradingDays <= 35)))
+      );
+      if (matchesTimeframe) {
+        setRawPayload(initialData);
+        setWarningBanner(null);
+        setLoading(false);
+        return;
+      }
       if (
         initialData &&
         typeof initialData === 'object' &&
@@ -476,6 +488,7 @@ function BrokerSmartMoneyCardInner({
       ) {
         setRawPayload(initialData[tfUpper] ?? initialData[tfLower]);
         setWarningBanner(null);
+        setLoading(false);
         return;
       }
 
@@ -495,7 +508,10 @@ function BrokerSmartMoneyCardInner({
             `${(typeof getProxyBase === "function" ? getProxyBase() : "") || ""}/api/stocks/${encodeURIComponent(
               cleanSymbol
             )}/smart-money?timeframe=${timeframe}&tf=${tfLower}&days=${days}`,
-            { headers: { Accept: 'application/json' } }
+            {
+              headers: { Accept: 'application/json' },
+              signal: abortController.signal
+            }
           );
 
           if (!res.ok) {
@@ -504,7 +520,7 @@ function BrokerSmartMoneyCardInner({
           responseData = await res.json();
         }
 
-        if (!isMounted) return;
+        if (!isMounted || abortController.signal.aborted) return;
 
         const normalizedCheck = normalizeAndAggregateBrokerData(
           responseData,
@@ -532,8 +548,8 @@ function BrokerSmartMoneyCardInner({
             setCached1DPayload(responseData);
           }
         }
-      } catch (err) {
-        if (!isMounted) return;
+      } catch (err: any) {
+        if (!isMounted || abortController.signal.aborted || err?.name === 'AbortError') return;
         const isInitialMultiDay = Boolean(
           (initialData as any)?.tradingDays > 1 || (initialData as any)?.timeframeDays > 1
         );
@@ -550,13 +566,14 @@ function BrokerSmartMoneyCardInner({
           setRawPayload(null);
         }
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted && !abortController.signal.aborted) setLoading(false);
       }
     }
 
     loadTimeframeData();
     return () => {
       isMounted = false;
+      abortController.abort();
     };
   }, [cleanSymbol, timeframe, initialData, onFetchSmartMoney, brokerBaselineShares]);
 
@@ -714,13 +731,12 @@ function BrokerSmartMoneyCardInner({
               <button
                 key={tf}
                 type="button"
-                disabled={loading}
                 onClick={() => handleSelectTimeframe(tf)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   isActive
                     ? 'bg-emerald-600 text-white shadow-sm'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                } ${loading ? 'opacity-60 cursor-wait' : ''}`}
+                }`}
               >
                 {tf === '1D' ? '1D (Session)' : tf === '5D' ? '5D (Weekly)' : tf === '1M' ? '1M (30D)' : '🏆 All-Time (Till Today)'}
               </button>

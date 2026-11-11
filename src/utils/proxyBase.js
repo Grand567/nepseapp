@@ -42,7 +42,6 @@ export function getProxyBase() {
     // 2. Desktop browser on localhost / 127.0.0.1
     const h = window.location.hostname || '';
     if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0') {
-      if (_localProxyState === 'dead') return 'https://nepseapp.onrender.com';
       return '';
     }
 

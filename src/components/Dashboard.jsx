@@ -67,51 +67,6 @@ const fmtM = n => (n == null || isNaN(n)) ? '—' : n >= 1000 ? `${(n / 1000).to
 
 const normalizeSector = (sec) => (sec || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-const parseInlineMarkdown = (text) => {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--text-primary); font-weight: 700;">$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em style="font-style: italic;">$1</em>');
-};
-
-const markdownToHtml = (markdown) => {
-  if (!markdown) return '';
-  let html = markdown
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  const lines = html.split('\n');
-  let inList = false;
-  const result = [];
-  for (let line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-      if (!inList) {
-        result.push('<ul style="margin: 8px 0; padding-left: 20px; list-style-type: disc;">');
-        inList = true;
-      }
-      const itemContent = trimmed.substring(2);
-      result.push(`<li style="margin: 4px 0;">${parseInlineMarkdown(itemContent)}</li>`);
-      continue;
-    }
-    if (inList && !trimmed.startsWith('- ') && !trimmed.startsWith('* ')) {
-      result.push('</ul>');
-      inList = false;
-    }
-    if (trimmed.startsWith('### ')) {
-      result.push(`<h4 style="font-size: 15px; font-weight: 700; margin-top: 16px; margin-bottom: 8px; color: var(--text-primary);">${parseInlineMarkdown(trimmed.substring(4))}</h4>`);
-    } else if (trimmed.startsWith('## ')) {
-      result.push(`<h3 style="font-size: 16px; font-weight: 800; margin-top: 20px; margin-bottom: 10px; color: var(--primary-light);">${parseInlineMarkdown(trimmed.substring(3))}</h3>`);
-    } else if (trimmed.startsWith('# ')) {
-      result.push(`<h2 style="font-size: 18px; font-weight: 900; margin-top: 24px; margin-bottom: 12px; color: var(--primary-light); border-bottom: 1px solid var(--border); padding-bottom: 4px;">${parseInlineMarkdown(trimmed.substring(2))}</h2>`);
-    } else if (trimmed === '') {
-      result.push('<div style="height: 8px;"></div>');
-    } else {
-      result.push(`<p style="margin: 8px 0;">${parseInlineMarkdown(trimmed)}</p>`);
-    }
-  }
-  if (inList) result.push('</ul>');
-  return result.join('\n');
-};
 
 /* ─── Mini Sparkline ─── */
 function Sparkline({ points, bull }) {
@@ -1407,7 +1362,7 @@ function Dashboard({
       return;
     }
     import('../utils/liveData.js').then(({ getProxyBase }) => {
-      const base = getProxyBase() || 'https://nepseapp.onrender.com';
+      const base = getProxyBase();
       fetch(`${base}/api/radar/signal-track-record`, { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
