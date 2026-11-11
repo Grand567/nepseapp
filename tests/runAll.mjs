@@ -53,7 +53,8 @@ const testFiles = [
   'anBatchStatutoryCircuitRules.test.mjs',
   'aoBatchPushNotificationVerification.test.mjs',
   'testMeroShareWaccDetails.test.mjs',
-  'testCumulativeBrokerHolding.test.mjs'
+  'testCumulativeBrokerHolding.test.mjs',
+  'marketRules.test.mjs'
 ];
 
 console.log('====================================================');
