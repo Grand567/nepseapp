@@ -12371,13 +12371,30 @@ app.all('/api/telegram/detect-chat-id', async (req, res) => {
 
 app.all('/api/telegram/test-alert', async (req, res) => {
   try {
-    const ltp = Number(req.body?.ltp || req.query?.ltp || 937.5);
+    const sym = String(req.body?.symbol || req.query?.symbol || 'NTC').toUpperCase().trim();
+    const ltp = Number(req.body?.ltp || req.query?.ltp || (sym === 'NTC' ? 937.5 : 438.0));
+    const companyName = req.body?.companyName || req.query?.companyName || (sym === 'NTC' ? 'Nepal Telecom' : sym);
+    const sector = req.body?.sector || req.query?.sector || (sym === 'NTC' ? 'Telecom' : 'Equities');
+
+    // Dynamic execution levels strictly anchored to LTP & v2.0 flowchart rules:
+    const entryLow = Number(req.body?.entryLow || req.body?.buyZone?.low || (ltp * 0.995).toFixed(1));
+    const entryHigh = Number(req.body?.entryHigh || req.body?.buyZone?.high || (ltp * 1.012).toFixed(1));
+    const chaseCap = Number(req.body?.chaseCap || (ltp * 1.018).toFixed(1));
+    const stopLoss = Number(req.body?.stopLoss || (ltp * (1 - 0.035)).toFixed(1));
+    const ratchetTrigger = Number(req.body?.ratchetTrigger || (ltp * 1.055).toFixed(1));
+    const ratchetLock = Number(req.body?.ratchetLock || (ltp * 1.018).toFixed(1));
+    const target1 = Number(req.body?.target1 || (ltp * 1.080).toFixed(1));
+    const target2 = Number(req.body?.target2 || (ltp * 1.150).toFixed(1));
+    const bcr3AvgPrice = Number(req.body?.bcr3AvgPrice || (ltp * 0.995).toFixed(1));
+
     const mockAlert = {
-      symbol: req.body?.symbol || req.query?.symbol || 'NTC',
-      companyName: req.body?.companyName || req.query?.companyName || 'Nepal Telecom',
+      symbol: sym,
+      name: companyName,
+      companyName,
+      sector,
       ltp,
-      bcr3AvgPrice: Number(req.body?.bcr3AvgPrice || req.query?.bcr3AvgPrice || 937.0),
-      costBasisFloorPct: req.body?.costBasisFloorPct !== undefined ? Number(req.body.costBasisFloorPct) : 0.05,
+      bcr3AvgPrice,
+      costBasisFloorPct: req.body?.costBasisFloorPct !== undefined ? Number(req.body.costBasisFloorPct) : +(((ltp - bcr3AvgPrice) / bcr3AvgPrice) * 100).toFixed(1),
       leadBrokerId: req.body?.leadBrokerId || req.query?.leadBrokerId || '58',
       leadBrokerName: req.body?.leadBrokerName || req.query?.leadBrokerName || 'Naasa Securities',
       netKitta: Number(req.body?.netKitta || req.query?.netKitta || 26300),
@@ -12385,21 +12402,22 @@ app.all('/api/telegram/test-alert', async (req, res) => {
       bcr3Buy: Number(req.body?.bcr3Buy || req.query?.bcr3Buy || 88.3),
       bcr3Sell: Number(req.body?.bcr3Sell || req.query?.bcr3Sell || 34.7),
       cmf: Number(req.body?.cmf !== undefined ? req.body.cmf : (req.query?.cmf !== undefined ? req.query.cmf : 0.14)),
-      buyZone: {
-        low: Number(req.body?.buyZone?.low || req.body?.entryLow || 933.0),
-        high: Number(req.body?.buyZone?.high || req.body?.entryHigh || 945.0)
-      },
-      entryLow: Number(req.body?.entryLow || 933.0),
-      entryHigh: Number(req.body?.entryHigh || 945.0),
-      stopLoss: Number(req.body?.stopLoss || req.query?.stopLoss || 904.7),
-      target1: Number(req.body?.target1 || req.query?.target1 || 1012.5),
-      target2: Number(req.body?.target2 || req.query?.target2 || 1078.1),
+      buyZone: { low: entryLow, high: entryHigh },
+      entryLow,
+      entryHigh,
+      stopLoss,
+      slPct: 3.5,
+      ratchetTrigger,
+      ratchetLock,
+      target1,
+      t1Pct: 8.0,
+      target2,
+      t2Pct: 15.0,
       vduRatio: Number(req.body?.vduRatio || req.query?.vduRatio || 0.52),
       vdu: Number(req.body?.vdu || 0.52),
       bbwPct: Number(req.body?.bbwPct || req.query?.bbwPct || 8.4),
       bbw: Number(req.body?.bbw || 8.4),
-      sector: req.body?.sector || req.query?.sector || 'Telecom',
-      chaseCap: Number(req.body?.chaseCap || req.query?.chaseCap || 954.4),
+      chaseCap,
       retention10D: Number(req.body?.retention10D || 87),
       corneringScore: Number(req.body?.corneringScore || 92),
       confidenceLabel: req.body?.confidenceLabel || '🟢 Confirmed Stealth (v2.0)'
@@ -12407,7 +12425,7 @@ app.all('/api/telegram/test-alert', async (req, res) => {
     const result = await sendTelegramSmartAlert(mockAlert);
     res.json({
       success: result.success,
-      message: result.success ? 'Sample alert sent to your Telegram chat!' : (result.error || result.reason),
+      message: result.success ? 'Upgraded Flowchart v2.0 alert sent to your Telegram chat!' : (result.error || result.reason),
       payload: mockAlert
     });
   } catch (err) {
