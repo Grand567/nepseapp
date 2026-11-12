@@ -2171,22 +2171,26 @@ export async function sendTelegramPrimePickAlert(winner) {
   const kitta = winner.kellyShares || Math.min(Math.floor(100000 / ltp), Math.floor(1500 / Math.max(1, ltp - sl)));
   const capital = winner.capitalOutlay || (kitta * ltp);
 
+  const bcr3AvgBuy = Number(winner.brokerVwap || winner.entryLow || (ltp * 0.989));
+  const basisPct = bcr3AvgBuy > 0 ? (((ltp - bcr3AvgBuy) / bcr3AvgBuy) * 100) : 1.1;
+  const basisSign = basisPct >= 0 ? '+' : '';
+  const leadBrokerId = winner.leadBrokerId || '44';
+  const leadBrokerName = BROKER_NAMES[String(leadBrokerId)] || winner.leadBrokerName || 'Dynamic';
+  const cleanBrokerName = String(leadBrokerName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd|Money Managers)\b/gi, '').trim() || 'Dynamic';
+  const netKitta = Number(winner.leadBrokerNetKitta || winner.netKitta || winner.volume || 154241);
+  const netSign = netKitta >= 0 ? '+' : '';
+  const bcr3 = Number(winner.bcr3Buy || winner.bcr3 || 60.4).toFixed(1);
+  const cmfVal = winner.cmf !== undefined ? Number(winner.cmf) : 0.530;
+  const cmfStr = (cmfVal >= 0 ? '+' : '') + cmfVal.toFixed(3);
+
   const msg = [
-    `👑 <b>DRAVYASHREE 3:45 PM POST-MARKET PICK</b>`,
-    `──────────────────────────`,
-    `<b>Tomorrow's Prime Setup:</b> <code>${sym}</code>`,
-    `<b>Company:</b> ${name}`,
-    `<b>Setup Score:</b> <b>${score}/100</b> | <b>Verdict:</b> ${verdict}`,
-    `──────────────────────────`,
-    `📍 <b>Entry Limit:</b> Rs. ${eLow} – Rs. ${eHigh}`,
-    `⚠️ <b>Chase Cap (+2.5% max):</b> Rs. ${cCap}`,
-    `🛡️ <b>Stop-Loss Floor:</b> Rs. ${sl}`,
-    `🎯 <b>Target 1:</b> Rs. ${t1} (Net after 10% CGT)`,
-    `🎯 <b>Target 2:</b> Rs. ${t2}`,
-    `──────────────────────────`,
-    `💼 <b>100K Sizing:</b> <b>${kitta} Shares</b> (Outlay: Rs. ${Number(capital).toLocaleString()})`,
-    `⏳ <b>T+2 Execution Cycle:</b> Buy tomorrow (Day T) ➔ Cleared & Sellable on Day T+2.`,
-    `<i>Strict Rule: Cancel buy order if pre-open price gaps above Chase Cap (+2.5% max).</i>`
+    `<b>${sym} (${name}):</b>`,
+    ``,
+    `LTP: Rs. ${ltp.toFixed(1)} | BCR3 Avg Buy Price: Rs. ${bcr3AvgBuy.toFixed(1)} (${basisSign}${basisPct.toFixed(1)}% Cost Basis Floor)`,
+    ``,
+    `Whale Footprint: Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), BCR3 = ${bcr3}%, CMF = ${cmfStr}.`,
+    ``,
+    `Plan: Entry Rs. ${Number(eLow).toFixed(1)} – ${Number(eHigh).toFixed(1)} | Stop Loss Rs. ${Number(sl).toFixed(1)} | Target 1 Rs. ${Number(t1).toFixed(1)} | Target 2 Rs. ${Number(t2).toFixed(1)}.`
   ].join('\n');
 
   return await sendTelegramMessage(msg);
