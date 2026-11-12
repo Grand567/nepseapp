@@ -76,6 +76,7 @@ const B58_STATE_FILE = path.join(DATA_DIR, 'broker58_alert_state.json');
 const HISTORY_FILE = path.join(DATA_DIR, 'smart_alert_history.json');
 const TOKENS_FILE = path.join(DATA_DIR, 'push_tokens.json');
 const SEEN_NEWS_FILE = path.join(DATA_DIR, 'seen_news_keys.json');
+const SEEN_IPO_FILE = path.join(DATA_DIR, 'seen_ipo_keys.json');
 
 let stockMap = {};
 try {
@@ -2602,7 +2603,7 @@ export function getUserTrackedHoldings() {
 // ── 9. LIVE NEWS & IPO WATCHER ──────────────────────────────────────────────
 
 const seenNewsKeys = new Set(loadJson(SEEN_NEWS_FILE, []));
-const seenIpoStatusKeys = new Set();
+const seenIpoStatusKeys = new Set(loadJson(SEEN_IPO_FILE, []));
 let lastNonHoldingPushWindow = ''; // e.g. "2026-11-10_11am" or "2026-11-10_6pm"
 
 export function isNonHoldingPushWindowActive() {
@@ -2630,6 +2631,15 @@ function saveSeenNewsKeys() {
     seenNewsKeys.clear();
     trimmed.forEach(k => seenNewsKeys.add(k));
     saveJson(SEEN_NEWS_FILE, trimmed);
+  } catch (_) {}
+}
+
+function saveSeenIpoKeys() {
+  try {
+    const trimmed = Array.from(seenIpoStatusKeys).slice(-300);
+    seenIpoStatusKeys.clear();
+    trimmed.forEach(k => seenIpoStatusKeys.add(k));
+    saveJson(SEEN_IPO_FILE, trimmed);
   } catch (_) {}
 }
 
@@ -2826,43 +2836,61 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
       ipos = await actualIpoFn().catch(() => []);
     }
     if (Array.isArray(ipos) && ipos.length > 0) {
-      if (seenIpoStatusKeys.size > 500) {
-        seenIpoStatusKeys.clear();
+      // Cold boot guard: When the server first boots with an empty seenIpoStatusKeys set,
+      // seed all currently open IPOs into memory and disk so we NEVER blast active IPOs
+      // as repeated status bar or push notifications upon server restarts.
+      if (seenIpoStatusKeys.size === 0) {
+        for (const ipo of ipos) {
+          const scripKey = String(ipo.scrip || ipo.id || 'IPO').toUpperCase().trim();
+          seenIpoStatusKeys.add(`ipo_open_${scripKey}`);
+        }
+        saveSeenIpoKeys();
+        console.log(`[SmartAlertEngine] Cold boot guard: seeded ${seenIpoStatusKeys.size} active IPOs to suppress restart notification spam.`);
+        return;
       }
+
       const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
       const todayIso = nowNpt.toISOString().split('T')[0];
 
       for (const ipo of ipos) {
-        const key = `${ipo.id || ipo.scrip}_${ipo.status}_${todayIso}`;
-        if (seenIpoStatusKeys.has(key)) continue;
-
+        const scripKey = String(ipo.scrip || ipo.id || 'IPO').toUpperCase().trim();
+        const openKey = `ipo_open_${scripKey}`;
         const openDate = (ipo.openDate || '').split('T')[0];
         const closeDate = (ipo.closeDate || '').split('T')[0];
+        const closeKey = `ipo_close_${scripKey}_${closeDate || todayIso}`;
 
+        // Alert #1: New IPO Opening (Sent ONCE when the issue opens, never re-alerted while open)
         if (ipo.status === 'Open' && (!openDate || openDate <= todayIso)) {
-          seenIpoStatusKeys.add(key);
-          broadcastAlert({
-            id: `ipo_open_${ipo.id || ipo.scrip}_${todayIso}`,
-            type: 'IPO_ALERT',
-            category: 'general',
-            title: `🔔 IPO Open: ${ipo.name} (${ipo.scrip || 'IPO'})`,
-            body: `${ipo.name} IPO is open for application. Price: Rs. ${ipo.issuePrice || 100} | Closes: ${closeDate || 'Soon'}.`,
-            symbol: ipo.scrip || 'IPO',
-            action: 'OPEN_IPO',
-            triggeredAt: new Date().toISOString()
-          });
+          if (!seenIpoStatusKeys.has(openKey)) {
+            seenIpoStatusKeys.add(openKey);
+            saveSeenIpoKeys();
+            broadcastAlert({
+              id: openKey,
+              type: 'IPO_ALERT',
+              category: 'general',
+              title: `🔔 IPO Open: ${ipo.name} (${scripKey})`,
+              body: `${ipo.name} IPO is open for application. Price: Rs. ${ipo.issuePrice || 100} | Closes: ${closeDate || 'Soon'}.`,
+              symbol: scripKey,
+              action: 'OPEN_IPO',
+              triggeredAt: new Date().toISOString()
+            });
+          }
         } else if (closeDate === todayIso) {
-          seenIpoStatusKeys.add(key);
-          broadcastAlert({
-            id: `ipo_close_${ipo.id || ipo.scrip}_${todayIso}`,
-            type: 'IPO_ALERT',
-            category: 'general',
-            title: `⏳ Last Day to Apply: ${ipo.name} (${ipo.scrip || 'IPO'})`,
-            body: `Today is the LAST DAY to apply for ${ipo.name} before 5:00 PM NPT.`,
-            symbol: ipo.scrip || 'IPO',
-            action: 'OPEN_IPO',
-            triggeredAt: new Date().toISOString()
-          });
+          // Alert #2: Last Day to Apply (Sent ONCE on the official closing day)
+          if (!seenIpoStatusKeys.has(closeKey)) {
+            seenIpoStatusKeys.add(closeKey);
+            saveSeenIpoKeys();
+            broadcastAlert({
+              id: closeKey,
+              type: 'IPO_ALERT',
+              category: 'general',
+              title: `⏳ Last Day to Apply: ${ipo.name} (${scripKey})`,
+              body: `Today is the LAST DAY to apply for ${ipo.name} before 5:00 PM NPT.`,
+              symbol: scripKey,
+              action: 'OPEN_IPO',
+              triggeredAt: new Date().toISOString()
+            });
+          }
         }
       }
     }

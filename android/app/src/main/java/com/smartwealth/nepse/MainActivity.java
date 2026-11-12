@@ -249,6 +249,8 @@ public class MainActivity extends BridgeActivity {
     }
 
     public class NepseNativeNotifier {
+        private final java.util.Map<String, Long> postedAlertHistory = new java.util.concurrent.ConcurrentHashMap<>();
+
         @JavascriptInterface
         public String getPendingNotification() {
             String pending = pendingNotificationPayload;
@@ -288,14 +290,26 @@ public class MainActivity extends BridgeActivity {
                 final String safeTitle = (title != null && !title.trim().isEmpty()) ? title : "🔔 Dravyashree Alert";
                 final String safeBody = (body != null) ? body : "";
                 final String safeChannel = (channelId != null && !channelId.trim().isEmpty()) ? channelId : DravyashreeAlertWorker.CHANNEL_PRO;
+                final String sym = (symbol != null) ? symbol.trim().toUpperCase() : "";
+                final String notifType = (type != null) ? type.trim() : "";
+
+                // In-memory deduplication: prevent repeated JS/SSE firings for the exact same alert within 15 minutes
+                final String dedupKey = notifType + "_" + sym + "_" + safeTitle.hashCode();
+                final long now = System.currentTimeMillis();
+                final Long lastPosted = postedAlertHistory.get(dedupKey);
+                if (lastPosted != null && (now - lastPosted < 15 * 60 * 1000L)) {
+                    android.util.Log.d("NepseNativeNotifier", "Suppressed duplicate notification from JS within 15m: " + safeTitle);
+                    return;
+                }
+                postedAlertHistory.put(dedupKey, now);
 
                 Intent intent = new Intent(MainActivity.this, MainActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 intent.putExtra("from_notification", true);
-                intent.putExtra("symbol", symbol != null ? symbol : "");
-                intent.putExtra("type", type != null ? type : "");
+                intent.putExtra("symbol", sym);
+                intent.putExtra("type", notifType);
                 intent.putExtra("category", safeChannel.contains("pro") ? "pro" : "general");
-                intent.putExtra("id", "notif_" + System.currentTimeMillis() + "_" + (symbol != null ? symbol : ""));
+                intent.putExtra("id", "notif_" + System.currentTimeMillis() + "_" + sym);
                 intent.putExtra("action", action != null ? action : "");
                 intent.putExtra("url", url != null ? url : "");
                 intent.putExtra("title", safeTitle);
@@ -318,9 +332,9 @@ public class MainActivity extends BridgeActivity {
                         .setContentText(safeBody)
                         .setStyle(new NotificationCompat.BigTextStyle().bigText(safeBody))
                         .setAutoCancel(true)
+                        .setOnlyAlertOnce(true)
                         .setSound(defaultSoundUri)
                         .setVibrate(new long[]{0, 250, 150, 250})
-                        .setDefaults(NotificationCompat.DEFAULT_ALL)
                         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                         .setContentIntent(pendingIntent)
                         .setPriority(NotificationCompat.PRIORITY_MAX);
@@ -331,8 +345,9 @@ public class MainActivity extends BridgeActivity {
                     builder.setColor(Color.parseColor("#38BDF8"));
                 }
 
-                // Deterministic notification ID: updates existing notification rather than stacking duplicates
-                int notifId = Math.abs((safeTitle + "_" + symbol).hashCode()) % 1000000;
+                // Deterministic notification ID: updates existing notification without noisy re-alerting
+                String notifKey = !sym.isEmpty() ? (notifType + "_" + sym) : (notifType + "_" + Math.abs(safeTitle.hashCode()));
+                int notifId = Math.abs(notifKey.hashCode()) % 1000000;
                 if (notifId == 0) notifId = 1001;
                 NotificationManagerCompat.from(MainActivity.this).notify(notifId, builder.build());
                 android.util.Log.d("NepseNativeNotifier", "Posted status bar notification from JS: " + safeTitle);

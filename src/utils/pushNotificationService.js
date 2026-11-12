@@ -383,9 +383,9 @@ export function triggerNativeStatusBarNotification(normalized) {
   const cleanBody = String(normalized.body || '').trim();
   if (!cleanTitle || !cleanBody) return;
 
-  // Stale-notification validation layer: inspect timestamp and enforce 30m TTL
+  // Stale-notification & duplicate validation layer: inspect timestamp, enforce TTL, and reject duplicates
   const validation = validatePushNotificationPayload(normalized, { ttlMs: NOTIFICATION_TTL_MS });
-  if (!validation.valid && validation.reason !== 'DUPLICATE_ALERT') {
+  if (!validation.valid) {
     console.warn(`[PushService] Suppressed status bar notification [${validation.reason}]:`, validation.error);
     return;
   }

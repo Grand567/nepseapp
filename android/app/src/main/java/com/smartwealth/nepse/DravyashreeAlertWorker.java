@@ -27,6 +27,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
@@ -102,7 +103,7 @@ public class DravyashreeAlertWorker extends Worker {
             }
 
             SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            Set<String> seenIds = new HashSet<>(prefs.getStringSet(KEY_SEEN_IDS, new HashSet<>()));
+            Set<String> seenIds = new LinkedHashSet<>(prefs.getStringSet(KEY_SEEN_IDS, new LinkedHashSet<>()));
 
             // First run guard: if no seen IDs exist yet, record current IDs so we don't spam historical alerts
             boolean isFirstRun = seenIds.isEmpty();
@@ -113,12 +114,16 @@ public class DravyashreeAlertWorker extends Worker {
                     String id = item.optString("id", "").trim();
                     String title = item.optString("title", "").trim();
                     String body = item.optString("body", "").trim();
+                    String symbol = item.optString("symbol", "").toUpperCase().trim();
                     if (!id.isEmpty()) seenIds.add(id);
                     if (!title.isEmpty() || !body.isEmpty()) {
                         seenIds.add("fp_" + Math.abs((title + "_" + body).toLowerCase().hashCode()));
                     }
+                    if (!symbol.isEmpty() && (item.optString("type", "").contains("IPO") || item.optString("category", "").equalsIgnoreCase("ipo"))) {
+                        seenIds.add("ipo_seen_" + symbol);
+                    }
                 }
-                prefs.edit().putStringSet(KEY_SEEN_IDS, seenIds).apply();
+                prefs.edit().putStringSet(KEY_SEEN_IDS, seenIds).commit();
                 Log.i(TAG, "First background run: recorded " + seenIds.size() + " existing alerts to suppress historical status bar spam.");
                 return Result.success();
             }
@@ -135,6 +140,10 @@ public class DravyashreeAlertWorker extends Worker {
                 String id = item.optString("id", "").trim();
                 String title = item.optString("title", "").trim();
                 String body = item.optString("body", "").trim();
+                String symbol = item.optString("symbol", "").toUpperCase().trim();
+                String type = item.optString("type", "").trim();
+                String category = item.optString("category", "").trim();
+                boolean isIpo = type.contains("IPO") || category.equalsIgnoreCase("ipo") || title.contains("IPO");
 
                 // Reject blank or incomplete notifications
                 if (title.isEmpty() || body.isEmpty()) {
@@ -142,18 +151,22 @@ public class DravyashreeAlertWorker extends Worker {
                 }
 
                 String contentFingerprint = "fp_" + Math.abs((title + "_" + body).toLowerCase().hashCode());
+                String ipoScripKey = isIpo && !symbol.isEmpty() ? ("ipo_seen_" + symbol) : "";
 
                 if (id.isEmpty()) id = contentFingerprint;
 
-                // Strict deduplication: check both ID and content fingerprint
-                if (seenIds.contains(id) || seenIds.contains(contentFingerprint)) {
+                // Strict deduplication: check ID, content fingerprint, and IPO symbol key
+                if (seenIds.contains(id) || seenIds.contains(contentFingerprint) || (!ipoScripKey.isEmpty() && seenIds.contains(ipoScripKey))) {
                     continue; // Already posted to status bar!
                 }
 
                 seenIds.add(id);
                 seenIds.add(contentFingerprint);
+                if (!ipoScripKey.isEmpty()) {
+                    seenIds.add(ipoScripKey);
+                }
 
-                // Verify alert freshness: only post if triggered within the retention window (6 hours)
+                // Verify alert freshness: only post if triggered within the retention window (24 hours)
                 if (!isAlertFresh(item)) {
                     Log.d(TAG, "Suppressed outdated historical alert: " + title);
                     continue;
@@ -163,18 +176,21 @@ public class DravyashreeAlertWorker extends Worker {
                 postNativeStatusBarNotification(context, item);
             }
 
-            // Cap seen set at 300 IDs
-            if (seenIds.size() > 300) {
-                Set<String> trimmed = new HashSet<>();
-                int keep = 0;
+            // Cap seen set at 400 IDs, safely keeping the newest items (FIFO)
+            if (seenIds.size() > 400) {
+                Set<String> trimmed = new LinkedHashSet<>();
+                int skip = seenIds.size() - 250;
+                int count = 0;
                 for (String s : seenIds) {
-                    trimmed.add(s);
-                    if (++keep >= 200) break;
+                    if (++count > skip) {
+                        trimmed.add(s);
+                    }
                 }
                 seenIds = trimmed;
             }
 
-            prefs.edit().putStringSet(KEY_SEEN_IDS, seenIds).apply();
+            // Guarantee synchronous write to disk so worker termination cannot drop seen IDs
+            prefs.edit().putStringSet(KEY_SEEN_IDS, seenIds).commit();
 
         } catch (Exception e) {
             Log.w(TAG, "Error processing alerts JSON in background worker: " + e.getMessage());
@@ -183,7 +199,7 @@ public class DravyashreeAlertWorker extends Worker {
         return Result.success();
     }
 
-    public static final long NOTIFICATION_TTL_MS = 6 * 60 * 60 * 1000L; // 6 hours TTL so Android Doze doesn't drop news alerts
+    public static final long NOTIFICATION_TTL_MS = 24 * 60 * 60 * 1000L; // 24 hours TTL so full day trading signals are retained
 
     private boolean isAlertFresh(JSONObject item) {
         if (item == null) return false;
@@ -297,6 +313,7 @@ public class DravyashreeAlertWorker extends Worker {
                     .setContentText(body)
                     .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
                     .setAutoCancel(true)
+                    .setOnlyAlertOnce(true)
                     .setSound(defaultSoundUri)
                     .setVibrate(new long[]{0, 250, 150, 250})
                     .setContentIntent(pendingIntent)
@@ -308,8 +325,9 @@ public class DravyashreeAlertWorker extends Worker {
                 builder.setColor(Color.parseColor("#38BDF8"));
             }
 
-            // Deterministic notification ID: updates existing notification rather than spamming multiple entries
-            int notifId = Math.abs((title + "_" + symbol).hashCode()) % 1000000;
+            // Stable deterministic notification ID: updates existing notification without noisy re-alerting
+            String notifKey = !symbol.isEmpty() ? (type + "_" + symbol) : (type + "_" + Math.abs(title.hashCode()));
+            int notifId = Math.abs(notifKey.hashCode()) % 1000000;
             if (notifId == 0) notifId = 1001;
             NotificationManagerCompat notificationManager = NotificationManagerCompat.from(context);
             notificationManager.notify(notifId, builder.build());
