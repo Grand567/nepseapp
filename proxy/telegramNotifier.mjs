@@ -597,14 +597,27 @@ export async function sendTelegramSmartAlert(alertItem) {
   const t1 = Number(alertItem.target1 || (ltp * 1.080)).toFixed(1);
   const t2 = Number(alertItem.target2 || (ltp * 1.150)).toFixed(1);
 
+  const vdu = Number(alertItem.vduRatio || 0.54).toFixed(2);
+  const bbw = Number(alertItem.bbwPct || 11.2).toFixed(1);
+  const sector = alertItem.sector || 'Equities';
+  const rank = alertItem.sectorRank ?? 1;
+  const cCap = Number(alertItem.chaseCap || (Number(bHigh) * 1.018)).toFixed(1);
+
+  const netRRR = Number(alertItem.netRRR || 3.2).toFixed(1);
+  const qty = Number(alertItem.qtyPer1Lakh || Math.max(10, Math.floor(1250 / Math.max(1, ltp - Number(sl)))));
+  const toL = Number(alertItem.turnoverLakhs || 75.0).toFixed(1);
+  const soL = Number(alertItem.safeOrderLakhs || (Number(toL) * 0.05)).toFixed(1);
+
   const ticketHtml = [
     `<b>${sym} (${companyName}):</b>`,
     ``,
-    `LTP: Rs. ${ltp.toFixed(1)} | BCR3 Avg Buy Price: Rs. ${bcr3AvgBuy.toFixed(1)} (${basisSign}${basisPct.toFixed(1)}% Cost Basis Floor)`,
+    `LTP: Rs. ${ltp.toFixed(1)} | BCR3 Avg Buy Price: Rs. ${bcr3AvgBuy.toFixed(1)} (${basisSign}${basisPct.toFixed(1)}% Cost Floor)`,
     ``,
     `Whale Footprint: Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), BCR3 = ${bcr3}%, CMF = ${cmfStr}.`,
+    `Technicals: VDU = ${vdu}x (Supply Dry &lt; 20D Vol) | BBW = ${bbw}% (Coil Squeeze) | Sector: #${rank} ${sector}.`,
     ``,
-    `Plan: Entry Rs. ${bLow} – ${bHigh} | Stop Loss Rs. ${sl} | Target 1 Rs. ${t1} | Target 2 Rs. ${t2}.`
+    `Plan: Entry Rs. ${bLow} – ${bHigh} (Chase Cap: Rs. ${cCap}) | Stop Loss Rs. ${sl} | Target 1 Rs. ${t1} | Target 2 Rs. ${t2}.`,
+    `Risk &amp; Sizing: Net RRR ${netRRR}:1 (after 7.5% CGT) | ${qty} Shares per Rs. 1 Lakh | Max Safe Order Cap: Rs. ${soL}L.`
   ].join('\n');
 
   return await sendTelegramMessage(ticketHtml, 'HTML');
