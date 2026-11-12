@@ -561,7 +561,7 @@ export async function dispatchFcmNotification(alertItem) {
   const symbol = alertItem.symbol || 'NEPSE';
   const ltp = Number(alertItem.ltp || 0);
   const type = alertItem.type || 'INSTITUTIONAL_ENTRY';
-  const isPro = alertItem.category === 'pro' || ['BREAKOUT', 'INSTITUTIONAL_ENTRY', 'ACCUMULATION', 'PROFIT_BOOKING', 'STOP_LOSS_WARNING', 'DIVIDEND_ALERT', 'RIGHT_SHARE_ALERT', 'PORTFOLIO_NEWS_ALERT'].includes(type);
+  const isPro = alertItem.category === 'pro' || ['BREAKOUT', 'INSTITUTIONAL_ENTRY', 'ACCUMULATION', 'PROFIT_BOOKING', 'STOP_LOSS_WARNING'].includes(type);
   const channelId = isPro ? 'dravyashree-pro-signals' : 'nepse-general-news';
 
   const buyZone = alertItem.buyZone || {};
@@ -2736,12 +2736,13 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
           seenNewsKeys.add(itemKey);
           saveSeenNewsKeys();
 
-          // Categorize by impact type
+          // Categorize by impact type for nepse-general-news channel (#38BDF8)
           const isDividend = ['लाभांश', 'बोनस', 'नगद लाभांश', 'प्रतिशत लाभांश', 'dividend', 'bonus share', 'bonus', 'cash dividend', 'unclaimed cash dividend', 'unclaimed dividend'].some(kw => lowerTitle.includes(kw));
           const isRightShare = ['हकप्रद', 'right share', 'right issue', 'rights issue', 'right offering', 'हकप्रद सेयर'].some(kw => lowerTitle.includes(kw));
           const isBookClosure = ['बुक क्लोज', 'बुकक्लोज', 'साधारण सभा', 'book closure', 'agm', 'annual general meeting', 'special general meeting', 'sgm'].some(kw => lowerTitle.includes(kw));
           const isFinancial = ['वित्तीय विवरण', 'त्रैमासिक', 'quarterly report', 'financial statement', 'financial report', 'provisional financial', 'quarterly', 'quarter of fy', 'earnings', 'खुद नाफा'].some(kw => lowerTitle.includes(kw));
           const isMacro = ['मौद्रिक नीति', 'ब्याजदर', 'धितोपत्र बोर्ड', 'राष्ट्र बैंक', 'सर्कुलर', 'सर्किट', 'monetary policy', 'interest rate', 'sebon', 'nrb', 'halt', 'circuit breaker'].some(kw => lowerTitle.includes(kw));
+          const isHighImportanceNews = isMacro || ['अर्थमन्त्री', 'बजेट', 'धितोपत्र', 'मन्त्रिपरिषद्', 'नेप्से परिसूचक', 'शेयर बजार', 'बजार बन्द', 'कारोबार स्थगित', 'सूचक', 'finance minister', 'budget', 'gdp', 'inflation', 'cabinet', 'nepse index', 'trading halt'].some(kw => lowerTitle.includes(kw));
 
           let notifType = 'NEWS_ALERT';
           let notifCategory = 'general';
@@ -2749,13 +2750,13 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
 
           if (isDividend) {
             notifType = 'DIVIDEND_ALERT';
-            notifCategory = 'pro';
+            notifCategory = 'general';
             notifTitle = foundSym
               ? `💰 ${isPortfolioTracked ? '💼 [Portfolio] ' : ''}${foundSym} Dividend / Bonus Announced`
               : `💰 NEPSE Dividend Announcement`;
           } else if (isRightShare) {
             notifType = 'RIGHT_SHARE_ALERT';
-            notifCategory = 'pro';
+            notifCategory = 'general';
             notifTitle = foundSym
               ? `📈 ${isPortfolioTracked ? '💼 [Portfolio] ' : ''}${foundSym} Right Share Notice`
               : `📈 NEPSE Right Share Notice`;
@@ -2771,13 +2772,13 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
             notifTitle = foundSym
               ? `📊 ${isPortfolioTracked ? '💼 [Portfolio] ' : ''}${foundSym} Financial Results`
               : `📊 Financial Announcement`;
-          } else if (isMacro) {
+          } else if (isHighImportanceNews) {
             notifType = 'NEPSE_MACRO';
             notifCategory = 'general';
             notifTitle = `🏛️ NEPSE Market & Policy Alert`;
           } else if (isPortfolioTracked && foundSym) {
             notifType = 'PORTFOLIO_NEWS_ALERT';
-            notifCategory = 'pro';
+            notifCategory = 'general';
             notifTitle = `💼 Portfolio Alert: ${foundSym}`;
           } else {
             notifType = 'NEWS_ALERT';
@@ -2785,11 +2786,13 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
             notifTitle = foundSym ? `📰 ${foundSym} Corporate Announcement` : `📰 NEPSE Announcement`;
           }
 
-          // Strict User Policy: "no need to alert corporate news and action, only of my portfolio news are enough"
-          // Non-portfolio notices are silently stored in the in-app drawer only;
-          // zero push notifications to Android status bar or Telegram!
-          if (!isPortfolioTracked) {
-            console.log(`[SmartAlertEngine] ℹ️ Non-holding corporate notice "${title.slice(0, 45)}...": recorded in-app only (no push/Telegram).`);
+          // User Policy for nepse-general-news channel:
+          // Corporate Actions, Dividends, Right Shares, Financial Reports, AGM notices, High Importance Business News,
+          // and Portfolio holdings trigger status bar heads-up push notifications.
+          const isEligibleGeneralAlert = isDividend || isRightShare || isBookClosure || isFinancial || isHighImportanceNews || isPortfolioTracked;
+
+          if (!isEligibleGeneralAlert) {
+            console.log(`[SmartAlertEngine] ℹ️ Routine PR notice "${title.slice(0, 45)}...": recorded in-app only (no push/Telegram).`);
             const feedItem = {
               id: itemKey,
               type: notifType,
@@ -2807,13 +2810,14 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
               if (alertHistory.length > 200) alertHistory.pop();
               saveJson(HISTORY_FILE, alertHistory);
             }
-            continue; // Skip push & skip Telegram
+            continue; // Skip push & skip Telegram for routine PR
           }
 
           broadcastAlert({
             id: itemKey,
             type: notifType,
             category: notifCategory,
+            channelId: 'nepse-general-news',
             title: notifTitle,
             body: title,
             symbol: foundSym || 'NEPSE',

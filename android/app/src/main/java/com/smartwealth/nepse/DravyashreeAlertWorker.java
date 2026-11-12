@@ -316,8 +316,9 @@ public class DravyashreeAlertWorker extends Worker {
                     .setOnlyAlertOnce(true)
                     .setSound(defaultSoundUri)
                     .setVibrate(new long[]{0, 250, 150, 250})
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                     .setContentIntent(pendingIntent)
-                    .setPriority(isPro ? NotificationCompat.PRIORITY_MAX : NotificationCompat.PRIORITY_DEFAULT);
+                    .setPriority(NotificationCompat.PRIORITY_HIGH);
 
             if (isPro) {
                 builder.setColor(Color.parseColor("#10B981"));
@@ -357,16 +358,18 @@ public class DravyashreeAlertWorker extends Worker {
             proChannel.setVibrationPattern(new long[]{0, 250, 150, 250});
             manager.createNotificationChannel(proChannel);
 
-            // 2. General News & IPO Channel
+            // 2. General News & IPO Channel (High Importance, Sky Blue Accent #38BDF8, Heads-Up Banner)
             NotificationChannel generalChannel = new NotificationChannel(
                     CHANNEL_GENERAL,
-                    "NEPSE News & IPO Pipeline",
+                    "NEPSE General News & Corporate Actions",
                     NotificationManager.IMPORTANCE_HIGH
             );
-            generalChannel.setDescription("Corporate Announcements, Dividends, IPO Deadlines & Results");
+            generalChannel.setDescription("Corporate Actions, Dividends, Right Shares, Financial Reports, High-Importance News & IPOs");
             generalChannel.enableLights(true);
             generalChannel.setLightColor(Color.parseColor("#38BDF8"));
             generalChannel.enableVibration(true);
+            generalChannel.setVibrationPattern(new long[]{0, 250, 150, 250});
+            generalChannel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
             manager.createNotificationChannel(generalChannel);
         }
     }
