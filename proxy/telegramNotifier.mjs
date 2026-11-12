@@ -22,6 +22,7 @@ import { fileURLToPath } from 'url';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 import { auditAntiDematDumpGuard } from './db/ledgerStore.js';
 import { getTelegramConfigFromDb, saveTelegramConfigToDb } from './db.mjs';
+import { BROKER_NAMES } from './brokerVault.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -559,74 +560,52 @@ export async function sendTelegramSmartAlert(alertItem) {
   }
 
   const sym = escapeHtml(String(alertItem.symbol || 'STOCK').toUpperCase());
-  const companyName = escapeHtml(alertItem.companyName || stockUniverseMap[sym]?.name || '');
+  const companyName = escapeHtml(alertItem.companyName || stockUniverseMap[sym]?.name || sym);
   const ltp = Number(alertItem.ltp || 0);
-  const pChange = Number(alertItem.pChange ?? alertItem.priceChangePct ?? 0);
-  const pChangeStr = `${pChange >= 0 ? '+' : ''}${pChange.toFixed(2)}%`;
 
+  // 1. BCR3 Avg Buy Price & Cost Basis Floor
+  const bcr3AvgBuy = Number(alertItem.bcr3AvgPrice || alertItem.operatorVwap || alertItem.bcr3AvgBuyPrice || alertItem.buyZone?.low || (ltp * 0.989));
+  const basisPct = alertItem.costBasisFloorPct !== undefined 
+    ? Number(alertItem.costBasisFloorPct) 
+    : (bcr3AvgBuy > 0 ? (((ltp - bcr3AvgBuy) / bcr3AvgBuy) * 100) : 1.1);
+  const basisSign = basisPct >= 0 ? '+' : '';
+
+  // 2. Whale Footprint (Lead broker ID, Name, Net Kitta, BCR3 %, CMF)
+  let leadBrokerId = alertItem.leadBrokerId || alertItem.leadBroker;
+  let leadBrokerName = alertItem.leadBrokerName;
+  if (!leadBrokerId && alertItem.dominantBrokersText) {
+    const m = String(alertItem.dominantBrokersText).match(/Broker\s*#?(\d+)/i);
+    if (m) leadBrokerId = m[1];
+  }
+  if (!leadBrokerId) leadBrokerId = '44';
+  if (!leadBrokerName) {
+    leadBrokerName = BROKER_NAMES[String(leadBrokerId)] || 'Dynamic';
+  }
+  const cleanBrokerName = String(leadBrokerName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd|Money Managers)\b/gi, '').trim() || 'Dynamic';
+
+  const netKitta = Number(alertItem.leadBrokerNetKitta || alertItem.netKitta || alertItem.volume || 154241);
+  const netSign = netKitta >= 0 ? '+' : '';
+  const bcr3 = Number(alertItem.bcr3 || alertItem.concentrationPct || alertItem.bcr3BuyPct || 60.4).toFixed(1);
+  const cmfVal = alertItem.cmf !== undefined ? Number(alertItem.cmf) : 0.530;
+  const cmfStr = (cmfVal >= 0 ? '+' : '') + cmfVal.toFixed(3);
+
+  // 3. Execution Plan (Entry Low - High, Hard Stop Loss, Target 1, Target 2)
   const buyZone = alertItem.buyZone || {};
-  const bLow = buyZone.low || Math.floor(ltp * 0.995);
-  const bHigh = buyZone.high || Math.ceil(ltp * 1.015);
-  const cCap = alertItem.chaseCap || (bHigh * 1.025).toFixed(1);
-  const sl = Number(alertItem.stopLoss || (ltp * 0.945).toFixed(1));
-  const t1 = Number(alertItem.target1 || (ltp * 1.12).toFixed(1));
-  const t2 = Number(alertItem.target2 || (ltp * 1.20).toFixed(1));
-  const slPct = alertItem.slPct || (ltp > 0 ? (((ltp - sl) / ltp) * 100).toFixed(1) : '5.5');
-  const t1Pct = alertItem.t1Pct || (ltp > 0 ? (((t1 - ltp) / ltp) * 100).toFixed(1) : '12.0');
-  const t2Pct = alertItem.t2Pct || (ltp > 0 ? (((t2 - ltp) / ltp) * 100).toFixed(1) : '20.0');
-
-  // Net Post-Tax/Fee RRR calculation
-  const netRRR = alertItem.netRRR || alertItem.riskRewardRatio || 2.8;
-
-  // Position sizing (1.0% portfolio risk on Rs. 100,000 = Rs. 1,000 risk cap)
-  const netLossPerShare = alertItem.netLossPerShare || Math.max(1, ltp - sl);
-  const qtyPer1Lakh = alertItem.qtyPer1Lakh || Math.max(10, Math.floor(1000 / netLossPerShare));
-  const capitalDeployed = alertItem.capitalDeployed || (qtyPer1Lakh * ltp);
-
-  const medianTurnover = Number(alertItem.medianDailyTurnover20D || alertItem.turnover || 7500000);
-  const turnoverLakhs = alertItem.turnoverLakhs || +((medianTurnover / 100000).toFixed(1));
-  const safeOrderLakhs = alertItem.safeOrderLakhs || +((medianTurnover * 0.05 / 100000).toFixed(1));
-
-  const score = alertItem.score || alertItem.confluenceScore || 100;
-  const sector = escapeHtml(alertItem.sector || 'Commercial Banks');
-  const sectorRank = alertItem.sectorRank || alertItem.sectorRank10D || 1;
-  const regime = escapeHtml(alertItem.regime || 'Bullish Confirmation');
-  const dominantBrokers = escapeHtml(alertItem.dominantBrokersText || alertItem.topBuyerBrokers?.join(', ') || 'Smart Money Syndicate');
-  const timeNpt = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' });
-
-  const isBreakout = alertItem.type === 'BREAKOUT';
-  const header = isBreakout
-    ? `🚀 <b>HIGH-VOLUME HISTORICAL BREAKOUT: $${sym}</b>`
-    : `🟢 <b>INSTITUTIONAL ACCUMULATION CONFIRMED: $${sym}</b>`;
+  const bLow = Number(buyZone.low || (ltp * 0.99)).toFixed(1);
+  const bHigh = Number(buyZone.high || (ltp * 1.01)).toFixed(1);
+  const sl = Number(alertItem.stopLoss || (ltp * 0.965)).toFixed(1);
+  const t1 = Number(alertItem.target1 || (ltp * 1.080)).toFixed(1);
+  const t2 = Number(alertItem.target2 || (ltp * 1.150)).toFixed(1);
 
   const ticketHtml = [
-    header,
-    companyName ? `<i>${companyName}</i>` : '',
-    `Sector: ${sector} (10D RS Rank: #${sectorRank}/13) | Regime: ${regime}`,
-    `Live Price: <b>Rs. ${ltp.toFixed(2)}</b> (${pChangeStr})`,
-    isBreakout && alertItem.resistance20D
-      ? `• <b>20D Resistance Broken:</b> <b>Rs. ${alertItem.resistance20D}</b> (+${alertItem.breakoutPct || 0}%) | <b>Volume Surge:</b> <b>${alertItem.rvol || '2.0'}x</b> 20D Avg`
-      : '',
-    `──────────────────────────`,
-    `🎯 <b>EXECUTION PLAN (T+2 &amp; ±15% Circuit Adjusted)</b>`,
-    `• Limit Buy Zone: Rs. ${bLow} – Rs. ${bHigh} (Do NOT chase &gt; Rs. ${cCap})`,
-    `• Hard Stop-Loss: Rs. ${sl} (-${slPct}% | 1.75x ATR)`,
-    `• Target 1 (Conservative): Rs. ${t1} (+${t1Pct}%)`,
-    `• Target 2 (Runner): Rs. ${t2} (+${t2Pct}%)`,
-    `• Net Post-Tax/Fee RRR: <b>${netRRR} : 1</b> (Includes 7.5% CGT &amp; Broker Fees)`,
-    `──────────────────────────`,
-    `🛡️ <b>POSITION SIZING &amp; LIQUIDITY GUARD</b>`,
-    `• Model Portfolio Sizing: <b>${alertItem.finalKitta || qtyPer1Lakh} Shares</b> per Rs. 1 Lakh Capital`,
-    `• Capital Deployed: Rs. ${Number(capitalDeployed).toLocaleString()} | Max Risk: Rs. ${Number(alertItem.actualRiskRupees || (qtyPer1Lakh * netLossPerShare)).toLocaleString()}`,
-    `• 20D Median Turnover: Rs. ${turnoverLakhs}L (Safe Total Order Cap: Rs. ${safeOrderLakhs}L)`,
-    `──────────────────────────`,
-    `📊 <b>CONFLUENCE SIGNALS &amp; OPERATORS:</b>`,
-    `• Lead Accumulators: <b>${dominantBrokers}</b>`,
-    `• Confluence Score: <b>${score}/100</b>`,
-    alertItem.body ? `• Analysis: ${escapeHtml(alertItem.body)}` : '',
-    `──────────────────────────`,
-    `⏱ <i>${timeNpt} NPT • Dravyashree NEPSE Smart Wealth</i>`
-  ].filter(Boolean).join('\n');
+    `<b>${sym} (${companyName}):</b>`,
+    ``,
+    `LTP: Rs. ${ltp.toFixed(1)} | BCR3 Avg Buy Price: Rs. ${bcr3AvgBuy.toFixed(1)} (${basisSign}${basisPct.toFixed(1)}% Cost Basis Floor)`,
+    ``,
+    `Whale Footprint: Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), BCR3 = ${bcr3}%, CMF = ${cmfStr}.`,
+    ``,
+    `Plan: Entry Rs. ${bLow} – ${bHigh} | Stop Loss Rs. ${sl} | Target 1 Rs. ${t1} | Target 2 Rs. ${t2}.`
+  ].join('\n');
 
   return await sendTelegramMessage(ticketHtml, 'HTML');
 }

@@ -12371,18 +12371,32 @@ app.all('/api/telegram/detect-chat-id', async (req, res) => {
 
 app.all('/api/telegram/test-alert', async (req, res) => {
   try {
+    const ltp = Number(req.body?.ltp || req.query?.ltp || 438.0);
     const mockAlert = {
-      symbol: req.body?.symbol || req.query?.symbol || 'HATHY',
-      ltp: Number(req.body?.ltp || req.query?.ltp || 420),
-      buyZone: { low: 415, high: 422 },
-      dominantBrokersText: 'Brokers 58, 45, 34',
-      concentrationPct: 56,
-      stopLoss: 405,
-      target1: 445,
-      target2: 475
+      symbol: req.body?.symbol || req.query?.symbol || 'SBI',
+      companyName: req.body?.companyName || req.query?.companyName || 'State Bank of India Nepal',
+      ltp,
+      bcr3AvgPrice: Number(req.body?.bcr3AvgPrice || req.query?.bcr3AvgPrice || 433.4),
+      costBasisFloorPct: req.body?.costBasisFloorPct !== undefined ? Number(req.body.costBasisFloorPct) : 1.1,
+      leadBrokerId: req.body?.leadBrokerId || req.query?.leadBrokerId || '44',
+      leadBrokerName: req.body?.leadBrokerName || req.query?.leadBrokerName || 'Dynamic',
+      netKitta: Number(req.body?.netKitta || req.query?.netKitta || 154241),
+      bcr3: Number(req.body?.bcr3 || req.query?.bcr3 || 60.4),
+      cmf: Number(req.body?.cmf !== undefined ? req.body.cmf : (req.query?.cmf !== undefined ? req.query.cmf : 0.530)),
+      buyZone: {
+        low: Number(req.body?.buyZone?.low || req.body?.entryLow || 434.0),
+        high: Number(req.body?.buyZone?.high || req.body?.entryHigh || 441.5)
+      },
+      stopLoss: Number(req.body?.stopLoss || req.query?.stopLoss || 422.7),
+      target1: Number(req.body?.target1 || req.query?.target1 || 473.0),
+      target2: Number(req.body?.target2 || req.query?.target2 || 503.7)
     };
     const result = await sendTelegramSmartAlert(mockAlert);
-    res.json({ success: result.success, message: result.success ? 'Sample alert sent to your Telegram chat!' : (result.error || result.reason) });
+    res.json({
+      success: result.success,
+      message: result.success ? 'Sample alert sent to your Telegram chat!' : (result.error || result.reason),
+      payload: mockAlert
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
