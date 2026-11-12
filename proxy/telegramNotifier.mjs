@@ -595,18 +595,34 @@ export async function sendTelegramSmartAlert(alertItem) {
   const t1 = Number(alertItem.target1 || (ltp * 1.080)).toFixed(1);
   const t2 = Number(alertItem.target2 || (ltp * 1.150)).toFixed(1);
 
-  const ticketHtml = [
-    `🟢 <b>${sym} (${companyName}):</b>`,
-    ``,
-    `<b>LTP:</b> Rs. ${ltp.toFixed(1)} | <b>BCR3 Avg Buy Price:</b> Rs. ${bcr3AvgBuy.toFixed(1)} (${basisSign}${basisPct.toFixed(1)}% Cost Basis Floor)`,
-    ``,
-    `<b>Whale Footprint:</b> Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), <b>BCR3 =</b> ${bcr3}%, <b>CMF =</b> ${cmfStr}.`,
-    ``,
-    `<b>Plan:</b> <b>Entry</b> Rs. ${bLow} – ${bHigh} | <b>Stop Loss</b> Rs. ${sl} | <b>Target 1</b> Rs. ${t1} | <b>Target 2</b> Rs. ${t2}.`
-  ].join('\n');
+  const upgradedPayload = {
+    symbol: sym,
+    name: companyName,
+    companyName,
+    sector: alertItem.sector || 'Equities',
+    ltp,
+    entryLow: Number(buyZone.low || (ltp * 0.995)),
+    entryHigh: Number(buyZone.high || (ltp * 1.012)),
+    chaseCap: Number(alertItem.chaseCap || (ltp * 1.018)),
+    stopLoss: sl,
+    slPct: alertItem.slPct || 3.5,
+    target1: t1,
+    t1Pct: alertItem.t1Pct || 8.0,
+    target2: t2,
+    t2Pct: alertItem.t2Pct || 15.0,
+    bcr3Buy: alertItem.bcr3Buy || alertItem.bcr3 || 60.4,
+    bcr3Sell: alertItem.bcr3Sell || 34.0,
+    leadBrokerId,
+    leadBrokerName: cleanBrokerName,
+    retention10D: alertItem.retention10D || alertItem.retentionPct || 85,
+    vdu: alertItem.vdu || alertItem.vduRatio || 0.52,
+    cmf: cmfVal,
+    bbw: alertItem.bbw || alertItem.bbwPct || 11.2,
+    corneringScore: alertItem.corneringScore || alertItem.score || 92,
+    confidenceLabel: alertItem.confidenceLabel || '🟢 Confirmed Stealth (v2.0)'
+  };
 
-  return await sendTelegramMessage(ticketHtml, 'HTML');
-
+  const ticketHtml = formatUpgradedStealthAccumulationHtml(upgradedPayload);
   return await sendTelegramMessage(ticketHtml, 'HTML');
 }
 

@@ -12371,34 +12371,38 @@ app.all('/api/telegram/detect-chat-id', async (req, res) => {
 
 app.all('/api/telegram/test-alert', async (req, res) => {
   try {
-    const ltp = Number(req.body?.ltp || req.query?.ltp || 438.0);
+    const ltp = Number(req.body?.ltp || req.query?.ltp || 937.5);
     const mockAlert = {
-      symbol: req.body?.symbol || req.query?.symbol || 'SBI',
-      companyName: req.body?.companyName || req.query?.companyName || 'State Bank of India Nepal',
+      symbol: req.body?.symbol || req.query?.symbol || 'NTC',
+      companyName: req.body?.companyName || req.query?.companyName || 'Nepal Telecom',
       ltp,
-      bcr3AvgPrice: Number(req.body?.bcr3AvgPrice || req.query?.bcr3AvgPrice || 433.4),
-      costBasisFloorPct: req.body?.costBasisFloorPct !== undefined ? Number(req.body.costBasisFloorPct) : 1.1,
-      leadBrokerId: req.body?.leadBrokerId || req.query?.leadBrokerId || '44',
-      leadBrokerName: req.body?.leadBrokerName || req.query?.leadBrokerName || 'Dynamic',
-      netKitta: Number(req.body?.netKitta || req.query?.netKitta || 154241),
-      bcr3: Number(req.body?.bcr3 || req.query?.bcr3 || 60.4),
-      cmf: Number(req.body?.cmf !== undefined ? req.body.cmf : (req.query?.cmf !== undefined ? req.query.cmf : 0.530)),
+      bcr3AvgPrice: Number(req.body?.bcr3AvgPrice || req.query?.bcr3AvgPrice || 937.0),
+      costBasisFloorPct: req.body?.costBasisFloorPct !== undefined ? Number(req.body.costBasisFloorPct) : 0.05,
+      leadBrokerId: req.body?.leadBrokerId || req.query?.leadBrokerId || '58',
+      leadBrokerName: req.body?.leadBrokerName || req.query?.leadBrokerName || 'Naasa Securities',
+      netKitta: Number(req.body?.netKitta || req.query?.netKitta || 26300),
+      bcr3: Number(req.body?.bcr3 || req.query?.bcr3 || 88.3),
+      bcr3Buy: Number(req.body?.bcr3Buy || req.query?.bcr3Buy || 88.3),
+      bcr3Sell: Number(req.body?.bcr3Sell || req.query?.bcr3Sell || 34.7),
+      cmf: Number(req.body?.cmf !== undefined ? req.body.cmf : (req.query?.cmf !== undefined ? req.query.cmf : 0.14)),
       buyZone: {
-        low: Number(req.body?.buyZone?.low || req.body?.entryLow || 434.0),
-        high: Number(req.body?.buyZone?.high || req.body?.entryHigh || 441.5)
+        low: Number(req.body?.buyZone?.low || req.body?.entryLow || 933.0),
+        high: Number(req.body?.buyZone?.high || req.body?.entryHigh || 945.0)
       },
-      stopLoss: Number(req.body?.stopLoss || req.query?.stopLoss || 422.7),
-      target1: Number(req.body?.target1 || req.query?.target1 || 473.0),
-      target2: Number(req.body?.target2 || req.query?.target2 || 503.7),
-      vduRatio: Number(req.body?.vduRatio || req.query?.vduRatio || 0.54),
-      bbwPct: Number(req.body?.bbwPct || req.query?.bbwPct || 11.2),
-      sector: req.body?.sector || req.query?.sector || 'Commercial Banks',
-      sectorRank: Number(req.body?.sectorRank || req.query?.sectorRank || 1),
-      chaseCap: Number(req.body?.chaseCap || req.query?.chaseCap || 445.8),
-      netRRR: Number(req.body?.netRRR || req.query?.netRRR || 3.2),
-      qtyPer1Lakh: Number(req.body?.qtyPer1Lakh || req.query?.qtyPer1Lakh || 142),
-      turnoverLakhs: Number(req.body?.turnoverLakhs || req.query?.turnoverLakhs || 75.0),
-      safeOrderLakhs: Number(req.body?.safeOrderLakhs || req.query?.safeOrderLakhs || 3.8)
+      entryLow: Number(req.body?.entryLow || 933.0),
+      entryHigh: Number(req.body?.entryHigh || 945.0),
+      stopLoss: Number(req.body?.stopLoss || req.query?.stopLoss || 904.7),
+      target1: Number(req.body?.target1 || req.query?.target1 || 1012.5),
+      target2: Number(req.body?.target2 || req.query?.target2 || 1078.1),
+      vduRatio: Number(req.body?.vduRatio || req.query?.vduRatio || 0.52),
+      vdu: Number(req.body?.vdu || 0.52),
+      bbwPct: Number(req.body?.bbwPct || req.query?.bbwPct || 8.4),
+      bbw: Number(req.body?.bbw || 8.4),
+      sector: req.body?.sector || req.query?.sector || 'Telecom',
+      chaseCap: Number(req.body?.chaseCap || req.query?.chaseCap || 954.4),
+      retention10D: Number(req.body?.retention10D || 87),
+      corneringScore: Number(req.body?.corneringScore || 92),
+      confidenceLabel: req.body?.confidenceLabel || '🟢 Confirmed Stealth (v2.0)'
     };
     const result = await sendTelegramSmartAlert(mockAlert);
     res.json({
@@ -12406,6 +12410,41 @@ app.all('/api/telegram/test-alert', async (req, res) => {
       message: result.success ? 'Sample alert sent to your Telegram chat!' : (result.error || result.reason),
       payload: mockAlert
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.all('/api/telegram/dispatch-upgraded-stealth', async (req, res) => {
+  try {
+    const candidate = req.body?.candidate || {
+      symbol: req.body?.symbol || 'NTC',
+      name: req.body?.name || 'Nepal Telecom',
+      companyName: req.body?.companyName || 'Nepal Doorsanchar Company Limited',
+      sector: req.body?.sector || 'Telecom',
+      ltp: Number(req.body?.ltp || 937.5),
+      entryLow: Number(req.body?.entryLow || 933.0),
+      entryHigh: Number(req.body?.entryHigh || 945.0),
+      chaseCap: Number(req.body?.chaseCap || 954.4),
+      stopLoss: Number(req.body?.stopLoss || 904.7),
+      slPct: Number(req.body?.slPct || 3.5),
+      target1: Number(req.body?.target1 || 1012.5),
+      t1Pct: Number(req.body?.t1Pct || 8.0),
+      target2: Number(req.body?.target2 || 1078.1),
+      t2Pct: Number(req.body?.t2Pct || 15.0),
+      bcr3Buy: Number(req.body?.bcr3Buy || 88.3),
+      bcr3Sell: Number(req.body?.bcr3Sell || 34.7),
+      leadBrokerId: req.body?.leadBrokerId || 58,
+      leadBrokerName: req.body?.leadBrokerName || 'Naasa Securities',
+      retention10D: Number(req.body?.retention10D || 87),
+      vdu: Number(req.body?.vdu || 0.52),
+      cmf: Number(req.body?.cmf !== undefined ? req.body.cmf : 0.14),
+      bbw: Number(req.body?.bbw || 8.4),
+      corneringScore: Number(req.body?.corneringScore || 92),
+      confidenceLabel: req.body?.confidenceLabel || '🟢 Confirmed Stealth (v2.0)'
+    };
+    const result = await sendTelegramPrimePickAlert(candidate);
+    res.json({ success: result.success, message: result.success ? 'Upgraded stealth alert dispatched to Telegram!' : (result.error || result.reason), result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
