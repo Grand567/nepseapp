@@ -554,10 +554,8 @@ export async function sendTelegramSmartAlert(alertItem) {
     return await sendTelegramIpoAlert(alertItem);
   }
 
-  // If already formatted HTML payload is passed, dispatch directly
-  if (alertItem.ticketPayload?.html) {
-    return await sendTelegramMessage(alertItem.ticketPayload.html, 'HTML');
-  }
+  // Bypassed legacy ticketPayload.html to ensure only the single clean unified ticket is sent
+  // (Prevents duplicate/conflicting multi-pillar diagnostic dumps in Telegram)
 
   const sym = escapeHtml(String(alertItem.symbol || 'STOCK').toUpperCase());
   const companyName = escapeHtml(alertItem.companyName || stockUniverseMap[sym]?.name || sym);
@@ -597,28 +595,17 @@ export async function sendTelegramSmartAlert(alertItem) {
   const t1 = Number(alertItem.target1 || (ltp * 1.080)).toFixed(1);
   const t2 = Number(alertItem.target2 || (ltp * 1.150)).toFixed(1);
 
-  const vdu = Number(alertItem.vduRatio || 0.54).toFixed(2);
-  const bbw = Number(alertItem.bbwPct || 11.2).toFixed(1);
-  const sector = alertItem.sector || 'Equities';
-  const rank = alertItem.sectorRank ?? 1;
-  const cCap = Number(alertItem.chaseCap || (Number(bHigh) * 1.018)).toFixed(1);
-
-  const netRRR = Number(alertItem.netRRR || 3.2).toFixed(1);
-  const qty = Number(alertItem.qtyPer1Lakh || Math.max(10, Math.floor(1250 / Math.max(1, ltp - Number(sl)))));
-  const toL = Number(alertItem.turnoverLakhs || 75.0).toFixed(1);
-  const soL = Number(alertItem.safeOrderLakhs || (Number(toL) * 0.05)).toFixed(1);
-
   const ticketHtml = [
     `🟢 <b>${sym} (${companyName}):</b>`,
     ``,
-    `<b>LTP:</b> Rs. ${ltp.toFixed(1)} | <b>BCR3 Avg Buy Price:</b> Rs. ${bcr3AvgBuy.toFixed(1)} (<b>${basisSign}${basisPct.toFixed(1)}% Cost Floor</b>)`,
+    `<b>LTP:</b> Rs. ${ltp.toFixed(1)} | <b>BCR3 Avg Buy Price:</b> Rs. ${bcr3AvgBuy.toFixed(1)} (${basisSign}${basisPct.toFixed(1)}% Cost Basis Floor)`,
     ``,
-    `<b>Whale Footprint:</b> Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), <b>BCR3 = ${bcr3}%</b>, <b>CMF = ${cmfStr}</b>.`,
-    `<b>Technicals:</b> <b>VDU = ${vdu}x</b> (Supply Dry &lt; 20D Vol) | <b>BBW = ${bbw}%</b> (Coil Squeeze) | <b>Sector:</b> #${rank} ${sector}.`,
+    `<b>Whale Footprint:</b> Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), <b>BCR3 =</b> ${bcr3}%, <b>CMF =</b> ${cmfStr}.`,
     ``,
-    `<b>Plan:</b> <b>Entry</b> Rs. ${bLow} – ${bHigh} (<b>Chase Cap:</b> Rs. ${cCap}) | <b>Stop Loss</b> Rs. ${sl} | <b>Target 1</b> Rs. ${t1} | <b>Target 2</b> Rs. ${t2}.`,
-    `<b>Risk &amp; Sizing:</b> <b>Net RRR</b> ${netRRR}:1 (after 7.5% CGT) | <b>${qty} Shares</b> per Rs. 1 Lakh | <b>Max Safe Order Cap:</b> Rs. ${soL}L.`
+    `<b>Plan:</b> <b>Entry</b> Rs. ${bLow} – ${bHigh} | <b>Stop Loss</b> Rs. ${sl} | <b>Target 1</b> Rs. ${t1} | <b>Target 2</b> Rs. ${t2}.`
   ].join('\n');
+
+  return await sendTelegramMessage(ticketHtml, 'HTML');
 
   return await sendTelegramMessage(ticketHtml, 'HTML');
 }
@@ -2204,13 +2191,11 @@ export async function sendTelegramPrimePickAlert(winner) {
   const msg = [
     `🟢 <b>${sym} (${name}):</b>`,
     ``,
-    `<b>LTP:</b> Rs. ${ltp.toFixed(1)} | <b>BCR3 Avg Buy Price:</b> Rs. ${bcr3AvgBuy.toFixed(1)} (<b>${basisSign}${basisPct.toFixed(1)}% Cost Floor</b>)`,
+    `<b>LTP:</b> Rs. ${ltp.toFixed(1)} | <b>BCR3 Avg Buy Price:</b> Rs. ${bcr3AvgBuy.toFixed(1)} (${basisSign}${basisPct.toFixed(1)}% Cost Basis Floor)`,
     ``,
-    `<b>Whale Footprint:</b> Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), <b>BCR3 = ${bcr3}%</b>, <b>CMF = ${cmfStr}</b>.`,
-    `<b>Technicals:</b> <b>VDU = ${vdu}x</b> (Supply Dry &lt; 20D Vol) | <b>BBW = ${bbw}%</b> (Coil Squeeze) | <b>Sector:</b> #${rank} ${sector}.`,
+    `<b>Whale Footprint:</b> Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), <b>BCR3 =</b> ${bcr3}%, <b>CMF =</b> ${cmfStr}.`,
     ``,
-    `<b>Plan:</b> <b>Entry</b> Rs. ${Number(eLow).toFixed(1)} – ${Number(eHigh).toFixed(1)} (<b>Chase Cap:</b> Rs. ${Number(cCap).toFixed(1)}) | <b>Stop Loss</b> Rs. ${Number(sl).toFixed(1)} | <b>Target 1</b> Rs. ${Number(t1).toFixed(1)} | <b>Target 2</b> Rs. ${Number(t2).toFixed(1)}.`,
-    `<b>Risk &amp; Sizing:</b> <b>Net RRR</b> 3.2:1 (after 7.5% CGT) | <b>${kitta} Shares</b> per Rs. 1 Lakh | <b>Outlay:</b> Rs. ${Number(capital).toLocaleString()}.`
+    `<b>Plan:</b> <b>Entry</b> Rs. ${Number(eLow).toFixed(1)} – ${Number(eHigh).toFixed(1)} | <b>Stop Loss</b> Rs. ${Number(sl).toFixed(1)} | <b>Target 1</b> Rs. ${Number(t1).toFixed(1)} | <b>Target 2</b> Rs. ${Number(t2).toFixed(1)}.`
   ].join('\n');
 
   return await sendTelegramMessage(msg);
