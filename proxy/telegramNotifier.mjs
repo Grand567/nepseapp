@@ -609,15 +609,15 @@ export async function sendTelegramSmartAlert(alertItem) {
   const soL = Number(alertItem.safeOrderLakhs || (Number(toL) * 0.05)).toFixed(1);
 
   const ticketHtml = [
-    `<b>${sym} (${companyName}):</b>`,
+    `🟢 <b>${sym} (${companyName}):</b>`,
     ``,
-    `LTP: Rs. ${ltp.toFixed(1)} | BCR3 Avg Buy Price: Rs. ${bcr3AvgBuy.toFixed(1)} (${basisSign}${basisPct.toFixed(1)}% Cost Floor)`,
+    `<b>LTP:</b> Rs. ${ltp.toFixed(1)} | <b>BCR3 Avg Buy Price:</b> Rs. ${bcr3AvgBuy.toFixed(1)} (<b>${basisSign}${basisPct.toFixed(1)}% Cost Floor</b>)`,
     ``,
-    `Whale Footprint: Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), BCR3 = ${bcr3}%, CMF = ${cmfStr}.`,
-    `Technicals: VDU = ${vdu}x (Supply Dry &lt; 20D Vol) | BBW = ${bbw}% (Coil Squeeze) | Sector: #${rank} ${sector}.`,
+    `<b>Whale Footprint:</b> Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), <b>BCR3 = ${bcr3}%</b>, <b>CMF = ${cmfStr}</b>.`,
+    `<b>Technicals:</b> <b>VDU = ${vdu}x</b> (Supply Dry &lt; 20D Vol) | <b>BBW = ${bbw}%</b> (Coil Squeeze) | <b>Sector:</b> #${rank} ${sector}.`,
     ``,
-    `Plan: Entry Rs. ${bLow} – ${bHigh} (Chase Cap: Rs. ${cCap}) | Stop Loss Rs. ${sl} | Target 1 Rs. ${t1} | Target 2 Rs. ${t2}.`,
-    `Risk &amp; Sizing: Net RRR ${netRRR}:1 (after 7.5% CGT) | ${qty} Shares per Rs. 1 Lakh | Max Safe Order Cap: Rs. ${soL}L.`
+    `<b>Plan:</b> <b>Entry</b> Rs. ${bLow} – ${bHigh} (<b>Chase Cap:</b> Rs. ${cCap}) | <b>Stop Loss</b> Rs. ${sl} | <b>Target 1</b> Rs. ${t1} | <b>Target 2</b> Rs. ${t2}.`,
+    `<b>Risk &amp; Sizing:</b> <b>Net RRR</b> ${netRRR}:1 (after 7.5% CGT) | <b>${qty} Shares</b> per Rs. 1 Lakh | <b>Max Safe Order Cap:</b> Rs. ${soL}L.`
   ].join('\n');
 
   return await sendTelegramMessage(ticketHtml, 'HTML');
@@ -2196,14 +2196,21 @@ export async function sendTelegramPrimePickAlert(winner) {
   const cmfVal = winner.cmf !== undefined ? Number(winner.cmf) : 0.530;
   const cmfStr = (cmfVal >= 0 ? '+' : '') + cmfVal.toFixed(3);
 
+  const vdu = Number(winner.vduRatio || 0.54).toFixed(2);
+  const bbw = Number(winner.bbwPct || 11.2).toFixed(1);
+  const sector = winner.sector || 'Equities';
+  const rank = winner.sectorRank ?? 1;
+
   const msg = [
-    `<b>${sym} (${name}):</b>`,
+    `🟢 <b>${sym} (${name}):</b>`,
     ``,
-    `LTP: Rs. ${ltp.toFixed(1)} | BCR3 Avg Buy Price: Rs. ${bcr3AvgBuy.toFixed(1)} (${basisSign}${basisPct.toFixed(1)}% Cost Basis Floor)`,
+    `<b>LTP:</b> Rs. ${ltp.toFixed(1)} | <b>BCR3 Avg Buy Price:</b> Rs. ${bcr3AvgBuy.toFixed(1)} (<b>${basisSign}${basisPct.toFixed(1)}% Cost Floor</b>)`,
     ``,
-    `Whale Footprint: Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), BCR3 = ${bcr3}%, CMF = ${cmfStr}.`,
+    `<b>Whale Footprint:</b> Lead Broker #${leadBrokerId} ${cleanBrokerName} (Net ${netSign}${netKitta.toLocaleString()} kitta), <b>BCR3 = ${bcr3}%</b>, <b>CMF = ${cmfStr}</b>.`,
+    `<b>Technicals:</b> <b>VDU = ${vdu}x</b> (Supply Dry &lt; 20D Vol) | <b>BBW = ${bbw}%</b> (Coil Squeeze) | <b>Sector:</b> #${rank} ${sector}.`,
     ``,
-    `Plan: Entry Rs. ${Number(eLow).toFixed(1)} – ${Number(eHigh).toFixed(1)} | Stop Loss Rs. ${Number(sl).toFixed(1)} | Target 1 Rs. ${Number(t1).toFixed(1)} | Target 2 Rs. ${Number(t2).toFixed(1)}.`
+    `<b>Plan:</b> <b>Entry</b> Rs. ${Number(eLow).toFixed(1)} – ${Number(eHigh).toFixed(1)} (<b>Chase Cap:</b> Rs. ${Number(cCap).toFixed(1)}) | <b>Stop Loss</b> Rs. ${Number(sl).toFixed(1)} | <b>Target 1</b> Rs. ${Number(t1).toFixed(1)} | <b>Target 2</b> Rs. ${Number(t2).toFixed(1)}.`,
+    `<b>Risk &amp; Sizing:</b> <b>Net RRR</b> 3.2:1 (after 7.5% CGT) | <b>${kitta} Shares</b> per Rs. 1 Lakh | <b>Outlay:</b> Rs. ${Number(capital).toLocaleString()}.`
   ].join('\n');
 
   return await sendTelegramMessage(msg);

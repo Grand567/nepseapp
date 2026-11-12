@@ -12389,7 +12389,16 @@ app.all('/api/telegram/test-alert', async (req, res) => {
       },
       stopLoss: Number(req.body?.stopLoss || req.query?.stopLoss || 422.7),
       target1: Number(req.body?.target1 || req.query?.target1 || 473.0),
-      target2: Number(req.body?.target2 || req.query?.target2 || 503.7)
+      target2: Number(req.body?.target2 || req.query?.target2 || 503.7),
+      vduRatio: Number(req.body?.vduRatio || req.query?.vduRatio || 0.54),
+      bbwPct: Number(req.body?.bbwPct || req.query?.bbwPct || 11.2),
+      sector: req.body?.sector || req.query?.sector || 'Commercial Banks',
+      sectorRank: Number(req.body?.sectorRank || req.query?.sectorRank || 1),
+      chaseCap: Number(req.body?.chaseCap || req.query?.chaseCap || 445.8),
+      netRRR: Number(req.body?.netRRR || req.query?.netRRR || 3.2),
+      qtyPer1Lakh: Number(req.body?.qtyPer1Lakh || req.query?.qtyPer1Lakh || 142),
+      turnoverLakhs: Number(req.body?.turnoverLakhs || req.query?.turnoverLakhs || 75.0),
+      safeOrderLakhs: Number(req.body?.safeOrderLakhs || req.query?.safeOrderLakhs || 3.8)
     };
     const result = await sendTelegramSmartAlert(mockAlert);
     res.json({
