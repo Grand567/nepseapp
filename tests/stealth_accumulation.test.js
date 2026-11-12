@@ -16,7 +16,8 @@
 import {
   calculateStealthAccumulationScore,
   classifyWyckoffStage,
-  detectSyndicateCluster
+  detectSyndicateCluster,
+  calculateStockCorneringScore
 } from '../src/utils/accumulationDistributionEngine.ts';
 
 // ── Universal Runner Adaptor (Vitest or Standalone Node.js) ──────────────────
@@ -279,6 +280,61 @@ describe('Group 5: Multi-Desk Syndicate Cornering Detector', () => {
 
     const analysisEmpty = detectSyndicateCluster({ buyers: [], sellers: [] });
     expect(analysisEmpty.syndicateType).toBe('INSUFFICIENT_DATA');
+  });
+});
+
+describe('[Group 6] Evidence-Based v2.0 Cornering Score', () => {
+  it('6a: SANIMA-like stealth setup scores GRADE_A with v2.0 criteria', () => {
+    // SANIMA backtest setup: BCR3=40.3%, retention=93%, VDU=0.46, CMF=0.114, price flat
+    const result = calculateStockCorneringScore({
+      ltp: 370,
+      previousClose: 369,
+      pChange: 0.27,
+      bcr3Buy: 40.3,
+      bcr3Sell: 18,
+      brokerData: { netAbsorptionRatio: 0.93 },
+      wyckoff: {
+        cmf: 0.114,
+        earlySignals: {
+          volumeDryUp: { isVDU: true, isCoil: true, vduRatio: 0.46 },
+          leadingOBV: { signal: 'BULLISH_LEAD' }
+        },
+        pumpDumpRiskScore: 10,
+        tradeSizeRatio: 1.5,
+        qaiScore: 80
+      }
+    });
+    expect(result.confidenceTier).toBe('GRADE_A_CONFIRMED');
+    expect(result.isDisqualifiedTrap).toBe(false);
+    expect(result.corneringScore).toBeGreaterThanOrEqual(80);
+    expect(result.factorVersion).toBe('v2.0_EVIDENCE_BASED');
+  });
+
+  it('6b: Moderate seller concentration at 40% is NOT vetoed under relaxed v2.0 45% ceiling', () => {
+    const result = calculateStockCorneringScore({
+      ltp: 500,
+      previousClose: 498,
+      pChange: 0.4,
+      bcr3Buy: 42,
+      bcr3Sell: 40,
+      brokerData: { netAbsorptionRatio: 0.75 },
+      wyckoff: { cmf: 0.06, pumpDumpRiskScore: 10, tradeSizeRatio: 1.2 }
+    });
+    expect(result.isDisqualifiedTrap).toBe(false);
+  });
+
+  it('6c: Extreme seller concentration (>= 45%) triggers distribution trap veto', () => {
+    const result = calculateStockCorneringScore({
+      ltp: 500,
+      previousClose: 498,
+      pChange: 0.4,
+      bcr3Buy: 30,
+      bcr3Sell: 46,
+      brokerData: { netAbsorptionRatio: 0.4 },
+      wyckoff: { cmf: -0.05, pumpDumpRiskScore: 10, tradeSizeRatio: 0.8 }
+    });
+    expect(result.isDisqualifiedTrap).toBe(true);
+    expect(result.trapReason).toContain('Seller Dominance');
   });
 });
 

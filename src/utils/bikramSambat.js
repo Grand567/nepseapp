@@ -289,10 +289,13 @@ export const BS_PUBLIC_HOLIDAYS = {
   '2083-07-23': { np: 'तिहार (गोवर्धन पूजा)', en: 'Tihar (Gobardhan Puja)' },
   '2083-07-24': { np: 'तिहार (भाइटीका)', en: 'Tihar (Bhai Tika)' },
   '2083-07-29': { np: 'छठ पर्व', en: 'Chhath Parva' },
+  '2083-09-09': { np: 'उधौली पर्व / योमरी पुन्ही', en: 'Udhauli Parva / Yomari Punhi' },
   '2083-11-03': { np: 'महाशिवरात्रि', en: 'Maha Shivaratri' },
   '2083-11-05': { np: 'सोनाम ल्होसार', en: 'Sonam Lhosar' },
+  '2083-11-07': { np: 'राष्ट्रिय प्रजातन्त्र दिवस', en: 'National Democracy Day' },
   '2083-11-19': { np: 'फागु पूर्णिमा (होली पहाड)', en: 'Fagu Purnima (Holi - Hilly)' },
   '2083-11-20': { np: 'होली (तराई)', en: 'Holi (Terai)' },
+  '2083-11-24': { np: 'अन्तर्राष्ट्रिय महिला दिवस', en: "International Women's Day" },
   '2083-12-05': { np: 'घोडे जात्रा', en: 'Ghode Jatra' },
   '2083-12-13': { np: 'रामनवमी', en: 'Ram Navami' },
 
@@ -360,6 +363,12 @@ export function getNepaliDate(date = new Date()) {
   const shortNp = `${toNepaliDigits(bs.day)} ${monthNameNp}`;
   const shortEn = `${bs.day} ${monthNameEn}`;
 
+  const d = date instanceof Date ? date : new Date(date);
+  const adIso = d && !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : '';
+  const isPostShift = !adIso || adIso >= '2026-04-06';
+  const isWeekend = isPostShift ? (bs.dayOfWeek === 6 || bs.dayOfWeek === 0) : (bs.dayOfWeek === 5 || bs.dayOfWeek === 6);
+  const isTradingDay = !isWeekend && !holiday.isHoliday;
+
   return {
     year: bs.year,
     month: bs.month,
@@ -377,7 +386,9 @@ export function getNepaliDate(date = new Date()) {
     shortEn,
     isHoliday: holiday.isHoliday,
     holidayNameNp: holiday.holidayNameNp,
-    holidayNameEn: holiday.holidayNameEn
+    holidayNameEn: holiday.holidayNameEn,
+    isWeekend,
+    isTradingDay
   };
 }
 
