@@ -17,11 +17,11 @@ export const DEFAULT_APP_PORTFOLIO_KEY = 'nepse-secure-portfolio-key-8899';
  * preventing any public leakage of personal Demat holdings, WACC, stop-loss, or targets.
  */
 export function requirePortfolioAuth(req, res, next) {
-  // Check loopback / localhost in development
-  const isLocalhost = req.ip === '127.0.0.1' || 
-                      req.ip === '::1' || 
-                      req.ip === '::ffff:127.0.0.1' || 
-                      req.hostname === 'localhost';
+  // Check loopback / localhost strictly via socket remote address (preventing Host header spoofing)
+  const remoteIp = req.socket?.remoteAddress || req.ip;
+  const isLocalhost = remoteIp === '127.0.0.1' || 
+                      remoteIp === '::1' || 
+                      remoteIp === '::ffff:127.0.0.1';
 
   const configuredSecrets = [
     process.env.PORTFOLIO_AUTH_KEY,

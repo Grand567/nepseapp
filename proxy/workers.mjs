@@ -631,8 +631,15 @@ import {
   checkAndDispatchScheduledNonHoldingDigest
 } from './smartAlertEngine.mjs';
 
+let workersStarted = false;
+
 // Start workers
 export function startWorkers() {
+  if (workersStarted) {
+    console.log('[Workers] startWorkers already active. Skipping duplicate initialization.');
+    return;
+  }
+  workersStarted = true;
   // Run floorsheet aggregation every 1 hour (3600000 ms)
   setInterval(aggregateFloorsheetData, 60 * 60 * 1000);
 
