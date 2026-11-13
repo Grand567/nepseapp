@@ -23,7 +23,8 @@ test('Telegram Notification Clutter & Precision Gate Audit', async (t) => {
     run5StepSwingSelectionAndDispatch,
     formatUpgradedStealthAccumulationHtml,
     formatEodStealthOfTheDayHtml,
-    dispatchEodStealthAccumulationOfTheDay
+    dispatchEodStealthAccumulationOfTheDay,
+    auditMultiSessionTrapRisk
   } = await import('../proxy/telegramNotifier.mjs');
 
   const { requirePortfolioAuth, DEFAULT_APP_PORTFOLIO_KEY } = await import('../proxy/middleware/requirePortfolioAuth.mjs');
@@ -221,5 +222,71 @@ test('Telegram Notification Clutter & Precision Gate Audit', async (t) => {
     assert.ok(html.includes('Rs. 3.15 Crores'), 'Must format multi-day capital outlay');
     assert.ok(html.includes('Secondary Stealth Candidates'), 'Must include compact runner-up table');
     assert.ok(html.includes('RUNNER1'), 'Must include runner up 1');
+  });
+
+  await t.test('7. 2-Day Dip Invalidation Rule (3 Consecutive Red Days Veto) vetoes falling setups', async () => {
+    // Mock DB that returns 3 consecutive lower closes
+    const mockDbFalling = {
+      prepare(sql) {
+        return {
+          all(...args) {
+            if (sql.includes('daily_stock_summary')) {
+              return [
+                { trade_date: '2026-11-13', open_price: 380, close_price: 360 }, // Day 0
+                { trade_date: '2026-11-12', open_price: 400, close_price: 385 }, // Day 1
+                { trade_date: '2026-11-11', open_price: 420, close_price: 405 }, // Day 2
+                { trade_date: '2026-11-10', open_price: 415, close_price: 420 }, // Day 3
+              ];
+            }
+            if (sql.includes('SELECT DISTINCT trade_date')) {
+              return [{ trade_date: '2026-11-13' }, { trade_date: '2026-11-12' }, { trade_date: '2026-11-11' }, { trade_date: '2026-11-10' }];
+            }
+            return [];
+          },
+          get(...args) {
+            return null;
+          }
+        };
+      }
+    };
+
+    const auditFalling = auditMultiSessionTrapRisk(mockDbFalling, 'TEST_FALLING_STOCK');
+    assert.strictEqual(auditFalling.isTrap, true, 'Stock with 3 consecutive down sessions must be flagged as trap');
+    assert.strictEqual(auditFalling.verdict, 'THREE_CONSECUTIVE_RED_DAYS_VETO', 'Verdict must be THREE_CONSECUTIVE_RED_DAYS_VETO');
+    assert.ok(auditFalling.reason.includes('3-Day Dip Invalidation'), 'Reason must cite 3-Day Dip Invalidation');
+
+    // Mock DB that rebounds on Day 2 (healthy institutional dip)
+    const mockDbHealthy = {
+      prepare(sql) {
+        return {
+          all(...args) {
+            if (sql.includes('daily_stock_summary')) {
+              return [
+                { trade_date: '2026-11-13', open_price: 405, close_price: 415 }, // Day 0: Rebound!
+                { trade_date: '2026-11-12', open_price: 410, close_price: 402 }, // Day 1: Dip
+                { trade_date: '2026-11-11', open_price: 420, close_price: 412 }, // Day 2: Dip
+              ];
+            }
+            if (sql.includes('SELECT DISTINCT trade_date')) {
+              return [{ trade_date: '2026-11-13' }, { trade_date: '2026-11-12' }, { trade_date: '2026-11-11' }];
+            }
+            if (sql.includes('daily_broker_ledger')) {
+              return [
+                { trade_date: '2026-11-11', buy_vol: 10000, sell_vol: 1000, buy_amt: 4100000, net_vol: 9000 },
+                { trade_date: '2026-11-12', buy_vol: 8000, sell_vol: 500, buy_amt: 3200000, net_vol: 7500 },
+                { trade_date: '2026-11-13', buy_vol: 15000, sell_vol: 2000, buy_amt: 6200000, net_vol: 13000 },
+              ];
+            }
+            return [];
+          },
+          get(...args) {
+            return { broker_id: 58, net_vol: 29500 };
+          }
+        };
+      }
+    };
+
+    const auditHealthy = auditMultiSessionTrapRisk(mockDbHealthy, 'TEST_HEALTHY_STOCK', 58);
+    assert.strictEqual(auditHealthy.isTrap, false, 'Stock with healthy rebound must not be flagged as 3-day dip trap');
   });
 });

@@ -1846,6 +1846,45 @@ export function auditMultiSessionTrapRisk(db, symbol, leadBrokerId = null) {
       }
     } catch (_) {}
 
+    // 0.1 The 2-Day Dip Invalidation Rule (3 Consecutive Red Days Veto)
+    // Institutional runners (GVL, MBJC, LSL, AKJCL, ECL) never drop for 3 consecutive days.
+    // If a stock closes in the red for 3 consecutive sessions in a row, operator support has collapsed.
+    try {
+      const priceHistory = db.prepare(`
+        SELECT trade_date, open_price, close_price 
+        FROM daily_stock_summary 
+        WHERE symbol = ? 
+        ORDER BY trade_date DESC 
+        LIMIT 4
+      `).all(symbol);
+
+      if (priceHistory && priceHistory.length >= 3) {
+        const d0 = priceHistory[0]; // Latest session
+        const d1 = priceHistory[1]; // Session - 1
+        const d2 = priceHistory[2]; // Session - 2
+
+        const c0 = Number(d0.close_price || 0);
+        const c1 = Number(d1.close_price || 0);
+        const c2 = Number(d2.close_price || 0);
+        const o0 = Number(d0.open_price || c0);
+        const o1 = Number(d1.open_price || c1);
+        const o2 = Number(d2.open_price || c2);
+
+        // Check A: 3 consecutive declining closes (lower close every single day)
+        const isConsecutiveDeclining = (c0 > 0 && c1 > 0 && c2 > 0) && (c0 < c1 && c1 < c2);
+        // Check B: 3 consecutive red candles (close < open for 3 sessions)
+        const isThreeRedCandles = (c0 < o0 && c1 < o1 && c2 < o2);
+
+        if (isConsecutiveDeclining || isThreeRedCandles) {
+          return {
+            isTrap: true,
+            verdict: 'THREE_CONSECUTIVE_RED_DAYS_VETO',
+            reason: `3-Day Dip Invalidation: Dropped 3 sessions in a row (Rs. ${c2} -> Rs. ${c1} -> Rs. ${c0}). Institutional base collapsed.`
+          };
+        }
+      }
+    } catch (_) {}
+
     // 1. Check for ANY unabsorbed massive dump (>12k net sell) in the last 2 sessions (Yesterday / Today)
     const recentDates = dates.slice(0, 2);
     const recentPlaceholders = recentDates.map(() => '?').join(',');

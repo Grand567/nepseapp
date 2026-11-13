@@ -425,10 +425,13 @@ export async function runPostMarketCloseAnalysis(force = false) {
     await aggregateFloorsheetData();
     // Run the full Entry/Exit Analyzer scan across ALL 350+ stocks
     await runFullUniversePrimePick();
-    // Post-Market EOD: Dispatch Settled Floorsheet "Stealth Accumulation of the Day" (5-Day Rolling Footprint)
-    await dispatchEodStealthAccumulationOfTheDay({ onTrackHolding: trackCustomHolding }).catch(e =>
-      console.warn('[Post-Market Worker] EOD Stealth of the Day dispatch notice:', e.message)
+    // Post-Market EOD (3:45 PM): Dispatch Flowchart v2.0 Tactical Prime Ticket + Top 5 Candidate Table (Overnight Prep)
+    const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(e =>
+      console.warn('[Post-Market Worker] 5-Step Swing dispatch notice:', e.message)
     );
+    if (swingRes && swingRes.topPick) {
+      setVerifiedPostMarketPrimePick(swingRes.topPick);
+    }
     // 5-Day Rolling Ledger Roll: Roll today into 4-day immutable ledger, prune oldest, & reset File A
     await runCalendarGuardedDailyTransition({ targetDate }).catch(e =>
       console.warn('[Post-Market Worker] Calendar-Guarded transition notice:', e.message)
@@ -560,6 +563,19 @@ export async function runPreOpenGateScan(force = false) {
     let askVol = 18000;
     let obir = '+0.16';
 
+    // Query live indicative open price from hot cache if available
+    if (_getCache) {
+      try {
+        const stockData = _getCache('today-prices') || _getCache('market-summary');
+        const list = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);
+        const found = list.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === sym);
+        if (found) {
+          const liveOpen = Number(found.openPrice || found.open || found.ltp || 0);
+          if (liveOpen > 0) indicativeOpen = liveOpen;
+        }
+      } catch (_) {}
+    }
+
     const gapPct = +(((indicativeOpen - basePivot) / basePivot) * 100).toFixed(1);
     const verdict = gapPct > 2.5 ? 'ABORT' : 'CLEAR';
 
@@ -669,9 +685,15 @@ export function startWorkers() {
           } catch (e) {
             console.warn('[PremarketWorker] Static sub-file compilation notice:', e.message);
           }
-          run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(err => {
-            console.warn('[PremarketWorker] Morning swing dispatch notice:', err.message);
-          });
+          // Option 1: Full Flowchart v2.0 ticket was dispatched at 3:45 PM EOD for overnight study.
+          // Fallback to morning full ticket dispatch ONLY if server was restarted and no post-market pick is cached.
+          if (!cachedPostMarketPrimePick) {
+            run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).then(res => {
+              if (res?.topPick) cachedPostMarketPrimePick = res.topPick;
+            }).catch(err => {
+              console.warn('[PremarketWorker] Morning swing fallback dispatch notice:', err.message);
+            });
+          }
         }
         // Phase 3: 10:50 AM - 11:00 AM Pre-Open Order Book Gate Check (Gap Risk Veto)
         if (nptMins >= 650 && nptMins < 660 && lastPreOpenDispatchedDate !== status.targetSessionDate) {
