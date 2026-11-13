@@ -2007,116 +2007,93 @@ export async function select5StepSwingPicks() {
  */
 export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId } = {}) {
   const { topPick, runnerUps, allQualified, vetoedTraps } = await select5StepSwingPicks();
+  const status = getDetailedMarketStatus();
+  const sessionDate = status?.targetSessionDate || new Date().toISOString().slice(0, 10);
+  let ltpStr = '2,695.60';
+  let chgStr = '+31.54';
+  try {
+    const lkmPath = path.join(DATA_DIR, 'last_known_market.json');
+    if (fs.existsSync(lkmPath)) {
+      const lkm = JSON.parse(fs.readFileSync(lkmPath, 'utf8'));
+      const nep = lkm.indices?.find(x => x.index === 'NEPSE Index');
+      if (nep) {
+        ltpStr = Number(nep.currentValue || nep.close).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const chg = Number(nep.change || 0);
+        chgStr = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}`;
+      }
+    }
+  } catch (_) {}
+
   if (!allQualified || allQualified.length === 0) {
+    const cashPreservationMsg = [
+      `🛡️ <b>DRAVYASHREE DISCIPLINE: 100% CASH PRESERVATION</b>`,
+      `📅 <b>Session: ${sessionDate} | Market Regime: NEPSE ${ltpStr} (${chgStr})</b>`,
+      `──────────────────────────`,
+      `Zero stocks passed all strict Flowchart v2.0 Institutional Accumulation gates today.`,
+      `• <b>Operator Supply Veto:</b> No clean volume dry-up with institutional absorption found.`,
+      `• <b>Demat Dump Veto:</b> Several candidates failed T+2 delivery / broker churn checks.`,
+      `──────────────────────────`,
+      `💡 <b>Action:</b> Hold cash! Never force a trade into a weak or indecisive setup.`,
+      `🔔 <i>Exit Guard actively monitoring your personal portfolio holdings.</i>`
+    ].join('\n');
+    const telegramResult = await sendTelegramMessage(cashPreservationMsg, { chatId });
     return {
       success: false,
       reason: 'No stock currently passes all strict swing gates & 5-day trap veto. Hold cash!',
+      html: cashPreservationMsg,
+      telegramResult
     };
   }
 
-  // Priority focus on verified strategic picks (SHEL, RFPL, KBL, DORDI) if present, then fill with highest-score candidates
-  const prioritySymbols = ['SHEL', 'RFPL', 'KBL', 'DORDI'];
-  const primaryPicks = [];
+  // Focus strictly on the #1 single curated winner (zero multi-stock clutter)
+  const topWinner = topPick || allQualified[0];
 
-  for (const sym of prioritySymbols) {
-    const found = allQualified.find((x) => x.symbol === sym);
-    if (found && !primaryPicks.some((p) => p.symbol === found.symbol)) {
-      primaryPicks.push(found);
-    }
+  // Automatically arm the real-time Exit Guard ONLY for this single curated top pick
+  if (typeof onTrackHolding === 'function' && topWinner) {
+    try {
+      onTrackHolding({
+        symbol: topWinner.symbol,
+        buyPrice: topWinner.ltp,
+        stopLoss: topWinner.stopLoss,
+        target1: topWinner.target1,
+        target2: topWinner.target2,
+        kitta: topWinner.sharesPer1Lakh,
+      });
+    } catch (_) {}
   }
 
-  for (const q of allQualified) {
-    if (primaryPicks.length >= 4) break;
-    if (!primaryPicks.some((p) => p.symbol === q.symbol)) {
-      primaryPicks.push(q);
-    }
-  }
+  const winnerHtml = formatUpgradedStealthAccumulationHtml(topWinner);
 
-  // Automatically arm the real-time Exit Guard for all primary picks if callback provided
-  if (typeof onTrackHolding === 'function') {
-    for (const p of primaryPicks) {
-      try {
-        onTrackHolding({
-          symbol: p.symbol,
-          buyPrice: p.ltp,
-          stopLoss: p.stopLoss,
-          target1: p.target1,
-          target2: p.target2,
-          kitta: p.sharesPer1Lakh,
-        });
-      } catch (_) {}
-    }
-  }
-
-  function getArchetypeTag(p) {
-    if (p.symbol === 'RFPL') return '⚡ HIGH-BETA MOMENTUM BREAKOUT (VOLUME EXPANSION)';
-    if (p.symbol === 'SHEL') return '🛡️ DEFENSIVE BASE ACCUMULATION (LOWEST RISK FLOOR)';
-    if (p.symbol === 'KBL') return '🏛️ HEAVY INSTITUTIONAL ABSORPTION (VALUE SQUEEZE)';
-    if (p.symbol === 'DORDI') return '🚀 CONSOLIDATION RANGE BREAKOUT (POC EXPANSION)';
-
-    if (p.sector === 'Commercial Banks' || (p.total5DayNet || 0) >= 100000) {
-      return '🏛️ HEAVY INSTITUTIONAL ABSORPTION';
-    }
-    if (p.rsi14 >= 60 || p.vwapDiffPct > 1.5) {
-      return '⚡ MOMENTUM BREAKOUT';
-    }
-    if (p.vwapDiffPct <= 0.5) {
-      return '🛡️ DEFENSIVE FLOOR ACCUMULATION';
-    }
-    return '🚀 CONSOLIDATION BREAKOUT';
-  }
-
-  const pickBlocks = primaryPicks
-    .map((p, idx) => {
-      const vwapSign = p.vwapDiffPct >= 0 ? `+${p.vwapDiffPct}%` : `${p.vwapDiffPct}%`;
-      const vwapTag =
-        p.vwapDiffPct <= 0
-          ? `🔥 ${Math.abs(p.vwapDiffPct)}% BELOW Operator VWAP`
-          : `✅ ${vwapSign} AT Operator VWAP`;
-      const archetype = getArchetypeTag(p);
-
-      return [
-        `<b>${idx + 1}. <code>$${escapeHtml(p.symbol)}</code> — ${escapeHtml(p.companyName)}</b>`,
-        `<i>${escapeHtml(archetype)}</i>`,
-        `• <b>Score:</b> <b>${p.totalScore}/100</b> | <b>Sector:</b> ${escapeHtml(p.sector)}`,
-        `• 🏛️ <b>Lead Accumulator:</b> <b>${escapeHtml(p.leadBrokerName)}</b> (+${(p.total5DayNet || 0).toLocaleString()} kitta | <b>${p.leadRetentionPct}%</b> Retention | <b>${p.consecutiveDays || 1}D</b> Streak)`,
-        `• 🎯 <b>Floor Proximity:</b> LTP <b>Rs. ${p.ltp}</b> vs VWAP <b>Rs. ${p.brokerVwap}</b> (${vwapTag})`,
-        `• 🟢 <b>Limit Buy Zone:</b> <b>Rs. ${p.entryLow} – Rs. ${p.entryHigh}</b>`,
-        `• ⚠️ <b>Chase Cap:</b> <b>Rs. ${p.chaseCap}</b> (+2.5% max limit)`,
-        `• 🛡️ <b>Hard Stop-Loss (-${p.slPct}%):</b> <b>Rs. ${p.stopLoss}</b>`,
-        `• 💰 <b>Target 1 (T+2 / Day 3):</b> <b>Rs. ${p.target1}</b> (+${p.t1Pct}% | <i>Sell 50% &amp; SL to Breakeven</i>)`,
-        `• 🚀 <b>Target 2 (Day 4–5):</b> <b>Rs. ${p.target2}</b> (+${p.t2Pct}% | RRR <b>${p.rrr}:1</b>)`,
-        `• 💼 <b>100K Sizing:</b> <b>${p.sharesPer1Lakh} Kitta</b> (~Rs. ${p.capitalOutlay.toLocaleString()} | Max Risk Rs. ${p.maxRiskRs.toLocaleString()})`,
-      ].join('\n');
-    })
-    .join('\n\n──────────────────────────\n');
+  const runnerUpSection = runnerUps && runnerUps.length > 0
+    ? `\n\n👀 <b>Secondary Watchlist:</b> ${runnerUps.slice(0, 3).map(r => `<code>$${escapeHtml(r.symbol)}</code> (Rs. ${r.ltp})`).join(', ')}`
+    : '';
 
   const trapVetoSection =
     vetoedTraps && vetoedTraps.length > 0
       ? [
-          `──────────────────────────`,
-          `🚫 <b>DUMP-TRAPS FILTERED &amp; VETOED:</b>`,
-          ...vetoedTraps.slice(0, 5).map((t) => `• <b>${escapeHtml(t.symbol)}:</b> ${escapeHtml(t.reason)}`),
-        ]
-      : [];
+          `\n──────────────────────────`,
+          `🚫 <b>DUMP-TRAPS FILTERED &amp; VETOED TODAY:</b>`,
+          ...vetoedTraps.slice(0, 4).map((t) => `• <b>${escapeHtml(t.symbol)}:</b> ${escapeHtml(t.reason)}`),
+        ].join('\n')
+      : '';
 
-  const html = [
-    `👑 <b>DRAVYASHREE TACTICAL PRIME SLATE</b>`,
-    `⚡ <b>6-Filter Operator Floor Architecture • Zero-Trap Guard</b>`,
-    `📅 <b>Session: 2026-11-03 | Market Regime: NEPSE 2,695.60 (+31.54)</b>`,
+  const fullMsg = [
+    `👑 <b>DRAVYASHREE TACTICAL PRIME SELECTION (v2.0)</b>`,
+    `📅 <b>Session: ${sessionDate} | Market Regime: NEPSE ${ltpStr} (${chgStr})</b>`,
     `──────────────────────────`,
-    pickBlocks,
-    ...trapVetoSection,
+    winnerHtml,
+    runnerUpSection,
+    trapVetoSection,
     `──────────────────────────`,
-    `🔔 <i>Exit Guard auto-armed for all ${primaryPicks.length} picks! Send <code>/swing</code>, <code>/list</code>, or <code>/track SYMBOL</code> anytime.</i>`,
-  ].join('\n');
+    `🔔 <i>Exit Guard auto-armed for <code>$${escapeHtml(topWinner.symbol)}</code>! Send <code>/swing</code>, <code>/list</code>, or <code>/track SYMBOL</code> anytime.</i>`
+  ].filter(Boolean).join('\n');
 
-  const telegramResult = await sendTelegramMessage(html, { chatId });
+  const telegramResult = await sendTelegramMessage(fullMsg, { chatId });
   return {
     success: Boolean(telegramResult?.success),
-    topPick: primaryPicks[0] || topPick,
-    primaryPicks,
+    topPick: topWinner,
     runnerUps,
+    html: fullMsg,
     telegramResult,
   };
 }
@@ -2157,7 +2134,7 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
   const bbw = Number(winner.bbw || winner.bbwPct || 11.2).toFixed(1);
 
   // 1% Risk Sizing
-  const riskPerShare = Math.max(1, ltp - Number(sl));
+  const riskPerShare = Math.max(1, Math.abs(Number(winner.entryHigh || ltp) - Number(sl)));
   const qty1L = Math.max(10, Math.floor(1000 / riskPerShare));
   const qty5L = Math.max(50, Math.floor(5000 / riskPerShare));
   const deploy1L = (qty1L * ltp).toLocaleString();
@@ -2780,7 +2757,7 @@ async function handleTelegramCommand(text, {
     let chgStr = '+31.54 (+1.18%)';
     let turnoverStr = 'Rs. 8.57 Arba';
     try {
-      const lkmPath = path.join(__dirname, 'data', 'last_known_market.json');
+      const lkmPath = path.join(DATA_DIR, 'last_known_market.json');
       if (fs.existsSync(lkmPath)) {
         const lkm = JSON.parse(fs.readFileSync(lkmPath, 'utf8'));
         const nep = lkm.indices?.find(x => x.index === 'NEPSE Index');

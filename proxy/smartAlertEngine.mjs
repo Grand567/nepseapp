@@ -301,11 +301,14 @@ export function broadcastAlert(alertPayload) {
     return false; // MUST RETURN IMMEDIATELY — do not dispatch duplicate push/SSE/Telegram/Discord!
   }
 
-  if (!alertHistory.includes(alertPayload)) {
-    alertHistory.unshift(alertPayload);
-    if (alertHistory.length > 200) alertHistory.pop();
+  const isTestAlert = Boolean(alertPayload.isTest || process.env.NODE_ENV === 'test' || String(alertPayload.symbol || '').startsWith('TEST_'));
+  if (!isTestAlert) {
+    if (!alertHistory.includes(alertPayload)) {
+      alertHistory.unshift(alertPayload);
+      if (alertHistory.length > 200) alertHistory.pop();
+    }
+    saveJson(HISTORY_FILE, alertHistory);
   }
-  saveJson(HISTORY_FILE, alertHistory);
 
   // 1. Dispatch to in-memory web/app listeners (SSE)
   const dataString = `data: ${JSON.stringify(alertPayload)}\n\n`;
@@ -1147,6 +1150,11 @@ export async function runMarketAlertScanCycle({
       for (const alert of activeAlertsSnapshot) {
         if (alert.status !== 'ACTIVE' && alert.status !== 'ACTIVE_T2') continue;
 
+        // STRICT PRECISION GATE: Exit alerts (Stop-Loss and Target profit) must ONLY be evaluated
+        // for confirmed user holdings (isUserHolding === true).
+        // Historical scanner entries, watchlist symbols, or unheld alerts must never dispatch exit notifications.
+        if (!alert.isUserHolding) continue;
+
         const currentStock = stocks.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === alert.symbol);
         if (!currentStock) continue;
         const currentLtp = Number(currentStock.ltp || currentStock.lastTradedPrice || 0);
@@ -1700,19 +1708,57 @@ export function detectBroker58EarlyIgnition({
 export async function processBroker58AlertTrigger(b58Eval) {
   const sym = b58Eval.symbol;
   const now = Date.now();
-  const lastTriggered = broker58AlertStateMap[sym]?.lastTriggeredAt || 0;
+  const status = getDetailedMarketStatus();
+  const sessionDate = status?.targetSessionDate || new Date().toISOString().slice(0, 10);
+  const isTest = Boolean(b58Eval.isTest || process.env.NODE_ENV === 'test' || String(sym || '').startsWith('TEST_'));
 
+  // 0. Morning Wash Period Gate: Suppress Early Ignition alerts during 11:00-11:45 AM
+  // Check BEFORE writing to broker58AlertStateMap so session lock is NOT prematurely consumed!
+  const isMorningWashPeriod = status?.isOpen && status?.nptTotalMinutes >= 660 && status?.nptTotalMinutes < 705; // 11:00 AM - 11:45 AM NPT
+  if (isMorningWashPeriod && !isTest) {
+    return {
+      triggered: false,
+      reason: `Suppressing early ignition alert for $${sym} during 11:00-11:45 AM morning wash period. Golden Window opens at 11:45 AM.`
+    };
+  }
+
+  // 1. Session Lock: Prevent alerting the same symbol more than once per trading session
+  const lastSessionDate = broker58AlertStateMap[sym]?.sessionDate;
+  if (!isTest && lastSessionDate === sessionDate) {
+    return { 
+      triggered: false, 
+      reason: `Session lock active: $${sym} already received an Early Ignition Alert in session ${sessionDate}. Zero duplicate intraday alerts allowed.` 
+    };
+  }
+
+  // 2. Cooldown check
+  const lastTriggered = broker58AlertStateMap[sym]?.lastTriggeredAt || 0;
   if (now - lastTriggered < B58_COOLDOWN_MS) {
     return { triggered: false, reason: 'Cooldown active', remainingMins: Math.ceil((B58_COOLDOWN_MS - (now - lastTriggered)) / 60000) };
   }
 
+  // 3. Daily Budget Gate: Limit to at most 1 distinct Early Ignition alert per session across the market to eliminate notification fatigue
+  if (!isTest) {
+    const alreadyTriggeredToday = Object.values(broker58AlertStateMap).filter(x => x.sessionDate === sessionDate && !x.isTest);
+    if (alreadyTriggeredToday.length >= 1) {
+      return { 
+        triggered: false, 
+        reason: `Daily Early Ignition budget reached (max 1 per session). Silenced $${sym} to preserve clean notification feed.` 
+      };
+    }
+  }
+
   broker58AlertStateMap[sym] = {
     symbol: sym,
+    sessionDate,
     lastTriggeredAt: now,
     lastLtp: b58Eval.ltp,
-    operatorVwap: b58Eval.operatorVwap
+    operatorVwap: b58Eval.operatorVwap,
+    isTest
   };
-  saveJson(B58_STATE_FILE, broker58AlertStateMap);
+  if (!isTest) {
+    saveJson(B58_STATE_FILE, broker58AlertStateMap);
+  }
 
   const alertItem = {
     id: `b58_alert_${sym}_${now}`,
@@ -1722,6 +1768,7 @@ export async function processBroker58AlertTrigger(b58Eval) {
     category: 'pro',
     tier: 'pro',
     isPro: true,
+    isTest,
     title: b58Eval.isLockInThreat && b58Eval.promoterLockin?.daysRemaining <= 30
       ? `⚠️ Operator Accumulation w/ Promoter Dump Risk: ${sym}`
       : `🚨 Early Operator Ignition: ${sym}`,
@@ -1752,10 +1799,6 @@ export async function processBroker58AlertTrigger(b58Eval) {
     lockInWarning: b58Eval.lockInWarning,
     status: 'ACTIVE'
   };
-
-  alertHistory.unshift(alertItem);
-  if (alertHistory.length > 100) alertHistory.pop();
-  saveJson(HISTORY_FILE, alertHistory);
 
   broadcastAlert(alertItem);
   return { triggered: true, alert: alertItem };

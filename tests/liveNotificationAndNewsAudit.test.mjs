@@ -25,7 +25,9 @@ test('1. Android Status Bar Bridge & Push Service Verification', async (t) => {
           postedNotification = { title, body, channelId, symbol, type, action, url, createdAt };
         }
       },
-      dispatchEvent: () => {}
+      dispatchEvent: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {}
     };
 
     global.localStorage = {
