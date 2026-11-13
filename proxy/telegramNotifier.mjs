@@ -1423,7 +1423,7 @@ export function selectPlaybookMidStagePick(stocks = []) {
     const bcr3Buy = Number(s.bcr3BuyPct || s.brokerAnalysis?.bcr3BuyPct || 0);
     const bcr3Sell = Number(s.bcr3SellPct || s.brokerAnalysis?.bcr3SellPct || 0);
     const nbar = Number(s.nbar || s.brokerAnalysis?.nbar || (bcr3Sell > 0 ? bcr3Buy / bcr3Sell : 1.0));
-    const smartFlow = Number(s.smartMoneyNetFlowPct || s.brokerAnalysis?.smartMoneyNetFlowPct || 0);
+    let smartFlow = Number(s.smartMoneyNetFlowPct || s.brokerAnalysis?.smartMoneyNetFlowPct || 0);
     const adSignal = s.adSignal || s.brokerAnalysis?.adSignal || 'Neutral';
 
     // METHOD 1: Mid-Stage Accumulation & Zero Trap Filters
@@ -1477,7 +1477,7 @@ export function selectPlaybookMidStagePick(stocks = []) {
 
     // Real Smart Money Net Flow calculation (avoids +0.0% uncalculated display)
     const netVol = Number(s.netVolume || s.brokerAnalysis?.netVolume || (volume * (bcr3Buy - bcr3Sell) / 100));
-    const smartFlow = volume > 0 ? +((netVol / volume) * 100).toFixed(1) : +(bcr3Buy - bcr3Sell).toFixed(1);
+    smartFlow = volume > 0 ? +((netVol / volume) * 100).toFixed(1) : +(bcr3Buy - bcr3Sell).toFixed(1);
 
     const proximityScore = Math.max(0, 10 - Math.abs(distFromVwap) * 2);
     const convictionScore = Math.round(bcr3Buy * 0.5 + nbar * 18 + proximityScore * 2 + (smartFlow > 0 ? 10 : 0));
