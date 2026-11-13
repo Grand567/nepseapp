@@ -670,11 +670,8 @@ export function startWorkers() {
       const isTradingDay = status.isTradingDay;
 
       if (isTradingDay) {
-        // Phase 1: 10:15 AM - 10:30 AM Pre-Market Scan
-        if (nptMins >= 615 && nptMins < 630 && lastPreMarketDispatchedDate !== status.targetSessionDate) {
-          runPreMarketMorningScan();
-        }
-        // Phase 2: 10:45 AM - 10:55 AM Verified Single Prime Pick (Pruned noise - sends #1 Pick passing 5-Filters)
+        // Phase 1: 10:15 AM - 10:30 AM Pre-Market Scan suppressed in Option 1 (Full analysis is delivered at 3:45 PM EOD)
+        // Phase 2: 10:45 AM - 10:55 AM Pre-Open Preparation
         if (nptMins >= 645 && nptMins < 655 && lastMorningDigestDispatchedDate !== status.targetSessionDate) {
           lastMorningDigestDispatchedDate = status.targetSessionDate;
           // Pre-compile Today's Static Analytics & initialize Tick Stream for market open
