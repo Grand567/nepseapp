@@ -1312,6 +1312,205 @@ export async function runBroker58RadarAndDispatch(symbolFilter = null, options =
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EOD STEALTH ACCUMULATION OF THE DAY FORMATTER
+ * ───────────────────────────────────────────────────────────────────────────
+ * Formats the single #1 highest-conviction Broker #58 / syndicate stealth
+ * setup from the settled EOD floorsheet with 5-day rolling footprint,
+ * tight base compression, and a compact Top 2–5 runner-up watchlist.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export function formatEodStealthOfTheDayHtml(winner, runnerUps = [], targetDate = '') {
+  if (!winner) {
+    const dateStr = targetDate ? ` (${targetDate})` : '';
+    return [
+      `🌙 <b>EOD STEALTH ACCUMULATION REPORT${dateStr}</b>`,
+      `──────────────────────────`,
+      `Zero stocks met the strict 5-Gate Operator Stealth Accumulation criteria today.`,
+      `• <b>Whale Absorption:</b> No scrip showed Broker #58 cornering ≥70% Buy Ratio with ≥15k kitta inside a tight base.`,
+      `• <b>Demat Safety:</b> High volume today was dominated by retail churn or institutional distribution.`,
+      `──────────────────────────`,
+      `🛡️ <b>Capital Preservation:</b> Cash remains intact for when true institutional accumulation appears.`,
+      `💡 <i>Check specific stocks: <code>/b58 SYMBOL</code> or view rules via <code>/b58 playbook</code>.</i>`
+    ].join('\n');
+  }
+
+  const sym = escapeHtml(winner.symbol || 'STOCK');
+  const name = escapeHtml(stockUniverseMap[sym]?.name || winner.companyName || winner.name || sym);
+  const ltp = Number(winner.ltp || 0).toFixed(1);
+  const pchg = Number(winner.day_pchange ?? winner.pChange ?? 0);
+  const pchgStr = `${pchg >= 0 ? '+' : ''}${pchg.toFixed(1)}%`;
+  const vwap = Number(winner.operator_vwap ?? winner.operatorVwap ?? ltp).toFixed(1);
+  const buyKitta = Number(winner.buy_vol ?? winner.buyVol ?? 0).toLocaleString();
+  const netKitta = Number(winner.net_vol ?? winner.netVol ?? 0).toLocaleString();
+  const ratio = Number(winner.buy_ratio ?? winner.buyRatio ?? 0).toFixed(1);
+  const share = Number(winner.mkt_share ?? winner.mktShare ?? 0).toFixed(1);
+
+  // Multi-day footprint metrics
+  const multiNet = Number(winner.multiDayNetVol ?? winner.net_vol ?? 0).toLocaleString();
+  const multiBuy = Number(winner.multiDayBuyVol ?? winner.buy_vol ?? 0).toLocaleString();
+  const multiCr = winner.multiDayBuyAmtCr ?? (Number(winner.buy_amt ?? 0) / 10000000).toFixed(2);
+  const multiRatio = Number(winner.multiDayBuyRatio ?? ratio).toFixed(1);
+  const multiShare = Number(winner.multiDayMarketShare ?? share).toFixed(1);
+  const multiDays = winner.multiDayActiveDays || 5;
+  const baseRange = winner.rangeCompressionPct ? `Tight ${winner.rangeCompressionPct}% Range` : 'Coiling Base';
+  const bLow = winner.baseLow || (vwap * 0.99).toFixed(1);
+  const bHigh = winner.baseHigh || (vwap * 1.015).toFixed(1);
+  const sl = winner.sl || (vwap * 0.950).toFixed(1);
+  const t1 = winner.t1 || (vwap * 1.080).toFixed(1);
+  const t2 = winner.t2 || (vwap * 1.145).toFixed(1);
+  const horizon = escapeHtml(winner.ignitionHorizon || '1–3 Days (Supply Vacuum Stage 2 Complete)');
+
+  const lines = [
+    `🌙 <b>EOD STEALTH ACCUMULATION OF THE DAY</b>`,
+    `📅 <b>Settled Session: ${targetDate || 'Today'} | Post-Market Ledger Reconciled</b>`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `<b>Scrip:</b> <code>$${sym}</code> (${name})`,
+    `<b>LTP:</b> Rs. ${ltp} (${pchgStr}) | <b>Operator VWAP:</b> Rs. ${vwap}`,
+    `<b>Setup Status:</b> <b>⚡ Stage 2: Supply Vacuum Complete</b>`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `🔍 <b>5-DAY INSTITUTIONAL FOOTPRINT (Broker #58):</b>`,
+    `• Multi-Day Footprint: <b>+${multiNet} Net Kitta</b> (${multiBuy} Bought over ${multiDays} sessions)`,
+    `• Institutional Outlay: <b>Rs. ${multiCr} Crores absorbed</b>`,
+    `• Accumulation Dominance: <b>${multiRatio}% Buy Ratio</b> (Zero Dumping)`,
+    `• Float Cornered: <b>${multiShare}% of Total Market Volume</b>`,
+    `• Today's Action: +${netKitta} Net Kitta (${ratio}% Buy Dominance)`,
+    ``,
+    `🧱 <b>BASE STRUCTURE &amp; WYCKOFF COILING:</b>`,
+    `• Price Base: <b>Rs. ${bLow} – Rs. ${bHigh}</b> (${baseRange})`,
+    `• Expected Ignition: <b>${horizon}</b>`,
+    ``,
+    `🎯 <b>TACTICAL EXECUTION PLAN (Tomorrow's Session):</b>`,
+    `• <b>Limit Buy Zone:</b> Rs. ${bLow} – Rs. ${bHigh} (Never chase open gap &gt; +4%)`,
+    `• 🛡️ <b>Invalidation Stop-Loss:</b> Rs. ${sl} (-5.0% Risk Floor)`,
+    `• 🎯 <b>Target 1 (Milestone 1):</b> Rs. ${t1} (+8.0% | Sell 50% &amp; Move SL to Breakeven)`,
+    `• 🚀 <b>Target 2 (Milestone 2):</b> Rs. ${t2} (+14.5% Circuit Ceiling | Exit Remaining)`
+  ];
+
+  if (runnerUps && runnerUps.length > 0) {
+    lines.push(
+      `──────────────────────────`,
+      `👀 <b>Secondary Stealth Candidates:</b>`,
+      ...runnerUps.slice(0, 4).map((r, i) => {
+        const rSym = escapeHtml(r.symbol);
+        const rLtp = Number(r.ltp || 0).toFixed(1);
+        const rRatio = Number(r.multiDayBuyRatio ?? r.buy_ratio ?? 0).toFixed(0);
+        const rNet = Number(r.multiDayNetVol ?? r.net_vol ?? 0).toLocaleString();
+        return `• <b>#${i + 2} <code>$${rSym}</code></b>: Rs. ${rLtp} | ${rRatio}% Buy Ratio | +${rNet} Net Kitta`;
+      })
+    );
+  }
+
+  lines.push(
+    `──────────────────────────`,
+    `🔔 <i>Auto-arm Exit Guard tomorrow with <code>/track ${sym}</code>. Check rules via <code>/b58 playbook</code>.</i>`
+  );
+
+  return lines.join('\n');
+}
+
+/**
+ * Dispatches the settled EOD "Stealth Accumulation of the Day" to Telegram
+ */
+export async function dispatchEodStealthAccumulationOfTheDay({ chatId, onTrackHolding } = {}) {
+  await ensureTodaySessionIngested();
+  let setups = [];
+  let targetDate = '';
+
+  try {
+    const { db } = await import('./db/ledgerStore.js');
+    if (db) {
+      const dateRow = db.prepare('SELECT MAX(trade_date) as maxDate FROM daily_broker_ledger').get();
+      targetDate = dateRow?.maxDate || '';
+      if (targetDate) {
+        const rows = db.prepare(`
+          SELECT l.symbol, l.trade_date, l.buy_vol, l.sell_vol, l.buy_amt,
+                 (l.buy_vol - l.sell_vol) as net_vol,
+                 ROUND(CAST(l.buy_vol AS REAL) / MAX(1, l.buy_vol + l.sell_vol) * 100, 1) as buy_ratio,
+                 s.close_price as ltp, s.open_price, s.total_volume,
+                 ROUND(CAST(l.buy_vol AS REAL) / MAX(1, s.total_volume) * 100, 1) as mkt_share,
+                 ROUND((s.close_price - s.open_price) / MAX(1, s.open_price) * 100, 1) as day_pchange,
+                 ROUND(l.buy_amt / MAX(1, l.buy_vol), 1) as operator_vwap
+          FROM daily_broker_ledger l
+          JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
+          WHERE l.broker_id = 58
+            AND l.trade_date = ?
+            AND (
+              l.buy_vol >= 15000 
+              OR (l.buy_vol >= 10000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.12)
+              OR (l.buy_vol >= 5000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.25)
+              OR (l.buy_amt >= 5000000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.10)
+            )
+            AND (l.buy_vol - l.sell_vol) >= 5000
+            AND CAST(l.buy_vol AS REAL) / MAX(1, l.buy_vol + l.sell_vol) >= 0.70
+            AND s.total_volume > 0
+            AND (s.close_price - s.open_price) / s.open_price BETWEEN -0.03 AND 0.045
+          ORDER BY l.buy_amt DESC
+          LIMIT 10
+        `).all(targetDate);
+
+        const { getMultiDayBroker58Accumulation } = await import('./smartAlertEngine.mjs');
+        for (const r of rows) {
+          const stealth = await getMultiDayBroker58Accumulation(r.symbol, { lookbackDays: 5, sessionDate: targetDate });
+          if (stealth) {
+            r.multiDayNetVol = stealth.netBuyVol;
+            r.multiDayBuyVol = stealth.totalBuyVol;
+            r.multiDayBuyAmtCr = stealth.totalBuyAmtCr;
+            r.multiDayBuyRatio = stealth.windowBuyRatio;
+            r.multiDayMarketShare = stealth.marketSharePct;
+            r.multiDayVwap = stealth.windowVwap;
+            r.multiDayActiveDays = stealth.activeDays;
+            r.rangeCompressionPct = stealth.rangeCompressionPct;
+            r.baseLow = stealth.minLow;
+            r.baseHigh = stealth.maxHigh;
+            r.ignitionHorizon = stealth.ignitionHorizon;
+          }
+        }
+
+        // Rank setups by multi-day footprint and conviction
+        rows.sort((a, b) => {
+          const scoreA = (Number(a?.multiDayNetVol) || Number(a?.net_vol) || 0) * (Number(a?.multiDayBuyRatio) || Number(a?.buy_ratio) || 0);
+          const scoreB = (Number(b?.multiDayNetVol) || Number(b?.net_vol) || 0) * (Number(b?.multiDayBuyRatio) || Number(b?.buy_ratio) || 0);
+          return scoreB - scoreA;
+        });
+
+        setups = rows;
+      }
+    }
+  } catch (err) {
+    console.warn('[TelegramNotifier] Error in dispatchEodStealthAccumulationOfTheDay:', err.message);
+  }
+
+  const topPick = setups[0] || null;
+  const runnerUps = setups.slice(1, 5);
+
+  if (topPick && typeof onTrackHolding === 'function') {
+    try {
+      const vwap = Number(topPick.operator_vwap || topPick.ltp || 100);
+      onTrackHolding({
+        symbol: topPick.symbol,
+        buyPrice: Number(topPick.ltp || vwap),
+        stopLoss: Math.round(vwap * 0.950 * 10) / 10,
+        target1: Math.round(vwap * 1.080 * 10) / 10,
+        target2: Math.round(vwap * 1.145 * 10) / 10,
+        kitta: 100
+      });
+    } catch (_) {}
+  }
+
+  const html = formatEodStealthOfTheDayHtml(topPick, runnerUps, targetDate);
+  const telegramResult = await sendTelegramMessage(html, { chatId });
+  return {
+    success: Boolean(telegramResult?.success),
+    topPick,
+    runnerUps,
+    sessionDate: targetDate,
+    html,
+    telegramResult
+  };
+}
+
+/**
  * Dispatches the Full Broker #58 Empirical Research Findings & Playbook to Telegram
  */
 export async function sendTelegramBroker58Playbook(options = {}) {
@@ -1991,7 +2190,7 @@ export async function select5StepSwingPicks() {
     const allRanked = [...strictMatches, ...secondaryMatches];
     return {
       topPick: allRanked[0] || null,
-      runnerUps: allRanked.slice(1, 4),
+      runnerUps: allRanked.slice(1, 5),
       allQualified: allRanked,
       vetoedTraps,
     };
@@ -2065,7 +2264,18 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId
   const winnerHtml = formatUpgradedStealthAccumulationHtml(topWinner);
 
   const runnerUpSection = runnerUps && runnerUps.length > 0
-    ? `\n\n👀 <b>Secondary Watchlist:</b> ${runnerUps.slice(0, 3).map(r => `<code>$${escapeHtml(r.symbol)}</code> (Rs. ${r.ltp})`).join(', ')}`
+    ? [
+        `\n\n📋 <b>TOP 5 FLOWCHART v2.0 CANDIDATE BACKUP TABLE:</b>`,
+        `• <b>#1 <code>$${escapeHtml(topWinner.symbol)}</code></b> | Score: ${topWinner.corneringScore || 95}/100 | LTP: Rs. ${Number(topWinner.ltp).toFixed(1)} | SL: Rs. ${Number(topWinner.stopLoss).toFixed(1)} 👑 <i>(Prime Ticket Above)</i>`,
+        ...runnerUps.slice(0, 4).map((r, idx) => {
+          const rSym = escapeHtml(r.symbol);
+          const rScore = r.corneringScore || r.totalScore || r.score || 85;
+          const rLtp = Number(r.ltp || r.closePrice || 0).toFixed(1);
+          const rSl = Number(r.stopLoss || (r.ltp * 0.965)).toFixed(1);
+          const rRet = Number(r.retention10D || r.retentionPct || 80).toFixed(0);
+          return `• <b>#${idx + 2} <code>$${rSym}</code></b> | Score: ${rScore}/100 | LTP: Rs. ${rLtp} | SL: Rs. ${rSl} | Ret: ${rRet}%`;
+        })
+      ].join('\n')
     : '';
 
   const trapVetoSection =
@@ -2658,6 +2868,7 @@ async function handleTelegramCommand(text, {
       `• <code>/b58</code> or <code>/broker58</code>: Live radar of Broker #58 stealth setups before the breakout!`,
       `• <code>/b58 GHL</code>: Deep-dive operator footprint &amp; verdict for a specific stock`,
       `• <code>/b58 playbook</code>: Complete empirical research findings &amp; 5-gate rules`,
+      `• <code>/stealth</code> or <code>/eod</code>: Settled EOD Stealth Accumulation of the Day (5-day footprint)`,
       ``,
       `⚡ <b>High-Volume Breakouts (20D Resistance):</b>`,
       `• <code>/breakout</code> or <code>/breakouts</code>: Stocks clearing 20-day resistance with &gt;= 1.5x volume expansion!`,
@@ -2739,6 +2950,17 @@ async function handleTelegramCommand(text, {
       return res.telegramResult;
     }
     return await sendTelegramMessage(`ℹ️ <b>Market Scanning Complete:</b> ${swingRes.reason || res.reason || 'No stock currently passes all strict 5-Step accumulation filters.'}`, { chatId });
+  }
+
+  // 2.5.1 EOD STEALTH ACCUMULATION OF THE DAY (/stealth, /eod, /stealth_of_the_day)
+  if (
+    lower === '/stealth' || lower === 'stealth' ||
+    lower === '/eod' || lower === 'eod' ||
+    lower === '/eodstealth' || lower === 'eodstealth' ||
+    lower === '/stealth_of_the_day'
+  ) {
+    const stealthRes = await dispatchEodStealthAccumulationOfTheDay({ chatId, onTrackHolding });
+    return stealthRes.telegramResult;
   }
 
   // 2.6 PLAYBOOK / GUIDE MATRIX

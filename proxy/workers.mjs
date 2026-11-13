@@ -11,6 +11,7 @@ import {
   sendMorningStockSelectionDigest,
   run5StepSwingSelectionAndDispatch,
   runBroker58RadarAndDispatch,
+  dispatchEodStealthAccumulationOfTheDay,
   pollIncomingTelegramCommands,
   sendTelegramMessage,
   auditMultiSessionTrapRisk
@@ -424,13 +425,9 @@ export async function runPostMarketCloseAnalysis(force = false) {
     await aggregateFloorsheetData();
     // Run the full Entry/Exit Analyzer scan across ALL 350+ stocks
     await runFullUniversePrimePick();
-    // Run the 5-Step 10–15 Day High-Alpha Swing Pick & auto-arm Exit Guard
-    await run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(e =>
-      console.warn('[Post-Market Worker] 5-Step Swing dispatch notice:', e.message)
-    );
-    // Method 3: Run Broker #58 Pre-Boom Operator Radar
-    await runBroker58RadarAndDispatch().catch(e =>
-      console.warn('[Post-Market Worker] Broker #58 Radar dispatch notice:', e.message)
+    // Post-Market EOD: Dispatch Settled Floorsheet "Stealth Accumulation of the Day" (5-Day Rolling Footprint)
+    await dispatchEodStealthAccumulationOfTheDay({ onTrackHolding: trackCustomHolding }).catch(e =>
+      console.warn('[Post-Market Worker] EOD Stealth of the Day dispatch notice:', e.message)
     );
     // 5-Day Rolling Ledger Roll: Roll today into 4-day immutable ledger, prune oldest, & reset File A
     await runCalendarGuardedDailyTransition({ targetDate }).catch(e =>
