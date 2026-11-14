@@ -32,7 +32,7 @@ export default defineConfig({
     port: 3000,
     host: true,
     watch: {
-      ignored: ['**/dist-electron/**', '**/android/**', '**/dist/**', '**/.git/**']
+      ignored: ['**/dist-electron/**', '**/android/**', '**/dist/**', '**/.git/**', '**/qa/work/**', '**/*.db*', '**/proxy/data/*.db*']
     },
     proxy: {
       '/api/meroShare': {
