@@ -603,6 +603,11 @@ export async function sendTelegramSmartAlert(alertItem) {
     alertItem.type === 'BOOK_CLOSURE_ALERT' ||
     alertItem.type === 'EARNINGS_ALERT' ||
     alertItem.type === 'NEPSE_MACRO' ||
+    alertItem.type === 'MERGER_ALERT' ||
+    alertItem.type === 'SEBON_APPROVAL_ALERT' ||
+    alertItem.type === 'ALLOTMENT_ALERT' ||
+    alertItem.type === 'MARKET_MILESTONE_ALERT' ||
+    alertItem.type === 'TRENDING_NEWS_ALERT' ||
     alertItem.category === 'news' ||
     alertItem.category === 'corporate'
   ) {
@@ -699,6 +704,11 @@ export async function sendTelegramNewsAlert(item) {
                : item.type === 'RIGHT_SHARE_ALERT' ? '📈 <b>DRAVYASHREE RIGHT SHARE NOTICE</b>'
                : item.type === 'BOOK_CLOSURE_ALERT' ? '📅 <b>DRAVYASHREE BOOK CLOSURE / AGM NOTICE</b>'
                : item.type === 'EARNINGS_ALERT' ? '📊 <b>DRAVYASHREE FINANCIAL REPORT DISCLOSURE</b>'
+               : item.type === 'MERGER_ALERT' ? '🤝 <b>DRAVYASHREE MERGER & ACQUISITION NOTICE</b>'
+               : item.type === 'SEBON_APPROVAL_ALERT' ? '📜 <b>DRAVYASHREE SEBON REGULATORY APPROVAL</b>'
+               : item.type === 'ALLOTMENT_ALERT' ? '🎯 <b>DRAVYASHREE IPO / FPO ALLOTMENT RESULTS</b>'
+               : item.type === 'MARKET_MILESTONE_ALERT' ? '📊 <b>DRAVYASHREE NEPSE MARKET CLOSE & MILESTONE</b>'
+               : item.type === 'TRENDING_NEWS_ALERT' ? '🔥 <b>DRAVYASHREE BREAKING TRENDING STORY</b>'
                : item.type === 'NEPSE_MACRO' ? '🏛️ <b>DRAVYASHREE MACRO & POLICY ALERT</b>'
                : '📰 <b>DRAVYASHREE MARKET NEWS</b>';
 

@@ -102,7 +102,12 @@ export function NotificationCenterDrawer({
              item.type === 'DIVIDEND_ALERT' ||
              item.type === 'RIGHT_SHARE_ALERT' ||
              item.type === 'BOOK_CLOSURE_ALERT' ||
-             item.type === 'EARNINGS_ALERT';
+             item.type === 'EARNINGS_ALERT' ||
+             item.type === 'MERGER_ALERT' ||
+             item.type === 'SEBON_APPROVAL_ALERT' ||
+             item.type === 'ALLOTMENT_ALERT' ||
+             item.type === 'MARKET_MILESTONE_ALERT' ||
+             item.type === 'TRENDING_NEWS_ALERT';
     }
     if (activeTab === 'portfolio') {
       const sym = String(item.symbol || '').toUpperCase().trim();
@@ -432,6 +437,26 @@ export function NotificationCenterDrawer({
                     ) : item.type === 'EARNINGS_ALERT' ? (
                       <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 flex items-center gap-1">
                         📊 Financials
+                      </span>
+                    ) : item.type === 'MERGER_ALERT' ? (
+                      <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                        🤝 Merger & Acq
+                      </span>
+                    ) : item.type === 'SEBON_APPROVAL_ALERT' ? (
+                      <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                        📜 SEBON Approval
+                      </span>
+                    ) : item.type === 'ALLOTMENT_ALERT' ? (
+                      <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30 flex items-center gap-1">
+                        🎯 Allotment
+                      </span>
+                    ) : item.type === 'MARKET_MILESTONE_ALERT' ? (
+                      <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1">
+                        📊 Market Close
+                      </span>
+                    ) : item.type === 'TRENDING_NEWS_ALERT' ? (
+                      <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1">
+                        🔥 Trending Story
                       </span>
                     ) : item.type === 'NEPSE_MACRO' ? (
                       <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">

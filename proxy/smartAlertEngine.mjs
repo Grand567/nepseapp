@@ -335,20 +335,28 @@ export function broadcastAlert(alertPayload) {
                    alertPayload.type === 'BOOK_CLOSURE_ALERT' ||
                    alertPayload.type === 'EARNINGS_ALERT' ||
                    alertPayload.type === 'NEPSE_MACRO' ||
+                   alertPayload.type === 'MERGER_ALERT' ||
+                   alertPayload.type === 'SEBON_APPROVAL_ALERT' ||
+                   alertPayload.type === 'ALLOTMENT_ALERT' ||
+                   alertPayload.type === 'MARKET_MILESTONE_ALERT' ||
+                   alertPayload.type === 'TRENDING_NEWS_ALERT' ||
                    alertPayload.category === 'news' ||
                    alertPayload.category === 'corporate';
     const isIpo = alertPayload.type === 'IPO_ALERT' || alertPayload.category === 'ipo';
 
     if (isNews) {
-      // User Policy: ONLY portfolio holdings news alerts are dispatched to Telegram
+      // User Policy: Portfolio holdings AND major market events / trending breaking news dispatch to Telegram
       const isPortfolioHolding = Boolean(
         alertPayload.isPortfolioTracked ||
         alertPayload.isUserHolding ||
         (alertPayload.symbol && userTrackedSymbolsSet.has(alertPayload.symbol))
       );
-      if (isPortfolioHolding) {
+      const isMajorMarketEvent = alertPayload.type === 'NEPSE_MACRO' || 
+                                 alertPayload.type === 'MARKET_MILESTONE_ALERT' || 
+                                 alertPayload.type === 'TRENDING_NEWS_ALERT';
+      if (isPortfolioHolding || isMajorMarketEvent) {
         sendTelegramNewsAlert(alertPayload).catch(err => {
-          console.warn('[SmartAlertEngine] Telegram news alert dispatch warning:', err.message);
+          console.warn('[SmartAlertEngine] Telegram news dispatch warning:', err.message);
         });
       }
     } else if (isIpo) {
@@ -582,6 +590,12 @@ export async function dispatchFcmNotification(alertItem) {
     else if (type === 'DIVIDEND_ALERT') title = `💰 Dividend Declared: ${symbol}`;
     else if (type === 'RIGHT_SHARE_ALERT') title = `📈 Right Share Notice: ${symbol}`;
     else if (type === 'BOOK_CLOSURE_ALERT') title = `📅 Book Closure Notice: ${symbol}`;
+    else if (type === 'EARNINGS_ALERT') title = `📊 Financial Results: ${symbol}`;
+    else if (type === 'MERGER_ALERT') title = `🤝 Merger Notice: ${symbol}`;
+    else if (type === 'SEBON_APPROVAL_ALERT') title = `📜 SEBON Approval: ${symbol}`;
+    else if (type === 'ALLOTMENT_ALERT') title = `🎯 IPO Allotment: ${symbol}`;
+    else if (type === 'MARKET_MILESTONE_ALERT') title = `📊 NEPSE Market Milestone`;
+    else if (type === 'TRENDING_NEWS_ALERT') title = `🔥 Trending Story: ${symbol}`;
     else if (type === 'PORTFOLIO_NEWS_ALERT') title = `💼 Portfolio Alert: ${symbol}`;
     else if (type === 'NEPSE_MACRO') title = `🏛️ NEPSE Market & Policy Alert`;
     else if (type === 'BREAKOUT') title = `⚡ Breakout Alert: ${symbol} Expanding`;
@@ -2745,14 +2759,108 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
       }
 
       const impactKeywords = [
+        // Dividends & Corporate Actions
         'लाभांश', 'बोनस', 'हकप्रद', 'साधारण सभा', 'वित्तीय विवरण', 'आइपिओ', 'म्युचुअल फन्ड', 'बुक क्लोज', 'बुकक्लोज',
         'dividend', 'bonus', 'bonus share', 'cash dividend', 'unclaimed dividend', 'unclaimed cash dividend',
         'right share', 'rights issue', 'right issue', 'right offering',
         'agm', 'annual general meeting', 'book closure', 'quarterly', 'quarter of fy', 'financial statement',
-        'provisional financial', 'financial report', 'ipo', 'circuit', 'halt', 'monetary policy', 'ब्याजदर', 'राष्ट्र बैंक', 'धितोपत्र बोर्ड'
+        'provisional financial', 'financial report', 'ipo', 'circuit', 'halt', 'monetary policy', 'ब्याजदर', 'राष्ट्र बैंक', 'धितोपत्र बोर्ड',
+        // Option 2: Mergers & Acquisitions
+        'मर्जर', 'प्राप्ति', 'अधिग्रहण', 'गाभ्ने', 'गाभिने', 'स्वाप', 'merger', 'acquisition', 'swap ratio', 'amalgamation', 'गाभिने सम्झौता',
+        // Option 2: SEBON & Regulatory Approvals
+        'सेबोन', 'स्वीकृत', 'स्वीकृति', 'अनुमति', 'sebon approval', 'sebon approved', 'regulatory approval', 'sebon permission',
+        // Option 2: IPO / FPO Allotment Results
+        'बाँडफाँड', 'नतिजा', 'बाँडफाँट', 'allotment', 'allotment result', 'ipo result', 'fpo result',
+        // Option 2: Daily NEPSE Market Close & Index Milestones
+        'नेप्से परिसूचक', 'शेयर बजार', 'कारोबार रकम', 'अंकले वृद्धि', 'अंकले गिरावट', 'अंकले बढ्यो', 'अंकले घट्यो', 'बजार बन्द',
+        'nepse gains', 'nepse drops', 'nepse index', 'daily market close', 'turnover reaches', 'nepse closed'
       ];
 
-      for (const item of articles.slice(0, 50)) {
+      // Multi-Portal Story Clustering: Detect major news covered across distinct portals
+      const STOP_WORDS = new Set([
+        'को', 'मा', 'र', 'ले', 'बाट', 'का', 'लाई', 'हुने', 'भयो', 'गर्ने', 'हुँदा', 'गरेको', 'थप', 'भने', 'पनि', 'गर्न',
+        'भएको', 'छ', 'छन्', 'थियो', 'गरे', 'यो', 'यस', 'ती', 'यी', 'हुन', 'गर्यो', 'लागि', 'प्रति', 'सम्म', 'धेरै',
+        'the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'is', 'are', 'was', 'were',
+        'from', 'as', 'has', 'have', 'had', 'its', 'their', 'be', 'been', 'this', 'that', 'after', 'per', 'pct', 'percent'
+      ]);
+
+      function extractNewsKeywords(t) {
+        if (!t) return new Set();
+        const clean = String(t)
+          .toLowerCase()
+          .replace(/[.,/#!$%^&*;:{}=\-_`~()?"'’।/\\\[\]0-9]/g, ' ')
+          .trim();
+        return new Set(clean.split(/\s+/).filter(w => w.length >= 3 && !STOP_WORDS.has(w)));
+      }
+
+      function normalizePortalSource(src, url = '') {
+        const s = String(src || '').toLowerCase();
+        const u = String(url || '').toLowerCase();
+        if (s.includes('merolagani') || u.includes('merolagani')) return 'merolagani';
+        if (s.includes('sharesansar') || u.includes('sharesansar')) return 'sharesansar';
+        if (s.includes('nepalipaisa') || u.includes('nepalipaisa')) return 'nepalipaisa';
+        if (s.includes('bizshala') || u.includes('bizshala')) return 'bizshala';
+        if (s.includes('karobar') || u.includes('karobar')) return 'karobar';
+        if (s.includes('clickmandu') || u.includes('clickmandu')) return 'clickmandu';
+        return s || 'other';
+      }
+
+      // Pre-compute cross-portal coverage across scraped articles
+      const crossPortalCoverageMap = new Map(); // itemKey -> Set of distinct source names
+      const candidateArticles = articles.slice(0, 80);
+      const parsedArticles = candidateArticles.map(item => {
+        const t = String(item.title || '').trim();
+        const key = (item.id && !String(item.id).startsWith('ss-') && !String(item.id).startsWith('ml-'))
+          ? `news_${item.id}`
+          : generateNewsContentKey(t, item.url || item.link);
+        const src = normalizePortalSource(item.source, item.url || item.link);
+        const kws = extractNewsKeywords(t);
+        let sym = extractStockSymbolFromText(t) || (item.body ? extractStockSymbolFromText(item.body) : null);
+        if (!sym && item.symbol && item.symbol !== 'NEPSE') sym = String(item.symbol).toUpperCase();
+        return { key, title: t, source: src, keywords: kws, symbol: sym };
+      });
+
+      for (let i = 0; i < parsedArticles.length; i++) {
+        const a = parsedArticles[i];
+        if (!crossPortalCoverageMap.has(a.key)) {
+          crossPortalCoverageMap.set(a.key, new Set([a.source]));
+        }
+        for (let j = i + 1; j < parsedArticles.length; j++) {
+          const b = parsedArticles[j];
+          if (a.source === b.source) continue;
+
+          let isMatch = false;
+          // Matching Rule 1: Same identified stock symbol and at least 1 overlapping keyword
+          if (a.symbol && b.symbol && a.symbol === b.symbol && a.symbol !== 'NEPSE') {
+            for (const kw of a.keywords) {
+              if (b.keywords.has(kw)) {
+                isMatch = true;
+                break;
+              }
+            }
+          }
+          // Matching Rule 2: Multi-word title keyword overlap (>= 2 common significant words)
+          if (!isMatch) {
+            let common = 0;
+            for (const kw of a.keywords) {
+              if (b.keywords.has(kw)) common++;
+              if (common >= 2) {
+                isMatch = true;
+                break;
+              }
+            }
+          }
+
+          if (isMatch) {
+            if (!crossPortalCoverageMap.has(a.key)) crossPortalCoverageMap.set(a.key, new Set([a.source]));
+            if (!crossPortalCoverageMap.has(b.key)) crossPortalCoverageMap.set(b.key, new Set([b.source]));
+            crossPortalCoverageMap.get(a.key).add(b.source);
+            crossPortalCoverageMap.get(b.key).add(a.source);
+          }
+        }
+      }
+
+      for (const item of candidateArticles) {
         const title = String(item.title || '').trim();
         if (!title || title.length < 10) continue;
 
@@ -2773,9 +2881,11 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
         }
 
         const isPortfolioTracked = foundSym && userTrackedSymbolsSet.has(foundSym);
+        const portalCoverageCount = crossPortalCoverageMap.get(itemKey)?.size || 1;
+        const isMultiPortalTrending = portalCoverageCount >= 2;
 
-        // Alert if high-impact keyword matches, or any specific scrip is mentioned, or portfolio tracked
-        if (hasImpact || foundSym || isPortfolioTracked) {
+        // Alert if high-impact keyword matches, or any specific scrip is mentioned, or portfolio tracked, or trending across portals
+        if (hasImpact || foundSym || isPortfolioTracked || isMultiPortalTrending) {
           seenNewsKeys.add(itemKey);
           saveSeenNewsKeys();
 
@@ -2784,8 +2894,12 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
           const isRightShare = ['हकप्रद', 'right share', 'right issue', 'rights issue', 'right offering', 'हकप्रद सेयर'].some(kw => lowerTitle.includes(kw));
           const isBookClosure = ['बुक क्लोज', 'बुकक्लोज', 'साधारण सभा', 'book closure', 'agm', 'annual general meeting', 'special general meeting', 'sgm'].some(kw => lowerTitle.includes(kw));
           const isFinancial = ['वित्तीय विवरण', 'त्रैमासिक', 'quarterly report', 'financial statement', 'financial report', 'provisional financial', 'quarterly', 'quarter of fy', 'earnings', 'खुद नाफा'].some(kw => lowerTitle.includes(kw));
+          const isMerger = ['मर्जर', 'प्राप्ति', 'अधिग्रहण', 'गाभ्ने', 'गाभिने', 'स्वाप', 'merger', 'acquisition', 'swap ratio', 'amalgamation', 'गाभिने सम्झौता'].some(kw => lowerTitle.includes(kw));
+          const isSebonApproval = ['धितोपत्र बोर्ड', 'सेबोन', 'स्वीकृत', 'स्वीकृति', 'अनुमति', 'sebon approval', 'sebon approved', 'regulatory approval', 'sebon permission'].some(kw => lowerTitle.includes(kw));
+          const isAllotment = ['बाँडफाँड', 'नतिजा', 'बाँडफाँट', 'allotment', 'allotment result', 'ipo result', 'fpo result'].some(kw => lowerTitle.includes(kw));
+          const isMarketMilestone = ['नेप्से परिसूचक', 'शेयर बजार', 'कारोबार रकम', 'अंकले वृद्धि', 'अंकले गिरावट', 'अंकले बढ्यो', 'अंकले घट्यो', 'बजार बन्द', 'nepse gains', 'nepse drops', 'nepse index', 'daily market close', 'turnover reaches', 'nepse closed'].some(kw => lowerTitle.includes(kw));
           const isMacro = ['मौद्रिक नीति', 'ब्याजदर', 'धितोपत्र बोर्ड', 'राष्ट्र बैंक', 'सर्कुलर', 'सर्किट', 'monetary policy', 'interest rate', 'sebon', 'nrb', 'halt', 'circuit breaker'].some(kw => lowerTitle.includes(kw));
-          const isHighImportanceNews = isMacro || ['अर्थमन्त्री', 'बजेट', 'धितोपत्र', 'मन्त्रिपरिषद्', 'नेप्से परिसूचक', 'शेयर बजार', 'बजार बन्द', 'कारोबार स्थगित', 'सूचक', 'finance minister', 'budget', 'gdp', 'inflation', 'cabinet', 'nepse index', 'trading halt'].some(kw => lowerTitle.includes(kw));
+          const isHighImportanceNews = isMacro || ['अर्थमन्त्री', 'बजेट', 'धितोपत्र', 'मन्त्रिपरिषद्', 'finance minister', 'budget', 'gdp', 'inflation', 'cabinet', 'trading halt'].some(kw => lowerTitle.includes(kw));
 
           let notifType = 'NEWS_ALERT';
           let notifCategory = 'general';
@@ -2815,6 +2929,34 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
             notifTitle = foundSym
               ? `📊 ${isPortfolioTracked ? '💼 [Portfolio] ' : ''}${foundSym} Financial Results`
               : `📊 Financial Announcement`;
+          } else if (isMerger) {
+            notifType = 'MERGER_ALERT';
+            notifCategory = 'general';
+            notifTitle = foundSym
+              ? `🤝 ${isPortfolioTracked ? '💼 [Portfolio] ' : ''}${foundSym} Merger / Acquisition Update`
+              : `🤝 NEPSE Merger & Acquisition News`;
+          } else if (isSebonApproval) {
+            notifType = 'SEBON_APPROVAL_ALERT';
+            notifCategory = 'general';
+            notifTitle = foundSym
+              ? `📜 ${isPortfolioTracked ? '💼 [Portfolio] ' : ''}${foundSym} SEBON Regulatory Approval`
+              : `📜 SEBON Approval Notice`;
+          } else if (isAllotment) {
+            notifType = 'ALLOTMENT_ALERT';
+            notifCategory = 'general';
+            notifTitle = foundSym
+              ? `🎯 ${foundSym} Allotment Results Published`
+              : `🎯 IPO Allotment Result Notice`;
+          } else if (isMarketMilestone) {
+            notifType = 'MARKET_MILESTONE_ALERT';
+            notifCategory = 'general';
+            notifTitle = `📊 Daily NEPSE Market Close & Index Update`;
+          } else if (isMultiPortalTrending) {
+            notifType = 'TRENDING_NEWS_ALERT';
+            notifCategory = 'general';
+            notifTitle = foundSym
+              ? `🔥 [Trending on ${portalCoverageCount} Portals] ${foundSym}`
+              : `🔥 [Trending on ${portalCoverageCount} Portals] Breaking News`;
           } else if (isHighImportanceNews) {
             notifType = 'NEPSE_MACRO';
             notifCategory = 'general';
@@ -2829,10 +2971,22 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
             notifTitle = foundSym ? `📰 ${foundSym} Corporate Announcement` : `📰 NEPSE Announcement`;
           }
 
-          // User Policy for nepse-general-news channel:
-          // Corporate Actions, Dividends, Right Shares, Financial Reports, AGM notices, High Importance Business News,
-          // and Portfolio holdings trigger status bar heads-up push notifications.
-          const isEligibleGeneralAlert = isDividend || isRightShare || isBookClosure || isFinancial || isHighImportanceNews || isPortfolioTracked;
+          // User Policy (Option 2) for nepse-general-news channel:
+          // Status bar heads-up push notifications are triggered for:
+          // 1. Dividends & Bonus Shares
+          // 2. Right Shares
+          // 3. Book Closures & AGMs
+          // 4. Quarterly Earnings Reports
+          // 5. Macro & Regulatory Halts
+          // 6. Any news mentioning a stock in Portfolio / Tracked List
+          // 7. Mergers & Acquisitions (Option 2)
+          // 8. SEBON & Regulatory Approvals (Option 2)
+          // 9. IPO / FPO Allotment Results (Option 2)
+          // 10. Daily NEPSE Market Close & Index Milestones (Option 2)
+          // 11. Multi-Portal Trending Breaking News (covered across >= 2 portals)
+          const isEligibleGeneralAlert = isDividend || isRightShare || isBookClosure || isFinancial || 
+                                         isMerger || isSebonApproval || isAllotment || isMarketMilestone ||
+                                         isHighImportanceNews || isPortfolioTracked || isMultiPortalTrending;
 
           if (!isEligibleGeneralAlert) {
             console.log(`[SmartAlertEngine] ℹ️ Routine PR notice "${title.slice(0, 45)}...": recorded in-app only (no push/Telegram).`);
