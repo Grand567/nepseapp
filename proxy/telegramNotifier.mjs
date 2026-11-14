@@ -1447,9 +1447,14 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
     const slice20 = hist.slice(0, 20);
     const minLow20 = Math.min(...slice20.map(h => h.lowPrice || ltp));
     const maxHigh20 = Math.max(...slice20.map(h => h.highPrice || ltp));
+    const minClose20 = Math.min(...slice20.map(h => h.closePrice || ltp));
+    const maxClose20 = Math.max(...slice20.map(h => h.closePrice || ltp));
     const avgVol20 = Math.round(slice20.reduce((acc, h) => acc + (h.totalVolume || 0), 0) / Math.max(1, slice20.length));
     const rvol = avgVol20 > 0 ? +(volume / avgVol20).toFixed(2) : 1.0;
-    const baseRangePct = minLow20 > 0 ? +(((maxHigh20 - minLow20) / minLow20) * 100).toFixed(1) : 0;
+    
+    // Evaluate closing base compression vs intraday extreme
+    const closeBasePct = minClose20 > 0 ? +(((maxClose20 - minClose20) / minClose20) * 100).toFixed(1) : 0;
+    const baseCategory = closeBasePct <= 7.0 ? 'Tight' : (closeBasePct <= 18.0 ? 'Moderate' : 'Wide');
 
     // Multi-Session Broker Flow (last 5 sessions)
     const flow = getSmartMoneyAggregatedFlow(sym, 5);
@@ -1559,7 +1564,7 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       `• <b>Live Price (LTP):</b> <b>Rs. ${ltp.toFixed(2)}</b> (${pChangeStr})`,
       `• <b>Day Range:</b> Low Rs. ${low.toFixed(1)} – High Rs. ${high.toFixed(1)}`,
       `• <b>20-Period Trend (EMA):</b> Rs. ${ema20.toFixed(2)} (${distFromEmaPct >= 0 ? '+' : ''}${distFromEmaPct}% from 20 EMA)`,
-      `• <b>20-Day Base Range:</b> Rs. ${minLow20.toFixed(1)} – Rs. ${maxHigh20.toFixed(1)} (Tight ${baseRangePct}% Base)`,
+      `• <b>20-Day Base Range:</b> Rs. ${minClose20.toFixed(1)} – Rs. ${maxClose20.toFixed(1)} (${baseCategory} ${closeBasePct}% Base)${minLow20 < minClose20 * 0.85 ? ` <i>[Extremes: Rs. ${minLow20.toFixed(1)} – Rs. ${maxHigh20.toFixed(1)}]</i>` : ''}`,
       ``,
       `🏛️ <b>2. INSTITUTIONAL ACCUMULATION &amp; BROKER COST:</b>`,
       `• 🎯 <b>Average Broker Buy Price (Cost Basis):</b> <b>Rs. ${avgBrokerPrice}</b> (${distSign}${distFromBroker}% from LTP)`,
