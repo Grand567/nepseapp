@@ -99,3 +99,19 @@ test('3. All-Time Honest Labeling & Ledger Boundary Disclosure', () => {
   assert.ok(meta.label.includes('Since 2026-08-27'));
   assert.ok(meta.disclaimer.includes('Pre-2026-08-27 baseline unknown'));
 });
+
+test('4. Off-Market Closed Session Guard: Multi-Day flow must strictly end on last completed trading session', async () => {
+  const { getHistoricalSubfileBrokerAnalysis } = await import('../src/utils/localLedgerManager.ts');
+  const { isMarketOpen } = await import('../src/utils/nepseCalendar.js');
+
+  // Saturday 2026-11-14 (Market closed)
+  const saturdayNow = new Date('2026-11-14T11:00:00+05:45');
+  assert.equal(isMarketOpen(saturdayNow), false);
+
+  const res5D = await getHistoricalSubfileBrokerAnalysis('RFPL', { days: 5 });
+  assert.ok(res5D != null, 'RFPL 5D subfile broker analysis must return valid object');
+  assert.equal(res5D.timeframe, '5D');
+  assert.equal(res5D.date, '2026-11-13', '5D date must be Friday 2026-11-13, never Saturday 2026-11-14');
+  assert.equal(res5D.toDate, '2026-11-13', '5D toDate must be Friday 2026-11-13, never Saturday 2026-11-14');
+  assert.equal(res5D.fromDate, '2026-11-03', '5D fromDate must be 2026-11-03');
+});

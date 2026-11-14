@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, ShieldCheck, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink, Download, Share2, Copy, Check, Globe, Building2, Flame } from 'lucide-react';
 import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap, fetchAvailableTradingDates } from '../utils/liveData';
-import { isNepseTradingDay, formatNptDateIso } from '../utils/nepseCalendar';
+import { isNepseTradingDay, formatNptDateIso, isMarketOpen, latestTradingSession } from '../utils/nepseCalendar';
 import { fetchBrokerAnalysis, fetchBrokerHeatmap, fetchBrokerHoldings } from '../utils/servicesApi';
 import { exportMarketBrokerSurveillance } from '../utils/floorsheetExport';
 import { StatCard, InfoBanner, Insight, Spinner, TimeframeFilterBar } from './ui';
@@ -220,6 +220,10 @@ export function BrokerFlowDominanceService({
     fetchAvailableTradingDates().then(dates => {
       if (Array.isArray(dates) && dates.length > 0) {
         setFetchedDates(dates);
+        const newest = dates[0];
+        if (!selectedDate && !date && !sessionDateFilter && newest && heatmapData?.businessDate && newest > heatmapData.businessDate) {
+          setSessionDateFilter(newest);
+        }
       }
     }).catch(() => {});
   }, []);
@@ -258,14 +262,14 @@ export function BrokerFlowDominanceService({
   const sessionDate = useMemo(() => {
     if (sessionDateFilter) return sessionDateFilter;
     if (selectedDate || date) return selectedDate || date;
-    if (heatmapData?.businessDate) return heatmapData.businessDate;
     if (availableDates.length > 0) return availableDates[0];
+    if (heatmapData?.businessDate) return heatmapData.businessDate;
     if (floorsheet && floorsheet.length > 0) {
       const fsDate = floorsheet.find(f => f.businessDate || f.date);
       if (fsDate?.businessDate || fsDate?.date) return String(fsDate.businessDate || fsDate.date).split('T')[0];
     }
-    return formatNptDateIso(new Date());
-  }, [sessionDateFilter, selectedDate, date, heatmapData, availableDates, floorsheet]);
+    return latestTradingSession(new Date(), !isMarketOpen(new Date()));
+  }, [sessionDateFilter, selectedDate, date, availableDates, heatmapData, floorsheet]);
 
   // Whole Day Net Bought Leaderboard
   const topNetBoughtWholeDay = useMemo(() => {
@@ -628,7 +632,7 @@ export function BrokerFlowDominanceService({
 
     try {
       const days = DAYS_MAP[activeTf] || 1;
-      const effDate = targetDate || sessionDate || formatNptDateIso(new Date());
+      const effDate = targetDate || sessionDate || latestTradingSession(new Date(), !isMarketOpen(new Date()));
 
       // Immediate local baseline switch (0ms) from pre-compiled historical matrices
       const histSeed = effDate ? (historicalMatricesSeed as any)?.[effDate] : null;

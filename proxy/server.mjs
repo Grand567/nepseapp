@@ -7566,7 +7566,7 @@ app.get([
 
   try {
     const marketDates = await getMarketTradingDates().catch(() => []);
-    const latestDate = marketDates[0] || formatNptDateIso(new Date());
+    const latestDate = marketDates[0] || latestTradingSession(new Date(), !isMarketOpen());
 
     if (isAll) {
       const allTimeResult = await getOrFetchAllTimeBrokerHoldings(symbol);

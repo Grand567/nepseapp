@@ -2,6 +2,7 @@
 import React, { Component, ErrorInfo, ReactNode, useEffect, useMemo, useState } from 'react';
 import { getProxyBase } from '../../utils/liveData';
 import { getBrokerName } from '../../utils/accumulationDistributionEngine';
+import { formatNptDateIso, isMarketOpen, latestTradingSession } from '../../utils/nepseCalendar';
 
 export type SmartMoneyTimeframe = '1D' | '5D' | '1M' | 'ALL';
 
@@ -696,7 +697,8 @@ function BrokerSmartMoneyCardInner({
               30D Baseline Normalized
             </span>
             {(() => {
-              const latestDateStr = '2026-11-06';
+              const now = new Date();
+              const latestDateStr = latestTradingSession(now, !isMarketOpen(now));
               const pDate = (rawPayload as any)?.date || (rawPayload as any)?.businessDate || (rawPayload as any)?.toDate || (initialData as any)?.date || (initialData as any)?.businessDate || latestDateStr;
               const fromDate = (rawPayload as any)?.fromDate || (rawPayload as any)?.startDate || '';
               const toDate = (rawPayload as any)?.toDate || (rawPayload as any)?.endDate || pDate;

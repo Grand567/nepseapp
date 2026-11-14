@@ -1487,7 +1487,7 @@ export default function StockDetailModal({
     const tradingSessions = Number(cum.coverage?.sessionCount || cum.coverage?.tradingDays || cum.tradingDays || cum.timeframeDays || 42);
     const coverageObj = cum.coverage || {
       startDate: '2026-08-27',
-      endDate: formatNptDateIso(new Date()),
+      endDate: latestTradingSession(new Date(), !isMarketOpen(new Date())),
       sessionCount: tradingSessions,
       tradingDays: tradingSessions,
       isLifetime: false,
@@ -2156,7 +2156,7 @@ export default function StockDetailModal({
         const tradingSessions = Number(cum.coverage?.sessionCount || cum.coverage?.tradingDays || cum.tradingDays || cum.timeframeDays || 42);
         const coverageObj = cum.coverage || {
           startDate: '2026-08-27',
-          endDate: formatNptDateIso(new Date()),
+          endDate: latestTradingSession(new Date(), !isMarketOpen(new Date())),
           sessionCount: tradingSessions,
           tradingDays: tradingSessions,
           isLifetime: false,

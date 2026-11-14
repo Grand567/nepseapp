@@ -562,12 +562,12 @@ function StockBrokerAnalysisTabInner({
           source: 'cumulative_broker_ledger_baseline',
           coverage: cum.coverage || {
             startDate: '2022-01-25',
-            endDate: formatNptDateIso(new Date()),
+            endDate: latestTradingSession(new Date(), !isMarketOpen(new Date())),
             sessionCount: dynamicSessions,
             tradingDays: dynamicSessions,
             isLifetime: false,
             label: `Since 2022-01-25 (${dynamicSessions} sessions)`,
-            disclaimer: `Covered from 2022-01-25 to ${formatNptDateIso(new Date())} (${dynamicSessions} sessions). Pre-2022-01-25 baseline unknown. Unadjusted for corporate actions.`,
+            disclaimer: `Covered from 2022-01-25 to ${latestTradingSession(new Date(), !isMarketOpen(new Date()))} (${dynamicSessions} sessions). Pre-2022-01-25 baseline unknown. Unadjusted for corporate actions.`,
             isLiveIncomplete: false,
             lastUpdated: new Date().toISOString()
           }
@@ -699,7 +699,7 @@ function StockBrokerAnalysisTabInner({
     if (bd?.businessDate) return bd.businessDate;
     if (bd?.date) return bd.date;
     if (availableDates.length > 0) return availableDates[0];
-    return formatNptDateIso(new Date());
+    return latestTradingSession(new Date(), !isMarketOpen(new Date()));
   }, [effectiveDate, activeBrokerData, availableDates]);
 
   // Process broker flows from activeBrokerData or floorsheetData

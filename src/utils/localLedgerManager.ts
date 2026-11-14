@@ -14,6 +14,7 @@ import { idbGet, idbSet } from './indexedDb.js';
 import { fetchFromBackend } from './liveData.js';
 import { getProxyBase } from './proxyBase.js';
 import { getCumulativeBrokerData } from './historyCache.js';
+import { formatNptDateIso, isMarketOpen, latestTradingSession } from './nepseCalendar.js';
 
 export interface ScripTacticalLevels {
   limit_buy_min: number;
@@ -673,18 +674,31 @@ export async function getHistoricalSubfileDirect(dateOrOffset: string | number):
   // Local bundled check (0ms offline APK access without network call)
   let subfileNum: number | null = typeof dateOrOffset === 'number' && dateOrOffset >= 1 && dateOrOffset <= 5 ? dateOrOffset : null;
   if (!subfileNum && typeof dateOrOffset === 'string') {
-    const manifest = _subfileMemoryCache.get('manifest') as any;
+    let manifest = _subfileMemoryCache.get('manifest') as any;
+    if (!manifest && typeof process !== 'undefined' && process?.versions?.node) {
+      try {
+        const fsMod = 'fs';
+        const pathMod = 'path';
+        const fs = await import(/* @vite-ignore */ fsMod);
+        const path = await import(/* @vite-ignore */ pathMod);
+        const indexPath = path.resolve(process.cwd(), `public/data/subfiles/historical_subfiles_index.json`);
+        if (fs.existsSync(indexPath)) {
+          manifest = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+          _subfileMemoryCache.set('manifest', manifest);
+        }
+      } catch (_) {}
+    }
     if (manifest && Array.isArray(manifest.subfiles)) {
       const found = manifest.subfiles.find((s: any) => s.session_date === dateOrOffset);
       if (found) subfileNum = found.day_offset;
     }
     if (!subfileNum) {
       const dateMap: Record<string, number> = {
-        '2026-11-06': 1,
-        '2026-11-05': 2,
-        '2026-11-04': 3,
-        '2026-11-03': 4,
-        '2026-11-02': 5
+        '2026-11-13': 1,
+        '2026-11-06': 2,
+        '2026-11-05': 3,
+        '2026-11-04': 4,
+        '2026-11-03': 5
       };
       if (dateMap[dateOrOffset]) subfileNum = dateMap[dateOrOffset];
     }
@@ -801,7 +815,7 @@ export async function getHistoricalSubfileBrokerAnalysis(
       const tradingSessions = Number(cum.coverage?.sessionCount || cum.coverage?.tradingDays || cum.tradingDays || cum.timeframeDays || 42);
       const coverageObj = cum.coverage || {
         startDate: '2026-08-27',
-        endDate: '2026-11-06',
+        endDate: latestTradingSession(new Date(), !isMarketOpen(new Date())),
         sessionCount: tradingSessions,
         tradingDays: tradingSessions,
         isLifetime: false,
@@ -1170,6 +1184,8 @@ export async function getHistoricalSubfileBrokerAnalysis(
   const cum5d = getCumulativeBrokerData(sym);
   const cum5dHeld = cum5d ? (Number(cum5d.totalSharesHeldTillNow || 0) || (cum5d.topAccumulators || []).reduce((s: number, a: any) => s + (a.netQty > 0 ? a.netQty : 0), 0)) : total5dHoldQty;
   const isPartialOffline = numDays > subfiles.length;
+  const toDate = subfiles[0]?.session_date || latestTradingSession(new Date(), !isMarketOpen(new Date()));
+  const fromDate = subfiles[subfiles.length - 1]?.session_date || toDate;
 
   return {
     symbol: sym,
@@ -1177,6 +1193,10 @@ export async function getHistoricalSubfileBrokerAnalysis(
     tradingDays: subfiles.length,
     timeframeDays: subfiles.length,
     requestedDays: numDays,
+    date: toDate,
+    businessDate: toDate,
+    toDate,
+    fromDate,
     isFallbackPartial: isPartialOffline,
     disclaimer: isPartialOffline ? `Showing ${subfiles.length} recent sessions offline (Requested ${numDays}D). Connect to server for full ${numDays} sessions.` : undefined,
     totalVolume: totalVol,
