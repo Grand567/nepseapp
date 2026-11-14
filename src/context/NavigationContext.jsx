@@ -85,6 +85,17 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
     });
   }, []);
 
+  // Expose QA test hooks for headless Playwright crawler
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__openStockDetail = openStockDetail;
+      window.__closeStockDetail = closeStockDetail;
+      window.__setActiveTab = setActiveTab;
+      window.__selectedStock = selectedStock;
+      window.__activeTab = activeTab;
+    }
+  }, [openStockDetail, closeStockDetail, setActiveTab, selectedStock, activeTab]);
+
   // Core back navigation handler (used by both hardware back & gestures)
   const goBack = useCallback(async () => {
     const now = Date.now();

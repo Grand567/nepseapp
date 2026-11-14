@@ -17,7 +17,7 @@ import {
   auditMultiSessionTrapRisk
 } from './telegramNotifier.mjs';
 import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
-import { getOrFetchSymbolFloorsheet, getFullSessionFloorsheet } from './brokerVault.mjs';
+import { getOrFetchSymbolFloorsheet, getFullSessionFloorsheet, aggregateMarketFloorsheet } from './brokerVault.mjs';
 import { ingestDailyStockPrices, getDailyCompletenessStatus, db } from './db/ledgerStore.js';
 import { downloadAndArchiveDailyFloorsheet } from './utils/dailyFloorsheetCollector.mjs';
 import { runCalendarGuardedDailyTransition } from './utils/rollingLedgerEngine.mjs';
@@ -423,6 +423,36 @@ export async function runPostMarketCloseAnalysis(force = false) {
     // Download and archive into daily_floorsheets local folder
     await downloadAndArchiveDailyFloorsheet(targetDate).catch(e => console.warn('[Post-Market Worker] dailyFloorsheetCollector notice:', e.message));
     await aggregateFloorsheetData();
+
+    // Exchange-wide broker matrix aggregation & dual-write to proxy and src
+    try {
+      const fullTrades = await getFullSessionFloorsheet(targetDate);
+      if (Array.isArray(fullTrades) && fullTrades.length > 0) {
+        const aggData = aggregateMarketFloorsheet(fullTrades, targetDate);
+        const proxyPath = path.join(__dirname, 'data', 'broker_matrix_latest.json');
+        const srcPath = path.resolve(__dirname, '..', 'src', 'data', 'broker_matrix_latest.json');
+        fs.writeFileSync(proxyPath, JSON.stringify(aggData, null, 2), 'utf8');
+        fs.writeFileSync(srcPath, JSON.stringify(aggData, null, 2), 'utf8');
+
+        const histPath = path.resolve(__dirname, '..', 'src', 'data', 'broker_matrices_historical.json');
+        if (fs.existsSync(histPath)) {
+          try {
+            const histData = JSON.parse(fs.readFileSync(histPath, 'utf8'));
+            const lightMatrix = (aggData.matrix || []).map(({ scrips, ...rest }) => rest);
+            histData[targetDate] = { ...aggData, matrix: lightMatrix };
+            const recentDates = Object.keys(histData).sort().reverse().slice(0, 5);
+            const prunedSeed = {};
+            for (const rd of recentDates) prunedSeed[rd] = histData[rd];
+            fs.writeFileSync(histPath, JSON.stringify(prunedSeed), 'utf8');
+          } catch (hErr) {
+            console.warn('[Post-Market Worker] broker_matrices_historical seed notice:', hErr.message);
+          }
+        }
+        console.log(`[Post-Market Worker] ✅ Dual-written broker_matrix_latest.json & updated historical seed for: ${targetDate}`);
+      }
+    } catch (mErr) {
+      console.warn('[Post-Market Worker] Broker matrix dual-write notice:', mErr.message);
+    }
     // Run the full Entry/Exit Analyzer scan across ALL 350+ stocks
     await runFullUniversePrimePick();
     // Post-Market EOD (3:45 PM): Dispatch Flowchart v2.0 Tactical Prime Ticket + Top 5 Candidate Table (Overnight Prep)

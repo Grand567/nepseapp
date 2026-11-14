@@ -122,6 +122,33 @@ export function exportCumulativeBrokerLedger(databaseInstance = db) {
                 brokerAggMap.set(bId, cur);
               }
             }
+
+            // Seamlessly incorporate newer settled sessions from SQLite daily_broker_ledger
+            if (databaseInstance) {
+              try {
+                const newerRows = databaseInstance.prepare(`
+                  SELECT broker_id, trade_date, buy_vol, sell_vol, buy_amt, sell_amt
+                  FROM daily_broker_ledger
+                  WHERE symbol = ? AND trade_date > ?
+                `).all(sym, dates[dates.length - 1]);
+                if (newerRows.length > 0) {
+                  const newerDates = new Set();
+                  for (const nr of newerRows) {
+                    newerDates.add(nr.trade_date);
+                    const bId = String(nr.broker_id);
+                    const cur = brokerAggMap.get(bId) || { buy_vol: 0, sell_vol: 0, buy_amt: 0, sell_amt: 0 };
+                    cur.buy_vol += Number(nr.buy_vol || 0);
+                    cur.sell_vol += Number(nr.sell_vol || 0);
+                    cur.buy_amt += Number(nr.buy_amt || 0);
+                    cur.sell_amt += Number(nr.sell_amt || 0);
+                    brokerAggMap.set(bId, cur);
+                  }
+                  const sortedNewer = Array.from(newerDates).sort();
+                  symEndDate = sortedNewer[sortedNewer.length - 1];
+                  symSessionCount += sortedNewer.length;
+                }
+              } catch (_) {}
+            }
             rows = Array.from(brokerAggMap.entries()).map(([bId, d]) => ({
               broker_id: parseInt(bId, 10) || bId,
               buyVol: d.buy_vol,
