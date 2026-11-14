@@ -12,6 +12,7 @@ import latestBrokerMatrix from '../data/broker_matrix_latest.json' with { type: 
 import latestFundamentals from '../data/nepse_fundamentals_latest.json' with { type: 'json' };
 import cumulativeBrokerLedger from '../data/nepse_cumulative_broker_ledger.json' with { type: 'json' };
 import nepseIndexBaseline from '../data/nepse_index_baseline.json' with { type: 'json' };
+import { isMarketOpen } from './nepseCalendar.js';
 
 // Universal in-memory cache maps
 const memHistCache = new Map();
@@ -443,6 +444,13 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
   if (!rawSym) return null;
   const isAll = days === 'all' || days === 'ALL' || days === 'all-time' || Number(days) >= 300;
   const numDays = isAll ? 'all' : Math.max(1, parseInt(days || 1, 10) || 1);
+
+  // Fix 2: Never serve static bundled matrix for 1D when market is actively open or refresh is requested
+  const isLive = isMarketOpen();
+  if (isLive && numDays === 1 && !options?.date) {
+    return null;
+  }
+
   const dateKey = options?.date ? String(options.date).trim() : (numDays === 1 ? BUNDLED_BROKER_DATE : 'latest');
   const fromKey = options?.fromDate ? String(options.fromDate).trim() : '';
   const toKey = options?.toDate ? String(options.toDate).trim() : '';

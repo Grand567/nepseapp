@@ -47,7 +47,7 @@ import {
 import { fetchStockSnapshot, getSnapshotCache } from '../services/stockSnapshot';
 import { fetchNepseIntradayGraph, fetchCompanyQuarterlyReports, fetchMarketNews } from '../utils/servicesApi';
 import { getCorporateAlertForSymbol } from '../services/merolaganiNewsService.js';
-import { getDetailedMarketStatus } from '../utils/nepseCalendar';
+import { getDetailedMarketStatus, formatNptDateIso, isMarketOpen, latestTradingSession } from '../utils/nepseCalendar';
 import { triggerHaptic } from '../utils/haptics';
 import LoadingShimmerBar from './LoadingShimmerBar';
 import { exportStockFloorsheet, exportStockPriceHistory } from '../utils/floorsheetExport';
@@ -1485,7 +1485,7 @@ export default function StockDetailModal({
     const tradingSessions = Number(cum.coverage?.sessionCount || cum.coverage?.tradingDays || cum.tradingDays || cum.timeframeDays || 42);
     const coverageObj = cum.coverage || {
       startDate: '2026-08-27',
-      endDate: '2026-11-06',
+      endDate: formatNptDateIso(new Date()),
       sessionCount: tradingSessions,
       tradingDays: tradingSessions,
       isLifetime: false,
@@ -1607,6 +1607,16 @@ export default function StockDetailModal({
       window.removeEventListener('watchlist_updated', onWatchlistChange);
     };
   }, [resolvedStock]);
+
+  // Fix 2: Reset broker state immediately on symbol change to prevent cross-stock contamination
+  useEffect(() => {
+    const sym = resolvedStock?.symbol;
+    if (!sym) return;
+    setRealBrokerAnalysis(null);
+    setBroker1DData(null);
+    setBroker5DData(null);
+    setBrokerAnalysisLoading(true);
+  }, [resolvedStock?.symbol]);
 
   // Preload verified available trading sessions on mount
   useEffect(() => {
@@ -2132,7 +2142,7 @@ export default function StockDetailModal({
         const tradingSessions = Number(cum.coverage?.sessionCount || cum.coverage?.tradingDays || cum.tradingDays || cum.timeframeDays || 42);
         const coverageObj = cum.coverage || {
           startDate: '2026-08-27',
-          endDate: '2026-11-06',
+          endDate: formatNptDateIso(new Date()),
           sessionCount: tradingSessions,
           tradingDays: tradingSessions,
           isLifetime: false,
@@ -4823,9 +4833,9 @@ export default function StockDetailModal({
                         }}
                       >
                         {(() => {
-                          const ms = getDetailedMarketStatus();
-                          const dateStr = pure1DBa?.businessDate || pure1DBa?.date || modalSessionDate;
-                          return ms.isOpen ? `🟢 LIVE SESSION (${dateStr || 'Today'})` : `🌙 LAST TRADING DAY (${dateStr || 'Settled'})`;
+                          const isOpen = isMarketOpen();
+                          const sessionDate = latestTradingSession(new Date(), !isOpen);
+                          return isOpen ? `🟢 LIVE SESSION (${sessionDate})` : `🌙 Market closed, showing ${sessionDate}`;
                         })()}
                       </button>
                       <button

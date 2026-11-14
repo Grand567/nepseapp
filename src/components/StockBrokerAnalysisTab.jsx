@@ -8,7 +8,7 @@ import { getBrokerName, formatBrokerAmount } from '../utils/accumulationDistribu
 import { exportBrokerAnalysisReport, exportStockFloorsheet } from '../utils/floorsheetExport';
 import { fetchRealBrokerAnalysis, fetchFromBackend, fetchAvailableTradingDates } from '../utils/liveData';
 import { getHistoricalSubfileBrokerAnalysis } from '../utils/localLedgerManager';
-import { formatNptDateIso } from '../utils/nepseCalendar';
+import { formatNptDateIso, isMarketOpen, latestTradingSession } from '../utils/nepseCalendar';
 import { SessionDateDropdown } from './SessionDateDropdown';
 import { triggerHaptic } from '../utils/haptics';
 import LoadingShimmerBar from './LoadingShimmerBar';
@@ -282,7 +282,6 @@ function StockBrokerAnalysisTabInner({
       });
 
       const flow = Array.from(combinedFlowMap.values())
-        .filter(f => !isOngoingMarketSession || f?.date !== todayNpt)
         .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
       if (flow.length > 0) {
@@ -563,12 +562,12 @@ function StockBrokerAnalysisTabInner({
           source: 'cumulative_broker_ledger_baseline',
           coverage: cum.coverage || {
             startDate: '2022-01-25',
-            endDate: '2026-11-06',
+            endDate: formatNptDateIso(new Date()),
             sessionCount: dynamicSessions,
             tradingDays: dynamicSessions,
             isLifetime: false,
             label: `Since 2022-01-25 (${dynamicSessions} sessions)`,
-            disclaimer: `Covered from 2022-01-25 to 2026-11-06 (${dynamicSessions} sessions). Pre-2022-01-25 baseline unknown. Unadjusted for corporate actions.`,
+            disclaimer: `Covered from 2022-01-25 to ${formatNptDateIso(new Date())} (${dynamicSessions} sessions). Pre-2022-01-25 baseline unknown. Unadjusted for corporate actions.`,
             isLiveIncomplete: false,
             lastUpdated: new Date().toISOString()
           }
