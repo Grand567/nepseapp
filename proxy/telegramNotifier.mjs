@@ -300,6 +300,48 @@ export function escapeHtml(str) {
 }
 
 /**
+ * Splits long Telegram messages into chunks <= maxLen (default 3900)
+ * preserving clean section dividers (\n──────────────────────────\n) or double-newlines.
+ * Prevents Telegram HTTP 400 Bad Request "message is too long" (limit 4096 chars).
+ */
+export function splitMessageIntoTelegramChunks(text, maxLen = 3900) {
+  if (!text || text.length <= maxLen) return [text];
+
+  const chunks = [];
+  const delimiter = '\n──────────────────────────\n';
+  const parts = text.includes(delimiter) ? text.split(delimiter) : text.split('\n\n');
+
+  let currentChunk = '';
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    const separator = currentChunk ? (text.includes(delimiter) ? delimiter : '\n\n') : '';
+    if ((currentChunk + separator + part).length <= maxLen) {
+      currentChunk += separator + part;
+    } else {
+      if (currentChunk) {
+        chunks.push(currentChunk);
+        currentChunk = '';
+      }
+      if (part.length <= maxLen) {
+        currentChunk = part;
+      } else {
+        const lines = part.split('\n');
+        for (const line of lines) {
+          if ((currentChunk + '\n' + line).length <= maxLen) {
+            currentChunk = currentChunk ? currentChunk + '\n' + line : line;
+          } else {
+            if (currentChunk) chunks.push(currentChunk);
+            currentChunk = line.length > maxLen ? line.slice(0, maxLen) : line;
+          }
+        }
+      }
+    }
+  }
+  if (currentChunk) chunks.push(currentChunk);
+  return chunks.length > 0 ? chunks : [text.slice(0, maxLen)];
+}
+
+/**
  * Sends a raw HTML/Markdown message to Telegram with automatic plain-text fallback.
  * Supports passing options object { parseMode, chatId } or string parseMode ('HTML'/'Markdown').
  */
@@ -316,6 +358,22 @@ export async function sendTelegramMessage(text, optionsOrParseMode = 'HTML') {
 
   if (isTokenInvalid) {
     return { success: false, reason: 'Telegram Bot Token is invalid or revoked (HTTP 401 Unauthorized). Retries suspended.' };
+  }
+
+  // Multi-message chunking for payloads exceeding Telegram 4096 char limit
+  if (text && text.length > 3900) {
+    const chunks = splitMessageIntoTelegramChunks(text, 3900);
+    if (chunks.length > 1) {
+      console.log(`[TelegramNotifier] Splitting large message (${text.length} chars) into ${chunks.length} safe chunks...`);
+      let lastRes = null;
+      for (let i = 0; i < chunks.length; i++) {
+        lastRes = await sendTelegramMessage(chunks[i], { parseMode, chatId: targetChatId });
+        if (i < chunks.length - 1) {
+          await new Promise(r => setTimeout(r, 250));
+        }
+      }
+      return { success: Boolean(lastRes?.success), messageId: lastRes?.messageId, chunksDispatched: chunks.length };
+    }
   }
 
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
