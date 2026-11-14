@@ -57,6 +57,7 @@ const testFiles = [
   'marketRules.test.mjs',
   'sharedTradingCalendar.test.mjs',
   'oneDayLiveMerging.test.mjs',
+  'multiTimeframeIsolation.test.mjs',
   'replayHarness.mjs',
   'researchBasis.test.mjs',
   'swingEngine.test.mjs',

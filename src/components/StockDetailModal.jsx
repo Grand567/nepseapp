@@ -4877,7 +4877,9 @@ export default function StockDetailModal({
                           cursor: 'pointer'
                         }}
                       >
-                        {allTimeBrokerAnalysis?.coverage?.sessionCount ? `NET ACCUMULATION (${allTimeBrokerAnalysis.coverage.sessionCount}S)` : 'NET ACCUMULATION (42S)'}
+                        {allTimeBrokerAnalysis?.coverage?.sessionCount
+                          ? `NET ACCUMULATION (${allTimeBrokerAnalysis.coverage.sessionCount}S since ${allTimeBrokerAnalysis.coverage.startDate || '2026-08-27'})`
+                          : 'NET ACCUMULATION (43S since 2026-08-27)'}
                       </button>
                     </div>
                   </div>

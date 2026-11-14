@@ -579,9 +579,26 @@ function StockBrokerAnalysisTabInner({
       (Array.isArray(internalBrokerData.brokers) && internalBrokerData.brokers.length > 0) ||
       (Array.isArray(internalBrokerData.dailyFlow) && internalBrokerData.dailyFlow.length > 0)
     )) {
-      return internalBrokerData;
+      const dataDays = internalBrokerData.timeframeDays || internalBrokerData.tradingDays || internalBrokerData.days;
+      if (effectiveDays === 'all' || effectiveDays === 'ALL') {
+        if (internalBrokerData.timeframe === 'ALL' || Number(dataDays) >= 30) {
+          return internalBrokerData;
+        }
+      } else if (Number(dataDays) === Number(effectiveDays)) {
+        return internalBrokerData;
+      }
     }
-    return brokerData || null;
+    if (brokerData) {
+      const parentDays = brokerData.timeframeDays || brokerData.tradingDays || brokerData.days;
+      if (effectiveDays === 'all' || effectiveDays === 'ALL') {
+        if (brokerData.timeframe === 'ALL' || Number(parentDays) >= 30) {
+          return brokerData;
+        }
+      } else if (Number(parentDays) === Number(effectiveDays)) {
+        return brokerData;
+      }
+    }
+    return null;
   }, [effectiveDate, internalBrokerData, brokerData, multiDayDailyFlow, symbol]);
 
   const isTabLoading = Boolean(loading || internalLoading);

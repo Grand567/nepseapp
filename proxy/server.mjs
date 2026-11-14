@@ -4994,11 +4994,8 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
       if (result !== 'TIMEOUT' && result && (result.brokers?.length > 0 || result.totalVolume > 0)) {
         vaultData = result;
       } else {
-        // Return fast on-disk vault snapshot immediately to prevent aborts
+        // Return fast on-disk vault snapshot for the requested timeframe (never substitute with 1D)
         let fastSnapshot = getFastVaultSnapshot(symbol, days);
-        if (!fastSnapshot || (!fastSnapshot.brokers?.length && !fastSnapshot.totalVolume)) {
-          fastSnapshot = getFastVaultSnapshot(symbol, 1);
-        }
         if (fastSnapshot && (fastSnapshot.brokers?.length > 0 || fastSnapshot.totalVolume > 0)) {
           const enrichedFast = enrichWithMicrostructure(symbol, days, fastSnapshot, date);
           vaultData = enrichedFast;
