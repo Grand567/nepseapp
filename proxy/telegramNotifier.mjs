@@ -1456,6 +1456,64 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
     const closeBasePct = minClose20 > 0 ? +(((maxClose20 - minClose20) / minClose20) * 100).toFixed(1) : 0;
     const baseCategory = closeBasePct <= 7.0 ? 'Tight' : (closeBasePct <= 18.0 ? 'Moderate' : 'Wide');
 
+    // Volume Profile Point of Control (POC) over 20 sessions
+    const vpBuckets = new Map();
+    for (const bar of slice20) {
+      const bHigh = Number(bar.highPrice || bar.ltp || ltp);
+      const bLow = Number(bar.lowPrice || bar.ltp || ltp);
+      const bClose = Number(bar.closePrice || bar.ltp || ltp);
+      const barMid = Math.round((bHigh + bLow + bClose) / 3);
+      if (barMid > 0) {
+        vpBuckets.set(barMid, (vpBuckets.get(barMid) || 0) + Number(bar.totalVolume || 0));
+      }
+    }
+    let maxVpVol = 0, pocPrice = Math.round(ltp);
+    for (const [px, vol] of vpBuckets.entries()) {
+      if (vol > maxVpVol) { maxVpVol = vol; pocPrice = px; }
+    }
+    const pocDist = +(((ltp - pocPrice) / pocPrice) * 100).toFixed(1);
+    const pocSign = pocDist >= 0 ? '+' : '';
+    const isAbovePoc = ltp >= pocPrice;
+
+    // SMC Liquidity Sweep & Structural Invalidation Floor (Past 5 sessions)
+    const slice5 = hist.slice(0, 5);
+    const validSlice5 = slice5.filter(h => (h.lowPrice || ltp) >= minClose20 * 0.75);
+    const priorLows = validSlice5.slice(1).map(h => h.lowPrice || ltp);
+    const minPriorLow = priorLows.length > 0 ? Math.min(...priorLows) : low;
+    const structuralFloor = validSlice5.length > 0 ? Math.min(...validSlice5.map(h => h.lowPrice || ltp)) : low;
+
+    let sweepStatus = '';
+    if (low < minPriorLow && ltp > minPriorLow) {
+      sweepStatus = `⚡ <b>Confirmed Liquidity Sweep</b> (Dipped to Rs. ${low.toFixed(1)}, flushed stops & reclaimed Rs. ${minPriorLow.toFixed(1)})`;
+    } else if (validSlice5.length > 2 && validSlice5[1].lowPrice < minPriorLow && ltp > validSlice5[1].lowPrice) {
+      sweepStatus = `⚡ <b>Recent Liquidity Sweep</b> (Flushed stops at Rs. ${validSlice5[1].lowPrice.toFixed(1)} and absorbed)`;
+    } else {
+      sweepStatus = `🛡️ <b>Orderly Base Accumulation</b> (Holding support shelf at Rs. ${structuralFloor.toFixed(1)})`;
+    }
+
+    // Market Structure Shift (MSS)
+    const priorHighs = slice5.slice(1).map(h => h.highPrice || ltp);
+    const recentSwingHigh = priorHighs.length > 0 ? Math.max(...priorHighs) : high;
+    let mssStatus = '';
+    if (ltp >= recentSwingHigh) {
+      mssStatus = `🟢 <b>Bullish MSS Breakout</b> (Cleared swing high Rs. ${recentSwingHigh.toFixed(1)})`;
+    } else if (ltp >= ema20) {
+      mssStatus = `📈 <b>Bullish Structure</b> (Holding above 20 EMA Rs. ${ema20.toFixed(1)})`;
+    } else {
+      mssStatus = `⚖️ <b>Range Compression</b> (Testing supply below Rs. ${recentSwingHigh.toFixed(1)})`;
+    }
+
+    // Fair Value Gap (FVG / Imbalance)
+    let fvgText = '⚪ <b>Balanced Auction</b> (Continuous order book liquidity)';
+    if (hist.length >= 3) {
+      const b0 = hist[0], b2 = hist[2];
+      if (b0.lowPrice > b2.highPrice && (b0.lowPrice - b2.highPrice) >= 1.0) {
+        fvgText = `🟢 <b>Bullish FVG Retest</b>: <code>Rs. ${b2.highPrice.toFixed(1)} – Rs. ${b0.lowPrice.toFixed(1)}</code> (Demand Imbalance Shelf)`;
+      } else if (hist.length >= 4 && hist[1].lowPrice > hist[3].highPrice && (hist[1].lowPrice - hist[3].highPrice) >= 1.0) {
+        fvgText = `🟢 <b>Active Demand FVG</b>: <code>Rs. ${hist[3].highPrice.toFixed(1)} – Rs. ${hist[1].lowPrice.toFixed(1)}</code>`;
+      }
+    }
+
     // Multi-Session Broker Flow (last 5 sessions)
     const flow = getSmartMoneyAggregatedFlow(sym, 5);
 
@@ -1521,19 +1579,25 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
     }
 
     // Tactical Execution Plan
-    const buyZoneLow = Math.max(1, Math.floor(Math.min(ltp, avgBrokerPrice) * 0.990));
-    const buyZoneHigh = Math.max(1, Math.ceil(Math.max(ltp, avgBrokerPrice) * 1.012));
-    const stopLoss = Math.max(1, +(buyZoneLow * 0.958).toFixed(1));
-    const slPct = +(((ltp - stopLoss) / ltp) * 100).toFixed(1);
+    const anchorBase = Math.min(ltp, avgBrokerPrice, pocPrice);
+    const anchorTop = Math.max(ltp, avgBrokerPrice);
+    const buyZoneLow = Math.max(1, Math.floor(anchorBase * 0.990));
+    const buyZoneHigh = Math.max(1, Math.ceil(anchorTop * 1.012));
+    
+    // Structural Stop-Loss anchored strictly below structural sweep floor
+    const structuralStop = Math.max(1, +(Math.min(buyZoneLow * 0.965, structuralFloor * 0.992)).toFixed(1));
+    const slPct = +(((ltp - structuralStop) / ltp) * 100).toFixed(1);
+    const riskPerShare = Math.max(1, ltp - structuralStop);
+    
     const target1 = +(ltp * 1.082).toFixed(1);
     const t1Pct = 8.2;
     const target2 = +(ltp * 1.150).toFixed(1);
     const t2Pct = 15.0;
 
-    const rrr = +((target1 - ltp) / Math.max(1, ltp - stopLoss)).toFixed(2);
+    const rrr1 = +((target1 - ltp) / riskPerShare).toFixed(2);
+    const rrr2 = +((target2 - ltp) / riskPerShare).toFixed(2);
 
     // Position Sizing (1% Capital Risk)
-    const riskPerShare = Math.max(1, ltp - stopLoss);
     const shares1L = Math.max(5, Math.floor(1000 / riskPerShare));
     const shares5L = Math.max(25, Math.floor(5000 / riskPerShare));
     const deploy1L = Math.round(shares1L * ltp).toLocaleString();
@@ -1566,7 +1630,13 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       `• <b>20-Period Trend (EMA):</b> Rs. ${ema20.toFixed(2)} (${distFromEmaPct >= 0 ? '+' : ''}${distFromEmaPct}% from 20 EMA)`,
       `• <b>20-Day Base Range:</b> Rs. ${minClose20.toFixed(1)} – Rs. ${maxClose20.toFixed(1)} (${baseCategory} ${closeBasePct}% Base)${minLow20 < minClose20 * 0.85 ? ` <i>[Extremes: Rs. ${minLow20.toFixed(1)} – Rs. ${maxHigh20.toFixed(1)}]</i>` : ''}`,
       ``,
-      `🏛️ <b>2. INSTITUTIONAL ACCUMULATION &amp; BROKER COST:</b>`,
+      `🎯 <b>2. SMC &amp; ORDER FLOW DIAGNOSTICS:</b>`,
+      `• <b>Liquidity Sweep (Stop Hunt):</b> ${sweepStatus}`,
+      `• <b>Market Structure Shift (MSS):</b> ${mssStatus}`,
+      `• <b>Fair Value Gap (FVG / Imbalance):</b> ${fvgText}`,
+      `• <b>Volume Profile Point of Control:</b> <b>Rs. ${pocPrice.toFixed(1)}</b> (${pocSign}${pocDist}% from LTP | <i>${isAbovePoc ? 'Holding ABOVE POC ✅' : 'Testing below POC ⚠️'}</i>)`,
+      ``,
+      `🏛️ <b>3. INSTITUTIONAL ACCUMULATION &amp; BROKER COST:</b>`,
       `• 🎯 <b>Average Broker Buy Price (Cost Basis):</b> <b>Rs. ${avgBrokerPrice}</b> (${distSign}${distFromBroker}% from LTP)`,
       `• <b>Top Accumulating Desks (Last 5 Sessions):</b>`,
       ...buyerLines,
@@ -1574,23 +1644,23 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       `• <b>Top Selling / Distribution Desks:</b>`,
       ...sellerLines,
       ``,
-      `🌊 <b>3. VOLUME &amp; FLOAT ABSORPTION:</b>`,
+      `🌊 <b>4. VOLUME &amp; FLOAT ABSORPTION:</b>`,
       `• <b>Today's Volume:</b> ${volume.toLocaleString()} Kitta (<b>${rvol}x</b> of 20D Avg ${avgVol20.toLocaleString()} Kitta)`,
       `• <b>Turnover:</b> Rs. ${(turnover / 10000000).toFixed(2)} Crores`,
       `• <b>Supply Status:</b> ${isNetAccumulated ? 'Institutional float cornering in progress (Supply Vacuum)' : 'Mixed float circulation'}`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `⚖️ <b>4. INVESTMENT &amp; PROFITABILITY VERDICT:</b>`,
+      `⚖️ <b>5. INVESTMENT &amp; PROFITABILITY VERDICT:</b>`,
       verdictBadge,
       `• <b>Audit Findings:</b> ${verdictReason}`,
       ``,
-      `🎯 <b>5. TACTICAL PROFIT PLAYBOOK:</b>`,
-      `• 🟢 <b>Limit Buy Zone:</b> <code>Rs. ${buyZoneLow} – Rs. ${buyZoneHigh}</code> <i>(Anchored to Broker Avg Rs. ${avgBrokerPrice})</i>`,
-      `• 🛑 <b>Invalidation Stop-Loss:</b> <code>Rs. ${stopLoss}</code> (-${slPct}% Capital Floor)`,
-      `• 💰 <b>Target 1 (Milestone 1):</b> <code>Rs. ${target1}</code> (+${t1Pct}% | <i>Sell 50% &amp; Move SL to Breakeven</i>)`,
-      `• 🚀 <b>Target 2 (Circuit Runner):</b> <code>Rs. ${target2}</code> (+${t2Pct}% | <i>Upper Circuit Ceiling</i>)`,
-      `• ⚖️ <b>Net Risk / Reward Ratio:</b> <b>${rrr} : 1</b>`,
+      `🎯 <b>6. TACTICAL PROFIT PLAYBOOK:</b>`,
+      `• 🟢 <b>Limit Buy Zone:</b> <code>Rs. ${buyZoneLow} – Rs. ${buyZoneHigh}</code> <i>(Anchored to POC Rs. ${pocPrice.toFixed(1)} &amp; Broker Avg Rs. ${avgBrokerPrice})</i>`,
+      `• 🛑 <b>Structural Invalidation Stop:</b> <code>Rs. ${structuralStop}</code> (-${slPct}% | <i>Floor: Rs. ${structuralFloor.toFixed(1)}</i>)`,
+      `• 💰 <b>Target 1 (Milestone 1):</b> <code>Rs. ${target1}</code> (+${t1Pct}% | <b>RRR ${rrr1} : 1</b> | <i>Sell 50% &amp; Move SL to BE</i>)`,
+      `• 🚀 <b>Target 2 (Circuit Runner):</b> <code>Rs. ${target2}</code> (+${t2Pct}% | <b>RRR ${rrr2} : 1</b> | <i>Upper Circuit Ceiling</i>)`,
+      `• 📲 <b>TMS Execution:</b> Place GTC Limit Buy inside zone. <i>Do NOT chase pre-open &gt; +1.8%!</i>`,
       ``,
-      `💼 <b>6. 1% RISK POSITION SIZING:</b>`,
+      `💼 <b>7. 1% RISK POSITION SIZING:</b>`,
       `• <b>Rs. 1 Lakh Portfolio (Rs. 1,000 Max Risk):</b> Buy <b>${shares1L} Kitta</b> (~Rs. ${deploy1L})`,
       `• <b>Rs. 5 Lakh Portfolio (Rs. 5,000 Max Risk):</b> Buy <b>${shares5L} Kitta</b> (~Rs. ${deploy5L})`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
