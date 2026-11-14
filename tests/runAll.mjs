@@ -60,6 +60,7 @@ const testFiles = [
   'multiTimeframeIsolation.test.mjs',
   'httpCacheStrategy.test.mjs',
   'processingAndCatchUp.test.mjs',
+  'sessionFreshnessBadge.test.mjs',
   'replayHarness.mjs',
   'researchBasis.test.mjs',
   'swingEngine.test.mjs',

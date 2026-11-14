@@ -48,6 +48,7 @@ import {
   deleteWatchlistAlertConfig
 } from '../utils/watchlistAlerts';
 import DataQualityBanner, { RiskDisclaimer } from './DataQualityBanner'; // A1+A2
+import SessionFreshnessBadge from './SessionFreshnessBadge.jsx';
 import { openExternalUrl } from '../utils/externalLinks';
 import { computeLiveSectorMedians } from '../utils/liveSectorMedians';
 import { classifySector } from '../utils/fundamentals';
@@ -5593,15 +5594,16 @@ function Dashboard({
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
               {marketStatus?.message || 'Trading Hours: 11:00 AM – 3:00 PM NPT (Official NEPSE Trading Calendar)'}
             </div>
-            {/* C4: Last-updated timestamp */}
-            {getCachedMarketSummary() && !getCachedMarketSummary()?.isSimulated && (() => {
-              const lu = getLastDataUpdateTime?.();
-              return lu?.npt ? (
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1, opacity: 0.75 }}>
-                  Data as of {lu.npt} NPT
-                </div>
-              ) : null;
-            })()}
+            {/* C4: Universal Session Freshness & Staleness Badge (Phase 4 Fix 6) */}
+            <div style={{ marginTop: 4 }}>
+              <SessionFreshnessBadge
+                lastUpdatedMs={(() => {
+                  const lu = getLastDataUpdateTime?.();
+                  return lu?.iso ? new Date(lu.iso).getTime() : null;
+                })()}
+                sessionDate={marketStatus?.lastClosedSessionDate}
+              />
+            </div>
 
           </div>
         </div>

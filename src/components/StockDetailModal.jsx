@@ -11,6 +11,7 @@ import ShareHubChart from './ShareHubChart';
 import AdvancedChartModal from './AdvancedChartModal';
 import BreakoutAlertDialog from './BreakoutAlertDialog';
 import StockInformationHubModal from './StockInformationHubModal';
+import SessionFreshnessBadge from './SessionFreshnessBadge.jsx';
 import { getWatchlistAlertConfig, calculateStockRvol } from '../utils/watchlistAlerts';
 import { calculatePivotPoints, calculateFibonacci, calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateSMA } from '../utils/indicators';
 import { getPeerStocks } from '../utils/calculations';
@@ -3568,6 +3569,10 @@ export default function StockDetailModal({
           <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', whiteSpace: 'nowrap' }}>
             {d.symbol}
           </div>
+          <SessionFreshnessBadge
+            compact={true}
+            sessionDate={modalSessionDate || marketStatus?.lastClosedSessionDate}
+          />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
