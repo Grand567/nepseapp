@@ -1,0 +1,35 @@
+{
+  "stepId": "the_next_day_0900",
+  "title": "Next Day Morning (Before Open)",
+  "virtualTimeIso": "2026-11-17T09:00:00+05:45",
+  "nptTime": "09:00:00",
+  "date": "2026-11-17",
+  "marketStatus": {
+    "isOpen": false,
+    "isTradingDay": true,
+    "session": "PRE_OPEN",
+    "sessionLabel": "Pre-Open / Closed",
+    "statusLabel": "Market Closed",
+    "asOfDate": "2026-11-16",
+    "asOfDisplay": "Market Closed, showing 2026-11-16"
+  },
+  "index": {
+    "nepseIndex": 2672.8,
+    "pointChange": 0,
+    "percentageChange": 0
+  },
+  "stocks": {
+    "SHIVM": {
+      "symbol": "SHIVM",
+      "ltp": 694,
+      "volumeToday": 0,
+      "multiDay": {
+        "oneDay": {
+          "volume": 151200,
+          "sessions": 1,
+          "range": "Showing 2026-11-16"
+        }
+      }
+    }
+  }
+}

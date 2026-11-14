@@ -1,0 +1,104 @@
+{
+  "stepId": "before_open_1045",
+  "title": "Pre-Open Order Session",
+  "virtualTimeIso": "2026-11-16T10:45:00+05:45",
+  "nptTime": "10:45:00",
+  "date": "2026-11-16",
+  "marketStatus": {
+    "isOpen": false,
+    "isTradingDay": true,
+    "isPreOpen": true,
+    "isWeekend": false,
+    "isHoliday": false,
+    "session": "PRE_OPEN",
+    "sessionLabel": "Pre-Open Order Session (±5% limit)",
+    "statusLabel": "Pre-Open",
+    "asOfDate": "2026-11-13",
+    "asOfDisplay": "Market Closed / Pre-Open, showing 2026-11-13"
+  },
+  "index": {
+    "nepseIndex": 2648.89,
+    "pointChange": 0,
+    "percentageChange": 0,
+    "totalTurnover": 0,
+    "totalVolume": 0,
+    "totalTrades": 0
+  },
+  "stocks": {
+    "SHIVM": {
+      "symbol": "SHIVM",
+      "ltp": 676,
+      "prevClose": 676,
+      "change": 0,
+      "pChange": 0,
+      "open": 676,
+      "high": 676,
+      "low": 676,
+      "volumeToday": 0,
+      "turnoverToday": 0,
+      "tradesToday": 0,
+      "multiDay": {
+        "oneDay": {
+          "volume": 0,
+          "sessions": 0,
+          "label": "No live ticks today yet"
+        },
+        "fiveDay": {
+          "volume": 762883,
+          "sessions": 5,
+          "range": "2026-11-03 → 2026-11-13"
+        },
+        "fifteenDay": {
+          "volume": 2618649,
+          "sessions": 15,
+          "range": "2026-10-13 → 2026-11-13"
+        },
+        "thirtyDay": {
+          "volume": 5945226,
+          "sessions": 30,
+          "range": "2026-09-18 → 2026-11-13"
+        },
+        "allTime": {
+          "volume": 9019555,
+          "sessions": 43,
+          "range": "2026-08-27 → 2026-11-13"
+        }
+      }
+    },
+    "NABIL": {
+      "symbol": "NABIL",
+      "ltp": 549,
+      "prevClose": 549,
+      "change": 0,
+      "pChange": 0,
+      "volumeToday": 0,
+      "turnoverToday": 0,
+      "multiDay": {
+        "fiveDay": {
+          "volume": 312940,
+          "sessions": 5
+        }
+      }
+    }
+  },
+  "depth": {
+    "SHIVM": {
+      "totalBuyQty": 12500,
+      "totalSellQty": 18400,
+      "bids": [
+        {
+          "price": 675,
+          "quantity": 4200,
+          "orders": 4
+        }
+      ],
+      "asks": [
+        {
+          "price": 677,
+          "quantity": 3800,
+          "orders": 3
+        }
+      ]
+    }
+  }
+}

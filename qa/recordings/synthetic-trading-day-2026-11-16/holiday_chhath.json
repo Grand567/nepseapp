@@ -1,0 +1,27 @@
+{
+  "stepId": "holiday_chhath",
+  "title": "Public Holiday (Chhath Parva)",
+  "virtualTimeIso": "2026-11-15T12:00:00+05:45",
+  "nptTime": "12:00:00",
+  "date": "2026-11-15",
+  "marketStatus": {
+    "isOpen": false,
+    "isTradingDay": false,
+    "isHoliday": true,
+    "holidayName": "Chhath Parva (Kartik 29)",
+    "session": "HOLIDAY",
+    "sessionLabel": "Market Holiday (Chhath Parva)",
+    "statusLabel": "Holiday: Chhath Parva",
+    "asOfDate": "2026-11-13",
+    "asOfDisplay": "Market Closed (Holiday: Chhath Parva), showing 2026-11-13"
+  },
+  "index": {
+    "nepseIndex": 2648.89
+  },
+  "stocks": {
+    "SHIVM": {
+      "symbol": "SHIVM",
+      "ltp": 676
+    }
+  }
+}

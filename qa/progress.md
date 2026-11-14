@@ -44,3 +44,46 @@
   - Verified in Chromium via Playwright MCP at `http://localhost:4173/` with **0 console errors and 0 network failures**.
   - Captured visual verification screenshots: `qa/swing_selector_backtest_audit.png` and `qa/swing_selector_paper_trading.png`.
   - Full master test suite: **54 passed, 0 failed out of 54 test suites** (`node tests/runAll.mjs`).
+
+
+---
+
+### Data-Parity & Live Session Engineering Milestones
+
+- [x] **Phase 1: Non-Invasive Data Parity Test Harness (Zero Code Changes)**
+  - Created `qa/scripts/fetchLayersAB.mjs` and `qa/scripts/generateParityReport.mjs`.
+  - Executed Playwright dual-viewport audit at 1440px desktop and 390px mobile across all views in `qa/app_inventory.md`.
+  - Audited 3 layers (Raw Source vs. Proxy API vs. Displayed DOM) with independent financial calculations.
+  - Spot-checked 10 stocks across sectors; discovered cross-stock volume contamination, identical multi-timeframe freezing (5D/15D/30D), and missing HTTP cache headers.
+  - Generated comprehensive deliverable `qa/data_parity_report.md`.
+
+- [x] **Phase 2: Live Session Recorder & Mock Replay Engine**
+  - Engineered rate-limited live recorder `qa/scripts/recordLiveSession.mjs` (scrubs credentials, runs only on user command).
+  - Synthesized rich 9-scenario trading day fixtures in `qa/recordings/synthetic-trading-day-2026-11-16/` with hand-computed mathematical multi-day proofs.
+  - Built replay mode server `proxy/replayServer.mjs` with virtual clock time travel and HTTP caching controls.
+  - Implemented automated test suite `tests/replayHarness.mjs` (35 assertions passing across pre-open, continuous trading, close, post-market, next day, weekend, and holiday).
+  - Generated `qa/replay_report.md`. Marked live-hours behavior as NOT-TESTED ON REAL DATA until Monday session recording.
+
+- [x] **Phase 3: Root Cause Analysis (File & Line Forensic Investigation)**
+  - Audited all 13 diagnostic vectors specified by the owner.
+  - Determined 12 vectors as **PRESENT** and 1 vector (**Service Worker**) as **ABSENT** (caching bug resides in HTTP headers and un-keyed React/RAM caches).
+  - Cited exact file paths and line numbers across `src/components/`, `src/utils/`, `proxy/db/`, and `proxy/server.mjs`.
+  - Generated [qa/root_causes_report.md](qa/root_causes_report.md).
+
+- [x] **Phase 4: Atomic Engineering Fixes (100% Implemented & Locally Committed)**
+  - **Fix 1 (`5abbddb`):** Shared Canonical Trading-Calendar Module (`src/utils/nepseCalendar.js` & `proxy/utils/tradingCalendar.mjs`). Single source of truth for `isMarketOpen(now)`, `latestTradingSession(now, requireCompleted)`, and `tradingDayWindow(n, endSession)`. Statutory holiday registered for Chhath Parva morning arghya (Nov 16, 2026). Test: `tests/sharedTradingCalendar.test.mjs` (3/3 passing).
+  - **Fix 2 (`b930a62`):** 1D Live Feed Merging & Closed Session Labeling (`src/components/StockDetailModal.jsx`, `src/utils/historyCache.js`). Bypasses stale static intraday caches during active hours; merges live tick seamlessly into 1D series; labels closed sessions with explicit date format `Market closed, showing <date>`. Test: `tests/oneDayLiveMerging.test.mjs` (3/3 passing).
+  - **Fix 3 (`73bb7de`):** Strict Multi-Timeframe Isolation & Ledger Coverage (`src/components/StockBrokerAnalysisTab.jsx`, `src/utils/localLedgerManager.ts`, `proxy/server.mjs`). Purged dangerous fastSnapshot fallback that polluted 5D/15D/30D with 1D data; enforces strict timeframe matching (`internalBrokerData.timeframeDays === effectiveDays`); displays transparent start date and session count for All-time view. Test: `tests/multiTimeframeIsolation.test.mjs` (3/3 passing).
+  - **Fix 4 (`d87bc3e`):** HTTP Cache Headers & Scoped Dynamic ETags (`proxy/server.mjs`). Emits dynamic `Cache-Control: no-store` on live endpoints during market hours and `public, max-age=60` during closed sessions; implements session-scoped cache keys `(stock, window, endSession)` and data-driven ETags. Test: `tests/httpCacheStrategy.test.mjs` (3/3 passing).
+  - **Fix 5 (`686b65a`):** Resilient Cornering Aggregation & EOD Catch-Up Engine (`proxy/server.mjs`, `proxy/workers.mjs`). Switched cornering from brittle INNER JOIN to LEFT JOIN with fallback to broker volume sums; added idempotent reconciliation and startup catch-up engine that detects and fills missing historical trading sessions. Test: `tests/processingAndCatchUp.test.mjs` (3/3 passing).
+  - **Fix 6 (`3e9ea52`):** Universal Session Freshness & Staleness Badge (`src/components/SessionFreshnessBadge.jsx`, `src/components/Dashboard.jsx`, `src/components/StockDetailModal.jsx`). Displays LIVE vs CLOSED badge, `As of <session date> <time>`, staleness warning (> 2m lag during session), and warming-up states across all primary views. Test: `tests/sessionFreshnessBadge.test.mjs` (1/1 passing).
+  - **Fix 7 (`0d13142`):** Admin Data-Freshness Diagnostic Endpoint (`proxy/utils/dataFreshnessTracker.mjs`, `proxy/server.mjs`). Exposes `GET /api/admin/data-freshness` tracking last fetch, session date, last processed, and lag seconds across 6 sources and 6 features. Test: `tests/adminDataFreshness.test.mjs` (4/4 passing).
+  - **Fix 8 (`2ff4d76`):** Runtime 1D Price Self-Check & Drift Alarm (`src/utils/systemMonitoring.js`, `src/components/StockDetailModal.jsx`). Compares displayed 1D price with latest live quote during trading hours; logs structured error and alerts when difference > Rs. 0.01 or age > 120s. Test: `tests/runtimeSelfCheck.test.mjs` (5/5 passing).
+
+- [x] **Phase 5: Full Verification & Parity Audit**
+  - **Replay Test Suite:** 35 passed, 0 failed (`node tests/replayHarness.mjs`).
+  - **Data-Parity Report:** Re-run and regenerated `qa/data_parity_report.md` with three-layer verification across 10 spot-checked stocks.
+  - **Master Test Suite:** **63 passed, 0 failed out of 63 test suites** (`node tests/runAll.mjs`).
+  - **Production Build:** `npm run build` completed successfully (1,784 modules transformed, built in 29.38s).
+  - **Desktop & Mobile Integrity:** Electron entry (`electron/main.cjs`) and Capacitor Android build configs intact.
+  - **Live Data Status:** All synthetic scenarios and off-market invariants pass 100%. Live market testing remains explicitly marked **[NOT-TESTED ON REAL DATA]** pending scheduled live session on **Tuesday, November 17, 2026, 11:00 AM – 3:00 PM NPT** (Monday Nov 16 being official statutory Chhath holiday).

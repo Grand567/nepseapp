@@ -1,0 +1,63 @@
+{
+  "recordingType": "SYNTHETIC_HIGH_PRECISION_FIXTURES",
+  "sessionDate": "2026-11-16",
+  "createdDate": "2026-11-14T03:00:34.456Z",
+  "targetScenarios": [
+    {
+      "stepId": "before_open_1045",
+      "title": "Pre-Open Order Session",
+      "virtualTime": "2026-11-16T10:45:00+05:45"
+    },
+    {
+      "stepId": "mid_session_1115",
+      "title": "Early Continuous Trading",
+      "virtualTime": "2026-11-16T11:15:00+05:45"
+    },
+    {
+      "stepId": "mid_session_1300",
+      "title": "Mid-Day Continuous Trading",
+      "virtualTime": "2026-11-16T13:00:00+05:45"
+    },
+    {
+      "stepId": "mid_session_1445",
+      "title": "Late Continuous Trading",
+      "virtualTime": "2026-11-16T14:45:00+05:45"
+    },
+    {
+      "stepId": "at_close_1500",
+      "title": "Closing Session Bell",
+      "virtualTime": "2026-11-16T15:00:00+05:45"
+    },
+    {
+      "stepId": "after_close_1630",
+      "title": "Post-Market Settlement",
+      "virtualTime": "2026-11-16T16:30:00+05:45"
+    },
+    {
+      "stepId": "the_next_day_0900",
+      "title": "Next Day Morning (Before Open)",
+      "virtualTime": "2026-11-17T09:00:00+05:45"
+    },
+    {
+      "stepId": "weekend_saturday_1200",
+      "title": "Weekend Saturday (Market Closed)",
+      "virtualTime": "2026-11-21T12:00:00+05:45"
+    },
+    {
+      "stepId": "holiday_chhath",
+      "title": "Public Holiday (Chhath Parva)",
+      "virtualTime": "2026-11-15T12:00:00+05:45"
+    }
+  ],
+  "zeroSecretsCertified": true,
+  "handComputedAnchors": {
+    "symbol": "SHIVM",
+    "priorSessionsVolumeSum": {
+      "fourSessions": 602883,
+      "fiveSessions": 762883,
+      "fourteenSessions": 2455937,
+      "twentyNineSessions": 5782514,
+      "fortyThreeSessions": 9019555
+    }
+  }
+}

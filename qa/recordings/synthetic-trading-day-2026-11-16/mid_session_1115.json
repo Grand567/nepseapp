@@ -1,0 +1,104 @@
+{
+  "stepId": "mid_session_1115",
+  "title": "Early Continuous Trading",
+  "virtualTimeIso": "2026-11-16T11:15:00+05:45",
+  "nptTime": "11:15:00",
+  "date": "2026-11-16",
+  "marketStatus": {
+    "isOpen": true,
+    "isTradingDay": true,
+    "isPreOpen": false,
+    "isWeekend": false,
+    "isHoliday": false,
+    "session": "CONTINUOUS",
+    "sessionLabel": "Continuous Live Trading (NEPSE NOTS)",
+    "statusLabel": "Market Open",
+    "asOfDate": "2026-11-16",
+    "asOfDisplay": "LIVE • 11:15 AM NPT"
+  },
+  "index": {
+    "nepseIndex": 2655.4,
+    "pointChange": 6.51,
+    "percentageChange": 0.25,
+    "totalTurnover": 352400000,
+    "totalVolume": 820000,
+    "totalTrades": 3150
+  },
+  "stocks": {
+    "SHIVM": {
+      "symbol": "SHIVM",
+      "ltp": 682,
+      "prevClose": 676,
+      "change": 6,
+      "pChange": 0.89,
+      "open": 677,
+      "high": 683,
+      "low": 675,
+      "volumeToday": 25000,
+      "turnoverToday": 17050000,
+      "tradesToday": 120,
+      "multiDay": {
+        "oneDay": {
+          "volume": 25000,
+          "sessions": 1,
+          "range": "2026-11-16 (Live)"
+        },
+        "fiveDay": {
+          "volume": 627883,
+          "sessions": 5,
+          "range": "2026-11-04 → 2026-11-16 (Live)"
+        },
+        "fifteenDay": {
+          "volume": 2480937,
+          "sessions": 15,
+          "range": "2026-10-14 → 2026-11-16 (Live)"
+        },
+        "thirtyDay": {
+          "volume": 5807514,
+          "sessions": 30,
+          "range": "2026-09-19 → 2026-11-16 (Live)"
+        },
+        "allTime": {
+          "volume": 9044555,
+          "sessions": 44,
+          "range": "2026-08-27 → 2026-11-16 (Live)"
+        }
+      }
+    },
+    "NABIL": {
+      "symbol": "NABIL",
+      "ltp": 552,
+      "prevClose": 549,
+      "change": 3,
+      "pChange": 0.55,
+      "volumeToday": 8000,
+      "turnoverToday": 4416000,
+      "multiDay": {
+        "fiveDay": {
+          "volume": 284000,
+          "sessions": 5
+        }
+      }
+    }
+  },
+  "depth": {
+    "SHIVM": {
+      "totalBuyQty": 45000,
+      "totalSellQty": 31000,
+      "bids": [
+        {
+          "price": 681,
+          "quantity": 8500,
+          "orders": 12
+        }
+      ],
+      "asks": [
+        {
+          "price": 682,
+          "quantity": 4100,
+          "orders": 6
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "stepId": "mid_session_1445",
+  "title": "Late Continuous Trading",
+  "virtualTimeIso": "2026-11-16T14:45:00+05:45",
+  "nptTime": "14:45:00",
+  "date": "2026-11-16",
+  "marketStatus": {
+    "isOpen": true,
+    "isTradingDay": true,
+    "isPreOpen": false,
+    "isWeekend": false,
+    "isHoliday": false,
+    "session": "CONTINUOUS",
+    "sessionLabel": "Continuous Live Trading (NEPSE NOTS)",
+    "statusLabel": "Market Open",
+    "asOfDate": "2026-11-16",
+    "asOfDisplay": "LIVE • 02:45 PM NPT"
+  },
+  "index": {
+    "nepseIndex": 2674.15,
+    "pointChange": 25.26,
+    "percentageChange": 0.95,
+    "totalTurnover": 2104000000,
+    "totalVolume": 4950000,
+    "totalTrades": 18900
+  },
+  "stocks": {
+    "SHIVM": {
+      "symbol": "SHIVM",
+      "ltp": 695,
+      "prevClose": 676,
+      "change": 19,
+      "pChange": 2.81,
+      "open": 677,
+      "high": 696,
+      "low": 675,
+      "volumeToday": 142000,
+      "turnoverToday": 98340000,
+      "tradesToday": 590,
+      "multiDay": {
+        "oneDay": {
+          "volume": 142000,
+          "sessions": 1,
+          "range": "2026-11-16 (Live)"
+        },
+        "fiveDay": {
+          "volume": 744883,
+          "sessions": 5,
+          "range": "2026-11-04 → 2026-11-16 (Live)"
+        },
+        "fifteenDay": {
+          "volume": 2597937,
+          "sessions": 15,
+          "range": "2026-10-14 → 2026-11-16 (Live)"
+        },
+        "thirtyDay": {
+          "volume": 5924514,
+          "sessions": 30,
+          "range": "2026-09-19 → 2026-11-16 (Live)"
+        },
+        "allTime": {
+          "volume": 9161555,
+          "sessions": 44,
+          "range": "2026-08-27 → 2026-11-16 (Live)"
+        }
+      }
+    }
+  },
+  "depth": {
+    "SHIVM": {
+      "totalBuyQty": 78000,
+      "totalSellQty": 62000,
+      "bids": [
+        {
+          "price": 694,
+          "quantity": 18500,
+          "orders": 24
+        }
+      ],
+      "asks": [
+        {
+          "price": 695,
+          "quantity": 9200,
+          "orders": 11
+        }
+      ]
+    }
+  }
+}

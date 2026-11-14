@@ -1,0 +1,26 @@
+{
+  "stepId": "weekend_saturday_1200",
+  "title": "Weekend Saturday (Market Closed)",
+  "virtualTimeIso": "2026-11-21T12:00:00+05:45",
+  "nptTime": "12:00:00",
+  "date": "2026-11-21",
+  "marketStatus": {
+    "isOpen": false,
+    "isTradingDay": false,
+    "isWeekend": true,
+    "session": "WEEKEND",
+    "sessionLabel": "Weekly Holiday (Saturday)",
+    "statusLabel": "Market Closed (Weekend)",
+    "asOfDate": "2026-11-20",
+    "asOfDisplay": "Market Closed (Weekend), showing 2026-11-20"
+  },
+  "index": {
+    "nepseIndex": 2672.8
+  },
+  "stocks": {
+    "SHIVM": {
+      "symbol": "SHIVM",
+      "ltp": 694
+    }
+  }
+}

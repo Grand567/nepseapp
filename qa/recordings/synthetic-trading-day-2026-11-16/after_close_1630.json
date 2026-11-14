@@ -1,0 +1,41 @@
+{
+  "stepId": "after_close_1630",
+  "title": "Post-Market Settlement",
+  "virtualTimeIso": "2026-11-16T16:30:00+05:45",
+  "nptTime": "16:30:00",
+  "date": "2026-11-16",
+  "marketStatus": {
+    "isOpen": false,
+    "isTradingDay": true,
+    "session": "POST_MARKET",
+    "sessionLabel": "Post-Market Analysis Session",
+    "statusLabel": "Market Closed",
+    "asOfDate": "2026-11-16",
+    "asOfDisplay": "Market Closed, showing 2026-11-16"
+  },
+  "index": {
+    "nepseIndex": 2672.8,
+    "pointChange": 23.91,
+    "percentageChange": 0.9,
+    "totalTurnover": 2248000000,
+    "totalVolume": 5310000,
+    "totalTrades": 20150
+  },
+  "stocks": {
+    "SHIVM": {
+      "symbol": "SHIVM",
+      "ltp": 694,
+      "volumeToday": 151200,
+      "multiDay": {
+        "oneDay": {
+          "volume": 151200,
+          "sessions": 1
+        },
+        "fiveDay": {
+          "volume": 754083,
+          "sessions": 5
+        }
+      }
+    }
+  }
+}

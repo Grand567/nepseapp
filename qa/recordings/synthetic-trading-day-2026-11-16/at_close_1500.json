@@ -1,0 +1,68 @@
+{
+  "stepId": "at_close_1500",
+  "title": "Closing Session Bell",
+  "virtualTimeIso": "2026-11-16T15:00:00+05:45",
+  "nptTime": "15:00:00",
+  "date": "2026-11-16",
+  "marketStatus": {
+    "isOpen": false,
+    "isTradingDay": true,
+    "isClosingSession": true,
+    "session": "CLOSING_SESSION",
+    "sessionLabel": "Closing Price Session (3:00 - 3:05 PM)",
+    "statusLabel": "Market Closed (Closing Session)",
+    "asOfDate": "2026-11-16",
+    "asOfDisplay": "Market Closed • Finalizing Session 2026-11-16"
+  },
+  "index": {
+    "nepseIndex": 2672.8,
+    "pointChange": 23.91,
+    "percentageChange": 0.9,
+    "totalTurnover": 2248000000,
+    "totalVolume": 5310000,
+    "totalTrades": 20150
+  },
+  "stocks": {
+    "SHIVM": {
+      "symbol": "SHIVM",
+      "ltp": 694,
+      "closePrice": 694,
+      "prevClose": 676,
+      "change": 18,
+      "pChange": 2.66,
+      "open": 677,
+      "high": 696,
+      "low": 675,
+      "volumeToday": 151200,
+      "turnoverToday": 104782800,
+      "tradesToday": 620,
+      "multiDay": {
+        "oneDay": {
+          "volume": 151200,
+          "sessions": 1,
+          "range": "2026-11-16"
+        },
+        "fiveDay": {
+          "volume": 754083,
+          "sessions": 5,
+          "range": "2026-11-04 → 2026-11-16"
+        },
+        "fifteenDay": {
+          "volume": 2607137,
+          "sessions": 15,
+          "range": "2026-10-14 → 2026-11-16"
+        },
+        "thirtyDay": {
+          "volume": 5933714,
+          "sessions": 30,
+          "range": "2026-09-19 → 2026-11-16"
+        },
+        "allTime": {
+          "volume": 9170755,
+          "sessions": 44,
+          "range": "2026-08-27 → 2026-11-16"
+        }
+      }
+    }
+  }
+}
