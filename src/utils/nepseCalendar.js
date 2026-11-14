@@ -399,17 +399,44 @@ export function isNepseWeekend(date = getAppNow()) {
   };
 }
 
+// Cache for trading day resolution (date string -> boolean)
+const _tradingDayCache = new Map();
+
 /**
  * Checks if a given date is an official active NEPSE trading day.
  * Returns true for Monday, Tuesday, Wednesday, Thursday, Friday when NOT a holiday.
  */
 export function isNepseTradingDay(date = getAppNow()) {
+  const dynamicHalt = getDynamicMarketHalt();
+  const hasDynamicHalt = Boolean(dynamicHalt && (dynamicHalt.isHalted || dynamicHalt.isEmergencyHalt));
+  const iso = getIsoDateInNPT(date);
+
+  if (!hasDynamicHalt && _tradingDayCache.has(iso)) {
+    return _tradingDayCache.get(iso);
+  }
+
   const weekendCheck = isNepseWeekend(date);
-  if (weekendCheck.isWeekend) return false;
+  if (weekendCheck.isWeekend) {
+    if (!hasDynamicHalt) {
+      if (_tradingDayCache.size > 10000) _tradingDayCache.clear();
+      _tradingDayCache.set(iso, false);
+    }
+    return false;
+  }
 
   const holidayCheck = isNepsePublicHoliday(date);
-  if (holidayCheck.isHoliday) return false;
+  if (holidayCheck.isHoliday) {
+    if (!hasDynamicHalt) {
+      if (_tradingDayCache.size > 10000) _tradingDayCache.clear();
+      _tradingDayCache.set(iso, false);
+    }
+    return false;
+  }
 
+  if (!hasDynamicHalt) {
+    if (_tradingDayCache.size > 10000) _tradingDayCache.clear();
+    _tradingDayCache.set(iso, true);
+  }
   return true;
 }
 
@@ -706,6 +733,8 @@ export function calculateT2SettlementDate(tradeDate = getAppNow()) {
 
 export const getT2SettlementSchedule = calculateT2SettlementDate;
 
+const _tradingSessionsBetweenCache = new Map();
+
 /**
  * Counts the exact number of official NEPSE trading sessions elapsed between two dates.
  * - Source: Nepal Stock Exchange (NEPSE) Trading Schedule & Official BS Holidays Database.
@@ -727,6 +756,14 @@ export const getT2SettlementSchedule = calculateT2SettlementDate;
 export function countNepseTradingSessionsBetween(startDate, endDate) {
   if (!startDate || !endDate) return 0;
 
+  const startKey = (startDate instanceof Date) ? startDate.toISOString().slice(0, 10) : String(startDate).trim().slice(0, 10);
+  const endKey = (endDate instanceof Date) ? endDate.toISOString().slice(0, 10) : String(endDate).trim().slice(0, 10);
+  const cacheKey = `${startKey}_${endKey}`;
+
+  if (_tradingSessionsBetweenCache.has(cacheKey)) {
+    return _tradingSessionsBetweenCache.get(cacheKey);
+  }
+
   const parseToUtcDate = (val) => {
     if (val instanceof Date) {
       return new Date(Date.UTC(val.getUTCFullYear(), val.getUTCMonth(), val.getUTCDate()));
@@ -743,6 +780,8 @@ export function countNepseTradingSessionsBetween(startDate, endDate) {
   const end = parseToUtcDate(endDate);
 
   if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+    if (_tradingSessionsBetweenCache.size > 20000) _tradingSessionsBetweenCache.clear();
+    _tradingSessionsBetweenCache.set(cacheKey, 0);
     return 0;
   }
 
@@ -759,6 +798,8 @@ export function countNepseTradingSessionsBetween(startDate, endDate) {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
+  if (_tradingSessionsBetweenCache.size > 20000) _tradingSessionsBetweenCache.clear();
+  _tradingSessionsBetweenCache.set(cacheKey, count);
   return count;
 }
 

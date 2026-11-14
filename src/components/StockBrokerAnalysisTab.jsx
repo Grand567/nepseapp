@@ -614,7 +614,7 @@ function StockBrokerAnalysisTabInner({
     setLocalDate('');
     setLocalFromDate('');
     setLocalToDate('');
-    setInternalBrokerData(null);
+    // Retain internalBrokerData during fetch to eliminate transient empty / 0-shares jitter
     if (onDateChange) onDateChange('');
     if (onDaysChange) {
       onDaysChange(d);
@@ -635,7 +635,7 @@ function StockBrokerAnalysisTabInner({
       if (onDaysChange) onDaysChange(1);
       setTableHoldingView('session');
     }
-    setInternalBrokerData(null);
+    // Retain internalBrokerData during fetch to eliminate transient empty / 0-shares jitter
     if (onDateChange) {
       onDateChange(dt);
     }
@@ -652,7 +652,7 @@ function StockBrokerAnalysisTabInner({
   const handleRangeApply = (fromVal = localFromDate, toVal = localToDate) => {
     if (!fromVal && !toVal) return;
     setLocalDate('');
-    setInternalBrokerData(null);
+    // Retain internalBrokerData during fetch to eliminate transient empty / 0-shares jitter
     setInternalLoading(true);
     fetchRealBrokerAnalysis(symbol, 500, { fromDate: fromVal, toDate: toVal, refresh: false })
       .then(res => { if (res) setInternalBrokerData(res); })
