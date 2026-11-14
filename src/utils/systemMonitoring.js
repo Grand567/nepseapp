@@ -9,7 +9,7 @@
  * 4. Error Logging & Diagnostics Aggregation: Rolling circular buffer for operational transparency.
  */
 
-import { isNepseWeekend, isNepsePublicHoliday, getDetailedMarketStatus } from './nepseCalendar.js';
+import { isNepseWeekend, isNepsePublicHoliday, getDetailedMarketStatus, isMarketOpen } from './nepseCalendar.js';
 
 /**
  * Evaluates daily ingestion data completeness against exchange-reported volumes
@@ -357,3 +357,109 @@ export function aggregateSystemHealth({
     dbStats
   };
 }
+
+/**
+ * ============================================================================
+ * RUNTIME 1D PRICE DRIFT & STALENESS SELF-CHECK (PHASE 4 FIX 8)
+ * ============================================================================
+ * During market hours, compares displayed 1D last price with the latest live price.
+ * Logs an error event if they differ or are older than a threshold (default 120s).
+ * ============================================================================
+ */
+export function runOneDayPriceSelfCheck({
+  symbol = 'UNKNOWN',
+  displayedPrice = 0,
+  livePrice = 0,
+  lastUpdatedMs = null,
+  now = new Date(),
+  tolerance = 0.01,
+  staleThresholdSec = 120,
+  logger = console.error
+} = {}) {
+  const open = isMarketOpen(now);
+  if (!open) {
+    return {
+      passed: true,
+      marketClosed: true,
+      symbol,
+      message: 'Market closed; runtime live drift self-check inactive.'
+    };
+  }
+
+  const dPrice = Number(displayedPrice || 0);
+  const lPrice = Number(livePrice || 0);
+  const diff = Math.abs(dPrice - lPrice);
+
+  const nowMs = now instanceof Date ? now.getTime() : Number(now);
+  const updateMs = lastUpdatedMs ? Number(lastUpdatedMs) : nowMs;
+  const ageSeconds = Math.max(0, Math.floor((nowMs - updateMs) / 1000));
+
+  const hasDrift = diff > tolerance;
+  const isStale = ageSeconds > staleThresholdSec;
+
+  if (hasDrift || isStale) {
+    const errorType = hasDrift && isStale ? 'PRICE_DRIFT_AND_STALE' : hasDrift ? 'PRICE_DRIFT' : 'STALE_DATA';
+    const errorEvent = {
+      timestamp: new Date(nowMs).toISOString(),
+      symbol,
+      errorType,
+      displayedPrice: dPrice,
+      livePrice: lPrice,
+      diff: Number(diff.toFixed(2)),
+      ageSeconds,
+      thresholdSeconds: staleThresholdSec,
+      message: `[RuntimeSelfCheck Error] ${symbol}: ${
+        hasDrift ? `Displayed price (Rs. ${dPrice}) differs from live quote (Rs. ${lPrice}) by Rs. ${diff.toFixed(2)}.` : ''
+      } ${
+        isStale ? `Displayed 1D data is ${ageSeconds}s old (> ${staleThresholdSec}s threshold).` : ''
+      }`.trim()
+    };
+
+    if (typeof logger === 'function') {
+      logger(`[RuntimeSelfCheck] ERROR: ${errorEvent.message}`, errorEvent);
+    }
+
+    runtimeSelfCheckMonitor.recordError(errorEvent);
+
+    return {
+      passed: false,
+      marketClosed: false,
+      ...errorEvent
+    };
+  }
+
+  return {
+    passed: true,
+    marketClosed: false,
+    symbol,
+    displayedPrice: dPrice,
+    livePrice: lPrice,
+    diff: 0,
+    ageSeconds,
+    message: `In sync (LTP: Rs. ${lPrice})`
+  };
+}
+
+export class RuntimeSelfCheckMonitor {
+  constructor(maxEvents = 100) {
+    this.maxEvents = maxEvents;
+    this.errorEvents = [];
+  }
+
+  recordError(evt) {
+    this.errorEvents.unshift(evt);
+    if (this.errorEvents.length > this.maxEvents) {
+      this.errorEvents.pop();
+    }
+  }
+
+  getErrors() {
+    return [...this.errorEvents];
+  }
+
+  clear() {
+    this.errorEvents = [];
+  }
+}
+
+export const runtimeSelfCheckMonitor = new RuntimeSelfCheckMonitor();

@@ -53,6 +53,7 @@ import { triggerHaptic } from '../utils/haptics';
 import LoadingShimmerBar from './LoadingShimmerBar';
 import { exportStockFloorsheet, exportStockPriceHistory } from '../utils/floorsheetExport';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
+import { runOneDayPriceSelfCheck } from '../utils/systemMonitoring.js';
 import { useBackHandler, useNavigation } from '../context/NavigationContext';
 import { ErrorBoundary } from './ErrorBoundary';
 import { DividendHistoryPanel } from './DividendHistoryPanel';
@@ -1939,6 +1940,18 @@ export default function StockDetailModal({
       });
     }
   }, [d?.ltp, chartTimeframe]);
+
+  // Runtime self-check: 1D Price Drift & Staleness Monitor (Phase 4 Fix 8)
+  useEffect(() => {
+    if (d?.symbol && d?.ltp > 0) {
+      runOneDayPriceSelfCheck({
+        symbol: d.symbol,
+        displayedPrice: d.ltp,
+        livePrice: Number(liveQuote?.ltp || liveQuote?.closePrice || d.ltp),
+        lastUpdatedMs: Date.now()
+      });
+    }
+  }, [d?.symbol, d?.ltp, liveQuote]);
 
   // ── Unified Entry/Exit & Day Prime Pick Plan Parity ──
   const cachedPrime = useMemo(() => {
