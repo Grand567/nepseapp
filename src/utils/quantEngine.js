@@ -2322,8 +2322,8 @@ export const NEPALI_FESTIVAL_CALENDAR = {
       bhaiTika: '2026-11-12',
       name: 'Tihar (Deepawali) Holidays'
     },
-    chhath: { date: '2026-11-15', name: 'Chhath Parva' },
-    mangsirAgmRally: { start: '2026-11-16', end: '2026-12-25', name: 'Mangsir AGM & Dividend Rally' },
+    chhath: { date: '2026-11-16', name: 'Chhath Parva (Government Holiday)' },
+    mangsirAgmRally: { start: '2026-11-17', end: '2026-12-25', name: 'Mangsir AGM & Dividend Rally' },
     poushTaxDrain: { start: '2026-12-26', end: '2027-01-15', name: 'Poush 40% Advance Corporate Tax Drain' },
     chaitraTaxDrain: { start: '2026-03-15', end: '2026-04-14', name: 'Chaitra 30% Advance Corporate Tax Drain' },
     ashadhSurge: { start: '2026-06-15', end: '2026-08-15', name: 'Ashadh-Shrawan Government Budget & Liquidity Surge' },

@@ -216,7 +216,7 @@ async function runReplayHarness() {
   console.log('Status: [NOT-TESTED ON REAL DATA (SYNTHETIC FIXTURES VERIFIED)]');
   console.log('Reason: Today is Saturday, 2026-11-14 (NEPSE Statutory Weekend Closure).');
   console.log('Action: Real live session recording must be executed during the next active session:');
-  console.log('👉 SCHEDULE: Monday, November 16, 2026, 11:00 AM – 3:00 PM Asia/Kathmandu (NPT).');
+  console.log('👉 SCHEDULE: Tuesday, November 17, 2026, 11:00 AM – 3:00 PM Asia/Kathmandu (NPT) (Post-Chhath Holiday Resumption).');
   console.log('👉 COMMAND:  node qa/scripts/recordLiveSession.mjs --interval 60 --duration 240');
   console.log('-----------------------------------------------------------------\n');
 

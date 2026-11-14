@@ -58,7 +58,8 @@ export function getNepseHolidays() {
     '2026-11-09': 'Tihar (Govardhan Puja / Mha Puja)',
     '2026-11-10': 'Tihar (Bhai Tika)',
     '2026-11-11': 'Tihar (Additional Holiday)',
-    '2026-11-15': 'Chhath Parva'
+    '2026-11-15': 'Chhath Parva',
+    '2026-11-16': 'Chhath Parva (Government Holiday)'
   };
   lastHolidayLoadMs = now;
   return cachedHolidays;
