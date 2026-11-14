@@ -637,7 +637,11 @@ export function AccumulationDistributionRadar({
 
   useEffect(() => {
     if (Array.isArray(propAvailableDates) && propAvailableDates.length > 0) {
-      setAvailableSessionDates(prev => Array.from(new Set([...propAvailableDates, ...prev])).filter(Boolean).sort().reverse());
+      const merged = Array.from(new Set([...propAvailableDates])).filter(Boolean).sort().reverse();
+      setAvailableSessionDates(prev => Array.from(new Set([...merged, ...prev])).filter(Boolean).sort().reverse());
+      if (!incomingDate && merged[0] && (!radarDate || radarDate < merged[0])) {
+        handleRadarDateChange(merged[0]);
+      }
     }
   }, [propAvailableDates]);
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
@@ -868,8 +872,12 @@ export function AccumulationDistributionRadar({
           fetchMarketWideBrokerSummaryMap(1, { date: effInitialDate })
         ]);
         if (!isMounted) return;
-        if (datesRes.status === 'fulfilled' && Array.isArray(datesRes.value)) {
+        if (datesRes.status === 'fulfilled' && Array.isArray(datesRes.value) && datesRes.value.length > 0) {
           setAvailableSessionDates(datesRes.value);
+          const freshestDate = datesRes.value[0];
+          if (!incomingDate && freshestDate && (!effInitialDate || freshestDate > effInitialDate)) {
+            handleRadarDateChange(freshestDate);
+          }
         }
         if (brokerMapRes.status === 'fulfilled' && brokerMapRes.value && typeof brokerMapRes.value === 'object') {
           const map1D: Record<string, any> = {};
