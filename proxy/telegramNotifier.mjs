@@ -1678,6 +1678,186 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
+ * TOP 5 BROKER #58 BREAKOUT-READY SLATE & TACTICAL PLAYBOOK DISPATCHER
+ * ───────────────────────────────────────────────────────────────────────────
+ * Generates and dispatches the Top 5 most coiled, breakout-ready accumulations
+ * of Broker #58 (Naasa Securities) with full tactical execution plans.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export async function dispatchTop5Broker58Breakouts(options = {}) {
+  const targetChatId = options?.chatId || null;
+  try {
+    const top5Data = [
+      {
+        sym: 'AKJCL',
+        name: 'Ankhu Khola Jalvidhyut Company Ltd',
+        sector: 'Hydro Power',
+        ltp: 341.0,
+        b58Avg: 344.3,
+        distPct: -1.0,
+        b58NetKitta: 55552,
+        b58OutlayCr: 4.32,
+        baseCompression: 'Tight 4.4% Base',
+        rvol: 0.40,
+        breakoutPivot: 350.0,
+        syndicateNote: '3-Broker Syndicate (#58, #35, #62) holding 307,743 Kitta (Rs. 10.60 Cr)',
+        buyZoneLow: 337.0,
+        buyZoneHigh: 349.0,
+        stopLoss: 325.2,
+        slPct: 4.6,
+        target1: 369.0,
+        t1Pct: 8.2,
+        rrr1: 1.77,
+        target2: 392.1,
+        t2Pct: 15.0,
+        rrr2: 3.23,
+        shares1L: 63,
+        deploy1L: '21,483'
+      },
+      {
+        sym: 'RFPL',
+        name: 'River Falls Power Limited',
+        sector: 'Hydro Power',
+        ltp: 374.0,
+        b58Avg: 376.8,
+        distPct: -0.7,
+        b58NetKitta: 110100,
+        b58OutlayCr: 7.33,
+        baseCompression: 'Coiled 6.2% Channel',
+        rvol: 0.35,
+        breakoutPivot: 382.0,
+        syndicateNote: 'Broker #58 absorbed 30.3% of the entire market float (+110k Kitta held)',
+        buyZoneLow: 370.0,
+        buyZoneHigh: 378.0,
+        stopLoss: 359.0,
+        slPct: 4.0,
+        target1: 404.7,
+        t1Pct: 8.2,
+        rrr1: 2.05,
+        target2: 430.1,
+        t2Pct: 15.0,
+        rrr2: 3.74,
+        shares1L: 66,
+        deploy1L: '24,684'
+      },
+      {
+        sym: 'SAHAS',
+        name: 'Sahas Urja Limited',
+        sector: 'Hydro Power',
+        ltp: 725.0,
+        b58Avg: 720.4,
+        distPct: 0.6,
+        b58NetKitta: 36347,
+        b58OutlayCr: 3.57,
+        baseCompression: 'Tight 6.4% Base',
+        rvol: 0.38,
+        breakoutPivot: 735.0,
+        syndicateNote: '73.3% Float Retention by Broker #58 (Fundamental safety)',
+        buyZoneLow: 718.0,
+        buyZoneHigh: 730.0,
+        stopLoss: 696.0,
+        slPct: 4.0,
+        target1: 784.5,
+        t1Pct: 8.2,
+        rrr1: 2.05,
+        target2: 833.8,
+        t2Pct: 15.0,
+        rrr2: 3.75,
+        shares1L: 34,
+        deploy1L: '24,650'
+      },
+      {
+        sym: 'ULHC',
+        name: 'Upper Lohore Khola Hydropower',
+        sector: 'Hydro Power',
+        ltp: 321.0,
+        b58Avg: 321.4,
+        distPct: -0.1,
+        b58NetKitta: 31289,
+        b58OutlayCr: 1.04,
+        baseCompression: 'Tight 7.5% Base',
+        rvol: 0.13,
+        breakoutPivot: 328.0,
+        syndicateNote: '60.1% Market Float Control & 96.4% Retention (Total Supply Lock)',
+        buyZoneLow: 317.0,
+        buyZoneHigh: 324.0,
+        stopLoss: 308.0,
+        slPct: 4.0,
+        target1: 347.3,
+        t1Pct: 8.2,
+        rrr1: 2.02,
+        target2: 369.2,
+        t2Pct: 15.0,
+        rrr2: 3.71,
+        shares1L: 76,
+        deploy1L: '24,396'
+      },
+      {
+        sym: 'API',
+        name: 'Api Power Company Limited',
+        sector: 'Hydro Power',
+        ltp: 333.0,
+        b58Avg: 335.4,
+        distPct: -0.7,
+        b58NetKitta: 82664,
+        b58OutlayCr: 2.77,
+        baseCompression: 'Tight 5.0% Base',
+        rvol: 0.33,
+        breakoutPivot: 340.0,
+        syndicateNote: 'Broker #58 net +82,664 Kitta (Highly liquid momentum base)',
+        buyZoneLow: 329.0,
+        buyZoneHigh: 336.0,
+        stopLoss: 320.0,
+        slPct: 3.9,
+        target1: 360.3,
+        t1Pct: 8.2,
+        rrr1: 2.10,
+        target2: 383.0,
+        t2Pct: 15.0,
+        rrr2: 3.85,
+        shares1L: 76,
+        deploy1L: '25,308'
+      }
+    ];
+
+    const cards = top5Data.map((d, i) => {
+      return [
+        `<b>${i + 1}. <code>$${d.sym}</code> — ${d.name}</b> (${d.sector})`,
+        `• <b>Price:</b> <b>Rs. ${d.ltp.toFixed(1)}</b> | <b>B58 Avg:</b> Rs. ${d.b58Avg.toFixed(1)} (${d.distPct >= 0 ? '+' : ''}${d.distPct}%)`,
+        `• <b>Coiling:</b> ${d.baseCompression} | <b>Supply Dry-Up:</b> <b>${d.rvol}x</b> RVOL`,
+        `• ⚡ <b>Breakout Trigger:</b> Daily close &gt; <b>Rs. ${d.breakoutPivot.toFixed(1)}</b>`,
+        `• 🟢 <b>Buy Zone:</b> <code>Rs. ${d.buyZoneLow.toFixed(1)} – Rs. ${d.buyZoneHigh.toFixed(1)}</code>`,
+        `• 🛑 <b>Stop-Loss:</b> <code>Rs. ${d.stopLoss.toFixed(1)}</code> (-${d.slPct}%)`,
+        `• 💰 <b>Target 1:</b> <code>Rs. ${d.target1.toFixed(1)}</code> (+${d.t1Pct}% | <b>RRR ${d.rrr1} : 1</b>)`,
+        `• 🚀 <b>Target 2:</b> <code>Rs. ${d.target2.toFixed(1)}</code> (+${d.t2Pct}% | <b>RRR ${d.rrr2} : 1</b> | <i>Circuit Runner</i>)`,
+        `• 💡 <i>${d.syndicateNote}</i>`
+      ].join('\n');
+    });
+
+    const msg = [
+      `👑 <b>TOP 5 BREAKOUT-READY SLATE: BROKER #58</b>`,
+      `<b>Session Audited:</b> <code>2026-11-13</code> | <b>Target Entry:</b> <code>Tuesday, 2026-11-17</code>`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      cards.join('\n\n──────────────────────────\n\n'),
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `📲 <b>TMS Execution Blueprint for Tuesday:</b>`,
+      `1. Place GTC Limit Buys inside the designated <b>Buy Zone</b>.`,
+      `2. <b>Do NOT chase pre-open gaps &gt; +1.8%!</b>`,
+      `3. When Target 1 (+8.2%) is reached, <b>sell 50% &amp; move SL to Breakeven</b> before Broker #58 initiates distribution!`,
+      ``,
+      `💡 <i>Deep audit any stock anytime: <code>/analyze SYMBOL</code></i>`
+    ].join('\n');
+
+    const res = await sendTelegramMessage(msg, { chatId: targetChatId });
+    return { success: Boolean(res?.success), message: msg, telegramResult: res };
+  } catch (err) {
+    console.warn('[TelegramNotifier] dispatchTop5Broker58Breakouts error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
  * EOD STEALTH ACCUMULATION OF THE DAY FORMATTER
  * ───────────────────────────────────────────────────────────────────────────
  * Formats the single #1 highest-conviction Broker #58 / syndicate stealth
@@ -3255,6 +3435,7 @@ async function handleTelegramCommand(text, {
       `I monitor NEPSE institutional accumulation and send high-conviction trade setups directly to your lockscreen!`,
       ``,
       `<b>⚡ Quick Commands to Send:</b>`,
+      `• <code>/top5</code> — Top 5 Broker #58 Breakout Slate (Tactical Playbook)`,
       `• <code>/analyze SHIVM</code> — Deep Stock Audit &amp; Profitability Verdict`,
       `• <code>/b58</code> — Broker #58 Operator Early Ignition Radar`,
       `• <code>/breakout</code> — High-Volume 20-Day Breakout Scanner`,
@@ -3282,6 +3463,7 @@ async function handleTelegramCommand(text, {
       `  👉 <code>/analyze SHIVM</code> or <code>/analyze GHL</code>`,
       ``,
       `🎯 <b>Early Operator Ignitions (Broker #58):</b>`,
+      `• <code>/top5</code>: Top 5 Coiled Breakout-Ready Accumulations (Tactical Tickets)`,
       `• <code>/b58</code> or <code>/broker58</code>: Live radar of Broker #58 stealth setups before the breakout!`,
       `• <code>/b58 GHL</code>: Deep-dive operator footprint &amp; verdict for a specific stock`,
       `• <code>/b58 playbook</code>: Complete empirical research findings &amp; 5-gate rules`,
@@ -3318,10 +3500,25 @@ async function handleTelegramCommand(text, {
     return await sendTelegramMessage(`🏓 <b>Pong!</b> Drabyashree server is online and actively watching NEPSE live market.`, { chatId });
   }
 
+  // 2.1 TOP 5 BROKER #58 BREAKOUT-READY SLATE (/top5, /broker58 top5)
+  if (
+    lower === '/top5' || lower === 'top5' ||
+    lower === '/top' || lower === 'top' ||
+    lower === '/top5breakouts' || lower === 'top5breakouts' ||
+    lower === '/breakout58' || lower === '/breakouts58'
+  ) {
+    const top5Res = await dispatchTop5Broker58Breakouts({ chatId });
+    return top5Res.telegramResult;
+  }
+
   // 2.3 HIGH-VOLUME BREAKOUT RADAR & 20 EMA ACCUMULATION SCANNER
   const breakoutMatch = raw.match(/^\/?(breakout|breakouts|surge)(?:\s+(.+))?$/i);
   if (breakoutMatch) {
     const rawArg = (breakoutMatch[2] || '').trim();
+    if (rawArg.toLowerCase() === 'top5' || rawArg.toLowerCase() === '58' || rawArg.toLowerCase() === 'b58') {
+      const top5Res = await dispatchTop5Broker58Breakouts({ chatId });
+      return top5Res.telegramResult;
+    }
     const cleanSym = rawArg ? rawArg.toUpperCase().replace(/[^A-Z0-9]/g, '') : null;
     const res = await runBreakoutScannerAndDispatch({ symbol: cleanSym, chatId });
     return res.telegramResult;
@@ -3332,6 +3529,11 @@ async function handleTelegramCommand(text, {
   if (b58Match) {
     const rawArg = (b58Match[2] || '').trim();
     const lowerArg = rawArg.toLowerCase();
+
+    if (lowerArg === 'top5' || lowerArg === 'top' || lowerArg === 'breakout' || lowerArg === 'breakouts') {
+      const top5Res = await dispatchTop5Broker58Breakouts({ chatId });
+      return top5Res.telegramResult;
+    }
 
     if (!rawArg || lowerArg === 'radar' || lowerArg === 'today' || lowerArg === 'scan' || lowerArg === 'list') {
       const radarRes = await runBroker58RadarAndDispatch(null, { chatId });

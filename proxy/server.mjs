@@ -82,7 +82,8 @@ import {
   sendTelegramPlaybookPickAlert,
   autoSelectAndDispatchPlaybookPick,
   runBroker58RadarAndDispatch,
-  formatBroker58RadarHtml
+  formatBroker58RadarHtml,
+  dispatchTop5Broker58Breakouts
 } from './telegramNotifier.mjs';
 import {
   getDiscordStatus,
@@ -12192,6 +12193,16 @@ app.post('/api/telegram/dispatch-broker58-radar', async (req, res) => {
     const { symbol } = req.body || {};
     const result = await runBroker58RadarAndDispatch(symbol);
     res.json({ success: true, message: 'Broker #58 radar dispatched to Telegram', result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.all('/api/telegram/dispatch-top5-breakouts', async (req, res) => {
+  try {
+    const { chatId } = req.body || req.query || {};
+    const result = await dispatchTop5Broker58Breakouts({ chatId });
+    res.json({ success: true, message: 'Top 5 Broker #58 breakouts dispatched to Telegram', result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
