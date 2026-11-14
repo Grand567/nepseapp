@@ -807,7 +807,7 @@ export function formatEarlyIgnitionAlertHtml(alert) {
     `• Capital Deployed: <b>Rs. ${totalAmtCrores} Crore</b>`,
     `• Session Market Share: <b>${mktShare}% of Total Float</b>`,
     `• Buy vs Sell Dominance: <b>${buyRatio}% Buy Dominance</b> (Zero dump)`,
-    `• Operator VWAP Basis: <b>Rs. ${operatorVwap}</b>`,
+    `• 🎯 <b>Average Broker Buy Price (Cost Basis):</b> <b>Rs. ${operatorVwap}</b> (${Number(ltp) >= Number(operatorVwap) ? '+' : ''}${(((Number(ltp) - Number(operatorVwap)) / Math.max(1, Number(operatorVwap))) * 100).toFixed(1)}% from LTP)`,
     `──────────────────────────`,
     `🕒 <b>TIMING & IGNITION LAW:</b>`,
     `• Window: ${timingSignature}`,
@@ -931,7 +931,7 @@ export function formatBroker58SymbolAuditHtml({
     `• Net Footprint: <b>${netVol >= 0 ? '+' : ''}${netVol.toLocaleString()} Kitta</b>`,
     `• Buy vs Sell Dominance: <b>${buyRatioPct}% Buy Dominance</b>`,
     `• Session Market Share: <b>${marketSharePct}% of Volume</b>`,
-    `• Operator VWAP Basis: <b>Rs. ${vwapStr}</b>`,
+    `• 🎯 <b>Average Broker Buy Price (Cost Basis):</b> <b>Rs. ${vwapStr}</b> (${Number(ltp) >= Number(vwapStr) ? '+' : ''}${(((Number(ltp) - Number(vwapStr)) / Math.max(1, Number(vwapStr))) * 100).toFixed(1)}% from LTP)`,
     multiSection,
     `──────────────────────────`,
     verdictTag,
@@ -1182,6 +1182,7 @@ export async function runBreakoutScannerAndDispatch(options = {}) {
         `<b>${cards.length + 1}. <code>$${b.symbol}</code></b> — ${compName}`,
         `• <b>Setup:</b> ${escapeHtml(b.statusBadge)}`,
         `• <b>Price:</b> Rs. ${Number(b.ltp).toFixed(2)} (${b.distFromEmaPct >= 0 ? '+' : ''}${b.distFromEmaPct}% from 20 EMA Rs. ${b.ema20})`,
+        `• 🎯 <b>Average Broker Price (Cost Basis):</b> Rs. ${Number(b.operatorVwap || b.avgBrokerPrice || b.ema20).toFixed(1)}`,
         `• <b>Crossover Spark:</b> ${timingText}`,
         `• <b>Sharp Base:</b> Rs. ${b.minBasePrice} – Rs. ${b.maxBasePrice} (Tight ${b.consolidationRangePct}% Base | ${b.rvolToday}x Today Vol)`,
         `• 🚀 <b>Ignition Outlook:</b> Coiled for Secondary Expansion Wave (Supply Absorbed)`,
@@ -1202,6 +1203,7 @@ export async function runBreakoutScannerAndDispatch(options = {}) {
           `<b>${cards.length + 1}. <code>$${b.symbol}</code></b> — ${compName}`,
           `• <b>Setup:</b> ⚡ Fresh 20-Day Resistance Breakout`,
           `• <b>Price:</b> Rs. ${Number(b.ltp).toFixed(2)} (+${b.breakout_pct}% above pivot)`,
+          `• 🎯 <b>Average Broker Price (Cost Basis):</b> Rs. ${Number(b.operatorVwap || b.res_20d).toFixed(1)}`,
           `• <b>20D Resistance:</b> Rs. ${Number(b.res_20d).toFixed(2)} (Broken 🚀)`,
           `• <b>Volume Surge:</b> <b>${b.rvol}x</b> 20D Avg (${Number(b.total_volume).toLocaleString('en-IN')} shares)`,
           `• 🛡️ <b>Stop-Loss Floor:</b> Rs. ${sl.toFixed(2)} (-4.5% defense)`,
@@ -1381,6 +1383,226 @@ export async function runBroker58RadarAndDispatch(symbolFilter = null, options =
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
+ * DEEP STOCK ANALYSIS & PROFITABILITY AUDIT (/analyze SYMBOL)
+ * ───────────────────────────────────────────────────────────────────────────
+ * Provides an exhaustive institutional, technical, supply dry-up, and risk
+ * audit for any queried stock, determining whether the stock is appropriate
+ * to invest in for profit making.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
+  const targetChatId = options?.chatId || null;
+  const sym = String(rawSymbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
+
+  if (!sym) {
+    const usage = [
+      `🔍 <b>DEEP STOCK AUDIT: /analyze</b>`,
+      `──────────────────────────`,
+      `Please provide a valid stock symbol to analyze.`,
+      `Example: <code>/analyze SHIVM</code> or <code>/analyze GHL</code>`
+    ].join('\n');
+    const res = await sendTelegramMessage(usage, { chatId: targetChatId });
+    return { success: false, telegramResult: res };
+  }
+
+  try {
+    const { getSmartMoneyAggregatedFlow, getSymbolHistoryFromDb } = await import('./db/ledgerStore.js');
+
+    const hist = getSymbolHistoryFromDb(sym, 30);
+    if (!hist || hist.length === 0) {
+      const notFoundMsg = [
+        `ℹ️ <b>DEEP STOCK AUDIT: <code>$${sym}</code></b>`,
+        `──────────────────────────`,
+        `No trading history found for <code>$${sym}</code> in the ledger database.`,
+        `Please verify the stock ticker and try again (e.g. <code>/analyze SHIVM</code>).`
+      ].join('\n');
+      const res = await sendTelegramMessage(notFoundMsg, { chatId: targetChatId });
+      return { success: false, telegramResult: res };
+    }
+
+    const latest = hist[0];
+    const ltp = Number(latest.closePrice || latest.ltp || 0);
+    const open = Number(latest.openPrice || ltp);
+    const high = Number(latest.highPrice || ltp);
+    const low = Number(latest.lowPrice || ltp);
+    const volume = Number(latest.totalVolume || 0);
+    const turnover = Number(latest.totalTurnover || 0);
+    const tradeDate = latest.date || latest.tradeDate || 'Latest Session';
+    const compName = escapeHtml(stockUniverseMap[sym]?.name || sym);
+    const sector = escapeHtml(stockUniverseMap[sym]?.sector || 'NEPSE Equities');
+
+    const pChange = open > 0 ? (((ltp - open) / open) * 100) : 0;
+    const pChangeStr = `${pChange >= 0 ? '+' : ''}${pChange.toFixed(2)}%`;
+
+    // 20-period EMA
+    const closes = hist.map(h => h.closePrice).reverse();
+    const k = 2 / (Math.min(closes.length, 20) + 1);
+    let ema20 = closes[0];
+    for (let i = 1; i < closes.length; i++) {
+      ema20 = closes[i] * k + ema20 * (1 - k);
+    }
+    const distFromEmaPct = +(((ltp - ema20) / ema20) * 100).toFixed(1);
+
+    // 20-Day Range & Average Volume
+    const slice20 = hist.slice(0, 20);
+    const minLow20 = Math.min(...slice20.map(h => h.lowPrice || ltp));
+    const maxHigh20 = Math.max(...slice20.map(h => h.highPrice || ltp));
+    const avgVol20 = Math.round(slice20.reduce((acc, h) => acc + (h.totalVolume || 0), 0) / Math.max(1, slice20.length));
+    const rvol = avgVol20 > 0 ? +(volume / avgVol20).toFixed(2) : 1.0;
+    const baseRangePct = minLow20 > 0 ? +(((maxHigh20 - minLow20) / minLow20) * 100).toFixed(1) : 0;
+
+    // Multi-Session Broker Flow (last 5 sessions)
+    const flow = getSmartMoneyAggregatedFlow(sym, 5);
+
+    const buyers = flow.filter(f => f.buyVolume > 0).sort((a, b) => (b.buyVolume - b.sellVolume) - (a.buyVolume - a.sellVolume));
+    const sellers = flow.filter(f => f.sellVolume > 0).sort((a, b) => (b.sellVolume - b.buyVolume) - (a.sellVolume - a.buyVolume));
+
+    const top3Buyers = buyers.slice(0, 3);
+    const top3Sellers = sellers.slice(0, 3);
+
+    const top3BuyVol = top3Buyers.reduce((acc, b) => acc + Number(b.buyVolume || 0), 0);
+    const top3BuyAmt = top3Buyers.reduce((acc, b) => acc + Number(b.buyAmount || 0), 0);
+    const top3SellVol = top3Sellers.reduce((acc, s) => acc + Number(s.sellVolume || 0), 0);
+
+    const totalBuyVolAll = flow.reduce((acc, f) => acc + Number(f.buyVolume || 0), 0);
+    const totalSellVolAll = flow.reduce((acc, f) => acc + Number(f.sellVolume || 0), 0);
+
+    const bcr3Buy = totalBuyVolAll > 0 ? +((top3BuyVol / totalBuyVolAll) * 100).toFixed(1) : 50.0;
+    const bcr3Sell = totalSellVolAll > 0 ? +((top3SellVol / totalSellVolAll) * 100).toFixed(1) : 35.0;
+
+    // Combined Average Broker Buy Price
+    let avgBrokerPrice = top3BuyVol > 0 ? +(top3BuyAmt / top3BuyVol).toFixed(1) : ltp;
+    if (!avgBrokerPrice || avgBrokerPrice <= 0) avgBrokerPrice = ltp;
+
+    const distFromBroker = +(((ltp - avgBrokerPrice) / avgBrokerPrice) * 100).toFixed(1);
+    const distSign = distFromBroker >= 0 ? '+' : '';
+
+    // Lead Accumulator
+    const leadBuyer = top3Buyers[0] || null;
+    const leadBrokerId = leadBuyer ? leadBuyer.brokerId : null;
+    const leadBrokerName = leadBrokerId ? (BROKER_NAMES[String(leadBrokerId)] || `Broker #${leadBrokerId}`) : 'Lead Desk';
+    const cleanLeadName = escapeHtml(String(leadBrokerName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd)\b/gi, '').trim());
+    const leadNetVol = leadBuyer ? (leadBuyer.buyVolume - leadBuyer.sellVolume) : 0;
+
+    // Lead Seller
+    const leadSeller = top3Sellers[0] || null;
+    const leadSellerId = leadSeller ? leadSeller.brokerId : null;
+    const leadSellerName = leadSellerId ? (BROKER_NAMES[String(leadSellerId)] || `Broker #${leadSellerId}`) : 'Seller Desk';
+    const cleanLeadSeller = escapeHtml(String(leadSellerName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd)\b/gi, '').trim());
+    const leadSellerNet = leadSeller ? (leadSeller.sellVolume - leadSeller.buyVolume) : 0;
+
+    // Decision Gates & Appropriateness Verdict
+    const isNetAccumulated = (top3BuyVol > top3SellVol * 1.15) && (leadNetVol > 0);
+    const isDumping = (top3SellVol > top3BuyVol * 1.30) || (leadSellerNet > top3BuyVol * 0.5);
+    const isPriceNearBasis = distFromBroker >= -4.5 && distFromBroker <= 3.8;
+    const isExtended = distFromBroker > 4.5 || pChange > 6.0;
+    const isTrendSafe = ltp >= (ema20 * 0.96);
+
+    let verdictBadge = '';
+    let verdictReason = '';
+
+    if (isDumping) {
+      verdictBadge = '🔴 <b>NOT APPROPRIATE / HIGH DOWNSIDE RISK (DISTRIBUTION TRAP)</b>';
+      verdictReason = `Broker #${leadSellerId} (${cleanLeadSeller}) and top sellers dumped <b>${top3SellVol.toLocaleString()} Kitta</b>, overwhelming buyers. Retail liquidity is being used as exit liquidity. <b>Do NOT buy! Preserve cash.</b>`;
+    } else if (isExtended) {
+      verdictBadge = '🟡 <b>WATCHLIST ONLY / PULLBACK REQUIRED (LATE CHASE RISK)</b>';
+      verdictReason = `Scrip has accumulated well, but price has jumped <b>${distSign}${distFromBroker}% above the Broker Average Cost Basis (Rs. ${avgBrokerPrice})</b>. Chasing now creates severe T+2 pullback risk. Wait for dip into the Buy Zone.`;
+    } else if (isNetAccumulated && isPriceNearBasis && isTrendSafe) {
+      verdictBadge = '🟢 <b>APPROPRIATE TO INVEST (HIGH CONVICTION SWING ACCUMULATION)</b>';
+      verdictReason = `Top institutional buyers (led by Broker #${leadBrokerId} ${cleanLeadName}) accumulated <b>${top3BuyVol.toLocaleString()} Kitta</b> at an <b>Average Broker Price of Rs. ${avgBrokerPrice}</b>. LTP is trading directly on/near this cost floor (${distSign}${distFromBroker}%). Institutional desks will defend this level!`;
+    } else {
+      verdictBadge = '⚪ <b>NEUTRAL / SUB-THRESHOLD (WAIT FOR CATALYST)</b>';
+      verdictReason = `Activity is balanced retail turnover with no decisive institutional supply cornering yet. Keep on radar for a volume breakout above 20 EMA.`;
+    }
+
+    // Tactical Execution Plan
+    const buyZoneLow = Math.max(1, Math.floor(Math.min(ltp, avgBrokerPrice) * 0.990));
+    const buyZoneHigh = Math.max(1, Math.ceil(Math.max(ltp, avgBrokerPrice) * 1.012));
+    const stopLoss = Math.max(1, +(buyZoneLow * 0.958).toFixed(1));
+    const slPct = +(((ltp - stopLoss) / ltp) * 100).toFixed(1);
+    const target1 = +(ltp * 1.082).toFixed(1);
+    const t1Pct = 8.2;
+    const target2 = +(ltp * 1.150).toFixed(1);
+    const t2Pct = 15.0;
+
+    const rrr = +((target1 - ltp) / Math.max(1, ltp - stopLoss)).toFixed(2);
+
+    // Position Sizing (1% Capital Risk)
+    const riskPerShare = Math.max(1, ltp - stopLoss);
+    const shares1L = Math.max(5, Math.floor(1000 / riskPerShare));
+    const shares5L = Math.max(25, Math.floor(5000 / riskPerShare));
+    const deploy1L = Math.round(shares1L * ltp).toLocaleString();
+    const deploy5L = Math.round(shares5L * ltp).toLocaleString();
+
+    // Format Buyer Lines
+    const buyerLines = top3Buyers.map((b, i) => {
+      const bName = escapeHtml(String(BROKER_NAMES[String(b.brokerId)] || `Broker #${b.brokerId}`).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd)\b/gi, '').trim());
+      const bAvg = b.buyVolume > 0 ? +(b.buyAmount / b.buyVolume).toFixed(1) : ltp;
+      const bCr = (Number(b.buyAmount || 0) / 10000000).toFixed(2);
+      const bNet = Number(b.buyVolume - b.sellVolume);
+      return `  ${i + 1}. <b>Broker #${b.brokerId} (${bName}):</b> ${Number(b.buyVolume).toLocaleString()} Kitta (Net: ${bNet >= 0 ? '+' : ''}${bNet.toLocaleString()}) @ <b>Avg Rs. ${bAvg}</b> (Rs. ${bCr} Cr)`;
+    });
+
+    // Format Seller Lines
+    const sellerLines = top3Sellers.map((s, i) => {
+      const sName = escapeHtml(String(BROKER_NAMES[String(s.brokerId)] || `Broker #${s.brokerId}`).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd)\b/gi, '').trim());
+      const sAvg = s.sellVolume > 0 ? +(s.sellAmount / s.sellVolume).toFixed(1) : ltp;
+      const sNet = Number(s.sellVolume - s.buyVolume);
+      return `  ${i + 1}. <b>Broker #${s.brokerId} (${sName}):</b> Sold ${Number(s.sellVolume).toLocaleString()} Kitta (Net: -${sNet.toLocaleString()}) @ Avg Rs. ${sAvg}`;
+    });
+
+    const msg = [
+      `📊 <b>DEEP STOCK AUDIT: <code>$${sym}</code></b> (${compName})`,
+      `<b>Session Audited:</b> <code>${tradeDate}</code> | <b>Sector:</b> ${sector}`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `📈 <b>1. PRICE &amp; TREND STRUCTURE:</b>`,
+      `• <b>Live Price (LTP):</b> <b>Rs. ${ltp.toFixed(2)}</b> (${pChangeStr})`,
+      `• <b>Day Range:</b> Low Rs. ${low.toFixed(1)} – High Rs. ${high.toFixed(1)}`,
+      `• <b>20-Period Trend (EMA):</b> Rs. ${ema20.toFixed(2)} (${distFromEmaPct >= 0 ? '+' : ''}${distFromEmaPct}% from 20 EMA)`,
+      `• <b>20-Day Base Range:</b> Rs. ${minLow20.toFixed(1)} – Rs. ${maxHigh20.toFixed(1)} (Tight ${baseRangePct}% Base)`,
+      ``,
+      `🏛️ <b>2. INSTITUTIONAL ACCUMULATION &amp; BROKER COST:</b>`,
+      `• 🎯 <b>Average Broker Buy Price (Cost Basis):</b> <b>Rs. ${avgBrokerPrice}</b> (${distSign}${distFromBroker}% from LTP)`,
+      `• <b>Top Accumulating Desks (Last 5 Sessions):</b>`,
+      ...buyerLines,
+      `• <b>Buyer Dominance (BCR3 Buy):</b> <b>${bcr3Buy}%</b> (vs BCR3 Sell ${bcr3Sell}%)`,
+      `• <b>Top Selling / Distribution Desks:</b>`,
+      ...sellerLines,
+      ``,
+      `🌊 <b>3. VOLUME &amp; FLOAT ABSORPTION:</b>`,
+      `• <b>Today's Volume:</b> ${volume.toLocaleString()} Kitta (<b>${rvol}x</b> of 20D Avg ${avgVol20.toLocaleString()} Kitta)`,
+      `• <b>Turnover:</b> Rs. ${(turnover / 10000000).toFixed(2)} Crores`,
+      `• <b>Supply Status:</b> ${isNetAccumulated ? 'Institutional float cornering in progress (Supply Vacuum)' : 'Mixed float circulation'}`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `⚖️ <b>4. INVESTMENT &amp; PROFITABILITY VERDICT:</b>`,
+      verdictBadge,
+      `• <b>Audit Findings:</b> ${verdictReason}`,
+      ``,
+      `🎯 <b>5. TACTICAL PROFIT PLAYBOOK:</b>`,
+      `• 🟢 <b>Limit Buy Zone:</b> <code>Rs. ${buyZoneLow} – Rs. ${buyZoneHigh}</code> <i>(Anchored to Broker Avg Rs. ${avgBrokerPrice})</i>`,
+      `• 🛑 <b>Invalidation Stop-Loss:</b> <code>Rs. ${stopLoss}</code> (-${slPct}% Capital Floor)`,
+      `• 💰 <b>Target 1 (Milestone 1):</b> <code>Rs. ${target1}</code> (+${t1Pct}% | <i>Sell 50% &amp; Move SL to Breakeven</i>)`,
+      `• 🚀 <b>Target 2 (Circuit Runner):</b> <code>Rs. ${target2}</code> (+${t2Pct}% | <i>Upper Circuit Ceiling</i>)`,
+      `• ⚖️ <b>Net Risk / Reward Ratio:</b> <b>${rrr} : 1</b>`,
+      ``,
+      `💼 <b>6. 1% RISK POSITION SIZING:</b>`,
+      `• <b>Rs. 1 Lakh Portfolio (Rs. 1,000 Max Risk):</b> Buy <b>${shares1L} Kitta</b> (~Rs. ${deploy1L})`,
+      `• <b>Rs. 5 Lakh Portfolio (Rs. 5,000 Max Risk):</b> Buy <b>${shares5L} Kitta</b> (~Rs. ${deploy5L})`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `💡 <i>Auto-arm Exit Guard alerts for this stock: <code>/track ${sym}</code></i>`
+    ].join('\n');
+
+    const res = await sendTelegramMessage(msg, { chatId: targetChatId });
+    return { success: Boolean(msg), message: msg, telegramResult: res };
+  } catch (err) {
+    console.warn('[TelegramNotifier] runStockDeepAnalysis error:', err.message);
+    const errRes = await sendTelegramMessage(`⚠️ Stock audit notice for ${sym}: ${err.message}`, { chatId: targetChatId });
+    return { success: false, error: err.message, telegramResult: errRes };
+  }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
  * EOD STEALTH ACCUMULATION OF THE DAY FORMATTER
  * ───────────────────────────────────────────────────────────────────────────
  * Formats the single #1 highest-conviction Broker #58 / syndicate stealth
@@ -1434,10 +1656,11 @@ export function formatEodStealthOfTheDayHtml(winner, runnerUps = [], targetDate 
     `📅 <b>Settled Session: ${targetDate || 'Today'} | Post-Market Ledger Reconciled</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `<b>Scrip:</b> <code>$${sym}</code> (${name})`,
-    `<b>LTP:</b> Rs. ${ltp} (${pchgStr}) | <b>Operator VWAP:</b> Rs. ${vwap}`,
+    `<b>LTP:</b> Rs. ${ltp} (${pchgStr}) | <b>Average Broker Price:</b> Rs. ${vwap} (${Number(ltp) >= Number(vwap) ? '+' : ''}${(((Number(ltp) - Number(vwap)) / Math.max(1, Number(vwap))) * 100).toFixed(1)}%)`,
     `<b>Setup Status:</b> <b>⚡ Stage 2: Supply Vacuum Complete</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🔍 <b>5-DAY INSTITUTIONAL FOOTPRINT (Broker #58):</b>`,
+    `• 🎯 <b>Average Broker Buy Price (Cost Basis):</b> <b>Rs. ${vwap}</b> (${Number(ltp) >= Number(vwap) ? '+' : ''}${(((Number(ltp) - Number(vwap)) / Math.max(1, Number(vwap))) * 100).toFixed(1)}% from LTP)`,
     `• Multi-Day Footprint: <b>+${multiNet} Net Kitta</b> (${multiBuy} Bought over ${multiDays} sessions)`,
     `• Institutional Outlay: <b>Rs. ${multiCr} Crores absorbed</b>`,
     `• Accumulation Dominance: <b>${multiRatio}% Buy Ratio</b> (Zero Dumping)`,
@@ -2439,6 +2662,10 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
   const t2Pct = Number(winner.t2Pct || 15.0).toFixed(1);
 
   // Microstructure & Flow Metrics
+  const numAvgBroker = Number(winner.avgBrokerPrice || winner.bcr3AvgPrice || winner.bcr3AvgBuy || winner.operatorVwap || winner.whaleVwap || winner.entryLow || (ltp * 0.992));
+  const avgBrokerPrice = numAvgBroker.toFixed(1);
+  const distFromBroker = numAvgBroker > 0 ? (((ltp - numAvgBroker) / numAvgBroker) * 100).toFixed(1) : '0.0';
+  const distSign = Number(distFromBroker) >= 0 ? '+' : '';
   const bcr3Buy = Number(winner.bcr3Buy || winner.bcr3BuyPct || 45.0).toFixed(1);
   const bcr3Sell = Number(winner.bcr3Sell || winner.bcr3SellPct || 20.0).toFixed(1);
   const netRet = Number(winner.retention10D || winner.retentionPct || winner.leadRetentionPct || 85).toFixed(0);
@@ -2471,6 +2698,7 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
     ``,
     `🏛️ <b>LAYER 2 &amp; 3: INSTITUTIONAL CORNERING &amp; EXHAUSTION</b>`,
     `• Lead Accumulator: <b>Broker #${leadBrokerId} (${cleanLeadBroker})</b>`,
+    `• 🎯 <b>Average Broker Price (Cost Basis):</b> <b>Rs. ${avgBrokerPrice}</b> (${distSign}${distFromBroker}% from LTP)`,
     `• Top 3 Buyer Concentration (BCR3): <b>${bcr3Buy}%</b> (>= 40.0% Institutional Absorption)`,
     `• Clean Delivery Retention: <b>${netRet}%</b> (>= 70.0% Delivery Absorption)`,
     `• Wyckoff Volume Dry-Up (VDU): <b>${vdu}x</b> (<= 0.60x 20D SMA Exhaustion)`,
@@ -2573,6 +2801,7 @@ export function formatInstantExecutionTicketHtml(d) {
     `⚡ <b>ORDER TYPE: LIMIT ORDER ONLY</b> (Do NOT Market-Buy)`,
     ``,
     `🎯 <b>LIMIT BUY PRICE:</b> <code>Rs. ${limitPrice}</code>`,
+    `🎯 <b>Average Broker Price (Cost Basis):</b> <code>Rs. ${vwap.toFixed(1)}</code>`,
     `⚠️ <b>MAX CHASE CAP:</b> Rs. ${chaseCap} <i>(Cancel if Ask &gt; this)</i>`,
     `🛑 <b>HARD STOP-LOSS:</b> <code>Rs. ${sl}</code> (-${slPct}%)`,
     `🏁 <b>TARGET 1 (Exit 50%):</b> <code>Rs. ${t1}</code> (+${t1Pct}%)`,
@@ -2767,6 +2996,7 @@ export function formatMorningDigestHtml(buyPicks = [], watchPicks = [], sessionD
         `• <b>Score:</b> <b>${score}/100</b> | Confidence: ${conf}%`,
         `• <b>Confluence:</b> Broker: ${bkd.brokerFloorsheet ?? '-'} | Tech: ${bkd.technical ?? '-'} | Fund: ${bkd.fundamental ?? '-'} | Market: ${bkd.marketContext ?? '-'}`,
         `• 📍 <b>Entry Zone:</b> Rs. ${entryZone[0]} – ${entryZone[1]} (LTP: Rs. ${entryLtp})`,
+        `• 🎯 <b>Average Broker Price (Cost Basis):</b> Rs. ${plan.brokerVwap || plan.entryVwap || entryLtp}`,
         `• 🛡️ <b>Stop-Loss:</b> Rs. ${sl} (-${riskPct}%)`,
         `• 🎯 <b>Targets:</b> T1: Rs. ${t1} | 🚀 T2: Rs. ${t2} (RRR: ${rrr}:1)`,
         `• 💼 <b>Position Size:</b> <b>${shares} kitta</b> (~Rs. ${Math.round(capNpr).toLocaleString()} | Max Risk: Rs. ${Math.round(maxRisk).toLocaleString()})`
@@ -2950,6 +3180,7 @@ async function handleTelegramCommand(text, {
       `I monitor NEPSE institutional accumulation and send high-conviction trade setups directly to your lockscreen!`,
       ``,
       `<b>⚡ Quick Commands to Send:</b>`,
+      `• <code>/analyze SHIVM</code> — Deep Stock Audit &amp; Profitability Verdict`,
       `• <code>/b58</code> — Broker #58 Operator Early Ignition Radar`,
       `• <code>/breakout</code> — High-Volume 20-Day Breakout Scanner`,
       `• <code>/swing</code> — Automated 5-Step Accumulation Pick`,
@@ -2970,6 +3201,10 @@ async function handleTelegramCommand(text, {
       `🤖 <b>DRAVYASHREE NEPSE TRADING ASSISTANT</b>`,
       `──────────────────────────`,
       `I monitor NEPSE institutional accumulation and send automated high-conviction trade setups directly to your lockscreen!`,
+      ``,
+      `🔍 <b>Deep Stock Audit &amp; Investment Verdict:</b>`,
+      `• <code>/analyze SYMBOL</code>: Comprehensive audit on whether a stock is appropriate to invest for profit (Average Broker Price, Whales vs Dumping, 20 EMA, exact Buy Zone, SL &amp; Targets)`,
+      `  👉 <code>/analyze SHIVM</code> or <code>/analyze GHL</code>`,
       ``,
       `🎯 <b>Early Operator Ignitions (Broker #58):</b>`,
       `• <code>/b58</code> or <code>/broker58</code>: Live radar of Broker #58 stealth setups before the breakout!`,
@@ -3036,6 +3271,32 @@ async function handleTelegramCommand(text, {
     const cleanSym = rawArg.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const radarRes = await runBroker58RadarAndDispatch(cleanSym, { chatId });
     return radarRes.telegramResult;
+  }
+
+  // 2.4.1 DEEP STOCK ANALYSIS & PROFITABILITY AUDIT (/analyze, /analyse, /audit, /check, /evaluate)
+  const analyzeMatch = raw.match(/^\/?(analyze|analyse|analysis|audit|evaluate|eval|check)(?:\s+(.+))?$/i);
+  if (analyzeMatch) {
+    const rawArg = (analyzeMatch[2] || '').trim();
+    if (!rawArg) {
+      const usageMsg = [
+        `🔍 <b>DEEP STOCK AUDIT: /analyze</b>`,
+        `──────────────────────────`,
+        `Get a comprehensive audit on whether a stock is appropriate to invest for profit making:`,
+        `• <b>Average Broker Price &amp; Cost Basis Floor</b>`,
+        `• <b>Top 3 Accumulating vs Dumping Broker Desks</b>`,
+        `• <b>Trend &amp; 20 EMA Support Structure</b>`,
+        `• <b>Supply Vacuum &amp; Float Cornering</b>`,
+        `• <b>Definitive Investment Verdict (Buy / Watch / Avoid)</b>`,
+        `• <b>Tactical Execution Ticket (Buy Zone, -4% SL, +8% &amp; +15% Targets)</b>`,
+        `──────────────────────────`,
+        `💡 <b>Usage:</b> <code>/analyze SYMBOL</code>`,
+        `Example: <code>/analyze SHIVM</code> or <code>/analyze GHL</code>`
+      ].join('\n');
+      return await sendTelegramMessage(usageMsg, { chatId });
+    }
+    const cleanSym = rawArg.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const res = await runStockDeepAnalysisAndDispatch(cleanSym, { chatId });
+    return res.telegramResult;
   }
 
   // 2.5 AUTOMATED 5-STEP 10–15 DAY SWING & MID-STAGE ACCUMULATION PICK
