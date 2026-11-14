@@ -59,6 +59,7 @@ const testFiles = [
   'oneDayLiveMerging.test.mjs',
   'multiTimeframeIsolation.test.mjs',
   'httpCacheStrategy.test.mjs',
+  'processingAndCatchUp.test.mjs',
   'replayHarness.mjs',
   'researchBasis.test.mjs',
   'swingEngine.test.mjs',

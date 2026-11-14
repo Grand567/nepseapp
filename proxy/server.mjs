@@ -33,6 +33,7 @@ import {
   rebuildHotCache,
   HOT_CACHE,
   getLedgerStatusInfo,
+  getStoredDates,
   getSmartMoneyAggregatedFlow,
   getScripLedgerTelemetry,
   getScripFloorsheet,
@@ -7067,10 +7068,10 @@ app.get('/api/smart-money/cornering', async (req, res) => {
     const rows = db.prepare(`
       SELECT bl.symbol, bl.broker_id as brokerId,
              SUM(bl.buy_vol) as buyVol,
-             SUM(ss.total_volume) as totalVol,
-             ROUND(SUM(bl.buy_vol) * 1.0 / NULLIF(SUM(ss.total_volume), 0) * 100, 2) as concentrationPct
+             COALESCE(SUM(ss.total_volume), SUM(bl.buy_vol) * 2) as totalVol,
+             ROUND(SUM(bl.buy_vol) * 1.0 / NULLIF(COALESCE(SUM(ss.total_volume), SUM(bl.buy_vol) * 2), 0) * 100, 2) as concentrationPct
       FROM daily_broker_ledger bl
-      JOIN daily_stock_summary ss ON ss.symbol = bl.symbol AND ss.trade_date = bl.trade_date
+      LEFT JOIN daily_stock_summary ss ON ss.symbol = bl.symbol AND ss.trade_date = bl.trade_date
       WHERE bl.trade_date >= ?
       GROUP BY bl.symbol, bl.broker_id
       HAVING buyVol * 1.0 / NULLIF(totalVol, 0) >= 0.25
@@ -13940,6 +13941,18 @@ app.listen(PORT, '0.0.0.0', async () => {
           warmupStage = 'Restoring floorsheet vault & rebuilding hot cache';
           seedFromDiskVault();
           rebuildHotCache();
+
+          // Fix 5: Startup Catch-Up Engine - Check for and fill any missed trading sessions if server was asleep
+          try {
+            const lastSettled = latestTradingSession(new Date(), true);
+            const storedDates = getStoredDates(5);
+            if (lastSettled && !storedDates.includes(lastSettled)) {
+              console.log(`[StartupCatchUp] ⚠️ Detected missing completed trading session (${lastSettled}). Triggering catch-up sync...`);
+              await downloadAndArchiveDailyFloorsheet(lastSettled).catch(() => {});
+            }
+          } catch (catchUpErr) {
+            console.warn('[StartupCatchUp] Catch-up notice:', catchUpErr.message);
+          }
           // Warm up popular brokers asynchronously in background to avoid blocking event loop
           setTimeout(() => {
             const popularBrokers = ['58', '77', '45', '34', '17', '28', '49', '57', '38', '14', '22', '42'];
