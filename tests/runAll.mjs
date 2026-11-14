@@ -61,6 +61,7 @@ const testFiles = [
   'httpCacheStrategy.test.mjs',
   'processingAndCatchUp.test.mjs',
   'sessionFreshnessBadge.test.mjs',
+  'adminDataFreshness.test.mjs',
   'replayHarness.mjs',
   'researchBasis.test.mjs',
   'swingEngine.test.mjs',

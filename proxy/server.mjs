@@ -28,6 +28,7 @@ import aiGuruRouter from './routes/aiGuruRoutes.mjs';
 import floorsheetHubRouter, { broadcastSseContracts } from './routes/floorsheetHubRoutes.mjs';
 import stockTelemetryRouter from './routes/stockTelemetryRoutes.mjs';
 import signalTrackRecordRouter from './routes/signalTrackRecordRoutes.mjs';
+import { dataFreshnessTracker } from './utils/dataFreshnessTracker.mjs';
 import {
   seedFromDiskVault,
   rebuildHotCache,
@@ -845,6 +846,11 @@ app.get('/api/nepse/diagnostics', (req, res) => {
     success: true,
     data: nepseManager.getDiagnostics()
   });
+});
+
+// Universal Data Freshness Admin Diagnostic Endpoint (Phase 4 Fix 7)
+app.get(['/api/admin/data-freshness', '/api/system/data-freshness'], (req, res) => {
+  res.json(dataFreshnessTracker.getStatus());
 });
 
 /**
@@ -1792,6 +1798,8 @@ app.get(['/api/today-prices', '/api/live-market'], async (req, res) => {
 
     const enriched = await enrichStocksWithBrokerSummary(stocks);
     setCache(cacheKey, enriched, 30000); // 30s TTL
+    dataFreshnessTracker.recordFetch('sharesansar_today_prices', { itemsCount: enriched.length });
+    dataFreshnessTracker.recordProcessed('overview_1d', { itemsCount: enriched.length });
     res.json({ success: true, data: enriched, source: 'closing', count: enriched.length });
   } catch (error) {
     console.error('[today-prices] Error:', error.message);
