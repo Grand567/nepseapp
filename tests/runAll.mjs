@@ -58,6 +58,7 @@ const testFiles = [
   'sharedTradingCalendar.test.mjs',
   'oneDayLiveMerging.test.mjs',
   'multiTimeframeIsolation.test.mjs',
+  'httpCacheStrategy.test.mjs',
   'replayHarness.mjs',
   'researchBasis.test.mjs',
   'swingEngine.test.mjs',

@@ -90,7 +90,7 @@ import {
   sendDiscordPrimePickAlert
 } from './discordNotifier.mjs';
 import { assembleScripDossier, buildAgentAnalysisPrompt } from './agentTools.mjs';
-import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseTradingDay, formatNptDateIso, setLiveMarketOverride, generateTradingDaysSequence, getLastValidTradingDay } from '../src/utils/nepseCalendar.js';
+import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseTradingDay, formatNptDateIso, setLiveMarketOverride, generateTradingDaysSequence, getLastValidTradingDay, isMarketOpen, latestTradingSession, tradingDayWindow } from '../src/utils/nepseCalendar.js';
 import { getKathmanduTradingStatus } from './utils/kathmanduTime.mjs';
 import { 
   getArchiveIndex, 
@@ -4942,7 +4942,13 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
     } catch (_) {}
   }
 
-  res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+  const isLiveTrading = isMarketOpen();
+  if (isLiveTrading && (days === 1 || !date)) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+  } else {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+  }
   const cacheKey = `broker-analysis-${symbol}-${days}-${date}-${fromDate}-${toDate}`;
   if (!refresh) {
     const cached = getCache(cacheKey);
@@ -7052,6 +7058,8 @@ app.get('/api/smart-money/broker-dominance', async (req, res) => {
 });
 
 app.get('/api/smart-money/cornering', async (req, res) => {
+  const isLive = isMarketOpen();
+  res.setHeader('Cache-Control', isLive ? 'no-store, no-cache, must-revalidate' : 'public, max-age=60');
   try {
     const days = Math.min(500, Math.max(1, parseInt(req.query.days || '5', 10) || 5));
     const subqueryDate = db.prepare(`SELECT MIN(trade_date) as d FROM (SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT ?)`).get(days)?.d || '2026-08-01';
@@ -7086,6 +7094,8 @@ app.get('/api/smart-money/cornering', async (req, res) => {
 });
 
 app.get('/api/smart-money/whale-prints', async (req, res) => {
+  const isLive = isMarketOpen();
+  res.setHeader('Cache-Control', isLive ? 'no-store, no-cache, must-revalidate' : 'public, max-age=60');
   try {
     const date = String(req.query.date || '').trim() || (db.prepare('SELECT MAX(trade_date) as d FROM floorsheet_contracts').get()?.d || '2026-10-29');
     const rows = db.prepare(`
@@ -7111,6 +7121,8 @@ app.get('/api/smart-money/whale-prints', async (req, res) => {
 });
 
 app.get('/api/smart-money/accumulation', async (req, res) => {
+  const isLive = isMarketOpen();
+  res.setHeader('Cache-Control', isLive ? 'no-store, no-cache, must-revalidate' : 'public, max-age=60');
   try {
     const days = Math.min(500, Math.max(1, parseInt(req.query.days || '10', 10) || 10));
     const subqueryDate = db.prepare(`SELECT MIN(trade_date) as d FROM (SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT ?)`).get(days)?.d || '2026-08-01';
@@ -7134,6 +7146,8 @@ app.get('/api/smart-money/accumulation', async (req, res) => {
 });
 
 app.get('/api/smart-money/distribution', async (req, res) => {
+  const isLive = isMarketOpen();
+  res.setHeader('Cache-Control', isLive ? 'no-store, no-cache, must-revalidate' : 'public, max-age=60');
   try {
     const days = Math.min(500, Math.max(1, parseInt(req.query.days || '10', 10) || 10));
     const subqueryDate = db.prepare(`SELECT MIN(trade_date) as d FROM (SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT ?)`).get(days)?.d || '2026-08-01';
@@ -7529,7 +7543,13 @@ app.get([
 ], async (req, res) => {
   const symbol = sanitizeSymbol(req.params.symbol);
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol is required', data: [] });
-  res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+  const isLiveTrading = isMarketOpen();
+  if (isLiveTrading && (days === 1 || !date)) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+  } else {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+  }
 
   const tf = String(req.query.timeframe || req.query.tf || '1D').toUpperCase();
   const isAll = req.query.days === 'all' || req.query.days === 'ALL' || tf === 'ALL' || parseInt(req.query.days, 10) >= 300;
