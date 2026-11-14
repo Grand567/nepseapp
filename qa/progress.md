@@ -137,6 +137,41 @@
 
 6. **Phase 6: Final Verification & Sign-Off**
    - **Oracle Fixtures:** 43/43 PASSED (`node qa/oracle/oracleFixtures.test.mjs`).
+   - **Round 1 Audit (10 Stocks x 5 Timeframes):** 100% mathematical parity across NABIL, BARUN, SHIVM, RFPL, HDL, AKJCL, CIT, NRN, HRL, API (`qa/ui_vs_ledger_report.md`).
+   - **Round 2 Audit (Additional 10 Stocks x 7 Sectors):** 100% mathematical parity across GCIL, SHPC, GBIME, BPCL, SHL, CFCL, CBBL, NICA, HATHY, SONA (`qa/round2_stocks_audit_report.md`). 20 total stocks verified in real browser DOM.
+   - **Tuesday Market Open Pre-Flight Test Suite:** 9/9 PASSED (`qa/tests/tuesdayPreFlightCheck.test.mjs`).
+   - **Telegram Bot Hardening:** Implemented `splitMessageIntoTelegramChunks` in `proxy/telegramNotifier.mjs` to eliminate HTTP 400 Bad Request on large multi-card alerts (`tests/testTelegramChunking.mjs` passing). Synchronized `drabyashree_ledger.db.gz` with 2026-11-13 data and pushed to origin/main.
    - **Master Test Suite:** 63/63 test suites PASSED, 0 failures (`node tests/runAll.mjs`).
-   - **Production Build:** `npm run build` compiled cleanly in 43.47s (1,784 modules).
+   - **Production Build:** `npm run build` compiled cleanly in 22.02s (1,784 modules).
    - **Final Status:** **PASS (100% Verification Parity)**.
+
+---
+
+### Live Market Operational Protocol (Tuesday, November 17, 2026)
+
+> [!NOTE]
+> Saturday (Nov 14) and Sunday (Nov 15) are regular weekend closures. Monday (Nov 16) is the official Nepal Government statutory public holiday for Chhath festival. The next live NEPSE trading session opens on **Tuesday, November 17, 2026 at 11:00 AM NPT**.
+
+#### Step 1: Pre-Market Launch (Before 10:50 AM NPT)
+1. Ensure proxy and Vite frontend are running:
+   ```bash
+   # Terminal 1: Proxy
+   cd proxy && npm start
+   # Terminal 2: Frontend
+   npm run dev
+   ```
+2. Verify live recorder is standing by:
+   ```bash
+   node qa/scripts/recordLiveSession.mjs --dry-run
+   ```
+
+#### Step 2: Live Trading Audits (3 Checkpoints During Live Hours)
+At the following times on Tuesday, compare 3 spot-checked stocks (e.g. `NABIL`, `SHIVM`, `SHPC`) against the official exchange data:
+- **Checkpoint 1 (11:30 AM NPT):** Verify 1D view reflects today's live ticks and green `LIVE` badge is active.
+- **Checkpoint 2 (13:00 PM NPT):** Verify broker flow 1D captures today's real-time buy/sell volumes and 5D/15D/30D retain isolated settled session windows.
+- **Checkpoint 3 (14:30 PM NPT):** Verify price drift alarm remains silent (0 drift) and runtime self-check logs 0 mismatch errors.
+
+#### Step 3: Post-Market Reconciliation (After 15:05 PM NPT)
+1. Verify system transitions from `LIVE` to `Market closed, showing 2026-11-17`.
+2. Confirm EOD floorsheet aggregator automatically incorporates Nov 17 contracts without duplicates.
+
