@@ -1,54 +1,54 @@
 {
-  "generatedAt": "2026-11-08T08:12:11.025Z",
+  "generatedAt": "2026-11-14T06:21:30.443Z",
   "navigationModel": "STATE-BASED. No react-router. App.jsx reads activeTab from NavigationContext (useNavigation). Tab panes are kept mounted and toggled with display:none; StockDetailModal is an overlay driven by selectedStock; Service Hub detail is driven by local selectedService state.",
   "method": "Static code-derived: JSX children (<Component>) imported from src/components|views, 2 levels deep under each root tab; inline sub-tab arrays; ALL_SERVICES + SERVICE_COMPONENTS registry in ServicesHub.tsx.",
   "totals": {
     "market": {
       "tab": 1,
       "sub-tab": 8,
-      "card": 13,
-      "sub-card": 29,
+      "card": 0,
+      "sub-card": 0,
       "service": 0
     },
     "portfolio_ipo": {
       "tab": 1,
       "sub-tab": 4,
-      "card": 3,
-      "sub-card": 2,
+      "card": 0,
+      "sub-card": 0,
       "service": 0
     },
     "predictor": {
       "tab": 1,
       "sub-tab": 13,
-      "card": 8,
-      "sub-card": 22,
+      "card": 0,
+      "sub-card": 0,
       "service": 0
     },
     "services": {
       "tab": 1,
       "sub-tab": 0,
       "card": 9,
-      "sub-card": 524,
-      "service": 125
+      "sub-card": 527,
+      "service": 128
     },
     "guru_ai": {
       "tab": 1,
       "sub-tab": 5,
-      "card": 13,
-      "sub-card": 5,
+      "card": 0,
+      "sub-card": 0,
       "service": 0
     },
     "stocks": {
       "tab": 1,
       "sub-tab": 13,
-      "card": 24,
-      "sub-card": 24,
+      "card": 0,
+      "sub-card": 6,
       "service": 0
     },
     "calculator": {
       "tab": 1,
       "sub-tab": 0,
-      "card": 1,
+      "card": 0,
       "sub-card": 0,
       "service": 0
     },
@@ -62,15 +62,15 @@
     "stitch": {
       "tab": 1,
       "sub-tab": 0,
-      "card": 7,
-      "sub-card": 1,
+      "card": 0,
+      "sub-card": 0,
       "service": 0
     }
   },
-  "serviceCount": 125,
+  "serviceCount": 128,
   "serviceCategories": {
-    "flagship": 20,
-    "smart-money": 10,
+    "flagship": 22,
+    "smart-money": 11,
     "trading": 36,
     "valuation": 16,
     "regulatory": 6,
@@ -106,7 +106,6 @@
       "ipo-results",
       "ipo-fpo-alert",
       "prime-breakout-pick",
-      "alpha-playbook",
       "nepse-playbook",
       "nepse-news",
       "comparable-stock",
@@ -117,7 +116,6 @@
       "system-health",
       "daily-whale-tracker",
       "aggressive-accumulators",
-      "distribution-leaders",
       "aggressive-holdings",
       "matching-buy-sell",
       "slow-accumulation"
@@ -131,745 +129,9 @@
       "parent": "app",
       "name": "Market (Dashboard)",
       "navState": "activeTab=dashboard",
-      "sourceFile": "src/components/Dashboard.jsx",
-      "dataDeps": [
-        "useSubscription (src/context/SubscriptionContext.jsx)",
-        "getPeerStocks (src/utils/calculations.js)",
-        "getMarketNews (src/utils/calculations.js)",
-        "calculatePivotPoints (src/utils/indicators.js)",
-        "calculateFibonacci (src/utils/indicators.js)",
-        "runStockScanners (src/utils/quantEngine.js)",
-        "calculateBuyDetails (src/utils/calculations.js)",
-        "calculateSellDetails (src/utils/calculations.js)",
-        "getProxyBase (src/utils/liveData.js)",
-        "fetchStockFundamentals (src/utils/liveData.js)",
-        "getCachedIndices (src/utils/liveData.js)",
-        "getCachedMarketSummary (src/utils/liveData.js)",
-        "getLastDataUpdateTime (src/utils/liveData.js)",
-        "getCachedRealBrokerAnalysis (src/utils/liveData.js)",
-        "getCachedRealPriceHistory (src/utils/liveData.js)",
-        "fetchPriceHistory (src/utils/liveData.js)",
-        "fetchDividendHistory (src/utils/liveData.js)",
-        "fetchRealBrokerAnalysis (src/utils/liveData.js)",
-        "fetchMarketDepth (src/utils/liveData.js)",
-        "fetchVerifiedDailyPrimePick (src/utils/liveData.js)",
-        "getHydroSeasonality (src/utils/quantEngine.js)",
-        "runAmalgamatedBreakoutPipeline (src/utils/quantEngine.js)",
-        "calculateOrderBookImbalanceRatio (src/utils/quantEngine.js)",
-        "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
-        "runUnifiedFiveStepAlphaDesk (src/utils/masterAlphaPipeline.js)",
-        "analyzeStockWithAi (src/services/aiService.js)",
-        "useBackHandler (src/context/NavigationContext.jsx)",
-        "useNavigation (src/context/NavigationContext.jsx)",
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)",
-        "getWatchlist (src/utils/watchlist.js)",
-        "getAllWatchlistAlertConfigs (src/utils/watchlistAlerts.js)",
-        "calculateStockRvol (src/utils/watchlistAlerts.js)",
-        "computeLiveSectorMedians (src/utils/liveSectorMedians.js)",
-        "getSignalStats (src/services/signalTracker.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.sparkline",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "Sparkline (inline in Dashboard.jsx)",
-      "sourceFile": "src/components/Dashboard.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.changesummarymodal",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "ChangeSummaryModal (inline in Dashboard.jsx)",
-      "sourceFile": "src/components/Dashboard.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.scannermodal",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "ScannerModal (inline in Dashboard.jsx)",
-      "sourceFile": "src/components/Dashboard.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.subindicesmodal",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "SubIndicesModal (inline in Dashboard.jsx)",
-      "sourceFile": "src/components/Dashboard.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.dataqualitybanner",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "DataQualityBanner",
-      "sourceFile": "src/components/DataQualityBanner.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "refresh"
-      ]
-    },
-    {
-      "id": "tab.market.dataqualitybanner.simulateddatabanner",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.dataqualitybanner",
-      "name": "SimulatedDataBanner (inline in DataQualityBanner.jsx)",
-      "sourceFile": "src/components/DataQualityBanner.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "refresh"
-      ]
-    },
-    {
-      "id": "tab.market.dataqualitybanner.riskdisclaimer",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.dataqualitybanner",
-      "name": "RiskDisclaimer (inline in DataQualityBanner.jsx)",
-      "sourceFile": "src/components/DataQualityBanner.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "refresh"
-      ]
-    },
-    {
-      "id": "tab.market.dataqualitybanner.dataqualitybanner",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.dataqualitybanner",
-      "name": "DataQualityBanner (inline in DataQualityBanner.jsx)",
-      "sourceFile": "src/components/DataQualityBanner.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "refresh"
-      ]
-    },
-    {
-      "id": "tab.market.nrbmacrowidget",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "NRBMacroWidget",
-      "sourceFile": "src/components/NRBMacroWidget.jsx",
-      "dataDeps": [
-        "getProxyBase (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "refresh"
-      ]
-    },
-    {
-      "id": "tab.market.loadingshimmerbar",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "LoadingShimmerBar",
-      "sourceFile": "src/components/LoadingShimmerBar.jsx",
+      "sourceFile": "NOT FOUND",
       "dataDeps": [],
       "actions": []
-    },
-    {
-      "id": "tab.market.sharehubchart",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "ShareHubChart",
-      "sourceFile": "src/components/ShareHubChart.jsx",
-      "dataDeps": [
-        "fetchRealPriceHistory (src/utils/liveData.js)",
-        "fetchNepseIntradayGraph (src/utils/servicesApi.js)",
-        "calculateEMA (src/utils/indicators.js)",
-        "calculatePivotPoints (src/utils/indicators.js)",
-        "calculateFibonacci (src/utils/indicators.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.market.progate",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "ProGate",
-      "sourceFile": "src/components/ProGate.jsx",
-      "dataDeps": [
-        "useSubscription (src/context/SubscriptionContext.jsx)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "StockDetailModal",
-      "sourceFile": "src/components/StockDetailModal.jsx",
-      "dataDeps": [
-        "getWatchlistAlertConfig (src/utils/watchlistAlerts.js)",
-        "calculateStockRvol (src/utils/watchlistAlerts.js)",
-        "calculatePivotPoints (src/utils/indicators.js)",
-        "calculateFibonacci (src/utils/indicators.js)",
-        "calculateRSI (src/utils/indicators.js)",
-        "calculateMACD (src/utils/indicators.js)",
-        "calculateBollingerBands (src/utils/indicators.js)",
-        "calculateEMA (src/utils/indicators.js)",
-        "calculateSMA (src/utils/indicators.js)",
-        "getPeerStocks (src/utils/calculations.js)",
-        "calculateBuyDetails (src/utils/calculations.js)",
-        "calculateSellDetails (src/utils/calculations.js)",
-        "calculateGrahamIntrinsicValue (src/utils/quantEngine.js)",
-        "calculateInterestAdjustedGrahamValue (src/utils/quantEngine.js)",
-        "calculatePeterLynchMetrics (src/utils/quantEngine.js)",
-        "calculateVolumeZScore (src/utils/quantEngine.js)",
-        "calculateCompositeTechnicalScore (src/utils/quantEngine.js)",
-        "calculateATR (src/utils/quantEngine.js)",
-        "calculateRiskRewardRatio (src/utils/quantEngine.js)",
-        "calculateMultiHorizonTargets (src/utils/quantEngine.js)",
-        "fetchStockFundamentals (src/utils/liveData.js)",
-        "fetchAvailableTradingDates (src/utils/liveData.js)",
-        "fetchRealPriceHistory (src/utils/liveData.js)",
-        "fetchRealFloorsheet (src/utils/liveData.js)",
-        "fetchRealBrokerAnalysis (src/utils/liveData.js)",
-        "fetchMarketDepth (src/utils/liveData.js)",
-        "fetchDividendHistory (src/utils/liveData.js)",
-        "fetchCompareStocks (src/utils/liveData.js)",
-        "fetchLiveStockQuote (src/utils/liveData.js)",
-        "getLatestTradingDateStr (src/utils/liveData.js)",
-        "getCachedRealPriceHistory (src/utils/liveData.js)",
-        "getCachedRealBrokerAnalysis (src/utils/liveData.js)",
-        "getCachedRealFloorsheet (src/utils/liveData.js)",
-        "getCachedStockFundamentals (src/utils/liveData.js)",
-        "getProxyBase (src/utils/liveData.js)",
-        "fetchStockSnapshot (src/services/stockSnapshot.js)",
-        "getSnapshotCache (src/services/stockSnapshot.js)",
-        "fetchNepseIntradayGraph (src/utils/servicesApi.js)",
-        "fetchCompanyQuarterlyReports (src/utils/servicesApi.js)",
-        "fetchMarketNews (src/utils/servicesApi.js)",
-        "getCorporateAlertForSymbol (src/services/merolaganiNewsService.js)",
-        "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
-        "analyzeStockWithAi (src/services/aiService.js)",
-        "useBackHandler (src/context/NavigationContext.jsx)",
-        "useNavigation (src/context/NavigationContext.jsx)",
-        "getSectorBenchmark (src/utils/fundamentals.js)",
-        "buildBookClosureAlert (src/utils/bookClosureTracker.js)",
-        "getScripEarningsContext (src/utils/earningsCalendar.js)",
-        "calculateMultiSessionBrokerFootprint (src/utils/accumulationDistributionEngine.ts)",
-        "calculateBrokerConcentration (src/utils/accumulationDistributionEngine.ts)",
-        "getBrokerName (src/utils/accumulationDistributionEngine.ts)",
-        "calculateMultiDayDiagnostics (src/utils/microstructureEngine.js)",
-        "buildDailyHistoryFromStockData (src/utils/microstructureEngine.js)",
-        "calculateStockSignals (src/utils/stockSignals.js)",
-        "calculateStockMetrics (src/utils/stockMetrics.js)",
-        "getCumulativeBrokerData (src/utils/historyCache.js)",
-        "runAiQuantitativeAssessment (src/services/aiGuru/runAiQuantitativeAssessment.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.stockentryexitcard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "StockEntryExitCard (inline in StockDetailModal.jsx)",
-      "sourceFile": "src/components/StockDetailModal.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.beginnerconfidencecard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "BeginnerConfidenceCard (inline in StockDetailModal.jsx)",
-      "sourceFile": "src/components/StockDetailModal.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.loadingshimmerbar",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "LoadingShimmerBar",
-      "sourceFile": "src/components/LoadingShimmerBar.jsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.market.stockdetailmodal.errorboundary",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "ErrorBoundary",
-      "sourceFile": "src/components/ErrorBoundary.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.sharehubchart",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "ShareHubChart",
-      "sourceFile": "src/components/ShareHubChart.jsx",
-      "dataDeps": [
-        "fetchRealPriceHistory (src/utils/liveData.js)",
-        "fetchNepseIntradayGraph (src/utils/servicesApi.js)",
-        "calculateEMA (src/utils/indicators.js)",
-        "calculatePivotPoints (src/utils/indicators.js)",
-        "calculateFibonacci (src/utils/indicators.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.brokersmartmoneycard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "BrokerSmartMoneyCard",
-      "sourceFile": "src/components/stock/BrokerSmartMoneyCard.tsx",
-      "dataDeps": [
-        "getProxyBase (src/utils/liveData.js)",
-        "getBrokerName (src/utils/accumulationDistributionEngine.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.stocksignalscard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "StockSignalsCard",
-      "sourceFile": "src/components/StockSignalsCard.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.stocktechnicalgaugecard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "StockTechnicalGaugeCard",
-      "sourceFile": "src/components/StockTechnicalGaugeCard.jsx",
-      "dataDeps": [
-        "calculateTechnicalSpeedometer (src/utils/candlestickPatterns.js)"
-      ],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.bookclosurealert",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "BookClosureAlert",
-      "sourceFile": "src/components/BookClosureAlert.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.signaltrackrecord",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "SignalTrackRecord",
-      "sourceFile": "src/components/analyzer/SignalTrackRecord.jsx",
-      "dataDeps": [
-        "getSignals (src/services/signalTracker.js)",
-        "getSignalStats (src/services/signalTracker.js)",
-        "getProxyBase (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.stockyananalyticscard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "StockYanAnalyticsCard",
-      "sourceFile": "src/components/StockYanAnalyticsCard.jsx",
-      "dataDeps": [
-        "getBrokerName (src/utils/accumulationDistributionEngine.ts)"
-      ],
-      "actions": []
-    },
-    {
-      "id": "tab.market.stockdetailmodal.fundamentalvaluationcard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "FundamentalValuationCard",
-      "sourceFile": "src/components/analyzer/FundamentalValuationCard.jsx",
-      "dataDeps": [
-        "calculateFundamentalSummary (src/utils/fundamentals.js)",
-        "computeSectorComparison (src/utils/fundamentals.js)",
-        "getSectorBenchmark (src/utils/fundamentals.js)"
-      ],
-      "actions": []
-    },
-    {
-      "id": "tab.market.stockdetailmodal.sessiondatedropdown",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "SessionDateDropdown",
-      "sourceFile": "src/components/SessionDateDropdown.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.stockinformationhubmodal",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "StockInformationHubModal",
-      "sourceFile": "src/components/StockInformationHubModal.tsx",
-      "dataDeps": [
-        "buildUnifiedStockTabTelemetry (src/services/floorsheet/floorsheetHubEngine.ts)",
-        "fetchFromBackend (src/utils/liveData.js)",
-        "fetchRealBrokerAnalysis (src/utils/liveData.js)",
-        "fetchRealFloorsheet (src/utils/liveData.js)",
-        "subscribeToFloorsheetStream (src/utils/liveData.js)",
-        "getProxyBase (src/utils/proxyBase.js)",
-        "getBrokerName (src/utils/accumulationDistributionEngine.ts)",
-        "calculateMACD (src/utils/indicators.js)",
-        "useHistoricalSubfile (src/utils/localLedgerManager.ts)",
-        "useScrip4DayTrajectory (src/utils/localLedgerManager.ts)",
-        "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
-        "getLastValidTradingDay (src/utils/nepseCalendar.js)",
-        "getNepaliDate (src/utils/bikramSambat.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.stockbrokeranalysistab",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "StockBrokerAnalysisTab",
-      "sourceFile": "src/components/StockBrokerAnalysisTab.jsx",
-      "dataDeps": [
-        "getBrokerName (src/utils/accumulationDistributionEngine.ts)",
-        "fetchRealBrokerAnalysis (src/utils/liveData.js)",
-        "fetchFromBackend (src/utils/liveData.js)",
-        "fetchAvailableTradingDates (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input",
-        "sort"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.brokerfootprintcard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "BrokerFootprintCard",
-      "sourceFile": "src/components/analyzer/BrokerFootprintCard.jsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.market.stockdetailmodal.stockfundamentalstab",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "StockFundamentalsTab",
-      "sourceFile": "src/components/StockFundamentalsTab.jsx",
-      "dataDeps": [
-        "getSectorBenchmark (src/utils/fundamentals.js)",
-        "fetchCompanyQuarterlyReports (src/utils/servicesApi.js)",
-        "fetchCompanyIndustryComparison (src/utils/servicesApi.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.stockrightsharecard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "StockRightShareCard",
-      "sourceFile": "src/components/StockRightShareCard.jsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.market.stockdetailmodal.dividendhistorypanel",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "DividendHistoryPanel",
-      "sourceFile": "src/components/DividendHistoryPanel.tsx",
-      "dataDeps": [
-        "fetchRealDividendHistory (src/utils/dividendHistory.js)"
-      ],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.stockseasonalitycard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "StockSeasonalityCard",
-      "sourceFile": "src/components/StockSeasonalityCard.jsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.market.stockdetailmodal.stockreportsannouncementscard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "StockReportsAnnouncementsCard",
-      "sourceFile": "src/components/StockReportsAnnouncementsCard.jsx",
-      "dataDeps": [
-        "fetchMarketNews (src/utils/servicesApi.js)",
-        "getProxyBase (src/utils/proxyBase.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.aiguruquantitativecard",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "AiGuruQuantitativeCard",
-      "sourceFile": "src/components/AiGuruQuantitativeCard.tsx",
-      "dataDeps": [
-        "runAiQuantitativeAssessment (src/services/aiGuru/runAiQuantitativeAssessment.ts)"
-      ],
-      "actions": []
-    },
-    {
-      "id": "tab.market.stockdetailmodal.advancedchartmodal",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "AdvancedChartModal",
-      "sourceFile": "src/components/AdvancedChartModal.jsx",
-      "dataDeps": [
-        "useBackHandler (src/context/NavigationContext.jsx)"
-      ],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.market.stockdetailmodal.breakoutalertdialog",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.stockdetailmodal",
-      "name": "BreakoutAlertDialog",
-      "sourceFile": "src/components/BreakoutAlertDialog.jsx",
-      "dataDeps": [
-        "getWatchlistAlertConfig (src/utils/watchlistAlerts.js)",
-        "calculateStockRvol (src/utils/watchlistAlerts.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.market.algorithmicsignaltrackrecord",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "AlgorithmicSignalTrackRecord",
-      "sourceFile": "src/components/AlgorithmicSignalTrackRecord.tsx",
-      "dataDeps": [
-        "getProxyBase (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input",
-        "sort"
-      ]
-    },
-    {
-      "id": "tab.market.advancedchartmodal",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "AdvancedChartModal",
-      "sourceFile": "src/components/AdvancedChartModal.jsx",
-      "dataDeps": [
-        "useBackHandler (src/context/NavigationContext.jsx)"
-      ],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.market.advancedchartmodal.sharehubchart",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.advancedchartmodal",
-      "name": "ShareHubChart",
-      "sourceFile": "src/components/ShareHubChart.jsx",
-      "dataDeps": [
-        "fetchRealPriceHistory (src/utils/liveData.js)",
-        "fetchNepseIntradayGraph (src/utils/servicesApi.js)",
-        "calculateEMA (src/utils/indicators.js)",
-        "calculatePivotPoints (src/utils/indicators.js)",
-        "calculateFibonacci (src/utils/indicators.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.market.advancedchartmodal.stockcandlestickchart",
-      "type": "sub-card",
-      "tab": "market",
-      "parent": "tab.market.advancedchartmodal",
-      "name": "StockCandlestickChart",
-      "sourceFile": "src/components/charts/StockCandlestickChart.tsx",
-      "dataDeps": [
-        "calculateEMA (src/utils/indicators.js)",
-        "calculatePivotPoints (src/utils/indicators.js)",
-        "calculateFibonacci (src/utils/indicators.js)",
-        "fetchNepseIntradayGraph (src/utils/servicesApi.js)",
-        "fetchPriceHistory (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.market.breakoutalertdialog",
-      "type": "card",
-      "tab": "market",
-      "parent": "tab.market",
-      "name": "BreakoutAlertDialog",
-      "sourceFile": "src/components/BreakoutAlertDialog.jsx",
-      "dataDeps": [
-        "getWatchlistAlertConfig (src/utils/watchlistAlerts.js)",
-        "calculateStockRvol (src/utils/watchlistAlerts.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
     },
     {
       "id": "tab.portfolio_ipo",
@@ -878,109 +140,9 @@
       "parent": "app",
       "name": "Portfolio & IPO",
       "navState": "activeTab=portfolio|bulk_ipo|simulator",
-      "sourceFile": "src/components/PortfolioHub.jsx",
+      "sourceFile": "NOT FOUND",
       "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.portfolio_ipo.portfolio",
-      "type": "card",
-      "tab": "portfolio_ipo",
-      "parent": "tab.portfolio_ipo",
-      "name": "Portfolio",
-      "sourceFile": "src/components/Portfolio.jsx",
-      "dataDeps": [
-        "calculateBuyDetails (src/utils/calculations.js)",
-        "calculateSellDetails (src/utils/calculations.js)",
-        "getCustomWaccMap (src/utils/calculations.js)",
-        "getProxyBase (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.portfolio_ipo.portfolio.safemarkdown",
-      "type": "sub-card",
-      "tab": "portfolio_ipo",
-      "parent": "tab.portfolio_ipo.portfolio",
-      "name": "SafeMarkdown (inline in Portfolio.jsx)",
-      "sourceFile": "src/components/Portfolio.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.portfolio_ipo.capitalrisksimulatorview",
-      "type": "card",
-      "tab": "portfolio_ipo",
-      "parent": "tab.portfolio_ipo",
-      "name": "CapitalRiskSimulatorView",
-      "sourceFile": "src/components/CapitalRiskSimulatorView.jsx",
-      "dataDeps": [
-        "getUserConfiguredCapital (src/utils/dynamicCapitalEngine.js)",
-        "getCapitalTierConfig (src/utils/dynamicCapitalEngine.js)",
-        "getNepseBrokerCommissionRate (src/utils/dynamicCapitalEngine.js)",
-        "calculateDynamicBrokerFee (src/utils/dynamicCapitalEngine.js)",
-        "NEPSE_FRICTION_FY2083 (src/utils/dynamicCapitalEngine.js)"
-      ],
-      "actions": [
-        "tap",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.portfolio_ipo.capitalrisksimulatorview.capitalrisksimulatorbar",
-      "type": "sub-card",
-      "tab": "portfolio_ipo",
-      "parent": "tab.portfolio_ipo.capitalrisksimulatorview",
-      "name": "CapitalRiskSimulatorBar",
-      "sourceFile": "src/components/CapitalRiskSimulatorBar.jsx",
-      "dataDeps": [
-        "getUserConfiguredCapital (src/utils/dynamicCapitalEngine.js)",
-        "getCapitalTierConfig (src/utils/dynamicCapitalEngine.js)",
-        "getNepseBrokerCommissionRate (src/utils/dynamicCapitalEngine.js)"
-      ],
-      "actions": [
-        "tap",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.portfolio_ipo.merosharehub",
-      "type": "card",
-      "tab": "portfolio_ipo",
-      "parent": "tab.portfolio_ipo",
-      "name": "MeroShareHub",
-      "sourceFile": "src/components/MeroShareHub.jsx",
-      "dataDeps": [
-        "fetchIpoCompanyList (src/services/meroShareService.js)",
-        "fetchOpenIpos (src/services/meroShareService.js)",
-        "getProxyBase (src/utils/liveData.js)",
-        "calculateIpoAllotmentProbability (src/utils/calculations.js)",
-        "fetchUserDataFromCloud (src/utils/firebase.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
+      "actions": []
     },
     {
       "id": "tab.predictor",
@@ -989,484 +151,9 @@
       "parent": "app",
       "name": "Predictor",
       "navState": "activeTab=predictor|entry_exit|short_term_plan|master_100_profit",
-      "sourceFile": "src/components/PredictorHub.jsx",
-      "dataDeps": [
-        "getProxyBase (src/utils/liveData.js)",
-        "getCachedRealPriceHistory (src/utils/liveData.js)",
-        "getCachedRealBrokerAnalysis (src/utils/liveData.js)",
-        "fetchMarketWideBrokerSummaryMap (src/utils/liveData.js)",
-        "fetchPriceHistory (src/utils/liveData.js)",
-        "fetchRealBrokerAnalysis (src/utils/liveData.js)",
-        "fetchMarketDepth (src/utils/liveData.js)",
-        "fetchVerifiedDailyPrimePick (src/utils/liveData.js)",
-        "calculateEMA (src/utils/indicators.js)",
-        "fetchNewsArticle (src/utils/servicesApi.js)",
-        "fetchDividendHistory (src/utils/servicesApi.js)",
-        "getHydroSeasonality (src/utils/quantEngine.js)",
-        "computeFiscalCycle (src/utils/quantEngine.js)",
-        "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)",
-        "getCircuitLimits (src/utils/dynamicCalculationEngine.js)",
-        "calculateDynamicRSI (src/utils/dynamicCalculationEngine.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.predictor.loadingshimmerbar",
-      "type": "card",
-      "tab": "predictor",
-      "parent": "tab.predictor",
-      "name": "LoadingShimmerBar",
-      "sourceFile": "src/components/LoadingShimmerBar.jsx",
+      "sourceFile": "NOT FOUND",
       "dataDeps": [],
       "actions": []
-    },
-    {
-      "id": "tab.predictor.nepseagentdashboard",
-      "type": "card",
-      "tab": "predictor",
-      "parent": "tab.predictor",
-      "name": "NepseAgentDashboard",
-      "sourceFile": "src/components/NepseAgentDashboard.jsx",
-      "dataDeps": [
-        "fetchAgentScripDossier (src/services/nepseAgentTools.js)",
-        "runAgentAnalysis (src/services/nepseAgentTools.js)",
-        "getProxyBase (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.predictor.nepseagentdashboard.stocksearchselect",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.nepseagentdashboard",
-      "name": "StockSearchSelect",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.predictor.errorboundary",
-      "type": "card",
-      "tab": "predictor",
-      "parent": "tab.predictor",
-      "name": "ErrorBoundary",
-      "sourceFile": "src/components/ErrorBoundary.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.predictor.master100profitworkstation",
-      "type": "card",
-      "tab": "predictor",
-      "parent": "tab.predictor",
-      "name": "Master100ProfitWorkstation",
-      "sourceFile": "src/components/Master100ProfitWorkstation.tsx",
-      "dataDeps": [
-        "runMasterGuideAudit (src/utils/masterProfitEngine.ts)",
-        "calculateNetTradeGain (src/utils/masterProfitEngine.ts)",
-        "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
-        "getProxyBase (src/utils/liveData.js)",
-        "fetchMarketWideBrokerSummaryMap (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.predictor.master100profitworkstation.alphacommandcenter",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.master100profitworkstation",
-      "name": "AlphaCommandCenter",
-      "sourceFile": "src/components/AlphaCommandCenter.tsx",
-      "dataDeps": [
-        "runUnifiedFiveStepAlphaDesk (src/utils/masterAlphaPipeline.js)",
-        "getStageFailureReason (src/utils/masterAlphaPipeline.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.predictor.progate",
-      "type": "card",
-      "tab": "predictor",
-      "parent": "tab.predictor",
-      "name": "ProGate",
-      "sourceFile": "src/components/ProGate.jsx",
-      "dataDeps": [
-        "useSubscription (src/context/SubscriptionContext.jsx)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.predictor.shorttermprofitplan",
-      "type": "card",
-      "tab": "predictor",
-      "parent": "tab.predictor",
-      "name": "ShortTermProfitPlan",
-      "sourceFile": "src/components/ShortTermProfitPlan.jsx",
-      "dataDeps": [
-        "calculateBuyDetails (src/utils/calculations.js)",
-        "calculateSellDetails (src/utils/calculations.js)",
-        "getCumulativeBrokerData (src/utils/historyCache.js)",
-        "calculateMultiHorizonTargets (src/utils/quantEngine.js)",
-        "calculateATR (src/utils/quantEngine.js)",
-        "calculateExpectancy (src/utils/quantEngine.js)",
-        "calculateKellyCriterion (src/utils/quantEngine.js)",
-        "calculateT2CircuitTrapGuard (src/utils/quantEngine.js)",
-        "calculateOrderBookImbalanceRatio (src/utils/quantEngine.js)",
-        "calculateRelativeStrength (src/utils/quantEngine.js)",
-        "getCachedRealPriceHistory (src/utils/liveData.js)",
-        "fetchPriceHistory (src/utils/liveData.js)",
-        "getCachedStockFundamentals (src/utils/liveData.js)",
-        "calculateEMA (src/utils/indicators.js)",
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)",
-        "useNavigation (src/context/NavigationContext.jsx)",
-        "getDetailedMarketStatus (src/utils/nepseCalendar.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer",
-      "type": "card",
-      "tab": "predictor",
-      "parent": "tab.predictor",
-      "name": "EntryExitAnalyzer",
-      "sourceFile": "src/components/EntryExitAnalyzer.tsx",
-      "dataDeps": [
-        "fetchPriceHistory (src/utils/liveData.js)",
-        "fetchAllSecurities (src/utils/liveData.js)",
-        "fetchDividendHistory (src/utils/liveData.js)",
-        "fetchTodayPrice (src/utils/liveData.js)",
-        "fetchRealBrokerAnalysis (src/utils/liveData.js)",
-        "fetchStockFundamentals (src/utils/liveData.js)",
-        "getCachedStockFundamentals (src/utils/liveData.js)",
-        "getCachedRealPriceHistory (src/utils/liveData.js)",
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)",
-        "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
-        "getIsoDateInNPT (src/utils/nepseCalendar.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.infobanner",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "InfoBanner",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.stocksearchselect",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "StockSearchSelect",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.skeleton",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "Skeleton",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.nodata",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "NoData",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.setupscorecard",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "SetupScoreCard",
-      "sourceFile": "src/components/analyzer/SetupScoreCard.tsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.smartmoneybrokerflowcard",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "SmartMoneyBrokerFlowCard",
-      "sourceFile": "src/components/analyzer/SmartMoneyBrokerFlowCard.tsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.festivalseasonalitycard",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "FestivalSeasonalityCard",
-      "sourceFile": "src/components/analyzer/FestivalSeasonalityCard.tsx",
-      "dataDeps": [
-        "getAccurateFestivalSeasonality (src/utils/quantEngine.js)"
-      ],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.grahamsafetycard",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "GrahamSafetyCard",
-      "sourceFile": "src/components/analyzer/GrahamSafetyCard.tsx",
-      "dataDeps": [
-        "calculateGrahamIntrinsicValue (src/utils/quantEngine.js)",
-        "calculateInterestAdjustedGrahamValue (src/utils/quantEngine.js)",
-        "calculateEarningsYieldAndRiskPremium (src/utils/quantEngine.js)",
-        "getCachedStockFundamentals (src/utils/historyCache.js)",
-        "getSectorBenchmark (src/utils/fundamentals.js)"
-      ],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.entryriskcard",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "EntryRiskCard",
-      "sourceFile": "src/components/analyzer/EntryRiskCard.tsx",
-      "dataDeps": [
-        "calculateNetProfit (src/utils/riskManagement.js)"
-      ],
-      "actions": [
-        "tap",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.whatnextpanel",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "WhatNextPanel",
-      "sourceFile": "src/components/analyzer/WhatNextPanel.tsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.stockcandlestickchart",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "StockCandlestickChart",
-      "sourceFile": "src/components/charts/StockCandlestickChart.tsx",
-      "dataDeps": [
-        "calculateEMA (src/utils/indicators.js)",
-        "calculatePivotPoints (src/utils/indicators.js)",
-        "calculateFibonacci (src/utils/indicators.js)",
-        "fetchNepseIntradayGraph (src/utils/servicesApi.js)",
-        "fetchPriceHistory (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.supportresistancepanel",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "SupportResistancePanel",
-      "sourceFile": "src/components/analyzer/SupportResistancePanel.tsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.breakoutpanel",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "BreakoutPanel",
-      "sourceFile": "src/components/analyzer/BreakoutPanel.tsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.technicaldashboard",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "TechnicalDashboard",
-      "sourceFile": "src/components/analyzer/TechnicalDashboard.tsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.signalagreement",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "SignalAgreement",
-      "sourceFile": "src/components/analyzer/SignalAgreement.tsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.evidencepanel",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "EvidencePanel",
-      "sourceFile": "src/components/analyzer/EvidencePanel.tsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.historicalanalogpanel",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "HistoricalAnalogPanel",
-      "sourceFile": "src/components/analyzer/HistoricalAnalogPanel.tsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.strategytrackrecord",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "StrategyTrackRecord",
-      "sourceFile": "src/components/analyzer/StrategyTrackRecord.tsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.signaltrackrecord",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "SignalTrackRecord",
-      "sourceFile": "src/components/analyzer/SignalTrackRecord.jsx",
-      "dataDeps": [
-        "getSignals (src/services/signalTracker.js)",
-        "getSignalStats (src/services/signalTracker.js)",
-        "getProxyBase (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.predictor.entryexitanalyzer.dataqualitypanel",
-      "type": "sub-card",
-      "tab": "predictor",
-      "parent": "tab.predictor.entryexitanalyzer",
-      "name": "DataQualityPanel",
-      "sourceFile": "src/components/analyzer/DataQualityPanel.tsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.predictor.investordecisionguidemodal",
-      "type": "card",
-      "tab": "predictor",
-      "parent": "tab.predictor",
-      "name": "InvestorDecisionGuideModal",
-      "sourceFile": "src/components/InvestorDecisionGuideModal.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter"
-      ]
     },
     {
       "id": "tab.services",
@@ -1475,23 +162,9 @@
       "parent": "app",
       "name": "Service Hub",
       "navState": "activeTab=services",
-      "sourceFile": "src/components/ServicesHub.tsx",
-      "dataDeps": [
-        "useBackHandler (src/context/NavigationContext.jsx)",
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)",
-        "getProxyBase (src/utils/proxyBase.js)",
-        "getHistoricalSubfileDirect (src/utils/localLedgerManager.ts)",
-        "fetchMarketWideBrokerSummaryMap (src/utils/liveData.js)",
-        "fetchAvailableTradingDates (src/utils/liveData.js)",
-        "fetchLiveMarketData (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
+      "sourceFile": "NOT FOUND",
+      "dataDeps": [],
+      "actions": []
     },
     {
       "id": "tab.guru_ai",
@@ -1500,319 +173,9 @@
       "parent": "app",
       "name": "Guru AI",
       "navState": "activeTab=ai",
-      "sourceFile": "src/components/AiAnalyst.jsx",
-      "dataDeps": [
-        "fetchTechnicalAnalysis (src/utils/liveData.js)",
-        "fetchTodayPrice (src/utils/liveData.js)",
-        "fetchCompanyFinancials (src/utils/liveData.js)",
-        "fetchMarketSummary (src/utils/liveData.js)",
-        "fetchAllSecurities (src/utils/liveData.js)",
-        "fetchPriceHistory (src/utils/liveData.js)",
-        "getProxyBase (src/utils/liveData.js)",
-        "calculateGrahamIntrinsicValue (src/utils/quantEngine.js)",
-        "calculateAccumulationDistributionIndex (src/utils/quantEngine.js)",
-        "calculateRiskRewardRatio (src/utils/quantEngine.js)",
-        "calculateMultiHorizonTargets (src/utils/quantEngine.js)",
-        "calculateATR (src/utils/quantEngine.js)",
-        "calculateVolumeZScore (src/utils/quantEngine.js)",
-        "calculateCircuitAndLiquidityMetrics (src/utils/quantEngine.js)",
-        "calculateBrokerAccumulationScore (src/utils/quantEngine.js)",
-        "getHydroSeasonality (src/utils/quantEngine.js)",
-        "fetchBrokerAnalysis (src/utils/servicesApi.js)",
-        "runBacktest (src/utils/backtest.js)",
-        "analyzePriceAction (src/utils/priceActionEngine.js)",
-        "analyzeCandlestickPattern (src/utils/priceActionEngine.js)",
-        "analyzeMarketStructure (src/utils/priceActionEngine.js)",
-        "getPaperState (src/utils/paperTrading.js)",
-        "calculateSandboxSummary (src/utils/paperTrading.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.confidencegauge",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "ConfidenceGauge (inline in AiAnalyst.jsx)",
-      "sourceFile": "src/components/AiAnalyst.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.verdictbadge",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "VerdictBadge (inline in AiAnalyst.jsx)",
-      "sourceFile": "src/components/AiAnalyst.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.threepillarscores",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "ThreePillarScores (inline in AiAnalyst.jsx)",
-      "sourceFile": "src/components/AiAnalyst.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.tradeexecutioncards",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "TradeExecutionCards (inline in AiAnalyst.jsx)",
-      "sourceFile": "src/components/AiAnalyst.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.circuitandliquidityshield",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "CircuitAndLiquidityShield (inline in AiAnalyst.jsx)",
-      "sourceFile": "src/components/AiAnalyst.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.backtesttransparencycard",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "BacktestTransparencyCard (inline in AiAnalyst.jsx)",
-      "sourceFile": "src/components/AiAnalyst.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.gururesponse",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "GuruResponse (inline in AiAnalyst.jsx)",
-      "sourceFile": "src/components/AiAnalyst.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.safegurumarkdown",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "SafeGuruMarkdown (inline in AiAnalyst.jsx)",
-      "sourceFile": "src/components/AiAnalyst.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.chatmessage",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "ChatMessage (inline in AiAnalyst.jsx)",
-      "sourceFile": "src/components/AiAnalyst.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.nepseagentdashboard",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "NepseAgentDashboard",
-      "sourceFile": "src/components/NepseAgentDashboard.jsx",
-      "dataDeps": [
-        "fetchAgentScripDossier (src/services/nepseAgentTools.js)",
-        "runAgentAnalysis (src/services/nepseAgentTools.js)",
-        "getProxyBase (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.nepseagentdashboard.stocksearchselect",
-      "type": "sub-card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai.nepseagentdashboard",
-      "name": "StockSearchSelect",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.stocksearchselect",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "StockSearchSelect",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.stocksearchselect.skeleton",
-      "type": "sub-card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai.stocksearchselect",
-      "name": "Skeleton (inline in ui.tsx)",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.stocksearchselect.tableskeleton",
-      "type": "sub-card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai.stocksearchselect",
-      "name": "TableSkeleton (inline in ui.tsx)",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.stocksearchselect.nodata",
-      "type": "sub-card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai.stocksearchselect",
-      "name": "NoData (inline in ui.tsx)",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.stocksearchselect.loadingshimmerbar",
-      "type": "sub-card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai.stocksearchselect",
-      "name": "LoadingShimmerBar",
-      "sourceFile": "src/components/LoadingShimmerBar.jsx",
+      "sourceFile": "NOT FOUND",
       "dataDeps": [],
       "actions": []
-    },
-    {
-      "id": "tab.guru_ai.progate",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "ProGate",
-      "sourceFile": "src/components/ProGate.jsx",
-      "dataDeps": [
-        "useSubscription (src/context/SubscriptionContext.jsx)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.guru_ai.investordecisionguidemodal",
-      "type": "card",
-      "tab": "guru_ai",
-      "parent": "tab.guru_ai",
-      "name": "InvestorDecisionGuideModal",
-      "sourceFile": "src/components/InvestorDecisionGuideModal.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter"
-      ]
     },
     {
       "id": "tab.stocks",
@@ -1821,686 +184,9 @@
       "parent": "app",
       "name": "Stocks (Stock Detail Modal, 13 tabs)",
       "navState": "activeTab=(modal overlay: selectedStock)",
-      "sourceFile": "src/components/StockDetailModal.jsx",
-      "dataDeps": [
-        "getWatchlistAlertConfig (src/utils/watchlistAlerts.js)",
-        "calculateStockRvol (src/utils/watchlistAlerts.js)",
-        "calculatePivotPoints (src/utils/indicators.js)",
-        "calculateFibonacci (src/utils/indicators.js)",
-        "calculateRSI (src/utils/indicators.js)",
-        "calculateMACD (src/utils/indicators.js)",
-        "calculateBollingerBands (src/utils/indicators.js)",
-        "calculateEMA (src/utils/indicators.js)",
-        "calculateSMA (src/utils/indicators.js)",
-        "getPeerStocks (src/utils/calculations.js)",
-        "calculateBuyDetails (src/utils/calculations.js)",
-        "calculateSellDetails (src/utils/calculations.js)",
-        "calculateGrahamIntrinsicValue (src/utils/quantEngine.js)",
-        "calculateInterestAdjustedGrahamValue (src/utils/quantEngine.js)",
-        "calculatePeterLynchMetrics (src/utils/quantEngine.js)",
-        "calculateVolumeZScore (src/utils/quantEngine.js)",
-        "calculateCompositeTechnicalScore (src/utils/quantEngine.js)",
-        "calculateATR (src/utils/quantEngine.js)",
-        "calculateRiskRewardRatio (src/utils/quantEngine.js)",
-        "calculateMultiHorizonTargets (src/utils/quantEngine.js)",
-        "fetchStockFundamentals (src/utils/liveData.js)",
-        "fetchAvailableTradingDates (src/utils/liveData.js)",
-        "fetchRealPriceHistory (src/utils/liveData.js)",
-        "fetchRealFloorsheet (src/utils/liveData.js)",
-        "fetchRealBrokerAnalysis (src/utils/liveData.js)",
-        "fetchMarketDepth (src/utils/liveData.js)",
-        "fetchDividendHistory (src/utils/liveData.js)",
-        "fetchCompareStocks (src/utils/liveData.js)",
-        "fetchLiveStockQuote (src/utils/liveData.js)",
-        "getLatestTradingDateStr (src/utils/liveData.js)",
-        "getCachedRealPriceHistory (src/utils/liveData.js)",
-        "getCachedRealBrokerAnalysis (src/utils/liveData.js)",
-        "getCachedRealFloorsheet (src/utils/liveData.js)",
-        "getCachedStockFundamentals (src/utils/liveData.js)",
-        "getProxyBase (src/utils/liveData.js)",
-        "fetchStockSnapshot (src/services/stockSnapshot.js)",
-        "getSnapshotCache (src/services/stockSnapshot.js)",
-        "fetchNepseIntradayGraph (src/utils/servicesApi.js)",
-        "fetchCompanyQuarterlyReports (src/utils/servicesApi.js)",
-        "fetchMarketNews (src/utils/servicesApi.js)",
-        "getCorporateAlertForSymbol (src/services/merolaganiNewsService.js)",
-        "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
-        "analyzeStockWithAi (src/services/aiService.js)",
-        "useBackHandler (src/context/NavigationContext.jsx)",
-        "useNavigation (src/context/NavigationContext.jsx)",
-        "getSectorBenchmark (src/utils/fundamentals.js)",
-        "buildBookClosureAlert (src/utils/bookClosureTracker.js)",
-        "getScripEarningsContext (src/utils/earningsCalendar.js)",
-        "calculateMultiSessionBrokerFootprint (src/utils/accumulationDistributionEngine.ts)",
-        "calculateBrokerConcentration (src/utils/accumulationDistributionEngine.ts)",
-        "getBrokerName (src/utils/accumulationDistributionEngine.ts)",
-        "calculateMultiDayDiagnostics (src/utils/microstructureEngine.js)",
-        "buildDailyHistoryFromStockData (src/utils/microstructureEngine.js)",
-        "calculateStockSignals (src/utils/stockSignals.js)",
-        "calculateStockMetrics (src/utils/stockMetrics.js)",
-        "getCumulativeBrokerData (src/utils/historyCache.js)",
-        "runAiQuantitativeAssessment (src/services/aiGuru/runAiQuantitativeAssessment.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stocks.stockentryexitcard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "StockEntryExitCard (inline in StockDetailModal.jsx)",
-      "sourceFile": "src/components/StockDetailModal.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stocks.beginnerconfidencecard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "BeginnerConfidenceCard (inline in StockDetailModal.jsx)",
-      "sourceFile": "src/components/StockDetailModal.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stocks.loadingshimmerbar",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "LoadingShimmerBar",
-      "sourceFile": "src/components/LoadingShimmerBar.jsx",
+      "sourceFile": "NOT FOUND",
       "dataDeps": [],
       "actions": []
-    },
-    {
-      "id": "tab.stocks.errorboundary",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "ErrorBoundary",
-      "sourceFile": "src/components/ErrorBoundary.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.stocks.sharehubchart",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "ShareHubChart",
-      "sourceFile": "src/components/ShareHubChart.jsx",
-      "dataDeps": [
-        "fetchRealPriceHistory (src/utils/liveData.js)",
-        "fetchNepseIntradayGraph (src/utils/servicesApi.js)",
-        "calculateEMA (src/utils/indicators.js)",
-        "calculatePivotPoints (src/utils/indicators.js)",
-        "calculateFibonacci (src/utils/indicators.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.stocks.brokersmartmoneycard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "BrokerSmartMoneyCard",
-      "sourceFile": "src/components/stock/BrokerSmartMoneyCard.tsx",
-      "dataDeps": [
-        "getProxyBase (src/utils/liveData.js)",
-        "getBrokerName (src/utils/accumulationDistributionEngine.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.stocks.brokersmartmoneycard.brokersmartmoneycardinner",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.brokersmartmoneycard",
-      "name": "BrokerSmartMoneyCardInner (inline in BrokerSmartMoneyCard.tsx)",
-      "sourceFile": "src/components/stock/BrokerSmartMoneyCard.tsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.stocks.stocksignalscard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "StockSignalsCard",
-      "sourceFile": "src/components/StockSignalsCard.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.stocks.stocktechnicalgaugecard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "StockTechnicalGaugeCard",
-      "sourceFile": "src/components/StockTechnicalGaugeCard.jsx",
-      "dataDeps": [
-        "calculateTechnicalSpeedometer (src/utils/candlestickPatterns.js)"
-      ],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.stocks.bookclosurealert",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "BookClosureAlert",
-      "sourceFile": "src/components/BookClosureAlert.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.stocks.signaltrackrecord",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "SignalTrackRecord",
-      "sourceFile": "src/components/analyzer/SignalTrackRecord.jsx",
-      "dataDeps": [
-        "getSignals (src/services/signalTracker.js)",
-        "getSignalStats (src/services/signalTracker.js)",
-        "getProxyBase (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.stocks.signaltrackrecord.globalsignaltrackermodal",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.signaltrackrecord",
-      "name": "GlobalSignalTrackerModal",
-      "sourceFile": "src/components/analyzer/GlobalSignalTrackerModal.jsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.stocks.stockyananalyticscard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "StockYanAnalyticsCard",
-      "sourceFile": "src/components/StockYanAnalyticsCard.jsx",
-      "dataDeps": [
-        "getBrokerName (src/utils/accumulationDistributionEngine.ts)"
-      ],
-      "actions": []
-    },
-    {
-      "id": "tab.stocks.fundamentalvaluationcard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "FundamentalValuationCard",
-      "sourceFile": "src/components/analyzer/FundamentalValuationCard.jsx",
-      "dataDeps": [
-        "calculateFundamentalSummary (src/utils/fundamentals.js)",
-        "computeSectorComparison (src/utils/fundamentals.js)",
-        "getSectorBenchmark (src/utils/fundamentals.js)"
-      ],
-      "actions": []
-    },
-    {
-      "id": "tab.stocks.fundamentalvaluationcard.row",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.fundamentalvaluationcard",
-      "name": "Row (inline in FundamentalValuationCard.jsx)",
-      "sourceFile": "src/components/analyzer/FundamentalValuationCard.jsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.stocks.sessiondatedropdown",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "SessionDateDropdown",
-      "sourceFile": "src/components/SessionDateDropdown.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stocks.stockinformationhubmodal",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "StockInformationHubModal",
-      "sourceFile": "src/components/StockInformationHubModal.tsx",
-      "dataDeps": [
-        "buildUnifiedStockTabTelemetry (src/services/floorsheet/floorsheetHubEngine.ts)",
-        "fetchFromBackend (src/utils/liveData.js)",
-        "fetchRealBrokerAnalysis (src/utils/liveData.js)",
-        "fetchRealFloorsheet (src/utils/liveData.js)",
-        "subscribeToFloorsheetStream (src/utils/liveData.js)",
-        "getProxyBase (src/utils/proxyBase.js)",
-        "getBrokerName (src/utils/accumulationDistributionEngine.ts)",
-        "calculateMACD (src/utils/indicators.js)",
-        "useHistoricalSubfile (src/utils/localLedgerManager.ts)",
-        "useScrip4DayTrajectory (src/utils/localLedgerManager.ts)",
-        "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
-        "getLastValidTradingDay (src/utils/nepseCalendar.js)",
-        "getNepaliDate (src/utils/bikramSambat.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stocks.stockinformationhubmodal.stockfundamentalsandlockintab",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.stockinformationhubmodal",
-      "name": "StockFundamentalsAndLockInTab",
-      "sourceFile": "src/components/StockFundamentalsAndLockInTab.tsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.stocks.stockinformationhubmodal.dividendhistorypanel",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.stockinformationhubmodal",
-      "name": "DividendHistoryPanel",
-      "sourceFile": "src/components/DividendHistoryPanel.tsx",
-      "dataDeps": [
-        "fetchRealDividendHistory (src/utils/dividendHistory.js)"
-      ],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.stocks.stockinformationhubmodal.stockreportsannouncementscard",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.stockinformationhubmodal",
-      "name": "StockReportsAnnouncementsCard",
-      "sourceFile": "src/components/StockReportsAnnouncementsCard.jsx",
-      "dataDeps": [
-        "fetchMarketNews (src/utils/servicesApi.js)",
-        "getProxyBase (src/utils/proxyBase.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.stocks.stockinformationhubmodal.aiguruquantitativecard",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.stockinformationhubmodal",
-      "name": "AiGuruQuantitativeCard",
-      "sourceFile": "src/components/AiGuruQuantitativeCard.tsx",
-      "dataDeps": [
-        "runAiQuantitativeAssessment (src/services/aiGuru/runAiQuantitativeAssessment.ts)"
-      ],
-      "actions": []
-    },
-    {
-      "id": "tab.stocks.stockbrokeranalysistab",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "StockBrokerAnalysisTab",
-      "sourceFile": "src/components/StockBrokerAnalysisTab.jsx",
-      "dataDeps": [
-        "getBrokerName (src/utils/accumulationDistributionEngine.ts)",
-        "fetchRealBrokerAnalysis (src/utils/liveData.js)",
-        "fetchFromBackend (src/utils/liveData.js)",
-        "fetchAvailableTradingDates (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input",
-        "sort"
-      ]
-    },
-    {
-      "id": "tab.stocks.stockbrokeranalysistab.stockbrokeranalysistabinner",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.stockbrokeranalysistab",
-      "name": "StockBrokerAnalysisTabInner (inline in StockBrokerAnalysisTab.jsx)",
-      "sourceFile": "src/components/StockBrokerAnalysisTab.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input",
-        "sort"
-      ]
-    },
-    {
-      "id": "tab.stocks.stockbrokeranalysistab.loadingshimmerbar",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.stockbrokeranalysistab",
-      "name": "LoadingShimmerBar",
-      "sourceFile": "src/components/LoadingShimmerBar.jsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.stocks.stockbrokeranalysistab.sessiondatedropdown",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.stockbrokeranalysistab",
-      "name": "SessionDateDropdown",
-      "sourceFile": "src/components/SessionDateDropdown.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stocks.brokerfootprintcard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "BrokerFootprintCard",
-      "sourceFile": "src/components/analyzer/BrokerFootprintCard.jsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.stocks.stockfundamentalstab",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "StockFundamentalsTab",
-      "sourceFile": "src/components/StockFundamentalsTab.jsx",
-      "dataDeps": [
-        "getSectorBenchmark (src/utils/fundamentals.js)",
-        "fetchCompanyQuarterlyReports (src/utils/servicesApi.js)",
-        "fetchCompanyIndustryComparison (src/utils/servicesApi.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stocks.stockrightsharecard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "StockRightShareCard",
-      "sourceFile": "src/components/StockRightShareCard.jsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.stocks.dividendhistorypanel",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "DividendHistoryPanel",
-      "sourceFile": "src/components/DividendHistoryPanel.tsx",
-      "dataDeps": [
-        "fetchRealDividendHistory (src/utils/dividendHistory.js)"
-      ],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.stocks.dividendhistorypanel.badge",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.dividendhistorypanel",
-      "name": "Badge (inline in DividendHistoryPanel.tsx)",
-      "sourceFile": "src/components/DividendHistoryPanel.tsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.stocks.dividendhistorypanel.summarycard",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.dividendhistorypanel",
-      "name": "SummaryCard (inline in DividendHistoryPanel.tsx)",
-      "sourceFile": "src/components/DividendHistoryPanel.tsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.stocks.dividendhistorypanel.infobanner",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.dividendhistorypanel",
-      "name": "InfoBanner",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stocks.dividendhistorypanel.stocksearchselect",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.dividendhistorypanel",
-      "name": "StockSearchSelect",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stocks.dividendhistorypanel.spinner",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.dividendhistorypanel",
-      "name": "Spinner",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stocks.dividendhistorypanel.nodata",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.dividendhistorypanel",
-      "name": "NoData",
-      "sourceFile": "src/components/ui.tsx",
-      "dataDeps": [
-        "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stocks.stockseasonalitycard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "StockSeasonalityCard",
-      "sourceFile": "src/components/StockSeasonalityCard.jsx",
-      "dataDeps": [],
-      "actions": []
-    },
-    {
-      "id": "tab.stocks.stockreportsannouncementscard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "StockReportsAnnouncementsCard",
-      "sourceFile": "src/components/StockReportsAnnouncementsCard.jsx",
-      "dataDeps": [
-        "fetchMarketNews (src/utils/servicesApi.js)",
-        "getProxyBase (src/utils/proxyBase.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.stocks.aiguruquantitativecard",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "AiGuruQuantitativeCard",
-      "sourceFile": "src/components/AiGuruQuantitativeCard.tsx",
-      "dataDeps": [
-        "runAiQuantitativeAssessment (src/services/aiGuru/runAiQuantitativeAssessment.ts)"
-      ],
-      "actions": []
-    },
-    {
-      "id": "tab.stocks.advancedchartmodal",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "AdvancedChartModal",
-      "sourceFile": "src/components/AdvancedChartModal.jsx",
-      "dataDeps": [
-        "useBackHandler (src/context/NavigationContext.jsx)"
-      ],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.stocks.advancedchartmodal.sharehubchart",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.advancedchartmodal",
-      "name": "ShareHubChart",
-      "sourceFile": "src/components/ShareHubChart.jsx",
-      "dataDeps": [
-        "fetchRealPriceHistory (src/utils/liveData.js)",
-        "fetchNepseIntradayGraph (src/utils/servicesApi.js)",
-        "calculateEMA (src/utils/indicators.js)",
-        "calculatePivotPoints (src/utils/indicators.js)",
-        "calculateFibonacci (src/utils/indicators.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.stocks.advancedchartmodal.stockcandlestickchart",
-      "type": "sub-card",
-      "tab": "stocks",
-      "parent": "tab.stocks.advancedchartmodal",
-      "name": "StockCandlestickChart",
-      "sourceFile": "src/components/charts/StockCandlestickChart.tsx",
-      "dataDeps": [
-        "calculateEMA (src/utils/indicators.js)",
-        "calculatePivotPoints (src/utils/indicators.js)",
-        "calculateFibonacci (src/utils/indicators.js)",
-        "fetchNepseIntradayGraph (src/utils/servicesApi.js)",
-        "fetchPriceHistory (src/utils/liveData.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.stocks.breakoutalertdialog",
-      "type": "card",
-      "tab": "stocks",
-      "parent": "tab.stocks",
-      "name": "BreakoutAlertDialog",
-      "sourceFile": "src/components/BreakoutAlertDialog.jsx",
-      "dataDeps": [
-        "getWatchlistAlertConfig (src/utils/watchlistAlerts.js)",
-        "calculateStockRvol (src/utils/watchlistAlerts.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "refresh",
-        "input"
-      ]
     },
     {
       "id": "tab.calculator",
@@ -2509,38 +195,9 @@
       "parent": "app",
       "name": "Calculator (header/hidden route)",
       "navState": "activeTab=calculator",
-      "sourceFile": "src/components/Calculator.jsx",
-      "dataDeps": [
-        "calculateBuyDetails (src/utils/calculations.js)",
-        "calculateSellDetails (src/utils/calculations.js)",
-        "calculatePositionSize (src/utils/riskManagement.js)",
-        "calculateStopLossTargets (src/utils/riskManagement.js)",
-        "calculateNetProfit (src/utils/riskManagement.js)",
-        "getUserConfiguredCapital (src/utils/dynamicCapitalEngine.js)"
-      ],
-      "actions": [
-        "tap",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.calculator.capitalrisksimulatorbar",
-      "type": "card",
-      "tab": "calculator",
-      "parent": "tab.calculator",
-      "name": "CapitalRiskSimulatorBar",
-      "sourceFile": "src/components/CapitalRiskSimulatorBar.jsx",
-      "dataDeps": [
-        "getUserConfiguredCapital (src/utils/dynamicCapitalEngine.js)",
-        "getCapitalTierConfig (src/utils/dynamicCapitalEngine.js)",
-        "getNepseBrokerCommissionRate (src/utils/dynamicCapitalEngine.js)"
-      ],
-      "actions": [
-        "tap",
-        "refresh",
-        "input"
-      ]
+      "sourceFile": "NOT FOUND",
+      "dataDeps": [],
+      "actions": []
     },
     {
       "id": "tab.resources",
@@ -2549,14 +206,9 @@
       "parent": "app",
       "name": "Resources (header icon)",
       "navState": "activeTab=resources",
-      "sourceFile": "src/components/Resources.jsx",
+      "sourceFile": "NOT FOUND",
       "dataDeps": [],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "input"
-      ]
+      "actions": []
     },
     {
       "id": "tab.stitch",
@@ -2565,123 +217,9 @@
       "parent": "app",
       "name": "Stitch Hub (header icon)",
       "navState": "activeTab=stitch",
-      "sourceFile": "src/views/StitchHub.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.stitch.livemarketdashboard",
-      "type": "card",
-      "tab": "stitch",
-      "parent": "tab.stitch",
-      "name": "LiveMarketDashboard",
-      "sourceFile": "src/views/LiveMarketDashboard.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter"
-      ]
-    },
-    {
-      "id": "tab.stitch.watchlistscreener",
-      "type": "card",
-      "tab": "stitch",
-      "parent": "tab.stitch",
-      "name": "WatchlistScreener",
-      "sourceFile": "src/views/WatchlistScreener.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap",
-        "filter",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stitch.floorsheettape",
-      "type": "card",
-      "tab": "stitch",
-      "parent": "tab.stitch",
-      "name": "FloorSheetTape",
-      "sourceFile": "src/views/FloorSheetTape.jsx",
-      "dataDeps": [
-        "fetchRealFloorsheet (src/utils/liveData.js)",
-        "fetchAvailableTradingDates (src/utils/liveData.js)",
-        "getBrokerName (src/utils/accumulationDistributionEngine.ts)",
-        "getDetailedMarketStatus (src/utils/nepseCalendar.js)"
-      ],
-      "actions": [
-        "tap",
-        "search",
-        "filter",
-        "refresh",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stitch.floorsheettape.loadingshimmerbar",
-      "type": "sub-card",
-      "tab": "stitch",
-      "parent": "tab.stitch.floorsheettape",
-      "name": "LoadingShimmerBar",
-      "sourceFile": "src/components/LoadingShimmerBar.jsx",
+      "sourceFile": "NOT FOUND",
       "dataDeps": [],
       "actions": []
-    },
-    {
-      "id": "tab.stitch.stockdetails",
-      "type": "card",
-      "tab": "stitch",
-      "parent": "tab.stitch",
-      "name": "StockDetails",
-      "sourceFile": "src/views/StockDetails.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.stitch.portfolioanalytics",
-      "type": "card",
-      "tab": "stitch",
-      "parent": "tab.stitch",
-      "name": "PortfolioAnalytics",
-      "sourceFile": "src/views/PortfolioAnalytics.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
-    },
-    {
-      "id": "tab.stitch.wacctaxcalculator",
-      "type": "card",
-      "tab": "stitch",
-      "parent": "tab.stitch",
-      "name": "WaccTaxCalculator",
-      "sourceFile": "src/views/WaccTaxCalculator.jsx",
-      "dataDeps": [
-        "calculateBuyDetails (src/utils/calculations.js)",
-        "calculateBrokerCommission (src/utils/calculations.js)",
-        "calculateSebonFee (src/utils/calculations.js)"
-      ],
-      "actions": [
-        "tap",
-        "filter",
-        "input"
-      ]
-    },
-    {
-      "id": "tab.stitch.orderexecution",
-      "type": "card",
-      "tab": "stitch",
-      "parent": "tab.stitch",
-      "name": "OrderExecution",
-      "sourceFile": "src/views/OrderExecution.jsx",
-      "dataDeps": [],
-      "actions": [
-        "tap"
-      ]
     },
     {
       "id": "tab.predictor.subtab_nepse_agent",
@@ -3296,6 +834,27 @@
         "fetchAvailableTradingDates (src/utils/liveData.js)",
         "fetchLiveMarketData (src/utils/liveData.js)"
       ],
+      "actions": [
+        "tap",
+        "search",
+        "filter",
+        "refresh",
+        "input"
+      ]
+    },
+    {
+      "id": "tab.services.svc_swing_trade_selector",
+      "type": "service",
+      "tab": "services",
+      "parent": "tab.services.cat_flagship",
+      "serviceId": "swing-trade-selector",
+      "name": "🎯 Short-Term Swing Selector & Edge Validator",
+      "category": "flagship",
+      "flagship": true,
+      "component": "SwingTradeSelectorView",
+      "sourceFile": "src/components/swing/SwingTradeSelectorView.tsx",
+      "mappingExpr": "(({ stocks, onSelectStock }: { stocks?: any[]; onSelectStock?: (s: any) => void }) => ( <SwingTradeSelectorView stocks={stocks || []} onSelectStock={onSelectSto",
+      "dataDeps": [],
       "actions": [
         "tap",
         "search",
@@ -4081,8 +1640,11 @@
         "getCorporateAlertForSymbol (src/services/merolaganiNewsService.js)",
         "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
         "analyzeStockWithAi (src/services/aiService.js)",
+        "runOneDayPriceSelfCheck (src/utils/systemMonitoring.js)",
         "useBackHandler (src/context/NavigationContext.jsx)",
         "useNavigation (src/context/NavigationContext.jsx)",
+        "NEPSE_RULES (src/utils/nepseRules.js)",
+        "getCircuitLimits (src/utils/nepseRules.js)",
         "getSectorBenchmark (src/utils/fundamentals.js)",
         "buildBookClosureAlert (src/utils/bookClosureTracker.js)",
         "getScripEarningsContext (src/utils/earningsCalendar.js)",
@@ -4534,8 +2096,10 @@
       ],
       "actions": [
         "tap",
+        "search",
         "filter",
-        "refresh"
+        "refresh",
+        "input"
       ]
     },
     {
@@ -4556,11 +2120,11 @@
       ]
     },
     {
-      "id": "tab.services.svc_backtest_report.spinner",
+      "id": "tab.services.svc_backtest_report.infobanner",
       "type": "sub-card",
       "tab": "services",
       "parent": "tab.services.svc_backtest_report",
-      "name": "Spinner",
+      "name": "InfoBanner",
       "sourceFile": "src/components/ui.tsx",
       "dataDeps": [
         "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
@@ -4573,11 +2137,11 @@
       ]
     },
     {
-      "id": "tab.services.svc_backtest_report.infobanner",
+      "id": "tab.services.svc_backtest_report.spinner",
       "type": "sub-card",
       "tab": "services",
       "parent": "tab.services.svc_backtest_report",
-      "name": "InfoBanner",
+      "name": "Spinner",
       "sourceFile": "src/components/ui.tsx",
       "dataDeps": [
         "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
@@ -4886,7 +2450,9 @@
       "dataDeps": [
         "fetchAgentScripDossier (src/services/nepseAgentTools.js)",
         "runAgentAnalysis (src/services/nepseAgentTools.js)",
-        "getProxyBase (src/utils/liveData.js)"
+        "getProxyBase (src/utils/liveData.js)",
+        "getCircuitLimits (src/utils/nepseRules.js)",
+        "NEPSE_RULES (src/utils/nepseRules.js)"
       ],
       "actions": [
         "tap",
@@ -4934,6 +2500,26 @@
         "refresh",
         "input",
         "sort"
+      ]
+    },
+    {
+      "id": "tab.services.svc_alpha_playbook",
+      "type": "service",
+      "tab": "services",
+      "parent": "tab.services.cat_flagship",
+      "serviceId": "alpha-playbook",
+      "name": "⚡ Alpha Playbook: 5-Step Edge Execution Plan",
+      "category": "flagship",
+      "flagship": true,
+      "component": "AlphaPlaybookService",
+      "sourceFile": "src/components/AlphaPlaybookService.tsx",
+      "mappingExpr": "AlphaPlaybookService,",
+      "dataDeps": [],
+      "actions": [
+        "tap",
+        "filter",
+        "refresh",
+        "input"
       ]
     },
     {
@@ -5119,8 +2705,11 @@
         "getCorporateAlertForSymbol (src/services/merolaganiNewsService.js)",
         "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
         "analyzeStockWithAi (src/services/aiService.js)",
+        "runOneDayPriceSelfCheck (src/utils/systemMonitoring.js)",
         "useBackHandler (src/context/NavigationContext.jsx)",
         "useNavigation (src/context/NavigationContext.jsx)",
+        "NEPSE_RULES (src/utils/nepseRules.js)",
+        "getCircuitLimits (src/utils/nepseRules.js)",
         "getSectorBenchmark (src/utils/fundamentals.js)",
         "buildBookClosureAlert (src/utils/bookClosureTracker.js)",
         "getScripEarningsContext (src/utils/earningsCalendar.js)",
@@ -5738,6 +3327,169 @@
       "sourceFile": "src/components/ui.tsx",
       "dataDeps": [
         "NEPSE_UNIVERSE (src/data/nepseUniverse.ts)"
+      ],
+      "actions": [
+        "tap",
+        "filter",
+        "refresh",
+        "input"
+      ]
+    },
+    {
+      "id": "tab.services.svc_distribution_leaders",
+      "type": "service",
+      "tab": "services",
+      "parent": "tab.services.cat_smart_money",
+      "serviceId": "distribution-leaders",
+      "name": "🚨 Distribution Leaders & Smart Money Exit Radar",
+      "category": "smart-money",
+      "flagship": true,
+      "component": "AccumulationDistributionRadar",
+      "sourceFile": "src/components/AccumulationDistributionRadar.tsx",
+      "mappingExpr": "(props: any) => <AccumulationDistributionRadar {...props} initialStage=\"DISTRIBUTION\" />,",
+      "dataDeps": [
+        "loadNepseData (src/utils/liveData.js)",
+        "fetchFloorSheet (src/utils/liveData.js)",
+        "fetchRealFloorsheet (src/utils/liveData.js)",
+        "fetchRealBrokerAnalysis (src/utils/liveData.js)",
+        "getCachedRealPriceHistory (src/utils/liveData.js)",
+        "getCachedRealBrokerAnalysis (src/utils/liveData.js)",
+        "fetchPriceHistory (src/utils/liveData.js)",
+        "fetchMarketWideBrokerSummaryMap (src/utils/liveData.js)",
+        "fetchPrecomputedRadar (src/utils/liveData.js)",
+        "fetchPrecomputedDiagnostic (src/utils/liveData.js)",
+        "fetchAvailableTradingDates (src/utils/liveData.js)",
+        "getCachedStocks (src/utils/liveData.js)",
+        "calculateChaikinADL (src/utils/accumulationDistributionEngine.ts)",
+        "calculateCMF (src/utils/accumulationDistributionEngine.ts)",
+        "calculateOBV (src/utils/accumulationDistributionEngine.ts)",
+        "calculateBrokerConcentration (src/utils/accumulationDistributionEngine.ts)",
+        "calculateStealthAccumulationScore (src/utils/accumulationDistributionEngine.ts)",
+        "calculatePumpDumpRiskScore (src/utils/accumulationDistributionEngine.ts)",
+        "calculateSectorAccumulationChampions (src/utils/accumulationDistributionEngine.ts)",
+        "calculateStockCorneringScore (src/utils/accumulationDistributionEngine.ts)",
+        "getStoredWhaleArchive (src/services/whaleDailyArchive.js)",
+        "calculateArchivePerformance (src/services/whaleDailyArchive.js)",
+        "calculateMultiDayDiagnostics (src/utils/microstructureEngine.js)",
+        "buildDailyHistoryFromStockData (src/utils/microstructureEngine.js)"
+      ],
+      "actions": [
+        "tap",
+        "search",
+        "filter",
+        "refresh",
+        "input",
+        "sort"
+      ]
+    },
+    {
+      "id": "tab.services.svc_distribution_leaders.brokersmartflowtracker",
+      "type": "sub-card",
+      "tab": "services",
+      "parent": "tab.services.svc_distribution_leaders",
+      "name": "BrokerSmartFlowTracker",
+      "sourceFile": "src/components/BrokerSmartFlowTracker.tsx",
+      "dataDeps": [
+        "fetchBrokerTracker (src/utils/liveData.js)",
+        "fetchEarlyIgnition (src/utils/liveData.js)",
+        "fetchPrecomputedDiagnostic (src/utils/liveData.js)"
+      ],
+      "actions": [
+        "tap",
+        "search",
+        "filter",
+        "refresh",
+        "input",
+        "sort"
+      ]
+    },
+    {
+      "id": "tab.services.svc_distribution_leaders.portfoliobrokershield",
+      "type": "sub-card",
+      "tab": "services",
+      "parent": "tab.services.svc_distribution_leaders",
+      "name": "PortfolioBrokerShield",
+      "sourceFile": "src/components/PortfolioBrokerShield.tsx",
+      "dataDeps": [
+        "NEPSE_UNIVERSE (src/data/nepseUniverse.js)",
+        "fetchPortfolioShield (src/utils/liveData.js)",
+        "fetchPrecomputedDiagnostic (src/utils/liveData.js)"
+      ],
+      "actions": [
+        "tap",
+        "filter",
+        "refresh",
+        "input"
+      ]
+    },
+    {
+      "id": "tab.services.svc_distribution_leaders.stockdetailmodal",
+      "type": "sub-card",
+      "tab": "services",
+      "parent": "tab.services.svc_distribution_leaders",
+      "name": "StockDetailModal",
+      "sourceFile": "src/components/StockDetailModal.jsx",
+      "dataDeps": [
+        "getWatchlistAlertConfig (src/utils/watchlistAlerts.js)",
+        "calculateStockRvol (src/utils/watchlistAlerts.js)",
+        "calculatePivotPoints (src/utils/indicators.js)",
+        "calculateFibonacci (src/utils/indicators.js)",
+        "calculateRSI (src/utils/indicators.js)",
+        "calculateMACD (src/utils/indicators.js)",
+        "calculateBollingerBands (src/utils/indicators.js)",
+        "calculateEMA (src/utils/indicators.js)",
+        "calculateSMA (src/utils/indicators.js)",
+        "getPeerStocks (src/utils/calculations.js)",
+        "calculateBuyDetails (src/utils/calculations.js)",
+        "calculateSellDetails (src/utils/calculations.js)",
+        "calculateGrahamIntrinsicValue (src/utils/quantEngine.js)",
+        "calculateInterestAdjustedGrahamValue (src/utils/quantEngine.js)",
+        "calculatePeterLynchMetrics (src/utils/quantEngine.js)",
+        "calculateVolumeZScore (src/utils/quantEngine.js)",
+        "calculateCompositeTechnicalScore (src/utils/quantEngine.js)",
+        "calculateATR (src/utils/quantEngine.js)",
+        "calculateRiskRewardRatio (src/utils/quantEngine.js)",
+        "calculateMultiHorizonTargets (src/utils/quantEngine.js)",
+        "fetchStockFundamentals (src/utils/liveData.js)",
+        "fetchAvailableTradingDates (src/utils/liveData.js)",
+        "fetchRealPriceHistory (src/utils/liveData.js)",
+        "fetchRealFloorsheet (src/utils/liveData.js)",
+        "fetchRealBrokerAnalysis (src/utils/liveData.js)",
+        "fetchMarketDepth (src/utils/liveData.js)",
+        "fetchDividendHistory (src/utils/liveData.js)",
+        "fetchCompareStocks (src/utils/liveData.js)",
+        "fetchLiveStockQuote (src/utils/liveData.js)",
+        "getLatestTradingDateStr (src/utils/liveData.js)",
+        "getCachedRealPriceHistory (src/utils/liveData.js)",
+        "getCachedRealBrokerAnalysis (src/utils/liveData.js)",
+        "getCachedRealFloorsheet (src/utils/liveData.js)",
+        "getCachedStockFundamentals (src/utils/liveData.js)",
+        "getProxyBase (src/utils/liveData.js)",
+        "fetchStockSnapshot (src/services/stockSnapshot.js)",
+        "getSnapshotCache (src/services/stockSnapshot.js)",
+        "fetchNepseIntradayGraph (src/utils/servicesApi.js)",
+        "fetchCompanyQuarterlyReports (src/utils/servicesApi.js)",
+        "fetchMarketNews (src/utils/servicesApi.js)",
+        "getCorporateAlertForSymbol (src/services/merolaganiNewsService.js)",
+        "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
+        "analyzeStockWithAi (src/services/aiService.js)",
+        "runOneDayPriceSelfCheck (src/utils/systemMonitoring.js)",
+        "useBackHandler (src/context/NavigationContext.jsx)",
+        "useNavigation (src/context/NavigationContext.jsx)",
+        "NEPSE_RULES (src/utils/nepseRules.js)",
+        "getCircuitLimits (src/utils/nepseRules.js)",
+        "getSectorBenchmark (src/utils/fundamentals.js)",
+        "buildBookClosureAlert (src/utils/bookClosureTracker.js)",
+        "getScripEarningsContext (src/utils/earningsCalendar.js)",
+        "calculateMultiSessionBrokerFootprint (src/utils/accumulationDistributionEngine.ts)",
+        "calculateBrokerConcentration (src/utils/accumulationDistributionEngine.ts)",
+        "getBrokerName (src/utils/accumulationDistributionEngine.ts)",
+        "calculateMultiDayDiagnostics (src/utils/microstructureEngine.js)",
+        "buildDailyHistoryFromStockData (src/utils/microstructureEngine.js)",
+        "calculateStockSignals (src/utils/stockSignals.js)",
+        "calculateStockMetrics (src/utils/stockMetrics.js)",
+        "getCumulativeBrokerData (src/utils/historyCache.js)",
+        "runAiQuantitativeAssessment (src/services/aiGuru/runAiQuantitativeAssessment.ts)"
       ],
       "actions": [
         "tap",
@@ -6380,8 +4132,11 @@
         "getCorporateAlertForSymbol (src/services/merolaganiNewsService.js)",
         "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
         "analyzeStockWithAi (src/services/aiService.js)",
+        "runOneDayPriceSelfCheck (src/utils/systemMonitoring.js)",
         "useBackHandler (src/context/NavigationContext.jsx)",
         "useNavigation (src/context/NavigationContext.jsx)",
+        "NEPSE_RULES (src/utils/nepseRules.js)",
+        "getCircuitLimits (src/utils/nepseRules.js)",
         "getSectorBenchmark (src/utils/fundamentals.js)",
         "buildBookClosureAlert (src/utils/bookClosureTracker.js)",
         "getScripEarningsContext (src/utils/earningsCalendar.js)",
@@ -6478,8 +4233,11 @@
         "getCorporateAlertForSymbol (src/services/merolaganiNewsService.js)",
         "getDetailedMarketStatus (src/utils/nepseCalendar.js)",
         "analyzeStockWithAi (src/services/aiService.js)",
+        "runOneDayPriceSelfCheck (src/utils/systemMonitoring.js)",
         "useBackHandler (src/context/NavigationContext.jsx)",
         "useNavigation (src/context/NavigationContext.jsx)",
+        "NEPSE_RULES (src/utils/nepseRules.js)",
+        "getCircuitLimits (src/utils/nepseRules.js)",
         "getSectorBenchmark (src/utils/fundamentals.js)",
         "buildBookClosureAlert (src/utils/bookClosureTracker.js)",
         "getScripEarningsContext (src/utils/earningsCalendar.js)",

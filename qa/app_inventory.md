@@ -1,6 +1,6 @@
 # App Inventory (Phase 1 — coverage checklist)
 
-Generated: 2026-11-08T08:12:11.025Z
+Generated: 2026-11-14T06:21:30.443Z
 
 **Navigation model:** STATE-BASED. No react-router. App.jsx reads activeTab from NavigationContext (useNavigation). Tab panes are kept mounted and toggled with display:none; StockDetailModal is an overlay driven by selectedStock; Service Hub detail is driven by local selectedService state.
 
@@ -10,23 +10,23 @@ Generated: 2026-11-08T08:12:11.025Z
 
 | Tab | tab | sub-tabs | cards | sub-cards | services | total |
 |---|---|---|---|---|---|---|
-| market | 1 | 8 | 13 | 29 | 0 | 51 |
-| portfolio_ipo | 1 | 4 | 3 | 2 | 0 | 10 |
-| predictor | 1 | 13 | 8 | 22 | 0 | 44 |
-| services | 1 | 0 | 9 | 524 | 125 | 659 |
-| guru_ai | 1 | 5 | 13 | 5 | 0 | 24 |
-| stocks | 1 | 13 | 24 | 24 | 0 | 62 |
-| calculator | 1 | 0 | 1 | 0 | 0 | 2 |
+| market | 1 | 8 | 0 | 0 | 0 | 9 |
+| portfolio_ipo | 1 | 4 | 0 | 0 | 0 | 5 |
+| predictor | 1 | 13 | 0 | 0 | 0 | 14 |
+| services | 1 | 0 | 9 | 527 | 128 | 665 |
+| guru_ai | 1 | 5 | 0 | 0 | 0 | 6 |
+| stocks | 1 | 13 | 0 | 6 | 0 | 20 |
+| calculator | 1 | 0 | 0 | 0 | 0 | 1 |
 | resources | 1 | 0 | 0 | 0 | 0 | 1 |
-| stitch | 1 | 0 | 7 | 1 | 0 | 9 |
-| **ALL** | | | | | | **862** |
+| stitch | 1 | 0 | 0 | 0 | 0 | 1 |
+| **ALL** | | | | | | **722** |
 
-## Service Hub: 125 services
+## Service Hub: 128 services
 
 | Category | Count |
 |---|---|
-| flagship | 20 |
-| smart-money | 10 |
+| flagship | 22 |
+| smart-money | 11 |
 | trading | 36 |
 | valuation | 16 |
 | regulatory | 6 |
@@ -34,55 +34,13 @@ Generated: 2026-11-08T08:12:11.025Z
 | calculators | 10 |
 | desk | 6 |
 
-Registry issues: services with NO component mapping: **0** ; duplicate IDs: **0** ; component keys not in ALL_SERVICES (unreachable): **39** price-history, advanced-chart, candlestick-pattern, consolidating, support-resistance-scanner, lockin-tracker, price-volume, zero-sum-floorsheet, floorsheet-hub, whale-scanner, stealth-accumulation, live-nepse, market-indices, sector-rotation, sector-wise-ad, top-volume, top-turnover, top-traded, sip-in-stocks, smart-portfolio, target-alert, ipo-results, ipo-fpo-alert, prime-breakout-pick, alpha-playbook, nepse-playbook, nepse-news, comparable-stock, stock-screener, smart-money, trade-notes, preferences, system-health, daily-whale-tracker, aggressive-accumulators, distribution-leaders, aggressive-holdings, matching-buy-sell, slow-accumulation
+Registry issues: services with NO component mapping: **0** ; duplicate IDs: **0** ; component keys not in ALL_SERVICES (unreachable): **37** price-history, advanced-chart, candlestick-pattern, consolidating, support-resistance-scanner, lockin-tracker, price-volume, zero-sum-floorsheet, floorsheet-hub, whale-scanner, stealth-accumulation, live-nepse, market-indices, sector-rotation, sector-wise-ad, top-volume, top-turnover, top-traded, sip-in-stocks, smart-portfolio, target-alert, ipo-results, ipo-fpo-alert, prime-breakout-pick, nepse-playbook, nepse-news, comparable-stock, stock-screener, smart-money, trade-notes, preferences, system-health, daily-whale-tracker, aggressive-accumulators, aggressive-holdings, matching-buy-sell, slow-accumulation
 
 ## market
 
 | ID | Type | Parent | Name | Source | Data/API deps | Actions |
 |---|---|---|---|---|---|---|
-| `tab.market` | tab | app | Market (Dashboard) | src/components/Dashboard.jsx | useSubscription (src/context/SubscriptionContext.jsx); getPeerStocks (src/utils/calculations.js); getMarketNews (src/utils/calculations.js); calculatePivotPoints (src/utils/indicators.js) | tap, search, filter, refresh, input |
-| `tab.market.sparkline` | card | tab.market | Sparkline (inline in Dashboard.jsx) | src/components/Dashboard.jsx | — | tap, search, filter, refresh, input |
-| `tab.market.changesummarymodal` | card | tab.market | ChangeSummaryModal (inline in Dashboard.jsx) | src/components/Dashboard.jsx | — | tap, search, filter, refresh, input |
-| `tab.market.scannermodal` | card | tab.market | ScannerModal (inline in Dashboard.jsx) | src/components/Dashboard.jsx | — | tap, search, filter, refresh, input |
-| `tab.market.subindicesmodal` | card | tab.market | SubIndicesModal (inline in Dashboard.jsx) | src/components/Dashboard.jsx | — | tap, search, filter, refresh, input |
-| `tab.market.dataqualitybanner` | card | tab.market | DataQualityBanner | src/components/DataQualityBanner.jsx | — | tap, refresh |
-| `tab.market.dataqualitybanner.simulateddatabanner` | sub-card | tab.market.dataqualitybanner | SimulatedDataBanner (inline in DataQualityBanner.jsx) | src/components/DataQualityBanner.jsx | — | tap, refresh |
-| `tab.market.dataqualitybanner.riskdisclaimer` | sub-card | tab.market.dataqualitybanner | RiskDisclaimer (inline in DataQualityBanner.jsx) | src/components/DataQualityBanner.jsx | — | tap, refresh |
-| `tab.market.dataqualitybanner.dataqualitybanner` | sub-card | tab.market.dataqualitybanner | DataQualityBanner (inline in DataQualityBanner.jsx) | src/components/DataQualityBanner.jsx | — | tap, refresh |
-| `tab.market.nrbmacrowidget` | card | tab.market | NRBMacroWidget | src/components/NRBMacroWidget.jsx | getProxyBase (src/utils/liveData.js) | tap, refresh |
-| `tab.market.loadingshimmerbar` | card | tab.market | LoadingShimmerBar | src/components/LoadingShimmerBar.jsx | — | — |
-| `tab.market.sharehubchart` | card | tab.market | ShareHubChart | src/components/ShareHubChart.jsx | fetchRealPriceHistory (src/utils/liveData.js); fetchNepseIntradayGraph (src/utils/servicesApi.js); calculateEMA (src/utils/indicators.js); calculatePivotPoints (src/utils/indicators.js) | tap, filter |
-| `tab.market.progate` | card | tab.market | ProGate | src/components/ProGate.jsx | useSubscription (src/context/SubscriptionContext.jsx) | tap, filter |
-| `tab.market.stockdetailmodal` | card | tab.market | StockDetailModal | src/components/StockDetailModal.jsx | getWatchlistAlertConfig (src/utils/watchlistAlerts.js); calculateStockRvol (src/utils/watchlistAlerts.js); calculatePivotPoints (src/utils/indicators.js); calculateFibonacci (src/utils/indicators.js) | tap, filter, refresh, input |
-| `tab.market.stockdetailmodal.stockentryexitcard` | sub-card | tab.market.stockdetailmodal | StockEntryExitCard (inline in StockDetailModal.jsx) | src/components/StockDetailModal.jsx | — | tap, filter, refresh, input |
-| `tab.market.stockdetailmodal.beginnerconfidencecard` | sub-card | tab.market.stockdetailmodal | BeginnerConfidenceCard (inline in StockDetailModal.jsx) | src/components/StockDetailModal.jsx | — | tap, filter, refresh, input |
-| `tab.market.stockdetailmodal.loadingshimmerbar` | sub-card | tab.market.stockdetailmodal | LoadingShimmerBar | src/components/LoadingShimmerBar.jsx | — | — |
-| `tab.market.stockdetailmodal.errorboundary` | sub-card | tab.market.stockdetailmodal | ErrorBoundary | src/components/ErrorBoundary.jsx | — | tap |
-| `tab.market.stockdetailmodal.sharehubchart` | sub-card | tab.market.stockdetailmodal | ShareHubChart | src/components/ShareHubChart.jsx | fetchRealPriceHistory (src/utils/liveData.js); fetchNepseIntradayGraph (src/utils/servicesApi.js); calculateEMA (src/utils/indicators.js); calculatePivotPoints (src/utils/indicators.js) | tap, filter |
-| `tab.market.stockdetailmodal.brokersmartmoneycard` | sub-card | tab.market.stockdetailmodal | BrokerSmartMoneyCard | src/components/stock/BrokerSmartMoneyCard.tsx | getProxyBase (src/utils/liveData.js); getBrokerName (src/utils/accumulationDistributionEngine.ts) | tap, filter |
-| `tab.market.stockdetailmodal.stocksignalscard` | sub-card | tab.market.stockdetailmodal | StockSignalsCard | src/components/StockSignalsCard.jsx | — | tap, filter |
-| `tab.market.stockdetailmodal.stocktechnicalgaugecard` | sub-card | tab.market.stockdetailmodal | StockTechnicalGaugeCard | src/components/StockTechnicalGaugeCard.jsx | calculateTechnicalSpeedometer (src/utils/candlestickPatterns.js) | tap |
-| `tab.market.stockdetailmodal.bookclosurealert` | sub-card | tab.market.stockdetailmodal | BookClosureAlert | src/components/BookClosureAlert.jsx | — | tap |
-| `tab.market.stockdetailmodal.signaltrackrecord` | sub-card | tab.market.stockdetailmodal | SignalTrackRecord | src/components/analyzer/SignalTrackRecord.jsx | getSignals (src/services/signalTracker.js); getSignalStats (src/services/signalTracker.js); getProxyBase (src/utils/liveData.js) | tap, filter |
-| `tab.market.stockdetailmodal.stockyananalyticscard` | sub-card | tab.market.stockdetailmodal | StockYanAnalyticsCard | src/components/StockYanAnalyticsCard.jsx | getBrokerName (src/utils/accumulationDistributionEngine.ts) | — |
-| `tab.market.stockdetailmodal.fundamentalvaluationcard` | sub-card | tab.market.stockdetailmodal | FundamentalValuationCard | src/components/analyzer/FundamentalValuationCard.jsx | calculateFundamentalSummary (src/utils/fundamentals.js); computeSectorComparison (src/utils/fundamentals.js); getSectorBenchmark (src/utils/fundamentals.js) | — |
-| `tab.market.stockdetailmodal.sessiondatedropdown` | sub-card | tab.market.stockdetailmodal | SessionDateDropdown | src/components/SessionDateDropdown.jsx | — | tap, filter, input |
-| `tab.market.stockdetailmodal.stockinformationhubmodal` | sub-card | tab.market.stockdetailmodal | StockInformationHubModal | src/components/StockInformationHubModal.tsx | buildUnifiedStockTabTelemetry (src/services/floorsheet/floorsheetHubEngine.ts); fetchFromBackend (src/utils/liveData.js); fetchRealBrokerAnalysis (src/utils/liveData.js); fetchRealFloorsheet (src/utils/liveData.js) | tap, search, filter, refresh, input |
-| `tab.market.stockdetailmodal.stockbrokeranalysistab` | sub-card | tab.market.stockdetailmodal | StockBrokerAnalysisTab | src/components/StockBrokerAnalysisTab.jsx | getBrokerName (src/utils/accumulationDistributionEngine.ts); fetchRealBrokerAnalysis (src/utils/liveData.js); fetchFromBackend (src/utils/liveData.js); fetchAvailableTradingDates (src/utils/liveData.js) | tap, search, filter, refresh, input, sort |
-| `tab.market.stockdetailmodal.brokerfootprintcard` | sub-card | tab.market.stockdetailmodal | BrokerFootprintCard | src/components/analyzer/BrokerFootprintCard.jsx | — | — |
-| `tab.market.stockdetailmodal.stockfundamentalstab` | sub-card | tab.market.stockdetailmodal | StockFundamentalsTab | src/components/StockFundamentalsTab.jsx | getSectorBenchmark (src/utils/fundamentals.js); fetchCompanyQuarterlyReports (src/utils/servicesApi.js); fetchCompanyIndustryComparison (src/utils/servicesApi.js) | tap, search, filter, input |
-| `tab.market.stockdetailmodal.stockrightsharecard` | sub-card | tab.market.stockdetailmodal | StockRightShareCard | src/components/StockRightShareCard.jsx | — | — |
-| `tab.market.stockdetailmodal.dividendhistorypanel` | sub-card | tab.market.stockdetailmodal | DividendHistoryPanel | src/components/DividendHistoryPanel.tsx | fetchRealDividendHistory (src/utils/dividendHistory.js) | tap |
-| `tab.market.stockdetailmodal.stockseasonalitycard` | sub-card | tab.market.stockdetailmodal | StockSeasonalityCard | src/components/StockSeasonalityCard.jsx | — | — |
-| `tab.market.stockdetailmodal.stockreportsannouncementscard` | sub-card | tab.market.stockdetailmodal | StockReportsAnnouncementsCard | src/components/StockReportsAnnouncementsCard.jsx | fetchMarketNews (src/utils/servicesApi.js); getProxyBase (src/utils/proxyBase.js) | tap, filter |
-| `tab.market.stockdetailmodal.aiguruquantitativecard` | sub-card | tab.market.stockdetailmodal | AiGuruQuantitativeCard | src/components/AiGuruQuantitativeCard.tsx | runAiQuantitativeAssessment (src/services/aiGuru/runAiQuantitativeAssessment.ts) | — |
-| `tab.market.stockdetailmodal.advancedchartmodal` | sub-card | tab.market.stockdetailmodal | AdvancedChartModal | src/components/AdvancedChartModal.jsx | useBackHandler (src/context/NavigationContext.jsx) | tap |
-| `tab.market.stockdetailmodal.breakoutalertdialog` | sub-card | tab.market.stockdetailmodal | BreakoutAlertDialog | src/components/BreakoutAlertDialog.jsx | getWatchlistAlertConfig (src/utils/watchlistAlerts.js); calculateStockRvol (src/utils/watchlistAlerts.js) | tap, filter, refresh, input |
-| `tab.market.algorithmicsignaltrackrecord` | card | tab.market | AlgorithmicSignalTrackRecord | src/components/AlgorithmicSignalTrackRecord.tsx | getProxyBase (src/utils/liveData.js) | tap, search, filter, refresh, input, sort |
-| `tab.market.advancedchartmodal` | card | tab.market | AdvancedChartModal | src/components/AdvancedChartModal.jsx | useBackHandler (src/context/NavigationContext.jsx) | tap |
-| `tab.market.advancedchartmodal.sharehubchart` | sub-card | tab.market.advancedchartmodal | ShareHubChart | src/components/ShareHubChart.jsx | fetchRealPriceHistory (src/utils/liveData.js); fetchNepseIntradayGraph (src/utils/servicesApi.js); calculateEMA (src/utils/indicators.js); calculatePivotPoints (src/utils/indicators.js) | tap, filter |
-| `tab.market.advancedchartmodal.stockcandlestickchart` | sub-card | tab.market.advancedchartmodal | StockCandlestickChart | src/components/charts/StockCandlestickChart.tsx | calculateEMA (src/utils/indicators.js); calculatePivotPoints (src/utils/indicators.js); calculateFibonacci (src/utils/indicators.js); fetchNepseIntradayGraph (src/utils/servicesApi.js) | tap, filter |
-| `tab.market.breakoutalertdialog` | card | tab.market | BreakoutAlertDialog | src/components/BreakoutAlertDialog.jsx | getWatchlistAlertConfig (src/utils/watchlistAlerts.js); calculateStockRvol (src/utils/watchlistAlerts.js) | tap, filter, refresh, input |
+| `tab.market` | tab | app | Market (Dashboard) | NOT FOUND | — | — |
 | `tab.market.subtab_gainers` | sub-tab | tab.market | Movers panel: Top Gainers | src/components/Dashboard.jsx | — | tap |
 | `tab.market.subtab_losers` | sub-tab | tab.market | Movers panel: Top Losers | src/components/Dashboard.jsx | — | tap |
 | `tab.market.subtab_turnover` | sub-tab | tab.market | Movers panel: Turnover Leaders | src/components/Dashboard.jsx | — | tap |
@@ -96,12 +54,7 @@ Registry issues: services with NO component mapping: **0** ; duplicate IDs: **0*
 
 | ID | Type | Parent | Name | Source | Data/API deps | Actions |
 |---|---|---|---|---|---|---|
-| `tab.portfolio_ipo` | tab | app | Portfolio & IPO | src/components/PortfolioHub.jsx | — | tap, filter |
-| `tab.portfolio_ipo.portfolio` | card | tab.portfolio_ipo | Portfolio | src/components/Portfolio.jsx | calculateBuyDetails (src/utils/calculations.js); calculateSellDetails (src/utils/calculations.js); getCustomWaccMap (src/utils/calculations.js); getProxyBase (src/utils/liveData.js) | tap, search, filter, refresh, input |
-| `tab.portfolio_ipo.portfolio.safemarkdown` | sub-card | tab.portfolio_ipo.portfolio | SafeMarkdown (inline in Portfolio.jsx) | src/components/Portfolio.jsx | — | tap, search, filter, refresh, input |
-| `tab.portfolio_ipo.capitalrisksimulatorview` | card | tab.portfolio_ipo | CapitalRiskSimulatorView | src/components/CapitalRiskSimulatorView.jsx | getUserConfiguredCapital (src/utils/dynamicCapitalEngine.js); getCapitalTierConfig (src/utils/dynamicCapitalEngine.js); getNepseBrokerCommissionRate (src/utils/dynamicCapitalEngine.js); calculateDynamicBrokerFee (src/utils/dynamicCapitalEngine.js) | tap, refresh, input |
-| `tab.portfolio_ipo.capitalrisksimulatorview.capitalrisksimulatorbar` | sub-card | tab.portfolio_ipo.capitalrisksimulatorview | CapitalRiskSimulatorBar | src/components/CapitalRiskSimulatorBar.jsx | getUserConfiguredCapital (src/utils/dynamicCapitalEngine.js); getCapitalTierConfig (src/utils/dynamicCapitalEngine.js); getNepseBrokerCommissionRate (src/utils/dynamicCapitalEngine.js) | tap, refresh, input |
-| `tab.portfolio_ipo.merosharehub` | card | tab.portfolio_ipo | MeroShareHub | src/components/MeroShareHub.jsx | fetchIpoCompanyList (src/services/meroShareService.js); fetchOpenIpos (src/services/meroShareService.js); getProxyBase (src/utils/liveData.js); calculateIpoAllotmentProbability (src/utils/calculations.js) | tap, search, filter, refresh, input |
+| `tab.portfolio_ipo` | tab | app | Portfolio & IPO | NOT FOUND | — | — |
 | `tab.portfolio_ipo.subtab_portfolio` | sub-tab | tab.portfolio_ipo | Portfolio sub-tab: Portfolio | src/components/PortfolioHub.jsx | — | tap |
 | `tab.portfolio_ipo.subtab_bulk_ipo` | sub-tab | tab.portfolio_ipo | Portfolio sub-tab: Bulk IPO | src/components/PortfolioHub.jsx | — | tap |
 | `tab.portfolio_ipo.subtab_accounts` | sub-tab | tab.portfolio_ipo | Portfolio sub-tab: Accounts | src/components/PortfolioHub.jsx | — | tap |
@@ -111,37 +64,7 @@ Registry issues: services with NO component mapping: **0** ; duplicate IDs: **0*
 
 | ID | Type | Parent | Name | Source | Data/API deps | Actions |
 |---|---|---|---|---|---|---|
-| `tab.predictor` | tab | app | Predictor | src/components/PredictorHub.jsx | getProxyBase (src/utils/liveData.js); getCachedRealPriceHistory (src/utils/liveData.js); getCachedRealBrokerAnalysis (src/utils/liveData.js); fetchMarketWideBrokerSummaryMap (src/utils/liveData.js) | tap, search, filter, refresh, input |
-| `tab.predictor.loadingshimmerbar` | card | tab.predictor | LoadingShimmerBar | src/components/LoadingShimmerBar.jsx | — | — |
-| `tab.predictor.nepseagentdashboard` | card | tab.predictor | NepseAgentDashboard | src/components/NepseAgentDashboard.jsx | fetchAgentScripDossier (src/services/nepseAgentTools.js); runAgentAnalysis (src/services/nepseAgentTools.js); getProxyBase (src/utils/liveData.js) | tap, search, refresh, input |
-| `tab.predictor.nepseagentdashboard.stocksearchselect` | sub-card | tab.predictor.nepseagentdashboard | StockSearchSelect | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.predictor.errorboundary` | card | tab.predictor | ErrorBoundary | src/components/ErrorBoundary.jsx | — | tap |
-| `tab.predictor.master100profitworkstation` | card | tab.predictor | Master100ProfitWorkstation | src/components/Master100ProfitWorkstation.tsx | runMasterGuideAudit (src/utils/masterProfitEngine.ts); calculateNetTradeGain (src/utils/masterProfitEngine.ts); getDetailedMarketStatus (src/utils/nepseCalendar.js); getProxyBase (src/utils/liveData.js) | tap, filter, refresh, input |
-| `tab.predictor.master100profitworkstation.alphacommandcenter` | sub-card | tab.predictor.master100profitworkstation | AlphaCommandCenter | src/components/AlphaCommandCenter.tsx | runUnifiedFiveStepAlphaDesk (src/utils/masterAlphaPipeline.js); getStageFailureReason (src/utils/masterAlphaPipeline.js) | tap, search, filter, refresh, input |
-| `tab.predictor.progate` | card | tab.predictor | ProGate | src/components/ProGate.jsx | useSubscription (src/context/SubscriptionContext.jsx) | tap, filter |
-| `tab.predictor.shorttermprofitplan` | card | tab.predictor | ShortTermProfitPlan | src/components/ShortTermProfitPlan.jsx | calculateBuyDetails (src/utils/calculations.js); calculateSellDetails (src/utils/calculations.js); getCumulativeBrokerData (src/utils/historyCache.js); calculateMultiHorizonTargets (src/utils/quantEngine.js) | tap, search, filter, input |
-| `tab.predictor.entryexitanalyzer` | card | tab.predictor | EntryExitAnalyzer | src/components/EntryExitAnalyzer.tsx | fetchPriceHistory (src/utils/liveData.js); fetchAllSecurities (src/utils/liveData.js); fetchDividendHistory (src/utils/liveData.js); fetchTodayPrice (src/utils/liveData.js) | tap, search, filter, refresh |
-| `tab.predictor.entryexitanalyzer.infobanner` | sub-card | tab.predictor.entryexitanalyzer | InfoBanner | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.predictor.entryexitanalyzer.stocksearchselect` | sub-card | tab.predictor.entryexitanalyzer | StockSearchSelect | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.predictor.entryexitanalyzer.skeleton` | sub-card | tab.predictor.entryexitanalyzer | Skeleton | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.predictor.entryexitanalyzer.nodata` | sub-card | tab.predictor.entryexitanalyzer | NoData | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.predictor.entryexitanalyzer.setupscorecard` | sub-card | tab.predictor.entryexitanalyzer | SetupScoreCard | src/components/analyzer/SetupScoreCard.tsx | — | — |
-| `tab.predictor.entryexitanalyzer.smartmoneybrokerflowcard` | sub-card | tab.predictor.entryexitanalyzer | SmartMoneyBrokerFlowCard | src/components/analyzer/SmartMoneyBrokerFlowCard.tsx | — | — |
-| `tab.predictor.entryexitanalyzer.festivalseasonalitycard` | sub-card | tab.predictor.entryexitanalyzer | FestivalSeasonalityCard | src/components/analyzer/FestivalSeasonalityCard.tsx | getAccurateFestivalSeasonality (src/utils/quantEngine.js) | tap |
-| `tab.predictor.entryexitanalyzer.grahamsafetycard` | sub-card | tab.predictor.entryexitanalyzer | GrahamSafetyCard | src/components/analyzer/GrahamSafetyCard.tsx | calculateGrahamIntrinsicValue (src/utils/quantEngine.js); calculateInterestAdjustedGrahamValue (src/utils/quantEngine.js); calculateEarningsYieldAndRiskPremium (src/utils/quantEngine.js); getCachedStockFundamentals (src/utils/historyCache.js) | tap |
-| `tab.predictor.entryexitanalyzer.entryriskcard` | sub-card | tab.predictor.entryexitanalyzer | EntryRiskCard | src/components/analyzer/EntryRiskCard.tsx | calculateNetProfit (src/utils/riskManagement.js) | tap, input |
-| `tab.predictor.entryexitanalyzer.whatnextpanel` | sub-card | tab.predictor.entryexitanalyzer | WhatNextPanel | src/components/analyzer/WhatNextPanel.tsx | — | — |
-| `tab.predictor.entryexitanalyzer.stockcandlestickchart` | sub-card | tab.predictor.entryexitanalyzer | StockCandlestickChart | src/components/charts/StockCandlestickChart.tsx | calculateEMA (src/utils/indicators.js); calculatePivotPoints (src/utils/indicators.js); calculateFibonacci (src/utils/indicators.js); fetchNepseIntradayGraph (src/utils/servicesApi.js) | tap, filter |
-| `tab.predictor.entryexitanalyzer.supportresistancepanel` | sub-card | tab.predictor.entryexitanalyzer | SupportResistancePanel | src/components/analyzer/SupportResistancePanel.tsx | — | — |
-| `tab.predictor.entryexitanalyzer.breakoutpanel` | sub-card | tab.predictor.entryexitanalyzer | BreakoutPanel | src/components/analyzer/BreakoutPanel.tsx | — | — |
-| `tab.predictor.entryexitanalyzer.technicaldashboard` | sub-card | tab.predictor.entryexitanalyzer | TechnicalDashboard | src/components/analyzer/TechnicalDashboard.tsx | — | — |
-| `tab.predictor.entryexitanalyzer.signalagreement` | sub-card | tab.predictor.entryexitanalyzer | SignalAgreement | src/components/analyzer/SignalAgreement.tsx | — | — |
-| `tab.predictor.entryexitanalyzer.evidencepanel` | sub-card | tab.predictor.entryexitanalyzer | EvidencePanel | src/components/analyzer/EvidencePanel.tsx | — | — |
-| `tab.predictor.entryexitanalyzer.historicalanalogpanel` | sub-card | tab.predictor.entryexitanalyzer | HistoricalAnalogPanel | src/components/analyzer/HistoricalAnalogPanel.tsx | — | tap |
-| `tab.predictor.entryexitanalyzer.strategytrackrecord` | sub-card | tab.predictor.entryexitanalyzer | StrategyTrackRecord | src/components/analyzer/StrategyTrackRecord.tsx | — | — |
-| `tab.predictor.entryexitanalyzer.signaltrackrecord` | sub-card | tab.predictor.entryexitanalyzer | SignalTrackRecord | src/components/analyzer/SignalTrackRecord.jsx | getSignals (src/services/signalTracker.js); getSignalStats (src/services/signalTracker.js); getProxyBase (src/utils/liveData.js) | tap, filter |
-| `tab.predictor.entryexitanalyzer.dataqualitypanel` | sub-card | tab.predictor.entryexitanalyzer | DataQualityPanel | src/components/analyzer/DataQualityPanel.tsx | — | tap |
-| `tab.predictor.investordecisionguidemodal` | card | tab.predictor | InvestorDecisionGuideModal | src/components/InvestorDecisionGuideModal.jsx | — | tap, filter |
+| `tab.predictor` | tab | app | Predictor | NOT FOUND | — | — |
 | `tab.predictor.subtab_nepse_agent` | sub-tab | tab.predictor | Predictor sub-tab: 🤖 NEPSE Agent (3.1 Pro) | src/components/PredictorHub.jsx | — | tap |
 | `tab.predictor.subtab_master_100_profit` | sub-tab | tab.predictor | Predictor sub-tab: 👑 100% Master Guide | src/components/PredictorHub.jsx | — | tap |
 | `tab.predictor.subtab_nepse` | sub-tab | tab.predictor | Predictor sub-tab: Index Predictor | src/components/PredictorHub.jsx | — | tap |
@@ -160,8 +83,9 @@ Registry issues: services with NO component mapping: **0** ; duplicate IDs: **0*
 
 | ID | Type | Parent | Name | Source | Data/API deps | Actions |
 |---|---|---|---|---|---|---|
-| `tab.services` | tab | app | Service Hub | src/components/ServicesHub.tsx | useBackHandler (src/context/NavigationContext.jsx); NEPSE_UNIVERSE (src/data/nepseUniverse.ts); getProxyBase (src/utils/proxyBase.js); getHistoricalSubfileDirect (src/utils/localLedgerManager.ts) | tap, search, filter, refresh, input |
+| `tab.services` | tab | app | Service Hub | NOT FOUND | — | — |
 | `tab.services.hub_shell` | card | tab.services | Service Hub shell (search, filter tabs, quick carousel, categories) | src/components/ServicesHub.tsx | useBackHandler (src/context/NavigationContext.jsx); NEPSE_UNIVERSE (src/data/nepseUniverse.ts); getProxyBase (src/utils/proxyBase.js); getHistoricalSubfileDirect (src/utils/localLedgerManager.ts) | tap, search, filter, refresh, input |
+| `tab.services.svc_swing_trade_selector` | service | tab.services.cat_flagship | 🎯 Short-Term Swing Selector & Edge Validator | src/components/swing/SwingTradeSelectorView.tsx | — | tap, search, filter, refresh, input |
 | `tab.services.svc_master_100_profit` | service | tab.services.cat_flagship | 👑 Master Guide: 100% Profit Engine | src/components/Master100ProfitWorkstation.tsx | runMasterGuideAudit (src/utils/masterProfitEngine.ts); calculateNetTradeGain (src/utils/masterProfitEngine.ts); getDetailedMarketStatus (src/utils/nepseCalendar.js); getProxyBase (src/utils/liveData.js) | tap, filter, refresh, input |
 | `tab.services.svc_master_100_profit.alphacommandcenter` | sub-card | tab.services.svc_master_100_profit | AlphaCommandCenter | src/components/AlphaCommandCenter.tsx | runUnifiedFiveStepAlphaDesk (src/utils/masterAlphaPipeline.js); getStageFailureReason (src/utils/masterAlphaPipeline.js) | tap, search, filter, refresh, input |
 | `tab.services.svc_multibagger_hunter` | service | tab.services.cat_flagship | 🎯 100% Hunter — 8-Gate Multibagger Screener | src/components/MultibaggerHunterService.tsx | getAccurateFestivalSeasonality (src/utils/quantEngine.js); calculateStealthAccumulationScore (src/utils/accumulationDistributionEngine.ts); getCachedRealPriceHistory (src/utils/liveData.js); getCachedRealBrokerAnalysis (src/utils/liveData.js) | tap, filter, refresh |
@@ -219,10 +143,10 @@ Registry issues: services with NO component mapping: **0** ; duplicate IDs: **0*
 | `tab.services.svc_strategy_lab.statcard` | sub-card | tab.services.svc_strategy_lab | StatCard | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
 | `tab.services.svc_strategy_lab.infobanner` | sub-card | tab.services.svc_strategy_lab | InfoBanner | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
 | `tab.services.svc_strategy_lab.insight` | sub-card | tab.services.svc_strategy_lab | Insight | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.services.svc_backtest_report` | service | tab.services.cat_flagship | Backtest Engine & Walk-Forward Report | src/components/BacktestReportScreen.tsx | getProxyBase (src/utils/liveData.js) | tap, filter, refresh |
+| `tab.services.svc_backtest_report` | service | tab.services.cat_flagship | Backtest Engine & Walk-Forward Report | src/components/BacktestReportScreen.tsx | getProxyBase (src/utils/liveData.js) | tap, search, filter, refresh, input |
 | `tab.services.svc_backtest_report.stocksearchselect` | sub-card | tab.services.svc_backtest_report | StockSearchSelect | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.services.svc_backtest_report.spinner` | sub-card | tab.services.svc_backtest_report | Spinner | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
 | `tab.services.svc_backtest_report.infobanner` | sub-card | tab.services.svc_backtest_report | InfoBanner | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
+| `tab.services.svc_backtest_report.spinner` | sub-card | tab.services.svc_backtest_report | Spinner | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
 | `tab.services.svc_backtest_report.statcard` | sub-card | tab.services.svc_backtest_report | StatCard | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
 | `tab.services.svc_paper_trading_journal` | service | tab.services.cat_flagship | Paper Trading Mode & Trade Journal | src/components/PaperTradingJournalScreen.tsx | — | tap, filter, refresh |
 | `tab.services.svc_paper_trading_journal.infobanner` | sub-card | tab.services.svc_paper_trading_journal | InfoBanner | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
@@ -238,9 +162,10 @@ Registry issues: services with NO component mapping: **0** ; duplicate IDs: **0*
 | `tab.services.svc_broker_accumulation_view.statcard` | sub-card | tab.services.svc_broker_accumulation_view | StatCard | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
 | `tab.services.svc_watchlist_entry_alerts` | service | tab.services.cat_flagship | Watchlist Entry & Risk Alerts | src/components/WatchlistEntryAlertModal.tsx | getAllWatchlistAlertConfigs (src/utils/watchlistAlerts.js); getAlertHistory (src/utils/watchlistAlerts.js); fetchFromBackend (src/utils/liveData.js); loadNepseData (src/utils/liveData.js) | tap, refresh |
 | `tab.services.svc_watchlist_entry_alerts.stocksearchselect` | sub-card | tab.services.svc_watchlist_entry_alerts | StockSearchSelect | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.services.svc_ai_agent_dossier` | service | tab.services.cat_flagship | Autonomous AI Scrip Intelligence Agent | src/components/NepseAgentDashboard.jsx | fetchAgentScripDossier (src/services/nepseAgentTools.js); runAgentAnalysis (src/services/nepseAgentTools.js); getProxyBase (src/utils/liveData.js) | tap, search, refresh, input |
+| `tab.services.svc_ai_agent_dossier` | service | tab.services.cat_flagship | Autonomous AI Scrip Intelligence Agent | src/components/NepseAgentDashboard.jsx | fetchAgentScripDossier (src/services/nepseAgentTools.js); runAgentAnalysis (src/services/nepseAgentTools.js); getProxyBase (src/utils/liveData.js); getCircuitLimits (src/utils/nepseRules.js) | tap, search, refresh, input |
 | `tab.services.svc_ai_agent_dossier.stocksearchselect` | sub-card | tab.services.svc_ai_agent_dossier | StockSearchSelect | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
 | `tab.services.svc_signals_track_record` | service | tab.services.cat_flagship | Algorithmic Signal Track Record & Audit | src/components/AlgorithmicSignalTrackRecord.tsx | getProxyBase (src/utils/liveData.js) | tap, search, filter, refresh, input, sort |
+| `tab.services.svc_alpha_playbook` | service | tab.services.cat_flagship | ⚡ Alpha Playbook: 5-Step Edge Execution Plan | src/components/AlphaPlaybookService.tsx | — | tap, filter, refresh, input |
 | `tab.services.svc_broker_smart_flow` | service | tab.services.cat_smart_money | ⚡ Broker Smart Flow & Early Ignition Workstation | src/components/BrokerSmartFlowTracker.tsx | fetchBrokerTracker (src/utils/liveData.js); fetchEarlyIgnition (src/utils/liveData.js); fetchPrecomputedDiagnostic (src/utils/liveData.js) | tap, search, filter, refresh, input, sort |
 | `tab.services.svc_broker_smart_flow.portfoliobrokershield` | sub-card | tab.services.svc_broker_smart_flow | PortfolioBrokerShield | src/components/PortfolioBrokerShield.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.js); fetchPortfolioShield (src/utils/liveData.js); fetchPrecomputedDiagnostic (src/utils/liveData.js) | tap, filter, refresh, input |
 | `tab.services.svc_whale_daily_archive` | service | tab.services.cat_smart_money | Daily Top 5 Whale Archive (दैनिक ह्वेल) | src/components/AccumulationDistributionRadar.tsx | loadNepseData (src/utils/liveData.js); fetchFloorSheet (src/utils/liveData.js); fetchRealFloorsheet (src/utils/liveData.js); fetchRealBrokerAnalysis (src/utils/liveData.js) | tap, search, filter, refresh, input, sort |
@@ -274,6 +199,10 @@ Registry issues: services with NO component mapping: **0** ; duplicate IDs: **0*
 | `tab.services.svc_broker_dominance.statcard` | sub-card | tab.services.svc_broker_dominance | StatCard | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
 | `tab.services.svc_broker_dominance.infobanner` | sub-card | tab.services.svc_broker_dominance | InfoBanner | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
 | `tab.services.svc_broker_dominance.insight` | sub-card | tab.services.svc_broker_dominance | Insight | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
+| `tab.services.svc_distribution_leaders` | service | tab.services.cat_smart_money | 🚨 Distribution Leaders & Smart Money Exit Radar | src/components/AccumulationDistributionRadar.tsx | loadNepseData (src/utils/liveData.js); fetchFloorSheet (src/utils/liveData.js); fetchRealFloorsheet (src/utils/liveData.js); fetchRealBrokerAnalysis (src/utils/liveData.js) | tap, search, filter, refresh, input, sort |
+| `tab.services.svc_distribution_leaders.brokersmartflowtracker` | sub-card | tab.services.svc_distribution_leaders | BrokerSmartFlowTracker | src/components/BrokerSmartFlowTracker.tsx | fetchBrokerTracker (src/utils/liveData.js); fetchEarlyIgnition (src/utils/liveData.js); fetchPrecomputedDiagnostic (src/utils/liveData.js) | tap, search, filter, refresh, input, sort |
+| `tab.services.svc_distribution_leaders.portfoliobrokershield` | sub-card | tab.services.svc_distribution_leaders | PortfolioBrokerShield | src/components/PortfolioBrokerShield.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.js); fetchPortfolioShield (src/utils/liveData.js); fetchPrecomputedDiagnostic (src/utils/liveData.js) | tap, filter, refresh, input |
+| `tab.services.svc_distribution_leaders.stockdetailmodal` | sub-card | tab.services.svc_distribution_leaders | StockDetailModal | src/components/StockDetailModal.jsx | getWatchlistAlertConfig (src/utils/watchlistAlerts.js); calculateStockRvol (src/utils/watchlistAlerts.js); calculatePivotPoints (src/utils/indicators.js); calculateFibonacci (src/utils/indicators.js) | tap, filter, refresh, input |
 | `tab.services.svc_broker_top10` | service | tab.services.cat_smart_money | Broker Top 10 Stocks (Brokers 58, 45, 34) | src/components/BrokerFlowDominanceService.tsx | loadNepseData (src/utils/liveData.js); fetchFloorSheet (src/utils/liveData.js); fetchRealFloorsheet (src/utils/liveData.js); getCachedRealBrokerAnalysis (src/utils/liveData.js) | tap, filter, refresh, input, sort |
 | `tab.services.svc_broker_top10.spinner` | sub-card | tab.services.svc_broker_top10 | Spinner | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
 | `tab.services.svc_broker_top10.timeframefilterbar` | sub-card | tab.services.svc_broker_top10 | TimeframeFilterBar | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
@@ -824,25 +753,7 @@ Registry issues: services with NO component mapping: **0** ; duplicate IDs: **0*
 
 | ID | Type | Parent | Name | Source | Data/API deps | Actions |
 |---|---|---|---|---|---|---|
-| `tab.guru_ai` | tab | app | Guru AI | src/components/AiAnalyst.jsx | fetchTechnicalAnalysis (src/utils/liveData.js); fetchTodayPrice (src/utils/liveData.js); fetchCompanyFinancials (src/utils/liveData.js); fetchMarketSummary (src/utils/liveData.js) | tap, search, filter, refresh, input |
-| `tab.guru_ai.confidencegauge` | card | tab.guru_ai | ConfidenceGauge (inline in AiAnalyst.jsx) | src/components/AiAnalyst.jsx | — | tap, search, filter, refresh, input |
-| `tab.guru_ai.verdictbadge` | card | tab.guru_ai | VerdictBadge (inline in AiAnalyst.jsx) | src/components/AiAnalyst.jsx | — | tap, search, filter, refresh, input |
-| `tab.guru_ai.threepillarscores` | card | tab.guru_ai | ThreePillarScores (inline in AiAnalyst.jsx) | src/components/AiAnalyst.jsx | — | tap, search, filter, refresh, input |
-| `tab.guru_ai.tradeexecutioncards` | card | tab.guru_ai | TradeExecutionCards (inline in AiAnalyst.jsx) | src/components/AiAnalyst.jsx | — | tap, search, filter, refresh, input |
-| `tab.guru_ai.circuitandliquidityshield` | card | tab.guru_ai | CircuitAndLiquidityShield (inline in AiAnalyst.jsx) | src/components/AiAnalyst.jsx | — | tap, search, filter, refresh, input |
-| `tab.guru_ai.backtesttransparencycard` | card | tab.guru_ai | BacktestTransparencyCard (inline in AiAnalyst.jsx) | src/components/AiAnalyst.jsx | — | tap, search, filter, refresh, input |
-| `tab.guru_ai.gururesponse` | card | tab.guru_ai | GuruResponse (inline in AiAnalyst.jsx) | src/components/AiAnalyst.jsx | — | tap, search, filter, refresh, input |
-| `tab.guru_ai.safegurumarkdown` | card | tab.guru_ai | SafeGuruMarkdown (inline in AiAnalyst.jsx) | src/components/AiAnalyst.jsx | — | tap, search, filter, refresh, input |
-| `tab.guru_ai.chatmessage` | card | tab.guru_ai | ChatMessage (inline in AiAnalyst.jsx) | src/components/AiAnalyst.jsx | — | tap, search, filter, refresh, input |
-| `tab.guru_ai.nepseagentdashboard` | card | tab.guru_ai | NepseAgentDashboard | src/components/NepseAgentDashboard.jsx | fetchAgentScripDossier (src/services/nepseAgentTools.js); runAgentAnalysis (src/services/nepseAgentTools.js); getProxyBase (src/utils/liveData.js) | tap, search, refresh, input |
-| `tab.guru_ai.nepseagentdashboard.stocksearchselect` | sub-card | tab.guru_ai.nepseagentdashboard | StockSearchSelect | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.guru_ai.stocksearchselect` | card | tab.guru_ai | StockSearchSelect | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.guru_ai.stocksearchselect.skeleton` | sub-card | tab.guru_ai.stocksearchselect | Skeleton (inline in ui.tsx) | src/components/ui.tsx | — | tap, filter, refresh, input |
-| `tab.guru_ai.stocksearchselect.tableskeleton` | sub-card | tab.guru_ai.stocksearchselect | TableSkeleton (inline in ui.tsx) | src/components/ui.tsx | — | tap, filter, refresh, input |
-| `tab.guru_ai.stocksearchselect.nodata` | sub-card | tab.guru_ai.stocksearchselect | NoData (inline in ui.tsx) | src/components/ui.tsx | — | tap, filter, refresh, input |
-| `tab.guru_ai.stocksearchselect.loadingshimmerbar` | sub-card | tab.guru_ai.stocksearchselect | LoadingShimmerBar | src/components/LoadingShimmerBar.jsx | — | — |
-| `tab.guru_ai.progate` | card | tab.guru_ai | ProGate | src/components/ProGate.jsx | useSubscription (src/context/SubscriptionContext.jsx) | tap, filter |
-| `tab.guru_ai.investordecisionguidemodal` | card | tab.guru_ai | InvestorDecisionGuideModal | src/components/InvestorDecisionGuideModal.jsx | — | tap, filter |
+| `tab.guru_ai` | tab | app | Guru AI | NOT FOUND | — | — |
 | `tab.guru_ai.subtab_agent` | sub-tab | tab.guru_ai | Guru AI sub-tab: 🤖 NEPSE Agent (3.1 Pro) | src/components/AiAnalyst.jsx | — | tap |
 | `tab.guru_ai.subtab_stock` | sub-tab | tab.guru_ai | Guru AI sub-tab: Stock Analysis | src/components/AiAnalyst.jsx | — | tap |
 | `tab.guru_ai.subtab_sandbox` | sub-tab | tab.guru_ai | Guru AI sub-tab: Virtual Sandbox | src/components/AiAnalyst.jsx | — | tap |
@@ -853,49 +764,7 @@ Registry issues: services with NO component mapping: **0** ; duplicate IDs: **0*
 
 | ID | Type | Parent | Name | Source | Data/API deps | Actions |
 |---|---|---|---|---|---|---|
-| `tab.stocks` | tab | app | Stocks (Stock Detail Modal, 13 tabs) | src/components/StockDetailModal.jsx | getWatchlistAlertConfig (src/utils/watchlistAlerts.js); calculateStockRvol (src/utils/watchlistAlerts.js); calculatePivotPoints (src/utils/indicators.js); calculateFibonacci (src/utils/indicators.js) | tap, filter, refresh, input |
-| `tab.stocks.stockentryexitcard` | card | tab.stocks | StockEntryExitCard (inline in StockDetailModal.jsx) | src/components/StockDetailModal.jsx | — | tap, filter, refresh, input |
-| `tab.stocks.beginnerconfidencecard` | card | tab.stocks | BeginnerConfidenceCard (inline in StockDetailModal.jsx) | src/components/StockDetailModal.jsx | — | tap, filter, refresh, input |
-| `tab.stocks.loadingshimmerbar` | card | tab.stocks | LoadingShimmerBar | src/components/LoadingShimmerBar.jsx | — | — |
-| `tab.stocks.errorboundary` | card | tab.stocks | ErrorBoundary | src/components/ErrorBoundary.jsx | — | tap |
-| `tab.stocks.sharehubchart` | card | tab.stocks | ShareHubChart | src/components/ShareHubChart.jsx | fetchRealPriceHistory (src/utils/liveData.js); fetchNepseIntradayGraph (src/utils/servicesApi.js); calculateEMA (src/utils/indicators.js); calculatePivotPoints (src/utils/indicators.js) | tap, filter |
-| `tab.stocks.brokersmartmoneycard` | card | tab.stocks | BrokerSmartMoneyCard | src/components/stock/BrokerSmartMoneyCard.tsx | getProxyBase (src/utils/liveData.js); getBrokerName (src/utils/accumulationDistributionEngine.ts) | tap, filter |
-| `tab.stocks.brokersmartmoneycard.brokersmartmoneycardinner` | sub-card | tab.stocks.brokersmartmoneycard | BrokerSmartMoneyCardInner (inline in BrokerSmartMoneyCard.tsx) | src/components/stock/BrokerSmartMoneyCard.tsx | — | tap, filter |
-| `tab.stocks.stocksignalscard` | card | tab.stocks | StockSignalsCard | src/components/StockSignalsCard.jsx | — | tap, filter |
-| `tab.stocks.stocktechnicalgaugecard` | card | tab.stocks | StockTechnicalGaugeCard | src/components/StockTechnicalGaugeCard.jsx | calculateTechnicalSpeedometer (src/utils/candlestickPatterns.js) | tap |
-| `tab.stocks.bookclosurealert` | card | tab.stocks | BookClosureAlert | src/components/BookClosureAlert.jsx | — | tap |
-| `tab.stocks.signaltrackrecord` | card | tab.stocks | SignalTrackRecord | src/components/analyzer/SignalTrackRecord.jsx | getSignals (src/services/signalTracker.js); getSignalStats (src/services/signalTracker.js); getProxyBase (src/utils/liveData.js) | tap, filter |
-| `tab.stocks.signaltrackrecord.globalsignaltrackermodal` | sub-card | tab.stocks.signaltrackrecord | GlobalSignalTrackerModal | src/components/analyzer/GlobalSignalTrackerModal.jsx | — | — |
-| `tab.stocks.stockyananalyticscard` | card | tab.stocks | StockYanAnalyticsCard | src/components/StockYanAnalyticsCard.jsx | getBrokerName (src/utils/accumulationDistributionEngine.ts) | — |
-| `tab.stocks.fundamentalvaluationcard` | card | tab.stocks | FundamentalValuationCard | src/components/analyzer/FundamentalValuationCard.jsx | calculateFundamentalSummary (src/utils/fundamentals.js); computeSectorComparison (src/utils/fundamentals.js); getSectorBenchmark (src/utils/fundamentals.js) | — |
-| `tab.stocks.fundamentalvaluationcard.row` | sub-card | tab.stocks.fundamentalvaluationcard | Row (inline in FundamentalValuationCard.jsx) | src/components/analyzer/FundamentalValuationCard.jsx | — | — |
-| `tab.stocks.sessiondatedropdown` | card | tab.stocks | SessionDateDropdown | src/components/SessionDateDropdown.jsx | — | tap, filter, input |
-| `tab.stocks.stockinformationhubmodal` | card | tab.stocks | StockInformationHubModal | src/components/StockInformationHubModal.tsx | buildUnifiedStockTabTelemetry (src/services/floorsheet/floorsheetHubEngine.ts); fetchFromBackend (src/utils/liveData.js); fetchRealBrokerAnalysis (src/utils/liveData.js); fetchRealFloorsheet (src/utils/liveData.js) | tap, search, filter, refresh, input |
-| `tab.stocks.stockinformationhubmodal.stockfundamentalsandlockintab` | sub-card | tab.stocks.stockinformationhubmodal | StockFundamentalsAndLockInTab | src/components/StockFundamentalsAndLockInTab.tsx | — | — |
-| `tab.stocks.stockinformationhubmodal.dividendhistorypanel` | sub-card | tab.stocks.stockinformationhubmodal | DividendHistoryPanel | src/components/DividendHistoryPanel.tsx | fetchRealDividendHistory (src/utils/dividendHistory.js) | tap |
-| `tab.stocks.stockinformationhubmodal.stockreportsannouncementscard` | sub-card | tab.stocks.stockinformationhubmodal | StockReportsAnnouncementsCard | src/components/StockReportsAnnouncementsCard.jsx | fetchMarketNews (src/utils/servicesApi.js); getProxyBase (src/utils/proxyBase.js) | tap, filter |
-| `tab.stocks.stockinformationhubmodal.aiguruquantitativecard` | sub-card | tab.stocks.stockinformationhubmodal | AiGuruQuantitativeCard | src/components/AiGuruQuantitativeCard.tsx | runAiQuantitativeAssessment (src/services/aiGuru/runAiQuantitativeAssessment.ts) | — |
-| `tab.stocks.stockbrokeranalysistab` | card | tab.stocks | StockBrokerAnalysisTab | src/components/StockBrokerAnalysisTab.jsx | getBrokerName (src/utils/accumulationDistributionEngine.ts); fetchRealBrokerAnalysis (src/utils/liveData.js); fetchFromBackend (src/utils/liveData.js); fetchAvailableTradingDates (src/utils/liveData.js) | tap, search, filter, refresh, input, sort |
-| `tab.stocks.stockbrokeranalysistab.stockbrokeranalysistabinner` | sub-card | tab.stocks.stockbrokeranalysistab | StockBrokerAnalysisTabInner (inline in StockBrokerAnalysisTab.jsx) | src/components/StockBrokerAnalysisTab.jsx | — | tap, search, filter, refresh, input, sort |
-| `tab.stocks.stockbrokeranalysistab.loadingshimmerbar` | sub-card | tab.stocks.stockbrokeranalysistab | LoadingShimmerBar | src/components/LoadingShimmerBar.jsx | — | — |
-| `tab.stocks.stockbrokeranalysistab.sessiondatedropdown` | sub-card | tab.stocks.stockbrokeranalysistab | SessionDateDropdown | src/components/SessionDateDropdown.jsx | — | tap, filter, input |
-| `tab.stocks.brokerfootprintcard` | card | tab.stocks | BrokerFootprintCard | src/components/analyzer/BrokerFootprintCard.jsx | — | — |
-| `tab.stocks.stockfundamentalstab` | card | tab.stocks | StockFundamentalsTab | src/components/StockFundamentalsTab.jsx | getSectorBenchmark (src/utils/fundamentals.js); fetchCompanyQuarterlyReports (src/utils/servicesApi.js); fetchCompanyIndustryComparison (src/utils/servicesApi.js) | tap, search, filter, input |
-| `tab.stocks.stockrightsharecard` | card | tab.stocks | StockRightShareCard | src/components/StockRightShareCard.jsx | — | — |
-| `tab.stocks.dividendhistorypanel` | card | tab.stocks | DividendHistoryPanel | src/components/DividendHistoryPanel.tsx | fetchRealDividendHistory (src/utils/dividendHistory.js) | tap |
-| `tab.stocks.dividendhistorypanel.badge` | sub-card | tab.stocks.dividendhistorypanel | Badge (inline in DividendHistoryPanel.tsx) | src/components/DividendHistoryPanel.tsx | — | tap |
-| `tab.stocks.dividendhistorypanel.summarycard` | sub-card | tab.stocks.dividendhistorypanel | SummaryCard (inline in DividendHistoryPanel.tsx) | src/components/DividendHistoryPanel.tsx | — | tap |
-| `tab.stocks.dividendhistorypanel.infobanner` | sub-card | tab.stocks.dividendhistorypanel | InfoBanner | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.stocks.dividendhistorypanel.stocksearchselect` | sub-card | tab.stocks.dividendhistorypanel | StockSearchSelect | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.stocks.dividendhistorypanel.spinner` | sub-card | tab.stocks.dividendhistorypanel | Spinner | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.stocks.dividendhistorypanel.nodata` | sub-card | tab.stocks.dividendhistorypanel | NoData | src/components/ui.tsx | NEPSE_UNIVERSE (src/data/nepseUniverse.ts) | tap, filter, refresh, input |
-| `tab.stocks.stockseasonalitycard` | card | tab.stocks | StockSeasonalityCard | src/components/StockSeasonalityCard.jsx | — | — |
-| `tab.stocks.stockreportsannouncementscard` | card | tab.stocks | StockReportsAnnouncementsCard | src/components/StockReportsAnnouncementsCard.jsx | fetchMarketNews (src/utils/servicesApi.js); getProxyBase (src/utils/proxyBase.js) | tap, filter |
-| `tab.stocks.aiguruquantitativecard` | card | tab.stocks | AiGuruQuantitativeCard | src/components/AiGuruQuantitativeCard.tsx | runAiQuantitativeAssessment (src/services/aiGuru/runAiQuantitativeAssessment.ts) | — |
-| `tab.stocks.advancedchartmodal` | card | tab.stocks | AdvancedChartModal | src/components/AdvancedChartModal.jsx | useBackHandler (src/context/NavigationContext.jsx) | tap |
-| `tab.stocks.advancedchartmodal.sharehubchart` | sub-card | tab.stocks.advancedchartmodal | ShareHubChart | src/components/ShareHubChart.jsx | fetchRealPriceHistory (src/utils/liveData.js); fetchNepseIntradayGraph (src/utils/servicesApi.js); calculateEMA (src/utils/indicators.js); calculatePivotPoints (src/utils/indicators.js) | tap, filter |
-| `tab.stocks.advancedchartmodal.stockcandlestickchart` | sub-card | tab.stocks.advancedchartmodal | StockCandlestickChart | src/components/charts/StockCandlestickChart.tsx | calculateEMA (src/utils/indicators.js); calculatePivotPoints (src/utils/indicators.js); calculateFibonacci (src/utils/indicators.js); fetchNepseIntradayGraph (src/utils/servicesApi.js) | tap, filter |
-| `tab.stocks.breakoutalertdialog` | card | tab.stocks | BreakoutAlertDialog | src/components/BreakoutAlertDialog.jsx | getWatchlistAlertConfig (src/utils/watchlistAlerts.js); calculateStockRvol (src/utils/watchlistAlerts.js) | tap, filter, refresh, input |
+| `tab.stocks` | tab | app | Stocks (Stock Detail Modal, 13 tabs) | NOT FOUND | — | — |
 | `tab.stocks.modal_overview` | sub-tab | tab.stocks | Stock modal tab: Overview | src/components/StockDetailModal.jsx | — | tap |
 | `tab.stocks.modal_broker_analysis` | sub-tab | tab.stocks | Stock modal tab: Broker Flow | src/components/StockDetailModal.jsx | — | tap |
 | `tab.stocks.modal_ai_calc` | sub-tab | tab.stocks | Stock modal tab: AI Guru & Targets | src/components/StockDetailModal.jsx | — | tap |
@@ -920,26 +789,17 @@ Registry issues: services with NO component mapping: **0** ; duplicate IDs: **0*
 
 | ID | Type | Parent | Name | Source | Data/API deps | Actions |
 |---|---|---|---|---|---|---|
-| `tab.calculator` | tab | app | Calculator (header/hidden route) | src/components/Calculator.jsx | calculateBuyDetails (src/utils/calculations.js); calculateSellDetails (src/utils/calculations.js); calculatePositionSize (src/utils/riskManagement.js); calculateStopLossTargets (src/utils/riskManagement.js) | tap, refresh, input |
-| `tab.calculator.capitalrisksimulatorbar` | card | tab.calculator | CapitalRiskSimulatorBar | src/components/CapitalRiskSimulatorBar.jsx | getUserConfiguredCapital (src/utils/dynamicCapitalEngine.js); getCapitalTierConfig (src/utils/dynamicCapitalEngine.js); getNepseBrokerCommissionRate (src/utils/dynamicCapitalEngine.js) | tap, refresh, input |
+| `tab.calculator` | tab | app | Calculator (header/hidden route) | NOT FOUND | — | — |
 
 ## resources
 
 | ID | Type | Parent | Name | Source | Data/API deps | Actions |
 |---|---|---|---|---|---|---|
-| `tab.resources` | tab | app | Resources (header icon) | src/components/Resources.jsx | — | tap, search, filter, input |
+| `tab.resources` | tab | app | Resources (header icon) | NOT FOUND | — | — |
 
 ## stitch
 
 | ID | Type | Parent | Name | Source | Data/API deps | Actions |
 |---|---|---|---|---|---|---|
-| `tab.stitch` | tab | app | Stitch Hub (header icon) | src/views/StitchHub.jsx | — | tap |
-| `tab.stitch.livemarketdashboard` | card | tab.stitch | LiveMarketDashboard | src/views/LiveMarketDashboard.jsx | — | tap, filter |
-| `tab.stitch.watchlistscreener` | card | tab.stitch | WatchlistScreener | src/views/WatchlistScreener.jsx | — | tap, filter, input |
-| `tab.stitch.floorsheettape` | card | tab.stitch | FloorSheetTape | src/views/FloorSheetTape.jsx | fetchRealFloorsheet (src/utils/liveData.js); fetchAvailableTradingDates (src/utils/liveData.js); getBrokerName (src/utils/accumulationDistributionEngine.ts); getDetailedMarketStatus (src/utils/nepseCalendar.js) | tap, search, filter, refresh, input |
-| `tab.stitch.floorsheettape.loadingshimmerbar` | sub-card | tab.stitch.floorsheettape | LoadingShimmerBar | src/components/LoadingShimmerBar.jsx | — | — |
-| `tab.stitch.stockdetails` | card | tab.stitch | StockDetails | src/views/StockDetails.jsx | — | tap |
-| `tab.stitch.portfolioanalytics` | card | tab.stitch | PortfolioAnalytics | src/views/PortfolioAnalytics.jsx | — | tap |
-| `tab.stitch.wacctaxcalculator` | card | tab.stitch | WaccTaxCalculator | src/views/WaccTaxCalculator.jsx | calculateBuyDetails (src/utils/calculations.js); calculateBrokerCommission (src/utils/calculations.js); calculateSebonFee (src/utils/calculations.js) | tap, filter, input |
-| `tab.stitch.orderexecution` | card | tab.stitch | OrderExecution | src/views/OrderExecution.jsx | — | tap |
+| `tab.stitch` | tab | app | Stitch Hub (header icon) | NOT FOUND | — | — |
 

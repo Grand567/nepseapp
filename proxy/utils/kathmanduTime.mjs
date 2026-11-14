@@ -75,7 +75,15 @@ export function isNepseHoliday(dateIso) {
   return { isHoliday: false, holidayName: null };
 }
 
-export function getKathmanduTradingStatus(date = new Date()) {
+function getAppNow() {
+  if (typeof process !== 'undefined' && process.env && process.env.APP_FAKE_NOW) {
+    const d = new Date(process.env.APP_FAKE_NOW);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return new Date();
+}
+
+export function getKathmanduTradingStatus(date = getAppNow()) {
   const d = new Date(date);
 
   const formatter = new Intl.DateTimeFormat('en-US', {
@@ -142,7 +150,7 @@ export function getKathmanduTradingStatus(date = new Date()) {
 /**
  * Returns the next valid active NEPSE trading day strictly skipping Saturday, Sunday, and listed holidays.
  */
-export function getNextTradingDay(fromDate = new Date()) {
+export function getNextTradingDay(fromDate = getAppNow()) {
   const cursor = new Date(fromDate);
   let iterations = 0;
   while (iterations < 60) {
@@ -159,7 +167,7 @@ export function getNextTradingDay(fromDate = new Date()) {
 /**
  * Calculates exact T+2 Settlement Date strictly skipping Saturday, Sunday, and listed public holidays.
  */
-export function calculateT2Settlement(tradeDate = new Date()) {
+export function calculateT2Settlement(tradeDate = getAppNow()) {
   let session = new Date(tradeDate);
   const initialStatus = getKathmanduTradingStatus(session);
   if (!initialStatus.isTradingDay) {

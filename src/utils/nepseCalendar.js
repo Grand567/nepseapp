@@ -154,9 +154,69 @@ export const NEPSE_PUBLIC_HOLIDAYS = {
 };
 
 /**
+ * Universal Fake Clock Reader
+ * Enables coordinated time travel testing across proxy backend and frontend.
+ */
+export function getAppNow() {
+  if (typeof process !== 'undefined' && process.env && process.env.APP_FAKE_NOW) {
+    const d = new Date(process.env.APP_FAKE_NOW);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (typeof window !== 'undefined') {
+    if (window.__APP_FAKE_NOW__) {
+      const d = new Date(window.__APP_FAKE_NOW__);
+      if (!isNaN(d.getTime())) return d;
+    }
+    try {
+      if (window.location && window.location.search) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlFake = urlParams.get('fakeNow') || urlParams.get('APP_FAKE_NOW');
+        if (urlFake) {
+          const d = new Date(urlFake);
+          if (!isNaN(d.getTime())) return d;
+        }
+      }
+      const stored = window.localStorage ? window.localStorage.getItem('APP_FAKE_NOW') : null;
+      if (stored) {
+        const d = new Date(stored);
+        if (!isNaN(d.getTime())) return d;
+      }
+    } catch (_) {}
+  }
+  return new Date();
+}
+
+/**
+ * Sets or clears the application fake clock dynamically.
+ */
+export function setAppFakeNow(isoStringOrNull) {
+  if (isoStringOrNull) {
+    if (typeof process !== 'undefined' && process.env) {
+      process.env.APP_FAKE_NOW = isoStringOrNull;
+    }
+    if (typeof window !== 'undefined') {
+      window.__APP_FAKE_NOW__ = isoStringOrNull;
+      try {
+        window.localStorage.setItem('APP_FAKE_NOW', isoStringOrNull);
+      } catch (_) {}
+    }
+  } else {
+    if (typeof process !== 'undefined' && process.env) {
+      delete process.env.APP_FAKE_NOW;
+    }
+    if (typeof window !== 'undefined') {
+      delete window.__APP_FAKE_NOW__;
+      try {
+        window.localStorage.removeItem('APP_FAKE_NOW');
+      } catch (_) {}
+    }
+  }
+}
+
+/**
  * Returns YYYY-MM-DD string for any Date object in Nepal Standard Time
  */
-export function getIsoDateInNPT(date = new Date()) {
+export function getIsoDateInNPT(date = getAppNow()) {
   const d = new Date(date);
   // Format in Asia/Kathmandu time zone
   try {
@@ -241,7 +301,7 @@ export function getDynamicMarketHalt() {
  * Checks if a given date is a Public Holiday in Nepal (Bikram Sambat & Official NEPSE)
  * or an Emergency Market Halt (e.g. ransomware breach / regulatory suspension).
  */
-export function isNepsePublicHoliday(date = new Date()) {
+export function isNepsePublicHoliday(date = getAppNow()) {
   const nepaliDate = getNepaliDate(date);
   const iso = getIsoDateInNPT(date);
 
@@ -304,7 +364,7 @@ export function isNepsePublicHoliday(date = new Date()) {
  */
 export const NEPSE_SCHEDULE_SHIFT_DATE = '2026-04-06';
 
-export function isNepseWeekend(date = new Date()) {
+export function isNepseWeekend(date = getAppNow()) {
   const d = new Date(date);
   // Get Day of Week in Asia/Kathmandu
   let dayOfWeek = d.getDay();
@@ -343,7 +403,7 @@ export function isNepseWeekend(date = new Date()) {
  * Checks if a given date is an official active NEPSE trading day.
  * Returns true for Monday, Tuesday, Wednesday, Thursday, Friday when NOT a holiday.
  */
-export function isNepseTradingDay(date = new Date()) {
+export function isNepseTradingDay(date = getAppNow()) {
   const weekendCheck = isNepseWeekend(date);
   if (weekendCheck.isWeekend) return false;
 
@@ -363,7 +423,7 @@ export function isNepseTradingDay(date = new Date()) {
  *   on a trading day (market still open / partial session), returns the previous completed
  *   trading day instead of today. Use this when you need fully settled OHLCV data.
  */
-export function getLastValidTradingDay(fromDate = new Date(), requireCompleted = false) {
+export function getLastValidTradingDay(fromDate = getAppNow(), requireCompleted = false) {
   const cursor = new Date(fromDate);
 
   // A6: If caller needs a *completed* session, step back past the current partial day
@@ -398,7 +458,7 @@ export function getLastValidTradingDay(fromDate = new Date(), requireCompleted =
 /**
  * Returns the minutes elapsed from midnight in Asia/Kathmandu time (0 - 1439).
  */
-export function getNptMinutesOfDay(date = new Date()) {
+export function getNptMinutesOfDay(date = getAppNow()) {
   const d = new Date(date);
   try {
     const formatter = new Intl.DateTimeFormat('en-US', {
@@ -423,7 +483,7 @@ export function getNptMinutesOfDay(date = new Date()) {
  * Standard hours: Monday - Friday, 11:00 AM – 3:00 PM Asia/Kathmandu (UTC+5:45).
  * Strictly false on weekends (Sat & Sun), public holidays, and emergency halts.
  */
-export function isMarketOpen(now = new Date()) {
+export function isMarketOpen(now = getAppNow()) {
   const d = new Date(now);
   if (!isNepseTradingDay(d)) return false;
   const mins = getNptMinutesOfDay(d);
@@ -438,7 +498,7 @@ export function isMarketOpen(now = new Date()) {
  * - After market close (>= 15:00 NPT on trading day): returns today's completed session date.
  * - Before market open (< 11:00 NPT) or on non-trading days (weekends & holidays): returns previous completed session.
  */
-export function latestTradingSession(now = new Date(), requireCompleted = false) {
+export function latestTradingSession(now = getAppNow(), requireCompleted = false) {
   const d = new Date(now);
   const isTrading = isNepseTradingDay(d);
   const mins = getNptMinutesOfDay(d);
@@ -484,7 +544,7 @@ export function tradingDayWindow(n = 5, endSession = null, options = {}) {
       anchorIso = String(endSession).trim().slice(0, 10);
     }
   } else {
-    anchorIso = latestTradingSession(new Date(), false);
+    anchorIso = latestTradingSession(getAppNow(), false);
   }
 
   let cursor = new Date(`${anchorIso}T12:00:00+05:45`);
@@ -518,7 +578,7 @@ export function tradingDayWindow(n = 5, endSession = null, options = {}) {
 /**
  * Formats a Date object into YYYY-MM-DD in Asia/Kathmandu time zone.
  */
-export function formatNptDateIso(date = new Date()) {
+export function formatNptDateIso(date = getAppNow()) {
   try {
     const formatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Kathmandu',
@@ -535,7 +595,7 @@ export function formatNptDateIso(date = new Date()) {
 /**
  * Finds the NEXT active NEPSE trading day strictly skipping weekends and holidays.
  */
-export function getNextValidTradingDay(fromDate = new Date()) {
+export function getNextValidTradingDay(fromDate = getAppNow()) {
   const cursor = new Date(fromDate);
   cursor.setDate(cursor.getDate() + 1);
   let iterations = 0;
@@ -554,7 +614,7 @@ export function getNextValidTradingDay(fromDate = new Date()) {
  * - During active trading hours (before 15:00 NPT on a trading day): applies to TODAY.
  * - After market close (>= 15:00 NPT), or on weekends/holidays: applies to NEXT trading day.
  */
-export function getTargetTradingSessionDate(now = new Date()) {
+export function getTargetTradingSessionDate(now = getAppNow()) {
   const d = new Date(now);
   let nptHours = 0;
   let nptMinutes = 0;
@@ -604,7 +664,7 @@ export function getTargetTradingSessionDate(now = new Date()) {
  * @param {Date|string} tradeDate - Execution date (default: now)
  * @returns {object} Comprehensive T+2 settlement schedule
  */
-export function calculateT2SettlementDate(tradeDate = new Date()) {
+export function calculateT2SettlementDate(tradeDate = getAppNow()) {
   const d = new Date(tradeDate);
   // Ensure we are anchored to a valid trading session date in NPT
   let tradeSession = new Date(d);
@@ -754,7 +814,7 @@ export function getLiveMarketOverride() {
 /**
  * Calculates current NEPSE market status with exact Nepal time, weekend, and holiday detection.
  */
-export function getDetailedMarketStatus(now = new Date()) {
+export function getDetailedMarketStatus(now = getAppNow()) {
   const nepaliDate = getNepaliDate(now);
   const holiday = isNepsePublicHoliday(now);
   const weekend = isNepseWeekend(now);

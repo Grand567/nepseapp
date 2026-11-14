@@ -19,5 +19,7 @@ export {
   formatNptDateIso,
   getDetailedMarketStatus,
   calculateT2SettlementDate,
-  NEPSE_PUBLIC_HOLIDAYS
+  NEPSE_PUBLIC_HOLIDAYS,
+  getAppNow,
+  setAppFakeNow
 } from '../../src/utils/nepseCalendar.js';

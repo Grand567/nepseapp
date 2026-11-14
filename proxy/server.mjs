@@ -92,7 +92,7 @@ import {
   sendDiscordPrimePickAlert
 } from './discordNotifier.mjs';
 import { assembleScripDossier, buildAgentAnalysisPrompt } from './agentTools.mjs';
-import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseTradingDay, formatNptDateIso, setLiveMarketOverride, generateTradingDaysSequence, getLastValidTradingDay, isMarketOpen, latestTradingSession, tradingDayWindow } from '../src/utils/nepseCalendar.js';
+import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseTradingDay, formatNptDateIso, setLiveMarketOverride, generateTradingDaysSequence, getLastValidTradingDay, isMarketOpen, latestTradingSession, tradingDayWindow, getAppNow, setAppFakeNow } from '../src/utils/nepseCalendar.js';
 import { getKathmanduTradingStatus } from './utils/kathmanduTime.mjs';
 import { 
   getArchiveIndex, 
@@ -851,6 +851,37 @@ app.get('/api/nepse/diagnostics', (req, res) => {
 // Universal Data Freshness Admin Diagnostic Endpoint (Phase 4 Fix 7)
 app.get(['/api/admin/data-freshness', '/api/system/data-freshness'], (req, res) => {
   res.json(dataFreshnessTracker.getStatus());
+});
+
+// Fake Clock Diagnostic & Replay Control Endpoint
+app.get('/api/test/fake-clock', (req, res) => {
+  res.json({
+    fakeNow: process.env.APP_FAKE_NOW || null,
+    appNow: getAppNow().toISOString()
+  });
+});
+
+app.post('/api/test/fake-clock', (req, res) => {
+  const { fakeNow } = req.body || {};
+  if (fakeNow) {
+    setAppFakeNow(fakeNow);
+  } else {
+    setAppFakeNow(null);
+  }
+  res.json({
+    success: true,
+    fakeNow: process.env.APP_FAKE_NOW || null,
+    appNow: getAppNow().toISOString()
+  });
+});
+
+app.delete('/api/test/fake-clock', (req, res) => {
+  setAppFakeNow(null);
+  res.json({
+    success: true,
+    fakeNow: null,
+    appNow: getAppNow().toISOString()
+  });
 });
 
 /**

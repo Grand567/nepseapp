@@ -48,6 +48,7 @@ temp_frames_v3/
 proxy/data/floorsheet-full-*.json
 /data/
 *.mp4
+qa/work/
 dist-electron/
 *.exe
 drabyashree_*.txt
