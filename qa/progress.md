@@ -87,3 +87,56 @@
   - **Production Build:** `npm run build` completed successfully (1,784 modules transformed, built in 29.38s).
   - **Desktop & Mobile Integrity:** Electron entry (`electron/main.cjs`) and Capacitor Android build configs intact.
   - **Live Data Status:** All synthetic scenarios and off-market invariants pass 100%. Live market testing remains explicitly marked **[NOT-TESTED ON REAL DATA]** pending scheduled live session on **Tuesday, November 17, 2026, 11:00 AM – 3:00 PM NPT** (Monday Nov 16 being official statutory Chhath holiday).
+
+---
+
+### UI Presentation vs. SQLite Ledger Parity & Live Market Transition Audit
+**Audit Date:** Saturday, November 14, 2026  
+**Auditor:** Senior QA & Data Engineer  
+**Mode:** Localhost Only (`http://localhost:3000` & `http://localhost:5000`)  
+**Strict Mandate Compliance:**
+- **Zero Push to Git:** Confirmed. All commits are local (`HEAD` on `main`, 0 pushes to remote repository).
+- **Zero Production Ledger Mutation:** Confirmed. Production SQLite database `proxy/data/drabyashree_ledger.db` accessed read-only; copy maintained in `qa/work/drabyashree_ledger.db`.
+- **Statutory Calendar Compliance:** Monday 2026-11-16 confirmed Nepal Government holiday (Chhath festival, 30 Kartik 2083); next live trading session confirmed as Tuesday 2026-11-17, 11:00 AM NPT.
+
+#### Audit Execution Milestones & Deliverables:
+1. **Phase 1: Setup & Independent Calculation Oracle (`16554db`)**
+   - Developed independent SQL calculation oracle in `qa/oracle/independentOracle.mjs` (zero imports from application runtime).
+   - Rebuilt comprehensive inventory in `qa/app_inventory.md` (722 UI cards, sub-cards, routes, and indicators).
+   - Verified 43/43 hand-calculated proof fixtures in `qa/oracle/oracleFixtures.test.mjs` (commissions, SEBON fees, WACC, CGT, bonus adjustments, and 1D/5D broker accumulation).
+   - Spot-checked 50 vectors against exchange records with 100% parity.
+   - Fixed Vite file watcher `EBUSY` on SQLite databases in `vite.config.mjs` (`adb1c13`).
+
+2. **Phase 2: UI Crawl & Three-Way Reconciliation (`1b07e3d`)**
+   - Executed dual-viewport Playwright audit (1440x900 desktop and 390x844 mobile).
+   - Reconciled Oracle vs. Proxy API vs. Displayed DOM across 10 spot-checked stocks (`NABIL`, `BARUN`, `SHIVM`, `RFPL`, `HDL`, `AKJCL`, `CIT`, `NRN`, `HRL`, `API`) across 5 timeframes (`1D`, `5D`, `15D`, `30D`, `All-Time`).
+   - Reconciled Broker Cornering Top 10, Market Depth, and Portfolio Accounting.
+   - Captured 48 visual verification screenshots in `qa/screenshots/phase2/`.
+   - Delivered full three-way reconciliation report: [`qa/ui_vs_ledger_report.md`](qa/ui_vs_ledger_report.md).
+   - Upgraded Proxy Node.js V8 heap to 1536MB in `proxy/package.json` to handle multi-broker matrix serialization without OOM.
+
+3. **Phase 3: Virtual Clock Time-Travel Verification (`b5e5269`)**
+   - Simulated 7 critical session transitions via environment clock (`APP_FAKE_NOW`):
+     - Session 1: Saturday Weekend (2026-11-14 10:49 NPT) — Correctly labeled closed, displays Friday Nov 13 settled data.
+     - Session 2: Monday Chhath Holiday (2026-11-16 11:30 NPT) — Correctly flagged market closed, next session Tuesday Nov 17.
+     - Session 3: Tuesday Pre-Open (2026-11-17 10:59:30 NPT) — Pre-open status, no premature live tape leak.
+     - Session 4: Tuesday Market Open (2026-11-17 11:00:15 NPT) — Real-time clock turns green, live tape initializes.
+     - Session 5: Tuesday Midday Live Trading (2026-11-17 12:00:00 NPT) — 17 live ticks ingested; 1D view reflects Nov 17 live transactions; 5D flow strictly spans previous 5 settled sessions (`2026-11-04` → `2026-11-13`).
+     - Session 6: Tuesday Market Close (2026-11-17 15:00:30 NPT) — Market closes, Nov 17 ticks transition to official settled session.
+     - Session 7: Wednesday Next Pre-Open (2026-11-18 10:59:00 NPT) — 5D rolling window advances to include Nov 17 (`2026-11-05` → `2026-11-17`).
+   - Captured 21 visual verification screenshots in `qa/screenshots/phase3/`.
+   - Delivered full time-travel verification report: [`qa/time_travel_report.md`](qa/time_travel_report.md).
+
+4. **Phase 4: Forensic Root Causes Analysis (`70ce9de`)**
+   - Traced data pipeline from SQLite schema through API routes and React state to DOM text nodes across 7 discovered presentation nuances.
+   - Delivered comprehensive root cause report: [`qa/root_causes_report.md`](qa/root_causes_report.md).
+
+5. **Phase 5: Performance Optimization & Smooth Timeframe Transitions (`1b43d8d`)**
+   - Optimized `countNepseTradingSessionsBetween` and `isNepseTradingDay` in `src/utils/nepseCalendar.js` with bounded Map memoization, eliminating 100,000+ redundant Bikram Sambat conversions during backtesting.
+   - Refactored `src/components/StockBrokerAnalysisTab.jsx` to eliminate transient `setInternalBrokerData(null)` wipeout, ensuring smooth shimmer transitions without flashing 0-share empty states.
+
+6. **Phase 6: Final Verification & Sign-Off**
+   - **Oracle Fixtures:** 43/43 PASSED (`node qa/oracle/oracleFixtures.test.mjs`).
+   - **Master Test Suite:** 63/63 test suites PASSED, 0 failures (`node tests/runAll.mjs`).
+   - **Production Build:** `npm run build` compiled cleanly in 43.47s (1,784 modules).
+   - **Final Status:** **PASS (100% Verification Parity)**.
