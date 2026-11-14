@@ -159,16 +159,16 @@ assert.strictEqual(vCircuit.isVetoed, true);
 assert.ok(vCircuit.vetoTriggers.some(v => v.code === 'VETO_CIRCUIT_CEILING'));
 console.log('✅ Test 5.1 Passed: ±15% circuit ceiling chase (+12.96% gain) vetoed.');
 
-// 5.2 Operator Offloading Veto (BCR3_Sell >= 38%)
+// 5.2 Operator Offloading Veto (BCR3_Sell >= 45%)
 const vOperator = evaluateVetoFilters({
   ltp: 270,
   previousClose: 269,
-  bcr3SellPct: 44.5, // >= 38%
+  bcr3SellPct: 48.5, // >= 45% (relaxed from 38% based on N=760 backtest lift)
   bypassTimingGate: true
 });
 assert.strictEqual(vOperator.isVetoed, true);
 assert.ok(vOperator.vetoTriggers.some(v => v.code === 'VETO_OPERATOR_OFFLOADING_WASH'));
-console.log('✅ Test 5.2 Passed: Operator offloading (BCR3 Sell 44.5%) vetoed.');
+console.log('✅ Test 5.2 Passed: Operator offloading (BCR3 Sell 48.5%) vetoed.');
 
 // 5.3 T+3 Settlement Supply Overhang Veto (sitting 11%+ in profit with t-3 vol >= 2.5x SMA)
 const vT3 = evaluateVetoFilters({

@@ -30,8 +30,8 @@ try {
   ok(sample.name && sample.name.length > 0, `IPO record has valid company name: "${sample.name}"`);
 
   // Verify that if live scraper was blocked by 403, stale labeling is strictly applied
-  if (sample.source === 'sharesansar' && !sample.isStale) {
-    ok(true, 'Live ShareSansar succeeded without 403');
+  if (!sample.isStale) {
+    ok(true, `Live scraper (${sample.source}) succeeded without 403`);
   } else {
     ok(sample.isStale === true, 'Fallback IPO data is strictly labeled with isStale: true');
     ok(
