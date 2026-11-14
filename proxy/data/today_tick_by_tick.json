@@ -5,9 +5,499 @@
   "session_date": "2026-11-06",
   "market_status": "PRE_OPEN",
   "initialized_at": "2026-11-06T11:12:09.638Z",
-  "last_tick_timestamp_npt": "2026-11-06T11:12:09.638Z",
-  "total_ticks_ingested": 0,
-  "active_scrips_count": 0,
+  "last_tick_timestamp_npt": "2026-11-14T08:14:28.182Z",
+  "total_ticks_ingested": 17,
+  "active_scrips_count": 10,
   "description": "Sub-file for live feed dynamic tick-by-tick real-time data containing live quote updates, Level-2 5-level order depth, streaming floorsheet contracts, and real-time execution signals.",
-  "ticks": {}
+  "ticks": {
+    "NABIL": {
+      "symbol": "NABIL",
+      "timestamp_npt": "2026-11-14T08:14:28.063Z",
+      "quote": {
+        "ltp": 558,
+        "open": 550,
+        "high": 560,
+        "low": 549,
+        "prev_close": 549,
+        "point_change": 9,
+        "p_change": 1.64,
+        "vwap": 558,
+        "day_range_pct": 81.8,
+        "total_volume": 0,
+        "total_turnover": 0,
+        "total_trades": 0,
+        "rvol_live": 1,
+        "circuit_ceiling": 631.3,
+        "circuit_floor": 466.6
+      },
+      "level2_depth": {
+        "bids": [],
+        "asks": [],
+        "total_buy_qty": 0,
+        "total_sell_qty": 0,
+        "order_book_imbalance_pct": 0,
+        "spread_npr": 0,
+        "spread_bps": 0
+      },
+      "recent_contract_stream": [
+        {
+          "buyer": 49,
+          "seller": 16,
+          "qty": 1500,
+          "rate": 558,
+          "trade_type": "Whale"
+        },
+        {
+          "buyer": 65,
+          "seller": 44,
+          "qty": 3000,
+          "rate": 555,
+          "trade_type": "Whale"
+        },
+        {
+          "buyer": 65,
+          "seller": 17,
+          "qty": 2000,
+          "rate": 552,
+          "trade_type": "Whale"
+        }
+      ],
+      "live_signals": {
+        "is_circuit_locked": false,
+        "order_flow_veto": false,
+        "safe_entry_status": "NEUTRAL"
+      }
+    },
+    "RFPL": {
+      "symbol": "RFPL",
+      "timestamp_npt": "2026-11-14T08:14:28.077Z",
+      "quote": {
+        "ltp": 382,
+        "open": 374,
+        "high": 383,
+        "low": 374,
+        "prev_close": 374,
+        "point_change": 8,
+        "p_change": 2.14,
+        "vwap": 382,
+        "day_range_pct": 88.9,
+        "total_volume": 0,
+        "total_turnover": 0,
+        "total_trades": 0,
+        "rvol_live": 1,
+        "circuit_ceiling": 430.1,
+        "circuit_floor": 317.9
+      },
+      "level2_depth": {
+        "bids": [],
+        "asks": [],
+        "total_buy_qty": 0,
+        "total_sell_qty": 0,
+        "order_book_imbalance_pct": 0,
+        "spread_npr": 0,
+        "spread_bps": 0
+      },
+      "recent_contract_stream": [
+        {
+          "buyer": 58,
+          "seller": 32,
+          "qty": 4000,
+          "rate": 382,
+          "trade_type": "Whale"
+        },
+        {
+          "buyer": 58,
+          "seller": 8,
+          "qty": 5000,
+          "rate": 379,
+          "trade_type": "Whale"
+        },
+        {
+          "buyer": 49,
+          "seller": 16,
+          "qty": 2000,
+          "rate": 376,
+          "trade_type": "Whale"
+        }
+      ],
+      "live_signals": {
+        "is_circuit_locked": false,
+        "order_flow_veto": false,
+        "safe_entry_status": "NEUTRAL"
+      }
+    },
+    "SHIVM": {
+      "symbol": "SHIVM",
+      "timestamp_npt": "2026-11-14T08:14:28.182Z",
+      "quote": {
+        "ltp": 688,
+        "open": 676,
+        "high": 690,
+        "low": 676,
+        "prev_close": 676,
+        "point_change": 12,
+        "p_change": 1.78,
+        "vwap": 688,
+        "day_range_pct": 85.7,
+        "total_volume": 0,
+        "total_turnover": 0,
+        "total_trades": 0,
+        "rvol_live": 1,
+        "circuit_ceiling": 777.4,
+        "circuit_floor": 574.6
+      },
+      "level2_depth": {
+        "bids": [],
+        "asks": [],
+        "total_buy_qty": 0,
+        "total_sell_qty": 0,
+        "order_book_imbalance_pct": 0,
+        "spread_npr": 0,
+        "spread_bps": 0
+      },
+      "recent_contract_stream": [
+        {
+          "buyer": 77,
+          "seller": 17,
+          "qty": 6000,
+          "rate": 688,
+          "trade_type": "Whale"
+        },
+        {
+          "buyer": 81,
+          "seller": 44,
+          "qty": 8000,
+          "rate": 685,
+          "trade_type": "Whale"
+        },
+        {
+          "buyer": 81,
+          "seller": 39,
+          "qty": 5000,
+          "rate": 680,
+          "trade_type": "Whale"
+        }
+      ],
+      "live_signals": {
+        "is_circuit_locked": false,
+        "order_flow_veto": false,
+        "safe_entry_status": "NEUTRAL"
+      }
+    },
+    "BARUN": {
+      "symbol": "BARUN",
+      "timestamp_npt": "2026-11-14T08:14:26.131Z",
+      "quote": {
+        "ltp": 326,
+        "open": 324,
+        "high": 327,
+        "low": 323,
+        "prev_close": 323.9,
+        "point_change": 2.1,
+        "p_change": 0.65,
+        "vwap": 326,
+        "day_range_pct": 75,
+        "total_volume": 0,
+        "total_turnover": 0,
+        "total_trades": 0,
+        "rvol_live": 1,
+        "circuit_ceiling": 372.5,
+        "circuit_floor": 275.3
+      },
+      "level2_depth": {
+        "bids": [],
+        "asks": [],
+        "total_buy_qty": 0,
+        "total_sell_qty": 0,
+        "order_book_imbalance_pct": 0,
+        "spread_npr": 0,
+        "spread_bps": 0
+      },
+      "recent_contract_stream": [
+        {
+          "buyer": 48,
+          "seller": 59,
+          "qty": 1500,
+          "rate": 326,
+          "trade_type": "Whale"
+        }
+      ],
+      "live_signals": {
+        "is_circuit_locked": false,
+        "order_flow_veto": false,
+        "safe_entry_status": "NEUTRAL"
+      }
+    },
+    "HDL": {
+      "symbol": "HDL",
+      "timestamp_npt": "2026-11-14T08:14:27.032Z",
+      "quote": {
+        "ltp": 1308,
+        "open": 1302,
+        "high": 1310,
+        "low": 1302,
+        "prev_close": 1302.4,
+        "point_change": 5.6,
+        "p_change": 0.43,
+        "vwap": 1308,
+        "day_range_pct": 75,
+        "total_volume": 0,
+        "total_turnover": 0,
+        "total_trades": 0,
+        "rvol_live": 1,
+        "circuit_ceiling": 1497.8,
+        "circuit_floor": 1107
+      },
+      "level2_depth": {
+        "bids": [],
+        "asks": [],
+        "total_buy_qty": 0,
+        "total_sell_qty": 0,
+        "order_book_imbalance_pct": 0,
+        "spread_npr": 0,
+        "spread_bps": 0
+      },
+      "recent_contract_stream": [
+        {
+          "buyer": 58,
+          "seller": 1,
+          "qty": 1200,
+          "rate": 1308,
+          "trade_type": "Whale"
+        }
+      ],
+      "live_signals": {
+        "is_circuit_locked": false,
+        "order_flow_veto": false,
+        "safe_entry_status": "NEUTRAL"
+      }
+    },
+    "AKJCL": {
+      "symbol": "AKJCL",
+      "timestamp_npt": "2026-11-14T08:14:27.042Z",
+      "quote": {
+        "ltp": 345,
+        "open": 341,
+        "high": 346,
+        "low": 340,
+        "prev_close": 341,
+        "point_change": 4,
+        "p_change": 1.17,
+        "vwap": 345,
+        "day_range_pct": 83.3,
+        "total_volume": 0,
+        "total_turnover": 0,
+        "total_trades": 0,
+        "rvol_live": 1,
+        "circuit_ceiling": 392.1,
+        "circuit_floor": 289.8
+      },
+      "level2_depth": {
+        "bids": [],
+        "asks": [],
+        "total_buy_qty": 0,
+        "total_sell_qty": 0,
+        "order_book_imbalance_pct": 0,
+        "spread_npr": 0,
+        "spread_bps": 0
+      },
+      "recent_contract_stream": [
+        {
+          "buyer": 6,
+          "seller": 34,
+          "qty": 4000,
+          "rate": 345,
+          "trade_type": "Whale"
+        }
+      ],
+      "live_signals": {
+        "is_circuit_locked": false,
+        "order_flow_veto": false,
+        "safe_entry_status": "NEUTRAL"
+      }
+    },
+    "CIT": {
+      "symbol": "CIT",
+      "timestamp_npt": "2026-11-14T08:14:27.093Z",
+      "quote": {
+        "ltp": 1715,
+        "open": 1703,
+        "high": 1720,
+        "low": 1700,
+        "prev_close": 1703,
+        "point_change": 12,
+        "p_change": 0.7,
+        "vwap": 1715,
+        "day_range_pct": 75,
+        "total_volume": 0,
+        "total_turnover": 0,
+        "total_trades": 0,
+        "rvol_live": 1,
+        "circuit_ceiling": 1958.4,
+        "circuit_floor": 1447.5
+      },
+      "level2_depth": {
+        "bids": [],
+        "asks": [],
+        "total_buy_qty": 0,
+        "total_sell_qty": 0,
+        "order_book_imbalance_pct": 0,
+        "spread_npr": 0,
+        "spread_bps": 0
+      },
+      "recent_contract_stream": [
+        {
+          "buyer": 57,
+          "seller": 38,
+          "qty": 500,
+          "rate": 1715,
+          "trade_type": "Institutional"
+        }
+      ],
+      "live_signals": {
+        "is_circuit_locked": false,
+        "order_flow_veto": false,
+        "safe_entry_status": "NEUTRAL"
+      }
+    },
+    "NRN": {
+      "symbol": "NRN",
+      "timestamp_npt": "2026-11-14T08:14:27.098Z",
+      "quote": {
+        "ltp": 1395,
+        "open": 1383,
+        "high": 1398,
+        "low": 1380,
+        "prev_close": 1382.9,
+        "point_change": 12.1,
+        "p_change": 0.87,
+        "vwap": 1395,
+        "day_range_pct": 83.3,
+        "total_volume": 0,
+        "total_turnover": 0,
+        "total_trades": 0,
+        "rvol_live": 1,
+        "circuit_ceiling": 1590.3,
+        "circuit_floor": 1175.5
+      },
+      "level2_depth": {
+        "bids": [],
+        "asks": [],
+        "total_buy_qty": 0,
+        "total_sell_qty": 0,
+        "order_book_imbalance_pct": 0,
+        "spread_npr": 0,
+        "spread_bps": 0
+      },
+      "recent_contract_stream": [
+        {
+          "buyer": 16,
+          "seller": 56,
+          "qty": 1000,
+          "rate": 1395,
+          "trade_type": "Whale"
+        }
+      ],
+      "live_signals": {
+        "is_circuit_locked": false,
+        "order_flow_veto": false,
+        "safe_entry_status": "NEUTRAL"
+      }
+    },
+    "HRL": {
+      "symbol": "HRL",
+      "timestamp_npt": "2026-11-14T08:14:28.061Z",
+      "quote": {
+        "ltp": 502,
+        "open": 491,
+        "high": 505,
+        "low": 490,
+        "prev_close": 491,
+        "point_change": 11,
+        "p_change": 2.24,
+        "vwap": 502,
+        "day_range_pct": 80,
+        "total_volume": 0,
+        "total_turnover": 0,
+        "total_trades": 0,
+        "rvol_live": 1,
+        "circuit_ceiling": 564.6,
+        "circuit_floor": 417.3
+      },
+      "level2_depth": {
+        "bids": [],
+        "asks": [],
+        "total_buy_qty": 0,
+        "total_sell_qty": 0,
+        "order_book_imbalance_pct": 0,
+        "spread_npr": 0,
+        "spread_bps": 0
+      },
+      "recent_contract_stream": [
+        {
+          "buyer": 51,
+          "seller": 33,
+          "qty": 9000,
+          "rate": 502,
+          "trade_type": "Whale"
+        },
+        {
+          "buyer": 35,
+          "seller": 34,
+          "qty": 6000,
+          "rate": 498,
+          "trade_type": "Whale"
+        }
+      ],
+      "live_signals": {
+        "is_circuit_locked": false,
+        "order_flow_veto": false,
+        "safe_entry_status": "NEUTRAL"
+      }
+    },
+    "API": {
+      "symbol": "API",
+      "timestamp_npt": "2026-11-14T08:14:28.023Z",
+      "quote": {
+        "ltp": 337,
+        "open": 333,
+        "high": 338,
+        "low": 332,
+        "prev_close": 333,
+        "point_change": 4,
+        "p_change": 1.2,
+        "vwap": 337,
+        "day_range_pct": 83.3,
+        "total_volume": 0,
+        "total_turnover": 0,
+        "total_trades": 0,
+        "rvol_live": 1,
+        "circuit_ceiling": 382.9,
+        "circuit_floor": 283.1
+      },
+      "level2_depth": {
+        "bids": [],
+        "asks": [],
+        "total_buy_qty": 0,
+        "total_sell_qty": 0,
+        "order_book_imbalance_pct": 0,
+        "spread_npr": 0,
+        "spread_bps": 0
+      },
+      "recent_contract_stream": [
+        {
+          "buyer": 4,
+          "seller": 39,
+          "qty": 8000,
+          "rate": 337,
+          "trade_type": "Whale"
+        }
+      ],
+      "live_signals": {
+        "is_circuit_locked": false,
+        "order_flow_veto": false,
+        "safe_entry_status": "NEUTRAL"
+      }
+    }
+  }
 }
