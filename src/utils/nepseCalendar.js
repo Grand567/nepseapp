@@ -128,6 +128,7 @@ export const NEPSE_PUBLIC_HOLIDAYS = {
   '2026-11-12': 'Tihar Holiday (Day after Bhai Tika / Kartik 26)',
   // Note: 2026-11-13 (Kartik 27, Friday) is an active NEPSE trading session resuming post-Tihar.
   '2026-11-15': 'Chhath Parva (Kartik 29)',
+  '2026-11-16': 'Chhath Parva (Morning Arghya / Kartik 30)',
   '2026-12-24': 'Udhauli Parva / Yomari Punhi (Poush 9)',
   '2026-12-25': 'Christmas Day (Poush 10)',
   '2026-12-30': 'Tamu Lhosar (Poush 15)',
@@ -393,6 +394,126 @@ export function getLastValidTradingDay(fromDate = new Date(), requireCompleted =
   return new Date(fromDate);
 }
 
+
+/**
+ * Returns the minutes elapsed from midnight in Asia/Kathmandu time (0 - 1439).
+ */
+export function getNptMinutesOfDay(date = new Date()) {
+  const d = new Date(date);
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kathmandu',
+      hour12: false,
+      hour: 'numeric',
+      minute: 'numeric'
+    });
+    const parts = formatter.formatToParts(d);
+    const h = parseInt(parts.find(p => p.type === 'hour').value, 10) % 24;
+    const m = parseInt(parts.find(p => p.type === 'minute').value, 10);
+    return h * 60 + m;
+  } catch (_) {
+    const nptOffset = 5 * 60 + 45;
+    const utcMins = d.getUTCHours() * 60 + d.getUTCMinutes();
+    return (utcMins + nptOffset) % 1440;
+  }
+}
+
+/**
+ * Checks whether NEPSE is currently in an active continuous trading session.
+ * Standard hours: Monday - Friday, 11:00 AM – 3:00 PM Asia/Kathmandu (UTC+5:45).
+ * Strictly false on weekends (Sat & Sun), public holidays, and emergency halts.
+ */
+export function isMarketOpen(now = new Date()) {
+  const d = new Date(now);
+  if (!isNepseTradingDay(d)) return false;
+  const mins = getNptMinutesOfDay(d);
+  return mins >= 11 * 60 && mins < 15 * 60;
+}
+
+/**
+ * Returns the exact session date (YYYY-MM-DD in Asia/Kathmandu) of the latest trading session.
+ * - During active market hours:
+ *   - If requireCompleted = false: returns today's date (active partial session).
+ *   - If requireCompleted = true: returns previous completed session date.
+ * - After market close (>= 15:00 NPT on trading day): returns today's completed session date.
+ * - Before market open (< 11:00 NPT) or on non-trading days (weekends & holidays): returns previous completed session.
+ */
+export function latestTradingSession(now = new Date(), requireCompleted = false) {
+  const d = new Date(now);
+  const isTrading = isNepseTradingDay(d);
+  const mins = getNptMinutesOfDay(d);
+
+  if (isTrading) {
+    if (mins >= 15 * 60) {
+      return formatNptDateIso(d);
+    }
+    if (mins >= 11 * 60) {
+      if (!requireCompleted) {
+        return formatNptDateIso(d);
+      }
+      const prevDate = new Date(d);
+      prevDate.setDate(prevDate.getDate() - 1);
+      return formatNptDateIso(getLastValidTradingDay(prevDate, false));
+    }
+    const prevDate = new Date(d);
+    prevDate.setDate(prevDate.getDate() - 1);
+    return formatNptDateIso(getLastValidTradingDay(prevDate, false));
+  }
+
+  const lastSession = getLastValidTradingDay(d, false);
+  return formatNptDateIso(lastSession);
+}
+
+/**
+ * Computes an exact window of n consecutive active NEPSE trading days ending at endSession.
+ * Strictly skips all Saturdays, Sundays, and public holidays.
+ *
+ * @param {number} n - Number of trading sessions requested (e.g. 1, 5, 15, 30)
+ * @param {string|Date} endSession - Anchor session date (default: latestTradingSession(now))
+ * @param {object} options - Optional flags
+ * @returns {{ dates: string[], startDate: string, endDate: string, count: number, timeframeDays: number }}
+ */
+export function tradingDayWindow(n = 5, endSession = null, options = {}) {
+  const count = Math.max(1, parseInt(n, 10) || 1);
+  let anchorIso;
+
+  if (endSession) {
+    if (endSession instanceof Date) {
+      anchorIso = formatNptDateIso(endSession);
+    } else {
+      anchorIso = String(endSession).trim().slice(0, 10);
+    }
+  } else {
+    anchorIso = latestTradingSession(new Date(), false);
+  }
+
+  let cursor = new Date(`${anchorIso}T12:00:00+05:45`);
+  if (!isNepseTradingDay(cursor)) {
+    cursor = getLastValidTradingDay(cursor, false);
+  }
+
+  const collectedDates = [];
+  let iterations = 0;
+  const maxIterations = count * 12;
+
+  while (collectedDates.length < count && iterations < maxIterations) {
+    if (isNepseTradingDay(cursor)) {
+      collectedDates.push(formatNptDateIso(cursor));
+    }
+    cursor.setDate(cursor.getDate() - 1);
+    iterations++;
+  }
+
+  collectedDates.reverse();
+
+  return {
+    dates: collectedDates,
+    startDate: collectedDates[0] || anchorIso,
+    endDate: collectedDates[collectedDates.length - 1] || anchorIso,
+    count: collectedDates.length,
+    timeframeDays: count
+  };
+}
 
 /**
  * Formats a Date object into YYYY-MM-DD in Asia/Kathmandu time zone.

@@ -55,6 +55,8 @@ const testFiles = [
   'testMeroShareWaccDetails.test.mjs',
   'testCumulativeBrokerHolding.test.mjs',
   'marketRules.test.mjs',
+  'sharedTradingCalendar.test.mjs',
+  'replayHarness.mjs',
   'researchBasis.test.mjs',
   'swingEngine.test.mjs',
   'swingGateEvaluator.test.mjs',

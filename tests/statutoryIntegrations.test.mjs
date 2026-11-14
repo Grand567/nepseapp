@@ -75,13 +75,14 @@ test('3. Official Statutory Trading Calendar: 2083 Tihar & Chhath Holidays', () 
   const fridayResumption = new Date('2026-11-13T12:00:00+05:45');
   assert.strictEqual(isNepseTradingDay(fridayResumption), true, '2026-11-13 (Friday, Kartik 27) must be an active trading day');
 
-  // Verify weekend / Chhath closures on Nov 14 & 15
+  // Verify weekend / Chhath closures on Nov 14, 15, & 16
   assert.strictEqual(isNepseTradingDay(new Date('2026-11-14T12:00:00+05:45')), false, '2026-11-14 (Saturday) must be weekend closed');
-  assert.strictEqual(isNepseTradingDay(new Date('2026-11-15T12:00:00+05:45')), false, '2026-11-15 (Sunday / Chhath) must be closed');
+  assert.strictEqual(isNepseTradingDay(new Date('2026-11-15T12:00:00+05:45')), false, '2026-11-15 (Sunday / Chhath Sunset Arghya) must be closed');
+  assert.strictEqual(isNepseTradingDay(new Date('2026-11-16T12:00:00+05:45')), false, '2026-11-16 (Monday / Chhath Morning Arghya) must be government holiday closed');
 
-  // Verify market trading on Monday, Kartik 30 (2026-11-16)
-  const mondayResumption = new Date('2026-11-16T12:00:00+05:45');
-  assert.strictEqual(isNepseTradingDay(mondayResumption), true, '2026-11-16 (Monday, Kartik 30) must be an active trading day');
+  // Verify market trading on Tuesday, Mangsir 1 (2026-11-17)
+  const tuesdayResumption = new Date('2026-11-17T12:00:00+05:45');
+  assert.strictEqual(isNepseTradingDay(tuesdayResumption), true, '2026-11-17 (Tuesday, Mangsir 1) must be an active trading day');
 
   // Verify getNextValidTradingDay from Friday 2026-11-06 lands accurately on Friday 2026-11-13
   const nov6 = new Date('2026-11-06T12:00:00+05:45');
