@@ -11,6 +11,10 @@ import {
 } from '../proxy/telegramNotifier.mjs';
 import { broadcastAlert } from '../proxy/smartAlertEngine.mjs';
 
+process.env.SUPPRESS_TEST_ALERTS = 'true';
+process.env.TEST_LIVE_TELEGRAM = 'false';
+process.env.NODE_ENV = 'test';
+
 test('1. Android Status Bar Bridge & Push Service Verification', async (t) => {
   await t.test('triggerNativeStatusBarNotification invokes postStatusBarNotification without false deduplication suppression', async () => {
     // Setup mock window with NepseNativeNotifier
@@ -51,14 +55,14 @@ test('1. Android Status Bar Bridge & Push Service Verification', async (t) => {
       created_at: new Date().toISOString()
     };
 
-    // First mark as processed (as pushNotificationReceived listener does)
+    // Trigger status bar notification before marking processed
+    pushModule.triggerNativeStatusBarNotification(liveAlert);
+
+    // Then mark as processed (as pushNotificationReceived listener does)
     pushModule.markNotificationAsProcessed(liveAlert.id, 'fp_NABIL_BREAKOUT_123', {
       symbol: 'NABIL',
       type: 'BREAKOUT'
     });
-
-    // Now trigger status bar notification
-    pushModule.triggerNativeStatusBarNotification(liveAlert);
 
     // Verify it was NOT suppressed and was posted to Android bridge!
     assert.ok(postedNotification, 'Notification should be delivered to native bridge');
@@ -113,12 +117,13 @@ test('2. Telegram Bot Message Formatting & HTML Entity Safety', async (t) => {
       target1: 375,
       target2: 405,
       netRRR: 3.2,
+      skipTrapVeto: true,
       body: 'Institutional accumulation confirmed at support'
     });
     assert.equal(res.success, true);
   });
 
-  await t.test('sendTelegramNewsAlert generates dedicated news layout without fake buy signals', async () => {
+  await t.test('sendTelegramNewsAlert suppresses news dispatch to Telegram (in-app only)', async () => {
     const res = await sendTelegramNewsAlert({
       title: 'NABIL Bank Reports 18% Net Profit Growth in Q3',
       body: 'Operating profit reached Rs. 4.2 Billion driven by retail loan expansion.',
@@ -126,16 +131,18 @@ test('2. Telegram Bot Message Formatting & HTML Entity Safety', async (t) => {
       symbol: 'NABIL',
       url: 'https://sharesansar.com/newsdetail/nabil-q3-profit'
     });
-    assert.equal(res.success, true);
+    assert.equal(res.success, false);
+    assert.equal(res.suppressed, true);
   });
 
-  await t.test('sendTelegramIpoAlert generates dedicated IPO layout', async () => {
+  await t.test('sendTelegramIpoAlert suppresses IPO dispatch to Telegram (in-app only)', async () => {
     const res = await sendTelegramIpoAlert({
       title: 'Reliance Spinning Mills IPO Opens Today',
       body: 'Book-building price Rs. 820.80 per unit. Closes in 4 days.',
       symbol: 'RSML'
     });
-    assert.equal(res.success, true);
+    assert.equal(res.success, false);
+    assert.equal(res.suppressed, true);
   });
 
   await t.test('sendTelegramExitAlert generates structured TMS action guidance for targets and stop loss', async () => {
@@ -153,7 +160,7 @@ test('2. Telegram Bot Message Formatting & HTML Entity Safety', async (t) => {
   });
 
   await t.test('broadcastAlert correctly routes NEWS_ALERT and IPO_ALERT to their dedicated dispatchers', async () => {
-    // Should route news without error
+    // Should route news to in-app feed without error (while suppressing Telegram dispatch)
     const newsBroadcast = broadcastAlert({
       id: 'news_test_broadcast_01',
       type: 'NEWS_ALERT',
@@ -161,18 +168,20 @@ test('2. Telegram Bot Message Formatting & HTML Entity Safety', async (t) => {
       title: 'SEBON Approves New Margin Lending Guidelines',
       body: 'Loan to value ratio maintained at 70%.',
       url: 'https://merolagani.com/news',
-      source: 'MeroLagani'
+      source: 'MeroLagani',
+      isTest: true
     });
     assert.notEqual(newsBroadcast, false);
 
-    // Should route IPO without error
+    // Should route IPO to in-app feed without error (while suppressing Telegram dispatch)
     const ipoBroadcast = broadcastAlert({
       id: 'ipo_test_broadcast_01',
       type: 'IPO_ALERT',
       category: 'general',
       title: '🔔 IPO Open: Greenlife Hydro',
       body: 'Price Rs. 100 per unit.',
-      symbol: 'GLH'
+      symbol: 'GLH',
+      isTest: true
     });
     assert.notEqual(ipoBroadcast, false);
   });

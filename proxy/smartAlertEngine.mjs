@@ -32,7 +32,10 @@ import {
   sendTelegramMessage, 
   sendTelegramEarlyIgnitionAlert,
   sendTelegramNewsAlert,
-  sendTelegramIpoAlert
+  sendTelegramIpoAlert,
+  auditMultiSessionTrapRisk,
+  extract5DayBrokerFlowMetrics,
+  evaluateLoopholeProtectedSmcSetup
 } from './telegramNotifier.mjs';
 import { sendDiscordSmartAlert } from './discordNotifier.mjs';
 import { getScripPromoterLockin } from './utils/promoterLockinEngine.mjs';
@@ -344,25 +347,9 @@ export function broadcastAlert(alertPayload) {
                    alertPayload.category === 'corporate';
     const isIpo = alertPayload.type === 'IPO_ALERT' || alertPayload.category === 'ipo';
 
-    if (isNews) {
-      // User Policy: Portfolio holdings AND major market events / trending breaking news dispatch to Telegram
-      const isPortfolioHolding = Boolean(
-        alertPayload.isPortfolioTracked ||
-        alertPayload.isUserHolding ||
-        (alertPayload.symbol && userTrackedSymbolsSet.has(alertPayload.symbol))
-      );
-      const isMajorMarketEvent = alertPayload.type === 'NEPSE_MACRO' || 
-                                 alertPayload.type === 'MARKET_MILESTONE_ALERT' || 
-                                 alertPayload.type === 'TRENDING_NEWS_ALERT';
-      if (isPortfolioHolding || isMajorMarketEvent) {
-        sendTelegramNewsAlert(alertPayload).catch(err => {
-          console.warn('[SmartAlertEngine] Telegram news dispatch warning:', err.message);
-        });
-      }
-    } else if (isIpo) {
-      sendTelegramIpoAlert(alertPayload).catch(err => {
-        console.warn('[SmartAlertEngine] Telegram IPO alert dispatch warning:', err.message);
-      });
+    if (isNews || isIpo) {
+      // User Policy: Do NOT send any stock news, corporate announcements, or IPO alerts to Telegram.
+      // News and IPO updates remain in-app only.
     } else if (alertPayload.type === 'PROFIT_BOOKING' || alertPayload.type === 'STOP_LOSS_WARNING') {
       sendTelegramExitAlert({
         symbol: alertPayload.symbol,
@@ -383,7 +370,7 @@ export function broadcastAlert(alertPayload) {
         console.log(`[SmartAlertEngine] Suppressing morning early ignition alert for ${alertPayload.symbol} during 11:00-11:45 AM wash period. Golden Window opens at 11:45 AM.`);
         return;
       }
-      sendTelegramEarlyIgnitionAlert(alertPayload).catch(err => {
+      sendTelegramSmartAlert(alertPayload).catch(err => {
         console.warn('[SmartAlertEngine] Telegram early ignition alert dispatch warning:', err.message);
       });
     } else {
@@ -2391,7 +2378,7 @@ export async function scanEmaCrossoverAndSharpBase({
   limit = 6
 } = {}) {
   try {
-    const { db } = await import('./db/ledgerStore.js');
+    const { db, getSmartMoneyAggregatedFlow } = await import('./db/ledgerStore.js');
     if (!db) return [];
 
     let targetDate = sessionDate;
@@ -2420,7 +2407,7 @@ export async function scanEmaCrossoverAndSharpBase({
         `).all(targetDate).map(r => r.symbol);
 
     const getHistoryStmt = db.prepare(`
-      SELECT trade_date, close_price, high_price, low_price, total_volume, total_turnover
+      SELECT trade_date, open_price, close_price, high_price, low_price, total_volume, total_turnover
       FROM daily_stock_summary
       WHERE symbol = ? AND trade_date <= ?
       ORDER BY trade_date ASC
@@ -2451,6 +2438,7 @@ export async function scanEmaCrossoverAndSharpBase({
       let crossDate = null;
       let crossVol = 0;
       let crossAvgVol = 0;
+      let isPocketPivotIgnition = false;
 
       const minLookback = Math.max(20, n - (lookbackSessions - 1));
       for (let i = minLookback; i <= n; i++) {
@@ -2480,6 +2468,21 @@ export async function scanEmaCrossoverAndSharpBase({
           crossDate = rows[crossIndex]?.trade_date || targetDate;
           crossVol = currentVol;
           crossAvgVol = avgVol20;
+        } else if (!symbol && currentClose >= currentEma * 0.99 && currentClose > closes[n - 1] && (currentVol >= 1.2 * avgVol20 || currentVol >= 15000)) {
+          // Check Coiled Pocket Pivot / 20 EMA Bounce Ignition on targetDate
+          for (let i = minLookback; i <= n; i++) {
+            if (closes[i - 1] <= emas[i - 1] * 1.02) {
+              crossIndex = i;
+            }
+          }
+          if (crossIndex !== -1) {
+            isPocketPivotIgnition = true;
+            crossDate = rows[crossIndex]?.trade_date || targetDate;
+            crossVol = Math.max(volumes[crossIndex] || 0, currentVol);
+            crossAvgVol = avgVol20;
+          } else {
+            continue;
+          }
         } else {
           continue;
         }
@@ -2502,24 +2505,72 @@ export async function scanEmaCrossoverAndSharpBase({
       if (currentClose < currentEma * 0.980) continue;
 
       const rvolToday = Number((currentVol / Math.max(1, avgVol20)).toFixed(2));
-      const rvolCross = Number((crossVol / Math.max(1, crossAvgVol)).toFixed(2));
+      const baseRvolCross = Number((crossVol / Math.max(1, crossAvgVol)).toFixed(2));
+      const rvolCross = isPocketPivotIgnition ? Math.max(baseRvolCross, rvolToday, 1.25) : baseRvolCross;
 
-      // Execution plan levels
+      // 3. Enforce 5-Day Institutional Ledger, Trap Veto Gate & Loophole-Protected SMC Confluence
+      const trapAudit = auditMultiSessionTrapRisk(db, sym);
+      const flow = typeof getSmartMoneyAggregatedFlow === 'function' ? getSmartMoneyAggregatedFlow(sym, 5) : [];
+      const flowMetrics = extract5DayBrokerFlowMetrics(flow, Number(currentEma.toFixed(1)));
+      const avgBrokerPrice = Number(flowMetrics.avgBrokerPrice || currentEma);
+      const bcr3Buy = Number(flowMetrics.bcr3Buy ?? 50.0);
+      const bcr3Sell = Number(flowMetrics.bcr3Sell ?? 35.0);
+      const leadBrokerId = trapAudit?.leadBrokerId || flowMetrics.leadBrokerId || null;
+      const leadRetentionPct = Number(trapAudit?.retentionPct ?? 0);
+      const isTrap = Boolean(trapAudit?.isTrap);
+
+      // General /breakout radar strictly vetoes T+2 traps, high seller dominance & wash churn
+      if (!symbol) {
+        if (isTrap || bcr3Sell > bcr3Buy || bcr3Sell > 45 || leadRetentionPct < 55) {
+          continue;
+        }
+      }
+
+      const smc = evaluateLoopholeProtectedSmcSetup(rows.slice(-55), {
+        ltp: currentClose,
+        ema20: currentEma,
+        avgBrokerPrice,
+        bcr3Buy,
+        bcr3Sell,
+        leadRetentionPct,
+        isTrap,
+      });
+
+      // Execution plan levels (anchored with ATR-buffered SMC stop when structure holds)
       const buyLow = Math.floor(currentEma * 0.995);
       const buyHigh = Math.ceil(currentClose * 1.015);
-      const stopLoss = Math.round(currentEma * 0.955 * 10) / 10;
+      const baseStopLoss = Math.round(currentEma * 0.955 * 10) / 10;
+      const hasSmcStructure = smc.isBreakAndRetest || smc.isSmcSweepMss || smc.isFvgMitigated;
+      const stopLoss =
+        hasSmcStructure && smc.smcStopLoss > baseStopLoss && smc.smcStopLoss < currentClose * 0.985
+          ? smc.smcStopLoss
+          : baseStopLoss;
       const target1 = Math.round(currentClose * 1.080 * 10) / 10;
       const target2 = Math.round(currentClose * 1.145 * 10) / 10;
 
-      const statusBadge = daysSinceCross === 0
-        ? '⚡ Fresh 20 EMA Cross Today'
-        : `🔥 20 EMA Cross &amp; Sharp Base (${daysSinceCross}D Coiling)`;
+      let statusBadge = isPocketPivotIgnition
+        ? `🚀 Coiled Pocket Pivot & 20 EMA Bounce (${daysSinceCross}D Base)`
+        : daysSinceCross === 0
+          ? '⚡ Fresh 20 EMA Cross Today'
+          : `🔥 20 EMA Cross & Sharp Base (${daysSinceCross}D Coiling)`;
+      if (smc.isBreakAndRetest) {
+        statusBadge = `🎯 SMC Break & Retest Confirmed (${daysSinceCross}D Base)`;
+      } else if (smc.isSmcSweepMss) {
+        statusBadge = `⚡ SMC Liquidity Sweep + MSS (${daysSinceCross}D Base)`;
+      }
 
       results.push({
         symbol: sym,
         sessionDate: targetDate,
         ltp: currentClose,
         ema20: Number(currentEma.toFixed(1)),
+        operatorVwap: avgBrokerPrice,
+        avgBrokerPrice,
+        bcr3Buy,
+        bcr3Sell,
+        leadBrokerId,
+        leadRetentionPct,
+        isTrap,
         distFromEmaPct,
         daysSinceCross,
         crossDate,
@@ -2535,14 +2586,34 @@ export async function scanEmaCrossoverAndSharpBase({
         target1,
         target2,
         statusBadge,
+        isBreakAndRetest: smc.isBreakAndRetest,
+        isSmcSweepMss: smc.isSmcSweepMss,
+        isFvgMitigated: smc.isFvgMitigated,
+        smcNarrative: smc.smcNarrative,
+        fvgNarrative: smc.fvgNarrative,
+        smcConfluenceBonus: smc.smcConfluenceBonus,
         ignitionVerdict: 'Coiled for Secondary Expansion Wave (Supply Absorbed)'
       });
     }
 
-    // Sort by setup quality
+    // Sort by Institutional Breakout Quality Score + SMC Confluence
     results.sort((a, b) => {
-      const scoreA = (a.rvolCross * 1.5) + (a.rvolToday * 1.0) - (a.consolidationRangePct * 0.5) + (a.daysSinceCross > 0 ? 3 : 0);
-      const scoreB = (b.rvolCross * 1.5) + (b.rvolToday * 1.0) - (b.consolidationRangePct * 0.5) + (b.daysSinceCross > 0 ? 3 : 0);
+      const scoreA =
+        (a.bcr3Buy || 45) +
+        ((a.bcr3Buy || 45) - (a.bcr3Sell || 35)) * 1.2 +
+        (a.leadRetentionPct || 65) * 0.4 +
+        (a.rvolCross * 8) +
+        (a.rvolToday * 6) +
+        ((a.smcConfluenceBonus || 0) * 1.5) -
+        (a.consolidationRangePct * 2);
+      const scoreB =
+        (b.bcr3Buy || 45) +
+        ((b.bcr3Buy || 45) - (b.bcr3Sell || 35)) * 1.2 +
+        (b.leadRetentionPct || 65) * 0.4 +
+        (b.rvolCross * 8) +
+        (b.rvolToday * 6) +
+        ((b.smcConfluenceBonus || 0) * 1.5) -
+        (b.consolidationRangePct * 2);
       return scoreB - scoreA;
     });
 

@@ -73,7 +73,9 @@ function loadConfig() {
 
   // Prefer verified fileConfig if saved by user, otherwise fallback to env
   const botToken = fileToken || envToken;
-  const chatId = String(fileConfig.chatId || process.env.TELEGRAM_CHAT_ID || process.env.CHAT_ID || '').trim();
+  const chatId = fileConfig.chatId !== undefined
+    ? String(fileConfig.chatId).trim()
+    : String(process.env.TELEGRAM_CHAT_ID || process.env.CHAT_ID || '').trim();
 
   return {
     botToken,
@@ -589,12 +591,298 @@ export async function autoDetectChatId(customToken) {
 }
 
 /**
+ * Shared helper extracting 5-day Top 3 Buyer/Seller concentration, cost basis, and lead broker
+ * from `getSmartMoneyAggregatedFlow(sym, 5)` output.
+ */
+export function extract5DayBrokerFlowMetrics(flow = [], fallbackPrice = 0, defaults = {}) {
+  const defaultBcr3Buy = defaults.bcr3Buy ?? 50.0;
+  const defaultBcr3Sell = defaults.bcr3Sell ?? 35.0;
+  if (!Array.isArray(flow) || flow.length === 0) {
+    return {
+      bcr3Buy: defaultBcr3Buy,
+      bcr3Sell: defaultBcr3Sell,
+      avgBrokerPrice: fallbackPrice,
+      leadBrokerId: defaults.leadBrokerId || null,
+      leadBrokerName: defaults.leadBrokerName || null,
+      hasLedgerFlow: false
+    };
+  }
+
+  const buyers = flow
+    .filter(f => Number(f.buyVolume || 0) > 0)
+    .sort((a, b) => (Number(b.buyVolume || 0) - Number(b.sellVolume || 0)) - (Number(a.buyVolume || 0) - Number(a.sellVolume || 0)));
+  const sellers = flow
+    .filter(f => Number(f.sellVolume || 0) > 0)
+    .sort((a, b) => (Number(b.sellVolume || 0) - Number(b.buyVolume || 0)) - (Number(a.sellVolume || 0) - Number(a.buyVolume || 0)));
+
+  const top3Buyers = buyers.slice(0, 3);
+  const top3Sellers = sellers.slice(0, 3);
+
+  const top3BuyVol = top3Buyers.reduce((acc, b) => acc + Number(b.buyVolume || 0), 0);
+  const top3BuyAmt = top3Buyers.reduce((acc, b) => acc + Number(b.buyAmount || 0), 0);
+  const top3SellVol = top3Sellers.reduce((acc, s) => acc + Number(s.sellVolume || 0), 0);
+
+  const totalBuyVolAll = flow.reduce((acc, f) => acc + Number(f.buyVolume || 0), 0);
+  const totalSellVolAll = flow.reduce((acc, f) => acc + Number(f.sellVolume || 0), 0);
+
+  const bcr3Buy = totalBuyVolAll > 0 ? +((top3BuyVol / totalBuyVolAll) * 100).toFixed(1) : defaultBcr3Buy;
+  const bcr3Sell = totalSellVolAll > 0 ? +((top3SellVol / totalSellVolAll) * 100).toFixed(1) : defaultBcr3Sell;
+  const computedAvg = top3BuyVol > 0 && top3BuyAmt > 0 ? +(top3BuyAmt / top3BuyVol).toFixed(1) : fallbackPrice;
+
+  const leadBuyer = top3Buyers[0] || null;
+  const leadBrokerId = leadBuyer ? leadBuyer.brokerId : (defaults.leadBrokerId || null);
+  const rawLeadName = leadBrokerId ? (BROKER_NAMES[String(leadBrokerId)] || `Broker #${leadBrokerId}`) : (defaults.leadBrokerName || 'Dynamic');
+  const leadBrokerName = String(rawLeadName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd|Money Managers)\b/gi, '').trim() || 'Dynamic';
+
+  return {
+    bcr3Buy,
+    bcr3Sell,
+    avgBrokerPrice: computedAvg > 0 ? computedAvg : fallbackPrice,
+    leadBrokerId,
+    leadBrokerName,
+    hasLedgerFlow: true
+  };
+}
+
+/**
+ * Evaluates Loophole-Protected SMC & Multi-Day Break-and-Retest Confluences.
+ * Guards against NEPSE phantom-tick wicks, momentum starvation, and tight intraday stop hunts.
+ */
+export function evaluateLoopholeProtectedSmcSetup(histBars, context = {}) {
+  const fallbackLtp = Number(context.ltp || 0);
+  const defaultOut = {
+    isBreakAndRetest: false,
+    isSmcSweepMss: false,
+    hasBullishFvg: false,
+    isFvgMitigated: false,
+    fvgLow: null,
+    fvgHigh: null,
+    retestLevel: null,
+    sweepLow: null,
+    smcStopLoss: fallbackLtp > 0 ? Number((fallbackLtp * 0.965).toFixed(1)) : 0,
+    smcTarget1: fallbackLtp > 0 ? Number((fallbackLtp * 1.08).toFixed(1)) : 0,
+    smcTarget2: fallbackLtp > 0 ? Number((fallbackLtp * 1.15).toFixed(1)) : 0,
+    smcConfluenceBonus: 0,
+    smcBadge: null,
+    smcNarrative: 'Orderly Floor Base Holding Above 20 EMA',
+    fvgNarrative: 'Balanced Auction Near Broker VWAP',
+  };
+
+  if (!Array.isArray(histBars) || histBars.length < 12) {
+    return defaultOut;
+  }
+
+  // Loophole 1 Guard: Normalize bars & clamp pathological phantom-wick drops (< 85% of close)
+  const validBars = histBars.map((b) => {
+    const c = Number(b?.close_price ?? b?.close ?? 0);
+    const o = Number(b?.open_price ?? b?.open ?? c) || c;
+    const rawHigh = Number(b?.high_price ?? b?.high ?? c) || c;
+    const rawLow = Number(b?.low_price ?? b?.low ?? c) || c;
+    const safeLow = rawLow > 0 && c > 0 && rawLow < c * 0.85 ? Number((Math.min(o, c) * 0.98).toFixed(2)) : rawLow;
+    const safeHigh = Math.max(rawHigh, o, c);
+    return {
+      date: String(b?.trade_date ?? b?.date ?? ''),
+      open: o,
+      high: safeHigh,
+      low: Math.min(safeLow, o, c),
+      close: c,
+      volume: Number(b?.total_volume ?? b?.volume ?? 0),
+    };
+  }).filter((b) => b.close > 0);
+
+  if (validBars.length < 12) return defaultOut;
+
+  const bLen = validBars.length - 1;
+  const curBar = validBars[bLen];
+  const prevBar = validBars[bLen - 1];
+  const ltp = Number(context.ltp || curBar.close || 0);
+  if (ltp <= 0) return defaultOut;
+
+  const prior20 = validBars.slice(Math.max(0, bLen - 20), bLen);
+  const avgVol20 = prior20.reduce((s, r) => s + r.volume, 0) / Math.max(1, prior20.length);
+  const ema20Val = Number(context.ema20 || 0) > 0
+    ? Number(context.ema20)
+    : prior20.reduce((s, r) => s + r.close, 0) / Math.max(1, prior20.length);
+
+  const curVol = curBar.volume;
+  const dayChgPct = prevBar.close > 0 ? ((curBar.close - prevBar.close) / prevBar.close) * 100 : 0;
+  const prior5 = validBars.slice(Math.max(0, bLen - 5), bLen);
+  const minVol5 = prior5.length > 0 ? Math.min(...prior5.map((r) => r.volume)) : avgVol20;
+  const vduRatio = minVol5 / Math.max(1, avgVol20);
+
+  const bcr3Buy = Number(context.bcr3Buy ?? 50.0);
+  const bcr3Sell = Number(context.bcr3Sell ?? 30.0);
+  const leadRetentionPct = Number(context.leadRetentionPct ?? 70);
+  const isTrap = Boolean(context.isTrap);
+
+  const hasRealLiquidity = curVol >= 0.40 * avgVol20 || curVol >= 4000;
+  const hasBrokerBacking = !isTrap && bcr3Buy >= bcr3Sell && bcr3Sell <= 45 && leadRetentionPct >= 55;
+
+  // Compute ATR(14) & Structural Low / Liquidity Pool Targets (Loophole 3 Guard)
+  const atrSlice = validBars.slice(Math.max(1, bLen - 14), bLen + 1);
+  let trSum = 0;
+  for (let idx = 1; idx < atrSlice.length; idx++) {
+    const b = atrSlice[idx];
+    const p = atrSlice[idx - 1];
+    trSum += Math.max(b.high - b.low, Math.abs(b.high - p.close), Math.abs(b.low - p.close));
+  }
+  const atr14 = atrSlice.length > 1 ? trSum / (atrSlice.length - 1) : ltp * 0.025;
+
+  const bars20 = validBars.slice(Math.max(0, validBars.length - 20));
+  const bars50 = validBars.slice(Math.max(0, validBars.length - 50));
+  const maxHigh20 = Math.max(...bars20.map((b) => b.high));
+  const maxHigh50 = Math.max(...bars50.map((b) => b.high));
+  const smcTarget1 = Number(Math.max(ltp * 1.075, Math.min(ltp * 1.095, maxHigh20 * 1.02)).toFixed(1));
+  const smcTarget2 = Number(Math.max(ltp * 1.145, Math.min(ltp * 1.180, maxHigh50 * 1.04)).toFixed(1));
+
+  let isBreakAndRetest = false;
+  let retestLevel = null;
+  let isSmcSweepMss = false;
+  let sweepLow = null;
+  let hasBullishFvg = false;
+  let isFvgMitigated = false;
+  let fvgLow = null;
+  let fvgHigh = null;
+
+  if (hasRealLiquidity && hasBrokerBacking) {
+    // 1. Multi-Day Break & Retest (Breakout 2-8 sessions ago, low-vol pullback retest today)
+    const minBrkIdx = Math.max(5, bLen - 8);
+    const maxBrkIdx = bLen - 2;
+    for (let i = maxBrkIdx; i >= minBrkIdx; i--) {
+      const brkBar = validBars[i];
+      const beforeBrk = validBars.slice(Math.max(0, i - 10), i);
+      if (beforeBrk.length < 3) continue;
+      const priorRes = Math.max(...beforeBrk.map((b) => b.close));
+      const clearedResistance = brkBar.close > priorRes && validBars[i - 1].close <= priorRes * 1.006;
+      const clearedEma = ema20Val > 0 && brkBar.close > ema20Val * 1.005 && validBars[i - 1].close <= ema20Val * 1.003;
+      const breakoutVolOk = brkBar.volume >= 1.15 * avgVol20;
+
+      if ((clearedResistance || clearedEma) && breakoutVolOk) {
+        const pivot = clearedResistance ? priorRes : ema20Val;
+        const distRetest = pivot > 0 ? Math.abs(curBar.low - pivot) / pivot : 1;
+        const heldRetest = distRetest <= 0.020 && curBar.close >= pivot * 0.993 && dayChgPct >= -1.5 && dayChgPct <= 3.5;
+        const volCalm = curVol <= 0.95 * brkBar.volume || vduRatio <= 0.72;
+        if (heldRetest && volCalm && leadRetentionPct >= 65) {
+          isBreakAndRetest = true;
+          retestLevel = Number(pivot.toFixed(1));
+          break;
+        }
+      }
+    }
+
+    // 2. Liquidity Sweep + Market Structure Shift (MSS) within last 5 bars
+    let detectedSweep = null;
+    const minSweepIdx = Math.max(5, bLen - 4);
+    for (let s = bLen; s >= minSweepIdx; s--) {
+      const sBar = validBars[s];
+      const priorWindow = validBars.slice(Math.max(0, s - 10), s);
+      if (priorWindow.length < 3) continue;
+      const minPriorLow = Math.min(...priorWindow.map((b) => b.low));
+      const sweptSupport = sBar.low < minPriorLow || (ema20Val > 0 && sBar.low < ema20Val * 0.992);
+      const sweptAndAbsorbed = sweptSupport && sBar.close > sBar.low && sBar.close >= Math.min(minPriorLow, ema20Val) * 0.985;
+      if (sweptAndAbsorbed) {
+        detectedSweep = Number(sBar.low.toFixed(1));
+        break;
+      }
+    }
+    const prior3Highs = validBars.slice(Math.max(0, bLen - 3), bLen).map((b) => b.high);
+    const recentMinorHigh3 = prior3Highs.length > 0 ? Math.max(...prior3Highs) : prevBar.high;
+    const mssConfirmed =
+      curBar.close > prevBar.close &&
+      dayChgPct >= 0.25 &&
+      (curBar.close >= recentMinorHigh3 * 0.997 || (ema20Val > 0 && curBar.close >= ema20Val));
+
+    if (detectedSweep !== null && mssConfirmed && curBar.close > detectedSweep) {
+      isSmcSweepMss = true;
+      sweepLow = detectedSweep;
+    }
+
+    // 3. Bullish Fair Value Gap (FVG) + Mitigation Check across last 5 sessions
+    const minFvgIdx = Math.max(2, bLen - 4);
+    for (let k = bLen; k >= minFvgIdx; k--) {
+      const cPrev2 = validBars[k - 2];
+      const cMid = validBars[k - 1];
+      const cCurr = validBars[k];
+      const gap = cCurr.low - cPrev2.high;
+      const gapPct = cPrev2.high > 0 ? gap / cPrev2.high : 0;
+      if (gap >= 1.0 && gapPct >= 0.003 && cMid.volume >= 0.85 * avgVol20) {
+        hasBullishFvg = true;
+        fvgLow = Number(cPrev2.high.toFixed(1));
+        fvgHigh = Number(cCurr.low.toFixed(1));
+        isFvgMitigated = curBar.low <= fvgHigh * 1.018 && curBar.close >= fvgLow * 0.992;
+        break;
+      }
+    }
+  }
+
+  // ATR-buffered End-of-Day Invalidation Stop-Loss (Loophole 3 Guard)
+  const last5Valid = validBars.slice(Math.max(0, bLen - 4), bLen + 1);
+  const minLow5 = Math.min(...last5Valid.map((b) => b.low));
+  const structuralInvalidationLow = fvgLow
+    ? Math.min(minLow5, fvgLow)
+    : (sweepLow !== null ? Math.min(minLow5, sweepLow) : minLow5);
+  const rawStop = structuralInvalidationLow - 0.35 * atr14;
+  const smcStopLoss = Number(Math.max(ltp * 0.955, Math.min(ltp * 0.965, rawStop)).toFixed(1));
+
+  // Additive Confluence Bonus (Loophole 4 Guard)
+  const smcConfluenceBonus = Math.min(
+    16,
+    (isBreakAndRetest ? 8 : 0) +
+      (isSmcSweepMss ? 7 : 0) +
+      (isFvgMitigated ? 5 : hasBullishFvg ? 3 : 0)
+  );
+
+  let smcBadge = null;
+  let smcNarrative = 'Orderly Floor Base Holding Above 20 EMA';
+  if (isBreakAndRetest && isSmcSweepMss) {
+    smcBadge = '🎯 SMC Break & Retest + Sweep MSS';
+    smcNarrative = `Break & Retest (Rs. ${retestLevel}) + Sweep (Rs. ${sweepLow}) & MSS`;
+  } else if (isBreakAndRetest) {
+    smcBadge = '🎯 SMC Break & Retest';
+    smcNarrative = `Confirmed Break & Retest at Rs. ${retestLevel} (Controlled Pullback)`;
+  } else if (isSmcSweepMss && isFvgMitigated) {
+    smcBadge = '⚡ SMC Sweep + MSS + FVG';
+    smcNarrative = `Liquidity Sweep (Rs. ${sweepLow}) + MSS + FVG Mitigation`;
+  } else if (isSmcSweepMss) {
+    smcBadge = '⚡ SMC Sweep + MSS';
+    smcNarrative = `Liquidity Sweep (Rs. ${sweepLow}) + Bullish MSS Above Structure`;
+  } else if (isFvgMitigated) {
+    smcBadge = '🟢 FVG Demand Mitigation';
+    smcNarrative = `Mitigating Bullish FVG Demand Shelf (Rs. ${fvgLow}–${fvgHigh})`;
+  }
+
+  const fvgNarrative = isFvgMitigated
+    ? `Mitigated Bullish FVG (Rs. ${fvgLow}–${fvgHigh}) at Demand`
+    : hasBullishFvg
+      ? `Active Demand FVG Shelf (Rs. ${fvgLow}–${fvgHigh})`
+      : 'Balanced Auction Near Broker VWAP';
+
+  return {
+    isBreakAndRetest,
+    isSmcSweepMss,
+    hasBullishFvg,
+    isFvgMitigated,
+    fvgLow,
+    fvgHigh,
+    retestLevel,
+    sweepLow,
+    smcStopLoss,
+    smcTarget1,
+    smcTarget2,
+    smcConfluenceBonus,
+    smcBadge,
+    smcNarrative,
+    fvgNarrative,
+  };
+}
+
+/**
  * Dispatches an Institutional Smart Alert to Telegram with full 4-Pillar Confluence and Execution Ticket
  */
 export async function sendTelegramSmartAlert(alertItem) {
   if (!alertItem) return { success: false, reason: 'No alert payload provided' };
 
-  // Route News and IPO items to their dedicated clean layouts
+  // Suppress News, Corporate Announcements, and IPO items on Telegram (in-app only)
   if (
     alertItem.type === 'NEWS_ALERT' || 
     alertItem.type === 'PORTFOLIO_NEWS_ALERT' || 
@@ -609,31 +897,52 @@ export async function sendTelegramSmartAlert(alertItem) {
     alertItem.type === 'MARKET_MILESTONE_ALERT' ||
     alertItem.type === 'TRENDING_NEWS_ALERT' ||
     alertItem.category === 'news' ||
-    alertItem.category === 'corporate'
+    alertItem.category === 'corporate' ||
+    alertItem.type === 'IPO_ALERT' ||
+    alertItem.category === 'ipo'
   ) {
-    return await sendTelegramNewsAlert(alertItem);
-  }
-  if (alertItem.type === 'IPO_ALERT' || alertItem.category === 'ipo') {
-    return await sendTelegramIpoAlert(alertItem);
+    return { success: false, suppressed: true, reason: 'Stock news and IPO alerts are disabled on Telegram' };
   }
 
-  // Bypassed legacy ticketPayload.html to ensure only the single clean unified ticket is sent
-  // (Prevents duplicate/conflicting multi-pillar diagnostic dumps in Telegram)
-
-  const sym = escapeHtml(String(alertItem.symbol || 'STOCK').toUpperCase());
-  const companyName = escapeHtml(alertItem.companyName || stockUniverseMap[sym]?.name || sym);
+  const rawSym = String(alertItem.symbol || 'STOCK').toUpperCase().trim();
+  const sym = escapeHtml(rawSym);
+  const companyName = escapeHtml(alertItem.companyName || stockUniverseMap[rawSym]?.name || sym);
   const ltp = Number(alertItem.ltp || 0);
 
-  // 1. BCR3 Avg Buy Price & Cost Basis Floor
-  const bcr3AvgBuy = Number(alertItem.bcr3AvgPrice || alertItem.operatorVwap || alertItem.bcr3AvgBuyPrice || alertItem.buyZone?.low || (ltp * 0.989));
-  const basisPct = alertItem.costBasisFloorPct !== undefined 
-    ? Number(alertItem.costBasisFloorPct) 
-    : (bcr3AvgBuy > 0 ? (((ltp - bcr3AvgBuy) / bcr3AvgBuy) * 100) : 1.1);
-  const basisSign = basisPct >= 0 ? '+' : '';
+  // Enforce 5-Day Multi-Session Trap Veto Gate & enrich with live ledger metrics
+  let trapAudit = null;
+  let flowMetrics = { hasLedgerFlow: false };
+  let vp = null;
+  try {
+    const { db, getSmartMoneyAggregatedFlow, getScripVolumeProfile } = await import('./db/ledgerStore.js');
+    if (db) {
+      if (alertItem.skipTrapVeto !== true) {
+        trapAudit = auditMultiSessionTrapRisk(db, rawSym, alertItem.leadBrokerId || alertItem.brokerId || null);
+        if (trapAudit && trapAudit.isTrap) {
+          console.log(`[sendTelegramSmartAlert] 🚫 Hard Veto ${rawSym}: ${trapAudit.reason}`);
+          return { success: false, isVetoed: true, reason: trapAudit.reason };
+        }
+      }
+      const flow = getSmartMoneyAggregatedFlow(rawSym, 5);
+      flowMetrics = extract5DayBrokerFlowMetrics(flow, ltp);
+      vp = getScripVolumeProfile(rawSym, 30);
+    }
+  } catch (_) {}
 
-  // 2. Whale Footprint (Lead broker ID, Name, Net Kitta, BCR3 %, CMF)
-  let leadBrokerId = alertItem.leadBrokerId || alertItem.leadBroker;
-  let leadBrokerName = alertItem.leadBrokerName;
+  // 1. Avg Broker Cost Basis & Volume Profile POC
+  const explicitAvg = alertItem.avgBrokerPrice ?? alertItem.bcr3AvgPrice ?? alertItem.operatorVwap ?? alertItem.bcr3AvgBuyPrice;
+  const avgBrokerPrice = Number(
+    explicitAvg ??
+    (flowMetrics.hasLedgerFlow ? flowMetrics.avgBrokerPrice : null) ??
+    trapAudit?.buyVwap ??
+    alertItem.buyZone?.low ??
+    (ltp * 0.989)
+  );
+  const pocPrice = Number(alertItem.pocPrice ?? vp?.pocPrice ?? avgBrokerPrice ?? ltp);
+
+  // 2. Whale Footprint (Lead broker ID, Name, BCR3 %, Retention, CMF)
+  let leadBrokerId = alertItem.leadBrokerId || alertItem.leadBroker || alertItem.brokerId || (flowMetrics.hasLedgerFlow ? flowMetrics.leadBrokerId : null) || trapAudit?.leadBrokerId;
+  let leadBrokerName = alertItem.leadBrokerName || alertItem.brokerName || (flowMetrics.hasLedgerFlow ? flowMetrics.leadBrokerName : null);
   if (!leadBrokerId && alertItem.dominantBrokersText) {
     const m = String(alertItem.dominantBrokersText).match(/Broker\s*#?(\d+)/i);
     if (m) leadBrokerId = m[1];
@@ -644,16 +953,21 @@ export async function sendTelegramSmartAlert(alertItem) {
   }
   const cleanBrokerName = String(leadBrokerName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd|Money Managers)\b/gi, '').trim() || 'Dynamic';
 
-  const netKitta = Number(alertItem.leadBrokerNetKitta || alertItem.netKitta || alertItem.volume || 154241);
-  const netSign = netKitta >= 0 ? '+' : '';
-  const bcr3 = Number(alertItem.bcr3 || alertItem.concentrationPct || alertItem.bcr3BuyPct || 60.4).toFixed(1);
+  const bcr3Buy = Number(
+    alertItem.bcr3Buy ?? alertItem.bcr3 ?? alertItem.concentrationPct ?? alertItem.bcr3BuyPct ?? alertItem.buyRatioPct ??
+    (flowMetrics.hasLedgerFlow ? flowMetrics.bcr3Buy : 60.4)
+  );
+  const bcr3Sell = Number(
+    alertItem.bcr3Sell ?? alertItem.bcr3SellPct ??
+    (flowMetrics.hasLedgerFlow ? flowMetrics.bcr3Sell : 34.0)
+  );
+  const retention10D = Number(
+    alertItem.retention10D ?? alertItem.retentionPct ?? trapAudit?.retentionPct ?? 85
+  );
   const cmfVal = alertItem.cmf !== undefined ? Number(alertItem.cmf) : 0.530;
-  const cmfStr = (cmfVal >= 0 ? '+' : '') + cmfVal.toFixed(3);
 
   // 3. Execution Plan (Entry Low - High, Hard Stop Loss, Target 1, Target 2)
   const buyZone = alertItem.buyZone || {};
-  const bLow = Number(buyZone.low || (ltp * 0.99)).toFixed(1);
-  const bHigh = Number(buyZone.high || (ltp * 1.01)).toFixed(1);
   const sl = Number(alertItem.stopLoss || (ltp * 0.965)).toFixed(1);
   const t1 = Number(alertItem.target1 || (ltp * 1.080)).toFixed(1);
   const t2 = Number(alertItem.target2 || (ltp * 1.150)).toFixed(1);
@@ -662,8 +976,10 @@ export async function sendTelegramSmartAlert(alertItem) {
     symbol: sym,
     name: companyName,
     companyName,
-    sector: alertItem.sector || 'Equities',
+    sector: alertItem.sector || stockUniverseMap[rawSym]?.sector || 'Equities',
     ltp,
+    avgBrokerPrice,
+    pocPrice,
     entryLow: Number(buyZone.low || (ltp * 0.995)),
     entryHigh: Number(buyZone.high || (ltp * 1.012)),
     chaseCap: Number(alertItem.chaseCap || (ltp * 1.018)),
@@ -673,16 +989,16 @@ export async function sendTelegramSmartAlert(alertItem) {
     t1Pct: alertItem.t1Pct || 8.0,
     target2: t2,
     t2Pct: alertItem.t2Pct || 15.0,
-    bcr3Buy: alertItem.bcr3Buy || alertItem.bcr3 || 60.4,
-    bcr3Sell: alertItem.bcr3Sell || 34.0,
+    bcr3Buy,
+    bcr3Sell,
     leadBrokerId,
     leadBrokerName: cleanBrokerName,
-    retention10D: alertItem.retention10D || alertItem.retentionPct || 85,
+    retention10D,
     vdu: alertItem.vdu || alertItem.vduRatio || 0.52,
     cmf: cmfVal,
     bbw: alertItem.bbw || alertItem.bbwPct || 11.2,
-    corneringScore: alertItem.corneringScore || alertItem.score || 92,
-    confidenceLabel: alertItem.confidenceLabel || '🟢 Confirmed Stealth (v2.0)'
+    corneringScore: alertItem.corneringScore || alertItem.confluenceScore || alertItem.score || 92,
+    confidenceLabel: alertItem.confidenceLabel || alertItem.stageBadge || '🟢 Confirmed Stealth (v2.0)'
   };
 
   const ticketHtml = formatUpgradedStealthAccumulationHtml(upgradedPayload);
@@ -724,11 +1040,11 @@ export async function sendTelegramNewsAlert(item) {
     `⏱ <i>${timeNpt} NPT • Dravyashree In-App Reader</i>`
   ].filter(Boolean).join('\n');
 
-  return await sendTelegramMessage(msg, 'HTML');
+  return { success: false, suppressed: true, reason: 'Stock news alerts are disabled on Telegram', message: msg };
 }
 
 /**
- * Dispatches a formatted IPO / Corporate Action alert to Telegram
+ * Dispatches a formatted IPO / Corporate Action alert to Telegram (suppressed on Telegram; in-app only)
  */
 export async function sendTelegramIpoAlert(item) {
   if (!item) return { success: false, reason: 'No IPO payload' };
@@ -748,7 +1064,7 @@ export async function sendTelegramIpoAlert(item) {
     `⏱ <i>${timeNpt} NPT</i>`
   ].filter(Boolean).join('\n');
 
-  return await sendTelegramMessage(msg, 'HTML');
+  return { success: false, suppressed: true, reason: 'IPO alerts are disabled on Telegram', message: msg };
 }
 
 /**
@@ -1052,7 +1368,7 @@ export async function runBreakoutScannerAndDispatch(options = {}) {
   const symbolFilter = options?.symbol ? String(options.symbol).toUpperCase().trim() : null;
 
   try {
-    const { db } = await import('./db/ledgerStore.js');
+    const { db, getSmartMoneyAggregatedFlow } = await import('./db/ledgerStore.js');
     if (!db) {
       const msg = `ℹ️ <b>Breakout Scanner:</b> Database initializing. Please try again shortly.`;
       const res = await sendTelegramMessage(msg, { chatId: targetChatId });
@@ -1118,7 +1434,7 @@ export async function runBreakoutScannerAndDispatch(options = {}) {
       maxSurgePct: 7.5, 
       maxBaseRangePct: 9.0,
       sessionDate, 
-      limit: 5 
+      limit: 3 
     });
 
     const breakouts20d = db.prepare(`
@@ -1151,63 +1467,100 @@ export async function runBreakoutScannerAndDispatch(options = {}) {
         AND s.total_volume >= 15000
         AND (s.close_price - h.res_20d) / h.res_20d BETWEEN 0.001 AND 0.07
       ORDER BY rvol DESC
-      LIMIT 3
+      LIMIT 10
     `).all(sessionDate, sessionDate);
 
-    if ((!emaSetups || emaSetups.length === 0) && (!breakouts20d || breakouts20d.length === 0)) {
+    // Filter 20-Day breakouts through 5-Day Institutional Ledger & Trap Veto Gate
+    const verifiedBreakouts20d = [];
+    for (const b of breakouts20d || []) {
+      const trapAudit = auditMultiSessionTrapRisk(db, b.symbol);
+      const flow = typeof getSmartMoneyAggregatedFlow === 'function' ? getSmartMoneyAggregatedFlow(b.symbol, 5) : [];
+      const flowMetrics = extract5DayBrokerFlowMetrics(flow, b.ltp);
+      const retentionPct = Number(trapAudit?.retentionPct || 0);
+      if (
+        trapAudit?.isTrap === true ||
+        flowMetrics.bcr3Sell > flowMetrics.bcr3Buy ||
+        flowMetrics.bcr3Sell > 45 ||
+        retentionPct < 55
+      ) {
+        continue;
+      }
+      verifiedBreakouts20d.push({
+        ...b,
+        operatorVwap: flowMetrics.avgBrokerPrice,
+        avgBrokerPrice: flowMetrics.avgBrokerPrice,
+        bcr3Buy: flowMetrics.bcr3Buy,
+        bcr3Sell: flowMetrics.bcr3Sell,
+        leadBrokerId: trapAudit?.leadBrokerId || flowMetrics.leadBrokerId,
+        leadRetentionPct: retentionPct
+      });
+    }
+
+    if ((!emaSetups || emaSetups.length === 0) && verifiedBreakouts20d.length === 0) {
       const noBreakoutMsg = [
         `⚡ <b>HIGH-VOLUME BREAKOUT &amp; 20 EMA ACCUMULATION RADAR</b>`,
         `──────────────────────────`,
         `Session: <b>${sessionDate}</b>`,
-        `No stock currently meets the strict criteria (20 EMA cross within 1-10 days + sharp non-extended base, or fresh 20-Day resistance breakout with &gt;= 1.5x volume).`,
+        `No stock currently meets the strict criteria (20 EMA cross within 1-10 days + sharp non-extended base, or fresh 20-Day resistance breakout passing the 5-Day Institutional Trap Veto).`,
         `──────────────────────────`,
-        `🛡️ <i>Strict entry rules protect you from chasing overextended stocks or low-volume fakeouts.</i>`,
+        `🛡️ <i>Strict entry rules protect you from chasing overextended stocks or T+2 operator distribution traps.</i>`,
         `💡 Type <code>/b58</code> to view early pre-breakout operator footprints.`
       ].join('\n');
       const res = await sendTelegramMessage(noBreakoutMsg, { chatId: targetChatId });
-      return { success: true, count: 0, telegramResult: res };
+      return { success: true, count: 0, message: noBreakoutMsg, telegramResult: res };
     }
 
     const cards = [];
 
     // Render 20 EMA Cross & Sharp Base Setups
     for (let idx = 0; idx < emaSetups.length; idx++) {
+      if (cards.length >= 4) break;
       const b = emaSetups[idx];
       const compName = escapeHtml(stockUniverseMap[b.symbol]?.name || b.symbol);
       const timingText = b.daysSinceCross === 0
-        ? `Crossed 20 EMA Today with <b>${b.rvolCross}x Volume</b>`
-        : `Crossed 20 EMA ${b.daysSinceCross}D ago (${b.crossDate}) with <b>${b.rvolCross}x Volume</b>`;
+        ? `Crossed 20 EMA Today (<b>${b.rvolCross}x Vol</b>)`
+        : `Crossed 20 EMA ${b.daysSinceCross}D ago (${b.crossDate}, <b>${b.rvolCross}x Vol</b>)`;
+      const realVwap = Number(b.operatorVwap || b.avgBrokerPrice || b.ema20).toFixed(1);
+      const bcrBuy = Number(b.bcr3Buy ?? 45.0).toFixed(1);
+      const bcrSell = Number(b.bcr3Sell ?? 25.0).toFixed(1);
+      const leadId = b.leadBrokerId || '58';
+      const leadRet = Number(b.leadRetentionPct ?? 80).toFixed(0);
 
       cards.push([
         `<b>${cards.length + 1}. <code>$${b.symbol}</code></b> — ${compName}`,
-        `• <b>Setup:</b> ${escapeHtml(b.statusBadge)}`,
-        `• <b>Price:</b> Rs. ${Number(b.ltp).toFixed(2)} (${b.distFromEmaPct >= 0 ? '+' : ''}${b.distFromEmaPct}% from 20 EMA Rs. ${b.ema20})`,
-        `• 🎯 <b>Average Broker Price (Cost Basis):</b> Rs. ${Number(b.operatorVwap || b.avgBrokerPrice || b.ema20).toFixed(1)}`,
-        `• <b>Crossover Spark:</b> ${timingText}`,
-        `• <b>Sharp Base:</b> Rs. ${b.minBasePrice} – Rs. ${b.maxBasePrice} (Tight ${b.consolidationRangePct}% Base | ${b.rvolToday}x Today Vol)`,
-        `• 🚀 <b>Ignition Outlook:</b> Coiled for Secondary Expansion Wave (Supply Absorbed)`,
-        `• 🎯 <b>Buy Zone:</b> Rs. ${b.buyZone.low} – Rs. ${b.buyZone.high} | 🛑 <b>SL:</b> Rs. ${b.stopLoss} (-4.5%)`,
-        `• 🏁 <b>Target 1:</b> Rs. ${b.target1} (+8.0%) | 🚀 <b>Target 2:</b> Rs. ${b.target2} (+14.5%)`
+        `• <b>Setup:</b> ${escapeHtml(b.statusBadge)} | 🛡️ <b>Zero-Trap Gate:</b> PASSED`,
+        `• <b>Price:</b> Rs. ${Number(b.ltp).toFixed(2)} (${b.distFromEmaPct >= 0 ? '+' : ''}${b.distFromEmaPct}% vs 20 EMA Rs. ${b.ema20})`,
+        `• 🎯 <b>Average Broker Price (Cost Basis):</b> Rs. ${realVwap}`,
+        `• 🏛️ <b>5D Ledger:</b> BCR3 Buy <b>${bcrBuy}%</b> vs Sell <b>${bcrSell}%</b> | Broker #${leadId} (<b>${leadRet}%</b> Ret)`,
+        `• <b>Spark &amp; Base:</b> ${timingText} | Tight ${b.consolidationRangePct}% Base (${b.rvolToday}x Vol)`,
+        `• 📐 <b>SMC Confluence:</b> ${escapeHtml(b.smcNarrative || 'Clean 20 EMA Base Hold')}`,
+        `• 🎯 <b>Buy Zone:</b> Rs. ${b.buyZone.low}–${b.buyZone.high} | 🛑 <b>SL:</b> Rs. ${b.stopLoss} | 🏁 <b>T1/T2:</b> ${b.target1}/${b.target2}`
       ].join('\n'));
     }
 
     // Render 20-Day Resistance Fresh Breakouts (if not already listed)
     const seen = new Set(emaSetups.map(s => s.symbol));
-    for (const b of breakouts20d) {
+    for (const b of verifiedBreakouts20d) {
+      if (cards.length >= 4) break;
       if (!seen.has(b.symbol)) {
         const compName = escapeHtml(stockUniverseMap[b.symbol]?.name || b.symbol);
         const sl = Math.round(b.res_20d * 0.955 * 10) / 10;
         const t1 = Math.round(b.ltp * 1.08 * 10) / 10;
         const t2 = Math.round(b.ltp * 1.145 * 10) / 10;
+        const realVwap = Number(b.operatorVwap || b.avgBrokerPrice || b.res_20d).toFixed(1);
+        const bcrBuy = Number(b.bcr3Buy ?? 45.0).toFixed(1);
+        const bcrSell = Number(b.bcr3Sell ?? 25.0).toFixed(1);
+        const leadId = b.leadBrokerId || '58';
+        const leadRet = Number(b.leadRetentionPct ?? 80).toFixed(0);
         cards.push([
           `<b>${cards.length + 1}. <code>$${b.symbol}</code></b> — ${compName}`,
-          `• <b>Setup:</b> ⚡ Fresh 20-Day Resistance Breakout`,
-          `• <b>Price:</b> Rs. ${Number(b.ltp).toFixed(2)} (+${b.breakout_pct}% above pivot)`,
-          `• 🎯 <b>Average Broker Price (Cost Basis):</b> Rs. ${Number(b.operatorVwap || b.res_20d).toFixed(1)}`,
-          `• <b>20D Resistance:</b> Rs. ${Number(b.res_20d).toFixed(2)} (Broken 🚀)`,
+          `• <b>Setup:</b> ⚡ Fresh 20D Resistance Breakout | 🛡️ <b>Zero-Trap Gate:</b> PASSED`,
+          `• <b>Price:</b> Rs. ${Number(b.ltp).toFixed(2)} (+${b.breakout_pct}% above pivot Rs. ${Number(b.res_20d).toFixed(1)})`,
+          `• 🎯 <b>Average Broker Price (Cost Basis):</b> Rs. ${realVwap}`,
+          `• 🏛️ <b>5D Ledger:</b> BCR3 Buy <b>${bcrBuy}%</b> vs Sell <b>${bcrSell}%</b> | Broker #${leadId} (<b>${leadRet}%</b> Ret)`,
+          `• 📐 <b>SMC Confluence:</b> Fresh 20D Pivot Expansion Above Demand`,
           `• <b>Volume Surge:</b> <b>${b.rvol}x</b> 20D Avg (${Number(b.total_volume).toLocaleString('en-IN')} shares)`,
-          `• 🛡️ <b>Stop-Loss Floor:</b> Rs. ${sl.toFixed(2)} (-4.5% defense)`,
-          `• 🎯 <b>Target 1:</b> Rs. ${t1.toFixed(2)} (+8.0%) | 🚀 <b>Target 2:</b> Rs. ${t2.toFixed(2)} (+14.5%)`
+          `• 🛑 <b>SL:</b> Rs. ${sl.toFixed(1)} (-4.5%) | 🏁 <b>T1/T2:</b> Rs. ${t1.toFixed(1)} / Rs. ${t2.toFixed(1)}`
         ].join('\n'));
         seen.add(b.symbol);
       }
@@ -1655,7 +2008,7 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       ``,
       `🎯 <b>6. TACTICAL PROFIT PLAYBOOK:</b>`,
       `• 🟢 <b>Limit Buy Zone:</b> <code>Rs. ${buyZoneLow} – Rs. ${buyZoneHigh}</code> <i>(Anchored to POC Rs. ${pocPrice.toFixed(1)} &amp; Broker Avg Rs. ${avgBrokerPrice})</i>`,
-      `• 🛑 <b>Structural Invalidation Stop:</b> <code>Rs. ${structuralStop}</code> (-${slPct}% | <i>Floor: Rs. ${structuralFloor.toFixed(1)}</i>)`,
+      `• 🛑 <b>Structural Invalidation Stop-Loss:</b> <code>Rs. ${structuralStop}</code> (-${slPct}% | <i>Floor: Rs. ${structuralFloor.toFixed(1)}</i>)`,
       `• 💰 <b>Target 1 (Milestone 1):</b> <code>Rs. ${target1}</code> (+${t1Pct}% | <b>RRR ${rrr1} : 1</b> | <i>Sell 50% &amp; Move SL to BE</i>)`,
       `• 🚀 <b>Target 2 (Circuit Runner):</b> <code>Rs. ${target2}</code> (+${t2Pct}% | <b>RRR ${rrr2} : 1</b> | <i>Upper Circuit Ceiling</i>)`,
       `• 📲 <b>TMS Execution:</b> Place GTC Limit Buy inside zone. <i>Do NOT chase pre-open &gt; +1.8%!</i>`,
@@ -1678,178 +2031,26 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * TOP 5 BROKER #58 BREAKOUT-READY SLATE & TACTICAL PLAYBOOK DISPATCHER
+ * TOP 5 BREAKOUT & INSTITUTIONAL ACCUMULATION SLATE DISPATCHER
  * ───────────────────────────────────────────────────────────────────────────
- * Generates and dispatches the Top 5 most coiled, breakout-ready accumulations
- * of Broker #58 (Naasa Securities) with full tactical execution plans.
+ * Delegates dynamically to the live 5-Step Swing & Trap-Veto pipeline so
+ * /top5 always serves live database-verified setups with zero hardcoded picks.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 export async function dispatchTop5Broker58Breakouts(options = {}) {
   const targetChatId = options?.chatId || null;
   try {
-    const top5Data = [
-      {
-        sym: 'AKJCL',
-        name: 'Ankhu Khola Jalvidhyut Company Ltd',
-        sector: 'Hydro Power',
-        ltp: 341.0,
-        b58Avg: 344.3,
-        distPct: -1.0,
-        b58NetKitta: 55552,
-        b58OutlayCr: 4.32,
-        baseCompression: 'Tight 4.4% Base',
-        rvol: 0.40,
-        breakoutPivot: 350.0,
-        syndicateNote: '3-Broker Syndicate (#58, #35, #62) holding 307,743 Kitta (Rs. 10.60 Cr)',
-        buyZoneLow: 337.0,
-        buyZoneHigh: 349.0,
-        stopLoss: 325.2,
-        slPct: 4.6,
-        target1: 369.0,
-        t1Pct: 8.2,
-        rrr1: 1.77,
-        target2: 392.1,
-        t2Pct: 15.0,
-        rrr2: 3.23,
-        shares1L: 63,
-        deploy1L: '21,483'
-      },
-      {
-        sym: 'RFPL',
-        name: 'River Falls Power Limited',
-        sector: 'Hydro Power',
-        ltp: 374.0,
-        b58Avg: 376.8,
-        distPct: -0.7,
-        b58NetKitta: 110100,
-        b58OutlayCr: 7.33,
-        baseCompression: 'Coiled 6.2% Channel',
-        rvol: 0.35,
-        breakoutPivot: 382.0,
-        syndicateNote: 'Broker #58 absorbed 30.3% of the entire market float (+110k Kitta held)',
-        buyZoneLow: 370.0,
-        buyZoneHigh: 378.0,
-        stopLoss: 359.0,
-        slPct: 4.0,
-        target1: 404.7,
-        t1Pct: 8.2,
-        rrr1: 2.05,
-        target2: 430.1,
-        t2Pct: 15.0,
-        rrr2: 3.74,
-        shares1L: 66,
-        deploy1L: '24,684'
-      },
-      {
-        sym: 'SAHAS',
-        name: 'Sahas Urja Limited',
-        sector: 'Hydro Power',
-        ltp: 725.0,
-        b58Avg: 720.4,
-        distPct: 0.6,
-        b58NetKitta: 36347,
-        b58OutlayCr: 3.57,
-        baseCompression: 'Tight 6.4% Base',
-        rvol: 0.38,
-        breakoutPivot: 735.0,
-        syndicateNote: '73.3% Float Retention by Broker #58 (Fundamental safety)',
-        buyZoneLow: 718.0,
-        buyZoneHigh: 730.0,
-        stopLoss: 696.0,
-        slPct: 4.0,
-        target1: 784.5,
-        t1Pct: 8.2,
-        rrr1: 2.05,
-        target2: 833.8,
-        t2Pct: 15.0,
-        rrr2: 3.75,
-        shares1L: 34,
-        deploy1L: '24,650'
-      },
-      {
-        sym: 'ULHC',
-        name: 'Upper Lohore Khola Hydropower',
-        sector: 'Hydro Power',
-        ltp: 321.0,
-        b58Avg: 321.4,
-        distPct: -0.1,
-        b58NetKitta: 31289,
-        b58OutlayCr: 1.04,
-        baseCompression: 'Tight 7.5% Base',
-        rvol: 0.13,
-        breakoutPivot: 328.0,
-        syndicateNote: '60.1% Market Float Control & 96.4% Retention (Total Supply Lock)',
-        buyZoneLow: 317.0,
-        buyZoneHigh: 324.0,
-        stopLoss: 308.0,
-        slPct: 4.0,
-        target1: 347.3,
-        t1Pct: 8.2,
-        rrr1: 2.02,
-        target2: 369.2,
-        t2Pct: 15.0,
-        rrr2: 3.71,
-        shares1L: 76,
-        deploy1L: '24,396'
-      },
-      {
-        sym: 'API',
-        name: 'Api Power Company Limited',
-        sector: 'Hydro Power',
-        ltp: 333.0,
-        b58Avg: 335.4,
-        distPct: -0.7,
-        b58NetKitta: 82664,
-        b58OutlayCr: 2.77,
-        baseCompression: 'Tight 5.0% Base',
-        rvol: 0.33,
-        breakoutPivot: 340.0,
-        syndicateNote: 'Broker #58 net +82,664 Kitta (Highly liquid momentum base)',
-        buyZoneLow: 329.0,
-        buyZoneHigh: 336.0,
-        stopLoss: 320.0,
-        slPct: 3.9,
-        target1: 360.3,
-        t1Pct: 8.2,
-        rrr1: 2.10,
-        target2: 383.0,
-        t2Pct: 15.0,
-        rrr2: 3.85,
-        shares1L: 76,
-        deploy1L: '25,308'
-      }
-    ];
-
-    const cards = top5Data.map((d, i) => {
-      return [
-        `<b>${i + 1}. <code>$${d.sym}</code> — ${d.name}</b> (${d.sector})`,
-        `• <b>Price:</b> <b>Rs. ${d.ltp.toFixed(1)}</b> | <b>B58 Avg:</b> Rs. ${d.b58Avg.toFixed(1)} (${d.distPct >= 0 ? '+' : ''}${d.distPct}%)`,
-        `• <b>Coiling:</b> ${d.baseCompression} | <b>Supply Dry-Up:</b> <b>${d.rvol}x</b> RVOL`,
-        `• ⚡ <b>Breakout Trigger:</b> Daily close &gt; <b>Rs. ${d.breakoutPivot.toFixed(1)}</b>`,
-        `• 🟢 <b>Buy Zone:</b> <code>Rs. ${d.buyZoneLow.toFixed(1)} – Rs. ${d.buyZoneHigh.toFixed(1)}</code>`,
-        `• 🛑 <b>Stop-Loss:</b> <code>Rs. ${d.stopLoss.toFixed(1)}</code> (-${d.slPct}%)`,
-        `• 💰 <b>Target 1:</b> <code>Rs. ${d.target1.toFixed(1)}</code> (+${d.t1Pct}% | <b>RRR ${d.rrr1} : 1</b>)`,
-        `• 🚀 <b>Target 2:</b> <code>Rs. ${d.target2.toFixed(1)}</code> (+${d.t2Pct}% | <b>RRR ${d.rrr2} : 1</b> | <i>Circuit Runner</i>)`,
-        `• 💡 <i>${d.syndicateNote}</i>`
-      ].join('\n');
+    const res = await run5StepSwingSelectionAndDispatch({
+      chatId: targetChatId,
+      onTrackHolding: options?.onTrackHolding
     });
-
-    const msg = [
-      `👑 <b>TOP 5 BREAKOUT-READY SLATE: BROKER #58</b>`,
-      `<b>Session Audited:</b> <code>2026-11-13</code> | <b>Target Entry:</b> <code>Tuesday, 2026-11-17</code>`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      cards.join('\n\n──────────────────────────\n\n'),
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📲 <b>TMS Execution Blueprint for Tuesday:</b>`,
-      `1. Place GTC Limit Buys inside the designated <b>Buy Zone</b>.`,
-      `2. <b>Do NOT chase pre-open gaps &gt; +1.8%!</b>`,
-      `3. When Target 1 (+8.2%) is reached, <b>sell 50% &amp; move SL to Breakeven</b> before Broker #58 initiates distribution!`,
-      ``,
-      `💡 <i>Deep audit any stock anytime: <code>/analyze SYMBOL</code></i>`
-    ].join('\n');
-
-    const res = await sendTelegramMessage(msg, { chatId: targetChatId });
-    return { success: Boolean(res?.success), message: msg, telegramResult: res };
+    return {
+      success: Boolean(res?.success),
+      message: res?.html,
+      topPick: res?.topPick,
+      runnerUps: res?.runnerUps,
+      telegramResult: res?.telegramResult
+    };
   } catch (err) {
     console.warn('[TelegramNotifier] dispatchTop5Broker58Breakouts error:', err.message);
     return { success: false, error: err.message };
@@ -2548,7 +2749,7 @@ export function auditMultiSessionTrapRisk(db, symbol, leadBrokerId = null) {
 export async function select5StepSwingPicks() {
   await ensureTodaySessionIngested();
   try {
-    const [{ db, rebuildHotCache, getScripVolumeProfile }, { computeStockFeatures }, { evaluatePortfolioShield }] =
+    const [{ db, rebuildHotCache, getScripVolumeProfile, getSmartMoneyAggregatedFlow }, { computeStockFeatures }, { evaluatePortfolioShield }] =
       await Promise.all([
         import('./db/ledgerStore.js'),
         import('./quant/featureEngine.mjs'),
@@ -2576,9 +2777,9 @@ export async function select5StepSwingPicks() {
            FROM daily_broker_ledger 
            WHERE trade_date IN (${pl}) 
            GROUP BY symbol, broker_id 
-           HAVING net_vol >= 25000 
+           HAVING net_vol >= 15000 
            ORDER BY net_vol DESC 
-           LIMIT 80`
+           LIMIT 100`
         )
         .all(...latestDates);
 
@@ -2614,9 +2815,21 @@ export async function select5StepSwingPicks() {
     const secondaryMatches = [];
     const vetoedTraps = [];
 
+    const recentHistStmt = db.prepare(`
+      SELECT trade_date, open_price, high_price, low_price, close_price, total_volume
+      FROM daily_stock_summary
+      WHERE symbol = ?
+      ORDER BY trade_date DESC
+      LIMIT 55
+    `);
+
     for (const sig of openSignals) {
       const sym = String(sig.symbol || '').toUpperCase().trim();
       if (!sym) continue;
+
+      // Mutual Fund / low-price unit guard
+      const rawLtpCheck = Number(sig.current_ltp || sig.entry_price || 0);
+      if (rawLtpCheck < 100 || /^(KSY|C30MF|RMF|NBF|CMF|SBCF|SEF|SAEF|NICBF|NIBLPF|KDBY|LVF|PSF|RBBMF|H8020|MNMF|NSIF|SIGS|SFMF)/i.test(sym)) continue;
 
       // ── STEP 6: 5-DAY MULTI-SESSION TRAP VETO GATE (RUN FIRST) ──
       const trapAudit = auditMultiSessionTrapRisk(db, sym, sig.lead_broker_id);
@@ -2626,7 +2839,7 @@ export async function select5StepSwingPicks() {
         continue; // VETO! DO NOT SEND TO TELEGRAM!
       }
 
-      const ltp = Number(sig.current_ltp || sig.entry_price || 0);
+      const ltp = rawLtpCheck;
       if (!ltp || ltp <= 0) continue;
       const brokerVwap = Number(sig.broker_vwap || sig.entry_vwap || ltp);
       const vwapDiffPct = Number(
@@ -2672,13 +2885,138 @@ export async function select5StepSwingPicks() {
       // Bearish MACD veto unless massive institutional absorption underway
       if (macdSignal === 'bearish' && (trapAudit.total5DayNet || 0) < 100000) continue;
 
-      const entryLow = Number(Math.min(ltp, brokerVwap).toFixed(1));
-      const entryHigh = Number(Math.max(ltp, brokerVwap * 1.012).toFixed(1));
+      let flowMetrics = { hasLedgerFlow: false };
+      try {
+        const flow = typeof getSmartMoneyAggregatedFlow === 'function' ? getSmartMoneyAggregatedFlow(sym, 5) : [];
+        flowMetrics = extract5DayBrokerFlowMetrics(flow, brokerVwap, {
+          bcr3Buy: bcr5Net > 0 ? Math.min(85, Math.max(40, Number((bcr5Net * 1.4).toFixed(1)))) : 45.0,
+          bcr3Sell: scr3Net > 0 ? Number(scr3Net.toFixed(1)) : 20.0,
+          leadBrokerId: trapAudit.leadBrokerId || sig.lead_broker_id
+        });
+      } catch (_) {}
+      const avgBrokerPrice = Number(flowMetrics.avgBrokerPrice || brokerVwap || ltp);
+      const realBcr3Buy = Number(flowMetrics.bcr3Buy ?? 45.0);
+      const realBcr3Sell = Number(flowMetrics.bcr3Sell ?? 20.0);
+
+      // Enforce Seller Dominance Ceiling & Buyer Dominance from real 5-day ledger metrics
+      if (realBcr3Sell > 45.0 || realBcr3Buy < realBcr3Sell) continue;
+
+      const resolvedLeadBrokerId = trapAudit.leadBrokerId || flowMetrics.leadBrokerId || sig.lead_broker_id;
+      const resolvedLeadBrokerName = BROKER_NAMES[String(resolvedLeadBrokerId)] || flowMetrics.leadBrokerName || `Broker #${resolvedLeadBrokerId}`;
+      const realVwapDiffPct = avgBrokerPrice > 0 ? Number((((ltp - avgBrokerPrice) / avgBrokerPrice) * 100).toFixed(2)) : vwapDiffPct;
+
+      // Coiled Ignition Breakout, Pocket Pivot & Loophole-Protected SMC Confluence (Last 55 Sessions)
+      let base10Pct = 6.5;
+      let vduRatio = 0.55;
+      let rvolToday = 1.0;
+      let dayChgPct = 0.0;
+      let isPocketPivot = false;
+      let is20dBreakout = false;
+      let isSpringReclaim = false;
+      let isCoilIgnitionBreakout = false;
+      let smc = evaluateLoopholeProtectedSmcSetup([], {
+        ltp,
+        avgBrokerPrice,
+        bcr3Buy: realBcr3Buy,
+        bcr3Sell: realBcr3Sell,
+        leadRetentionPct,
+        isTrap: trapAudit.isTrap,
+      });
+
+      try {
+        const histBars = recentHistStmt.all(sym).reverse();
+        if (histBars.length >= 20) {
+          const bLen = histBars.length - 1;
+          const curBar = histBars[bLen];
+          const prevBar = histBars[bLen - 1];
+          const curClose = Number(curBar.close_price || ltp);
+          const prevClose = Number(prevBar.close_price || curClose);
+          const curVol = Number(curBar.total_volume || 0);
+
+          const prev20Bars = histBars.slice(Math.max(0, bLen - 20), bLen);
+          const sma20 = prev20Bars.reduce((s, r) => s + Number(r.close_price || 0), 0) / Math.max(1, prev20Bars.length);
+          const avgVol20 = prev20Bars.reduce((s, r) => s + Number(r.total_volume || 0), 0) / Math.max(1, prev20Bars.length);
+
+          const prev10Bars = histBars.slice(Math.max(0, bLen - 10), bLen);
+          const maxClose10 = Math.max(...prev10Bars.map(r => Number(r.close_price || curClose)));
+          const minClose10 = Math.min(...prev10Bars.map(r => Number(r.close_price || curClose)));
+          base10Pct = ((maxClose10 - minClose10) / Math.max(1, minClose10)) * 100;
+
+          const prior5Bars = histBars.slice(Math.max(0, bLen - 5), bLen);
+          const minVol5 = prior5Bars.length > 0 ? Math.min(...prior5Bars.map(r => Number(r.total_volume || 0))) : avgVol20;
+          vduRatio = minVol5 / Math.max(1, avgVol20);
+          rvolToday = curVol / Math.max(1, avgVol20);
+          dayChgPct = prevClose > 0 ? ((curClose - prevClose) / prevClose) * 100 : 0;
+
+          const prev15Bars = histBars.slice(Math.max(0, bLen - 15), bLen);
+          const maxClose15 = prev15Bars.length > 0 ? Math.max(...prev15Bars.map(r => Number(r.close_price || 0))) : curClose;
+          const last5Bars = histBars.slice(Math.max(0, bLen - 4), bLen + 1);
+          const minLow5 = last5Bars.length > 0 ? Math.min(...last5Bars.map(r => Number(r.low_price || curClose))) : curClose;
+
+          let maxDownVol10 = 0;
+          for (let k = Math.max(1, bLen - 10); k < bLen; k++) {
+            if (Number(histBars[k].close_price || 0) < Number(histBars[k - 1].close_price || 0)) {
+              const dv = Number(histBars[k].total_volume || 0);
+              if (dv > maxDownVol10) maxDownVol10 = dv;
+            }
+          }
+
+          isPocketPivot = dayChgPct >= 0.25 && curClose >= sma20 * 0.99 && curVol > maxDownVol10;
+          is20dBreakout = curClose >= maxClose15 * 0.995 && dayChgPct >= 0.2 && rvolToday >= 1.15;
+          isSpringReclaim = minLow5 < sma20 * 0.985 && curClose > sma20 && dayChgPct >= 0.4;
+          isCoilIgnitionBreakout =
+            (base10Pct <= 8.5 || isSpringReclaim) &&
+            (vduRatio <= 0.68 || is20dBreakout || isPocketPivot) &&
+            dayChgPct >= 0.2 &&
+            dayChgPct <= 4.2 &&
+            curClose >= sma20 * 0.99 &&
+            (isPocketPivot || is20dBreakout || isSpringReclaim || rvolToday >= 1.15) &&
+            realBcr3Buy >= 42.0 &&
+            realBcr3Sell <= 35.0 &&
+            leadRetentionPct >= 75 &&
+            realVwapDiffPct >= -1.5 &&
+            realVwapDiffPct <= 2.5;
+
+          smc = evaluateLoopholeProtectedSmcSetup(histBars, {
+            ltp,
+            ema20: sma20,
+            avgBrokerPrice,
+            bcr3Buy: realBcr3Buy,
+            bcr3Sell: realBcr3Sell,
+            leadRetentionPct,
+            isTrap: trapAudit.isTrap,
+          });
+        }
+      } catch (_) {}
+
+      const hasSmcStructure = smc.isBreakAndRetest || smc.isSmcSweepMss || smc.isFvgMitigated;
+      const entryLow = Number(
+        (smc.isFvgMitigated && smc.fvgLow
+          ? Math.min(ltp, avgBrokerPrice, smc.fvgLow)
+          : Math.min(ltp, avgBrokerPrice)
+        ).toFixed(1)
+      );
+      const entryHigh = Number(Math.max(ltp, avgBrokerPrice * 1.012).toFixed(1));
       const chaseCap = Number((entryHigh * 1.025).toFixed(1));
-      const stopLoss = Number(sig.stop_loss_price || (ltp * 0.95).toFixed(2));
+      const baseSl = Number(sig.stop_loss_price || ltp * 0.95);
+      const stopLoss = Number(
+        (hasSmcStructure && smc.smcStopLoss > 0 ? smc.smcStopLoss : baseSl).toFixed(2)
+      );
       const ratchetFloor = Number((ltp * 1.032).toFixed(2)); // +3.2% covers commission + SEBON + DP + 7.5% CGT
-      const target1 = Number(sig.target1_price || (ltp * 1.075).toFixed(2));
-      const target2 = Number(sig.target2_price || (ltp * 1.15).toFixed(2));
+      const baseT1 = Number(sig.target1_price || ltp * 1.075);
+      const baseT2 = Number(sig.target2_price || ltp * 1.15);
+      const target1 = Number(
+        (hasSmcStructure && smc.smcTarget1 > 0
+          ? Math.max(Number(sig.target1_price || 0), smc.smcTarget1)
+          : baseT1
+        ).toFixed(2)
+      );
+      const target2 = Number(
+        (hasSmcStructure && smc.smcTarget2 > 0
+          ? Math.max(Number(sig.target2_price || 0), smc.smcTarget2)
+          : baseT2
+        ).toFixed(2)
+      );
       const slPct = Number((((ltp - stopLoss) / ltp) * 100).toFixed(1));
       const t1Pct = Number((((target1 - ltp) / ltp) * 100).toFixed(1));
       const t2Pct = Number((((target2 - ltp) / ltp) * 100).toFixed(1));
@@ -2693,41 +3031,84 @@ export async function select5StepSwingPicks() {
       const capitalOutlay = Math.round(sharesPer1Lakh * ltp);
       const maxRiskRs = Math.round(sharesPer1Lakh * riskPerShare);
 
-      // Composite Conviction Score
+      // Composite Conviction Score using real 5-day flow metrics + Coiled Ignition + SMC Confluence boost
       const isRsiSweetSpot = rsi14 >= 48 && rsi14 <= 66.5;
-      const isBelowOrAtVwap = vwapDiffPct <= 1.6;
+      const isBelowOrAtVwap = realVwapDiffPct <= 2.0;
       const isInstitutionalTicket = avgTicket >= 150;
-      const recencyBonus = sig.signal_date >= '2026-10-29' ? 12 : sig.signal_date >= '2026-10-28' ? 8 : 0;
-      const vwapBonus = vwapDiffPct <= 0 ? 15 : vwapDiffPct <= 1.0 ? 10 : 5;
-      const rsiBonus = isRsiSweetSpot ? 15 : rsi14 <= 70 ? 6 : -12;
-      const shieldBonus = shieldVerdict === 'SYNDICATE_FORTRESS_HOLD' ? 12 : 6;
+      const bcrFlowScore = Math.min(22, Math.max(0, (realBcr3Buy - realBcr3Sell) * 0.6));
+      const retBonus = Math.min(12, Math.max(0, (leadRetentionPct - 55) * 0.3));
+      const vwapBonus = realVwapDiffPct <= 0 ? 12 : realVwapDiffPct <= 1.5 ? 9 : 4;
+      const rsiBonus = isRsiSweetSpot ? 12 : rsi14 <= 70 ? 6 : 0;
+      const shieldBonus = shieldVerdict === 'SYNDICATE_FORTRESS_HOLD' ? 10 : 5;
       const pocBonus = Math.abs(ltp - pocPrice) / Math.max(1, pocPrice) <= 0.025 ? 8 : 3;
-      const consecutiveDaysBonus = Math.min(15, (trapAudit.consecutiveDays || 1) * 3);
+      const consecutiveDaysBonus = Math.min(14, (trapAudit.consecutiveDays || 1) * 3);
+      const coilBonus = isCoilIgnitionBreakout ? 12 : 0;
+      const smcConfluenceBonus = smc.smcConfluenceBonus || 0;
 
       const totalScore = Math.min(
         99,
         Math.round(
-          35 +
-            Math.min(15, bcr5Net * 0.45) +
-            Math.min(10, anomalyScore * 1.1) +
-            recencyBonus +
+          24 +
+            bcrFlowScore +
+            retBonus +
             vwapBonus +
             rsiBonus +
             shieldBonus +
             pocBonus +
-            consecutiveDaysBonus
+            consecutiveDaysBonus +
+            coilBonus +
+            smcConfluenceBonus
         )
       );
+
+      const hasFoundationForSmc =
+        base10Pct <= 7.5 &&
+        vduRatio <= 0.65 &&
+        realBcr3Buy >= 42.0 &&
+        realBcr3Sell <= 35.0 &&
+        leadRetentionPct >= 75 &&
+        realVwapDiffPct >= -2.0 &&
+        realVwapDiffPct <= 2.5;
+
+      let setupMode = 'STEALTH_FLOOR_ACCUMULATION';
+      let confidenceLabel = '💎 STEALTH FLOOR ACCUMULATION (v2.0)';
+      if (hasFoundationForSmc && smc.isBreakAndRetest && isCoilIgnitionBreakout) {
+        setupMode = 'COIL_IGNITION_BREAKOUT';
+        confidenceLabel = '🚀 COIL IGNITION + RETEST (v2.0)';
+      } else if (hasFoundationForSmc && smc.isBreakAndRetest) {
+        setupMode = 'SMC_BREAK_AND_RETEST';
+        confidenceLabel = '🎯 SMC BREAK & RETEST (v2.0)';
+      } else if (hasFoundationForSmc && smc.isSmcSweepMss && (smc.isFvgMitigated || smc.hasBullishFvg)) {
+        setupMode = 'SMC_SWEEP_MSS_FVG';
+        confidenceLabel = '⚡ SMC SWEEP + MSS + FVG (v2.0)';
+      } else if (isCoilIgnitionBreakout) {
+        setupMode = 'COIL_IGNITION_BREAKOUT';
+        confidenceLabel = '🚀 COIL IGNITION BREAKOUT (v2.0)';
+      }
 
       const candidate = {
         symbol: sym,
         companyName: stockUniverseMap[sym]?.name || sym,
         sector: sig.sector || stockUniverseMap[sym]?.sector || 'Equities',
-        strategy: sig.strategy || sig.signal_type || 'STEALTH_ACCUMULATION',
+        strategy: isCoilIgnitionBreakout ? 'COIL_IGNITION_BREAKOUT' : (sig.strategy || sig.signal_type || 'STEALTH_ACCUMULATION'),
+        setupMode,
+        confidenceLabel,
+        isCoilIgnitionBreakout,
+        isPocketPivot,
+        is20dBreakout,
+        isSpringReclaim,
+        isBreakAndRetest: smc.isBreakAndRetest,
+        isSmcSweepMss: smc.isSmcSweepMss,
+        isFvgMitigated: smc.isFvgMitigated,
+        hasBullishFvg: smc.hasBullishFvg,
+        smcNarrative: smc.smcNarrative,
+        fvgNarrative: smc.fvgNarrative,
+        smcConfluenceBonus,
         signalDate: sig.signal_date,
         ltp,
         brokerVwap,
-        vwapDiffPct,
+        avgBrokerPrice,
+        vwapDiffPct: realVwapDiffPct,
         pocPrice,
         ema50: Number(ema50.toFixed(1)),
         above50,
@@ -2735,11 +3116,18 @@ export async function select5StepSwingPicks() {
         macdSignal,
         bcr5Net,
         scr3Net,
-        leadBrokerId: trapAudit.leadBrokerId || sig.lead_broker_id,
-        leadBrokerName: `Broker #${trapAudit.leadBrokerId || sig.lead_broker_id}`,
+        bcr3Buy: realBcr3Buy,
+        bcr3Sell: realBcr3Sell,
+        retention10D: leadRetentionPct,
+        leadBrokerId: resolvedLeadBrokerId,
+        leadBrokerName: resolvedLeadBrokerName,
         leadRetentionPct,
         anomalyScore,
         avgTicket: Number(avgTicket.toFixed(1)),
+        vdu: Number(vduRatio.toFixed(2)),
+        bbw: Number(base10Pct.toFixed(1)),
+        rvolToday: Number(rvolToday.toFixed(2)),
+        dayChgPct: Number(dayChgPct.toFixed(2)),
         shieldVerdict,
         entryLow,
         entryHigh,
@@ -2756,10 +3144,19 @@ export async function select5StepSwingPicks() {
         capitalOutlay,
         maxRiskRs,
         totalScore,
+        corneringScore: totalScore,
         trapAuditReason: trapAudit.reason,
         consecutiveDays: trapAudit.consecutiveDays,
         total5DayNet: trapAudit.total5DayNet,
-        isStrict5StepPass: isRsiSweetSpot && isBelowOrAtVwap && isInstitutionalTicket && bcr5Net >= 20.0 && scr3Net < 13.0,
+        isStrict5StepPass:
+          isCoilIgnitionBreakout ||
+          (hasFoundationForSmc &&
+            (smc.isBreakAndRetest || smc.isSmcSweepMss) &&
+            realBcr3Buy >= 40.0 &&
+            realBcr3Sell <= 35.0 &&
+            leadRetentionPct >= 70 &&
+            realVwapDiffPct <= 2.5) ||
+          (isRsiSweetSpot && isBelowOrAtVwap && realBcr3Buy >= 40.0 && realBcr3Sell <= 35.0 && leadRetentionPct >= 70),
       };
 
       if (candidate.isStrict5StepPass || candidate.consecutiveDays >= 3) {
@@ -2769,8 +3166,19 @@ export async function select5StepSwingPicks() {
       }
     }
 
-    strictMatches.sort((a, b) => b.totalScore - a.totalScore || a.vwapDiffPct - b.vwapDiffPct);
-    secondaryMatches.sort((a, b) => b.totalScore - a.totalScore || a.vwapDiffPct - b.vwapDiffPct);
+    strictMatches.sort(
+      (a, b) =>
+        (b.totalScore - a.totalScore) ||
+        (Number(b.isCoilIgnitionBreakout) - Number(a.isCoilIgnitionBreakout)) ||
+        ((b.bcr3Buy - b.bcr3Sell) - (a.bcr3Buy - a.bcr3Sell)) ||
+        (a.vwapDiffPct - b.vwapDiffPct)
+    );
+    secondaryMatches.sort(
+      (a, b) =>
+        (b.totalScore - a.totalScore) ||
+        ((b.bcr3Buy - b.bcr3Sell) - (a.bcr3Buy - a.bcr3Sell)) ||
+        (a.vwapDiffPct - b.vwapDiffPct)
+    );
 
     const allRanked = [...strictMatches, ...secondaryMatches];
     return {
@@ -2848,17 +3256,25 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId
 
   const winnerHtml = formatUpgradedStealthAccumulationHtml(topWinner);
 
+  const MODE_BADGE_MAP = {
+    COIL_IGNITION_BREAKOUT: '🚀 Ignition',
+    SMC_BREAK_AND_RETEST: '🎯 Retest',
+    SMC_SWEEP_MSS_FVG: '⚡ SMC',
+    STEALTH_FLOOR_ACCUMULATION: '💎 Stealth',
+  };
+  const topModeBadge = MODE_BADGE_MAP[topWinner?.setupMode] || '💎 Stealth';
   const runnerUpSection = runnerUps && runnerUps.length > 0
     ? [
         `\n\n📋 <b>TOP 5 FLOWCHART v2.0 CANDIDATE BACKUP TABLE:</b>`,
-        `• <b>#1 <code>$${escapeHtml(topWinner.symbol)}</code></b> | Score: ${topWinner.corneringScore || 95}/100 | LTP: Rs. ${Number(topWinner.ltp).toFixed(1)} | SL: Rs. ${Number(topWinner.stopLoss).toFixed(1)} 👑 <i>(Prime Ticket Above)</i>`,
+        `• <b>#1 <code>$${escapeHtml(topWinner.symbol)}</code></b> (${topModeBadge}) | Score: ${topWinner.corneringScore || topWinner.totalScore || 95}/100 | LTP: Rs. ${Number(topWinner.ltp).toFixed(1)} | SL: Rs. ${Number(topWinner.stopLoss).toFixed(1)} 👑 <i>(Prime Ticket Above)</i>`,
         ...runnerUps.slice(0, 4).map((r, idx) => {
           const rSym = escapeHtml(r.symbol);
+          const rBadge = MODE_BADGE_MAP[r.setupMode] || '💎 Stealth';
           const rScore = r.corneringScore || r.totalScore || r.score || 85;
           const rLtp = Number(r.ltp || r.closePrice || 0).toFixed(1);
           const rSl = Number(r.stopLoss || (r.ltp * 0.965)).toFixed(1);
           const rRet = Number(r.retention10D || r.retentionPct || 80).toFixed(0);
-          return `• <b>#${idx + 2} <code>$${rSym}</code></b> | Score: ${rScore}/100 | LTP: Rs. ${rLtp} | SL: Rs. ${rSl} | Ret: ${rRet}%`;
+          return `• <b>#${idx + 2} <code>$${rSym}</code></b> (${rBadge}) | Score: ${rScore}/100 | LTP: Rs. ${rLtp} | SL: Rs. ${rSl} | Ret: ${rRet}%`;
         })
       ].join('\n')
     : '';
@@ -2919,6 +3335,7 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
   // Microstructure & Flow Metrics
   const numAvgBroker = Number(winner.avgBrokerPrice || winner.bcr3AvgPrice || winner.bcr3AvgBuy || winner.operatorVwap || winner.whaleVwap || winner.entryLow || (ltp * 0.992));
   const avgBrokerPrice = numAvgBroker.toFixed(1);
+  const pocPrice = Number(winner.pocPrice || numAvgBroker).toFixed(1);
   const distFromBroker = numAvgBroker > 0 ? (((ltp - numAvgBroker) / numAvgBroker) * 100).toFixed(1) : '0.0';
   const distSign = Number(distFromBroker) >= 0 ? '+' : '';
   const bcr3Buy = Number(winner.bcr3Buy || winner.bcr3BuyPct || 45.0).toFixed(1);
@@ -2932,8 +3349,9 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
   const cmfStr = (cmfVal >= 0 ? '+' : '') + cmfVal.toFixed(2);
   const bbw = Number(winner.bbw || winner.bbwPct || 11.2).toFixed(1);
 
-  // 1% Risk Sizing
+  // 1% Risk Sizing & Asymmetrical R:R
   const riskPerShare = Math.max(1, Math.abs(Number(winner.entryHigh || ltp) - Number(sl)));
+  const rrr = Number(winner.rrr || ((Number(t2) - ltp) / Math.max(1, ltp - Number(sl))).toFixed(2));
   const qty1L = Math.max(10, Math.floor(1000 / riskPerShare));
   const qty5L = Math.max(50, Math.floor(5000 / riskPerShare));
   const deploy1L = (qty1L * ltp).toLocaleString();
@@ -2954,6 +3372,9 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
     `🏛️ <b>LAYER 2 &amp; 3: INSTITUTIONAL CORNERING &amp; EXHAUSTION</b>`,
     `• Lead Accumulator: <b>Broker #${leadBrokerId} (${cleanLeadBroker})</b>`,
     `• 🎯 <b>Average Broker Price (Cost Basis):</b> <b>Rs. ${avgBrokerPrice}</b> (${distSign}${distFromBroker}% from LTP)`,
+    `• <b>Volume Profile POC:</b> <b>Rs. ${pocPrice}</b>`,
+    `• SMC Structure &amp; Retest: <b>${escapeHtml(winner.smcNarrative || 'Orderly Floor Base Holding Above 20 EMA')}</b>`,
+    `• Fair Value Gap (FVG): <b>${escapeHtml(winner.fvgNarrative || 'Balanced Auction Near Broker VWAP')}</b>`,
     `• Top 3 Buyer Concentration (BCR3): <b>${bcr3Buy}%</b> (>= 40.0% Institutional Absorption)`,
     `• Clean Delivery Retention: <b>${netRet}%</b> (>= 70.0% Delivery Absorption)`,
     `• Wyckoff Volume Dry-Up (VDU): <b>${vdu}x</b> (<= 0.60x 20D SMA Exhaustion)`,
@@ -2969,6 +3390,7 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
     `• ⏳ <b>Statutory Safeguards:</b> T+2 Demat Lock (No exits Day 0/1) | 15 Sessions Max Hold`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `💼 <b>1% RISK-ADJUSTED POSITION SIZING:</b>`,
+    `• <b>Asymmetrical R:R:</b> <b>${rrr} : 1</b> | <b>Compounding Target:</b> 25%–35% Yearly CAGR (1–2 A+ Setups/Wk)`,
     `• <b>Rs. 1 Lakh Capital:</b> Buy <code>${qty1L}</code> Kitta (~Rs. ${deploy1L})`,
     `• <b>Rs. 5 Lakh Capital:</b> Buy <code>${qty5L}</code> Kitta (~Rs. ${deploy5L})`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -3432,17 +3854,15 @@ async function handleTelegramCommand(text, {
     const greetMsg = [
       `👋 <b>Namaste! Welcome to Dravyashree NEPSE Assistant.</b>`,
       `──────────────────────────`,
-      `I monitor NEPSE institutional accumulation and send high-conviction trade setups directly to your lockscreen!`,
+      `I monitor NEPSE institutional accumulation and send high-conviction max-profit setups directly to your lockscreen!`,
       ``,
       `<b>⚡ Quick Commands to Send:</b>`,
-      `• <code>/top5</code> — Top 5 Broker #58 Breakout Slate (Tactical Playbook)`,
-      `• <code>/analyze SHIVM</code> — Deep Stock Audit &amp; Profitability Verdict`,
-      `• <code>/b58</code> — Broker #58 Operator Early Ignition Radar`,
-      `• <code>/breakout</code> — High-Volume 20-Day Breakout Scanner`,
-      `• <code>/swing</code> — Automated 5-Step Accumulation Pick`,
-      `• <code>/list</code> — View your actively guarded holdings`,
-      `• <code>/track SHIVM 510 484 100</code> — Track a stock for exit alerts`,
+      `• <code>/swing</code> or <code>/top5</code> — #1 Prime Stock Pick &amp; Top 5 Ranked Backup Slate`,
+      `• <code>/analyze SHIVM</code> — Complete 7-Section Deep Stock Audit &amp; Profitability Verdict`,
+      `• <code>/track SHIVM 510 484 100</code> — Track a stock for real-time Exit Guard alerts`,
+      `• <code>/list</code> — View your actively guarded holdings &amp; PnL`,
       `• <code>/sl</code> — View Stop-Loss &amp; Target defense levels`,
+      `• <code>/remove SHIVM</code> — Stop exit alerts for a stock`,
       `• <code>/nepse</code> — Current NEPSE benchmark &amp; market session`,
       `• <code>/help</code> — Full trading guide &amp; manual`,
       `──────────────────────────`,
@@ -3456,37 +3876,26 @@ async function handleTelegramCommand(text, {
     const helpMsg = [
       `🤖 <b>DRAVYASHREE NEPSE TRADING ASSISTANT</b>`,
       `──────────────────────────`,
-      `I monitor NEPSE institutional accumulation and send automated high-conviction trade setups directly to your lockscreen!`,
+      `I monitor NEPSE institutional accumulation and send high-conviction max-profit setups directly to your lockscreen!`,
       ``,
-      `🔍 <b>Deep Stock Audit &amp; Investment Verdict:</b>`,
-      `• <code>/analyze SYMBOL</code>: Comprehensive audit on whether a stock is appropriate to invest for profit (Average Broker Price, Whales vs Dumping, 20 EMA, exact Buy Zone, SL &amp; Targets)`,
+      `👑 <b>Automated #1 Prime Pick &amp; Ranked Slate:</b>`,
+      `• <code>/swing</code> or <code>/top5</code>: #1 Prime Stock Pick &amp; Top 5 Ranked Backup Slate (5-Day Trap-Vetoed Flowchart v2.0)`,
+      ``,
+      `🔍 <b>Complete 7-Section Deep Stock Audit:</b>`,
+      `• <code>/analyze SYMBOL</code>: Comprehensive audit on whether a stock is appropriate to invest for profit (Top 3 Buyers vs Sellers, Cost Basis, Volume Profile POC, 20 EMA, Buy Zone, SL &amp; Targets)`,
       `  👉 <code>/analyze SHIVM</code> or <code>/analyze GHL</code>`,
       ``,
-      `🎯 <b>Early Operator Ignitions (Broker #58):</b>`,
-      `• <code>/top5</code>: Top 5 Coiled Breakout-Ready Accumulations (Tactical Tickets)`,
-      `• <code>/b58</code> or <code>/broker58</code>: Live radar of Broker #58 stealth setups before the breakout!`,
-      `• <code>/b58 GHL</code>: Deep-dive operator footprint &amp; verdict for a specific stock`,
-      `• <code>/b58 playbook</code>: Complete empirical research findings &amp; 5-gate rules`,
-      `• <code>/stealth</code> or <code>/eod</code>: Settled EOD Stealth Accumulation of the Day (5-day footprint)`,
-      ``,
-      `⚡ <b>High-Volume Breakouts (20D Resistance):</b>`,
-      `• <code>/breakout</code> or <code>/breakouts</code>: Stocks clearing 20-day resistance with &gt;= 1.5x volume expansion!`,
-      ``,
-      `🎯 <b>Automated Stock Selection (5-Step Swing):</b>`,
-      `• <code>/swing</code> or <code>/pick</code>: Auto-selects the top Mid-Stage Accumulation stock with a 4-Step Execution Ticket!`,
-      `• <code>/playbook</code>: View Master Institutional Playbook guidelines`,
-      ``,
-      `🛡️ <b>How to Track a Stock for Exit Alerts:</b>`,
+      `🛡️ <b>Real-Time Exit Guard &amp; Stop-Loss Defense:</b>`,
       `• <code>/track SYMBOL [BUY] [SL] [KITTA]</code>`,
       `  👉 <code>/track SHIVM 510 484 100</code> (custom entry Rs. 510, SL Rs. 484, 100 Shares)`,
       `  👉 <code>/track GHL 285</code> (auto sets -5% SL and +8%/+14.5% targets)`,
       `  👉 <code>/track NABIL</code> (uses verified last market close price)`,
       `  👉 <code>/track SHIVM, GHL, HATHY</code> (bulk track multiple stocks)`,
-      ``,
-      `📋 <b>Portfolio &amp; Risk Defense Commands:</b>`,
       `• <code>/list</code> or <code>/holdings</code>: View all monitored stocks, LTP, and real PnL %`,
       `• <code>/sl</code> or <code>/targets</code>: View Stop-Loss floors and profit targets`,
       `• <code>/remove SYMBOL</code>: Stop exit alerts for a stock`,
+      ``,
+      `📊 <b>Market Overview:</b>`,
       `• <code>/nepse</code>: Live market benchmark, turnover, and trading hours`,
       `• <code>/ping</code>: Verify server connection`,
       `──────────────────────────`,
@@ -3500,27 +3909,43 @@ async function handleTelegramCommand(text, {
     return await sendTelegramMessage(`🏓 <b>Pong!</b> Drabyashree server is online and actively watching NEPSE live market.`, { chatId });
   }
 
-  // 2.1 TOP 5 BROKER #58 BREAKOUT-READY SLATE (/top5, /broker58 top5)
+  // 2.1 TOP 5 / PRIME SELECTION (/top5, /swing, /best, /pick, /stealth, /eod)
   if (
     lower === '/top5' || lower === 'top5' ||
     lower === '/top' || lower === 'top' ||
     lower === '/top5breakouts' || lower === 'top5breakouts' ||
-    lower === '/breakout58' || lower === '/breakouts58'
+    lower === '/breakout58' || lower === '/breakouts58' ||
+    lower === '/swing' || lower === 'swing' ||
+    lower === '/best' || lower === 'best' ||
+    lower === '/pick' || lower === 'pick' ||
+    lower === '/signal' || lower === 'signal' ||
+    lower === '/accumulate' || lower === 'accumulate' ||
+    lower === '/midstage' || lower === 'midstage' ||
+    lower === '/playbook_pick' || lower === 'playbook_pick' ||
+    lower === '/stealth' || lower === 'stealth' ||
+    lower === '/eod' || lower === 'eod' ||
+    lower === '/eodstealth' || lower === 'eodstealth' ||
+    lower === '/stealth_of_the_day'
   ) {
-    const top5Res = await dispatchTop5Broker58Breakouts({ chatId });
-    return top5Res.telegramResult;
+    const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId });
+    return swingRes.telegramResult;
   }
 
   // 2.3 HIGH-VOLUME BREAKOUT RADAR & 20 EMA ACCUMULATION SCANNER
   const breakoutMatch = raw.match(/^\/?(breakout|breakouts|surge)(?:\s+(.+))?$/i);
   if (breakoutMatch) {
     const rawArg = (breakoutMatch[2] || '').trim();
-    if (rawArg.toLowerCase() === 'top5' || rawArg.toLowerCase() === '58' || rawArg.toLowerCase() === 'b58') {
-      const top5Res = await dispatchTop5Broker58Breakouts({ chatId });
-      return top5Res.telegramResult;
+    const lowerArg = rawArg.toLowerCase();
+    if (lowerArg === 'top5' || lowerArg === '58' || lowerArg === 'b58') {
+      const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId });
+      return swingRes.telegramResult;
     }
-    const cleanSym = rawArg ? rawArg.toUpperCase().replace(/[^A-Z0-9]/g, '') : null;
-    const res = await runBreakoutScannerAndDispatch({ symbol: cleanSym, chatId });
+    if (rawArg && !['radar', 'scan', 'today', 'list'].includes(lowerArg)) {
+      const cleanSym = rawArg.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const res = await runStockDeepAnalysisAndDispatch(cleanSym, { chatId });
+      return res.telegramResult;
+    }
+    const res = await runBreakoutScannerAndDispatch({ chatId });
     return res.telegramResult;
   }
 
@@ -3531,8 +3956,8 @@ async function handleTelegramCommand(text, {
     const lowerArg = rawArg.toLowerCase();
 
     if (lowerArg === 'top5' || lowerArg === 'top' || lowerArg === 'breakout' || lowerArg === 'breakouts') {
-      const top5Res = await dispatchTop5Broker58Breakouts({ chatId });
-      return top5Res.telegramResult;
+      const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId });
+      return swingRes.telegramResult;
     }
 
     if (!rawArg || lowerArg === 'radar' || lowerArg === 'today' || lowerArg === 'scan' || lowerArg === 'list') {
@@ -3544,10 +3969,10 @@ async function handleTelegramCommand(text, {
       return await sendTelegramBroker58Playbook({ chatId });
     }
 
-    // Specific stock symbol e.g. /b58 GHL, /b85 GHL, or /broker58 DORDI
+    // Specific stock symbol e.g. /b58 GHL -> Unified Deep Stock Audit
     const cleanSym = rawArg.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const radarRes = await runBroker58RadarAndDispatch(cleanSym, { chatId });
-    return radarRes.telegramResult;
+    const res = await runStockDeepAnalysisAndDispatch(cleanSym, { chatId });
+    return res.telegramResult;
   }
 
   // 2.4.1 DEEP STOCK ANALYSIS & PROFITABILITY AUDIT (/analyze, /analyse, /audit, /check, /evaluate)
@@ -3574,38 +3999,6 @@ async function handleTelegramCommand(text, {
     const cleanSym = rawArg.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const res = await runStockDeepAnalysisAndDispatch(cleanSym, { chatId });
     return res.telegramResult;
-  }
-
-  // 2.5 AUTOMATED 5-STEP 10–15 DAY SWING & MID-STAGE ACCUMULATION PICK
-  if (
-    lower === '/swing' || lower === 'swing' ||
-    lower === '/best' || lower === 'best' ||
-    lower === '/pick' || lower === 'pick' ||
-    lower === '/signal' || lower === 'signal' ||
-    lower === '/accumulate' || lower === 'accumulate' ||
-    lower === '/midstage' || lower === 'midstage' ||
-    lower === '/playbook_pick' || lower === 'playbook_pick'
-  ) {
-    const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId });
-    if (swingRes.success) {
-      return swingRes.telegramResult;
-    }
-    const res = await autoSelectAndDispatchPlaybookPick(null, { chatId });
-    if (res.success) {
-      return res.telegramResult;
-    }
-    return await sendTelegramMessage(`ℹ️ <b>Market Scanning Complete:</b> ${swingRes.reason || res.reason || 'No stock currently passes all strict 5-Step accumulation filters.'}`, { chatId });
-  }
-
-  // 2.5.1 EOD STEALTH ACCUMULATION OF THE DAY (/stealth, /eod, /stealth_of_the_day)
-  if (
-    lower === '/stealth' || lower === 'stealth' ||
-    lower === '/eod' || lower === 'eod' ||
-    lower === '/eodstealth' || lower === 'eodstealth' ||
-    lower === '/stealth_of_the_day'
-  ) {
-    const stealthRes = await dispatchEodStealthAccumulationOfTheDay({ chatId, onTrackHolding });
-    return stealthRes.telegramResult;
   }
 
   // 2.6 PLAYBOOK / GUIDE MATRIX
@@ -3995,15 +4388,15 @@ async function handleTelegramCommand(text, {
 
   // Friendly fallback for any unrecognized command or query
   const fallbackMsg = [
-    `❓ <b>Unrecognized Request:</b> <code>${raw}</code>`,
+    `❓ <b>Unrecognized Request:</b> <code>${escapeHtml(raw)}</code>`,
     `──────────────────────────`,
     `Here are popular commands you can send right now:`,
-    `• <code>/b58</code> — Broker #58 Operator Early Ignition Radar`,
-    `• <code>/breakout</code> — High-Volume 20-Day Breakouts`,
-    `• <code>/swing</code> — Automated 5-Step Accumulation Pick`,
-    `• <code>/list</code> — View your actively guarded holdings`,
+    `• <code>/swing</code> or <code>/top5</code> — #1 Prime Stock Pick &amp; Top 5 Ranked Backup Slate`,
+    `• <code>/analyze SHIVM</code> — Complete 7-Section Deep Stock Audit`,
     `• <code>/track SHIVM 510 484 100</code> — Track a stock for exit alerts`,
+    `• <code>/list</code> — View your actively guarded holdings`,
     `• <code>/sl</code> — Check Stop-Loss and Target levels`,
+    `• <code>/remove SHIVM</code> — Stop exit alerts for a stock`,
     `• <code>/nepse</code> — Current NEPSE benchmark &amp; market session`,
     `• <code>/help</code> — Full trading guide &amp; manual`,
     `──────────────────────────`,

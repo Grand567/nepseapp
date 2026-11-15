@@ -344,10 +344,8 @@ export async function runFullUniversePrimePick() {
     setVerifiedPostMarketPrimePick(winner);
     console.log(`[PrimePickWorker] ✅ Winner: ${sym} | Score: ${scoreVal} | Verdict: ${plan.verdict} | ${qualifiedCandidates.length} qualified from ${candidates.length} scanned`);
 
-    // Dispatch 3:45 PM Daily Post-Market Setup to Telegram Bot
-    sendTelegramPrimePickAlert(winner).catch(tErr => {
-      console.warn('[PrimePickWorker] Telegram prime pick dispatch notice:', tErr.message);
-    });
+    // Telegram EOD dispatch is handled exclusively by run5StepSwingSelectionAndDispatch in runPostMarketCloseAnalysis
+    // to prevent duplicate competing EOD prime pick messages.
 
     // Dispatch 3:45 PM Daily Post-Market Setup to Discord Webhook (100% Free)
     sendDiscordPrimePickAlert(winner).catch(dErr => {
@@ -722,10 +720,7 @@ export function startWorkers() {
             });
           }
         }
-        // Phase 3: 10:50 AM - 11:00 AM Pre-Open Order Book Gate Check (Gap Risk Veto)
-        if (nptMins >= 650 && nptMins < 660 && lastPreOpenDispatchedDate !== status.targetSessionDate) {
-          runPreOpenGateScan();
-        }
+        // Phase 3: 10:50 AM Pre-Open Gate suppressed (Chase Cap rule is included directly on the EOD Prime Ticket)
         // Phase 4: 11:00 AM Market Open Bell suppressed to eliminate notification clutter
       }
     } catch (schedErr) {
