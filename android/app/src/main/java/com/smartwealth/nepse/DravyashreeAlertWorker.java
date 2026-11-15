@@ -51,6 +51,8 @@ public class DravyashreeAlertWorker extends Worker {
     public static final String CHANNEL_GENERAL = "nepse-general-news";
     private static final String PREFS_NAME = "dravyashree_native_alerts";
     private static final String KEY_SEEN_IDS = "seen_alert_ids";
+    private static final String KEY_LAST_OTHER_NEWS_POP_MS = "last_other_news_pop_ms";
+    public static final long OTHER_NEWS_INTERVAL_MS = 60 * 60 * 1000L; // 1 hour interval for general news
 
     private static final String[] API_ENDPOINTS = {
             "https://nepseapp.onrender.com/api/notifications?limit=20",
@@ -59,6 +61,143 @@ public class DravyashreeAlertWorker extends Worker {
 
     public DravyashreeAlertWorker(@NonNull Context context, @NonNull WorkerParameters workerParams) {
         super(context, workerParams);
+    }
+
+    public static String normalizeTextForDedup(String text) {
+        if (text == null) return "";
+        String lower = text.toLowerCase(java.util.Locale.US)
+                .replaceAll("\\(covered by:[^)]+\\)", " ")
+                .replaceAll("\\[(?:pro holding|my holding|portfolio|trending)[^\\]]*\\]", " ")
+                .replaceAll("[\\p{So}\\p{Cn}]", " ")
+                .replaceAll("[^\\p{L}\\p{N}\\s%]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return lower;
+    }
+
+    public static String getCorporateActionKind(String type, String title, String body) {
+        String cleanType = type != null ? type.trim().toUpperCase(java.util.Locale.US) : "";
+        if ("DIVIDEND_ALERT".equals(cleanType)) return "DIVIDEND";
+        if ("RIGHT_SHARE_ALERT".equals(cleanType)) return "RIGHT_SHARE";
+        if ("BOOK_CLOSURE_ALERT".equals(cleanType)) return "BOOK_CLOSURE";
+
+        String combined = ((title != null ? title : "") + " " + (body != null ? body : "")).toLowerCase(java.util.Locale.US);
+        String[] divKws = {"लाभांश", "बोनस", "dividend", "bonus share", "bonus", "cash dividend"};
+        for (String kw : divKws) {
+            if (combined.contains(kw)) return "DIVIDEND";
+        }
+        String[] rightKws = {"हकप्रद", "right share", "right issue", "rights issue", "right offering"};
+        for (String kw : rightKws) {
+            if (combined.contains(kw)) return "RIGHT_SHARE";
+        }
+        String[] bookKws = {"बुक क्लोज", "बुकक्लोज", "साधारण सभा", "book closure", "book close", "annual general meeting", "special general meeting", " agm", "agm "};
+        for (String kw : bookKws) {
+            if (combined.contains(kw)) return "BOOK_CLOSURE";
+        }
+        return "";
+    }
+
+    public static boolean isImmediateCorporateActionOrPro(String type, String channelOrCategory, String title, String body) {
+        String cleanType = type != null ? type.trim().toUpperCase(java.util.Locale.US) : "";
+        String cleanCat = channelOrCategory != null ? channelOrCategory.trim().toLowerCase(java.util.Locale.US) : "";
+        if (cleanCat.contains("pro")) return true;
+        if ("DIVIDEND_ALERT".equals(cleanType)
+                || "RIGHT_SHARE_ALERT".equals(cleanType)
+                || "BOOK_CLOSURE_ALERT".equals(cleanType)
+                || "PORTFOLIO_NEWS_ALERT".equals(cleanType)
+                || "ADMIN_TEST_ALERT".equals(cleanType)
+                || cleanType.contains("BREAKOUT")
+                || cleanType.contains("ACCUMULATION")
+                || cleanType.contains("ENTRY")
+                || cleanType.contains("PROFIT")
+                || cleanType.contains("STOP_LOSS")) {
+            return true;
+        }
+        if (!getCorporateActionKind(cleanType, title, body).isEmpty()) return true;
+        String combined = ((title != null ? title : "") + " " + (body != null ? body : "")).toLowerCase(java.util.Locale.US);
+        return combined.contains("[pro holding")
+                || combined.contains("[my holding")
+                || combined.contains("[portfolio]");
+    }
+
+    public static Set<String> buildDedupKeys(String id, String type, String symbol, String title, String body) {
+        Set<String> keys = new LinkedHashSet<>();
+        String cleanId = id != null ? id.trim() : "";
+        String cleanSym = symbol != null ? symbol.trim().toUpperCase(java.util.Locale.US) : "";
+        String cleanType = type != null ? type.trim().toUpperCase(java.util.Locale.US) : "";
+        String normTitle = normalizeTextForDedup(title);
+        String normBody = normalizeTextForDedup(body);
+
+        if (!cleanId.isEmpty()) {
+            keys.add(cleanId);
+        }
+        if (!normTitle.isEmpty() || !normBody.isEmpty()) {
+            keys.add("fp_" + Math.abs((normTitle + "_" + normBody).hashCode()));
+        }
+        if (normTitle.length() >= 10) {
+            keys.add("hl_" + (!cleanSym.isEmpty() ? cleanSym : "GEN") + "_" + Math.abs(normTitle.hashCode()));
+        }
+        String corpKind = getCorporateActionKind(cleanType, normTitle, normBody);
+        if (!corpKind.isEmpty() && !cleanSym.isEmpty() && !"NEPSE".equals(cleanSym)) {
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
+            sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+            keys.add("corp_" + corpKind + "_" + cleanSym + "_" + sdf.format(new java.util.Date()));
+        }
+        boolean isIpo = cleanType.contains("IPO") || normTitle.contains("ipo");
+        if (isIpo && !cleanSym.isEmpty()) {
+            keys.add("ipo_seen_" + cleanSym);
+        }
+        return keys;
+    }
+
+    public static synchronized boolean isAlertAlreadySeen(Context context, String id, String type, String symbol, String title, String body) {
+        if (context == null) return false;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        Set<String> stored = prefs.getStringSet(KEY_SEEN_IDS, null);
+        if (stored == null || stored.isEmpty()) return false;
+        Set<String> seenIds = new HashSet<>(stored);
+        for (String key : buildDedupKeys(id, type, symbol, title, body)) {
+            if (seenIds.contains(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static synchronized void markAlertSeen(Context context, String id, String type, String symbol, String title, String body) {
+        if (context == null) return;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        Set<String> existing = prefs.getStringSet(KEY_SEEN_IDS, null);
+        Set<String> seenIds = existing != null ? new LinkedHashSet<>(existing) : new LinkedHashSet<>();
+        seenIds.addAll(buildDedupKeys(id, type, symbol, title, body));
+
+        if (seenIds.size() > 400) {
+            Set<String> trimmed = new LinkedHashSet<>();
+            int skip = seenIds.size() - 250;
+            int count = 0;
+            for (String s : seenIds) {
+                if (++count > skip) {
+                    trimmed.add(s);
+                }
+            }
+            seenIds = trimmed;
+        }
+        prefs.edit().putStringSet(KEY_SEEN_IDS, seenIds).commit();
+    }
+
+    public static synchronized boolean canPopGeneralNewsNow(Context context) {
+        if (context == null) return true;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        long lastPopMs = prefs.getLong(KEY_LAST_OTHER_NEWS_POP_MS, 0L);
+        if (lastPopMs <= 0L) return true;
+        long elapsed = System.currentTimeMillis() - lastPopMs;
+        return elapsed < 0L || elapsed >= OTHER_NEWS_INTERVAL_MS;
+    }
+
+    public static synchronized void markGeneralNewsPoppedNow(Context context) {
+        if (context == null) return;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        prefs.edit().putLong(KEY_LAST_OTHER_NEWS_POP_MS, System.currentTimeMillis()).commit();
     }
 
     @NonNull
@@ -103,7 +242,8 @@ public class DravyashreeAlertWorker extends Worker {
             }
 
             SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            Set<String> seenIds = new LinkedHashSet<>(prefs.getStringSet(KEY_SEEN_IDS, new LinkedHashSet<>()));
+            Set<String> storedSeen = prefs.getStringSet(KEY_SEEN_IDS, null);
+            Set<String> seenIds = storedSeen != null ? new LinkedHashSet<>(storedSeen) : new LinkedHashSet<>();
 
             // First run guard: if no seen IDs exist yet, record current IDs so we don't spam historical alerts
             boolean isFirstRun = seenIds.isEmpty();
@@ -112,14 +252,12 @@ public class DravyashreeAlertWorker extends Worker {
                     JSONObject item = data.optJSONObject(i);
                     if (item == null) continue;
                     String id = item.optString("id", "").trim();
+                    String type = item.optString("type", "").trim();
                     String title = item.optString("title", "").trim();
                     String body = item.optString("body", "").trim();
                     String symbol = item.optString("symbol", "").toUpperCase().trim();
-                    if (!id.isEmpty()) seenIds.add(id);
-                    if (!title.isEmpty() || !body.isEmpty()) {
-                        seenIds.add("fp_" + Math.abs((title + "_" + body).toLowerCase().hashCode()));
-                    }
-                    if (!symbol.isEmpty() && (item.optString("type", "").contains("IPO") || item.optString("category", "").equalsIgnoreCase("ipo"))) {
+                    seenIds.addAll(buildDedupKeys(id, type, symbol, title, body));
+                    if (!symbol.isEmpty() && (type.contains("IPO") || item.optString("category", "").equalsIgnoreCase("ipo"))) {
                         seenIds.add("ipo_seen_" + symbol);
                     }
                 }
@@ -147,54 +285,41 @@ public class DravyashreeAlertWorker extends Worker {
                 String symbol = item.optString("symbol", "").toUpperCase().trim();
                 String type = item.optString("type", "").trim();
                 String category = item.optString("category", "").trim();
-                boolean isIpo = type.contains("IPO") || category.equalsIgnoreCase("ipo") || title.contains("IPO");
 
                 // Reject blank or incomplete notifications
                 if (title.isEmpty() || body.isEmpty()) {
                     continue;
                 }
 
-                String contentFingerprint = "fp_" + Math.abs((title + "_" + body).toLowerCase().hashCode());
-                String ipoScripKey = isIpo && !symbol.isEmpty() ? ("ipo_seen_" + symbol) : "";
-
-                if (id.isEmpty()) id = contentFingerprint;
-
-                // Strict deduplication: check ID, content fingerprint, and IPO symbol key
-                if (seenIds.contains(id) || seenIds.contains(contentFingerprint) || (!ipoScripKey.isEmpty() && seenIds.contains(ipoScripKey))) {
-                    continue; // Already posted to status bar!
-                }
-
-                seenIds.add(id);
-                seenIds.add(contentFingerprint);
-                if (!ipoScripKey.isEmpty()) {
-                    seenIds.add(ipoScripKey);
+                // Shared persistent deduplication across foreground JS bridge & background WorkManager
+                if (isAlertAlreadySeen(context, id, type, symbol, title, body)) {
+                    continue; // Already posted or suppressed! Never repeat!
                 }
 
                 // Verify alert freshness: only post if triggered within the retention window (24 hours)
                 if (!isAlertFresh(item)) {
+                    markAlertSeen(context, id, type, symbol, title, body);
                     Log.d(TAG, "Suppressed outdated historical alert: " + title);
                     continue;
                 }
 
+                // Immediate vs 1-hour interval for general news
+                boolean isImmediate = isImmediateCorporateActionOrPro(type, category, title, body)
+                        || item.optBoolean("isHoldingHighlight", false)
+                        || item.optBoolean("isPortfolioTracked", false);
+                if (!isImmediate) {
+                    if (!canPopGeneralNewsNow(context)) {
+                        markAlertSeen(context, id, type, symbol, title, body);
+                        Log.d(TAG, "Suppressed general news within 1h interval: " + title);
+                        continue;
+                    }
+                    markGeneralNewsPoppedNow(context);
+                }
+
+                markAlertSeen(context, id, type, symbol, title, body);
                 // New alert arrived! Post status bar notification!
                 postNativeStatusBarNotification(context, item);
             }
-
-            // Cap seen set at 400 IDs, safely keeping the newest items (FIFO)
-            if (seenIds.size() > 400) {
-                Set<String> trimmed = new LinkedHashSet<>();
-                int skip = seenIds.size() - 250;
-                int count = 0;
-                for (String s : seenIds) {
-                    if (++count > skip) {
-                        trimmed.add(s);
-                    }
-                }
-                seenIds = trimmed;
-            }
-
-            // Guarantee synchronous write to disk so worker termination cannot drop seen IDs
-            prefs.edit().putStringSet(KEY_SEEN_IDS, seenIds).commit();
 
         } catch (Exception e) {
             Log.w(TAG, "Error processing alerts JSON in background worker: " + e.getMessage());
@@ -266,6 +391,9 @@ public class DravyashreeAlertWorker extends Worker {
             String type = item.optString("type", "");
 
             boolean isPro = "pro".equalsIgnoreCase(category) || 
+                    item.optBoolean("isHoldingHighlight", false) ||
+                    item.optBoolean("isPortfolioTracked", false) ||
+                    title.contains("[PRO HOLDING") ||
                     type.contains("BREAKOUT") || 
                     type.contains("ACCUMULATION") || 
                     type.contains("ENTRY") || 
@@ -276,19 +404,42 @@ public class DravyashreeAlertWorker extends Worker {
 
             String action = item.optString("action", "");
             String url = item.optString("url", "");
-            if (action.isEmpty()) {
-                if ("NEWS_ALERT".equalsIgnoreCase(type) || "general".equalsIgnoreCase(category) || "news".equalsIgnoreCase(category)) {
-                    action = "OPEN_NEWS";
-                } else if ("IPO_ALERT".equalsIgnoreCase(type) || "ipo".equalsIgnoreCase(category)) {
+            boolean isIpoAlert = "IPO_ALERT".equalsIgnoreCase(type)
+                    || "ALLOTMENT_ALERT".equalsIgnoreCase(type)
+                    || "ipo".equalsIgnoreCase(category)
+                    || title.toLowerCase().contains("ipo");
+            if (action.isEmpty() || (isIpoAlert && "OPEN_NEWS".equalsIgnoreCase(action))) {
+                if (isIpoAlert) {
                     action = "OPEN_IPO";
-                } else if (!symbol.isEmpty()) {
-                    action = "OPEN_STOCK";
-                } else {
+                } else if ("NEWS_ALERT".equalsIgnoreCase(type)
+                        || "TRENDING_NEWS_ALERT".equalsIgnoreCase(type)
+                        || "DIVIDEND_ALERT".equalsIgnoreCase(type)
+                        || "RIGHT_SHARE_ALERT".equalsIgnoreCase(type)
+                        || "BOOK_CLOSURE_ALERT".equalsIgnoreCase(type)
+                        || "MERGER_ALERT".equalsIgnoreCase(type)
+                        || "SEBON_APPROVAL_ALERT".equalsIgnoreCase(type)
+                        || "NEPSE_MACRO".equalsIgnoreCase(type)
+                        || "MARKET_MILESTONE_ALERT".equalsIgnoreCase(type)
+                        || "PORTFOLIO_NEWS_ALERT".equalsIgnoreCase(type)
+                        || "news".equalsIgnoreCase(category)) {
                     action = "OPEN_NEWS";
+                } else if (!symbol.isEmpty() && !"NEPSE".equalsIgnoreCase(symbol)) {
+                    action = "OPEN_STOCK";
+                } else if ("general".equalsIgnoreCase(category)) {
+                    action = "OPEN_NEWS";
+                } else {
+                    action = "OPEN_RADAR";
                 }
             }
 
+            // Stable deterministic notification ID: updates existing notification without noisy re-alerting
+            String notifKey = !symbol.isEmpty() ? (type + "_" + symbol) : (type + "_" + Math.abs(title.hashCode()));
+            int notifId = Math.abs(notifKey.hashCode()) % 1000000;
+            if (notifId == 0) notifId = 1001;
+
             Intent intent = new Intent(context, MainActivity.class);
+            intent.setAction("com.smartwealth.nepse.NOTIFICATION_TAP_" + notifId + "_" + System.nanoTime());
+            intent.setData(Uri.parse("dravyashree://notification/" + notifId + "/" + System.nanoTime()));
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             intent.putExtra("from_notification", true);
             intent.putExtra("alert_id", item.optString("id", ""));
@@ -297,12 +448,13 @@ public class DravyashreeAlertWorker extends Worker {
             intent.putExtra("category", category);
             intent.putExtra("action", action);
             intent.putExtra("url", url);
+            intent.putExtra("source", item.optString("source", ""));
             intent.putExtra("title", title);
             intent.putExtra("body", body);
 
             PendingIntent pendingIntent = PendingIntent.getActivity(
                     context,
-                    (int) System.currentTimeMillis(),
+                    notifId,
                     intent,
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                             ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -330,10 +482,6 @@ public class DravyashreeAlertWorker extends Worker {
                 builder.setColor(Color.parseColor("#38BDF8"));
             }
 
-            // Stable deterministic notification ID: updates existing notification without noisy re-alerting
-            String notifKey = !symbol.isEmpty() ? (type + "_" + symbol) : (type + "_" + Math.abs(title.hashCode()));
-            int notifId = Math.abs(notifKey.hashCode()) % 1000000;
-            if (notifId == 0) notifId = 1001;
             NotificationManagerCompat notificationManager = NotificationManagerCompat.from(context);
             notificationManager.notify(notifId, builder.build());
 

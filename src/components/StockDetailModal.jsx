@@ -1355,8 +1355,19 @@ export default function StockDetailModal({
     : (propSelectedDate && propSelectedDate !== getLatestTradingDateStr() && propSelectedDate !== 'latest' && propSelectedDate !== '' ? propSelectedDate : '');
   const marketStatus = useMemo(() => propMarketStatus || getDetailedMarketStatus(), [propMarketStatus]);
   const { setActiveTab: setGlobalActiveTab } = useNavigation();
-  const [activeTab, setActiveTab] = useState(() => (typeof stock === 'object' && stock?.initialTab) || initialTab || 'overview');
+  const normalizeModalTab = (tabName) => {
+    if (!tabName) return '';
+    return tabName === 'broker' ? 'broker_analysis' : tabName;
+  };
+  const [activeTab, setActiveTab] = useState(() => normalizeModalTab(typeof stock === 'object' ? stock?.initialTab : '') || normalizeModalTab(initialTab) || 'overview');
   const [tabCategory, setTabCategory] = useState('all'); // 'all' | 'trading' | 'financials' | 'tools'
+
+  useEffect(() => {
+    const requested = normalizeModalTab(typeof stock === 'object' ? stock?.initialTab : '') || normalizeModalTab(initialTab);
+    if (requested) {
+      setActiveTab(requested);
+    }
+  }, [stock?.symbol, stock?.initialTab, initialTab]);
   const tabBarRef = useRef(null);
   const [chartTimeframe, setChartTimeframe] = useState('1M');
   const [chartMode, setChartMode] = useState('line');

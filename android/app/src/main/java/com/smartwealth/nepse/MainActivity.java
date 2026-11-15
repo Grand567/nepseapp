@@ -47,6 +47,9 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         isAppInForeground = true;
+        if (pendingNotificationPayload != null) {
+            dispatchPendingNotificationToWebView();
+        }
     }
 
     @Override
@@ -101,10 +104,9 @@ public class MainActivity extends BridgeActivity {
             android.util.Log.w("MainActivity", "WorkManager schedule notice: " + e.getMessage());
         }
 
-        // Invalidate Android WebView disk & memory cache and register native file downloader bridge
+        // Register native file downloader and notification bridges on WebView
         try {
             if (this.bridge != null && this.bridge.getWebView() != null) {
-                this.bridge.getWebView().clearCache(true);
                 this.bridge.getWebView().addJavascriptInterface(new NepseAndroidDownloader(), "NepseAndroidDownloader");
                 this.bridge.getWebView().addJavascriptInterface(new NepseNativeNotifier(), "NepseNativeNotifier");
             }
@@ -116,37 +118,47 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        setIntent(intent);
         handleNotificationDeepLink(intent);
     }
 
     private void handleNotificationDeepLink(Intent intent) {
         if (intent == null) return;
+        final String intentAction = intent.getAction();
+        final boolean hasNotificationAction = intentAction != null
+                && (intentAction.startsWith("com.smartwealth.nepse.NOTIFICATION_TAP_") || intentAction.startsWith("OPEN_"));
         android.os.Bundle extras = intent.getExtras();
-        if (extras == null) return;
+        if (extras == null && !hasNotificationAction) return;
+        android.os.Bundle safeExtras = extras != null ? extras : new android.os.Bundle();
 
-        boolean isNotification = intent.getBooleanExtra("from_notification", false)
+        boolean isNotification = hasNotificationAction
+                || intent.getBooleanExtra("from_notification", false)
                 || "true".equalsIgnoreCase(intent.getStringExtra("from_notification"))
-                || extras.containsKey("google.message_id")
-                || extras.containsKey("google.sent_time")
-                || extras.containsKey("gcm.n.e")
-                || extras.containsKey("symbol")
-                || extras.containsKey("alert_id")
-                || extras.containsKey("action");
+                || safeExtras.containsKey("google.message_id")
+                || safeExtras.containsKey("google.sent_time")
+                || safeExtras.containsKey("gcm.n.e")
+                || safeExtras.containsKey("symbol")
+                || safeExtras.containsKey("alert_id")
+                || safeExtras.containsKey("action");
 
         if (!isNotification) return;
 
-        final String symbol = extras.getString("symbol", "");
-        final String type = extras.getString("type", "");
-        final String category = extras.getString("category", "");
-        final String action = extras.getString("action", "");
-        final String url = extras.getString("url", "");
+        final String symbol = safeExtras.getString("symbol", "");
+        final String type = safeExtras.getString("type", "");
+        final String category = safeExtras.getString("category", "");
+        String action = safeExtras.getString("action", "");
+        if ((action == null || action.isEmpty()) && intentAction != null && intentAction.startsWith("OPEN_")) {
+            action = intentAction;
+        }
+        final String url = safeExtras.getString("url", "");
+        final String source = safeExtras.getString("source", "");
 
-        String title = extras.getString("title", "");
-        if (title == null || title.isEmpty()) title = extras.getString("gcm.notification.title", "");
-        if (title == null || title.isEmpty()) title = extras.getString("google.c.a.c_l", "");
+        String title = safeExtras.getString("title", "");
+        if (title == null || title.isEmpty()) title = safeExtras.getString("gcm.notification.title", "");
+        if (title == null || title.isEmpty()) title = safeExtras.getString("google.c.a.c_l", "");
 
-        String body = extras.getString("body", "");
-        if (body == null || body.isEmpty()) body = extras.getString("gcm.notification.body", "");
+        String body = safeExtras.getString("body", "");
+        if (body == null || body.isEmpty()) body = safeExtras.getString("gcm.notification.body", "");
 
         try {
             org.json.JSONObject payload = new org.json.JSONObject();
@@ -155,32 +167,48 @@ public class MainActivity extends BridgeActivity {
             payload.put("category", category != null ? category : "");
             payload.put("action", action != null ? action : "");
             payload.put("url", url != null ? url : "");
+            payload.put("source", source != null ? source : "");
             payload.put("title", title != null ? title : "");
             payload.put("body", body != null ? body : "");
 
             // Copy all extra key-values into payload so custom fields are never omitted
-            for (String key : extras.keySet()) {
+            for (String key : safeExtras.keySet()) {
                 if (!payload.has(key)) {
-                    Object val = extras.get(key);
+                    Object val = safeExtras.get(key);
                     if (val != null) {
                         payload.put(key, String.valueOf(val));
                     }
                 }
             }
 
+            // Clear consumed notification markers on intent so activity recreation does not re-trigger old intents
+            intent.removeExtra("from_notification");
+            intent.setAction("");
+
             final String payloadStr = payload.toString();
             pendingNotificationPayload = payloadStr;
-
-            if (this.bridge != null && this.bridge.getWebView() != null) {
-                this.bridge.getWebView().postDelayed(() -> {
-                    try {
-                        String script = "window.dispatchEvent(new CustomEvent('dravyashree_notification_clicked', { detail: " + payloadStr + " }));";
-                        bridge.getWebView().evaluateJavascript(script, null);
-                    } catch (Exception ignored) {}
-                }, 400);
-            }
+            dispatchPendingNotificationToWebView();
         } catch (Exception e) {
             android.util.Log.w("MainActivity", "Error handling notification deep link: " + e.getMessage());
+        }
+    }
+
+    private void dispatchPendingNotificationToWebView() {
+        if (this.bridge == null || this.bridge.getWebView() == null) return;
+        final long[] retryDelaysMs = {100L, 450L, 1000L, 2200L};
+        for (long delayMs : retryDelaysMs) {
+            this.bridge.getWebView().postDelayed(() -> {
+                final String currentPayload = pendingNotificationPayload;
+                if (currentPayload == null || currentPayload.isEmpty()) return;
+                try {
+                    if (bridge == null || bridge.getWebView() == null) return;
+                    String script = "window.__DRAVYASHREE_PENDING_NOTIFICATION__ = " + currentPayload + "; " +
+                            "if (window.__dravyashreeNotificationRouterReady) { " +
+                            "  window.dispatchEvent(new CustomEvent('dravyashree_notification_clicked', { detail: " + currentPayload + " })); " +
+                            "}";
+                    bridge.getWebView().evaluateJavascript(script, null);
+                } catch (Exception ignored) {}
+            }, delayMs);
         }
     }
 
@@ -259,6 +287,11 @@ public class MainActivity extends BridgeActivity {
         }
 
         @JavascriptInterface
+        public void clearPendingNotification() {
+            pendingNotificationPayload = null;
+        }
+
+        @JavascriptInterface
         public boolean hasNotificationPermission() {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -293,7 +326,13 @@ public class MainActivity extends BridgeActivity {
                 final String sym = (symbol != null) ? symbol.trim().toUpperCase() : "";
                 final String notifType = (type != null) ? type.trim() : "";
 
-                // In-memory deduplication: prevent repeated JS/SSE firings for the exact same alert within 15 minutes
+                // 1. Persistent shared deduplication across foreground JS bridge & background WorkManager: never pop twice of any kind
+                if (DravyashreeAlertWorker.isAlertAlreadySeen(MainActivity.this, "", notifType, sym, safeTitle, safeBody)) {
+                    android.util.Log.d("NepseNativeNotifier", "Suppressed duplicate notification across native store: " + safeTitle);
+                    return;
+                }
+
+                // In-memory deduplication safety net within active process
                 final String dedupKey = notifType + "_" + sym + "_" + safeTitle.hashCode();
                 final long now = System.currentTimeMillis();
                 final Long lastPosted = postedAlertHistory.get(dedupKey);
@@ -301,9 +340,28 @@ public class MainActivity extends BridgeActivity {
                     android.util.Log.d("NepseNativeNotifier", "Suppressed duplicate notification from JS within 15m: " + safeTitle);
                     return;
                 }
+
+                // 2. Immediate delivery for corporate actions (Dividend/Right Share/Book Closure) & PRO holdings vs 1-hour other news interval
+                if (!DravyashreeAlertWorker.isImmediateCorporateActionOrPro(notifType, safeChannel, safeTitle, safeBody)) {
+                    if (!DravyashreeAlertWorker.canPopGeneralNewsNow(MainActivity.this)) {
+                        DravyashreeAlertWorker.markAlertSeen(MainActivity.this, "", notifType, sym, safeTitle, safeBody);
+                        android.util.Log.d("NepseNativeNotifier", "Suppressed general news within 1h interval: " + safeTitle);
+                        return;
+                    }
+                    DravyashreeAlertWorker.markGeneralNewsPoppedNow(MainActivity.this);
+                }
+
                 postedAlertHistory.put(dedupKey, now);
+                DravyashreeAlertWorker.markAlertSeen(MainActivity.this, "", notifType, sym, safeTitle, safeBody);
+
+                // Deterministic notification ID: updates existing notification without noisy re-alerting
+                String notifKey = !sym.isEmpty() ? (notifType + "_" + sym) : (notifType + "_" + Math.abs(safeTitle.hashCode()));
+                int notifId = Math.abs(notifKey.hashCode()) % 1000000;
+                if (notifId == 0) notifId = 1001;
 
                 Intent intent = new Intent(MainActivity.this, MainActivity.class);
+                intent.setAction("com.smartwealth.nepse.NOTIFICATION_TAP_" + notifId + "_" + System.nanoTime());
+                intent.setData(Uri.parse("dravyashree://notification/" + notifId + "/" + System.nanoTime()));
                 intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 intent.putExtra("from_notification", true);
                 intent.putExtra("symbol", sym);
@@ -317,7 +375,7 @@ public class MainActivity extends BridgeActivity {
 
                 PendingIntent pendingIntent = PendingIntent.getActivity(
                         MainActivity.this,
-                        (int) System.currentTimeMillis(),
+                        notifId,
                         intent,
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                                 ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -345,10 +403,6 @@ public class MainActivity extends BridgeActivity {
                     builder.setColor(Color.parseColor("#38BDF8"));
                 }
 
-                // Deterministic notification ID: updates existing notification without noisy re-alerting
-                String notifKey = !sym.isEmpty() ? (notifType + "_" + sym) : (notifType + "_" + Math.abs(safeTitle.hashCode()));
-                int notifId = Math.abs(notifKey.hashCode()) % 1000000;
-                if (notifId == 0) notifId = 1001;
                 NotificationManagerCompat.from(MainActivity.this).notify(notifId, builder.build());
                 android.util.Log.d("NepseNativeNotifier", "Posted status bar notification from JS: " + safeTitle);
             } catch (final Exception e) {

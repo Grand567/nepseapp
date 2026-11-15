@@ -22,6 +22,9 @@ const MAX_NOTIFICATION_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours max age for act
 // ── Stale Notification Filtering & Deduplication Rules ───────────────────────
 export const NOTIFICATION_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours retention so news & stock alerts are not discarded
 export const PROCESSED_NOTIFICATIONS_KEY = 'dravyashree_processed_notification_log_v2';
+export const STATUS_BAR_POPPED_LOG_KEY = 'dravyashree_status_bar_popped_v1';
+export const LAST_OTHER_NEWS_POP_KEY = 'dravyashree_last_other_news_pop_ms';
+export const OTHER_NEWS_INTERVAL_MS = 60 * 60 * 1000; // 1 hour interval for general news
 export const MAX_PROCESSED_LOG_SIZE = 500;
 export const PROCESSED_LOG_RETENTION_MS = 48 * 60 * 60 * 1000; // 48 hours retention
 
@@ -37,6 +40,171 @@ function hashString(str) {
   }
   return Math.abs(hash);
 }
+
+/**
+ * Normalizes headline/body text for cross-portal, cross-channel deduplication.
+ * Strips badges, "(Covered by: ...)" suffixes, punctuation, and extra whitespace.
+ */
+export const normalizeHeadlineForDedup = (text) => {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/\(covered by:[^)]+\)/gi, ' ')
+    .replace(/\[(?:pro holding|my holding|portfolio|trending)[^\]]*\]/gi, ' ')
+    .replace(/[👑💼💰📈📅🔥📰⚡🛑🐋🏛️🎯🔔📜🤝📊]/g, ' ')
+    .replace(/[^\p{L}\p{N}\s%]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const DIVIDEND_KEYWORDS = [
+  'लाभांश', 'बोनस', 'नगद लाभांश', 'प्रतिशत लाभांश',
+  'dividend', 'bonus share', 'bonus', 'cash dividend', 'unclaimed cash dividend', 'unclaimed dividend'
+];
+const RIGHT_SHARE_KEYWORDS = [
+  'हकप्रद', 'हकप्रद सेयर', 'right share', 'right issue', 'rights issue', 'right offering'
+];
+const BOOK_CLOSURE_KEYWORDS = [
+  'बुक क्लोज', 'बुकक्लोज', 'साधारण सभा', 'book closure', 'book close', 'agm', 'annual general meeting', 'special general meeting', 'sgm'
+];
+
+/**
+ * Classifies corporate action stock news that must fire at the same time (0-delay):
+ * Dividend, Right Share, Book Closure.
+ */
+export const getCorporateActionKind = (item) => {
+  if (!item) return null;
+  const data = item.data || item;
+  const type = String(data.type || item.type || '').toUpperCase().trim();
+  if (type === 'DIVIDEND_ALERT') return 'DIVIDEND';
+  if (type === 'RIGHT_SHARE_ALERT') return 'RIGHT_SHARE';
+  if (type === 'BOOK_CLOSURE_ALERT') return 'BOOK_CLOSURE';
+
+  const combined = `${item.title || data.title || ''} ${item.body || data.body || ''}`.toLowerCase();
+  if (DIVIDEND_KEYWORDS.some(kw => combined.includes(kw))) return 'DIVIDEND';
+  if (RIGHT_SHARE_KEYWORDS.some(kw => combined.includes(kw))) return 'RIGHT_SHARE';
+  if (BOOK_CLOSURE_KEYWORDS.some(kw => combined.includes(kw))) return 'BOOK_CLOSURE';
+  return null;
+};
+
+export const isImmediateCorporateActionAlert = (item) => Boolean(getCorporateActionKind(item));
+
+/**
+ * Reads user's portfolio holdings (and watchlist fallback) from localStorage.
+ * Also supports checking a provided array or Set.
+ */
+export const getUserHoldingSymbolsSet = (extraSymbols = null) => {
+  const symbols = new Set();
+  if (extraSymbols) {
+    for (const s of extraSymbols) {
+      const clean = String(s || '').toUpperCase().trim();
+      if (clean && clean !== 'NEPSE') symbols.add(clean);
+    }
+  }
+  if (typeof localStorage === 'undefined') return symbols;
+  try {
+    const rawProfs = localStorage.getItem('nepse_portfolio_profiles');
+    if (rawProfs) {
+      const profs = JSON.parse(rawProfs);
+      if (Array.isArray(profs)) {
+        profs.forEach(p => (p?.holdings || []).forEach(h => {
+          const kitta = Number(h?.kitta ?? h?.units ?? h?.qty ?? 1);
+          const sym = String(h?.symbol || h?.scrip || '').toUpperCase().trim();
+          if (sym && sym !== 'NEPSE' && kitta > 0) symbols.add(sym);
+        }));
+      }
+    }
+  } catch (_) {}
+  try {
+    const rawDirect = localStorage.getItem('nepse_portfolio_holdings');
+    if (rawDirect) {
+      const list = JSON.parse(rawDirect);
+      if (Array.isArray(list)) {
+        list.forEach(h => {
+          const sym = String(typeof h === 'string' ? h : (h?.symbol || h?.scrip || '')).toUpperCase().trim();
+          if (sym && sym !== 'NEPSE') symbols.add(sym);
+        });
+      }
+    }
+  } catch (_) {}
+  try {
+    const rawWl = localStorage.getItem('nepse_user_watchlist');
+    if (rawWl) {
+      const wl = JSON.parse(rawWl);
+      if (Array.isArray(wl)) {
+        wl.forEach(w => {
+          const sym = String(typeof w === 'string' ? w : (w?.symbol || w?.scrip || '')).toUpperCase().trim();
+          if (sym && sym !== 'NEPSE') symbols.add(sym);
+        });
+      }
+    }
+  } catch (_) {}
+  return symbols;
+};
+
+/**
+ * Enhances stock notifications with PRO Holding special emphasis, especially for
+ * Dividend, Right Share, and Book Closure announcements.
+ */
+export const applyHoldingAndCorporateActionEmphasis = (item, holdingSymbolsOverride = null) => {
+  if (!item || typeof item !== 'object') return item;
+  const holdingsSet = getUserHoldingSymbolsSet(holdingSymbolsOverride);
+  const symbol = String(item.symbol || '').toUpperCase().trim();
+  const cleanSymbol = (symbol && symbol !== 'NEPSE') ? symbol : '';
+  const actionKind = getCorporateActionKind(item);
+
+  let resolvedType = String(item.type || '').trim();
+  if (actionKind === 'DIVIDEND' && (!resolvedType || resolvedType === 'NEWS_ALERT' || resolvedType === 'PORTFOLIO_NEWS_ALERT' || resolvedType === 'TRENDING_NEWS_ALERT')) {
+    resolvedType = 'DIVIDEND_ALERT';
+  } else if (actionKind === 'RIGHT_SHARE' && (!resolvedType || resolvedType === 'NEWS_ALERT' || resolvedType === 'PORTFOLIO_NEWS_ALERT' || resolvedType === 'TRENDING_NEWS_ALERT')) {
+    resolvedType = 'RIGHT_SHARE_ALERT';
+  } else if (actionKind === 'BOOK_CLOSURE' && (!resolvedType || resolvedType === 'NEWS_ALERT' || resolvedType === 'PORTFOLIO_NEWS_ALERT' || resolvedType === 'TRENDING_NEWS_ALERT')) {
+    resolvedType = 'BOOK_CLOSURE_ALERT';
+  }
+
+  const isHolding = Boolean(
+    item.isHoldingHighlight ||
+    item.isPortfolioTracked ||
+    (cleanSymbol && holdingsSet.has(cleanSymbol)) ||
+    String(item.title || '').includes('[PRO HOLDING')
+  );
+
+  let updatedTitle = String(item.title || '').trim();
+  let updatedCategory = item.category || 'general';
+  let updatedTier = item.tier || updatedCategory;
+
+  if (isHolding) {
+    updatedCategory = 'pro';
+    updatedTier = 'pro';
+    if (!updatedTitle.includes('[PRO HOLDING')) {
+      const strippedTitle = updatedTitle
+        .replace(/^(?:👑|💼|💰|📈|📅|🔥|📰)+\s*/gu, '')
+        .replace(/^\[Portfolio\]\s*/i, '')
+        .replace(/^Portfolio Alert:\s*[A-Z0-9]+\s*[-–:]?\s*/i, '')
+        .trim();
+      const actionLabel = actionKind === 'DIVIDEND'
+        ? 'DIVIDEND'
+        : actionKind === 'RIGHT_SHARE'
+          ? 'RIGHT SHARE'
+          : actionKind === 'BOOK_CLOSURE'
+            ? 'BOOK CLOSURE'
+            : '';
+      const badge = actionLabel
+        ? `👑 [PRO HOLDING • ${actionLabel}]${cleanSymbol ? ` ${cleanSymbol}` : ''}:`
+        : `👑 [PRO HOLDING${cleanSymbol ? ` • ${cleanSymbol}` : ''}]:`;
+      updatedTitle = `${badge} ${strippedTitle || cleanSymbol || 'Stock Update'}`.trim();
+    }
+  }
+
+  return {
+    ...item,
+    type: resolvedType || item.type,
+    category: updatedCategory,
+    tier: updatedTier,
+    isHoldingHighlight: isHolding,
+    isImmediateCorporateAction: Boolean(actionKind),
+    title: updatedTitle
+  };
+};
 
 /**
  * Extracts and verifies explicit creation timestamp from incoming FCM / background push payload.
@@ -202,8 +370,8 @@ export const validatePushNotificationPayload = (raw, options = {}) => {
     }
   }
 
-  // 3. TTL Expiration Rule: Discard if generation-to-receipt delta > 30 minutes
-  const now = Date.now();
+  // 3. TTL Expiration Rule: Discard if generation-to-receipt delta > TTL
+  const now = options.nowMs || Date.now();
   const createdAtMs = tsInfo.hasTimestamp ? tsInfo.createdAtMs : now;
   const deltaMs = now - createdAtMs;
 
@@ -334,13 +502,14 @@ export const clearNotificationCache = () => {
 
 export const normalizeNotificationItem = (raw) => {
   if (!raw) return null;
-  const data = raw.data || raw;
+  const data = (raw && typeof raw.data === 'object') ? { ...raw, ...raw.data } : (raw || {});
   if (data.isUserHolding) return null; // Suppress internal tracking objects
   const rawTitle = String(raw.title || data.title || '').trim();
   const rawBody = String(raw.body || data.body || '').trim();
   if (!rawTitle && !rawBody) return null; // Reject blank notifications
 
   const rawType = String(data.type || '').trim();
+  const isIpo = rawType === 'IPO_ALERT' || rawType === 'ALLOTMENT_ALERT' || data.category === 'ipo' || data.action === 'OPEN_IPO';
   const isGeneral = data.category === 'general' || [
     'NEWS_ALERT', 'IPO_ALERT', 'NEPSE_MACRO', 'TRENDING_NEWS_ALERT',
     'DIVIDEND_ALERT', 'RIGHT_SHARE_ALERT', 'BOOK_CLOSURE_ALERT',
@@ -350,20 +519,28 @@ export const normalizeNotificationItem = (raw) => {
   const category = data.category || (isGeneral ? 'general' : 'pro');
   const id = data.id || raw.id || `notif_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
 
+  const rawSym = String(data.symbol || '').toUpperCase().trim();
+  const cleanSymbol = (rawSym && rawSym !== 'NEPSE') ? rawSym : '';
+  const resolvedAction = (isIpo && (!data.action || data.action === 'OPEN_NEWS'))
+    ? 'OPEN_IPO'
+    : (data.action || (isIpo ? 'OPEN_IPO' : isGeneral ? 'OPEN_NEWS' : cleanSymbol ? 'OPEN_STOCK' : 'OPEN_RADAR'));
+
   const tsInfo = extractPayloadCreationTimestamp(raw);
   const createdAtIso = tsInfo.hasTimestamp ? tsInfo.createdAtIso : (data.created_at || data.triggeredAt || data.timestamp || new Date().toISOString());
   const createdAtMs = tsInfo.hasTimestamp ? tsInfo.createdAtMs : new Date(createdAtIso).getTime();
 
-  return {
+  const baseItem = {
     id,
     type: rawType || (isGeneral ? 'NEWS_ALERT' : 'SMART_INSTITUTIONAL_ENTRY'),
     category,
     tier: category,
+    isPortfolioTracked: Boolean(data.isPortfolioTracked || raw.isPortfolioTracked),
+    isHoldingHighlight: Boolean(data.isHoldingHighlight || raw.isHoldingHighlight),
     inAppOnly: Boolean(data.inAppOnly || raw.inAppOnly),
     pushStatusBar: data.pushStatusBar !== false && raw.pushStatusBar !== false,
     title: rawTitle || 'Dravyashree Notification',
     body: rawBody,
-    symbol: data.symbol || rawTitle.split(':')[1]?.trim()?.split(' ')[0] || '',
+    symbol: cleanSymbol,
     ltp: Number(data.ltp || 0),
     buyZone: data.buyZone || {
       low: Number(data.entryLow || 0),
@@ -375,49 +552,188 @@ export const normalizeNotificationItem = (raw) => {
     target1: Number(data.target1 || 0),
     target2: Number(data.target2 || 0),
     stopLoss: Number(data.stopLoss || 0),
-    action: data.action || (isGeneral ? 'OPEN_NEWS' : 'OPEN_RADAR'),
+    action: resolvedAction,
     url: data.url || '',
+    source: data.source || raw.source || '',
     created_at: createdAtIso,
     created_at_ms: createdAtMs,
     timestamp: createdAtIso,
     read: false
   };
+
+  return applyHoldingAndCorporateActionEmphasis(baseItem);
 };
 
 const recentlyTriggeredAlerts = new Set();
 
+export function clearStatusBarPopState() {
+  recentlyTriggeredAlerts.clear();
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem(STATUS_BAR_POPPED_LOG_KEY);
+      localStorage.removeItem(LAST_OTHER_NEWS_POP_KEY);
+    } catch (_) {}
+  }
+}
+
+export function buildStatusBarDedupKeys(item) {
+  if (!item) return [];
+  const keys = [];
+  const id = String(item.id || '').trim();
+  const sym = String(item.symbol || '').toUpperCase().trim();
+  const normTitle = normalizeHeadlineForDedup(item.title || '');
+  const normBody = normalizeHeadlineForDedup(item.body || '');
+  const actionKind = getCorporateActionKind(item);
+  const dayKey = new Date(Number(item.created_at_ms) || Date.now()).toISOString().slice(0, 10);
+
+  if (id) keys.push(`id_${id}`);
+  if (normTitle || normBody) keys.push(`fp_${hashString(`${normTitle}_${normBody}`)}`);
+  if (normTitle.length >= 10) keys.push(`hl_${sym || 'GEN'}_${hashString(normTitle)}`);
+  if (actionKind && sym && sym !== 'NEPSE') keys.push(`corp_${actionKind}_${sym}_${dayKey}`);
+  return keys;
+}
+
+function getStatusBarPoppedLog() {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(STATUS_BAR_POPPED_LOG_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    const now = Date.now();
+    const fresh = parsed.filter(e => e && e.k && e.ts && (now - e.ts <= PROCESSED_LOG_RETENTION_MS));
+    if (fresh.length !== parsed.length) {
+      localStorage.setItem(STATUS_BAR_POPPED_LOG_KEY, JSON.stringify(fresh));
+    }
+    return fresh;
+  } catch (_) {
+    return [];
+  }
+}
+
+export function hasStatusBarAlreadyPopped(item) {
+  const keys = buildStatusBarDedupKeys(item);
+  if (keys.length === 0) return false;
+  for (const k of keys) {
+    if (recentlyTriggeredAlerts.has(k)) return true;
+  }
+  const log = getStatusBarPoppedLog();
+  const seenSet = new Set(log.map(e => e.k));
+  return keys.some(k => seenSet.has(k));
+}
+
+export function markStatusBarPopped(item, nowMs = Date.now()) {
+  const keys = buildStatusBarDedupKeys(item);
+  if (keys.length === 0) return;
+
+  for (const k of keys) {
+    recentlyTriggeredAlerts.add(k);
+  }
+  if (recentlyTriggeredAlerts.size > 400) {
+    const arr = Array.from(recentlyTriggeredAlerts).slice(-250);
+    recentlyTriggeredAlerts.clear();
+    arr.forEach(a => recentlyTriggeredAlerts.add(a));
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const log = getStatusBarPoppedLog();
+      const existing = new Set(log.map(e => e.k));
+      for (const k of keys) {
+        if (!existing.has(k)) {
+          log.unshift({ k, ts: nowMs });
+          existing.add(k);
+        }
+      }
+      localStorage.setItem(STATUS_BAR_POPPED_LOG_KEY, JSON.stringify(log.slice(0, MAX_PROCESSED_LOG_SIZE)));
+    } catch (_) {}
+  }
+}
+
+/**
+ * Evaluates strict deduplication, immediate corporate/PRO holding bypass, and 1-hour other-news gate.
+ */
+export function shouldPopStatusBarForNotification(normalized, options = {}) {
+  if (!normalized) return { allow: false, immediate: false, reason: 'EMPTY_PAYLOAD' };
+  const now = options.nowMs || Date.now();
+
+  if (hasStatusBarAlreadyPopped(normalized)) {
+    return { allow: false, immediate: false, reason: 'DUPLICATE_POP' };
+  }
+
+  const holdingsSet = getUserHoldingSymbolsSet();
+  const cleanSym = String(normalized.symbol || '').toUpperCase().trim();
+  const isImmediateCorporate = isImmediateCorporateActionAlert(normalized);
+  const isProOrHolding = Boolean(
+    normalized.isHoldingHighlight ||
+    (cleanSym && holdingsSet.has(cleanSym)) ||
+    normalized.category === 'pro' ||
+    normalized.tier === 'pro' ||
+    normalized.type === 'ADMIN_TEST_ALERT'
+  );
+
+  if (isImmediateCorporate || isProOrHolding) {
+    return { allow: true, immediate: true, reason: 'IMMEDIATE_CORPORATE_OR_PRO_HOLDING' };
+  }
+
+  let lastPopMs = 0;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      lastPopMs = Number(localStorage.getItem(LAST_OTHER_NEWS_POP_KEY) || 0);
+    } catch (_) {}
+  }
+
+  if (lastPopMs > 0 && (now - lastPopMs < OTHER_NEWS_INTERVAL_MS)) {
+    // Mark seen so throttled message never pops later as a delayed duplicate
+    markStatusBarPopped(normalized, now);
+    return {
+      allow: false,
+      immediate: false,
+      reason: 'THROTTLED_1H_OTHER_NEWS',
+      remainingMs: OTHER_NEWS_INTERVAL_MS - (now - lastPopMs)
+    };
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(LAST_OTHER_NEWS_POP_KEY, String(now));
+    } catch (_) {}
+  }
+  return { allow: true, immediate: false, reason: 'ALLOWED_1H_WINDOW' };
+}
+
 export function triggerNativeStatusBarNotification(normalized, options = {}) {
-  if (!normalized || normalized.isUserHolding || normalized.inAppOnly || normalized.pushStatusBar === false || normalized.type === 'EARNINGS_ALERT') return;
-  const cleanTitle = String(normalized.title || '').trim();
-  const cleanBody = String(normalized.body || '').trim();
-  if (!cleanTitle || !cleanBody) return;
+  if (!normalized || normalized.isUserHolding || normalized.inAppOnly || normalized.pushStatusBar === false || normalized.type === 'EARNINGS_ALERT') return false;
+  const enhanced = applyHoldingAndCorporateActionEmphasis(normalized);
+  const cleanTitle = String(enhanced.title || '').trim();
+  const cleanBody = String(enhanced.body || '').trim();
+  if (!cleanTitle || !cleanBody) return false;
 
   // Stale-notification & duplicate validation layer: inspect timestamp, enforce TTL, and reject duplicates
-  const validation = validatePushNotificationPayload(normalized, {
+  const validation = validatePushNotificationPayload(enhanced, {
     ttlMs: NOTIFICATION_TTL_MS,
-    skipDuplicateCheck: options.skipDuplicateCheck === true
+    skipDuplicateCheck: options.skipDuplicateCheck === true,
+    nowMs: options.nowMs
   });
   if (!validation.valid) {
     console.warn(`[PushService] Suppressed status bar notification [${validation.reason}]:`, validation.error);
-    return;
+    return false;
   }
 
-  // Deduplicate on client to prevent multi-firing within current active session
-  const alertFingerprint = `${normalized.id || ''}_${normalized.title || ''}_${normalized.symbol || ''}`.trim();
-  if (alertFingerprint && recentlyTriggeredAlerts.has(alertFingerprint)) {
-    console.debug('[PushService] Suppressed duplicate status bar notification in session:', alertFingerprint);
-    return;
-  }
-  if (alertFingerprint) {
-    recentlyTriggeredAlerts.add(alertFingerprint);
-    if (recentlyTriggeredAlerts.size > 200) {
-      const arr = Array.from(recentlyTriggeredAlerts).slice(-100);
-      recentlyTriggeredAlerts.clear();
-      arr.forEach(a => recentlyTriggeredAlerts.add(a));
-    }
+  // Enforce strict global dedup (never pop twice of any kind) + 1-hour other news interval + immediate corporate/PRO holding bypass
+  const popDecision = shouldPopStatusBarForNotification(enhanced, { nowMs: options.nowMs });
+  if (!popDecision.allow) {
+    console.debug(`[PushService] Suppressed status bar notification [${popDecision.reason}]:`, enhanced.title);
+    return false;
   }
 
-  const isPro = normalized.category === 'pro' || normalized.tier === 'pro';
+  markStatusBarPopped(enhanced, options.nowMs || Date.now());
+  markNotificationAsProcessed(validation.id, validation.fingerprint, {
+    createdAt: validation.createdAtIso,
+    symbol: validation.symbol,
+    type: validation.type
+  });
+
+  const isPro = enhanced.category === 'pro' || enhanced.tier === 'pro' || enhanced.isHoldingHighlight;
   const channelId = isPro ? 'dravyashree-pro-signals' : 'nepse-general-news';
 
   // 1. Android Native Status Bar Bridge (Works on Android APK when foreground or minimized)
@@ -430,16 +746,16 @@ export function triggerNativeStatusBarNotification(normalized, options = {}) {
       }
 
       window.NepseNativeNotifier.postStatusBarNotification(
-        normalized.title || '🔔 Dravyashree Alert',
-        normalized.body || '',
+        enhanced.title || '🔔 Dravyashree Alert',
+        enhanced.body || '',
         channelId,
-        normalized.symbol || '',
-        normalized.type || '',
-        normalized.action || (normalized.symbol ? 'OPEN_STOCK' : 'OPEN_NEWS'),
-        normalized.url || '',
-        String(normalized.created_at_ms || Date.now())
+        enhanced.symbol || '',
+        enhanced.type || '',
+        enhanced.action || (enhanced.symbol ? 'OPEN_STOCK' : 'OPEN_NEWS'),
+        enhanced.url || '',
+        String(enhanced.created_at_ms || Date.now())
       );
-      return;
+      return true;
     } catch (e) {
       console.warn('[PushService] Android native notifier call notice:', e.message);
     }
@@ -448,13 +764,15 @@ export function triggerNativeStatusBarNotification(normalized, options = {}) {
   // 2. Browser Native Notification fallback for desktop / PWA
   if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
     try {
-      new Notification(normalized.title || `🔔 Dravyashree Alert: ${normalized.symbol}`, {
-        body: normalized.body,
+      new Notification(enhanced.title || `🔔 Dravyashree Alert: ${enhanced.symbol}`, {
+        body: enhanced.body,
         icon: '/favicon.ico',
-        tag: `dravyashree_alert_${normalized.id}`
+        tag: `dravyashree_alert_${enhanced.id}`
       });
+      return true;
     } catch (_) {}
   }
+  return false;
 }
 
 const getApiBase = () => {
@@ -642,19 +960,20 @@ export async function initPushNotifications() {
           type: validation.type
         });
 
-        // Trigger chime & vibration ONLY for verified, fresh notifications
-        playBreakoutChime();
-        triggerBreakoutVibration();
-
         const normalized = normalizeNotificationItem({
           ...notification,
           created_at: validation.createdAtIso,
           created_at_ms: validation.createdAtMs,
           timestamp: validation.createdAtIso
         });
+        if (!normalized) return;
 
         saveNotificationToCache(normalized);
-        triggerNativeStatusBarNotification(normalized, { skipDuplicateCheck: true });
+        const popped = triggerNativeStatusBarNotification(normalized, { skipDuplicateCheck: true });
+        if (popped) {
+          playBreakoutChime();
+          triggerBreakoutVibration();
+        }
 
         // Dispatch legacy smart alert event if symbol is present
         if (normalized.symbol) {
@@ -742,18 +1061,20 @@ function initWebPushFallback() {
           type: validation.type
         });
 
-        playBreakoutChime();
-        triggerBreakoutVibration();
-
         const normalized = normalizeNotificationItem({
           ...alertItem,
           created_at: validation.createdAtIso,
           created_at_ms: validation.createdAtMs,
           timestamp: validation.createdAtIso
         });
+        if (!normalized) return;
 
         saveNotificationToCache(normalized);
-        triggerNativeStatusBarNotification(normalized, { skipDuplicateCheck: true });
+        const popped = triggerNativeStatusBarNotification(normalized, { skipDuplicateCheck: true });
+        if (popped) {
+          playBreakoutChime();
+          triggerBreakoutVibration();
+        }
 
         if (normalized.symbol) {
           window.dispatchEvent(new CustomEvent('dravyashree_smart_alert_received', { detail: normalized }));

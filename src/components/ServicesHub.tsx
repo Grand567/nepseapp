@@ -423,6 +423,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Momentum + 2× volume often continues for 3–5 sessions. Trail stops under prior-day low." />
   ),
   'breakout-stocks': BreakoutTrapRadar,
+  'breakout-trap-radar': BreakoutTrapRadar,
   'volume-shockers': () => (
     <UniversalScreener filterFn={(s) => s.isVolumeShocker} sortFn={(a, b) => b.volumeZScore - a.volumeZScore}
       customCols={[
@@ -1008,6 +1009,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Check fundamentals first: falling knife vs coiled value." />
   ),
   'mero-share': () => <IPOList initialTab="apply" />,
+  'ipolist': () => <IPOList initialTab="apply" />,
   'credentials': () => <PreferencesSettingsService initialTab="credentials" />,
   'apply-history': () => <IPOList initialTab="my-applications" />,
   'brokers': BrokersDirectoryService,

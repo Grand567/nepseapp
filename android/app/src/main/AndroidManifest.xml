@@ -25,6 +25,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <intent-filter>
+                <action android:name="OPEN_STOCK" />
+                <action android:name="OPEN_STOCK_DETAIL" />
+                <action android:name="OPEN_ACCUMULATION_CARD" />
+                <action android:name="OPEN_NEWS" />
+                <action android:name="OPEN_IPO" />
+                <action android:name="OPEN_RADAR" />
+                <action android:name="OPEN_BROKER" />
+                <action android:name="FCM_PLUGIN_ACTIVITY" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
         </activity>
 
         <provider

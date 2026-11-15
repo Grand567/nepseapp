@@ -598,12 +598,19 @@ export function extract5DayBrokerFlowMetrics(flow = [], fallbackPrice = 0, defau
   const defaultBcr3Buy = defaults.bcr3Buy ?? 50.0;
   const defaultBcr3Sell = defaults.bcr3Sell ?? 35.0;
   if (!Array.isArray(flow) || flow.length === 0) {
+    const defRet = defaults.leadRetentionPct ?? 75.0;
     return {
       bcr3Buy: defaultBcr3Buy,
       bcr3Sell: defaultBcr3Sell,
+      bcr3Spread: +(defaultBcr3Buy - defaultBcr3Sell).toFixed(1),
       avgBrokerPrice: fallbackPrice,
       leadBrokerId: defaults.leadBrokerId || null,
       leadBrokerName: defaults.leadBrokerName || null,
+      leadBuyVol: 0,
+      leadSellVol: 0,
+      leadNetVol: 0,
+      leadRetentionPct: defRet,
+      leadChurnPct: +(Math.max(0, 100 - defRet)).toFixed(1),
       hasLedgerFlow: false
     };
   }
@@ -634,13 +641,48 @@ export function extract5DayBrokerFlowMetrics(flow = [], fallbackPrice = 0, defau
   const rawLeadName = leadBrokerId ? (BROKER_NAMES[String(leadBrokerId)] || `Broker #${leadBrokerId}`) : (defaults.leadBrokerName || 'Dynamic');
   const leadBrokerName = String(rawLeadName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd|Money Managers)\b/gi, '').trim() || 'Dynamic';
 
+  const leadBuyVol = Number(leadBuyer?.buyVolume || 0);
+  const leadSellVol = Number(leadBuyer?.sellVolume || 0);
+  const leadNetVol = leadBuyVol - leadSellVol;
+  const leadRetentionPct = leadBuyVol > 0 ? +((leadNetVol / leadBuyVol) * 100).toFixed(1) : (defaults.leadRetentionPct ?? 75.0);
+  const leadChurnPct = leadBuyVol > 0 ? +Math.min(100, (leadSellVol / leadBuyVol) * 100).toFixed(1) : +(Math.max(0, 100 - leadRetentionPct)).toFixed(1);
+  const bcr3Spread = +(bcr3Buy - bcr3Sell).toFixed(1);
+
   return {
     bcr3Buy,
     bcr3Sell,
+    bcr3Spread,
     avgBrokerPrice: computedAvg > 0 ? computedAvg : fallbackPrice,
     leadBrokerId,
     leadBrokerName,
+    leadBuyVol,
+    leadSellVol,
+    leadNetVol,
+    leadRetentionPct,
+    leadChurnPct,
     hasLedgerFlow: true
+  };
+}
+
+export function formatFlowchartTrackDisplay(rallyTrack, rallyHorizonLabel = '') {
+  if (rallyTrack === 'TRACK_B_T2_CLEARED_CONTINUATION') {
+    return {
+      label: rallyHorizonLabel || 'Track B: Post-T+2 Cleared Continuation',
+      tierBadge: '🟢 Track B: Post-T+2 Cleared Continuation (Primary • 75% Win-Rate Tier)',
+      allocationGuide: 'Track B: 70% Core Post-T+2 Entry (Highest Win-Rate Tier)',
+    };
+  }
+  if (rallyTrack === 'TRACK_A_COILED_2_3D_IGNITION') {
+    return {
+      label: rallyHorizonLabel || 'Track A: 2–3 Day Ignition Watch',
+      tierBadge: '🟡 Track A: 2–3 Day Ignition Watch (Secondary • Split-Tranche Tier)',
+      allocationGuide: 'Track A: 30% Tactical 50/50 Split-Tranche Entry (Hold for T+2 Ignition)',
+    };
+  }
+  return {
+    label: rallyHorizonLabel || 'Institutional Base Accumulation',
+    tierBadge: '⚪ Standard Base / Sub-Threshold (Wait for Track A/B Trigger)',
+    allocationGuide: 'Standard Accumulation (Confirm T+2 Survival Before Full Size)',
   };
 }
 
@@ -1429,28 +1471,44 @@ export function formatEarlyIgnitionAlertHtml(alert) {
   const timingSignature = alert.timingSignature || '⚡ Afternoon Stealth Accumulation (1:15 PM – 2:55 PM NPT)';
   const stageBadge = escapeHtml(alert.stageBadge || (alert.stage === 'STAGE_2_SUPPLY_VACUUM_IGNITION' ? '⚡ Stage 2: Supply Vacuum Ignition' : '🌱 Stage 1: Stealth Seeding'));
 
+  // Flowchart v2.0 Track, BCR3, Retention/Churn & Ratchet metrics
+  const bcr3Buy = Number(alert.bcr3Buy ?? alert.bcr3BuyPct ?? alert.bcr3 ?? 58.0);
+  const bcr3Sell = Number(alert.bcr3Sell ?? alert.bcr3SellPct ?? 24.0);
+  const bcr3Spread = +(bcr3Buy - bcr3Sell).toFixed(1);
+  const bcr3SpreadStr = `${bcr3Spread >= 0 ? '+' : ''}${bcr3Spread}%`;
+  const retentionPct = buyQty > 0 ? +((netQty / buyQty) * 100).toFixed(1) : Number(alert.retention10D ?? 85.0);
+  const churnPct = buyQty > 0 ? +Math.min(100, (sellQty / buyQty) * 100).toFixed(1) : +(Math.max(0, 100 - retentionPct)).toFixed(1);
+  const resolvedTrack = alert.rallyTrack || (alert.isT2ClearedContinuation || alert.isBreakAndRetest ? 'TRACK_B_T2_CLEARED_CONTINUATION' : 'TRACK_A_COILED_2_3D_IGNITION');
+  const trackDisplay = formatFlowchartTrackDisplay(resolvedTrack, alert.rallyHorizonLabel);
+  const numOpVwap = Math.max(1, Number(operatorVwap) || ltp || 100);
+  const ratchetTrigger = (numOpVwap * 1.055).toFixed(1);
+  const ratchetLock = (numOpVwap * 1.018).toFixed(1);
+
   return [
     `🚨 <b>[EARLY IGNITION ALERT] OPERATOR ACCUMULATION</b>`,
     `<b>Scrip:</b> <code>$${sym}</code> (${companyName})`,
     `<b>Live Price:</b> Rs. ${ltp.toFixed(2)} (${pChangeStr} | <i>Quiet Base Compression</i>)`,
     `<b>Phase:</b> ${stageBadge}`,
+    `<b>Rally Track:</b> ${escapeHtml(trackDisplay.tierBadge)}`,
     `──────────────────────────`,
-    `🕵️ <b>OPERATOR FOOTPRINT (BROKER #${brokerId}):</b>`,
+    `🕵️ <b>OPERATOR FOOTPRINT &amp; BCR3 AUDIT (BROKER #${brokerId}):</b>`,
     `• Dominant Accumulator: <b>${brokerName} (#${brokerId})</b>`,
     `• Volume Cornered: <b>${buyQty.toLocaleString()} Kitta</b> (Net: +${netQty.toLocaleString()} Kitta)`,
-    `• Capital Deployed: <b>Rs. ${totalAmtCrores} Crore</b>`,
-    `• Session Market Share: <b>${mktShare}% of Total Float</b>`,
-    `• Buy vs Sell Dominance: <b>${buyRatio}% Buy Dominance</b> (Zero dump)`,
+    `• Lead Retention vs Churn: <b>${retentionPct}% Held</b> | Churn: <b>${churnPct}%</b> (${churnPct > 35 ? '⚠️ High Wash Churn' : '✅ Clean Absorption'})`,
+    `• Capital Deployed: <b>Rs. ${totalAmtCrores} Crore</b> | Share: <b>${mktShare}%</b>`,
+    `• Top-3 Concentration: <b>BCR3 Buy ${bcr3Buy.toFixed(1)}% vs BCR3 Sell ${bcr3Sell.toFixed(1)}%</b> (Net Spread: <b>${bcr3SpreadStr}</b>)`,
+    `• Buy vs Sell Dominance: <b>${buyRatio}% Buy Dominance</b>`,
     `• 🎯 <b>Average Broker Buy Price (Cost Basis):</b> <b>Rs. ${operatorVwap}</b> (${Number(ltp) >= Number(operatorVwap) ? '+' : ''}${(((Number(ltp) - Number(operatorVwap)) / Math.max(1, Number(operatorVwap))) * 100).toFixed(1)}% from LTP)`,
     `──────────────────────────`,
     `🕒 <b>TIMING & IGNITION LAW:</b>`,
     `• Window: ${timingSignature}`,
     `• Historical Lead Time: <b>1 to 3 Sessions Before Public Markup (T+1 to T+3)</b>`,
-    `• Float Cornering: Cornered floating supply before retail FOMO`,
+    `• Track Allocation: <i>${escapeHtml(trackDisplay.allocationGuide)}</i>`,
     `──────────────────────────`,
     `🎯 <b>TACTICAL PROFIT PLAYBOOK:</b>`,
     `• <b>Limit Buy Zone:</b> Rs. ${buyZone.low} – Rs. ${buyZone.high} (Anchor near Operator VWAP)`,
     `• <b>Invalidation Stop-Loss:</b> Rs. ${sl} (-${slPct}% | 1.5x ATR breathing room)`,
+    `• ⚡ <b>Early Impulse Ratchet:</b> At <b>Rs. ${ratchetTrigger}</b> (+5.5% MFE) ➔ Lock SL to <b>Rs. ${ratchetLock}</b> (+1.8% Breakeven)`,
     `• <b>Target 1 (50% Profit Take):</b> Rs. ${t1} (+${t1Pct}% | <i>Sell 50% &amp; SL to Breakeven</i>)`,
     `• <b>Target 2 (Circuit Runner):</b> Rs. ${t2} (+${t2Pct}% | ±15% Circuit Ceiling)`,
     `• <b>Net Risk / Reward:</b> <b>${netRRR} : 1</b>`,
@@ -2185,8 +2243,11 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       }
     }
 
-    // Multi-Session Broker Flow (last 5 sessions)
+    // Multi-Session Broker Flow (last 5 & 20 sessions for Flowchart v2.0 wash-churn audit)
     const flow = getSmartMoneyAggregatedFlow(sym, 5);
+    const flow20 = getSmartMoneyAggregatedFlow(sym, 20);
+    const flow5Metrics = extract5DayBrokerFlowMetrics(flow, ltp);
+    const flow20Metrics = extract5DayBrokerFlowMetrics(flow20, ltp);
 
     const buyers = flow.filter(f => f.buyVolume > 0).sort((a, b) => (b.buyVolume - b.sellVolume) - (a.buyVolume - a.sellVolume));
     const sellers = flow.filter(f => f.sellVolume > 0).sort((a, b) => (b.sellVolume - b.buyVolume) - (a.sellVolume - a.buyVolume));
@@ -2203,6 +2264,8 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
 
     const bcr3Buy = totalBuyVolAll > 0 ? +((top3BuyVol / totalBuyVolAll) * 100).toFixed(1) : 50.0;
     const bcr3Sell = totalSellVolAll > 0 ? +((top3SellVol / totalSellVolAll) * 100).toFixed(1) : 35.0;
+    const bcr3SpreadVal = +(bcr3Buy - bcr3Sell).toFixed(1);
+    const bcr3SpreadStr = `${bcr3SpreadVal >= 0 ? '+' : ''}${bcr3SpreadVal.toFixed(1)}%`;
 
     // Combined Average Broker Buy Price
     let avgBrokerPrice = top3BuyVol > 0 ? +(top3BuyAmt / top3BuyVol).toFixed(1) : ltp;
@@ -2211,12 +2274,71 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
     const distFromBroker = +(((ltp - avgBrokerPrice) / avgBrokerPrice) * 100).toFixed(1);
     const distSign = distFromBroker >= 0 ? '+' : '';
 
-    // Lead Accumulator
+    // Lead Accumulator & Wash-Churn Audit
     const leadBuyer = top3Buyers[0] || null;
     const leadBrokerId = leadBuyer ? leadBuyer.brokerId : null;
     const leadBrokerName = leadBrokerId ? (BROKER_NAMES[String(leadBrokerId)] || `Broker #${leadBrokerId}`) : 'Lead Desk';
     const cleanLeadName = escapeHtml(String(leadBrokerName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd)\b/gi, '').trim());
     const leadNetVol = leadBuyer ? (leadBuyer.buyVolume - leadBuyer.sellVolume) : 0;
+
+    const leadRetention5D = flow5Metrics.leadRetentionPct;
+    const leadChurn5D = flow5Metrics.leadChurnPct;
+    const leadRetention20D = flow20Metrics.leadRetentionPct;
+    const leadChurn20D = flow20Metrics.leadChurnPct;
+    const maxChurn = Math.max(leadChurn5D, leadChurn20D);
+
+    // Chronological ASC history for Flowchart v2.0 SMC, CLV, Upper Wick, Pocket Pivot & Dual-Track classification
+    const ascBars = [...hist].reverse().map(b => ({
+      date: b.date || b.tradeDate || '',
+      open: Number(b.openPrice ?? b.open ?? b.closePrice ?? ltp),
+      high: Number(b.highPrice ?? b.high ?? b.closePrice ?? ltp),
+      low: Number(b.lowPrice ?? b.low ?? b.closePrice ?? ltp),
+      close: Number(b.closePrice ?? b.close ?? ltp),
+      volume: Number(b.totalVolume ?? b.volume ?? 0)
+    }));
+    const latestAscBar = ascBars[ascBars.length - 1] || { open: ltp, high: ltp, low: ltp, close: ltp, volume: 0 };
+    const prevAscBar = ascBars.length >= 2 ? ascBars[ascBars.length - 2] : null;
+    const dayChgPctLocal = prevAscBar && prevAscBar.close > 0
+      ? +(((latestAscBar.close - prevAscBar.close) / prevAscBar.close) * 100).toFixed(2)
+      : 0;
+
+    let smcEma20 = ascBars.length > 0 ? ascBars[0].close : ltp;
+    const k20 = 2 / 21;
+    for (let i = 1; i < ascBars.length; i++) {
+      smcEma20 = ascBars[i].close * k20 + smcEma20 * (1 - k20);
+    }
+
+    let maxDownVol10 = 0;
+    const ppStart = Math.max(1, ascBars.length - 11);
+    for (let i = ppStart; i < ascBars.length - 1; i++) {
+      if (ascBars[i].close < ascBars[i - 1].close && ascBars[i].volume > maxDownVol10) {
+        maxDownVol10 = ascBars[i].volume;
+      }
+    }
+    const isPocketPivot = ascBars.length >= 2 && latestAscBar.close >= prevAscBar.close && latestAscBar.volume > maxDownVol10 && maxDownVol10 > 0;
+
+    const candleRange = Math.max(0, latestAscBar.high - latestAscBar.low);
+    const clvPct = candleRange > 0 ? Math.round(((latestAscBar.close - latestAscBar.low) / candleRange) * 100) : 50;
+    const wickPct = candleRange > 0 ? Math.round(((latestAscBar.high - Math.max(latestAscBar.open, latestAscBar.close)) / candleRange) * 100) : 0;
+
+    const smcSetup = evaluateLoopholeProtectedSmcSetup(ascBars, {
+      ltp,
+      ema20: smcEma20,
+      avgBrokerPrice,
+      bcr3Buy,
+      bcr3Sell,
+      leadRetentionPct: leadRetention5D,
+      isTrap: bcr3Sell > 45 && bcr3Buy < bcr3Sell
+    });
+    const trackInfo = classifyDualTrackRally({
+      smc: smcSetup,
+      isPocketPivot,
+      leadRetentionPct: leadRetention5D,
+      dayChgPct: dayChgPctLocal
+    });
+    const trackDisplay = formatFlowchartTrackDisplay(trackInfo.rallyTrack, trackInfo.rallyHorizonLabel);
+    const ratchetTrigger = +(ltp * 1.055).toFixed(1);
+    const ratchetLock = +(ltp * 1.018).toFixed(1);
 
     // Lead Seller
     const leadSeller = top3Sellers[0] || null;
@@ -2277,10 +2399,14 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
     // Format Buyer Lines
     const buyerLines = top3Buyers.map((b, i) => {
       const bName = escapeHtml(String(BROKER_NAMES[String(b.brokerId)] || `Broker #${b.brokerId}`).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd)\b/gi, '').trim());
-      const bAvg = b.buyVolume > 0 ? +(b.buyAmount / b.buyVolume).toFixed(1) : ltp;
+      const bBuy = Number(b.buyVolume || 0);
+      const bSell = Number(b.sellVolume || 0);
+      const bAvg = bBuy > 0 ? +(b.buyAmount / bBuy).toFixed(1) : ltp;
       const bCr = (Number(b.buyAmount || 0) / 10000000).toFixed(2);
-      const bNet = Number(b.buyVolume - b.sellVolume);
-      return `  ${i + 1}. <b>Broker #${b.brokerId} (${bName}):</b> ${Number(b.buyVolume).toLocaleString()} Kitta (Net: ${bNet >= 0 ? '+' : ''}${bNet.toLocaleString()}) @ <b>Avg Rs. ${bAvg}</b> (Rs. ${bCr} Cr)`;
+      const bNet = Number(bBuy - bSell);
+      const bRet = bBuy > 0 ? Math.max(0, Math.min(100, Math.round((bNet / bBuy) * 100))) : 0;
+      const bChurn = bBuy > 0 ? Math.min(100, Math.round((bSell / bBuy) * 100)) : 0;
+      return `  ${i + 1}. <b>Broker #${b.brokerId} (${bName}):</b> ${bBuy.toLocaleString()} Kitta (Net: ${bNet >= 0 ? '+' : ''}${bNet.toLocaleString()} | Ret: ${bRet}% | Churn: ${bChurn}%) @ <b>Avg Rs. ${bAvg}</b> (Rs. ${bCr} Cr)`;
     });
 
     // Format Seller Lines
@@ -2308,16 +2434,20 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       `• <b>Volume Profile Point of Control:</b> <b>Rs. ${pocPrice.toFixed(1)}</b> (${pocSign}${pocDist}% from LTP | <i>${isAbovePoc ? 'Holding ABOVE POC ✅' : 'Testing below POC ⚠️'}</i>)`,
       ``,
       `🏛️ <b>3. INSTITUTIONAL ACCUMULATION &amp; BROKER COST:</b>`,
+      `• 🧭 <b>Flowchart v2.0 Track:</b> <b>${escapeHtml(trackDisplay.tierBadge)}</b>`,
+      `• 📋 <b>Allocation Guidance:</b> <i>${escapeHtml(trackDisplay.allocationGuide)}</i>`,
       `• 🎯 <b>Average Broker Buy Price (Cost Basis):</b> <b>Rs. ${avgBrokerPrice}</b> (${distSign}${distFromBroker}% from LTP)`,
       `• <b>Top Accumulating Desks (Last 5 Sessions):</b>`,
       ...buyerLines,
-      `• <b>Buyer Dominance (BCR3 Buy):</b> <b>${bcr3Buy}%</b> (vs BCR3 Sell ${bcr3Sell}%)`,
+      `• <b>Buyer Dominance (BCR3 Buy):</b> <b>${bcr3Buy}%</b> vs BCR3 Sell <b>${bcr3Sell}%</b> (Net Spread: <b>${bcr3SpreadStr}</b>)`,
+      `• <b>Multi-Window Wash-Churn Audit:</b> <b>5D Retention ${leadRetention5D}%</b> (Churn ${leadChurn5D}%) | <b>20D Retention ${leadRetention20D}%</b> (Churn ${leadChurn20D}%) — <i>${maxChurn > 35 ? '⚠️ High Two-Way Wash Churn Detected' : '✅ Clean Institutional Absorption'}</i>`,
       `• <b>Top Selling / Distribution Desks:</b>`,
       ...sellerLines,
       ``,
       `🌊 <b>4. VOLUME &amp; FLOAT ABSORPTION:</b>`,
       `• <b>Today's Volume:</b> ${volume.toLocaleString()} Kitta (<b>${rvol}x</b> of 20D Avg ${avgVol20.toLocaleString()} Kitta)`,
       `• <b>Turnover:</b> Rs. ${(turnover / 10000000).toFixed(2)} Crores`,
+      `• <b>Candle &amp; VDU Microstructure:</b> CLV <b>${clvPct}%</b> | Upper Wick <b>${wickPct}%</b> (${wickPct <= 45 ? '&lt;= 45% Safe ✅' : '&gt; 45% Distribution Risk ⚠️'}) | VDU <b>${Number(rvol || 0).toFixed(2)}x</b>${isPocketPivot ? ' | ⚡ <b>Pocket Pivot</b>' : ''}`,
       `• <b>Supply Status:</b> ${isNetAccumulated ? 'Institutional float cornering in progress (Supply Vacuum)' : 'Mixed float circulation'}`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `⚖️ <b>5. INVESTMENT &amp; PROFITABILITY VERDICT:</b>`,
@@ -2329,6 +2459,7 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       `• 🛑 <b>Structural Invalidation Stop-Loss:</b> <code>Rs. ${structuralStop}</code> (-${slPct}% | <i>Floor: Rs. ${structuralFloor.toFixed(1)}</i>)`,
       `• 💰 <b>Target 1 (Milestone 1):</b> <code>Rs. ${target1}</code> (+${t1Pct}% | <b>RRR ${rrr1} : 1</b> | <i>Sell 50% &amp; Move SL to BE</i>)`,
       `• 🚀 <b>Target 2 (Circuit Runner):</b> <code>Rs. ${target2}</code> (+${t2Pct}% | <b>RRR ${rrr2} : 1</b> | <i>Upper Circuit Ceiling</i>)`,
+      `• ⚡ <b>Early Impulse Ratchet (v2.0):</b> At <b>Rs. ${ratchetTrigger}</b> (+5.5% MFE) ➔ Lock SL at <b>Rs. ${ratchetLock}</b> (+1.8% Fee-Cleared Breakeven)`,
       `• 📲 <b>TMS Execution:</b> Place GTC Limit Buy inside zone. <i>Do NOT chase pre-open &gt; +1.8%!</i>`,
       ``,
       `💼 <b>7. 1% RISK POSITION SIZING:</b>`,
@@ -2424,6 +2555,16 @@ export function formatEodStealthOfTheDayHtml(winner, runnerUps = [], targetDate 
   const t1 = winner.t1 || (vwap * 1.080).toFixed(1);
   const t2 = winner.t2 || (vwap * 1.145).toFixed(1);
   const horizon = escapeHtml(winner.ignitionHorizon || '1–3 Days (Supply Vacuum Stage 2 Complete)');
+  const eodBcr3Buy = Number(winner.bcr3BuyPct ?? winner.bcr3Buy ?? winner.bcr3 ?? 68.0).toFixed(1);
+  const eodBcr3Sell = Number(winner.bcr3SellPct ?? winner.bcr3Sell ?? 26.0).toFixed(1);
+  const eodBcr3SpreadVal = +(Number(eodBcr3Buy) - Number(eodBcr3Sell)).toFixed(1);
+  const eodBcr3SpreadStr = `${eodBcr3SpreadVal >= 0 ? '+' : ''}${eodBcr3SpreadVal.toFixed(1)}%`;
+  const eodRetPct = Number(winner.leadRetentionPct ?? winner.netRetentionPct ?? (Number.isFinite(Number(multiRatio)) ? Number(multiRatio) : 85)).toFixed(0);
+  const eodChurnPct = Number(winner.washChurnPct ?? winner.churnPct ?? Math.max(0, 100 - Number(eodRetPct))).toFixed(0);
+  const eodTrack = formatFlowchartTrackDisplay(winner.rallyTrack || 'TRACK_A_COILED_2_3D_IGNITION', winner.rallyHorizonLabel || horizon);
+  const eodLtpNum = Math.max(1, Number(ltp) || Number(vwap) || 100);
+  const eodRatchetTrigger = +(eodLtpNum * 1.055).toFixed(1);
+  const eodRatchetLock = +(eodLtpNum * 1.018).toFixed(1);
 
   const lines = [
     `🌙 <b>EOD STEALTH ACCUMULATION OF THE DAY</b>`,
@@ -2432,11 +2573,15 @@ export function formatEodStealthOfTheDayHtml(winner, runnerUps = [], targetDate 
     `<b>Scrip:</b> <code>$${sym}</code> (${name})`,
     `<b>LTP:</b> Rs. ${ltp} (${pchgStr}) | <b>Average Broker Price:</b> Rs. ${vwap} (${Number(ltp) >= Number(vwap) ? '+' : ''}${(((Number(ltp) - Number(vwap)) / Math.max(1, Number(vwap))) * 100).toFixed(1)}%)`,
     `<b>Setup Status:</b> <b>⚡ Stage 2: Supply Vacuum Complete</b>`,
+    `<b>🧭 Rally Track:</b> <b>${escapeHtml(eodTrack.tierBadge)}</b>`,
+    `<b>📋 Track Allocation:</b> <i>${escapeHtml(eodTrack.allocationGuide)}</i>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🔍 <b>5-DAY INSTITUTIONAL FOOTPRINT (Broker #58):</b>`,
     `• 🎯 <b>Average Broker Buy Price (Cost Basis):</b> <b>Rs. ${vwap}</b> (${Number(ltp) >= Number(vwap) ? '+' : ''}${(((Number(ltp) - Number(vwap)) / Math.max(1, Number(vwap))) * 100).toFixed(1)}% from LTP)`,
     `• Multi-Day Footprint: <b>+${multiNet} Net Kitta</b> (${multiBuy} Bought over ${multiDays} sessions)`,
     `• Institutional Outlay: <b>Rs. ${multiCr} Crores absorbed</b>`,
+    `• <b>BCR3 Buy ${eodBcr3Buy}%</b> vs BCR3 Sell <b>${eodBcr3Sell}%</b> (Net Spread: <b>${eodBcr3SpreadStr}</b>)`,
+    `• <b>Lead Retention:</b> <b>${eodRetPct}%</b> | <b>Churn: ${eodChurnPct}%</b>`,
     `• Accumulation Dominance: <b>${multiRatio}% Buy Ratio</b> (Zero Dumping)`,
     `• Float Cornered: <b>${multiShare}% of Total Market Volume</b>`,
     `• Today's Action: +${netKitta} Net Kitta (${ratio}% Buy Dominance)`,
@@ -2449,7 +2594,8 @@ export function formatEodStealthOfTheDayHtml(winner, runnerUps = [], targetDate 
     `• <b>Limit Buy Zone:</b> Rs. ${bLow} – Rs. ${bHigh} (Never chase open gap &gt; +4%)`,
     `• 🛡️ <b>Invalidation Stop-Loss:</b> Rs. ${sl} (-5.0% Risk Floor)`,
     `• 🎯 <b>Target 1 (Milestone 1):</b> Rs. ${t1} (+8.0% | Sell 50% &amp; Move SL to Breakeven)`,
-    `• 🚀 <b>Target 2 (Milestone 2):</b> Rs. ${t2} (+14.5% Circuit Ceiling | Exit Remaining)`
+    `• 🚀 <b>Target 2 (Milestone 2):</b> Rs. ${t2} (+14.5% Circuit Ceiling | Exit Remaining)`,
+    `• ⚡ <b>Early Impulse Ratchet:</b> At <b>Rs. ${eodRatchetTrigger}</b> (+5.5% MFE ➔ Lock SL to +1.8% Breakeven @ <b>Rs. ${eodRatchetLock}</b>)`
   ];
 
   if (runnerUps && runnerUps.length > 0) {
@@ -3705,6 +3851,7 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
           ? 'Track A: 2–3 Day Ignition Watch'
           : 'Institutional Base Accumulation')
   );
+  const upgradedTrackDisplay = formatFlowchartTrackDisplay(winner.rallyTrack, winner.rallyHorizonLabel || rallyHorizonLabel);
   const freeFloatCorneredPct = Number(winner.freeFloatCorneredPct ?? 0);
   const clvPct = Number(winner.clv !== undefined ? winner.clv * 100 : 65).toFixed(0);
   const wickPct = Number(winner.upperWickRatio !== undefined ? winner.upperWickRatio * 100 : 12).toFixed(0);
@@ -3745,7 +3892,10 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
   const distSign = Number(distFromBroker) >= 0 ? '+' : '';
   const bcr3Buy = Number(winner.bcr3Buy || winner.bcr3BuyPct || 45.0).toFixed(1);
   const bcr3Sell = Number(winner.bcr3Sell || winner.bcr3SellPct || 20.0).toFixed(1);
+  const bcr3SpreadVal = +(Number(bcr3Buy) - Number(bcr3Sell)).toFixed(1);
+  const bcr3SpreadStr = `${bcr3SpreadVal >= 0 ? '+' : ''}${bcr3SpreadVal.toFixed(1)}%`;
   const netRet = Number(winner.retention10D || winner.retentionPct || winner.leadRetentionPct || 85).toFixed(0);
+  const washChurnPct = Number(winner.washChurnPct ?? winner.churnPct ?? Math.max(0, 100 - Number(netRet))).toFixed(0);
   const leadBrokerId = winner.leadBrokerId || winner.leadBroker || '58';
   const rawLeadName = BROKER_NAMES[String(leadBrokerId)] || winner.leadBrokerName || `Broker #${leadBrokerId}`;
   const cleanLeadBroker = escapeHtml(String(rawLeadName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd)\b/gi, '').trim());
@@ -3781,13 +3931,14 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
     `• <b>Volume Profile POC:</b> <b>Rs. ${pocPrice}</b>`,
     `• SMC Structure &amp; Retest: <b>${escapeHtml(winner.smcNarrative || 'Orderly Floor Base Holding Above 20 EMA')}</b>`,
     `• Fair Value Gap (FVG): <b>${escapeHtml(winner.fvgNarrative || 'Balanced Auction Near Broker VWAP')}</b>`,
-    `• Top 3 Buyer Concentration (BCR3): <b>${bcr3Buy}%</b> (>= 40.0% Institutional Absorption)`,
-    `• Clean Delivery Retention: <b>${netRet}%</b> (>= 70.0% Delivery Absorption)`,
+    `• Top 3 Buyer Concentration (BCR3): <b>${bcr3Buy}%</b> vs BCR3 Sell <b>${bcr3Sell}%</b> (Net Spread: <b>${bcr3SpreadStr}</b>)`,
+    `• Clean Delivery Retention: <b>${netRet}%</b> | <b>Wash-Churn Rate:</b> <b>${washChurnPct}%</b> (${Number(washChurnPct) <= 35 ? '&lt;= 35% Clean ✅' : '&gt; 35% Elevated Churn ⚠️'})`,
     `• Wyckoff Volume Dry-Up (VDU): <b>${vdu}x</b> (<= 0.60x 20D SMA Exhaustion)`,
     `• Chaikin Money Flow (CMF): <b>${cmfStr}</b> (Positive Institutional Inflow)`,
     ``,
     `🚀 <b>LAYER 4: DUAL-TRACK RALLY &amp; IGNITION HORIZON (v2.0)</b>`,
     `• 🧭 <b>Rally Track:</b> <b>${rallyHorizonLabel}</b>`,
+    `• 📋 <b>Allocation Guide:</b> <b>${escapeHtml(upgradedTrackDisplay.tierBadge)}</b> — <i>${escapeHtml(upgradedTrackDisplay.allocationGuide)}</i>`,
     `• ⚡ <b>Ignition / Survival Trigger:</b> <b>${escapeHtml(triggerSummary)}</b>`,
     `• 🧲 <b>5D Free-Float Cornered:</b> <b>${freeFloatCorneredPct.toFixed(2)}%</b> of Sector Public Float`,
     `• 🕯️ <b>Close Location Value (CLV):</b> <b>${clvPct}%</b> (Upper-Wick Ratio: <b>${wickPct}%</b> &lt;= 45% Safe)`,
@@ -3886,6 +4037,15 @@ export function formatInstantExecutionTicketHtml(d) {
   const deploy10L = (qty10L * numLimit).toLocaleString();
   
   const bcr3 = d.bcr3BuyPct || d.bcr3 || 75;
+  const bcr3SellPct = Number(d.bcr3SellPct ?? d.bcr3Sell ?? 24).toFixed(1);
+  const bcr3BuyVal = Number(bcr3).toFixed(1);
+  const instantSpreadVal = +(Number(bcr3BuyVal) - Number(bcr3SellPct)).toFixed(1);
+  const instantSpreadStr = `${instantSpreadVal >= 0 ? '+' : ''}${instantSpreadVal.toFixed(1)}%`;
+  const instantRetPct = Number(d.leadRetentionPct ?? d.netRetentionPct ?? 82).toFixed(0);
+  const instantChurnPct = Number(d.washChurnPct ?? d.churnPct ?? Math.max(0, 100 - Number(instantRetPct))).toFixed(0);
+  const instantTrack = formatFlowchartTrackDisplay(d.rallyTrack || 'TRACK_B_T2_CLEARED_CONTINUATION', d.rallyHorizonLabel);
+  const instantRatchetTrigger = +(ltp * 1.055).toFixed(1);
+  const instantRatchetLock = +(ltp * 1.018).toFixed(1);
   const leadBroker = escapeHtml(d.dominantBrokersText || (d.leadBrokerId ? `Broker #${d.leadBrokerId}` : 'Syndicate Accumulator'));
   
   // Expiry calculation: 10 minutes from now
@@ -3901,6 +4061,8 @@ export function formatInstantExecutionTicketHtml(d) {
     `🟢 <b>[INSTANT BUY TRIGGER — 10-SEC SNIPER]</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `<b>Scrip:</b> <code>${sym}</code> | <b>LTP:</b> Rs. ${ltp.toFixed(1)}`,
+    `<b>🧭 Rally Track:</b> <b>${escapeHtml(instantTrack.tierBadge)}</b>`,
+    `<b>📋 Track Allocation:</b> <i>${escapeHtml(instantTrack.allocationGuide)}</i>`,
     `⚡ <b>ORDER TYPE: LIMIT ORDER ONLY</b> (Do NOT Market-Buy)`,
     ``,
     `🎯 <b>LIMIT BUY PRICE:</b> <code>Rs. ${limitPrice}</code>`,
@@ -3909,13 +4071,15 @@ export function formatInstantExecutionTicketHtml(d) {
     `🛑 <b>HARD STOP-LOSS:</b> <code>Rs. ${sl}</code> (-${slPct}%)`,
     `🏁 <b>TARGET 1 (Exit 50%):</b> <code>Rs. ${t1}</code> (+${t1Pct}%)`,
     `🚀 <b>TARGET 2 (Runner):</b> <code>Rs. ${t2}</code> (+${t2Pct}%)`,
+    `⚡ <b>Early Impulse Ratchet:</b> At <b>Rs. ${instantRatchetTrigger}</b> (+5.5% MFE ➔ Lock SL to +1.8% Breakeven @ <b>Rs. ${instantRatchetLock}</b>)`,
     `⚖️ <b>Net Expectancy:</b> ${netRRR}:1 RRR <i>(Post-CGT &amp; Broker Fees)</i>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🛡️ <b>ZERO-TRAP VERIFICATION:</b>`,
     `• Past Accumulator Selling: <b>0 Kitta (Clean / No Dump)</b>`,
     `• Opening Noise Gate: <b>PASSED (Post-11:15 AM)</b>`,
     `• Intraday VWAP: Rs. ${vwap.toFixed(1)} <i>(Defended at Base)</i>`,
-    `• Dominant Institutional Flow: ${leadBroker} (${bcr3}% Concentration)`,
+    `• Dominant Institutional Flow: ${leadBroker} (<b>BCR3 Buy ${bcr3BuyVal}%</b> vs BCR3 Sell <b>${bcr3SellPct}%</b> | Net Spread: <b>${instantSpreadStr}</b>)`,
+    `• Lead Delivery Integrity: <b>${instantRetPct}% Retention</b> | <b>Wash-Churn: ${instantChurnPct}%</b> (${Number(instantChurnPct) <= 35 ? '&lt;= 35% Clean ✅' : '&gt; 35% Elevated Churn ⚠️'})`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `💼 <b>10-SEC TMS SIZING (1% Risk Cap):</b>`,
     `• <b>Rs. 1 Lakh:</b> Buy <code>${qty1L}</code> Kitta (Rs. ${deploy1L})`,
