@@ -282,20 +282,6 @@ public class MainActivity extends BridgeActivity {
         }
 
         @JavascriptInterface
-        public void postStatusBarNotification(final String title, final String body, final String channelId, final String symbol, final String type, final String action, final String url, final String createdAt) {
-            try {
-                if (createdAt != null && !createdAt.trim().isEmpty()) {
-                    long ts = Long.parseLong(createdAt.trim());
-                    if (ts > 0 && (System.currentTimeMillis() - ts > 30 * 60 * 1000L)) {
-                        android.util.Log.d("NepseNativeNotifier", "Suppressed stale notification (>30m) from JS: " + title);
-                        return;
-                    }
-                }
-            } catch (Exception ignored) {}
-            postStatusBarNotification(title, body, channelId, symbol, type, action, url);
-        }
-
-        @JavascriptInterface
         public void postStatusBarNotification(final String title, final String body, final String channelId, final String symbol, final String type, final String action, final String url) {
             try {
                 // Ensure notification channels exist before notifying
