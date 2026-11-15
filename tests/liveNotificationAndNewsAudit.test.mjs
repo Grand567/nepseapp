@@ -55,43 +55,71 @@ test('1. Android Status Bar Bridge & Push Service Verification', async (t) => {
       created_at: new Date().toISOString()
     };
 
-    // Trigger status bar notification before marking processed
-    pushModule.triggerNativeStatusBarNotification(liveAlert);
-
-    // Then mark as processed (as pushNotificationReceived listener does)
+    // Reproduce exact pushNotificationReceived / SSE listener order:
+    // markNotificationAsProcessed runs FIRST, then triggerNativeStatusBarNotification with skipDuplicateCheck: true
     pushModule.markNotificationAsProcessed(liveAlert.id, 'fp_NABIL_BREAKOUT_123', {
       symbol: 'NABIL',
       type: 'BREAKOUT'
     });
+    pushModule.triggerNativeStatusBarNotification(liveAlert, { skipDuplicateCheck: true });
 
-    // Verify it was NOT suppressed and was posted to Android bridge!
-    assert.ok(postedNotification, 'Notification should be delivered to native bridge');
+    // Verify it was NOT self-suppressed and was posted to Android bridge!
+    assert.ok(postedNotification, 'Notification should be delivered to native bridge even after markNotificationAsProcessed');
     assert.equal(postedNotification.symbol, 'NABIL');
     assert.equal(postedNotification.channelId, 'dravyashree-pro-signals');
     assert.ok(postedNotification.title.includes('NABIL'));
+    assert.ok(postedNotification.createdAt, '8th createdAt argument must be passed to native bridge');
   });
 
-  await t.test('General news triggers general channel on Android status bar', async () => {
+  await t.test('General news and Trending Most Covered News trigger general channel while Financial Results are suppressed', async () => {
     let postedNotification = null;
     global.window.NepseNativeNotifier.postStatusBarNotification = (title, body, channelId, symbol, type, action, url, createdAt) => {
       postedNotification = { title, body, channelId, symbol, type, action, url, createdAt };
     };
 
     const pushModule = await import('../src/utils/pushNotificationService.js');
-    const newsAlert = {
-      id: 'news_alert_general_002',
-      title: 'NRB Monetary Policy Review Announced',
-      body: 'Interest rate corridor adjusted by 25 bps.',
+
+    // 1. General trending multi-portal news must post
+    const trendingAlert = {
+      id: 'news_alert_trending_002',
+      title: '🔥 [Trending on 3 Portals] NABIL',
+      body: 'NABIL announces major strategic expansion (Covered by: ShareSansar, BikashNews, Artha Sarokar)',
       category: 'general',
-      type: 'NEWS_ALERT',
+      type: 'TRENDING_NEWS_ALERT',
+      symbol: 'NABIL',
       action: 'OPEN_NEWS',
       created_at_ms: Date.now()
     };
 
-    pushModule.triggerNativeStatusBarNotification(newsAlert);
-    assert.ok(postedNotification, 'News notification should be posted');
+    pushModule.triggerNativeStatusBarNotification(trendingAlert, { skipDuplicateCheck: true });
+    assert.ok(postedNotification, 'Trending news notification should be posted');
     assert.equal(postedNotification.channelId, 'nepse-general-news');
+    assert.equal(postedNotification.type, 'TRENDING_NEWS_ALERT');
     assert.equal(postedNotification.action, 'OPEN_NEWS');
+
+    // 2. Financial Results (EARNINGS_ALERT) and inAppOnly notices MUST NOT post to status bar
+    postedNotification = null;
+    pushModule.triggerNativeStatusBarNotification({
+      id: 'news_earnings_suppressed_003',
+      title: '📊 NABIL Financial Results',
+      body: 'NABIL publishes Q3 financial report',
+      category: 'general',
+      type: 'EARNINGS_ALERT',
+      symbol: 'NABIL',
+      created_at_ms: Date.now()
+    }, { skipDuplicateCheck: true });
+    assert.equal(postedNotification, null, 'EARNINGS_ALERT (Financial Results) must be suppressed from Android status bar');
+
+    pushModule.triggerNativeStatusBarNotification({
+      id: 'news_inapp_only_004',
+      title: '📰 General Routine Notice',
+      body: 'Routine branch relocation notice',
+      category: 'general',
+      type: 'NEWS_ALERT',
+      inAppOnly: true,
+      created_at_ms: Date.now()
+    }, { skipDuplicateCheck: true });
+    assert.equal(postedNotification, null, 'inAppOnly alert must be suppressed from Android status bar');
   });
 });
 

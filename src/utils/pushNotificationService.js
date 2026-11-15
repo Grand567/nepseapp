@@ -161,6 +161,7 @@ export const markNotificationAsProcessed = (id, fingerprint, metadata = {}) => {
 export const validatePushNotificationPayload = (raw, options = {}) => {
   const ttlMs = options.ttlMs || NOTIFICATION_TTL_MS;
   const allowMissingTimestamp = options.allowMissingTimestamp === true;
+  const skipDuplicateCheck = options.skipDuplicateCheck === true;
 
   if (!raw) {
     return { valid: false, reason: 'EMPTY_PAYLOAD', error: 'Payload is null or empty' };
@@ -177,7 +178,7 @@ export const validatePushNotificationPayload = (raw, options = {}) => {
   const contentFingerprint = `fp_${symbol || 'GEN'}_${type || 'ALERT'}_${hashString(title + '_' + body)}`;
 
   // 1. Queue Deduplication Check against persistent local client-side cache
-  if (isNotificationAlreadyProcessed(id, contentFingerprint)) {
+  if (!skipDuplicateCheck && isNotificationAlreadyProcessed(id, contentFingerprint)) {
     return {
       valid: false,
       reason: 'DUPLICATE_ALERT',
@@ -339,7 +340,13 @@ export const normalizeNotificationItem = (raw) => {
   const rawBody = String(raw.body || data.body || '').trim();
   if (!rawTitle && !rawBody) return null; // Reject blank notifications
 
-  const isGeneral = data.category === 'general' || data.type === 'NEWS_ALERT' || data.type === 'IPO_ALERT' || data.type === 'NEPSE_MACRO';
+  const rawType = String(data.type || '').trim();
+  const isGeneral = data.category === 'general' || [
+    'NEWS_ALERT', 'IPO_ALERT', 'NEPSE_MACRO', 'TRENDING_NEWS_ALERT',
+    'DIVIDEND_ALERT', 'RIGHT_SHARE_ALERT', 'BOOK_CLOSURE_ALERT',
+    'MERGER_ALERT', 'SEBON_APPROVAL_ALERT', 'ALLOTMENT_ALERT',
+    'MARKET_MILESTONE_ALERT', 'PORTFOLIO_NEWS_ALERT', 'EARNINGS_ALERT'
+  ].includes(rawType);
   const category = data.category || (isGeneral ? 'general' : 'pro');
   const id = data.id || raw.id || `notif_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
 
@@ -349,9 +356,11 @@ export const normalizeNotificationItem = (raw) => {
 
   return {
     id,
-    type: data.type || (isGeneral ? 'NEWS_ALERT' : 'SMART_INSTITUTIONAL_ENTRY'),
+    type: rawType || (isGeneral ? 'NEWS_ALERT' : 'SMART_INSTITUTIONAL_ENTRY'),
     category,
     tier: category,
+    inAppOnly: Boolean(data.inAppOnly || raw.inAppOnly),
+    pushStatusBar: data.pushStatusBar !== false && raw.pushStatusBar !== false,
     title: rawTitle || 'Dravyashree Notification',
     body: rawBody,
     symbol: data.symbol || rawTitle.split(':')[1]?.trim()?.split(' ')[0] || '',
@@ -377,14 +386,17 @@ export const normalizeNotificationItem = (raw) => {
 
 const recentlyTriggeredAlerts = new Set();
 
-export function triggerNativeStatusBarNotification(normalized) {
-  if (!normalized || normalized.isUserHolding) return;
+export function triggerNativeStatusBarNotification(normalized, options = {}) {
+  if (!normalized || normalized.isUserHolding || normalized.inAppOnly || normalized.pushStatusBar === false || normalized.type === 'EARNINGS_ALERT') return;
   const cleanTitle = String(normalized.title || '').trim();
   const cleanBody = String(normalized.body || '').trim();
   if (!cleanTitle || !cleanBody) return;
 
   // Stale-notification & duplicate validation layer: inspect timestamp, enforce TTL, and reject duplicates
-  const validation = validatePushNotificationPayload(normalized, { ttlMs: NOTIFICATION_TTL_MS });
+  const validation = validatePushNotificationPayload(normalized, {
+    ttlMs: NOTIFICATION_TTL_MS,
+    skipDuplicateCheck: options.skipDuplicateCheck === true
+  });
   if (!validation.valid) {
     console.warn(`[PushService] Suppressed status bar notification [${validation.reason}]:`, validation.error);
     return;
@@ -642,7 +654,7 @@ export async function initPushNotifications() {
         });
 
         saveNotificationToCache(normalized);
-        triggerNativeStatusBarNotification(normalized);
+        triggerNativeStatusBarNotification(normalized, { skipDuplicateCheck: true });
 
         // Dispatch legacy smart alert event if symbol is present
         if (normalized.symbol) {
@@ -741,7 +753,7 @@ function initWebPushFallback() {
         });
 
         saveNotificationToCache(normalized);
-        triggerNativeStatusBarNotification(normalized);
+        triggerNativeStatusBarNotification(normalized, { skipDuplicateCheck: true });
 
         if (normalized.symbol) {
           window.dispatchEvent(new CustomEvent('dravyashree_smart_alert_received', { detail: normalized }));

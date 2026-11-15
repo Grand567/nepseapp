@@ -132,8 +132,12 @@ public class DravyashreeAlertWorker extends Worker {
                 JSONObject item = data.optJSONObject(i);
                 if (item == null) continue;
 
-                // Never alert for internal portfolio holding objects
-                if (item.optBoolean("isUserHolding", false)) {
+                // Never alert for internal portfolio holding objects, in-app-only notices, or suppressed Financial Results
+                String rawType = item.optString("type", "").trim();
+                if (item.optBoolean("isUserHolding", false)
+                        || item.optBoolean("inAppOnly", false)
+                        || !item.optBoolean("pushStatusBar", true)
+                        || "EARNINGS_ALERT".equalsIgnoreCase(rawType)) {
                     continue;
                 }
 

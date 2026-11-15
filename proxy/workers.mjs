@@ -124,6 +124,9 @@ let _fetchNepaliPaisaNews = null;
 let _scrapeBizshalaNews = null;
 let _fetchKarobarNews = null;
 let _fetchClickmanduNews = null;
+let _scrapeBikashNews = null;
+let _scrapeArthaKendraNews = null;
+let _scrapeArthaSarokarNews = null;
 let _getLiveIpoListings = null;
 
 export function initWorkerDependencies({
@@ -142,6 +145,9 @@ export function initWorkerDependencies({
   scrapeBizshalaNews,
   fetchKarobarNews,
   fetchClickmanduNews,
+  scrapeBikashNews,
+  scrapeArthaKendraNews,
+  scrapeArthaSarokarNews,
   getLiveIpoListings,
 }) {
   _getPriceHistoryInternal = getPriceHistoryInternal;
@@ -159,6 +165,9 @@ export function initWorkerDependencies({
   _scrapeBizshalaNews = scrapeBizshalaNews;
   _fetchKarobarNews = fetchKarobarNews;
   _fetchClickmanduNews = fetchClickmanduNews;
+  _scrapeBikashNews = scrapeBikashNews;
+  _scrapeArthaKendraNews = scrapeArthaKendraNews;
+  _scrapeArthaSarokarNews = scrapeArthaSarokarNews;
   _getLiveIpoListings = getLiveIpoListings;
 }
 
@@ -817,22 +826,29 @@ export function startWorkers() {
   }, 4000);
 
   // 4. Live News & IPO Alert Poller (General + Pro Users):
-  // Checks news (MeroLagani Announcements + News + NepaliPaisa + Bizshala + ShareSansar) and IPO pipeline status every 3 minutes.
-  // Sends push notifications, SSE events, and Telegram updates for dividends, right shares, macro alerts, IPOs, and corporate announcements.
+  // Checks news across all 9 Services tab portals (ShareSansar, MeroLagani Announcements + News, NepaliPaisa, Clickmandu, Karobar Daily, Bizshala, BikashNews, Artha Kendra, Artha Sarokar) and IPO pipeline status every 3 minutes.
+  // Sends push notifications and SSE updates for corporate actions, Most Covered News, macro halts, IPOs, and portfolio alerts.
+  const runNewsAndIpoCheck = async () => {
+    const hasAnyScraper = _scrapeMeroLaganiAnnouncements || _scrapeMeroLaganiNews || _scrapeShareSansarNews || _fetchNepaliPaisaNews || _scrapeBizshalaNews || _fetchKarobarNews || _fetchClickmanduNews || _scrapeBikashNews || _scrapeArthaKendraNews || _scrapeArthaSarokarNews || _getLiveIpoListings;
+    if (!hasAnyScraper) return;
+    await pollLiveNewsAndIpoAlerts({
+      scrapeMeroLaganiAnnouncements: _scrapeMeroLaganiAnnouncements,
+      scrapeMeroLaganiNews: _scrapeMeroLaganiNews,
+      scrapeShareSansarNews: _scrapeShareSansarNews,
+      fetchNepaliPaisaNews: _fetchNepaliPaisaNews,
+      scrapeBizshalaNews: _scrapeBizshalaNews,
+      fetchKarobarNews: _fetchKarobarNews,
+      fetchClickmanduNews: _fetchClickmanduNews,
+      scrapeBikashNews: _scrapeBikashNews,
+      scrapeArthaKendraNews: _scrapeArthaKendraNews,
+      scrapeArthaSarokarNews: _scrapeArthaSarokarNews,
+      getLiveIpoListings: _getLiveIpoListings
+    });
+  };
+
   setInterval(async () => {
     try {
-      if (_scrapeMeroLaganiAnnouncements || _scrapeMeroLaganiNews || _scrapeShareSansarNews || _fetchNepaliPaisaNews || _scrapeBizshalaNews || _getLiveIpoListings) {
-        await pollLiveNewsAndIpoAlerts({
-          scrapeMeroLaganiAnnouncements: _scrapeMeroLaganiAnnouncements,
-          scrapeMeroLaganiNews: _scrapeMeroLaganiNews,
-          scrapeShareSansarNews: _scrapeShareSansarNews,
-          fetchNepaliPaisaNews: _fetchNepaliPaisaNews,
-          scrapeBizshalaNews: _scrapeBizshalaNews,
-          fetchKarobarNews: _fetchKarobarNews,
-          fetchClickmanduNews: _fetchClickmanduNews,
-          getLiveIpoListings: _getLiveIpoListings
-        });
-      }
+      await runNewsAndIpoCheck();
     } catch (newsErr) {
       console.warn('[NewsIpoWorker] Polling notice:', newsErr.message);
     }
@@ -841,18 +857,7 @@ export function startWorkers() {
   // Initial check 12 seconds after startup
   setTimeout(async () => {
     try {
-      if (_scrapeMeroLaganiAnnouncements || _scrapeMeroLaganiNews || _scrapeShareSansarNews || _fetchNepaliPaisaNews || _scrapeBizshalaNews || _getLiveIpoListings) {
-        await pollLiveNewsAndIpoAlerts({
-          scrapeMeroLaganiAnnouncements: _scrapeMeroLaganiAnnouncements,
-          scrapeMeroLaganiNews: _scrapeMeroLaganiNews,
-          scrapeShareSansarNews: _scrapeShareSansarNews,
-          fetchNepaliPaisaNews: _fetchNepaliPaisaNews,
-          scrapeBizshalaNews: _scrapeBizshalaNews,
-          fetchKarobarNews: _fetchKarobarNews,
-          fetchClickmanduNews: _fetchClickmanduNews,
-          getLiveIpoListings: _getLiveIpoListings
-        });
-      }
+      await runNewsAndIpoCheck();
     } catch (_) {}
   }, 12000);
 

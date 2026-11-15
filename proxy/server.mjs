@@ -12068,6 +12068,7 @@ app.get('/api/notifications', (req, res) => {
     const category = (req.query.category || 'all').toLowerCase();
     const limit = Math.min(parseInt(req.query.limit || '50', 10), 100);
     const includeExpired = req.query.includeExpired === 'true';
+    const includeInAppOnly = req.query.includeInAppOnly === 'true';
     const history = getSmartAlertHistory(100);
 
     const now = Date.now();
@@ -12075,6 +12076,9 @@ app.get('/api/notifications', (req, res) => {
 
     let filtered = history.filter(a => {
       if (!a || a.isUserHolding) return false;
+      if (!includeInAppOnly && (a.inAppOnly === true || a.pushStatusBar === false || a.type === 'EARNINGS_ALERT')) {
+        return false;
+      }
       const cleanTitle = String(a.title || '').trim();
       const cleanBody = String(a.body || '').trim();
       if (!cleanTitle || !cleanBody) return false;
@@ -14032,6 +14036,9 @@ app.listen(PORT, '0.0.0.0', async () => {
           scrapeBizshalaNews,
           fetchKarobarNews,
           fetchClickmanduNews,
+          scrapeBikashNews,
+          scrapeArthaKendraNews,
+          scrapeArthaSarokarNews,
           getLiveIpoListings,
           fetchTodayPricesInternal: async () => {
             const stockData = getCache('today-prices') || getCache('market-summary');
