@@ -125,6 +125,13 @@ export interface MasterStockEvaluation {
   promoterHoldingKnown: boolean;     // true = real data from feed, false = defaulted to 55%
   rvolVerified: boolean;             // true = real RVOL from data feed, false = volume-based estimate
   dataConfidence: 'FULLY_VERIFIED' | 'PARTIALLY_VERIFIED' | 'DATA_UNCONFIRMED'; // overall data quality tier
+  rallyTrack: 'TRACK_A_COILED_2_3D_IGNITION' | 'TRACK_B_T2_CLEARED_CONTINUATION' | 'STANDARD_ACCUMULATION';
+  rallyHorizonLabel: string;
+  isPocketPivot: boolean;
+  isNr7: boolean;
+  isT2ClearedContinuation: boolean;
+  freeFloatCorneredPct: number;
+  clv: number;
 }
 
 export interface MasterAuditReport {
@@ -552,6 +559,101 @@ export function evaluateMasterStock(
     ? 'SUPPORT_BOUNCE'
     : (rvol >= 1.4 && pChange >= 1.5 ? 'MOMENTUM_BREAKOUT' : 'PULLBACK_COIL');
 
+  // Dual-Track 5-Dimension Rally Classification (Track A: 2-3D Ignition vs Track B: T+2 Cleared Continuation)
+  const normHist = Array.isArray(cachedHistory)
+    ? cachedHistory.map((b: any) => {
+        const c = Number(b?.close_price ?? b?.close ?? 0);
+        const o = Number(b?.open_price ?? b?.open ?? c) || c;
+        const h = Math.max(Number(b?.high_price ?? b?.high ?? c) || c, o, c);
+        const l = Math.min(Number(b?.low_price ?? b?.low ?? c) || c, o, c);
+        const v = Number(b?.total_volume ?? b?.volume ?? b?.vol ?? 0);
+        return { open: o, high: h, low: l, close: c, volume: v };
+      }).filter((b) => b.close > 0)
+    : [];
+
+  let clv = pChange > 0 ? 0.72 : pChange < 0 ? 0.28 : 0.5;
+  let upperWickRatio = 0;
+  let isNr7 = Boolean((stock as any)?.isNr7);
+  let isPocketPivot = Boolean((stock as any)?.isPocketPivot);
+  let isT2ClearedContinuation = Boolean((stock as any)?.isT2ClearedContinuation);
+
+  if (normHist.length >= 2) {
+    const bLen = normHist.length - 1;
+    const curBar = normHist[bLen];
+    const prevBar = normHist[bLen - 1];
+    const curRange = curBar.high - curBar.low;
+    if (curRange > 0.001) {
+      clv = Number(Math.max(0, Math.min(1, (curBar.close - curBar.low) / curRange)).toFixed(3));
+      upperWickRatio = Number(Math.max(0, (curBar.high - Math.max(curBar.open, curBar.close)) / curRange).toFixed(3));
+    } else {
+      clv = pChange > 0 ? 1.0 : pChange < 0 ? 0.0 : 0.5;
+    }
+
+    if (!isNr7 && normHist.length >= 7) {
+      const prior6 = normHist.slice(bLen - 6, bLen).map((b) => b.high - b.low);
+      isNr7 = prior6.every((r) => r > 0) && curRange > 0 && curRange <= Math.min(...prior6) + 1e-6;
+    }
+
+    if (!isPocketPivot) {
+      let maxDownVol10 = 0;
+      for (let k = Math.max(1, bLen - 10); k < bLen; k++) {
+        if (normHist[k].close < normHist[k - 1].close && normHist[k].volume > maxDownVol10) {
+          maxDownVol10 = normHist[k].volume;
+        }
+      }
+      const curChg = prevBar.close > 0 ? ((curBar.close - prevBar.close) / prevBar.close) * 100 : pChange;
+      isPocketPivot = curChg >= 0.2 && curBar.close >= ema20 * 0.99 && maxDownVol10 > 0 && curBar.volume > maxDownVol10;
+    }
+
+    if (!isT2ClearedContinuation && normHist.length >= 10) {
+      const prior20 = normHist.slice(Math.max(0, bLen - 20), bLen);
+      const avgVol20 = prior20.reduce((s, r) => s + r.volume, 0) / Math.max(1, prior20.length);
+      for (let k = Math.max(1, bLen - 4); k <= bLen - 2; k++) {
+        const igBar = normHist[k];
+        const beforeIg = normHist[k - 1];
+        const igChgPct = beforeIg.close > 0 ? ((igBar.close - beforeIg.close) / beforeIg.close) * 100 : 0;
+        const postBars = normHist.slice(k + 1, bLen + 1);
+        const minPostLow = Math.min(...postBars.map((b) => b.low));
+        const hasDryup = postBars.some((b) => b.volume <= igBar.volume * 0.72);
+        if (
+          igChgPct >= 3.0 &&
+          igBar.volume >= avgVol20 * 1.25 &&
+          minPostLow >= igBar.low * 0.992 &&
+          curBar.close >= igBar.open * 0.992 &&
+          curBar.close >= ema20 * 0.99 &&
+          hasDryup
+        ) {
+          isT2ClearedContinuation = true;
+          break;
+        }
+      }
+    }
+  }
+  if ((stock as any)?.clv !== undefined) clv = Number((stock as any).clv);
+  if ((stock as any)?.upperWickRatio !== undefined) upperWickRatio = Number((stock as any).upperWickRatio);
+  const isUpperWickRejected = upperWickRatio > 0.45 && pChange > 1.0;
+
+  const rawNetQty5D = Number(
+    cachedBroker?.total5DayNet ??
+    cachedBroker?.net5DayQty ??
+    cachedBroker?.netAccumulationQty ??
+    stock?.netBrokerQty ??
+    (isBrokerVerified && bcr3Net > 0 && vol > 0 ? (bcr3Net / 100) * vol : 0)
+  );
+  const publicFloatShares = Math.max(1, publicFloatM * 1_000_000);
+  const freeFloatCorneredPct = Number(((Math.max(0, rawNetQty5D) / publicFloatShares) * 100).toFixed(2));
+
+  const hasFlowBacking = !isDistributionTrap && (isBrokerVerified ? (bcr3 >= 40.0 || bcr3Net >= 16.0) : (cmfFallbackPasses || (stock?.stealthAccumulation || 0) >= 65));
+  let rallyTrack: 'TRACK_A_COILED_2_3D_IGNITION' | 'TRACK_B_T2_CLEARED_CONTINUATION' | 'STANDARD_ACCUMULATION' = 'STANDARD_ACCUMULATION';
+  let rallyHorizonLabel = 'Institutional Base Accumulation';
+  if (!isDistributionTrap && !isUpperWickRejected && (isT2ClearedContinuation || (setupArchetype === 'MOMENTUM_BREAKOUT' && hasFlowBacking))) {
+    rallyTrack = 'TRACK_B_T2_CLEARED_CONTINUATION';
+    rallyHorizonLabel = 'Track B: Post-T+2 Cleared Continuation';
+  } else if (!isDistributionTrap && !isUpperWickRejected && (isNr7 || isPocketPivot || (Math.abs(ltp - ema20) / Math.max(1, ema20) <= 0.045 && hasFlowBacking))) {
+    rallyTrack = 'TRACK_A_COILED_2_3D_IGNITION';
+    rallyHorizonLabel = 'Track A: 2–3 Day Ignition Watch';
+  }
+
   // ───────────────────────────────────────────────────────────────────────────
   // THE 8-GATE MULTIBAGGER SCREENER
   // ───────────────────────────────────────────────────────────────────────────
@@ -584,14 +686,20 @@ export function evaluateMasterStock(
       isDataUnverified: dynEMAs.ema20IsFallback
     },
     gate4_volume: {
-      passed: rvolVerified
-        ? (rvol >= 1.4 || volumeZScore >= 1.4 || (isBounceBack && rvol >= 1.15))
-        : (volumeZScore >= 1.4),  // when RVOL is unverified, only VolumeZScore (OHLCV-based) can pass this gate
-      label: 'Volume Surge (RVOL >= 1.4x)',
-      actualValue: rvolVerified ? `${rvol}x RVOL` : `VZ ${volumeZScore.toFixed(2)}σ (RVOL unverified)`,
-      threshold: isBounceBack ? '>= 1.15x absorption' : '>= 1.4x baseline',
+      passed: !isUpperWickRejected && (
+        rvolVerified
+          ? (rvol >= 1.4 || volumeZScore >= 1.4 || (isBounceBack && rvol >= 1.15) || isPocketPivot || isT2ClearedContinuation)
+          : (volumeZScore >= 1.4 || isPocketPivot || isT2ClearedContinuation)
+      ),  // when RVOL is unverified, only OHLCV-based triggers can pass this gate
+      label: 'Volume Surge / Pocket Pivot (RVOL >= 1.4x)',
+      actualValue: isT2ClearedContinuation
+        ? 'T+2 Survived (Pullback Dry-Up)'
+        : isPocketPivot
+          ? `Pocket Pivot (CLV ${(clv * 100).toFixed(0)}%)`
+          : (rvolVerified ? `${rvol}x RVOL` : `VZ ${volumeZScore.toFixed(2)}σ (RVOL unverified)`),
+      threshold: isBounceBack ? '>= 1.15x absorption' : '>= 1.4x baseline or Pocket Pivot',
       category: 'Institutional Footprint',
-      isDataUnverified: !rvolVerified
+      isDataUnverified: !rvolVerified && !isPocketPivot && !isT2ClearedContinuation
     },
     gate5_broker: {
       // P1: CMF >= 0.08 fallback when live broker data unavailable (replaces stealthAccumulation proxy)
@@ -676,7 +784,17 @@ export function evaluateMasterStock(
     (typeof globalThis !== 'undefined' && (globalThis as any)?.HOT_CACHE?.signalTrackRecord?.summary?.verifiedWinRatePct) ??
     52
   );
-  const winRateBoost = (!isDistributionTrap && (bcr3 > 45 || bcr3Net >= 18)) ? 12 : (isDistributionTrap ? -10 : 0);
+  const empiricalFactorLiftBonus = !isDistributionTrap
+    ? (bcr3 >= 40 ? 4 : 0) +
+      ((isNr7 || isPocketPivot) ? 5 : 0) +
+      (isT2ClearedContinuation ? 6 : 0) +
+      (freeFloatCorneredPct >= 0.35 ? 4 : 0) +
+      (clv >= 0.65 && upperWickRatio <= 0.30 ? 3 : 0)
+    : 0;
+  const winRateBoost =
+    (!isDistributionTrap && (bcr3 > 45 || bcr3Net >= 18) ? 12 : (isDistributionTrap ? -10 : 0)) +
+    empiricalFactorLiftBonus -
+    (isUpperWickRejected ? 12 : 0);
   const empiricalBase = (stock as any)?.empiricalWinRate ? baseEmpiricalWinRate : (baseEmpiricalWinRate + winRateBoost);
 
   const analogWinRate = Math.max(
@@ -692,6 +810,11 @@ export function evaluateMasterStock(
   if (isPromoterLockinNear) rawScore -= 30;
   if (publicFloatM > 15.0 && track !== 'BLUE_CHIP_COMPOUNDER') rawScore -= 20;
   if (isBounceBack && pChange >= 0.2) rawScore += 6;
+  if (rallyTrack === 'TRACK_B_T2_CLEARED_CONTINUATION') rawScore += 6;
+  else if (rallyTrack === 'TRACK_A_COILED_2_3D_IGNITION') rawScore += 5;
+  if (freeFloatCorneredPct >= 0.50) rawScore += 5;
+  else if (freeFloatCorneredPct >= 0.25) rawScore += 3;
+  if (isUpperWickRejected) rawScore -= 15;
   const setupScore = Math.max(15, Math.min(98, Math.round(Number.isFinite(rawScore) ? rawScore : 50)));
 
   const matrixChecks: MatrixCheck[] = [
@@ -814,7 +937,7 @@ export function evaluateMasterStock(
     : isCapitalCapped 
       ? ` [Capped at 100K Capital: ${maxAffordableShares} units]` 
       : '';
-  const tmsOrderText = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${sym} | Type: LIMIT ORDER\nTrack: ${track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum'}\nSetup: ${setupArchetype}\nEntry Limit: Rs. ${entryLow} (Chase Cap: Rs. ${chaseCap})\nAllocated Qty: ${kellyShares} Shares (Capital: Rs. ${capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${stopLoss} (-${stopLossPct}%)\nTarget 1: Rs. ${target1Gross} (+${t1NetCalc.netReturnPct}% Net after 10% CGT)`;
+  const tmsOrderText = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${sym} | Type: LIMIT ORDER\nTrack: ${track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum'} (${rallyHorizonLabel})\nSetup: ${setupArchetype}\nEntry Limit: Rs. ${entryLow} (Chase Cap: Rs. ${chaseCap})\nAllocated Qty: ${kellyShares} Shares (Capital: Rs. ${capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${stopLoss} (-${stopLossPct}%)\nTarget 1: Rs. ${target1Gross} (+${t1NetCalc.netReturnPct}% Net after 10% CGT)`;
 
   return {
     symbol: sym,
@@ -879,6 +1002,13 @@ export function evaluateMasterStock(
     cmfValue: cmfResult?.cmf ?? 0,
     promoterHoldingKnown,
     rvolVerified,
+    rallyTrack,
+    rallyHorizonLabel,
+    isPocketPivot,
+    isNr7,
+    isT2ClearedContinuation,
+    freeFloatCorneredPct,
+    clv,
     dataConfidence: (() => {
       const verifiedCount = [isBrokerVerified, !dynEMAs.ema20IsFallback, rvolVerified, promoterHoldingKnown].filter(Boolean).length;
       if (verifiedCount === 4) return 'FULLY_VERIFIED' as const;

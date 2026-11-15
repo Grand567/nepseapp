@@ -317,4 +317,197 @@ test('Unified Max-Profit Telegram Pruning & Consolidation Audit', async (t) => {
       'smartAlertEngine.mjs broadcastAlert must explicitly suppress news & IPO Telegram dispatch'
     );
   });
+
+  await t.test('10. Dual-Track 5-Dimension Rally Selector (NR7/Pocket Pivot Track A, T+2 Survival Track B, CLV/Wick Guard)', async () => {
+    const { evaluateStockSwingGates } = await import('../src/utils/swingGateEvaluator.js');
+
+    // A. NR7 Tight Coil + High CLV (Track A: 2-3 Day Ignition)
+    const nr7Bars = [];
+    for (let i = 0; i < 14; i++) {
+      nr7Bars.push({
+        trade_date: `2026-10-${String(i + 1).padStart(2, '0')}`,
+        open_price: 500,
+        high_price: 506,
+        low_price: 495,
+        close_price: 501,
+        total_volume: 10000,
+      });
+    }
+    nr7Bars.push({
+      trade_date: '2026-10-15',
+      open_price: 502,
+      high_price: 505,
+      low_price: 501,
+      close_price: 504.5,
+      total_volume: 12500,
+    });
+
+    const nr7Smc = evaluateLoopholeProtectedSmcSetup(nr7Bars, {
+      ltp: 504.5,
+      ema20: 501,
+      avgBrokerPrice: 502,
+      bcr3Buy: 50,
+      bcr3Sell: 20,
+      leadRetentionPct: 82,
+      isTrap: false,
+    });
+    assert.strictEqual(nr7Smc.isNr7, true, 'Must detect NR7 narrowest range bar across 7 sessions');
+    assert.ok(nr7Smc.clv >= 0.8, `High CLV expected, got ${nr7Smc.clv}`);
+    assert.ok(nr7Smc.upperWickRatio <= 0.2, `Low upper-wick expected, got ${nr7Smc.upperWickRatio}`);
+    assert.strictEqual(nr7Smc.rallyTrack, 'TRACK_A_COILED_2_3D_IGNITION', 'Must classify NR7 coil as Track A');
+    assert.ok(nr7Smc.smcConfluenceBonus >= 8, 'NR7 + high CLV must award >= 8 confluence points');
+
+    // B. T+2 Settlement Survival + Volume Dry-Up (Track B) & Upper-Wick Rejection Guard
+    const t2Bars = [];
+    for (let i = 0; i < 12; i++) {
+      t2Bars.push({
+        trade_date: `2026-10-${String(i + 1).padStart(2, '0')}`,
+        open_price: 500,
+        high_price: 505,
+        low_price: 496,
+        close_price: 500,
+        total_volume: 10000,
+      });
+    }
+    t2Bars.push({ trade_date: '2026-10-13', open_price: 500, high_price: 526, low_price: 499, close_price: 525, total_volume: 32000 });
+    t2Bars.push({ trade_date: '2026-10-14', open_price: 524, high_price: 528, low_price: 516, close_price: 521, total_volume: 11000 });
+    t2Bars.push({ trade_date: '2026-10-15', open_price: 520, high_price: 527, low_price: 517, close_price: 525, total_volume: 9500 });
+
+    const t2Smc = evaluateLoopholeProtectedSmcSetup(t2Bars, {
+      ltp: 525,
+      ema20: 506,
+      avgBrokerPrice: 514,
+      bcr3Buy: 52,
+      bcr3Sell: 22,
+      leadRetentionPct: 84,
+      isTrap: false,
+    });
+    assert.strictEqual(t2Smc.isT2ClearedContinuation, true, 'Must detect T+2 Settlement Survival continuation');
+    assert.strictEqual(t2Smc.rallyTrack, 'TRACK_B_T2_CLEARED_CONTINUATION', 'Must classify T+2 survival as Track B');
+
+    const wickBars = t2Bars.slice(0, 14).concat([
+      { trade_date: '2026-10-15', open_price: 520, high_price: 552, low_price: 520, close_price: 528, total_volume: 28000 },
+    ]);
+    const wickSmc = evaluateLoopholeProtectedSmcSetup(wickBars, {
+      ltp: 528,
+      ema20: 506,
+      bcr3Buy: 52,
+      bcr3Sell: 22,
+      leadRetentionPct: 84,
+      isTrap: false,
+    });
+    assert.ok(wickSmc.upperWickRatio > 0.45, `Heavy upper wick expected, got ${wickSmc.upperWickRatio}`);
+    assert.strictEqual(wickSmc.isT2ClearedContinuation, false, 'Upper-wick rejection must veto T+2 continuation flag');
+
+    // C. Dual-Track Gate Evaluation in swingGateEvaluator.js + >14% Climax Veto
+    const bullRegime = { passed: true, reason: 'Bullish regime' };
+    const trackAGate = evaluateStockSwingGates(
+      {
+        symbol: 'NICA',
+        sector: 'Commercial Banks',
+        ltp: 520,
+        ema20: 515,
+        ema50: 495,
+        turnover: 15000000,
+        volume: 30000,
+        transactions: 120,
+        pChange: 1.1,
+        threeDayRunPct: 2.1,
+        rvol: 1.1,
+        isPocketPivot: true,
+        isNr7: true,
+        bcr3BuyPct: 48,
+      },
+      bullRegime
+    );
+    assert.strictEqual(trackAGate.verdict, 'APPROVED_PAPER_PICK', 'Track A NR7/Pocket Pivot with broker backing must pass swing gates');
+    assert.strictEqual(trackAGate.rallyTrack, 'TRACK_A_COILED_2_3D_IGNITION');
+
+    const trackBGate = evaluateStockSwingGates(
+      {
+        symbol: 'SHPC',
+        sector: 'Hydro Power',
+        ltp: 540,
+        ema20: 518,
+        ema50: 495,
+        turnover: 20000000,
+        volume: 40000,
+        transactions: 150,
+        pChange: 1.4,
+        threeDayRunPct: 6.5,
+        rvol: 1.05,
+        isT2ClearedContinuation: true,
+        bcr3BuyPct: 50,
+      },
+      bullRegime
+    );
+    assert.strictEqual(trackBGate.verdict, 'APPROVED_PAPER_PICK', 'Track B T+2 cleared continuation must pass swing gates');
+    assert.strictEqual(trackBGate.rallyTrack, 'TRACK_B_T2_CLEARED_CONTINUATION');
+    assert.strictEqual(trackBGate.plan.dematLockSessions, 2);
+
+    const climaxGate = evaluateStockSwingGates(
+      {
+        symbol: 'CHCL',
+        ltp: 620,
+        ema20: 540,
+        ema50: 500,
+        turnover: 25000000,
+        volume: 45000,
+        transactions: 200,
+        pChange: 4.5,
+        threeDayRunPct: 15.2,
+        isBreakout: true,
+        rvol: 2.1,
+        bcr3BuyPct: 45,
+      },
+      bullRegime
+    );
+    assert.strictEqual(climaxGate.verdict, 'REJECTED', '>14% 3-day climax extension must be rejected');
+
+    const renderedHtml = formatUpgradedStealthAccumulationHtml({
+      symbol: 'SHPC',
+      name: 'Sanima Mai Hydropower',
+      sector: 'Hydro Power',
+      ltp: 540,
+      rallyTrack: 'TRACK_B_T2_CLEARED_CONTINUATION',
+      rallyHorizonLabel: 'Track B: Post-T+2 Cleared Continuation',
+      isT2ClearedContinuation: true,
+      freeFloatCorneredPct: 0.48,
+      clv: 0.85,
+      upperWickRatio: 0.12,
+    });
+    assert.ok(renderedHtml.includes('Rally Track:'), 'Alert HTML must display dual-track rally horizon');
+    assert.ok(renderedHtml.includes('LAYER 4: DUAL-TRACK RALLY &amp; IGNITION HORIZON (v2.0)'), 'Alert HTML must render Flowchart v2.0 Layer 4');
+    assert.ok(renderedHtml.includes('Ignition / Survival Trigger:'), 'Alert HTML must display Layer 4 trigger summary');
+    assert.ok(renderedHtml.includes('5D Free-Float Cornered:'), 'Alert HTML must display 5D free-float velocity metric');
+    assert.ok(renderedHtml.includes('Close Location Value (CLV):'), 'Alert HTML must display Close Location Value & Wick Ratio');
+
+    // Upper-wick distribution trap veto inside Flowchart v2.0 sendTelegramSmartAlert
+    const wickedAlertRes = await sendTelegramSmartAlert({
+      symbol: 'TEST_WICK',
+      ltp: 528,
+      pChange: 2.5,
+      upperWickRatio: 0.62,
+      bcr3Buy: 48,
+      bcr3Sell: 25,
+    });
+    assert.strictEqual(wickedAlertRes.success, false, 'Flowchart v2.0 smart alert must reject blown upper-wick distribution');
+    assert.strictEqual(wickedAlertRes.isVetoed, true, 'Upper-wick distribution rejection must set isVetoed: true');
+
+    // Clean Track A smart alert flows through Flowchart v2.0 enrichment pipeline cleanly
+    const cleanSmartAlertRes = await sendTelegramSmartAlert({
+      symbol: 'TEST_NR7_V2',
+      ltp: 505,
+      pChange: 1.1,
+      bcr3Buy: 54,
+      bcr3Sell: 22,
+      retention10D: 85,
+      isNr7: true,
+      isPocketPivot: true,
+      clv: 0.88,
+      upperWickRatio: 0.12,
+      skipTrapVeto: true,
+    });
+    assert.strictEqual(cleanSmartAlertRes.success, true, 'Clean Flowchart v2.0 smart alert must succeed');
+  });
 });

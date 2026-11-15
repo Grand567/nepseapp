@@ -141,13 +141,111 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
   else if (isLowerCircuitLocked) gate3Reason = 'REJECTED: Locked at -15% Lower Circuit (Exit illiquidity)';
   else if (!liquidityPassed) gate3Reason = `Thin liquidity: Turnover Rs. ${(turnover/100000).toFixed(1)}L < Rs. 50L threshold`;
 
-  // Gate 4: Momentum Breakout & RVOL Gate
+  // Gate 4: Momentum Breakout / Track A (NR7/Pocket Pivot) / Track B (T+2 Continuation)
+  const historyBars = Array.isArray(stock.candles)
+    ? stock.candles
+    : (Array.isArray(stock.history) ? stock.history : []);
+  let derivedNr7 = false;
+  let derivedPocketPivot = false;
+  let derivedT2Continuation = false;
+  let derivedClv = 0.5;
+  let derivedUpperWickRatio = 0;
+
+  if (historyBars.length >= 2) {
+    const norm = historyBars.map((b) => {
+      const c = Number(b?.close_price ?? b?.close ?? 0);
+      const o = Number(b?.open_price ?? b?.open ?? c) || c;
+      const h = Math.max(Number(b?.high_price ?? b?.high ?? c) || c, o, c);
+      const l = Math.min(Number(b?.low_price ?? b?.low ?? c) || c, o, c);
+      const v = Number(b?.total_volume ?? b?.volume ?? b?.vol ?? 0);
+      return { open: o, high: h, low: l, close: c, volume: v };
+    }).filter((b) => b.close > 0);
+
+    if (norm.length >= 2) {
+      const bLen = norm.length - 1;
+      const curBar = norm[bLen];
+      const prevBar = norm[bLen - 1];
+      const curRange = curBar.high - curBar.low;
+      if (curRange > 0.001) {
+        derivedClv = Number(Math.max(0, Math.min(1, (curBar.close - curBar.low) / curRange)).toFixed(3));
+        derivedUpperWickRatio = Number(Math.max(0, (curBar.high - Math.max(curBar.open, curBar.close)) / curRange).toFixed(3));
+      } else {
+        derivedClv = pChange > 0 ? 1.0 : pChange < 0 ? 0.0 : 0.5;
+      }
+
+      if (norm.length >= 7) {
+        const prior6 = norm.slice(bLen - 6, bLen).map((b) => b.high - b.low);
+        derivedNr7 = prior6.every((r) => r > 0) && curRange > 0 && curRange <= Math.min(...prior6) + 1e-6;
+      }
+
+      let maxDownVol10 = 0;
+      for (let k = Math.max(1, bLen - 10); k < bLen; k++) {
+        if (norm[k].close < norm[k - 1].close && norm[k].volume > maxDownVol10) {
+          maxDownVol10 = norm[k].volume;
+        }
+      }
+      const curChg = prevBar.close > 0 ? ((curBar.close - prevBar.close) / prevBar.close) * 100 : pChange;
+      derivedPocketPivot = curChg >= 0.2 && curBar.close >= ema20 * 0.99 && curBar.volume > maxDownVol10 && maxDownVol10 > 0;
+
+      if (norm.length >= 10) {
+        const prior20 = norm.slice(Math.max(0, bLen - 20), bLen);
+        const avgVol20 = prior20.reduce((s, r) => s + r.volume, 0) / Math.max(1, prior20.length);
+        for (let k = Math.max(1, bLen - 4); k <= bLen - 2; k++) {
+          const igBar = norm[k];
+          const beforeIg = norm[k - 1];
+          const igChgPct = beforeIg.close > 0 ? ((igBar.close - beforeIg.close) / beforeIg.close) * 100 : 0;
+          const postBars = norm.slice(k + 1, bLen + 1);
+          const minPostLow = Math.min(...postBars.map((b) => b.low));
+          const hasDryup = postBars.some((b) => b.volume <= igBar.volume * 0.72);
+          if (
+            igChgPct >= 3.0 &&
+            igBar.volume >= avgVol20 * 1.25 &&
+            minPostLow >= igBar.low * 0.992 &&
+            curBar.close >= igBar.open * 0.992 &&
+            curBar.close >= ema20 * 0.99 &&
+            hasDryup
+          ) {
+            derivedT2Continuation = true;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  const isPocketPivot = Boolean(stock.isPocketPivot || derivedPocketPivot);
+  const isNr7 = Boolean(stock.isNr7 || derivedNr7);
+  const isT2ClearedContinuation = Boolean(stock.isT2ClearedContinuation || derivedT2Continuation);
+  const clv = stock.clv != null ? Number(stock.clv) : derivedClv;
+  const upperWickRatio = stock.upperWickRatio != null ? Number(stock.upperWickRatio) : derivedUpperWickRatio;
+  const isUpperWickRejected = upperWickRatio > 0.45 && pChange > 1.0;
+
   const isNotClimaxExtended = threeDayRunPct < 14.0; // Avoid chasing >14% run
-  const gate4Passed = isBreakout && rvol >= 1.25 && isNotClimaxExtended;
+  const isCoiledPreIgnition = (isPocketPivot || isNr7) && ltp >= ema20 * 0.99 && hasBrokerAccumulation;
+  const isTrackB = (isT2ClearedContinuation || (isBreakout && rvol >= 1.25)) && !isUpperWickRejected;
+  const rallyTrack = isTrackB
+    ? 'TRACK_B_T2_CLEARED_CONTINUATION'
+    : (isCoiledPreIgnition && !isUpperWickRejected)
+      ? 'TRACK_A_COILED_2_3D_IGNITION'
+      : 'STANDARD_ACCUMULATION';
+  const rallyHorizonLabel = rallyTrack === 'TRACK_B_T2_CLEARED_CONTINUATION'
+    ? 'Track B: Post-T+2 Cleared Continuation'
+    : rallyTrack === 'TRACK_A_COILED_2_3D_IGNITION'
+      ? 'Track A: 2–3 Day Ignition Watch'
+      : 'Institutional Base Accumulation';
+
+  const gate4Passed = !isUpperWickRejected && isNotClimaxExtended && (
+    (isBreakout && rvol >= 1.25) ||
+    isT2ClearedContinuation ||
+    isCoiledPreIgnition
+  );
   let gate4Reason = 'Breakout with RVOL expansion and healthy base';
-  if (!isBreakout) gate4Reason = 'No 10-20 day range breakout detected';
+  if (!isNotClimaxExtended) gate4Reason = `Climax extension: stock up ${threeDayRunPct.toFixed(1)}% in 3 days`;
+  else if (isUpperWickRejected) gate4Reason = `Upper-wick distribution rejection: wick ${(upperWickRatio * 100).toFixed(0)}% > 45% threshold`;
+  else if (isT2ClearedContinuation) gate4Reason = 'Track B: T+2 settlement survival & continuation hold above ignition base';
+  else if (isCoiledPreIgnition) gate4Reason = `Track A: Coiled ${isNr7 ? 'NR7' : 'Pocket Pivot'} pre-ignition with broker accumulation`;
+  else if (!isBreakout) gate4Reason = 'No 10-20 day range breakout, T+2 continuation, or NR7/Pocket Pivot ignition detected';
   else if (rvol < 1.25) gate4Reason = `Insufficient volume surge (${rvol.toFixed(1)}x < 1.25x)`;
-  else if (!isNotClimaxExtended) gate4Reason = `Climax extension: stock up ${threeDayRunPct.toFixed(1)}% in 3 days`;
 
   // Gate 5: Quality & Event Risk Gate
   const positiveNetWorth = bookValue > 0;
@@ -233,12 +331,21 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
     pChange,
     turnover,
     volume,
+    rallyTrack,
+    rallyHorizonLabel,
+    isPocketPivot,
+    isNr7,
+    isT2ClearedContinuation,
+    clv,
+    upperWickRatio,
     allGatesPassed,
     gatesPassedCount,
     gates,
     verdict: allGatesPassed ? 'APPROVED_PAPER_PICK' : 'REJECTED',
     rejectionReasons: gates.filter(g => !g.passed).map(g => `${g.name}: ${g.reason}`),
     plan: {
+      rallyTrack,
+      rallyHorizonLabel,
       entryZone: [Number((ltp * 0.995).toFixed(1)), Number((ltp * 1.005).toFixed(1))],
       stopLoss: stopPrice,
       stopLossPct,

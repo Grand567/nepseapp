@@ -342,7 +342,7 @@ export function broadcastAlert(alertPayload) {
 
   // 3. Dispatch Instant Alert to Telegram Bot (PRO Users: Breakouts, Prime Picks, Accumulation, Watchlist, Exits, News, IPO)
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
-  if (!isTestEnv || process.env.TEST_LIVE_TELEGRAM === 'true') {
+  if (!alertPayload.skipTelegram && (!isTestEnv || process.env.TEST_LIVE_TELEGRAM === 'true')) {
     const isNews = alertPayload.type === 'NEWS_ALERT' || 
                    alertPayload.type === 'PORTFOLIO_NEWS_ALERT' || 
                    alertPayload.type === 'DIVIDEND_ALERT' ||
@@ -1059,6 +1059,19 @@ export async function processStockTickEvaluation(evaluationData) {
     state.lastTriggeredAt = now;
     state.historyCount += 1;
 
+    const rallyTrack =
+      evaluationData.rallyTrack ||
+      (inst?.pillar3?.isDay2Confirmed && inst?.pillar1?.isVduMet && inst?.pillar1?.isVcpMet
+        ? 'TRACK_A_COILED_2_3D_IGNITION'
+        : 'STANDARD_ACCUMULATION');
+    const rallyHorizonLabel =
+      evaluationData.rallyHorizonLabel ||
+      (rallyTrack === 'TRACK_B_T2_CLEARED_CONTINUATION'
+        ? 'Track B: Post-T+2 Cleared Continuation'
+        : rallyTrack === 'TRACK_A_COILED_2_3D_IGNITION'
+          ? 'Track A: 2–3 Day Ignition Watch'
+          : 'Institutional Base Accumulation');
+
     const alertItem = {
       id: `alert_${sym}_${now}`,
       symbol: sym,
@@ -1067,9 +1080,10 @@ export async function processStockTickEvaluation(evaluationData) {
       tier: 'pro',
       isPro: true,
       title: `⚡ Institutional Accumulation: ${sym}`,
-      body: `Price Rs. ${ltp} inside Buy Zone (${buyZone.low}-${buyZone.high}). Lead accumulators: ${buyerConcentration.dominantBrokersText || 'Smart Money'}.`,
+      body: `[Flowchart v2.0 • ${rallyHorizonLabel}] Price Rs. ${ltp} inside Buy Zone (${buyZone.low}-${buyZone.high}). Lead accumulators: ${buyerConcentration.dominantBrokersText || 'Smart Money'}.`,
       action: 'OPEN_STOCK_DETAIL',
       ltp,
+      pChange: Number(evaluationData.pChange ?? inst?.veto?.pChange ?? 0),
       triggeredAt: new Date(now).toISOString(),
       buyZone: buyZone,
       dominantBrokersText: buyerConcentration.dominantBrokersText,
@@ -1092,6 +1106,13 @@ export async function processStockTickEvaluation(evaluationData) {
       sector: inst?.pillar4?.sector || 'Hydro Power',
       sectorRank: inst?.pillar4?.sectorRank10D || 2,
       regime: inst?.macro?.regime || 'Neutral',
+      rallyTrack,
+      rallyHorizonLabel,
+      clv: evaluationData.clv,
+      upperWickRatio: evaluationData.upperWickRatio ?? inst?.pillar3?.upperWickRatio,
+      isNr7: Boolean(evaluationData.isNr7),
+      isPocketPivot: Boolean(evaluationData.isPocketPivot),
+      isT2ClearedContinuation: Boolean(evaluationData.isT2ClearedContinuation),
       ticketPayload: inst?.ticketPayload,
       vwap: evaluationData.vwap,
       isTest: Boolean(evaluationData.isTest),
@@ -2571,6 +2592,20 @@ export async function scanEmaCrossoverAndSharpBase({
         statusBadge = `⚡ SMC Liquidity Sweep + MSS (${daysSinceCross}D Base)`;
       }
 
+      const scanUpperWickRejected = Number(smc.upperWickRatio || 0) > 0.45 && distFromEmaPct > 1.0;
+      const rallyTrack =
+        smc.rallyTrack && smc.rallyTrack !== 'STANDARD_ACCUMULATION'
+          ? smc.rallyTrack
+          : isPocketPivotIgnition && !scanUpperWickRejected
+            ? 'TRACK_A_COILED_2_3D_IGNITION'
+            : smc.rallyTrack || 'STANDARD_ACCUMULATION';
+      const rallyHorizonLabel =
+        rallyTrack === 'TRACK_B_T2_CLEARED_CONTINUATION'
+          ? 'Track B: Post-T+2 Cleared Continuation'
+          : rallyTrack === 'TRACK_A_COILED_2_3D_IGNITION'
+            ? 'Track A: 2–3 Day Ignition Watch'
+            : smc.rallyHorizonLabel || 'Institutional Base Accumulation';
+
       results.push({
         symbol: sym,
         sessionDate: targetDate,
@@ -2598,6 +2633,12 @@ export async function scanEmaCrossoverAndSharpBase({
         target1,
         target2,
         statusBadge,
+        rallyTrack,
+        rallyHorizonLabel,
+        isNr7: smc.isNr7,
+        isT2ClearedContinuation: smc.isT2ClearedContinuation,
+        clv: smc.clv,
+        upperWickRatio: smc.upperWickRatio,
         isBreakAndRetest: smc.isBreakAndRetest,
         isSmcSweepMss: smc.isSmcSweepMss,
         isFvgMitigated: smc.isFvgMitigated,

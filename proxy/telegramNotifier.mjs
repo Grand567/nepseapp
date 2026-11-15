@@ -644,6 +644,44 @@ export function extract5DayBrokerFlowMetrics(flow = [], fallbackPrice = 0, defau
   };
 }
 
+function estimatePublicFloatShares(sectorName = 'Equities', explicitFloatShares = 0) {
+  const explicit = Number(explicitFloatShares);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const sec = String(sectorName || '');
+  if (/Microfinance/i.test(sec)) return 1_800_000;
+  if (/Finance/i.test(sec)) return 3_500_000;
+  if (/Hydro/i.test(sec)) return 4_500_000;
+  if (/Hotel|Tourism/i.test(sec)) return 4_000_000;
+  if (/Development Bank/i.test(sec)) return 8_000_000;
+  if (/Commercial Bank|Bank/i.test(sec)) return 35_000_000;
+  return 5_000_000;
+}
+
+function classifyDualTrackRally({
+  smc = {},
+  isCoilIgnitionBreakout = false,
+  isPocketPivot = false,
+  leadRetentionPct = 70,
+  dayChgPct = 0,
+} = {}) {
+  const isUpperWickRejected = Number(smc?.upperWickRatio || 0) > 0.45 && Number(dayChgPct || 0) > 1.0;
+  let rallyTrack = 'STANDARD_ACCUMULATION';
+  let rallyHorizonLabel = 'Institutional Base Accumulation';
+  if ((smc.isT2ClearedContinuation || smc.isBreakAndRetest) && !isUpperWickRejected) {
+    rallyTrack = 'TRACK_B_T2_CLEARED_CONTINUATION';
+    rallyHorizonLabel = 'Track B: Post-T+2 Cleared Continuation';
+  } else if (
+    isCoilIgnitionBreakout ||
+    ((isPocketPivot || smc.isNr7 || smc.isIdnr4 || smc.isSmcSweepMss || smc.isFvgMitigated) &&
+      Number(leadRetentionPct || 0) >= 70 &&
+      !isUpperWickRejected)
+  ) {
+    rallyTrack = 'TRACK_A_COILED_2_3D_IGNITION';
+    rallyHorizonLabel = 'Track A: 2–3 Day Ignition Watch';
+  }
+  return { isUpperWickRejected, rallyTrack, rallyHorizonLabel };
+}
+
 /**
  * Evaluates Loophole-Protected SMC & Multi-Day Break-and-Retest Confluences.
  * Guards against NEPSE phantom-tick wicks, momentum starvation, and tight intraday stop hunts.
@@ -655,6 +693,13 @@ export function evaluateLoopholeProtectedSmcSetup(histBars, context = {}) {
     isSmcSweepMss: false,
     hasBullishFvg: false,
     isFvgMitigated: false,
+    isNr7: false,
+    isIdnr4: false,
+    isT2ClearedContinuation: false,
+    clv: 0.5,
+    upperWickRatio: 0,
+    rallyTrack: 'STANDARD_ACCUMULATION',
+    rallyHorizonLabel: 'Institutional Base Accumulation',
     fvgLow: null,
     fvgHigh: null,
     retestLevel: null,
@@ -744,6 +789,34 @@ export function evaluateLoopholeProtectedSmcSetup(histBars, context = {}) {
   let fvgLow = null;
   let fvgHigh = null;
 
+  const curRange = curBar.high - curBar.low;
+  const clv = curRange > 0.001
+    ? Number(Math.max(0, Math.min(1, (curBar.close - curBar.low) / curRange)).toFixed(3))
+    : (dayChgPct > 0 ? 1.0 : dayChgPct < 0 ? 0.0 : 0.5);
+  const upperWickRatio = curRange > 0.001
+    ? Number(Math.max(0, (curBar.high - Math.max(curBar.open, curBar.close)) / curRange).toFixed(3))
+    : 0;
+
+  const prior6Bars = validBars.slice(Math.max(0, bLen - 6), bLen);
+  const prior6Ranges = prior6Bars.map((b) => b.high - b.low);
+  const isNr7 =
+    prior6Bars.length === 6 &&
+    prior6Ranges.every((r) => r > 0) &&
+    curRange > 0 &&
+    curRange <= Math.min(...prior6Ranges) + 1e-6;
+
+  const prior3Bars = validBars.slice(Math.max(0, bLen - 3), bLen);
+  const prior3Ranges = prior3Bars.map((b) => b.high - b.low);
+  const isInsideDay = curBar.high <= prevBar.high + 1e-6 && curBar.low >= prevBar.low - 1e-6;
+  const isIdnr4 =
+    isInsideDay &&
+    prior3Bars.length === 3 &&
+    prior3Ranges.every((r) => r > 0) &&
+    curRange > 0 &&
+    curRange <= Math.min(...prior3Ranges) + 1e-6;
+
+  let isT2ClearedContinuation = false;
+
   if (hasRealLiquidity && hasBrokerBacking) {
     // 1. Multi-Day Break & Retest (Breakout 2-8 sessions ago, low-vol pullback retest today)
     const minBrkIdx = Math.max(5, bLen - 8);
@@ -813,6 +886,38 @@ export function evaluateLoopholeProtectedSmcSetup(histBars, context = {}) {
         break;
       }
     }
+
+    // 4. T+2 Settlement Survival & Day-3/4 Pullback Continuation (NEPSE Demat Lockup Cycle)
+    const minIgIdx = Math.max(1, bLen - 4);
+    const maxIgIdx = bLen - 2;
+    for (let k = maxIgIdx; k >= minIgIdx; k--) {
+      const igBar = validBars[k];
+      const beforeIg = validBars[k - 1];
+      const igChgPct = beforeIg.close > 0 ? ((igBar.close - beforeIg.close) / beforeIg.close) * 100 : 0;
+      const igRange = igBar.high - igBar.low;
+      const igClv = igRange > 0.001 ? (igBar.close - igBar.low) / igRange : (igChgPct > 0 ? 1 : 0.5);
+      const preIgBars = validBars.slice(Math.max(0, k - 10), k);
+      const preIgAvgVol = preIgBars.length > 0
+        ? preIgBars.reduce((s, r) => s + r.volume, 0) / preIgBars.length
+        : avgVol20;
+      const postBars = validBars.slice(k + 1, bLen + 1);
+      const minPostLow = Math.min(...postBars.map((b) => b.low));
+      const hasPullbackDryup = postBars.some((b) => b.volume <= igBar.volume * 0.72);
+      const structuralFloor = Math.min(igBar.open, (igBar.open + igBar.close) * 0.5);
+      if (
+        igChgPct >= 3.0 &&
+        igClv >= 0.55 &&
+        igBar.volume >= Math.min(avgVol20, preIgAvgVol > 0 ? preIgAvgVol : avgVol20) * 1.35 &&
+        minPostLow >= igBar.low * 0.992 &&
+        curBar.close >= structuralFloor * 0.992 &&
+        curBar.close >= ema20Val * 0.99 &&
+        hasPullbackDryup &&
+        upperWickRatio <= 0.42
+      ) {
+        isT2ClearedContinuation = true;
+        break;
+      }
+    }
   }
 
   // ATR-buffered End-of-Day Invalidation Stop-Loss (Loophole 3 Guard)
@@ -824,13 +929,29 @@ export function evaluateLoopholeProtectedSmcSetup(histBars, context = {}) {
   const rawStop = structuralInvalidationLow - 0.35 * atr14;
   const smcStopLoss = Number(Math.max(ltp * 0.955, Math.min(ltp * 0.965, rawStop)).toFixed(1));
 
-  // Additive Confluence Bonus (Loophole 4 Guard)
-  const smcConfluenceBonus = Math.min(
-    16,
-    (isBreakAndRetest ? 8 : 0) +
+  // Additive Confluence Bonus (Loophole 4 Guard + NR7/IDNR4/T+2/CLV/Wick Guard)
+  const hasConfluenceBacking = hasRealLiquidity && hasBrokerBacking;
+  const upperWickPenalty = upperWickRatio > 0.45 && dayChgPct > 1.0 ? -6 : 0;
+  const rawConfluenceBonus = hasConfluenceBacking
+    ? (isBreakAndRetest ? 8 : 0) +
       (isSmcSweepMss ? 7 : 0) +
-      (isFvgMitigated ? 5 : hasBullishFvg ? 3 : 0)
-  );
+      (isFvgMitigated ? 5 : hasBullishFvg ? 3 : 0) +
+      (isNr7 || isIdnr4 ? 5 : 0) +
+      (isT2ClearedContinuation ? 6 : 0) +
+      (clv >= 0.65 && upperWickRatio <= 0.30 ? 3 : 0) +
+      upperWickPenalty
+    : 0;
+  const smcConfluenceBonus = Math.max(0, Math.min(20, rawConfluenceBonus));
+
+  let rallyTrack = 'STANDARD_ACCUMULATION';
+  let rallyHorizonLabel = 'Institutional Base Accumulation';
+  if (hasConfluenceBacking && (isT2ClearedContinuation || isBreakAndRetest)) {
+    rallyTrack = 'TRACK_B_T2_CLEARED_CONTINUATION';
+    rallyHorizonLabel = 'Track B: Post-T+2 Cleared Continuation';
+  } else if (hasConfluenceBacking && (isNr7 || isIdnr4 || isSmcSweepMss || isFvgMitigated)) {
+    rallyTrack = 'TRACK_A_COILED_2_3D_IGNITION';
+    rallyHorizonLabel = 'Track A: 2–3 Day Ignition Watch';
+  }
 
   let smcBadge = null;
   let smcNarrative = 'Orderly Floor Base Holding Above 20 EMA';
@@ -849,6 +970,12 @@ export function evaluateLoopholeProtectedSmcSetup(histBars, context = {}) {
   } else if (isFvgMitigated) {
     smcBadge = '🟢 FVG Demand Mitigation';
     smcNarrative = `Mitigating Bullish FVG Demand Shelf (Rs. ${fvgLow}–${fvgHigh})`;
+  } else if (isT2ClearedContinuation) {
+    smcBadge = '✅ T+2 Cleared Continuation';
+    smcNarrative = `Post-Ignition T+2 Settlement Survived on Volume Dry-Up (CLV ${(clv * 100).toFixed(0)}%)`;
+  } else if (isNr7 || isIdnr4) {
+    smcBadge = isIdnr4 ? '🌀 IDNR4 Coiled Ignition' : '🌀 NR7 Volatility Coil';
+    smcNarrative = `${isIdnr4 ? 'IDNR4' : 'NR7'} Tightest Daily Range Holding Above 20 EMA (2–3D Rally Spring)`;
   }
 
   const fvgNarrative = isFvgMitigated
@@ -862,6 +989,13 @@ export function evaluateLoopholeProtectedSmcSetup(histBars, context = {}) {
     isSmcSweepMss,
     hasBullishFvg,
     isFvgMitigated,
+    isNr7,
+    isIdnr4,
+    isT2ClearedContinuation,
+    clv,
+    upperWickRatio,
+    rallyTrack,
+    rallyHorizonLabel,
     fvgLow,
     fvgHigh,
     retestLevel,
@@ -873,6 +1007,161 @@ export function evaluateLoopholeProtectedSmcSetup(histBars, context = {}) {
     smcBadge,
     smcNarrative,
     fvgNarrative,
+  };
+}
+
+export function enrichPayloadWithFlowchartV2RallyMetrics(
+  rawPayload = {},
+  { db = null, trapAudit = null, flowMetrics = null, ltp = null } = {}
+) {
+  const sym = String(rawPayload.symbol || '').toUpperCase().trim();
+  const curLtp = Number(ltp || rawPayload.ltp || 0);
+  const sector = rawPayload.sector || stockUniverseMap[sym]?.sector || 'Equities';
+  const estFloat = estimatePublicFloatShares(sector, rawPayload.publicFloatShares);
+  const net5Day = Math.max(
+    0,
+    Number(
+      trapAudit?.total5DayNet ??
+        rawPayload.total5DayNet ??
+        rawPayload.netVol ??
+        rawPayload.netKitta ??
+        0
+    )
+  );
+  const computedFloatPct = Number(((net5Day / Math.max(1, estFloat)) * 100).toFixed(2));
+  const freeFloatCorneredPct =
+    rawPayload.freeFloatCorneredPct != null
+      ? Number(rawPayload.freeFloatCorneredPct)
+      : computedFloatPct;
+
+  let histBars = [];
+  if (db && sym) {
+    try {
+      histBars = db
+        .prepare(
+          `SELECT trade_date, open_price, high_price, low_price, close_price, total_volume
+           FROM daily_stock_summary
+           WHERE symbol = ?
+           ORDER BY trade_date DESC
+           LIMIT 55`
+        )
+        .all(sym)
+        .reverse();
+    } catch (_) {
+      histBars = [];
+    }
+  }
+
+  let smc = null;
+  let isPocketPivot = Boolean(rawPayload.isPocketPivot);
+  let dayChgPct = Number(rawPayload.pChange ?? rawPayload.dayChgPct ?? 0);
+
+  if (histBars.length >= 12) {
+    const bLen = histBars.length - 1;
+    const curBar = histBars[bLen];
+    const prevBar = histBars[bLen - 1];
+    const curClose = Number(curBar.close_price || curLtp || 0);
+    const prevClose = Number(prevBar?.close_price || curClose || 0);
+    const curVol = Number(curBar.total_volume || 0);
+    const prev20 = histBars.slice(Math.max(0, bLen - 20), bLen);
+    const sma20 =
+      prev20.reduce((s, r) => s + Number(r.close_price || 0), 0) / Math.max(1, prev20.length);
+
+    if (prevClose > 0 && rawPayload.pChange == null && rawPayload.dayChgPct == null) {
+      dayChgPct = ((curClose - prevClose) / prevClose) * 100;
+    }
+
+    let maxDownVol10 = 0;
+    for (let k = Math.max(1, bLen - 10); k < bLen; k++) {
+      if (Number(histBars[k].close_price || 0) < Number(histBars[k - 1].close_price || 0)) {
+        const dv = Number(histBars[k].total_volume || 0);
+        if (dv > maxDownVol10) maxDownVol10 = dv;
+      }
+    }
+    if (!isPocketPivot && histBars.length >= 12) {
+      isPocketPivot =
+        dayChgPct >= 0.25 &&
+        curClose >= sma20 * 0.99 &&
+        curVol > maxDownVol10 &&
+        maxDownVol10 > 0;
+    }
+
+    const avgBrokerPrice = Number(
+      rawPayload.avgBrokerPrice ||
+        rawPayload.bcr3AvgPrice ||
+        flowMetrics?.avgBrokerPrice ||
+        trapAudit?.buyVwap ||
+        sma20
+    );
+    const bcr3Buy = Number(rawPayload.bcr3Buy ?? flowMetrics?.bcr3Buy ?? 50);
+    const bcr3Sell = Number(rawPayload.bcr3Sell ?? flowMetrics?.bcr3Sell ?? 30);
+    const leadRetentionPct = Number(
+      rawPayload.retention10D ?? rawPayload.leadRetentionPct ?? trapAudit?.retentionPct ?? 75
+    );
+
+    smc = evaluateLoopholeProtectedSmcSetup(histBars, {
+      ltp: curLtp || curClose,
+      ema20: sma20,
+      avgBrokerPrice,
+      bcr3Buy,
+      bcr3Sell,
+      leadRetentionPct,
+      isTrap: Boolean(trapAudit?.isTrap),
+    });
+  }
+
+  const effectiveSmc = smc || {
+    isNr7: Boolean(rawPayload.isNr7),
+    isIdnr4: Boolean(rawPayload.isIdnr4),
+    isT2ClearedContinuation: Boolean(rawPayload.isT2ClearedContinuation),
+    isBreakAndRetest: Boolean(rawPayload.isBreakAndRetest),
+    isSmcSweepMss: Boolean(rawPayload.isSmcSweepMss),
+    isFvgMitigated: Boolean(rawPayload.isFvgMitigated),
+    clv: rawPayload.clv !== undefined ? Number(rawPayload.clv) : 0.65,
+    upperWickRatio: rawPayload.upperWickRatio !== undefined ? Number(rawPayload.upperWickRatio) : 0,
+    smcNarrative: rawPayload.smcNarrative,
+    fvgNarrative: rawPayload.fvgNarrative,
+  };
+
+  const trackClassification = classifyDualTrackRally({
+    smc: effectiveSmc,
+    isCoilIgnitionBreakout: Boolean(rawPayload.isCoilIgnitionBreakout),
+    isPocketPivot,
+    leadRetentionPct: Number(
+      rawPayload.retention10D ?? rawPayload.leadRetentionPct ?? trapAudit?.retentionPct ?? 75
+    ),
+    dayChgPct,
+  });
+
+  const rallyTrack = rawPayload.rallyTrack || trackClassification.rallyTrack;
+  const rallyHorizonLabel =
+    rawPayload.rallyHorizonLabel ||
+    (rallyTrack === 'TRACK_B_T2_CLEARED_CONTINUATION'
+      ? 'Track B: Post-T+2 Cleared Continuation'
+      : rallyTrack === 'TRACK_A_COILED_2_3D_IGNITION'
+        ? 'Track A: 2–3 Day Ignition Watch'
+        : trackClassification.rallyHorizonLabel);
+
+  return {
+    ...rawPayload,
+    sector,
+    rallyTrack,
+    rallyHorizonLabel,
+    freeFloatCorneredPct,
+    clv: rawPayload.clv !== undefined ? Number(rawPayload.clv) : effectiveSmc.clv,
+    upperWickRatio:
+      rawPayload.upperWickRatio !== undefined
+        ? Number(rawPayload.upperWickRatio)
+        : effectiveSmc.upperWickRatio,
+    isNr7: Boolean(rawPayload.isNr7 || effectiveSmc.isNr7),
+    isIdnr4: Boolean(rawPayload.isIdnr4 || effectiveSmc.isIdnr4),
+    isPocketPivot,
+    isT2ClearedContinuation: Boolean(
+      rawPayload.isT2ClearedContinuation || effectiveSmc.isT2ClearedContinuation
+    ),
+    isBreakAndRetest: Boolean(rawPayload.isBreakAndRetest || effectiveSmc.isBreakAndRetest),
+    smcNarrative: rawPayload.smcNarrative || effectiveSmc.smcNarrative,
+    fvgNarrative: rawPayload.fvgNarrative || effectiveSmc.fvgNarrative,
   };
 }
 
@@ -909,13 +1198,26 @@ export async function sendTelegramSmartAlert(alertItem) {
   const companyName = escapeHtml(alertItem.companyName || stockUniverseMap[rawSym]?.name || sym);
   const ltp = Number(alertItem.ltp || 0);
 
+  // Explicit Upper-Wick Distribution Guard (vetoes blown-out closing upper shadows on live alerts)
+  const explicitWickRatio = Number(alertItem.upperWickRatio ?? 0);
+  const explicitDayChg = Number(alertItem.pChange ?? alertItem.dayChgPct ?? 0);
+  if (explicitWickRatio > 0.45 && explicitDayChg > 1.0 && alertItem.skipTrapVeto !== true) {
+    return {
+      success: false,
+      isVetoed: true,
+      reason: `Upper-Wick Distribution Rejection (${Math.round(explicitWickRatio * 100)}% wick > 45% ceiling on +${explicitDayChg.toFixed(1)}% move)`,
+    };
+  }
+
   // Enforce 5-Day Multi-Session Trap Veto Gate & enrich with live ledger metrics
+  let ledgerDb = null;
   let trapAudit = null;
   let flowMetrics = { hasLedgerFlow: false };
   let vp = null;
   try {
     const { db, getSmartMoneyAggregatedFlow, getScripVolumeProfile } = await import('./db/ledgerStore.js');
     if (db) {
+      ledgerDb = db;
       if (alertItem.skipTrapVeto !== true) {
         trapAudit = auditMultiSessionTrapRisk(db, rawSym, alertItem.leadBrokerId || alertItem.brokerId || null);
         if (trapAudit && trapAudit.isTrap) {
@@ -972,34 +1274,50 @@ export async function sendTelegramSmartAlert(alertItem) {
   const t1 = Number(alertItem.target1 || (ltp * 1.080)).toFixed(1);
   const t2 = Number(alertItem.target2 || (ltp * 1.150)).toFixed(1);
 
-  const upgradedPayload = {
-    symbol: sym,
-    name: companyName,
-    companyName,
-    sector: alertItem.sector || stockUniverseMap[rawSym]?.sector || 'Equities',
-    ltp,
-    avgBrokerPrice,
-    pocPrice,
-    entryLow: Number(buyZone.low || (ltp * 0.995)),
-    entryHigh: Number(buyZone.high || (ltp * 1.012)),
-    chaseCap: Number(alertItem.chaseCap || (ltp * 1.018)),
-    stopLoss: sl,
-    slPct: alertItem.slPct || 3.5,
-    target1: t1,
-    t1Pct: alertItem.t1Pct || 8.0,
-    target2: t2,
-    t2Pct: alertItem.t2Pct || 15.0,
-    bcr3Buy,
-    bcr3Sell,
-    leadBrokerId,
-    leadBrokerName: cleanBrokerName,
-    retention10D,
-    vdu: alertItem.vdu || alertItem.vduRatio || 0.52,
-    cmf: cmfVal,
-    bbw: alertItem.bbw || alertItem.bbwPct || 11.2,
-    corneringScore: alertItem.corneringScore || alertItem.confluenceScore || alertItem.score || 92,
-    confidenceLabel: alertItem.confidenceLabel || alertItem.stageBadge || '🟢 Confirmed Stealth (v2.0)'
-  };
+  const upgradedPayload = enrichPayloadWithFlowchartV2RallyMetrics(
+    {
+      symbol: sym,
+      name: companyName,
+      companyName,
+      sector: alertItem.sector || stockUniverseMap[rawSym]?.sector || 'Equities',
+      ltp,
+      avgBrokerPrice,
+      pocPrice,
+      entryLow: Number(buyZone.low || (ltp * 0.995)),
+      entryHigh: Number(buyZone.high || (ltp * 1.012)),
+      chaseCap: Number(alertItem.chaseCap || (ltp * 1.018)),
+      stopLoss: sl,
+      slPct: alertItem.slPct || 3.5,
+      target1: t1,
+      t1Pct: alertItem.t1Pct || 8.0,
+      target2: t2,
+      t2Pct: alertItem.t2Pct || 15.0,
+      bcr3Buy,
+      bcr3Sell,
+      leadBrokerId,
+      leadBrokerName: cleanBrokerName,
+      retention10D,
+      vdu: alertItem.vdu || alertItem.vduRatio || 0.52,
+      cmf: cmfVal,
+      bbw: alertItem.bbw || alertItem.bbwPct || 11.2,
+      corneringScore: alertItem.corneringScore || alertItem.confluenceScore || alertItem.score || 92,
+      confidenceLabel: alertItem.confidenceLabel || alertItem.stageBadge || '🟢 Confirmed Stealth (v2.0)',
+      rallyTrack: alertItem.rallyTrack,
+      rallyHorizonLabel: alertItem.rallyHorizonLabel,
+      freeFloatCorneredPct: alertItem.freeFloatCorneredPct,
+      clv: alertItem.clv,
+      upperWickRatio: alertItem.upperWickRatio,
+      isNr7: alertItem.isNr7,
+      isIdnr4: alertItem.isIdnr4,
+      isPocketPivot: alertItem.isPocketPivot,
+      isT2ClearedContinuation: alertItem.isT2ClearedContinuation,
+      netVol: alertItem.netVol,
+      netKitta: alertItem.netKitta,
+      pChange: alertItem.pChange,
+      dayChgPct: alertItem.dayChgPct,
+    },
+    { db: ledgerDb, trapAudit, flowMetrics, ltp }
+  );
 
   const ticketHtml = formatUpgradedStealthAccumulationHtml(upgradedPayload);
   return await sendTelegramMessage(ticketHtml, 'HTML');
@@ -2476,32 +2794,60 @@ export async function sendTelegramPlaybookPickAlert(pick, options = {}) {
   const leadBrokerId = pick.leadBrokerId || (pick.topBuyers && pick.topBuyers[0] ? (pick.topBuyers[0].broker || pick.topBuyers[0].brokerId) : '58');
   const leadBrokerName = pick.leadBrokerName || BROKER_NAMES[String(leadBrokerId)] || 'Naasa Securities';
 
-  const v2Payload = {
-    symbol: pick.symbol,
-    name: pick.name || pick.companyName || pick.symbol,
-    companyName: pick.name || pick.companyName || pick.symbol,
-    sector: pick.sector || 'Equities',
-    ltp: Number(pick.ltp || 0),
-    entryLow: Number(pick.entryLow || (pick.ltp * 0.995)),
-    entryHigh: Number(pick.entryHigh || (pick.ltp * 1.012)),
-    chaseCap: Number(pick.chaseCap || (pick.ltp * 1.018)),
-    stopLoss: Number(pick.stopLoss || (pick.ltp * 0.965)),
-    slPct: Number(pick.slPct || 3.5),
-    target1: Number(pick.target1 || (pick.ltp * 1.080)),
-    t1Pct: Number(pick.t1Pct || 8.0),
-    target2: Number(pick.target2 || (pick.ltp * 1.150)),
-    t2Pct: Number(pick.t2Pct || 15.0),
-    bcr3Buy: Number(pick.bcr3Buy || 45.0),
-    bcr3Sell: Number(pick.bcr3Sell || 20.0),
-    leadBrokerId,
-    leadBrokerName,
-    retention10D: Number(pick.retention10D || pick.leadRetentionPct || 87),
-    vdu: Number(pick.vdu || pick.vduRatio || 0.52),
-    cmf: Number(pick.cmf !== undefined ? pick.cmf : 0.14),
-    bbw: Number(pick.bbw || pick.bbwPct || 8.4),
-    corneringScore: Number(pick.convictionScore || pick.corneringScore || 92),
-    confidenceLabel: '🟢 Confirmed Stealth (v2.0)'
-  };
+  let ledgerDb = null;
+  let trapAudit = null;
+  let flowMetrics = null;
+  try {
+    const { db, getSmartMoneyAggregatedFlow } = await import('./db/ledgerStore.js');
+    if (db) {
+      ledgerDb = db;
+      trapAudit = auditMultiSessionTrapRisk(db, pick.symbol, leadBrokerId);
+      const flow = getSmartMoneyAggregatedFlow(pick.symbol, 5);
+      flowMetrics = extract5DayBrokerFlowMetrics(flow, Number(pick.ltp || 0));
+    }
+  } catch (_) {}
+
+  const v2Payload = enrichPayloadWithFlowchartV2RallyMetrics(
+    {
+      symbol: pick.symbol,
+      name: pick.name || pick.companyName || pick.symbol,
+      companyName: pick.name || pick.companyName || pick.symbol,
+      sector: pick.sector || 'Equities',
+      ltp: Number(pick.ltp || 0),
+      avgBrokerPrice: pick.avgBrokerPrice,
+      entryLow: Number(pick.entryLow || (pick.ltp * 0.995)),
+      entryHigh: Number(pick.entryHigh || (pick.ltp * 1.012)),
+      chaseCap: Number(pick.chaseCap || (pick.ltp * 1.018)),
+      stopLoss: Number(pick.stopLoss || (pick.ltp * 0.965)),
+      slPct: Number(pick.slPct || 3.5),
+      target1: Number(pick.target1 || (pick.ltp * 1.080)),
+      t1Pct: Number(pick.t1Pct || 8.0),
+      target2: Number(pick.target2 || (pick.ltp * 1.150)),
+      t2Pct: Number(pick.t2Pct || 15.0),
+      bcr3Buy: Number(pick.bcr3Buy || 45.0),
+      bcr3Sell: Number(pick.bcr3Sell || 20.0),
+      leadBrokerId,
+      leadBrokerName,
+      retention10D: Number(pick.retention10D || pick.leadRetentionPct || 87),
+      vdu: Number(pick.vdu || pick.vduRatio || 0.52),
+      cmf: Number(pick.cmf !== undefined ? pick.cmf : 0.14),
+      bbw: Number(pick.bbw || pick.bbwPct || 8.4),
+      corneringScore: Number(pick.convictionScore || pick.corneringScore || 92),
+      confidenceLabel: pick.confidenceLabel || '🟢 Confirmed Stealth (v2.0)',
+      rallyTrack: pick.rallyTrack,
+      rallyHorizonLabel: pick.rallyHorizonLabel,
+      freeFloatCorneredPct: pick.freeFloatCorneredPct,
+      clv: pick.clv,
+      upperWickRatio: pick.upperWickRatio,
+      isNr7: pick.isNr7,
+      isIdnr4: pick.isIdnr4,
+      isPocketPivot: pick.isPocketPivot,
+      isT2ClearedContinuation: pick.isT2ClearedContinuation,
+      netVol: pick.netVol,
+      netKitta: pick.netKitta,
+    },
+    { db: ledgerDb, trapAudit, flowMetrics, ltp: Number(pick.ltp || 0) }
+  );
 
   const msg = formatUpgradedStealthAccumulationHtml(v2Payload);
   return await sendTelegramMessage(msg, { chatId: options?.chatId });
@@ -2989,7 +3335,7 @@ export async function select5StepSwingPicks() {
         }
       } catch (_) {}
 
-      const hasSmcStructure = smc.isBreakAndRetest || smc.isSmcSweepMss || smc.isFvgMitigated;
+      const hasSmcStructure = smc.isBreakAndRetest || smc.isSmcSweepMss || smc.isFvgMitigated || smc.isT2ClearedContinuation;
       const entryLow = Number(
         (smc.isFvgMitigated && smc.fvgLow
           ? Math.min(ltp, avgBrokerPrice, smc.fvgLow)
@@ -3044,6 +3390,18 @@ export async function select5StepSwingPicks() {
       const consecutiveDaysBonus = Math.min(14, (trapAudit.consecutiveDays || 1) * 3);
       const coilBonus = isCoilIgnitionBreakout ? 12 : 0;
       const smcConfluenceBonus = smc.smcConfluenceBonus || 0;
+      const sectorNameRaw = sig.sector || stockUniverseMap[sym]?.sector || 'Equities';
+      const estPublicFloatShares = estimatePublicFloatShares(sectorNameRaw, sig.publicFloatShares);
+      const freeFloatCorneredPct = Number(((Math.max(0, Number(trapAudit.total5DayNet || 0)) / Math.max(1, estPublicFloatShares)) * 100).toFixed(2));
+      const floatVelocityBonus = freeFloatCorneredPct >= 0.50 ? 8 : freeFloatCorneredPct >= 0.25 ? 5 : 0;
+
+      const { isUpperWickRejected, rallyTrack, rallyHorizonLabel } = classifyDualTrackRally({
+        smc,
+        isCoilIgnitionBreakout,
+        isPocketPivot,
+        leadRetentionPct,
+        dayChgPct,
+      });
 
       const totalScore = Math.min(
         99,
@@ -3057,7 +3415,8 @@ export async function select5StepSwingPicks() {
             pocBonus +
             consecutiveDaysBonus +
             coilBonus +
-            smcConfluenceBonus
+            smcConfluenceBonus +
+            floatVelocityBonus
         )
       );
 
@@ -3093,10 +3452,18 @@ export async function select5StepSwingPicks() {
         strategy: isCoilIgnitionBreakout ? 'COIL_IGNITION_BREAKOUT' : (sig.strategy || sig.signal_type || 'STEALTH_ACCUMULATION'),
         setupMode,
         confidenceLabel,
+        rallyTrack,
+        rallyHorizonLabel,
+        freeFloatCorneredPct,
         isCoilIgnitionBreakout,
         isPocketPivot,
         is20dBreakout,
         isSpringReclaim,
+        isNr7: smc.isNr7,
+        isIdnr4: smc.isIdnr4,
+        isT2ClearedContinuation: smc.isT2ClearedContinuation,
+        clv: smc.clv,
+        upperWickRatio: smc.upperWickRatio,
         isBreakAndRetest: smc.isBreakAndRetest,
         isSmcSweepMss: smc.isSmcSweepMss,
         isFvgMitigated: smc.isFvgMitigated,
@@ -3150,8 +3517,15 @@ export async function select5StepSwingPicks() {
         total5DayNet: trapAudit.total5DayNet,
         isStrict5StepPass:
           isCoilIgnitionBreakout ||
-          (hasFoundationForSmc &&
-            (smc.isBreakAndRetest || smc.isSmcSweepMss) &&
+          (!isUpperWickRejected &&
+            hasFoundationForSmc &&
+            (smc.isBreakAndRetest || smc.isSmcSweepMss || smc.isT2ClearedContinuation) &&
+            realBcr3Buy >= 40.0 &&
+            realBcr3Sell <= 35.0 &&
+            leadRetentionPct >= 70 &&
+            realVwapDiffPct <= 2.5) ||
+          (!isUpperWickRejected &&
+            (isPocketPivot || smc.isNr7 || smc.isIdnr4) &&
             realBcr3Buy >= 40.0 &&
             realBcr3Sell <= 35.0 &&
             leadRetentionPct >= 70 &&
@@ -3262,19 +3636,26 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId
     SMC_SWEEP_MSS_FVG: '⚡ SMC',
     STEALTH_FLOOR_ACCUMULATION: '💎 Stealth',
   };
+  const TRACK_BADGE_MAP = {
+    TRACK_A_COILED_2_3D_IGNITION: 'Track A: 2–3D',
+    TRACK_B_T2_CLEARED_CONTINUATION: 'Track B: T+2',
+    STANDARD_ACCUMULATION: 'Stealth Base',
+  };
   const topModeBadge = MODE_BADGE_MAP[topWinner?.setupMode] || '💎 Stealth';
+  const topTrackBadge = TRACK_BADGE_MAP[topWinner?.rallyTrack] || 'Stealth Base';
   const runnerUpSection = runnerUps && runnerUps.length > 0
     ? [
         `\n\n📋 <b>TOP 5 FLOWCHART v2.0 CANDIDATE BACKUP TABLE:</b>`,
-        `• <b>#1 <code>$${escapeHtml(topWinner.symbol)}</code></b> (${topModeBadge}) | Score: ${topWinner.corneringScore || topWinner.totalScore || 95}/100 | LTP: Rs. ${Number(topWinner.ltp).toFixed(1)} | SL: Rs. ${Number(topWinner.stopLoss).toFixed(1)} 👑 <i>(Prime Ticket Above)</i>`,
+        `• <b>#1 <code>$${escapeHtml(topWinner.symbol)}</code></b> (${topModeBadge} • ${topTrackBadge}) | Score: ${topWinner.corneringScore || topWinner.totalScore || 95}/100 | LTP: Rs. ${Number(topWinner.ltp).toFixed(1)} | SL: Rs. ${Number(topWinner.stopLoss).toFixed(1)} 👑 <i>(Prime Ticket Above)</i>`,
         ...runnerUps.slice(0, 4).map((r, idx) => {
           const rSym = escapeHtml(r.symbol);
           const rBadge = MODE_BADGE_MAP[r.setupMode] || '💎 Stealth';
+          const rTrackBadge = TRACK_BADGE_MAP[r.rallyTrack] || 'Stealth Base';
           const rScore = r.corneringScore || r.totalScore || r.score || 85;
           const rLtp = Number(r.ltp || r.closePrice || 0).toFixed(1);
           const rSl = Number(r.stopLoss || (r.ltp * 0.965)).toFixed(1);
           const rRet = Number(r.retention10D || r.retentionPct || 80).toFixed(0);
-          return `• <b>#${idx + 2} <code>$${rSym}</code></b> (${rBadge}) | Score: ${rScore}/100 | LTP: Rs. ${rLtp} | SL: Rs. ${rSl} | Ret: ${rRet}%`;
+          return `• <b>#${idx + 2} <code>$${rSym}</code></b> (${rBadge} • ${rTrackBadge}) | Score: ${rScore}/100 | LTP: Rs. ${rLtp} | SL: Rs. ${rSl} | Ret: ${rRet}%`;
         })
       ].join('\n')
     : '';
@@ -3316,6 +3697,30 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
   const sector = escapeHtml(winner.sector || 'Equities');
   const score = winner.corneringScore || winner.totalScore || winner.score || 95;
   const confidenceLabel = escapeHtml(winner.confidenceLabel || '🟢 Confirmed Stealth (v2.0)');
+  const rallyHorizonLabel = escapeHtml(
+    winner.rallyHorizonLabel ||
+      (winner.rallyTrack === 'TRACK_B_T2_CLEARED_CONTINUATION'
+        ? 'Track B: Post-T+2 Cleared Continuation'
+        : winner.rallyTrack === 'TRACK_A_COILED_2_3D_IGNITION'
+          ? 'Track A: 2–3 Day Ignition Watch'
+          : 'Institutional Base Accumulation')
+  );
+  const freeFloatCorneredPct = Number(winner.freeFloatCorneredPct ?? 0);
+  const clvPct = Number(winner.clv !== undefined ? winner.clv * 100 : 65).toFixed(0);
+  const wickPct = Number(winner.upperWickRatio !== undefined ? winner.upperWickRatio * 100 : 12).toFixed(0);
+  const triggerSummary = winner.isT2ClearedContinuation
+    ? 'T+2 Demat Settlement Survived + Pullback Dry-Up'
+    : winner.isIdnr4
+      ? 'IDNR4 Volatility Coil + Institutional Absorption'
+      : winner.isNr7 && winner.isPocketPivot
+        ? 'NR7 Volatility Coil + Pocket Pivot Ignition'
+        : winner.isNr7
+          ? 'NR7 Tightest 7-Session Coil Holding Above 20 EMA'
+          : winner.isPocketPivot
+            ? 'Pocket Pivot Institutional Volume Absorption'
+            : winner.isBreakAndRetest
+              ? 'Confirmed Multi-Day Break & Retest Hold'
+              : 'Orderly Floor Base Holding Above 20 EMA';
 
   // Execution Plan Levels
   const entryLow = Number(winner.entryLow || (ltp * 0.995)).toFixed(1);
@@ -3363,6 +3768,7 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
     `<b>Scrip:</b> <code>${sym}</code> (${name})`,
     `<b>Sector:</b> ${sector} | <b>LTP:</b> Rs. ${ltp.toFixed(1)}`,
     `<b>Setup Status:</b> <b>${confidenceLabel}</b> (Score: ${score}/100)`,
+    `<b>Rally Track:</b> <b>${rallyHorizonLabel}</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🛡️ <b>LAYER 0 &amp; 1: ZERO-TRAP &amp; SQUEEZE VALIDATION</b>`,
     `• Gate 0 Trap Immunity: <b>100% PASSED (No Dump / No Churn)</b>`,
@@ -3379,6 +3785,12 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
     `• Clean Delivery Retention: <b>${netRet}%</b> (>= 70.0% Delivery Absorption)`,
     `• Wyckoff Volume Dry-Up (VDU): <b>${vdu}x</b> (<= 0.60x 20D SMA Exhaustion)`,
     `• Chaikin Money Flow (CMF): <b>${cmfStr}</b> (Positive Institutional Inflow)`,
+    ``,
+    `🚀 <b>LAYER 4: DUAL-TRACK RALLY &amp; IGNITION HORIZON (v2.0)</b>`,
+    `• 🧭 <b>Rally Track:</b> <b>${rallyHorizonLabel}</b>`,
+    `• ⚡ <b>Ignition / Survival Trigger:</b> <b>${escapeHtml(triggerSummary)}</b>`,
+    `• 🧲 <b>5D Free-Float Cornered:</b> <b>${freeFloatCorneredPct.toFixed(2)}%</b> of Sector Public Float`,
+    `• 🕯️ <b>Close Location Value (CLV):</b> <b>${clvPct}%</b> (Upper-Wick Ratio: <b>${wickPct}%</b> &lt;= 45% Safe)`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🎯 <b>LAYER 5: DYNAMIC RATCHET EXECUTION TICKET</b>`,
     `• 🟢 <b>Limit Buy Zone:</b> <code>Rs. ${entryLow} – Rs. ${entryHigh}</code>`,
@@ -3406,12 +3818,20 @@ export async function sendTelegramPrimePickAlert(winner) {
   if (!winner || !winner.symbol) return { success: false, error: 'No symbol provided' };
 
   // Enforce 5-Day Multi-Session Trap Veto Gate
+  let ledgerDb = null;
+  let trapAudit = null;
+  let flowMetrics = null;
   try {
-    const { db } = await import('./db/ledgerStore.js');
-    const trapAudit = auditMultiSessionTrapRisk(db, winner.symbol);
-    if (trapAudit && trapAudit.isTrap) {
-      console.log(`[sendTelegramPrimePickAlert] 🚫 Hard Veto ${winner.symbol}: ${trapAudit.reason}`);
-      return { success: false, reason: trapAudit.reason, isVetoed: true };
+    const { db, getSmartMoneyAggregatedFlow } = await import('./db/ledgerStore.js');
+    if (db) {
+      ledgerDb = db;
+      trapAudit = auditMultiSessionTrapRisk(db, winner.symbol);
+      if (trapAudit && trapAudit.isTrap) {
+        console.log(`[sendTelegramPrimePickAlert] 🚫 Hard Veto ${winner.symbol}: ${trapAudit.reason}`);
+        return { success: false, reason: trapAudit.reason, isVetoed: true };
+      }
+      const flow = getSmartMoneyAggregatedFlow(winner.symbol, 5);
+      flowMetrics = extract5DayBrokerFlowMetrics(flow, Number(winner.ltp || winner.c || 0));
     }
   } catch (_) {}
 
@@ -3420,7 +3840,13 @@ export async function sendTelegramPrimePickAlert(winner) {
     return { success: false, error: 'Invalid LTP for prime pick' };
   }
 
-  const msg = formatUpgradedStealthAccumulationHtml(winner);
+  const enrichedWinner = enrichPayloadWithFlowchartV2RallyMetrics(winner, {
+    db: ledgerDb,
+    trapAudit,
+    flowMetrics,
+    ltp,
+  });
+  const msg = formatUpgradedStealthAccumulationHtml(enrichedWinner);
   return await sendTelegramMessage(msg, 'HTML');
 }
 

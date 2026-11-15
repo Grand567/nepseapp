@@ -468,6 +468,25 @@ export async function runPostMarketCloseAnalysis(force = false) {
     );
     if (swingRes && swingRes.topPick) {
       setVerifiedPostMarketPrimePick(swingRes.topPick);
+      try {
+        const tp = swingRes.topPick;
+        broadcastAlert({
+          id: `flowchart_v2_prime_${tp.symbol}_${targetDate}`,
+          symbol: tp.symbol,
+          type: 'INSTITUTIONAL_ENTRY',
+          category: 'pro',
+          tier: 'pro',
+          isPro: true,
+          skipTelegram: true,
+          action: 'OPEN_STOCK_DETAIL',
+          ltp: tp.ltp,
+          title: `👑 Flowchart v2.0 Prime Pick: ${tp.symbol}`,
+          body: `${tp.rallyHorizonLabel || 'Flowchart v2.0'} | Buy Zone: Rs. ${tp.entryLow}–${tp.entryHigh} | SL: Rs. ${tp.stopLoss} | T1: Rs. ${tp.target1}`,
+          rallyTrack: tp.rallyTrack,
+          rallyHorizonLabel: tp.rallyHorizonLabel,
+          triggeredAt: new Date().toISOString(),
+        });
+      } catch (_) {}
     }
     // 5-Day Rolling Ledger Roll: Roll today into 4-day immutable ledger, prune oldest, & reset File A
     await runCalendarGuardedDailyTransition({ targetDate }).catch(e =>
@@ -681,7 +700,8 @@ import {
   untrackCustomHolding, 
   getUserTrackedHoldings,
   pollLiveNewsAndIpoAlerts,
-  checkAndDispatchScheduledNonHoldingDigest
+  checkAndDispatchScheduledNonHoldingDigest,
+  broadcastAlert
 } from './smartAlertEngine.mjs';
 
 let workersStarted = false;
