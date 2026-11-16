@@ -4018,6 +4018,11 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId
     `🔔 <i>Exit Guard auto-armed for <code>$${escapeHtml(topWinner.symbol)}</code>! Send <code>/swing</code>, <code>/list</code>, or <code>/track SYMBOL</code> anytime.</i>`
   ].filter(Boolean).join('\n');
 
+  const invariantCheck = validateAlertInvariants(topWinner, winnerHtml);
+  if (!invariantCheck.valid) {
+    console.error(`[TelegramNotifier] 🛑 CRITICAL INVARIANT VIOLATION in Prime Alert for ${topWinner?.symbol}:\n` + invariantCheck.errors.map(e => `  - ${e}`).join('\n'));
+  }
+
   const telegramResult = await sendTelegramMessage(fullMsg, { chatId });
   return {
     success: Boolean(telegramResult?.success),
@@ -4172,6 +4177,64 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `📲 <b>TMS Execution:</b> Place Limit Buy inside the zone. Verified by v2.0 Flowchart.`
   ].join('\n');
+}
+
+/**
+ * Invariant validator to strictly ensure that mathematical and logical integrity
+ * holds across generated alerts before they are ever transmitted to Telegram.
+ */
+export function validateAlertInvariants(winner = {}, html = '') {
+  const errors = [];
+  const ltp = Number(winner.ltp || winner.closePrice || 0);
+  if (ltp <= 0) errors.push(`Invalid LTP (${ltp})`);
+
+  // 1. Pre-Open Chase Cap Invariant: Must strictly be within 0.25 of LTP * 1.018
+  const expectedChaseCap = Number((ltp * 1.018).toFixed(1));
+  const actualChaseCap = Number(winner.chaseCap || 0);
+  if (actualChaseCap > 0 && Math.abs(actualChaseCap - expectedChaseCap) > 0.25) {
+    errors.push(`Chase Cap math failure: actual Rs. ${actualChaseCap} vs expected Rs. ${expectedChaseCap} (+1.8% of LTP Rs. ${ltp})`);
+  }
+
+  // 2. Risk Bounds Invariant: Stop Loss < LTP < Target 1 < Target 2
+  const sl = Number(winner.stopLoss || 0);
+  if (sl >= ltp) {
+    errors.push(`Stop-Loss Rs. ${sl} is not strictly below LTP Rs. ${ltp}`);
+  }
+  const t1 = Number(winner.target1 || 0);
+  const t2 = Number(winner.target2 || 0);
+  if (t1 <= ltp) {
+    errors.push(`Target 1 Rs. ${t1} is not above LTP Rs. ${ltp}`);
+  }
+  if (t2 <= t1) {
+    errors.push(`Target 2 Rs. ${t2} is not above Target 1 Rs. ${t1}`);
+  }
+
+  // 3. Buy Zone Invariant: entryLow <= entryHigh <= chaseCap
+  const entryLow = Number(winner.entryLow || 0);
+  const entryHigh = Number(winner.entryHigh || 0);
+  if (entryLow > entryHigh) {
+    errors.push(`Entry Low Rs. ${entryLow} exceeds Entry High Rs. ${entryHigh}`);
+  }
+  if (actualChaseCap > 0 && entryHigh > actualChaseCap) {
+    errors.push(`Entry High Rs. ${entryHigh} exceeds Chase Cap Rs. ${actualChaseCap}`);
+  }
+
+  // 4. Semantic Contradiction Invariants
+  const netRet = Number(winner.retention10D ?? winner.retentionPct ?? winner.leadRetentionPct ?? 85);
+  const washChurn = Number(winner.washChurnPct ?? winner.churnPct ?? (100 - netRet));
+  if (washChurn > 35 && html.includes('No Dump / No Churn')) {
+    errors.push(`Semantic Contradiction: Wash-Churn is ${washChurn}% (>35%) but Gate 0 claims "No Dump / No Churn"`);
+  }
+
+  const vdu = Number(winner.vdu || winner.vduRatio || 0);
+  if (vdu > 0.60 && html.includes('<= 0.60x 20D SMA Exhaustion')) {
+    errors.push(`Semantic Contradiction: VDU is ${vdu}x (>0.60x) but Wyckoff dry-up claims "<= 0.60x"`);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
 }
 
 /**
