@@ -3659,8 +3659,8 @@ export async function select5StepSwingPicks(opts = {}) {
           : Math.min(ltp, avgBrokerPrice)
         ).toFixed(1)
       );
-      const entryHigh = Number(Math.max(ltp, avgBrokerPrice * 1.012).toFixed(1));
-      const chaseCap = Number((entryHigh * 1.025).toFixed(1));
+      const chaseCap = Number((ltp * 1.018).toFixed(1));
+      const entryHigh = Number(Math.min(Math.max(ltp, avgBrokerPrice * 1.012), chaseCap).toFixed(1));
       const baseSl = Number(sig.stop_loss_price || ltp * 0.95);
       const stopLoss = Number(
         (hasSmcStructure && smc.smcStopLoss > 0 ? smc.smcStopLoss : baseSl).toFixed(2)
@@ -3749,7 +3749,10 @@ export async function select5StepSwingPicks(opts = {}) {
 
       let setupMode = 'STEALTH_FLOOR_ACCUMULATION';
       let confidenceLabel = '💎 STEALTH FLOOR ACCUMULATION (v2.0)';
-      if (hasFoundationForSmc && smc.isBreakAndRetest && isCoilIgnitionBreakout) {
+      if (rallyTrack === 'TRACK_B_T2_CLEARED_CONTINUATION' || smc.isT2ClearedContinuation) {
+        setupMode = 'SMC_BREAK_AND_RETEST';
+        confidenceLabel = '🎯 TRACK B: POST-T+2 CONTINUATION (v2.0)';
+      } else if (hasFoundationForSmc && smc.isBreakAndRetest && isCoilIgnitionBreakout) {
         setupMode = 'COIL_IGNITION_BREAKOUT';
         confidenceLabel = '🚀 COIL IGNITION + RETEST (v2.0)';
       } else if (hasFoundationForSmc && smc.isBreakAndRetest) {
@@ -3865,17 +3868,26 @@ export async function select5StepSwingPicks(opts = {}) {
       }
     }
 
+    const getTrackPriority = (track) => {
+      if (track === 'TRACK_B_T2_CLEARED_CONTINUATION') return 3;
+      if (track === 'TRACK_A_COILED_2_3D_IGNITION') return 2;
+      return 1;
+    };
+
     strictMatches.sort(
       (a, b) =>
         (b.totalScore - a.totalScore) ||
-        (b.freeFloatCorneredPct - a.freeFloatCorneredPct) ||
-        (Number(b.isCoilIgnitionBreakout) - Number(a.isCoilIgnitionBreakout)) ||
+        (getTrackPriority(b.rallyTrack) - getTrackPriority(a.rallyTrack)) ||
+        ((b.leadRetentionPct || 0) - (a.leadRetentionPct || 0)) ||
         ((b.bcr3Buy - b.bcr3Sell) - (a.bcr3Buy - a.bcr3Sell)) ||
+        (b.freeFloatCorneredPct - a.freeFloatCorneredPct) ||
         (a.vwapDiffPct - b.vwapDiffPct)
     );
     secondaryMatches.sort(
       (a, b) =>
         (b.totalScore - a.totalScore) ||
+        (getTrackPriority(b.rallyTrack) - getTrackPriority(a.rallyTrack)) ||
+        ((b.leadRetentionPct || 0) - (a.leadRetentionPct || 0)) ||
         ((b.bcr3Buy - b.bcr3Sell) - (a.bcr3Buy - a.bcr3Sell)) ||
         (a.vwapDiffPct - b.vwapDiffPct)
     );
@@ -4056,9 +4068,9 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
 
   // Execution Plan Levels
   const basePrice = Math.max(1, ltp || Number(winner.avgBrokerPrice) || 100);
-  const entryLow = Number(winner.entryLow || (basePrice * 0.995)).toFixed(1);
-  const entryHigh = Number(winner.entryHigh || (basePrice * 1.012)).toFixed(1);
   const chaseCap = Number(winner.chaseCap || (basePrice * 1.018)).toFixed(1);
+  const entryLow = Number(winner.entryLow || (basePrice * 0.995)).toFixed(1);
+  const entryHigh = Number(Math.min(Number(winner.entryHigh || (basePrice * 1.012)), Number(chaseCap))).toFixed(1);
   const sl = Number(winner.stopLoss || (basePrice * 0.965)).toFixed(1);
   const slPct = Number(winner.slPct || 3.5).toFixed(1);
 
@@ -4086,10 +4098,16 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
   const bcr3SpreadStr = `${bcr3SpreadVal >= 0 ? '+' : ''}${bcr3SpreadVal.toFixed(1)}%`;
   const netRet = Number(winner.retention10D ?? winner.retentionPct ?? winner.leadRetentionPct ?? 85).toFixed(0);
   const washChurnPct = Number(winner.washChurnPct ?? winner.churnPct ?? Math.max(0, 100 - Number(netRet))).toFixed(0);
+  const isHighChurn = Number(washChurnPct) > 35;
+  const gate0Text = isHighChurn
+    ? `PASSED (No Operator Dump | ⚠️ Churn Elevated: ${washChurnPct}%)`
+    : `100% PASSED (No Operator Dump / Clean Retention: ${netRet}%)`;
   const leadBrokerId = winner.leadBrokerId || winner.leadBroker || '58';
   const rawLeadName = BROKER_NAMES[String(leadBrokerId)] || winner.leadBrokerName || `Broker #${leadBrokerId}`;
   const cleanLeadBroker = escapeHtml(String(rawLeadName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd)\b/gi, '').trim());
   const vdu = Number(winner.vdu || winner.vduRatio || 0.48).toFixed(2);
+  const vduNum = Number(vdu);
+  const vduLabel = vduNum <= 0.60 ? '&lt;= 0.60x Exhaustion Clean ✅' : '&gt; 0.60x Moderate Volume ⚠️';
   const cmfVal = Number(winner.cmf !== undefined ? winner.cmf : 0.12);
   const cmfStr = (cmfVal >= 0 ? '+' : '') + cmfVal.toFixed(2);
   const bbw = Number(winner.bbw || winner.bbwPct || 11.2).toFixed(1);
@@ -4111,7 +4129,7 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
     `<b>Rally Track:</b> <b>${rallyHorizonLabel}</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🛡️ <b>LAYER 0 &amp; 1: ZERO-TRAP &amp; SQUEEZE VALIDATION</b>`,
-    `• Gate 0 Trap Immunity: <b>100% PASSED (No Dump / No Churn)</b>`,
+    `• Gate 0 Trap Immunity: <b>${gate0Text}</b>`,
     `• Volatility Contraction: BBW <b>${bbw}%</b> (&lt;= 14.0%) | Narrow Range Bar`,
     `• Seller Dominance Ceiling: BCR3 Sell <b>${bcr3Sell}%</b> (&lt; 45% Safe Ceiling)`,
     ``,
@@ -4124,7 +4142,7 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
     `• Fair Value Gap (FVG): <b>${escapeHtml(winner.fvgNarrative || 'Balanced Auction Near Broker VWAP')}</b>`,
     `• Top 3 Buyer Concentration (BCR3): <b>${bcr3Buy}%</b> vs BCR3 Sell <b>${bcr3Sell}%</b> (Net Spread: <b>${bcr3SpreadStr}</b>)`,
     `• Clean Delivery Retention: <b>${netRet}%</b> | <b>Wash-Churn Rate:</b> <b>${washChurnPct}%</b> (${Number(washChurnPct) <= 35 ? '&lt;= 35% Clean ✅' : '&gt; 35% Elevated Churn ⚠️'})`,
-    `• Wyckoff Volume Dry-Up (VDU): <b>${vdu}x</b> (&lt;= 0.60x 20D SMA Exhaustion)`,
+    `• Wyckoff Volume Dry-Up (VDU): <b>${vdu}x</b> (${vduLabel})`,
     `• Chaikin Money Flow (CMF): <b>${cmfStr}</b> (Positive Institutional Inflow)`,
     ``,
     `🚀 <b>LAYER 4: DUAL-TRACK RALLY &amp; IGNITION HORIZON (v2.0)</b>`,
