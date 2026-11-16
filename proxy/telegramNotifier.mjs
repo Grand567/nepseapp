@@ -710,16 +710,33 @@ export function formatFlowchartTrackDisplay(rallyTrack, rallyHorizonLabel = '', 
   };
 }
 
-function estimatePublicFloatShares(sectorName = 'Equities', explicitFloatShares = 0) {
+function estimatePublicFloatShares(sectorName = 'Equities', explicitFloatShares = 0, sym = null, db = null) {
   const explicit = Number(explicitFloatShares);
   if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  if (sym && db) {
+    try {
+      const fund = db.prepare('SELECT public_float_kitta, paid_up_capital, sector FROM scrip_fundamentals WHERE symbol = ?').get(sym);
+      if (fund) {
+        if (Number(fund.public_float_kitta) > 0) return Number(fund.public_float_kitta);
+        if (Number(fund.paid_up_capital) > 0) {
+          const estKitta = Number(fund.paid_up_capital) / 100;
+          const sec = fund.sector || sectorName;
+          if (/Commercial Bank/i.test(sec)) return estKitta * 0.30;
+          if (/Hydro/i.test(sec)) return estKitta * 0.20;
+          if (/Finance|Development Bank/i.test(sec)) return estKitta * 0.40;
+          if (/Microfinance/i.test(sec)) return estKitta * 0.35;
+          return estKitta * 0.25;
+        }
+      }
+    } catch (_) {}
+  }
   const sec = String(sectorName || '');
-  if (/Microfinance/i.test(sec)) return 1_800_000;
+  if (/Microfinance/i.test(sec)) return 1_500_000;
   if (/Finance/i.test(sec)) return 3_500_000;
-  if (/Hydro/i.test(sec)) return 4_500_000;
+  if (/Hydro/i.test(sec)) return 6_000_000;
   if (/Hotel|Tourism/i.test(sec)) return 4_000_000;
-  if (/Development Bank/i.test(sec)) return 8_000_000;
-  if (/Commercial Bank|Bank/i.test(sec)) return 35_000_000;
+  if (/Development Bank/i.test(sec)) return 4_500_000;
+  if (/Commercial Bank|Bank/i.test(sec)) return 25_000_000;
   return 5_000_000;
 }
 
@@ -3607,9 +3624,9 @@ export async function select5StepSwingPicks() {
       const coilBonus = isCoilIgnitionBreakout ? 12 : 0;
       const smcConfluenceBonus = smc.smcConfluenceBonus || 0;
       const sectorNameRaw = sig.sector || stockUniverseMap[sym]?.sector || 'Equities';
-      const estPublicFloatShares = estimatePublicFloatShares(sectorNameRaw, sig.publicFloatShares);
+      const estPublicFloatShares = estimatePublicFloatShares(sectorNameRaw, sig.publicFloatShares, sym, db);
       const freeFloatCorneredPct = Number(((Math.max(0, Number(trapAudit.total5DayNet || 0)) / Math.max(1, estPublicFloatShares)) * 100).toFixed(2));
-      const floatVelocityBonus = freeFloatCorneredPct >= 0.50 ? 8 : freeFloatCorneredPct >= 0.25 ? 5 : 0;
+      const floatVelocityBonus = freeFloatCorneredPct >= 2.0 ? 15 : freeFloatCorneredPct >= 1.0 ? 10 : freeFloatCorneredPct >= 0.50 ? 6 : freeFloatCorneredPct >= 0.25 ? 3 : 0;
 
       const { isUpperWickRejected, rallyTrack, rallyHorizonLabel } = classifyDualTrackRally({
         smc,
@@ -3735,8 +3752,11 @@ export async function select5StepSwingPicks() {
         trapAuditReason: trapAudit.reason,
         consecutiveDays: trapAudit.consecutiveDays,
         total5DayNet: trapAudit.total5DayNet,
+        freeFloatCorneredPct,
+        estPublicFloatShares,
         isStrict5StepPass:
           rallyTrack !== 'TRACK_A_MUTED_CHOP_VETO' &&
+          (freeFloatCorneredPct >= 0.20 || Number(trapAudit.total5DayNet || 0) >= 25000) &&
           ((isCoilIgnitionBreakout && !isUpperWickRejected) ||
             (!isUpperWickRejected &&
               hasFoundationForSmc &&
@@ -3764,6 +3784,7 @@ export async function select5StepSwingPicks() {
     strictMatches.sort(
       (a, b) =>
         (b.totalScore - a.totalScore) ||
+        (b.freeFloatCorneredPct - a.freeFloatCorneredPct) ||
         (Number(b.isCoilIgnitionBreakout) - Number(a.isCoilIgnitionBreakout)) ||
         ((b.bcr3Buy - b.bcr3Sell) - (a.bcr3Buy - a.bcr3Sell)) ||
         (a.vwapDiffPct - b.vwapDiffPct)
