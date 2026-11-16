@@ -362,22 +362,6 @@ export async function sendTelegramMessage(text, optionsOrParseMode = 'HTML') {
     return { success: false, reason: 'Telegram Bot Token is invalid or revoked (HTTP 401 Unauthorized). Retries suspended.' };
   }
 
-  // Multi-message chunking for payloads exceeding Telegram 4096 char limit
-  if (text && text.length > 3900) {
-    const chunks = splitMessageIntoTelegramChunks(text, 3900);
-    if (chunks.length > 1) {
-      console.log(`[TelegramNotifier] Splitting large message (${text.length} chars) into ${chunks.length} safe chunks...`);
-      let lastRes = null;
-      for (let i = 0; i < chunks.length; i++) {
-        lastRes = await sendTelegramMessage(chunks[i], { parseMode, chatId: targetChatId });
-        if (i < chunks.length - 1) {
-          await new Promise(r => setTimeout(r, 250));
-        }
-      }
-      return { success: Boolean(lastRes?.success), messageId: lastRes?.messageId, chunksDispatched: chunks.length };
-    }
-  }
-
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
   if (isTestEnv && process.env.TEST_LIVE_TELEGRAM !== 'true') {
     return { success: true, messageId: 999999, mocked: true };
@@ -388,6 +372,22 @@ export async function sendTelegramMessage(text, optionsOrParseMode = 'HTML') {
 
   if (!cfg.enabled || !cfg.botToken || !effectiveChatId) {
     return { success: false, reason: 'Telegram notifications not configured or disabled' };
+  }
+
+  // Multi-message chunking for payloads exceeding Telegram 4096 char limit
+  if (text && text.length > 3900) {
+    const chunks = splitMessageIntoTelegramChunks(text, 3900);
+    if (chunks.length > 1) {
+      console.log(`[TelegramNotifier] Splitting large message (${text.length} chars) into ${chunks.length} safe chunks...`);
+      let lastRes = null;
+      for (let i = 0; i < chunks.length; i++) {
+        lastRes = await sendTelegramMessage(chunks[i], { parseMode, chatId: effectiveChatId });
+        if (i < chunks.length - 1) {
+          await new Promise(r => setTimeout(r, 250));
+        }
+      }
+      return { success: Boolean(lastRes?.success), messageId: lastRes?.messageId, chunksDispatched: chunks.length };
+    }
   }
 
   const payload = {
@@ -2230,7 +2230,7 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
   }
 
   try {
-    const { getSmartMoneyAggregatedFlow, getSymbolHistoryFromDb } = await import('./db/ledgerStore.js');
+    const { db, getSmartMoneyAggregatedFlow, getSymbolHistoryFromDb } = await import('./db/ledgerStore.js');
 
     const hist = getSymbolHistoryFromDb(sym, 30);
     if (!hist || hist.length === 0) {
@@ -2350,24 +2350,39 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
     const top3Buyers = buyers.slice(0, 3);
     const top3Sellers = sellers.slice(0, 3);
 
-    const top3BuyVol = top3Buyers.reduce((acc, b) => acc + Number(b.buyVolume || 0), 0);
+    const top3GrossBuyVol = top3Buyers.reduce((acc, b) => acc + Number(b.buyVolume || 0), 0);
     const top3BuyAmt = top3Buyers.reduce((acc, b) => acc + Number(b.buyAmount || 0), 0);
-    const top3SellVol = top3Sellers.reduce((acc, s) => acc + Number(s.sellVolume || 0), 0);
+    const top3NetBuyVol = top3Buyers.reduce((acc, b) => acc + Math.max(0, Number(b.buyVolume || 0) - Number(b.sellVolume || 0)), 0);
+
+    const top3GrossSellVol = top3Sellers.reduce((acc, s) => acc + Number(s.sellVolume || 0), 0);
+    const top3NetSellVol = top3Sellers.reduce((acc, s) => acc + Math.max(0, Number(s.sellVolume || 0) - Number(s.buyVolume || 0)), 0);
+
+    const top3RetPct = top3GrossBuyVol > 0 ? Math.round((top3NetBuyVol / top3GrossBuyVol) * 100) : 0;
+    const institutionalNetSpreadShares = top3NetBuyVol - top3NetSellVol;
 
     const totalBuyVolAll = flow.reduce((acc, f) => acc + Number(f.buyVolume || 0), 0);
     const totalSellVolAll = flow.reduce((acc, f) => acc + Number(f.sellVolume || 0), 0);
 
-    const bcr3Buy = totalBuyVolAll > 0 ? +((top3BuyVol / totalBuyVolAll) * 100).toFixed(1) : 50.0;
-    const bcr3Sell = totalSellVolAll > 0 ? +((top3SellVol / totalSellVolAll) * 100).toFixed(1) : 35.0;
+    const bcr3Buy = totalBuyVolAll > 0 ? +((top3GrossBuyVol / totalBuyVolAll) * 100).toFixed(1) : 50.0;
+    const bcr3Sell = totalSellVolAll > 0 ? +((top3GrossSellVol / totalSellVolAll) * 100).toFixed(1) : 35.0;
     const bcr3SpreadVal = +(bcr3Buy - bcr3Sell).toFixed(1);
     const bcr3SpreadStr = `${bcr3SpreadVal >= 0 ? '+' : ''}${bcr3SpreadVal.toFixed(1)}%`;
 
     // Combined Average Broker Buy Price
-    let avgBrokerPrice = top3BuyVol > 0 ? +(top3BuyAmt / top3BuyVol).toFixed(1) : ltp;
+    let avgBrokerPrice = top3GrossBuyVol > 0 ? +(top3BuyAmt / top3GrossBuyVol).toFixed(1) : ltp;
     if (!avgBrokerPrice || avgBrokerPrice <= 0) avgBrokerPrice = ltp;
 
     const distFromBroker = +(((ltp - avgBrokerPrice) / avgBrokerPrice) * 100).toFixed(1);
     const distSign = distFromBroker >= 0 ? '+' : '';
+
+    // Multi-Timeframe VWAPs
+    let vwapData = { vwap5D: null, vwap15D: null, vwap1M: null };
+    try {
+      vwapData = computeMultiTimeframeVwap(sym, db);
+    } catch (_) {}
+    const v5Str = vwapData?.vwap5D ? `Rs. ${vwapData.vwap5D}` : 'N/A';
+    const v15Str = vwapData?.vwap15D ? `Rs. ${vwapData.vwap15D}` : 'N/A';
+    const v1MStr = vwapData?.vwap1M ? `Rs. ${vwapData.vwap1M}` : 'N/A';
 
     // Lead Accumulator & Wash-Churn Audit
     const leadBuyer = top3Buyers[0] || null;
@@ -2461,30 +2476,17 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
     const leadSellerNet = leadSeller ? (leadSeller.sellVolume - leadSeller.buyVolume) : 0;
 
     // Decision Gates & Appropriateness Verdict
-    const isNetAccumulated = (top3BuyVol > top3SellVol * 1.15) && (leadNetVol > 0);
-    const isDumping = (top3SellVol > top3BuyVol * 1.30) || (leadSellerNet > top3BuyVol * 0.5);
+    const isNetInstitutionalPositive = (top3NetBuyVol > top3NetSellVol) && (leadNetVol > 0);
+    const isSevereDumping = (top3NetSellVol > top3NetBuyVol * 1.15) || (leadSellerNet > top3NetBuyVol * 0.6) || (bcr3Sell > 45 && bcr3Buy < bcr3Sell);
+    const isHeavyChurn = maxChurn > 50 || top3RetPct < 40;
+    const isDistributionCandle = wickPct > 45 && clvPct < 35;
     const isPriceNearBasis = distFromBroker >= -4.5 && distFromBroker <= 3.8;
     const isExtended = distFromBroker > 4.5 || pChange > 6.0;
     const isTrendSafe = ltp >= (ema20 * 0.96);
+    const isFlowchartTrackApproved = trackInfo.rallyTrack === 'TRACK_A_BREAKOUT' || trackInfo.rallyTrack === 'TRACK_B_RETEST';
+    const isTrueCornering = isNetInstitutionalPositive && leadRetention5D >= 65 && bcr3Buy >= 30 && bcr3SpreadVal >= 8.0 && !isHeavyChurn;
 
-    let verdictBadge = '';
-    let verdictReason = '';
-
-    if (isDumping) {
-      verdictBadge = '🔴 <b>NOT APPROPRIATE / HIGH DOWNSIDE RISK (DISTRIBUTION TRAP)</b>';
-      verdictReason = `Broker #${leadSellerId} (${cleanLeadSeller}) and top sellers dumped <b>${top3SellVol.toLocaleString()} Kitta</b>, overwhelming buyers. Retail liquidity is being used as exit liquidity. <b>Do NOT buy! Preserve cash.</b>`;
-    } else if (isExtended) {
-      verdictBadge = '🟡 <b>WATCHLIST ONLY / PULLBACK REQUIRED (LATE CHASE RISK)</b>';
-      verdictReason = `Scrip has accumulated well, but price has jumped <b>${distSign}${distFromBroker}% above the Broker Average Cost Basis (Rs. ${avgBrokerPrice})</b>. Chasing now creates severe T+2 pullback risk. Wait for dip into the Buy Zone.`;
-    } else if (isNetAccumulated && isPriceNearBasis && isTrendSafe) {
-      verdictBadge = '🟢 <b>APPROPRIATE TO INVEST (HIGH CONVICTION SWING ACCUMULATION)</b>';
-      verdictReason = `Top institutional buyers (led by Broker #${leadBrokerId} ${cleanLeadName}) accumulated <b>${top3BuyVol.toLocaleString()} Kitta</b> at an <b>Average Broker Price of Rs. ${avgBrokerPrice}</b>. LTP is trading directly on/near this cost floor (${distSign}${distFromBroker}%). Institutional desks will defend this level!`;
-    } else {
-      verdictBadge = '⚪ <b>NEUTRAL / SUB-THRESHOLD (WAIT FOR CATALYST)</b>';
-      verdictReason = `Activity is balanced retail turnover with no decisive institutional supply cornering yet. Keep on radar for a volume breakout above 20 EMA.`;
-    }
-
-    // Tactical Execution Plan
+    // Tactical Execution Calculations
     const anchorBase = Math.min(ltp, avgBrokerPrice, pocPrice);
     const anchorTop = Math.max(ltp, avgBrokerPrice);
     const buyZoneLow = Math.max(1, Math.floor(anchorBase * 0.990));
@@ -2508,6 +2510,36 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
     const shares5L = Math.max(25, Math.floor(5000 / riskPerShare));
     const deploy1L = Math.round(shares1L * ltp).toLocaleString();
     const deploy5L = Math.round(shares5L * ltp).toLocaleString();
+
+    let verdictBadge = '';
+    let verdictReason = '';
+    let tmsActionGuide = '';
+
+    if (isSevereDumping || (top3NetSellVol > top3NetBuyVol && top3NetSellVol >= 40000)) {
+      verdictBadge = '🔴 <b>NOT APPROPRIATE / INSTITUTIONAL DISTRIBUTION OVERHANG</b>';
+      verdictReason = `Top sellers (led by Broker #${leadSellerId} ${cleanLeadSeller}) dumped a net <b>${top3NetSellVol.toLocaleString()} Kitta</b>, exceeding net institutional buying by <b>${Math.abs(institutionalNetSpreadShares).toLocaleString()} Kitta</b>. Institutional inventory is being liquidated into retail bids. <b>Preserve capital — do NOT buy!</b>`;
+      tmsActionGuide = `<i>STAND ASIDE. No buy order recommended until distribution supply is fully absorbed and institutional net flow turns positive.</i>`;
+    } else if (isDistributionCandle || (isHeavyChurn && !isFlowchartTrackApproved)) {
+      verdictBadge = '⚠️ <b>AVOID / HIGH CHURN DISTRIBUTION PRESSURE (WAIT FOR BASE RESOLUTION)</b>';
+      verdictReason = `Two-way wash churn is elevated (<b>${maxChurn}% churn</b>) with an aggressive <b>${wickPct}% upper distribution wick</b> (CLV ${clvPct}%). Despite gross volume, institutional desks only retained <b>${top3NetBuyVol.toLocaleString()} Kitta</b> (${top3RetPct}% retention) while sellers offloaded <b>${top3NetSellVol.toLocaleString()} Kitta</b> net. Wait for price to clear overhead supply at Rs. ${high.toFixed(1)}.`;
+      tmsActionGuide = `<i>Existing holders HOLD with stop at Rs. ${structuralStop}. Do NOT add fresh capital or front-run; wait for clean volume clearing Rs. ${high.toFixed(1)}.</i>`;
+    } else if (isExtended) {
+      verdictBadge = '🟡 <b>WATCHLIST ONLY / PULLBACK REQUIRED (LATE CHASE RISK)</b>';
+      verdictReason = `Scrip has institutional footprint, but price has jumped <b>${distSign}${distFromBroker}% above the Broker Average Cost Basis (Rs. ${avgBrokerPrice})</b>. Chasing now creates severe T+2 pullback risk. Wait for dip into the Buy Zone.`;
+      tmsActionGuide = `<i>Do NOT chase at market. Wait patiently for a corrective pullback into the Limit Buy Zone (Rs. ${buyZoneLow} – Rs. ${buyZoneHigh}).</i>`;
+    } else if (isNetInstitutionalPositive && isPriceNearBasis && isTrendSafe && isFlowchartTrackApproved && !isHeavyChurn && !isDistributionCandle) {
+      verdictBadge = `🟢 <b>APPROPRIATE TO INVEST (HIGH CONVICTION ${trackInfo.rallyTrack === 'TRACK_A_BREAKOUT' ? 'TRACK A BREAKOUT' : 'TRACK B RETEST'})</b>`;
+      verdictReason = `Top institutional buyers (led by Broker #${leadBrokerId} ${cleanLeadName}) net absorbed <b>${top3NetBuyVol.toLocaleString()} Kitta</b> (${top3GrossBuyVol.toLocaleString()} gross, ${top3RetPct}% retention) at an <b>Average Broker Price of Rs. ${avgBrokerPrice}</b>. Setup meets Flowchart v2.0 criteria with positive net institutional spread (+${institutionalNetSpreadShares.toLocaleString()} shares).`;
+      tmsActionGuide = `Place GTC Limit Buy inside zone (Rs. ${buyZoneLow} – Rs. ${buyZoneHigh}). <i>Do NOT chase pre-open &gt; +1.8%!</i>`;
+    } else if (isNetInstitutionalPositive && isPriceNearBasis && isTrendSafe) {
+      verdictBadge = '🟡 <b>ACCUMULATION ON RADAR / SUB-THRESHOLD (WAIT FOR TRACK A/B TRIGGER)</b>';
+      verdictReason = `Lead buyer Broker #${leadBrokerId} (${cleanLeadName}) is net absorbing (+${leadNetVol.toLocaleString()} Kitta, ${flow5Metrics.leadRetentionPct}% retained), but scrip remains in a standard base below confirmation trigger. Hold existing core position with discipline, but <b>wait for a volume expansion trigger before deploying fresh capital</b>.`;
+      tmsActionGuide = `<i>Existing holders HOLD with stop-loss at Rs. ${structuralStop}. For fresh entries, wait for volume expansion trigger above Rs. ${Math.max(high, maxClose20).toFixed(1)}.</i>`;
+    } else {
+      verdictBadge = '⚪ <b>NEUTRAL / BALANCED RETAIL TURNOVER (WAIT FOR CATALYST)</b>';
+      verdictReason = `Activity is balanced retail turnover with no decisive institutional supply cornering yet. Keep on radar for a volume breakout above 20 EMA.`;
+      tmsActionGuide = `<i>Maintain watchlist only. Capital is better deployed in active Track A/B institutional runners.</i>`;
+    }
 
     // Format Buyer Lines
     const buyerLines = top3Buyers.map((b, i) => {
@@ -2550,6 +2582,7 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       `• 🧭 <b>Flowchart v2.0 Track:</b> <b>${escapeHtml(trackDisplay.tierBadge)}</b>`,
       `• 📋 <b>Allocation Guidance:</b> <i>${escapeHtml(trackDisplay.allocationGuide)}</i>`,
       `• 🎯 <b>Average Broker Buy Price (Cost Basis):</b> <b>Rs. ${avgBrokerPrice}</b> (${distSign}${distFromBroker}% from LTP)`,
+      `• 📊 <b>Multi-Timeframe VWAP (Cost Basis):</b> 5D: <b>${v5Str}</b> | 15D: <b>${v15Str}</b> | 1M: <b>${v1MStr}</b>`,
       `• <b>Top Accumulating Desks (Last 5 Sessions):</b>`,
       ...buyerLines,
       `• <b>Buyer Dominance (BCR3 Buy):</b> <b>${bcr3Buy}%</b> vs BCR3 Sell <b>${bcr3Sell}%</b> (Net Spread: <b>${bcr3SpreadStr}</b>)`,
@@ -2561,7 +2594,7 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       `• <b>Today's Volume:</b> ${volume.toLocaleString()} Kitta (<b>${rvol}x</b> of 20D Avg ${avgVol20.toLocaleString()} Kitta)`,
       `• <b>Turnover:</b> Rs. ${(turnover / 10000000).toFixed(2)} Crores`,
       `• <b>Candle &amp; VDU Microstructure:</b> CLV <b>${clvPct}%</b> | Upper Wick <b>${wickPct}%</b> (${wickPct <= 45 ? '&lt;= 45% Safe ✅' : '&gt; 45% Distribution Risk ⚠️'}) | VDU <b>${Number(rvol || 0).toFixed(2)}x</b>${isPocketPivot ? ' | ⚡ <b>Pocket Pivot</b>' : ''}`,
-      `• <b>Supply Status:</b> ${isNetAccumulated ? 'Institutional float cornering in progress (Supply Vacuum)' : 'Mixed float circulation'}`,
+      `• <b>Supply Status:</b> ${isTrueCornering ? '🔥 <b>Institutional Float Cornering (Supply Vacuum)</b>' : (isNetInstitutionalPositive ? '📦 <b>Orderly Float Absorption</b>' : (isSevereDumping ? '🚨 <b>Active Institutional Distribution / Supply Influx</b>' : '⚖️ <b>Two-Way Retail &amp; Churn Circulation</b>'))}`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `⚖️ <b>5. INVESTMENT &amp; PROFITABILITY VERDICT:</b>`,
       verdictBadge,
@@ -2573,7 +2606,7 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       `• 💰 <b>Target 1 (Milestone 1):</b> <code>Rs. ${target1}</code> (+${t1Pct}% | <b>RRR ${rrr1} : 1</b> | <i>Sell 50% &amp; Move SL to BE</i>)`,
       `• 🚀 <b>Target 2 (Circuit Runner):</b> <code>Rs. ${target2}</code> (+${t2Pct}% | <b>RRR ${rrr2} : 1</b> | <i>Upper Circuit Ceiling</i>)`,
       `• ⚡ <b>Early Impulse Ratchet (v2.0):</b> At <b>Rs. ${ratchetTrigger}</b> (+5.5% MFE) ➔ Lock SL at <b>Rs. ${ratchetLock}</b> (+1.8% Fee-Cleared Breakeven)`,
-      `• 📲 <b>TMS Execution:</b> Place GTC Limit Buy inside zone. <i>Do NOT chase pre-open &gt; +1.8%!</i>`,
+      `• 📲 <b>TMS Execution:</b> ${tmsActionGuide}`,
       ``,
       `💼 <b>7. 1% RISK POSITION SIZING:</b>`,
       `• <b>Rs. 1 Lakh Portfolio (Rs. 1,000 Max Risk):</b> Buy <b>${shares1L} Kitta</b> (~Rs. ${deploy1L})`,
@@ -4239,7 +4272,7 @@ export function formatInstantExecutionTicketHtml(d = {}) {
     `⚡ <b>ORDER TYPE: LIMIT ORDER ONLY</b> (Do NOT Market-Buy)`,
     ``,
     `🎯 <b>LIMIT BUY PRICE:</b> <code>Rs. ${limitPrice}</code>`,
-    `📊 <b>MULTI-TIMEFRAME VWAP (Cost Basis Baseline):</b>`,
+    `📊 <b>MULTI-TIMEFRAME VWAP &amp; Average Broker Price (Cost Basis):</b>`,
     `• 5-Day: <b>${v5Str}</b> | 15-Day: <b>${v15Str}</b> | 1-Month (22D): <b>${v1MStr}</b>`,
     `⚠️ <b>MAX CHASE CAP:</b> Rs. ${chaseCap} <i>(Cancel if Ask &gt; this)</i>`,
     `🛑 <b>HARD STOP-LOSS:</b> <code>Rs. ${sl}</code> (-${slPct}%)`,

@@ -34,7 +34,8 @@ async function runTest() {
   assert.strictEqual(resGhl.success, true, 'GHL analysis should succeed');
   assert.ok(resGhl.message.includes('DEEP STOCK AUDIT: <code>$GHL</code>'), 'Should contain GHL header');
   assert.ok(resGhl.message.includes('Average Broker Buy Price (Cost Basis)'), 'Should contain Broker Average Price');
-  assert.ok(resGhl.message.includes('APPROPRIATE TO INVEST'), 'GHL should qualify for appropriate investment');
+  assert.ok(resGhl.message.includes('PROFITABILITY VERDICT'), 'GHL should contain Investment Verdict section');
+  assert.ok(resGhl.message.includes('Multi-Timeframe VWAP'), 'GHL analysis must include Multi-Timeframe VWAP');
   assert.ok(resGhl.message.includes('Flowchart v2.0 Track'), 'GHL analysis must include Flowchart v2.0 Track');
   assert.ok(resGhl.message.includes('Early Impulse Ratchet'), 'GHL analysis must include Early Impulse Ratchet');
   console.log('✅ GHL Deep Analysis validated successfully!');
