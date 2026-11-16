@@ -664,25 +664,49 @@ export function extract5DayBrokerFlowMetrics(flow = [], fallbackPrice = 0, defau
   };
 }
 
-export function formatFlowchartTrackDisplay(rallyTrack, rallyHorizonLabel = '') {
+export function formatFlowchartTrackDisplay(rallyTrack, rallyHorizonLabel = '', marketRegime = 'BULL') {
+  const isChop = marketRegime === 'CHOP' || marketRegime === 'SIDEWAYS' || marketRegime === 'DEFENSIVE';
+  const regimeBadge = isChop
+    ? '🔴 <b>DEFENSIVE CHOP REGIME:</b> NEPSE &lt; 20-Day SMA (Track A Muted • Capital Preservation Active)'
+    : '🟢 <b>BULL REGIME:</b> NEPSE &gt; 20-Day SMA (Aggressive Compounding • Both Tracks Active)';
+
   if (rallyTrack === 'TRACK_B_T2_CLEARED_CONTINUATION') {
     return {
       label: rallyHorizonLabel || 'Track B: Post-T+2 Cleared Continuation',
-      tierBadge: '🟢 Track B: Post-T+2 Cleared Continuation (Primary • 75% Win-Rate Tier)',
-      allocationGuide: 'Track B: 70% Core Post-T+2 Entry (Highest Win-Rate Tier)',
+      tierBadge: isChop
+        ? '🎯 Track B: Sniper Post-T+2 Retest (Chop-Resistant • Capital Preservation Tier)'
+        : '🟢 Track B: Post-T+2 Cleared Continuation (Primary • 70%+ Win-Rate Tier)',
+      allocationGuide: isChop
+        ? 'Track B (Chop Regime): 100% Allocation to High-Retention Retests Only'
+        : 'Track B (Bull Regime): 70% Core Post-T+2 Entry (Highest Win-Rate Tier)',
+      regimeBadge,
     };
   }
   if (rallyTrack === 'TRACK_A_COILED_2_3D_IGNITION') {
     return {
       label: rallyHorizonLabel || 'Track A: 2–3 Day Ignition Watch',
-      tierBadge: '🟡 Track A: 2–3 Day Ignition Watch (Secondary • Split-Tranche Tier)',
-      allocationGuide: 'Track A: 30% Tactical 50/50 Split-Tranche Entry (Hold for T+2 Ignition)',
+      tierBadge: isChop
+        ? '⚠️ Track A: Coiled Ignition Muted (Chop Regime Veto • Do Not Chase)'
+        : '🟡 Track A: 2–3 Day Ignition Watch (Bull Regime • Tactical Split-Tranche)',
+      allocationGuide: isChop
+        ? 'Track A Vetoed: Index in Chop; hold cash and wait for Track B confirmation'
+        : 'Track A (Bull Regime): 30% Tactical 50/50 Split-Tranche Entry (Hold for T+2 Ignition)',
+      regimeBadge,
+    };
+  }
+  if (rallyTrack === 'TRACK_A_MUTED_CHOP_VETO') {
+    return {
+      label: rallyHorizonLabel || 'Track A: Muted by Chop Regime Veto',
+      tierBadge: '⚠️ Track A: Coiled Ignition Muted (Chop Regime Veto • Hold Cash)',
+      allocationGuide: 'Track A Vetoed: Index in Chop; hold cash and wait for Track B confirmation',
+      regimeBadge,
     };
   }
   return {
     label: rallyHorizonLabel || 'Institutional Base Accumulation',
     tierBadge: '⚪ Standard Base / Sub-Threshold (Wait for Track A/B Trigger)',
     allocationGuide: 'Standard Accumulation (Confirm T+2 Survival Before Full Size)',
+    regimeBadge,
   };
 }
 
@@ -699,27 +723,35 @@ function estimatePublicFloatShares(sectorName = 'Equities', explicitFloatShares 
   return 5_000_000;
 }
 
-function classifyDualTrackRally({
+export function classifyDualTrackRally({
   smc = {},
   isCoilIgnitionBreakout = false,
   isPocketPivot = false,
   leadRetentionPct = 70,
   dayChgPct = 0,
+  marketRegime = 'BULL',
 } = {}) {
   const isUpperWickRejected = Number(smc?.upperWickRatio || 0) > 0.45 && Number(dayChgPct || 0) > 1.0;
+  const isChop = marketRegime === 'CHOP' || marketRegime === 'SIDEWAYS' || marketRegime === 'DEFENSIVE';
   let rallyTrack = 'STANDARD_ACCUMULATION';
   let rallyHorizonLabel = 'Institutional Base Accumulation';
   if ((smc.isT2ClearedContinuation || smc.isBreakAndRetest) && !isUpperWickRejected) {
     rallyTrack = 'TRACK_B_T2_CLEARED_CONTINUATION';
-    rallyHorizonLabel = 'Track B: Post-T+2 Cleared Continuation';
+    rallyHorizonLabel = isChop
+      ? 'Track B: Sniper Retest (Chop-Resistant)'
+      : 'Track B: Post-T+2 Cleared Continuation';
   } else if (
-    isCoilIgnitionBreakout ||
-    ((isPocketPivot || smc.isNr7 || smc.isIdnr4 || smc.isSmcSweepMss || smc.isFvgMitigated) &&
-      Number(leadRetentionPct || 0) >= 70 &&
-      !isUpperWickRejected)
+    !isChop &&
+    !isUpperWickRejected &&
+    (isCoilIgnitionBreakout ||
+      ((isPocketPivot || smc.isNr7 || smc.isIdnr4 || smc.isSmcSweepMss || smc.isFvgMitigated) &&
+        Number(leadRetentionPct || 0) >= 70))
   ) {
     rallyTrack = 'TRACK_A_COILED_2_3D_IGNITION';
     rallyHorizonLabel = 'Track A: 2–3 Day Ignition Watch';
+  } else if (isChop && (isCoilIgnitionBreakout || smc.isNr7 || smc.isIdnr4 || smc.isSmcSweepMss || smc.isFvgMitigated)) {
+    rallyTrack = 'TRACK_A_MUTED_CHOP_VETO';
+    rallyHorizonLabel = 'Track A: Muted by Chop Regime Veto (NEPSE < 20 SMA)';
   }
   return { isUpperWickRejected, rallyTrack, rallyHorizonLabel };
 }
@@ -1173,6 +1205,7 @@ export function enrichPayloadWithFlowchartV2RallyMetrics(
       rawPayload.retention10D ?? rawPayload.leadRetentionPct ?? trapAudit?.retentionPct ?? 75
     ),
     dayChgPct,
+    marketRegime: rawPayload.marketRegime || rawPayload.regime || 'BULL',
   });
 
   const rallyTrack = rawPayload.rallyTrack || trackClassification.rallyTrack;
@@ -1479,7 +1512,7 @@ export function formatEarlyIgnitionAlertHtml(alert) {
   const retentionPct = buyQty > 0 ? +((netQty / buyQty) * 100).toFixed(1) : Number(alert.retention10D ?? 85.0);
   const churnPct = buyQty > 0 ? +Math.min(100, (sellQty / buyQty) * 100).toFixed(1) : +(Math.max(0, 100 - retentionPct)).toFixed(1);
   const resolvedTrack = alert.rallyTrack || (alert.isT2ClearedContinuation || alert.isBreakAndRetest ? 'TRACK_B_T2_CLEARED_CONTINUATION' : 'TRACK_A_COILED_2_3D_IGNITION');
-  const trackDisplay = formatFlowchartTrackDisplay(resolvedTrack, alert.rallyHorizonLabel);
+  const trackDisplay = formatFlowchartTrackDisplay(resolvedTrack, alert.rallyHorizonLabel, alert.marketRegime || alert.regime || 'BULL');
   const numOpVwap = Math.max(1, Number(operatorVwap) || ltp || 100);
   const ratchetTrigger = (numOpVwap * 1.055).toFixed(1);
   const ratchetLock = (numOpVwap * 1.018).toFixed(1);
@@ -2330,13 +2363,32 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       leadRetentionPct: leadRetention5D,
       isTrap: bcr3Sell > 45 && bcr3Buy < bcr3Sell
     });
+    let marketRegime = options?.marketRegime || options?.regime || 'BULL';
+    try {
+      const { getDb } = await import('./db/ledgerStore.js');
+      const db = getDb();
+      if (db) {
+        const mktRows = db.prepare(`
+          SELECT trade_date, AVG(close_price) as avg_close
+          FROM daily_stock_summary
+          WHERE close_price > 0 AND symbol NOT LIKE '%PO%' AND symbol NOT LIKE '%DEB%'
+          GROUP BY trade_date ORDER BY trade_date DESC LIMIT 20
+        `).all();
+        if (mktRows.length >= 20) {
+          const sma20 = mktRows.reduce((a, b) => a + b.avg_close, 0) / mktRows.length;
+          marketRegime = mktRows[0].avg_close >= sma20 ? 'BULL' : 'CHOP';
+        }
+      }
+    } catch (_) {}
+
     const trackInfo = classifyDualTrackRally({
       smc: smcSetup,
       isPocketPivot,
       leadRetentionPct: leadRetention5D,
-      dayChgPct: dayChgPctLocal
+      dayChgPct: dayChgPctLocal,
+      marketRegime,
     });
-    const trackDisplay = formatFlowchartTrackDisplay(trackInfo.rallyTrack, trackInfo.rallyHorizonLabel);
+    const trackDisplay = formatFlowchartTrackDisplay(trackInfo.rallyTrack, trackInfo.rallyHorizonLabel, marketRegime);
     const ratchetTrigger = +(ltp * 1.055).toFixed(1);
     const ratchetLock = +(ltp * 1.018).toFixed(1);
 
@@ -2561,7 +2613,11 @@ export function formatEodStealthOfTheDayHtml(winner, runnerUps = [], targetDate 
   const eodBcr3SpreadStr = `${eodBcr3SpreadVal >= 0 ? '+' : ''}${eodBcr3SpreadVal.toFixed(1)}%`;
   const eodRetPct = Number(winner.leadRetentionPct ?? winner.netRetentionPct ?? (Number.isFinite(Number(multiRatio)) ? Number(multiRatio) : 85)).toFixed(0);
   const eodChurnPct = Number(winner.washChurnPct ?? winner.churnPct ?? Math.max(0, 100 - Number(eodRetPct))).toFixed(0);
-  const eodTrack = formatFlowchartTrackDisplay(winner.rallyTrack || 'TRACK_A_COILED_2_3D_IGNITION', winner.rallyHorizonLabel || horizon);
+  const eodTrack = formatFlowchartTrackDisplay(
+    winner.rallyTrack || 'TRACK_A_COILED_2_3D_IGNITION',
+    winner.rallyHorizonLabel || horizon,
+    winner.marketRegime || winner.regime || 'BULL'
+  );
   const eodLtpNum = Math.max(1, Number(ltp) || Number(vwap) || 100);
   const eodRatchetTrigger = +(eodLtpNum * 1.055).toFixed(1);
   const eodRatchetLock = +(eodLtpNum * 1.018).toFixed(1);
@@ -3307,6 +3363,20 @@ export async function select5StepSwingPicks() {
     const secondaryMatches = [];
     const vetoedTraps = [];
 
+    let currentMarketRegime = opts?.marketRegime || opts?.regime || 'BULL';
+    try {
+      const mktRows = db.prepare(`
+        SELECT trade_date, AVG(close_price) as avg_close
+        FROM daily_stock_summary
+        WHERE close_price > 0 AND symbol NOT LIKE '%PO%' AND symbol NOT LIKE '%DEB%'
+        GROUP BY trade_date ORDER BY trade_date DESC LIMIT 20
+      `).all();
+      if (mktRows.length >= 20) {
+        const sma20 = mktRows.reduce((a, b) => a + b.avg_close, 0) / mktRows.length;
+        currentMarketRegime = mktRows[0].avg_close >= sma20 ? 'BULL' : 'CHOP';
+      }
+    } catch (_) {}
+
     const recentHistStmt = db.prepare(`
       SELECT trade_date, open_price, high_price, low_price, close_price, total_volume
       FROM daily_stock_summary
@@ -3547,6 +3617,7 @@ export async function select5StepSwingPicks() {
         isPocketPivot,
         leadRetentionPct,
         dayChgPct,
+        marketRegime: currentMarketRegime,
       });
 
       const totalScore = Math.min(
@@ -3657,29 +3728,33 @@ export async function select5StepSwingPicks() {
         capitalOutlay,
         maxRiskRs,
         totalScore,
+        marketRegime: currentMarketRegime,
+        rallyTrack,
+        rallyHorizonLabel,
         corneringScore: totalScore,
         trapAuditReason: trapAudit.reason,
         consecutiveDays: trapAudit.consecutiveDays,
         total5DayNet: trapAudit.total5DayNet,
         isStrict5StepPass:
-          isCoilIgnitionBreakout ||
-          (!isUpperWickRejected &&
-            hasFoundationForSmc &&
-            (smc.isBreakAndRetest || smc.isSmcSweepMss || smc.isT2ClearedContinuation) &&
-            realBcr3Buy >= 40.0 &&
-            realBcr3Sell <= 35.0 &&
-            leadRetentionPct >= 70 &&
-            realVwapDiffPct <= 2.5) ||
-          (!isUpperWickRejected &&
-            (isPocketPivot || smc.isNr7 || smc.isIdnr4) &&
-            realBcr3Buy >= 40.0 &&
-            realBcr3Sell <= 35.0 &&
-            leadRetentionPct >= 70 &&
-            realVwapDiffPct <= 2.5) ||
-          (isRsiSweetSpot && isBelowOrAtVwap && realBcr3Buy >= 40.0 && realBcr3Sell <= 35.0 && leadRetentionPct >= 70),
+          rallyTrack !== 'TRACK_A_MUTED_CHOP_VETO' &&
+          ((isCoilIgnitionBreakout && !isUpperWickRejected) ||
+            (!isUpperWickRejected &&
+              hasFoundationForSmc &&
+              (smc.isBreakAndRetest || smc.isSmcSweepMss || smc.isT2ClearedContinuation) &&
+              realBcr3Buy >= 40.0 &&
+              realBcr3Sell <= 35.0 &&
+              leadRetentionPct >= 70 &&
+              realVwapDiffPct <= 2.5) ||
+            (!isUpperWickRejected &&
+              (isPocketPivot || smc.isNr7 || smc.isIdnr4) &&
+              realBcr3Buy >= 40.0 &&
+              realBcr3Sell <= 35.0 &&
+              leadRetentionPct >= 70 &&
+              realVwapDiffPct <= 2.5) ||
+            (isRsiSweetSpot && isBelowOrAtVwap && realBcr3Buy >= 40.0 && realBcr3Sell <= 35.0 && leadRetentionPct >= 70)),
       };
 
-      if (candidate.isStrict5StepPass || candidate.consecutiveDays >= 3) {
+      if (candidate.rallyTrack !== 'TRACK_A_MUTED_CHOP_VETO' && (candidate.isStrict5StepPass || candidate.consecutiveDays >= 3)) {
         strictMatches.push(candidate);
       } else {
         secondaryMatches.push(candidate);
@@ -3851,7 +3926,11 @@ export function formatUpgradedStealthAccumulationHtml(winner) {
           ? 'Track A: 2–3 Day Ignition Watch'
           : 'Institutional Base Accumulation')
   );
-  const upgradedTrackDisplay = formatFlowchartTrackDisplay(winner.rallyTrack, winner.rallyHorizonLabel || rallyHorizonLabel);
+  const upgradedTrackDisplay = formatFlowchartTrackDisplay(
+    winner.rallyTrack,
+    winner.rallyHorizonLabel || rallyHorizonLabel,
+    winner.marketRegime || winner.regime || 'BULL'
+  );
   const freeFloatCorneredPct = Number(winner.freeFloatCorneredPct ?? 0);
   const clvPct = Number(winner.clv !== undefined ? winner.clv * 100 : 65).toFixed(0);
   const wickPct = Number(winner.upperWickRatio !== undefined ? winner.upperWickRatio * 100 : 12).toFixed(0);
@@ -4043,7 +4122,11 @@ export function formatInstantExecutionTicketHtml(d) {
   const instantSpreadStr = `${instantSpreadVal >= 0 ? '+' : ''}${instantSpreadVal.toFixed(1)}%`;
   const instantRetPct = Number(d.leadRetentionPct ?? d.netRetentionPct ?? 82).toFixed(0);
   const instantChurnPct = Number(d.washChurnPct ?? d.churnPct ?? Math.max(0, 100 - Number(instantRetPct))).toFixed(0);
-  const instantTrack = formatFlowchartTrackDisplay(d.rallyTrack || 'TRACK_B_T2_CLEARED_CONTINUATION', d.rallyHorizonLabel);
+  const instantTrack = formatFlowchartTrackDisplay(
+    d.rallyTrack || 'TRACK_B_T2_CLEARED_CONTINUATION',
+    d.rallyHorizonLabel,
+    d.marketRegime || d.regime || 'BULL'
+  );
   const instantRatchetTrigger = +(ltp * 1.055).toFixed(1);
   const instantRatchetLock = +(ltp * 1.018).toFixed(1);
   const leadBroker = escapeHtml(d.dominantBrokersText || (d.leadBrokerId ? `Broker #${d.leadBrokerId}` : 'Syndicate Accumulator'));
