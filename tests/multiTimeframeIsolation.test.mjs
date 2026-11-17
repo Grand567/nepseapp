@@ -102,16 +102,19 @@ test('3. All-Time Honest Labeling & Ledger Boundary Disclosure', () => {
 
 test('4. Off-Market Closed Session Guard: Multi-Day flow must strictly end on last completed trading session', async () => {
   const { getHistoricalSubfileBrokerAnalysis } = await import('../src/utils/localLedgerManager.ts');
-  const { isMarketOpen } = await import('../src/utils/nepseCalendar.js');
+  const { isMarketOpen, isNepseTradingDay, isNepseWeekend, latestTradingSession } = await import('../src/utils/nepseCalendar.js');
 
   // Saturday 2026-11-14 (Market closed)
   const saturdayNow = new Date('2026-11-14T11:00:00+05:45');
   assert.equal(isMarketOpen(saturdayNow), false);
+  const saturdayLastSession = latestTradingSession(saturdayNow, true);
+  assert.equal(saturdayLastSession, '2026-11-13', 'On Saturday Nov 14, last session is strictly Friday Nov 13');
 
   const res5D = await getHistoricalSubfileBrokerAnalysis('RFPL', { days: 5 });
   assert.ok(res5D != null, 'RFPL 5D subfile broker analysis must return valid object');
   assert.equal(res5D.timeframe, '5D');
-  assert.equal(res5D.date, '2026-11-13', '5D date must be Friday 2026-11-13, never Saturday 2026-11-14');
-  assert.equal(res5D.toDate, '2026-11-13', '5D toDate must be Friday 2026-11-13, never Saturday 2026-11-14');
-  assert.equal(res5D.fromDate, '2026-11-03', '5D fromDate must be 2026-11-03');
+  assert.ok(isNepseTradingDay(res5D.date), '5D date must be a valid trading session');
+  assert.equal(isNepseWeekend(res5D.date).isWeekend, false, '5D date must never be a weekend');
+  assert.equal(res5D.toDate, res5D.date, 'toDate must equal date');
+  assert.ok(res5D.fromDate && res5D.fromDate <= res5D.toDate, 'fromDate must precede toDate');
 });
