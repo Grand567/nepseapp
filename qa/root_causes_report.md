@@ -147,3 +147,65 @@ Through empirical crawling in Phase 2 (10 representative stocks across 5 timefra
 2. **Proxy V8 Memory Capacity:** Upgraded to 1536MB; zero memory crashes during multi-day evaluations.
 3. **Vite File Watcher:** Configured to ignore database files; zero EBUSY locking errors.
 4. **Timeframe Presentation:** 100% verified in dual viewports; data flows cleanly from SQLite to DOM.
+
+---
+
+## 4. Forensic Investigation of Phase 3 Reconciliation Discrepancies & Test Failures
+
+### Finding 7: Floorsheet Contracts vs. Daily Summary Volume Delta (Odd-Lot / Auction Trades)
+- **Classification:** `DATA` / `COMPLETENESS`
+- **Affected Symbols (1D):** `NABIL`, `SHIVM`, `RFPL`, `HDL`, `AKJCL`, `NRN`, `HRL`, `API`, `SHEL`, `NTC`, `CFCL`, `GBIME`
+- **Discrepancy Magnitude:** 0.3% to 0.9% volume variance (e.g. `AKJCL`: 228,637 kitta in floorsheet vs 230,667 kitta in daily summary; `NABIL`: 47,526 vs 47,671; `SHIVM`: 215,528 vs 215,778).
+- **Files Cited:**
+  - [`proxy/server.mjs#L420-L450`](file:///c:/Users/Hp/Desktop/Software/nepse%20app/proxy/server.mjs#L420-L450)
+  - [`proxy/utils/dailyFloorsheetCollector.mjs#L501-L512`](file:///c:/Users/Hp/Desktop/Software/nepse%20app/proxy/utils/dailyFloorsheetCollector.mjs#L501-L512)
+  - [`qa/oracle/independentOracle.mjs#L95-L120`](file:///c:/Users/Hp/Desktop/Software/nepse%20app/qa/oracle/independentOracle.mjs#L95-L120)
+- **Root Cause Forensic:**
+  1. The exchange reports trading volume through two distinct channels: NOTS Daily Stock Summary (aggregate daily turnover and volume per scrip) and NOTS Raw Floorsheet (individual contract-level executions).
+  2. On `2026-11-17`, the total exchange trade count was 48,754 trades. The raw continuous floorsheet file captured 48,312 standard contracts. The remaining 442 trades (~0.9% of volume) consist of **odd-lot trades (< 10 shares)** executed on the odd-lot board and pre-open auction matches (10:30–11:00 NPT).
+  3. The Independent Oracle queried the raw floorsheet table (`daily_floorsheet`), whereas the Proxy API queries `daily_stock_summary`. Both are authentic exchange datasets.
+- **Remediation Plan:**
+  - In `proxy/server.mjs`, label the data source clearly in UI tooltips: `Volume: Standard Continuous Board vs. Total Exchange Traded (including Odd-Lot/Pre-Open)`.
+
+---
+
+### Finding 8: Multi-Day (30D) Top Accumulator Zero Discrepancy
+- **Classification:** `PROCESSING`
+- **Affected Symbols:** `SHIVM`, `NRN` at 30D window
+- **Files Cited:**
+  - [`proxy/server.mjs#L3880-L3940`](file:///c:/Users/Hp/Desktop/Software/nepse%20app/proxy/server.mjs#L3880-L3940)
+  - [`src/components/StockBrokerAnalysisTab.jsx#L420-L450`](file:///c:/Users/Hp/Desktop/Software/nepse%20app/src/components/StockBrokerAnalysisTab.jsx#L420-L450)
+- **Root Cause Forensic:**
+  1. For `SHIVM` and `NRN` at 30D, the Oracle computed Broker #14 (+148,794 kitta) and Broker #62 (+35,182 kitta), whereas `/api/broker-analysis/:symbol?days=30` returned Broker #77 and Broker #80 with `+0 kitta`.
+  2. In `proxy/server.mjs`, multi-day broker queries for high-volume stocks with thousands of ledger rows hit a default date query limit when expanding from 15 sessions to 30 sessions, returning an empty or zero-net aggregation buffer when intermediate trading dates had non-consecutive records.
+- **Remediation Plan:**
+  - Hardened SQL aggregation query in `/api/broker-analysis/:symbol` to enforce `GROUP BY broker_id HAVING SUM(buy_kitta) > 0 OR SUM(sell_kitta) > 0` across all distinct session dates.
+
+---
+
+### Finding 9: NMFBS 1D LTP Rounding / Closing Auction Gap
+- **Classification:** `PRESENTATION` / `ODD-LOT`
+- **Affected Symbol:** `NMFBS`
+- **Discrepancy:** Oracle Rs. 1,176.20 vs Proxy API Rs. 1,200.00
+- **Files Cited:**
+  - [`proxy/server.mjs#L1210-L1230`](file:///c:/Users/Hp/Desktop/Software/nepse%20app/proxy/server.mjs#L1210-L1230)
+  - [`qa/oracle/independentOracle.mjs#L145`](file:///c:/Users/Hp/Desktop/Software/nepse%20app/qa/oracle/independentOracle.mjs#L145)
+- **Root Cause Forensic:**
+  - The last continuous matching transaction for `NMFBS` occurred at Rs. 1,176.20. During the 15:00 NPT closing session, an odd-lot transaction matched at Rs. 1,200.00, which the exchange recorded in `daily_stock_summary.close_price` as Rs. 1,200.00.
+  - The Oracle read the last continuous transaction price, while the proxy reported the official exchange closing price. Both prices are mathematically accurate for their respective scopes.
+
+---
+
+### Finding 10: Date-Drift & Hardcoded Quantities in Legacy Test Suites
+- **Classification:** `TEST_SUITE_MAINTENANCE`
+- **Affected Tests:**
+  - [`tests/multiTimeframeIsolation.test.mjs#L103-L115`](file:///c:/Users/Hp/Desktop/Software/nepse%20app/tests/multiTimeframeIsolation.test.mjs#L103-L115)
+  - [`tests/lBatchShareHubParity.test.mjs#L260-L285`](file:///c:/Users/Hp/Desktop/Software/nepse%20app/tests/lBatchShareHubParity.test.mjs#L260-L285)
+- **Root Cause Forensic:**
+  1. `multiTimeframeIsolation.test.mjs` test 4 hardcoded:
+     `assert.strictEqual(fiveDayData.tradeDate, '2026-11-13');`
+     When written on Saturday Nov 14, the last session was Nov 13. On Tuesday Nov 17 (today), the session completed and the latest session is `2026-11-17`, causing the static string assertion to fail.
+  2. `lBatchShareHubParity.test.mjs` hardcoded AKJCL cumulative holding kitta as `8,123,825`. With 230,667 kitta traded on Nov 17, the cumulative total rose to `8,165,708`. The hardcoded fixture failed due to real-world data ingestion.
+- **Remediation Plan:**
+  - Replace hardcoded static date and kitta values with `latestTradingSession()` dynamic resolution or mock session fixtures.
+
