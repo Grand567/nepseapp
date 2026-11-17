@@ -1014,8 +1014,27 @@ router.get("/diagnostics/:symbol", async (req, res) => {
   }
 
   if (!data) {
-    return res.status(404).json({
-      success: false,
+    return res.json({
+      success: true,
+      symbol,
+      period: `${validDays} days`,
+      timeframeDays: 0,
+      tradingDays: 0,
+      totalTrades: 0,
+      totalVolume: 0,
+      totalAmount: 0,
+      totalTurnover: 0,
+      concentrationPct: 0,
+      brokers: [],
+      buyers: [],
+      sellers: [],
+      topAccumulator: null,
+      topDistributor: null,
+      smartMoneyPhase: 'Neutral / Insufficient Data',
+      adSignal: 'Neutral',
+      adStrength: '0%',
+      adRatio: 0,
+      dailyFlow: [],
       message: `No diagnostic data found for ${symbol} (${validDays}D window)`,
       loadedTradingDays: storedDates.length,
       isBackfilling: backfill.isBackfilling,
