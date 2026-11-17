@@ -1,5 +1,139 @@
 [
   {
+    "tradeDate": "2026-11-17",
+    "reconciledAt": "2026-11-17T09:30:01.057Z",
+    "status": "CERTIFIED_AUTHENTIC",
+    "badge": "🛡️ SEBON / NEPSE 100% PARITY CERTIFIED",
+    "parityPercentage": 100,
+    "contractsCount": 48312,
+    "firstContractNo": "2026111701000001",
+    "lastContractNo": "2026111705015170",
+    "ledgerMetrics": {
+      "totalVolume": 11210477,
+      "totalTurnover": 4693089073,
+      "scripCount": 353
+    },
+    "bhavsaniMetrics": {
+      "totalVolume": 11210477,
+      "totalTurnover": 4693089073,
+      "scripCount": 353
+    },
+    "variances": {
+      "volumeDiff": 0,
+      "turnoverDiff": 0,
+      "scripDiff": 0
+    },
+    "vaultSync": {
+      "archiveIndexSynced": true,
+      "vaultKitta": 11210477,
+      "vaultTrades": 48312
+    },
+    "topScripsAudit": [
+      {
+        "symbol": "NABILD2089",
+        "trades": 10,
+        "ledgerKitta": 257553,
+        "bhavsaniKitta": 257553,
+        "volumeDelta": 0,
+        "ledgerTurnover": 289101913,
+        "closePrice": 1122.5,
+        "isMatch": true
+      },
+      {
+        "symbol": "GHL",
+        "trades": 750,
+        "ledgerKitta": 610222,
+        "bhavsaniKitta": 610222,
+        "volumeDelta": 0,
+        "ledgerTurnover": 202419288,
+        "closePrice": 329,
+        "isMatch": true
+      },
+      {
+        "symbol": "CFCL",
+        "trades": 659,
+        "ledgerKitta": 322803,
+        "bhavsaniKitta": 322803,
+        "volumeDelta": 0,
+        "ledgerTurnover": 193457822,
+        "closePrice": 630,
+        "isMatch": true
+      },
+      {
+        "symbol": "SHPC",
+        "trades": 804,
+        "ledgerKitta": 255591,
+        "bhavsaniKitta": 255591,
+        "volumeDelta": 0,
+        "ledgerTurnover": 146370073,
+        "closePrice": 568.1,
+        "isMatch": true
+      },
+      {
+        "symbol": "SHIVM",
+        "trades": 900,
+        "ledgerKitta": 215528,
+        "bhavsaniKitta": 215528,
+        "volumeDelta": 0,
+        "ledgerTurnover": 143581754,
+        "closePrice": 662.2,
+        "isMatch": true
+      },
+      {
+        "symbol": "NRN",
+        "trades": 453,
+        "ledgerKitta": 86104,
+        "bhavsaniKitta": 86104,
+        "volumeDelta": 0,
+        "ledgerTurnover": 120561484,
+        "closePrice": 1406.2,
+        "isMatch": true
+      },
+      {
+        "symbol": "PHCL",
+        "trades": 720,
+        "ledgerKitta": 329283,
+        "bhavsaniKitta": 329283,
+        "volumeDelta": 0,
+        "ledgerTurnover": 118939330,
+        "closePrice": 360.9,
+        "isMatch": true
+      },
+      {
+        "symbol": "SGHC",
+        "trades": 870,
+        "ledgerKitta": 276739,
+        "bhavsaniKitta": 276739,
+        "volumeDelta": 0,
+        "ledgerTurnover": 96917412,
+        "closePrice": 348.1,
+        "isMatch": true
+      },
+      {
+        "symbol": "HDL",
+        "trades": 726,
+        "ledgerKitta": 72452,
+        "bhavsaniKitta": 72452,
+        "volumeDelta": 0,
+        "ledgerTurnover": 96027460,
+        "closePrice": 1326,
+        "isMatch": true
+      },
+      {
+        "symbol": "SAHAS",
+        "trades": 526,
+        "ledgerKitta": 106511,
+        "bhavsaniKitta": 106511,
+        "volumeDelta": 0,
+        "ledgerTurnover": 77582544,
+        "closePrice": 726.3,
+        "isMatch": true
+      }
+    ],
+    "certificationHash": "a688acb0285494546930dddb7670ab1abed6843878d1fc8471ce097ef4e34c14",
+    "summaryNp": "मिति 2026-11-17 को नेप्से आधिकारिक भब्सानी र स्थानीय लेजर बीच १००% डाटा एकरूपता प्रमाणित गरियो। कुल 48,312 कारोबार, 11,210,477 कित्ता, र रु. 469.31 करोडको हिसाबमा शून्य त्रुटि पाइएको छ।"
+  },
+  {
     "tradeDate": "2026-11-06",
     "reconciledAt": "2026-11-07T03:04:45.183Z",
     "status": "CERTIFIED_AUTHENTIC",
