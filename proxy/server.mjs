@@ -83,7 +83,8 @@ import {
   autoSelectAndDispatchPlaybookPick,
   runBroker58RadarAndDispatch,
   formatBroker58RadarHtml,
-  dispatchTop5Broker58Breakouts
+  dispatchTop5Broker58Breakouts,
+  dispatchSpecialTrackBTelegramMessage
 } from './telegramNotifier.mjs';
 import {
   getDiscordStatus,
@@ -4756,13 +4757,9 @@ function enrichWithMicrostructure(symbol, days, vaultData, date = '') {
     } catch (_) {}
   }
   if (!diag) {
-    diag =
-      HOT_CACHE?.stockDiagnostics?.get(`${sym}_${d}`) ||
-      HOT_CACHE?.stockDiagnostics?.get(`${sym}_30`) ||
-      HOT_CACHE?.stockDiagnostics?.get(`${sym}_15`) ||
-      HOT_CACHE?.stockDiagnostics?.get(`${sym}_5`) ||
-      HOT_CACHE?.stockDiagnostics?.get(`${sym}_1`);
+    diag = HOT_CACHE?.stockDiagnostics?.get(`${sym}_${d}`) || null;
   }
+  const diag30 = HOT_CACHE?.stockDiagnostics?.get(`${sym}_30`) || diag || null;
 
   const enriched = {
     ...vaultData,
@@ -4780,7 +4777,7 @@ function enrichWithMicrostructure(symbol, days, vaultData, date = '') {
     ...enriched,
     date: date || vaultData.date || vaultData.businessDate || '',
     businessDate: date || vaultData.businessDate || vaultData.date || '',
-    microstructure30d: diag,
+    microstructure30d: diag30 || diag,
     phase: date ? (diag.phase || enriched.phase) : (enriched.phase || diag.phase),
     phaseLabel: date ? (diag.phaseLabel || enriched.phaseLabel) : (enriched.phaseLabel || diag.phaseLabel),
     marketVWAP: date ? (diag.marketVWAP || sessionVwap || enriched.marketVWAP) : (enriched.marketVWAP || diag.marketVWAP || sessionVwap),
@@ -4799,12 +4796,14 @@ function enrichWithMicrostructure(symbol, days, vaultData, date = '') {
     adStrength: enriched.adStrength || diag.adStrength || '0%',
     topAccumulators: date ? (diag.topAccumulators || enriched.topAccumulators) : (enriched.topAccumulators || diag.topAccumulators),
     topDistributors: date ? (diag.topDistributors || enriched.topDistributors) : (enriched.topDistributors || diag.topDistributors),
+    topNetBuyers: date ? (diag.topNetBuyers || diag.topAccumulators || enriched.topNetBuyers) : (enriched.topNetBuyers || diag.topNetBuyers || diag.topAccumulators || []),
+    topNetSellers: date ? (diag.topNetSellers || diag.topDistributors || enriched.topNetSellers) : (enriched.topNetSellers || diag.topNetSellers || diag.topDistributors || []),
     topAccumulator: date ? (diag.topAccumulators?.[0]?.brokerId || diag.topAccumulators?.[0]?.broker || enriched.topAccumulator) : (enriched.topAccumulator || (diag.topAccumulators?.[0] ? (diag.topAccumulators[0].brokerId || diag.topAccumulators[0].broker) : null)),
     topDistributor: date ? (diag.topDistributors?.[0]?.brokerId || diag.topDistributors?.[0]?.broker || enriched.topDistributor) : (enriched.topDistributor || (diag.topDistributors?.[0] ? (diag.topDistributors[0].brokerId || diag.topDistributors[0].broker) : null)),
     dailyFlow: diag.dailyFlow || vaultData.dailyFlow || enriched.dailyFlow || [],
     dateWiseBrokers: diag.dailyFlow || vaultData.dailyFlow || enriched.dailyFlow || [],
-    timeframeDays: date ? 1 : (diag.timeframeDays || days),
-    tradingDays: date ? 1 : (diag.timeframeDays || days),
+    timeframeDays: date ? 1 : days,
+    tradingDays: date ? 1 : days,
     availableDates: (Array.isArray(vaultData?.availableDates) && vaultData.availableDates.length > 0)
       ? vaultData.availableDates
       : ((Array.isArray(diag?.availableDates) && diag.availableDates.length > 0)
@@ -5071,11 +5070,11 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
     }
 
     if (vaultData && (vaultData.brokers?.length > 0 || vaultData.topBuyers?.length > 0 || vaultData.topNetBuyers?.length > 0 || vaultData.totalVolume > 0)) {
-      if (!vaultData.dailyFlow || vaultData.dailyFlow.length <= 1) {
-        const snap = getFastVaultSnapshot(symbol, 30);
+      if (!vaultData.dailyFlow || (days > 1 && vaultData.dailyFlow.length <= 1)) {
+        const snap = getFastVaultSnapshot(symbol, Math.max(days, 30));
         if (snap?.dailyFlow?.length > 1) {
-          vaultData.dailyFlow = snap.dailyFlow;
-          vaultData.dateWiseBrokers = snap.dailyFlow;
+          vaultData.dailyFlow = snap.dailyFlow.slice(0, days);
+          vaultData.dateWiseBrokers = vaultData.dailyFlow;
         }
       }
       const enrichedVault = enrichWithMicrostructure(symbol, days, vaultData, date);
@@ -12218,6 +12217,48 @@ app.all('/api/telegram/dispatch-top5-breakouts', async (req, res) => {
   }
 });
 
+// Track B Special Syndicate Dispatch & Preview Routes
+let trackBPreviewCache = null;
+let trackBPreviewCacheTime = 0;
+const TRACK_B_CACHE_TTL_MS = 60 * 1000;
+
+app.post('/api/telegram/dispatch-trackb', requireAdminSecret, async (req, res) => {
+  try {
+    const chatId = req.body?.chatId || null;
+    const targetDate = req.body?.targetDate || null;
+    const dryRun = Boolean(req.body?.dryRun);
+    const result = await dispatchSpecialTrackBTelegramMessage({ chatId, targetDate, dryRun });
+    res.json({
+      success: result.success,
+      message: result.success ? 'Special Track B Syndicate alert dispatched to Telegram!' : (result.error || result.reason),
+      result
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/telegram/preview-trackb', async (req, res) => {
+  try {
+    const targetDate = req.query?.targetDate || null;
+    const now = Date.now();
+    if (!targetDate && trackBPreviewCache && (now - trackBPreviewCacheTime < TRACK_B_CACHE_TTL_MS)) {
+      return res.json({ success: true, cached: true, result: trackBPreviewCache });
+    }
+    const result = await dispatchSpecialTrackBTelegramMessage({ targetDate, dryRun: true });
+    if (!targetDate && result) {
+      trackBPreviewCache = result;
+      trackBPreviewCacheTime = now;
+    }
+    res.json({
+      success: true,
+      result
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // SSE endpoint for live browser/app updates
 app.get('/api/smart-alerts/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -12386,27 +12427,25 @@ app.all('/api/telegram/config', async (req, res) => {
     const hasAdminKey = Boolean(isValidAdminRequest(req));
     const token = cleanBotToken(rawBotToken);
 
-    // If caller has valid admin secret or request is on localhost, allow direct configuration
-    if (hasAdminKey) {
-      const result = saveTelegramConfig({ botToken: token, chatId: rawChatId, enabled });
-      return res.json({ success: result.success, message: result.success ? 'Telegram configuration saved successfully (Admin)' : result.error });
-    }
-
-    // Otherwise, require botToken and verify it live directly with Telegram's getMe API
     if (!token) {
       return res.status(400).json({ success: false, error: 'Bot Token is required to configure Telegram alerts.' });
     }
 
-    const testRes = await verifyTelegramToken(token);
-    if (!testRes.ok) {
-      const desc = testRes.description || '';
-      const errMsg = desc.includes('SESSION_REVOKED')
-        ? 'Telegram returned "SESSION_REVOKED". In @BotFather, tap "Revoke current token" to get a fresh active token.'
-        : `Telegram rejected token as Unauthorized (${desc || 'Invalid token'}). Please check your token in @BotFather.`;
-      return res.status(400).json({
-        success: false,
-        error: errMsg
-      });
+    // Always verify the token live with Telegram getMe API (unless force=true) to prevent false positive "Connected" states
+    const forceSave = Boolean(req.body?.force || req.query?.force);
+    let testRes = { ok: true, result: { username: 'ConfiguredBot' }, isTestServer: false };
+    if (!forceSave) {
+      testRes = await verifyTelegramToken(token);
+      if (!testRes.ok) {
+        const desc = testRes.description || '';
+        const errMsg = desc.includes('SESSION_REVOKED')
+          ? 'Telegram returned "SESSION_REVOKED". In @BotFather, tap "Revoke current token" to get a fresh active token.'
+          : `Telegram rejected token as Unauthorized (${desc || 'Invalid token'}). Please check your token in @BotFather.`;
+        return res.status(400).json({
+          success: false,
+          error: errMsg
+        });
+      }
     }
 
     const botUser = testRes.result?.username ? `@${testRes.result.username}` : (testRes.result?.first_name || 'Bot');

@@ -538,7 +538,7 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
   const topHoldings = topNetBuyers.map((b) => ({
     ...b,
     holdQty: b.netVol,
-    holdAmt: Math.max(0, b.netAmt),
+    holdAmt: Number((b.netVol * (b.avgBuyPrice || 0)).toFixed(2)),
     buyQty: b.buyVol,
     sellQty: b.sellVol,
     avgBuyRate: b.avgBuyPrice,
@@ -680,6 +680,8 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
     phaseLabel,
     topBuyers: topNetBuyers.slice(0, 10),
     topSellers: topNetSellers.slice(0, 10),
+    topNetBuyers: topNetBuyers.slice(0, 10),
+    topNetSellers: topNetSellers.slice(0, 10),
     topAccumulators: topNetBuyers.slice(0, 10),
     topDistributors: topNetSellers.slice(0, 10),
     totalBuyersCount: topNetBuyers.length,
@@ -930,7 +932,8 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
         for (const b of day0.brokers) {
           const bId = String(b.brokerId || b.broker || '');
           if (topBuyerIds.has(bId)) {
-            t2DumpedOnDay0Qty += Number(b.sellVol || 0);
+            const netSold = Number(b.sellVol || 0) - Number(b.buyVol || 0);
+            if (netSold > 0) t2DumpedOnDay0Qty += netSold;
           }
         }
       }
