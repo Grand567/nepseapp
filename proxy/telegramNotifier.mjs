@@ -23,6 +23,7 @@ import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 import { auditAntiDematDumpGuard, db } from './db/ledgerStore.js';
 import { getTelegramConfigFromDb, saveTelegramConfigToDb } from './db.mjs';
 import { BROKER_NAMES } from './brokerVault.mjs';
+import { scanTrackBSyndicateCandidates, formatTrackBSyndicateHtml } from './trackBSyndicateEngine.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -4033,6 +4034,56 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId
   };
 }
 
+/**
+ * Dispatches the specialized Track B Syndicate alert to Telegram:
+ * - Nominal price < Rs. 450
+ * - Public Float <= 1.5 Cr shares
+ * - Total Syndicate Net Retention > 75%
+ * - BCR3 Buy vs BCR3 Sell Asymmetry
+ * - Multi-Timeframe Broker VWAP & POC Anchor
+ * - 2-3 Day Ignition Coil (NR7/IDNR4, Wyckoff VDU)
+ */
+export async function dispatchSpecialTrackBTelegramMessage({ chatId = null, targetDate = null, dryRun = false } = {}) {
+  const activeDb = db;
+  if (!activeDb) {
+    return { success: false, error: 'Database instance not initialized' };
+  }
+
+  const { topPick, runnerUps, effectiveDate, totalScanned, qualifiedCount } = scanTrackBSyndicateCandidates({
+    db: activeDb,
+    maxPrice: 450,
+    minRetention: 75,
+    targetDate
+  });
+
+  const fullMsg = formatTrackBSyndicateHtml(topPick, runnerUps);
+
+  if (dryRun) {
+    return {
+      success: true,
+      dryRun: true,
+      topPick,
+      runnerUps,
+      effectiveDate,
+      totalScanned,
+      qualifiedCount,
+      html: fullMsg
+    };
+  }
+
+  const telegramResult = await sendTelegramMessage(fullMsg, { chatId });
+  return {
+    success: Boolean(telegramResult?.success),
+    topPick,
+    runnerUps,
+    effectiveDate,
+    totalScanned,
+    qualifiedCount,
+    html: fullMsg,
+    telegramResult
+  };
+}
+
 export function formatUpgradedStealthAccumulationHtml(winner = {}) {
   const rawSym = String(winner.symbol || 'STOCK').toUpperCase().trim();
   const sym = escapeHtml(rawSym);
@@ -4741,6 +4792,7 @@ async function handleTelegramCommand(text, {
       ``,
       `<b>⚡ Quick Commands to Send:</b>`,
       `• <code>/swing</code> or <code>/top5</code> — #1 Prime Stock Pick &amp; Top 5 Ranked Backup Slate`,
+      `• <code>/trackb</code> — Special Track B Syndicate Setup (&lt; Rs. 450, Float &le; 1.5 Cr, Ret &gt; 75%)`,
       `• <code>/analyze SHIVM</code> — Complete 7-Section Deep Stock Audit &amp; Profitability Verdict`,
       `• <code>/track SHIVM 510 484 100</code> — Track a stock for real-time Exit Guard alerts`,
       `• <code>/list</code> — View your actively guarded holdings &amp; PnL`,
@@ -4763,6 +4815,7 @@ async function handleTelegramCommand(text, {
       ``,
       `👑 <b>Automated #1 Prime Pick &amp; Ranked Slate:</b>`,
       `• <code>/swing</code> or <code>/top5</code>: #1 Prime Stock Pick &amp; Top 5 Ranked Backup Slate (5-Day Trap-Vetoed Flowchart v2.0)`,
+      `• <code>/trackb</code>: Special Track B Syndicate Setup (&lt; Rs. 450, Float &le; 1.5 Cr, Net Retention &gt; 75%, Dual Ignition, &plusmn;1.5% POC Shelf, 2–3D Surge)`,
       ``,
       `🔍 <b>Complete 7-Section Deep Stock Audit:</b>`,
       `• <code>/analyze SYMBOL</code>: Comprehensive audit on whether a stock is appropriate to invest for profit (Top 3 Buyers vs Sellers, Cost Basis, Volume Profile POC, 20 EMA, Buy Zone, SL &amp; Targets)`,
@@ -4812,6 +4865,18 @@ async function handleTelegramCommand(text, {
   ) {
     const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId });
     return swingRes.telegramResult;
+  }
+
+  // 2.2 SPECIAL TRACK B SYNDICATE DISPATCH (/trackb, /track-b, /syndicate, /track2)
+  if (
+    lower === '/trackb' || lower === 'trackb' ||
+    lower === '/track-b' || lower === 'track-b' ||
+    lower === '/track_b' || lower === 'track_b' ||
+    lower === '/syndicate' || lower === 'syndicate' ||
+    lower === '/track2' || lower === 'track2'
+  ) {
+    const trackBRes = await dispatchSpecialTrackBTelegramMessage({ chatId });
+    return trackBRes.telegramResult || trackBRes;
   }
 
   // 2.3 HIGH-VOLUME BREAKOUT RADAR & 20 EMA ACCUMULATION SCANNER

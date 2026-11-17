@@ -498,13 +498,17 @@ export async function downloadAndArchiveDailyFloorsheet(dateStr = '', options = 
           try { if (fs.existsSync(gzFilePath)) fs.unlinkSync(gzFilePath); } catch (_) {}
           // Fall through to re-fetch below
         } else {
-          // ── Ensure floorsheet_contracts is populated even for cached files ──
+          // ── Ensure floorsheet_contracts and daily_stock_summary are populated and in parity ──
           if (db && cachedTrades.length > 0) {
-            const existing = db.prepare(
+            const existingContracts = db.prepare(
               'SELECT COUNT(*) as c FROM floorsheet_contracts WHERE trade_date = ?'
             ).get(targetDate);
-            if (!existing || existing.c === 0) {
-              console.log(`[dailyFloorsheetCollector] floorsheet_contracts missing for ${targetDate} — re-ingesting ${cachedTrades.length} cached contracts...`);
+            const existingSummary = db.prepare(
+              'SELECT COUNT(*) as c FROM daily_stock_summary WHERE trade_date = ?'
+            ).get(targetDate);
+
+            if (!existingContracts || existingContracts.c === 0 || existingContracts.c !== cachedTrades.length || !existingSummary || existingSummary.c === 0) {
+              console.log(`[dailyFloorsheetCollector] Ledger parity check failed (Contracts: ${existingContracts?.c}/${cachedTrades.length}, Summaries: ${existingSummary?.c}) for ${targetDate} — re-ingesting ${cachedTrades.length} cached contracts to reconcile ground truth...`);
               ingestContractsToLedger(targetDate, cachedTrades);
             }
           }

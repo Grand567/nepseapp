@@ -186,6 +186,7 @@ await itAsync('fetchWithRetryBackoff succeeds after transient failures with expo
     maxRetries: 4,
     initialDelayMs: 40,
     backoffFactor: 2,
+    withJitter: false,
     onRetry: (err, att, delayMs) => {
       delays.push(delayMs);
     }

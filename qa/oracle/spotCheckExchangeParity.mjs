@@ -15,7 +15,7 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = path.resolve(__dirname, '../work/drabyashree_ledger.db');
 
 const STOCKS = ['NABIL', 'BARUN', 'SHIVM', 'RFPL', 'HDL', 'AKJCL', 'CIT', 'NRN', 'HRL', 'API'];
-const DATES = ['2026-11-13', '2026-11-06', '2026-11-05', '2026-11-04', '2026-10-30'];
+const DATES = ['2026-11-17', '2026-11-13', '2026-11-06', '2026-11-05', '2026-11-04'];
 
 export function runSpotCheck() {
   const db = new Database(DB_PATH, { readonly: true });

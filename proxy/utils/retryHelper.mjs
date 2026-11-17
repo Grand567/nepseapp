@@ -43,6 +43,7 @@ export async function fetchWithRetryBackoff(fn, {
   maxDelayMs = 5000,
   retryCondition = isTransientNetworkError,
   onRetry = null,
+  withJitter = true
 } = {}) {
   let attempt = 0;
   while (true) {
@@ -56,7 +57,7 @@ export async function fetchWithRetryBackoff(fn, {
       }
       const exponentialDelay = initialDelayMs * Math.pow(backoffFactor, attempt - 1);
       const cappedDelay = Math.min(exponentialDelay, maxDelayMs);
-      const jitter = Math.floor(Math.random() * 50);
+      const jitter = withJitter ? Math.floor(Math.random() * 50) : 0;
       const delayMs = cappedDelay + jitter;
 
       if (typeof onRetry === 'function') {
