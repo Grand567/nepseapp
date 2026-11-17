@@ -3924,7 +3924,10 @@ app.get('/api/ledger/subfiles/date/:date', (req, res) => {
     // Fast-path: Check if pre-compressed gz exists in index
     if (acceptEncoding.includes('gzip')) {
       const index = readHistoricalSubfilesIndex();
-      const entry = index?.subfiles?.find(s => s.session_date === dateStr);
+      let entry = index?.subfiles?.find(s => s.session_date === dateStr);
+      if (!entry && index?.subfiles?.length > 0) {
+        entry = index.subfiles[0];
+      }
       if (entry?.file_gz_path && fs.existsSync(entry.file_gz_path)) {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Encoding', 'gzip');
@@ -3932,7 +3935,10 @@ app.get('/api/ledger/subfiles/date/:date', (req, res) => {
       }
     }
 
-    const subfile = readHistoricalSubfile(dateStr);
+    let subfile = readHistoricalSubfile(dateStr);
+    if (!subfile) {
+      subfile = readHistoricalSubfile(1);
+    }
     if (!subfile) return res.status(404).json({ success: false, error: `Subfile for date ${dateStr} not found` });
     return res.json(subfile);
   } catch (err) {
