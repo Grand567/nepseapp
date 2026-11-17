@@ -72,8 +72,9 @@ export const SignalTrackRecord = ({ symbol, livePrice = null, allStocks = [] }) 
         if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
           backendRows = cached.signals;
         } else {
-          const base = getProxyBase() || 'https://nepseapp.onrender.com';
-          const res = await fetch(`${base}/api/radar/signal-track-record`, { cache: 'no-store' });
+          const base = getProxyBase();
+          const proxyUrl = typeof base === 'string' ? base : 'https://nepseapp.onrender.com';
+          const res = await fetch(`${proxyUrl}/api/radar/signal-track-record`, { cache: 'no-store' });
           if (!res.ok) return;
           const data = await res.json();
           if (!data?.signals) return;
