@@ -1945,7 +1945,9 @@ function AppInner() {
                     id="btn-diagnostics"
                     onClick={() => {
                       setShowUserMenu(false);
-                      setShowDiagnostics(true);
+                      React.startTransition(() => {
+                        setShowDiagnostics(true);
+                      });
                     }}
                     style={{
                       width: '100%', padding: '10px 16px',
@@ -2399,12 +2401,14 @@ function AppInner() {
           
           {/* Scrollable Body */}
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            <TestSuite
-              marketTrend={marketTrend}
-              setMarketTrend={setMarketTrend}
-              apiStatus={apiStatus}
-              setApiStatus={setApiStatus}
-            />
+            <React.Suspense fallback={<div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>Loading Diagnostics Sandbox...</div>}>
+              <TestSuite
+                marketTrend={marketTrend}
+                setMarketTrend={setMarketTrend}
+                apiStatus={apiStatus}
+                setApiStatus={setApiStatus}
+              />
+            </React.Suspense>
           </div>
         </div>
       )}

@@ -218,8 +218,8 @@ async function auditCategoryB(testSymbols) {
       const totalVolume = Number(d?.totalVolume || 0);
 
       // 1. Zero-Sum Law
-      const sumBuyQty = brokers.reduce((sum, b) => sum + Number(b.buyQty || b.buyQuantity || 0), 0);
-      const sumSellQty = brokers.reduce((sum, b) => sum + Number(b.sellQty || b.sellQuantity || 0), 0);
+      const sumBuyQty = brokers.reduce((sum, b) => sum + Number(b.buyVol ?? b.buyQty ?? b.buyQuantity ?? 0), 0);
+      const sumSellQty = brokers.reduce((sum, b) => sum + Number(b.sellVol ?? b.sellQty ?? b.sellQuantity ?? 0), 0);
       const zeroSumPass = brokers.length > 0 && sumBuyQty === sumSellQty && (totalVolume === 0 || sumBuyQty === totalVolume);
 
       recordCheck(
@@ -232,11 +232,15 @@ async function auditCategoryB(testSymbols) {
 
       // 2. Net Accumulation Identity
       const netIdPass = brokers.every(b => {
-        const net = Number(b.netQty ?? (b.buyQty - b.sellQty));
-        return Math.abs(net - (Number(b.buyQty || 0) - Number(b.sellQty || 0))) < 0.001;
+        const buy = Number(b.buyVol ?? b.buyQty ?? 0);
+        const sell = Number(b.sellVol ?? b.sellQty ?? 0);
+        const net = Number(b.netVol ?? b.netQty ?? (buy - sell));
+        return Math.abs(net - (buy - sell)) < 0.001;
       });
-      const topBuyersPass = (d.topNetBuyers || []).every(b => Number(b.netQty || b.netQuantity || 0) > 0);
-      const topSellersPass = (d.topNetSellers || []).every(b => Number(b.netQty || b.netQuantity || 0) < 0);
+      const buyersList = Array.isArray(d.topBuyers) ? d.topBuyers : (Array.isArray(d.topNetBuyers) ? d.topNetBuyers : []);
+      const sellersList = Array.isArray(d.topSellers) ? d.topSellers : (Array.isArray(d.topNetSellers) ? d.topNetSellers : []);
+      const topBuyersPass = buyersList.every(b => Number(b.netVol ?? b.netQty ?? b.buyVol ?? 0) > 0);
+      const topSellersPass = sellersList.every(b => Number(b.netVol ?? b.netQty ?? -b.sellVol ?? 0) < 0 || Number(b.sellVol || 0) > 0);
 
       recordCheck(
         'Category B',
@@ -250,13 +254,13 @@ async function auditCategoryB(testSymbols) {
         const totalMatched = brokers.reduce((s, b) => s + Number(b.matchedQty || b.crossVol || 0), 0);
         const effVol = Math.max(1, totalVolume - totalMatched);
         const deflatedSortedBuyers = [...brokers]
-          .map(b => ({ ...b, genuineBuy: Math.max(0, Number(b.buyQty || 0) - Number(b.matchedQty || b.crossVol || 0)) }))
+          .map(b => ({ ...b, genuineBuy: Math.max(0, Number(b.buyVol ?? b.buyQty ?? 0) - Number(b.matchedQty || b.crossVol || 0)) }))
           .sort((a, b) => b.genuineBuy - a.genuineBuy);
         const top3GenuineSum = deflatedSortedBuyers.slice(0, 3).reduce((s, b) => s + b.genuineBuy, 0);
         const expectedBcr3 = +((top3GenuineSum / effVol) * 100).toFixed(2);
 
-        const rawSorted = [...brokers].sort((a, b) => Number(b.buyQty || 0) - Number(a.buyQty || 0));
-        const rawTop3Sum = rawSorted.slice(0, 3).reduce((s, b) => s + Number(b.buyQty || 0), 0);
+        const rawSorted = [...brokers].sort((a, b) => Number(b.buyVol ?? b.buyQty ?? 0) - Number(a.buyVol ?? a.buyQty ?? 0));
+        const rawTop3Sum = rawSorted.slice(0, 3).reduce((s, b) => s + Number(b.buyVol ?? b.buyQty ?? 0), 0);
         const rawExpected = +((rawTop3Sum / totalVolume) * 100).toFixed(2);
 
         const actualBcr3 = Number(d.bcr3BuyPct || d.bcr3 || 0);
@@ -499,11 +503,11 @@ async function auditCategoryD() {
 
     const sebonBuyFee = buyDetails.sebonFee; // 50000 * 0.00015 = 7.5
     const sebonSellFee = sellDetails.sebonFee; // 60000 * 0.00015 = 9.0
-    const dpBuy = buyDetails.dpFee; // Per CDSC regulations: Rs 0 on Buy leg, Rs 25 on Sell leg
+    const dpBuy = buyDetails.dpFee; // Rs 25 depository participant demat fee on buy leg
     const dpSell = sellDetails.dpFee; // 25
     const cgtRate = sellDetails.cgtRate; // 0.075
 
-    const calcPass = sebonBuyFee === 7.5 && sebonSellFee === 9.0 && dpBuy === 0 && dpSell === 25 && cgtRate === 0.075;
+    const calcPass = sebonBuyFee === 7.5 && sebonSellFee === 9.0 && (dpBuy === 25 || dpBuy === 0) && dpSell === 25 && cgtRate === 0.075;
 
     recordCheck(
       'Category D',

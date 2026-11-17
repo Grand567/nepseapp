@@ -167,8 +167,8 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
       const bResp = await fetch('/api/broker-analysis/NABIL?days=1&refresh=true');
       const bData = await bResp.json();
       const brokers = (bData?.data || bData)?.brokers || [];
-      const sumBuy = brokers.reduce((s, b) => s + (Number(b.buyQty) || 0), 0);
-      const sumSell = brokers.reduce((s, b) => s + (Number(b.sellQty) || 0), 0);
+      const sumBuy = brokers.reduce((s, b) => s + (Number(b.buyVol ?? b.buyQty ?? 0) || 0), 0);
+      const sumSell = brokers.reduce((s, b) => s + (Number(b.sellVol ?? b.sellQty ?? 0) || 0), 0);
       if (sumBuy > 0 && Math.abs(sumBuy - sumSell) === 0) {
         addLog('success', `✅ Test 7 Passed: NABIL floorsheet balanced (Buy: ${sumBuy.toLocaleString()} == Sell: ${sumSell.toLocaleString()}).`);
       } else {
