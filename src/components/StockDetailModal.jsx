@@ -4042,7 +4042,7 @@ export default function StockDetailModal({
                       {fmtCr(d.turnover || (d.ltp * (d.volume || 0)))}
                     </div>
                   </div>
-                  <div>
+                  <div title="Total Exchange Traded Volume (including Standard Continuous Board + Odd-Lot/Pre-Open Trades)">
                     <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Traded QTY.</div>
                     <div style={{ fontSize: 13.5, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
                       {Number(d.volume || 0).toLocaleString()}
