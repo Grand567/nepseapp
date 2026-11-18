@@ -22,7 +22,6 @@ import crypto from 'crypto';
 import dns from 'dns';
 import dnsPromises from 'dns/promises';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 import { auditAntiDematDumpGuard, db } from './db/ledgerStore.js';
 import { getTelegramConfigFromDb, saveTelegramConfigToDb } from './db.mjs';
@@ -44,12 +43,6 @@ async function resolveTelegramIp() {
   return cachedTelegramIp;
 }
 
-try {
-  const envPath = path.join(__dirname, '.env');
-  if (fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath });
-  }
-} catch (_) {}
 const DATA_DIR = (process.env.NEPSE_DATA_DIR && fs.existsSync(process.env.NEPSE_DATA_DIR))
   ? process.env.NEPSE_DATA_DIR
   : path.join(__dirname, 'data');
