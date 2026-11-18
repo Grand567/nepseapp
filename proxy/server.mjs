@@ -12456,7 +12456,19 @@ app.all('/api/telegram/config', async (req, res) => {
     }
 
     const botUser = testRes.result?.username ? `@${testRes.result.username}` : (testRes.result?.first_name || 'Bot');
-    const result = saveTelegramConfig({ botToken: token, chatId: rawChatId, enabled, isTestServer: testRes.isTestServer });
+    const isTestServer = req.body?.isTestServer !== undefined 
+      ? Boolean(req.body.isTestServer)
+      : (req.query?.isTestServer !== undefined ? req.query.isTestServer === 'true' : testRes.isTestServer);
+
+    const result = saveTelegramConfig({
+      botToken: token,
+      chatId: rawChatId,
+      enabled,
+      isTestServer,
+      useWebhook: req.body?.useWebhook,
+      webhookUrl: req.body?.webhookUrl,
+      webhookSecretToken: req.body?.webhookSecretToken
+    });
     if (result.success) {
       resetTelegramAuthError();
       return res.json({
