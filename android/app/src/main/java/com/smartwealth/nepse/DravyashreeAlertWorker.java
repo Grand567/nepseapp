@@ -227,7 +227,8 @@ public class DravyashreeAlertWorker extends Worker {
         }
 
         if (jsonResponse == null || jsonResponse.trim().isEmpty()) {
-            return Result.success();
+            Log.w(TAG, "Dravyashree endpoints unreachable, timed out, or returned 503/empty. Requesting WorkManager retry with backoff...");
+            return Result.retry();
         }
 
         try {
@@ -530,8 +531,8 @@ public class DravyashreeAlertWorker extends Worker {
         URL url = new URL(urlString);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("GET");
-        conn.setConnectTimeout(25000);
-        conn.setReadTimeout(25000);
+        conn.setConnectTimeout(35000);
+        conn.setReadTimeout(35000);
         conn.setRequestProperty("Accept", "application/json");
         conn.setRequestProperty("User-Agent", "DravyashreeAndroidApp/1.0.6");
 

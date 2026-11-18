@@ -185,6 +185,7 @@ let pushTokens = loadJson(TOKENS_FILE, []);
 let isFcmInitialized = false;
 let fcmMessaging = null;
 let hasValidFcmPrivateKey = false;
+let fcmCredentialsSource = 'NONE';
 
 try {
   let creds = null;
@@ -192,24 +193,39 @@ try {
     const raw = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
     try {
       creds = JSON.parse(raw);
+      fcmCredentialsSource = 'FIREBASE_SERVICE_ACCOUNT_ENV';
     } catch (_) {
       // Try decoding base64 if user encoded it
       try {
         const decoded = Buffer.from(raw, 'base64').toString('utf8');
         creds = JSON.parse(decoded);
+        fcmCredentialsSource = 'FIREBASE_SERVICE_ACCOUNT_BASE64_ENV';
       } catch (e2) {
         console.warn('[SmartAlertEngine] Could not parse FIREBASE_SERVICE_ACCOUNT JSON/Base64:', e2.message);
       }
     }
+  } else if (fs.existsSync('/etc/secrets')) {
+    try {
+      const secretFiles = fs.readdirSync('/etc/secrets');
+      const fcmFile = secretFiles.find(f => f.includes('firebase-adminsdk') && f.endsWith('.json'));
+      if (fcmFile) {
+        creds = JSON.parse(fs.readFileSync(path.join('/etc/secrets', fcmFile), 'utf8'));
+        fcmCredentialsSource = `RENDER_SECRET_FILE (/etc/secrets/${fcmFile})`;
+      }
+    } catch (eSec) {
+      console.warn('[SmartAlertEngine] Error reading /etc/secrets for Firebase:', eSec.message);
+    }
   } else if (fs.existsSync(path.join(__dirname, 'firebase-service-account.json'))) {
     try {
       creds = JSON.parse(fs.readFileSync(path.join(__dirname, 'firebase-service-account.json'), 'utf8'));
+      fcmCredentialsSource = 'LOCAL_SERVICE_ACCOUNT_FILE';
     } catch (e3) {
       console.warn('[SmartAlertEngine] Error reading firebase-service-account.json:', e3.message);
     }
   } else if (fs.existsSync(path.join(process.cwd(), 'firebase-service-account.json'))) {
     try {
       creds = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'firebase-service-account.json'), 'utf8'));
+      fcmCredentialsSource = 'CWD_SERVICE_ACCOUNT_FILE';
     } catch (_) {}
   }
 
@@ -265,7 +281,8 @@ export function broadcastAlert(alertPayload) {
   if (!alertPayload.timestamp) {
     alertPayload.timestamp = alertPayload.triggeredAt;
   }
-  alertPayload.ttl_ms = 30 * 60 * 1000; // 30 minutes TTL rule
+  const isExitOrStopLossPayload = ['STOP_LOSS_WARNING', 'PROFIT_BOOKING', 'STOP_LOSS_HIT', 'TARGET_REACHED'].includes(alertPayload.type) || Boolean(alertPayload.isPortfolioTracked);
+  alertPayload.ttl_ms = isExitOrStopLossPayload ? (24 * 60 * 60 * 1000) : (30 * 60 * 1000); // 24h for exit/SL vs 30m for regular signals
 
   // Normalize category: pro vs general
   if (alertPayload.isHoldingHighlight) {
@@ -647,13 +664,14 @@ export async function dispatchFcmNotification(alertItem) {
       timestamp: String(nowMs),
       created_at: String(createdAtIso),
       created_at_ms: String(createdAtMs),
-      ttl_seconds: '1800',
-      ttl_ms: '1800000',
+      original_trigger_time: alertItem.triggeredAtTime || new Date(createdAtMs).toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' }),
+      ttl_seconds: String(['STOP_LOSS_WARNING', 'PROFIT_BOOKING', 'STOP_LOSS_HIT', 'TARGET_REACHED'].includes(type) || alertItem.isPortfolioTracked ? 86400 : 1800),
+      ttl_ms: String(['STOP_LOSS_WARNING', 'PROFIT_BOOKING', 'STOP_LOSS_HIT', 'TARGET_REACHED'].includes(type) || alertItem.isPortfolioTracked ? 86400000 : 1800000),
       ...(alertItem.data || {})
     },
     android: {
       priority: 'high',
-      ttl: 1800 * 1000, // 30 minutes in milliseconds (Google FCM drops queued messages if phone was offline > 30m)
+      ttl: (['STOP_LOSS_WARNING', 'PROFIT_BOOKING', 'STOP_LOSS_HIT', 'TARGET_REACHED'].includes(type) || alertItem.isPortfolioTracked ? 86400 : 1800) * 1000,
       notification: {
         sound: 'default',
         channelId,
@@ -664,7 +682,7 @@ export async function dispatchFcmNotification(alertItem) {
     },
     webpush: {
       headers: {
-        TTL: '1800'
+        TTL: String(['STOP_LOSS_WARNING', 'PROFIT_BOOKING', 'STOP_LOSS_HIT', 'TARGET_REACHED'].includes(type) || alertItem.isPortfolioTracked ? 86400 : 1800)
       }
     }
   };
@@ -2716,6 +2734,7 @@ export function getSmartAlertSystemStatus() {
   return {
     isFcmInitialized: hasValidFcmPrivateKey,
     hasValidFcmPrivateKey,
+    firebaseCredentialsSource: fcmCredentialsSource,
     nativeWorkManagerSupported: true,
     androidChannels: ['dravyashree-pro-signals', 'nepse-general-news'],
     registeredPushTokensCount: pushTokens.length,
