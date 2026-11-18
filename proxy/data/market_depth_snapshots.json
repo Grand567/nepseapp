@@ -3,79 +3,79 @@
     "symbol": "NABIL",
     "bids": [
       {
-        "price": 547,
-        "quantity": 10,
-        "qty": 10,
+        "price": 549,
+        "quantity": 18,
+        "qty": 18,
         "orders": 1
       },
       {
-        "price": 546.5,
-        "quantity": 39,
-        "qty": 39,
+        "price": 548,
+        "quantity": 82,
+        "qty": 82,
+        "orders": 4
+      },
+      {
+        "price": 547.6,
+        "quantity": 2000,
+        "qty": 2000,
         "orders": 1
       },
       {
-        "price": 546.1,
-        "quantity": 455,
-        "qty": 455,
-        "orders": 1
+        "price": 547.5,
+        "quantity": 323,
+        "qty": 323,
+        "orders": 3
       },
       {
-        "price": 546,
-        "quantity": 1390,
-        "qty": 1390,
-        "orders": 8
-      },
-      {
-        "price": 545.1,
-        "quantity": 21,
-        "qty": 21,
-        "orders": 1
+        "price": 547.3,
+        "quantity": 120,
+        "qty": 120,
+        "orders": 2
       }
     ],
     "asks": [
       {
-        "price": 548,
-        "quantity": 2193,
-        "qty": 2193,
-        "orders": 16
-      },
-      {
-        "price": 548.4,
-        "quantity": 400,
-        "qty": 400,
+        "price": 549.8,
+        "quantity": 382,
+        "qty": 382,
         "orders": 1
       },
       {
-        "price": 548.5,
-        "quantity": 160,
-        "qty": 160,
+        "price": 550,
+        "quantity": 266,
+        "qty": 266,
+        "orders": 3
+      },
+      {
+        "price": 550.9,
+        "quantity": 120,
+        "qty": 120,
         "orders": 2
       },
       {
-        "price": 549,
-        "quantity": 1228,
-        "qty": 1228,
+        "price": 551,
+        "quantity": 1800,
+        "qty": 1800,
+        "orders": 4
+      },
+      {
+        "price": 552,
+        "quantity": 1911,
+        "qty": 1911,
         "orders": 8
-      },
-      {
-        "price": 549.1,
-        "quantity": 1010,
-        "qty": 1010,
-        "orders": 2
       }
     ],
-    "totalBidQty": 15575,
-    "totalAskQty": 40323,
-    "obir": -0.4427,
-    "spread": 1,
-    "spreadPct": 0.18,
+    "totalBidQty": 32227,
+    "totalAskQty": 33149,
+    "obir": -0.0141,
+    "spread": 0.8,
+    "spreadPct": 0.15,
     "isOffMarket": false,
     "sessionLabel": "Live NEPSE NOTS Order Book",
-    "demandStatus": "Supply Heavy",
+    "demandStatus": "Balanced Flow",
     "source": "nepse-api",
-    "fetchedAt": "2026-10-16T07:23:11.063Z",
-    "savedAt": "2026-10-16T07:23:11.063Z"
+    "fetchedAt": "2026-11-17T07:23:20.771Z",
+    "savedAt": "2026-11-17T07:23:20.771Z"
   },
   "SAHAS": {
     "symbol": "SAHAS",
@@ -154,5 +154,395 @@
     "source": "nepse-api",
     "fetchedAt": "2026-11-05T06:17:42.123Z",
     "savedAt": "2026-11-05T06:17:42.123Z"
+  },
+  "NABILD2089": {
+    "symbol": "NABILD2089",
+    "bids": [
+      {
+        "price": 1122.1,
+        "quantity": 1000,
+        "qty": 1000,
+        "orders": 1
+      },
+      {
+        "price": 1122,
+        "quantity": 39800,
+        "qty": 39800,
+        "orders": 1
+      },
+      {
+        "price": 1095,
+        "quantity": 100,
+        "qty": 100,
+        "orders": 1
+      },
+      {
+        "price": 1080,
+        "quantity": 250,
+        "qty": 250,
+        "orders": 2
+      },
+      {
+        "price": 1078,
+        "quantity": 100,
+        "qty": 100,
+        "orders": 1
+      }
+    ],
+    "asks": [
+      {
+        "price": 1140,
+        "quantity": 201,
+        "qty": 201,
+        "orders": 1
+      },
+      {
+        "price": 1151.8,
+        "quantity": 50,
+        "qty": 50,
+        "orders": 1
+      },
+      {
+        "price": 1151.9,
+        "quantity": 75,
+        "qty": 75,
+        "orders": 1
+      },
+      {
+        "price": 1152,
+        "quantity": 100,
+        "qty": 100,
+        "orders": 1
+      },
+      {
+        "price": 1153.9,
+        "quantity": 25,
+        "qty": 25,
+        "orders": 1
+      }
+    ],
+    "totalBidQty": 41250,
+    "totalAskQty": 1466,
+    "obir": 0.9314,
+    "spread": 17.9,
+    "spreadPct": 1.6,
+    "isOffMarket": false,
+    "sessionLabel": "Live NEPSE NOTS Order Book",
+    "demandStatus": "Demand Heavy",
+    "source": "nepse-api",
+    "fetchedAt": "2026-11-17T08:49:44.083Z",
+    "savedAt": "2026-11-17T08:49:44.083Z"
+  },
+  "SHIVM": {
+    "symbol": "SHIVM",
+    "bids": [
+      {
+        "price": 664,
+        "quantity": 426,
+        "qty": 426,
+        "orders": 4
+      },
+      {
+        "price": 663.5,
+        "quantity": 200,
+        "qty": 200,
+        "orders": 1
+      },
+      {
+        "price": 663.4,
+        "quantity": 50,
+        "qty": 50,
+        "orders": 1
+      },
+      {
+        "price": 663.1,
+        "quantity": 400,
+        "qty": 400,
+        "orders": 1
+      },
+      {
+        "price": 663,
+        "quantity": 850,
+        "qty": 850,
+        "orders": 1
+      }
+    ],
+    "asks": [
+      {
+        "price": 664.9,
+        "quantity": 390,
+        "qty": 390,
+        "orders": 1
+      },
+      {
+        "price": 665,
+        "quantity": 617,
+        "qty": 617,
+        "orders": 5
+      },
+      {
+        "price": 666,
+        "quantity": 500,
+        "qty": 500,
+        "orders": 1
+      },
+      {
+        "price": 666.7,
+        "quantity": 334,
+        "qty": 334,
+        "orders": 1
+      },
+      {
+        "price": 666.9,
+        "quantity": 500,
+        "qty": 500,
+        "orders": 1
+      }
+    ],
+    "totalBidQty": 75483,
+    "totalAskQty": 53815,
+    "obir": 0.1676,
+    "spread": 0.9,
+    "spreadPct": 0.14,
+    "isOffMarket": false,
+    "sessionLabel": "Live NEPSE NOTS Order Book",
+    "demandStatus": "Demand Heavy",
+    "source": "nepse-api",
+    "fetchedAt": "2026-11-17T08:59:35.702Z",
+    "savedAt": "2026-11-17T08:59:35.702Z"
+  },
+  "HRL": {
+    "symbol": "HRL",
+    "bids": [
+      {
+        "price": 485,
+        "quantity": 107,
+        "qty": 107,
+        "orders": 1
+      },
+      {
+        "price": 483.9,
+        "quantity": 290,
+        "qty": 290,
+        "orders": 1
+      },
+      {
+        "price": 483.8,
+        "quantity": 368,
+        "qty": 368,
+        "orders": 2
+      },
+      {
+        "price": 483.7,
+        "quantity": 1060,
+        "qty": 1060,
+        "orders": 4
+      },
+      {
+        "price": 483.5,
+        "quantity": 200,
+        "qty": 200,
+        "orders": 1
+      }
+    ],
+    "asks": [
+      {
+        "price": 485.5,
+        "quantity": 21,
+        "qty": 21,
+        "orders": 1
+      },
+      {
+        "price": 485.9,
+        "quantity": 10,
+        "qty": 10,
+        "orders": 1
+      },
+      {
+        "price": 486,
+        "quantity": 21,
+        "qty": 21,
+        "orders": 1
+      },
+      {
+        "price": 486.9,
+        "quantity": 110,
+        "qty": 110,
+        "orders": 2
+      },
+      {
+        "price": 487,
+        "quantity": 250,
+        "qty": 250,
+        "orders": 2
+      }
+    ],
+    "totalBidQty": 74257,
+    "totalAskQty": 42322,
+    "obir": 0.2739,
+    "spread": 0.5,
+    "spreadPct": 0.1,
+    "isOffMarket": false,
+    "sessionLabel": "Live NEPSE NOTS Order Book",
+    "demandStatus": "Demand Heavy",
+    "source": "nepse-api",
+    "fetchedAt": "2026-11-17T09:01:36.087Z",
+    "savedAt": "2026-11-17T09:01:36.087Z"
+  },
+  "UPPER": {
+    "symbol": "UPPER",
+    "bids": [
+      {
+        "price": 193.8,
+        "quantity": 40,
+        "qty": 40,
+        "orders": 1
+      },
+      {
+        "price": 193.7,
+        "quantity": 374,
+        "qty": 374,
+        "orders": 3
+      },
+      {
+        "price": 193.6,
+        "quantity": 250,
+        "qty": 250,
+        "orders": 2
+      },
+      {
+        "price": 193.5,
+        "quantity": 1274,
+        "qty": 1274,
+        "orders": 6
+      },
+      {
+        "price": 193.4,
+        "quantity": 650,
+        "qty": 650,
+        "orders": 2
+      }
+    ],
+    "asks": [
+      {
+        "price": 194,
+        "quantity": 760,
+        "qty": 760,
+        "orders": 1
+      },
+      {
+        "price": 194.2,
+        "quantity": 445,
+        "qty": 445,
+        "orders": 2
+      },
+      {
+        "price": 194.8,
+        "quantity": 1155,
+        "qty": 1155,
+        "orders": 1
+      },
+      {
+        "price": 194.9,
+        "quantity": 377,
+        "qty": 377,
+        "orders": 1
+      },
+      {
+        "price": 195,
+        "quantity": 2064,
+        "qty": 2064,
+        "orders": 13
+      }
+    ],
+    "totalBidQty": 95496,
+    "totalAskQty": 90848,
+    "obir": 0.0249,
+    "spread": 0.2,
+    "spreadPct": 0.1,
+    "isOffMarket": false,
+    "sessionLabel": "Live NEPSE NOTS Order Book",
+    "demandStatus": "Balanced Flow",
+    "source": "nepse-api",
+    "fetchedAt": "2026-11-17T07:23:21.376Z",
+    "savedAt": "2026-11-17T07:23:21.376Z"
+  },
+  "HDL": {
+    "symbol": "HDL",
+    "bids": [
+      {
+        "price": 1326,
+        "quantity": 444,
+        "qty": 444,
+        "orders": 1
+      },
+      {
+        "price": 1325.1,
+        "quantity": 320,
+        "qty": 320,
+        "orders": 2
+      },
+      {
+        "price": 1325,
+        "quantity": 2766,
+        "qty": 2766,
+        "orders": 13
+      },
+      {
+        "price": 1324,
+        "quantity": 206,
+        "qty": 206,
+        "orders": 6
+      },
+      {
+        "price": 1322,
+        "quantity": 100,
+        "qty": 100,
+        "orders": 1
+      }
+    ],
+    "asks": [
+      {
+        "price": 1328.5,
+        "quantity": 133,
+        "qty": 133,
+        "orders": 2
+      },
+      {
+        "price": 1328.9,
+        "quantity": 65,
+        "qty": 65,
+        "orders": 2
+      },
+      {
+        "price": 1329,
+        "quantity": 1882,
+        "qty": 1882,
+        "orders": 7
+      },
+      {
+        "price": 1329.4,
+        "quantity": 20,
+        "qty": 20,
+        "orders": 1
+      },
+      {
+        "price": 1329.5,
+        "quantity": 10,
+        "qty": 10,
+        "orders": 1
+      }
+    ],
+    "totalBidQty": 62765,
+    "totalAskQty": 36583,
+    "obir": 0.2635,
+    "spread": 2.5,
+    "spreadPct": 0.19,
+    "isOffMarket": false,
+    "sessionLabel": "Live NEPSE NOTS Order Book",
+    "demandStatus": "Demand Heavy",
+    "source": "nepse-api",
+    "fetchedAt": "2026-11-17T07:23:21.624Z",
+    "savedAt": "2026-11-17T07:23:21.624Z"
   }
 }

@@ -1,5 +1,27 @@
 [
   {
+    "date": "2026-11-18",
+    "tradeCount": 41627,
+    "ingestedCount": 41627,
+    "totalVolume": 10162605,
+    "totalTurnover": 4154925108,
+    "jsonFileSizeKb": 26455.5,
+    "gzFileSizeKb": 2599.8,
+    "savedAt": "2026-11-18T09:32:12.061Z",
+    "status": "COMPLETE"
+  },
+  {
+    "date": "2026-11-17",
+    "tradeCount": 48312,
+    "ingestedCount": 48312,
+    "totalVolume": 11210477,
+    "totalTurnover": 4693089073,
+    "jsonFileSizeKb": 30707.8,
+    "gzFileSizeKb": 3033.7,
+    "savedAt": "2026-11-17T09:20:10.807Z",
+    "status": "COMPLETE"
+  },
+  {
     "date": "2026-11-13",
     "tradeCount": 31323,
     "ingestedCount": 31323,

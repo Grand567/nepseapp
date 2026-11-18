@@ -84,7 +84,14 @@ import {
   runBroker58RadarAndDispatch,
   formatBroker58RadarHtml,
   dispatchTop5Broker58Breakouts,
-  dispatchSpecialTrackBTelegramMessage
+  dispatchSpecialTrackBTelegramMessage,
+  handleIncomingTelegramUpdate,
+  validateWebhookSecretToken,
+  getTelegramWebhookSecretToken,
+  setTelegramWebhook,
+  deleteTelegramWebhook,
+  getTelegramWebhookInfo,
+  isTelegramWebhookActive
 } from './telegramNotifier.mjs';
 import {
   getDiscordStatus,
@@ -12481,6 +12488,91 @@ app.all('/api/telegram/detect-chat-id', async (req, res) => {
     const botToken = req.body?.botToken || req.query?.botToken || req.query?.token || undefined;
     const result = await autoDetectChatId(botToken);
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── TELEGRAM WEBHOOK 2-WAY HANDLER ──
+// Receives instant push notifications from Telegram whenever a user messages the bot.
+// Instantly wakes up Render free container without waiting for keepalive polls.
+app.post('/api/telegram/webhook', async (req, res) => {
+  try {
+    const webhookSecret = getTelegramWebhookSecretToken();
+    const secretHeader = req.headers['x-telegram-bot-api-secret-token'];
+    
+    // Validate secret token if configured (OWASP spoofing prevention)
+    if (webhookSecret && !validateWebhookSecretToken(webhookSecret, secretHeader)) {
+      console.warn('[TelegramWebhook] ⛔ Rejected webhook request: invalid x-telegram-bot-api-secret-token');
+      return res.status(401).json({ ok: false, error: 'Unauthorized: invalid webhook secret token' });
+    }
+
+    // Immediately ACK with 200 OK to Telegram to prevent retry floods
+    res.status(200).json({ ok: true });
+
+    // Process update asynchronously
+    const update = req.body;
+    handleIncomingTelegramUpdate(update, {
+      onTrackHolding: trackCustomHolding,
+      onUntrackHolding: untrackCustomHolding,
+      onGetTrackedHoldings: getUserTrackedHoldings,
+      getLatestStockPrice: async (sym) => {
+        try {
+          const clean = String(sym || '').toUpperCase().trim();
+          let cached = getCache ? (getCache('today-prices') || getCache('market-summary')) : null;
+          let list = Array.isArray(cached) ? cached : (cached?.data || cached?.stocks || []);
+          if (list.length === 0 && fetchTodayPricesInternal) {
+            list = await fetchTodayPricesInternal().catch(() => []);
+          }
+          const found = list.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === clean);
+          if (found) {
+            return Number(found.ltp || found.lastTradedPrice || found.closePrice || 0);
+          }
+          if (db) {
+            const row = db.prepare('SELECT close_price FROM daily_stock_summary WHERE symbol = ? ORDER BY trade_date DESC LIMIT 1').get(clean);
+            if (row && row.close_price) return Number(row.close_price);
+          }
+        } catch (_) {}
+        return 0;
+      }
+    }).catch(err => {
+      console.error('[TelegramWebhook] Async update handling error:', err.message);
+    });
+  } catch (err) {
+    console.error('[TelegramWebhook] Fatal webhook handler error:', err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  }
+});
+
+app.post('/api/telegram/webhook/setup', requireAdminSecret, async (req, res) => {
+  try {
+    const url = req.body?.url;
+    const secretToken = req.body?.secretToken;
+    const dropPendingUpdates = Boolean(req.body?.dropPendingUpdates);
+    const result = await setTelegramWebhook({ url, secretToken, dropPendingUpdates });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/telegram/webhook/delete', requireAdminSecret, async (req, res) => {
+  try {
+    const dropPendingUpdates = Boolean(req.body?.dropPendingUpdates);
+    const result = await deleteTelegramWebhook({ dropPendingUpdates });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.all(['/api/telegram/webhook/info', '/api/telegram/webhook/status'], requireAdminSecret, async (req, res) => {
+  try {
+    const result = await getTelegramWebhookInfo();
+    const status = getTelegramStatus();
+    res.json({ success: true, localStatus: status, telegramInfo: result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

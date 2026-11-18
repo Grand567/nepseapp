@@ -1,0 +1,29 @@
+{
+  "recorderVersion": "1.0.0",
+  "sessionDateNpt": "2026-11-17",
+  "startedAtUtc": "2026-11-17T07:23:02.712Z",
+  "intervalSeconds": 60,
+  "targetDurationMinutes": 1,
+  "targetSymbols": [
+    "SHIVM",
+    "NABIL",
+    "HRL",
+    "UPPER",
+    "HDL",
+    "ACLBSL",
+    "MKHL",
+    "AKJCL",
+    "NICL",
+    "CBBL"
+  ],
+  "secretsScrubbed": true,
+  "status": "COMPLETED",
+  "ticksCaptured": 1,
+  "tickFiles": [
+    "tick_13-08-02.json"
+  ],
+  "updatedAtUtc": "2026-11-17T07:23:23.352Z",
+  "lastTickTimeUtc": "2026-11-17T07:23:02.715Z",
+  "lastTickNpt": "13:08:02",
+  "completedAtUtc": "2026-11-17T07:23:23.352Z"
+}

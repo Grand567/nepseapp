@@ -60,13 +60,19 @@ export async function ensureTelegramConfigTable() {
   try {
     await query(`
       CREATE TABLE IF NOT EXISTS telegram_bot_config (
-        id             VARCHAR(50) PRIMARY KEY DEFAULT 'default',
-        bot_token      TEXT,
-        chat_id        VARCHAR(100),
-        enabled        BOOLEAN DEFAULT TRUE,
-        is_test_server BOOLEAN DEFAULT FALSE,
-        updated_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        id                   VARCHAR(50) PRIMARY KEY DEFAULT 'default',
+        bot_token            TEXT,
+        chat_id              VARCHAR(100),
+        enabled              BOOLEAN DEFAULT TRUE,
+        is_test_server       BOOLEAN DEFAULT FALSE,
+        use_webhook          BOOLEAN DEFAULT FALSE,
+        webhook_url          TEXT,
+        webhook_secret_token TEXT,
+        updated_at           TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+      ALTER TABLE telegram_bot_config ADD COLUMN IF NOT EXISTS use_webhook BOOLEAN DEFAULT FALSE;
+      ALTER TABLE telegram_bot_config ADD COLUMN IF NOT EXISTS webhook_url TEXT;
+      ALTER TABLE telegram_bot_config ADD COLUMN IF NOT EXISTS webhook_secret_token TEXT;
     `);
   } catch (err) {
     console.warn('[db] ensureTelegramConfigTable notice:', err.message);
@@ -77,14 +83,17 @@ export async function getTelegramConfigFromDb() {
   if (!pool) return null;
   try {
     await ensureTelegramConfigTable();
-    const res = await query('SELECT bot_token, chat_id, enabled, is_test_server FROM telegram_bot_config WHERE id = $1', ['default']);
+    const res = await query('SELECT bot_token, chat_id, enabled, is_test_server, use_webhook, webhook_url, webhook_secret_token FROM telegram_bot_config WHERE id = $1', ['default']);
     if (res && res.rows && res.rows.length > 0) {
       const r = res.rows[0];
       return {
         botToken: r.bot_token,
         chatId: r.chat_id,
         enabled: r.enabled !== false,
-        isTestServer: Boolean(r.is_test_server)
+        isTestServer: Boolean(r.is_test_server),
+        useWebhook: Boolean(r.use_webhook),
+        webhookUrl: r.webhook_url || '',
+        webhookSecretToken: r.webhook_secret_token || ''
       };
     }
   } catch (err) {
@@ -93,20 +102,31 @@ export async function getTelegramConfigFromDb() {
   return null;
 }
 
-export async function saveTelegramConfigToDb({ botToken, chatId, enabled = true, isTestServer = false }) {
+export async function saveTelegramConfigToDb({ botToken, chatId, enabled, isTestServer, useWebhook, webhookUrl, webhookSecretToken }) {
   if (!pool) return false;
   try {
     await ensureTelegramConfigTable();
     await query(`
-      INSERT INTO telegram_bot_config (id, bot_token, chat_id, enabled, is_test_server, updated_at)
-      VALUES ('default', $1, $2, $3, $4, NOW())
+      INSERT INTO telegram_bot_config (id, bot_token, chat_id, enabled, is_test_server, use_webhook, webhook_url, webhook_secret_token, updated_at)
+      VALUES ('default', $1, $2, COALESCE($3, TRUE), COALESCE($4, FALSE), COALESCE($5, FALSE), $6, $7, NOW())
       ON CONFLICT (id) DO UPDATE SET
         bot_token = COALESCE(EXCLUDED.bot_token, telegram_bot_config.bot_token),
         chat_id = COALESCE(EXCLUDED.chat_id, telegram_bot_config.chat_id),
-        enabled = EXCLUDED.enabled,
-        is_test_server = EXCLUDED.is_test_server,
+        enabled = COALESCE(EXCLUDED.enabled, telegram_bot_config.enabled),
+        is_test_server = COALESCE(EXCLUDED.is_test_server, telegram_bot_config.is_test_server),
+        use_webhook = COALESCE(EXCLUDED.use_webhook, telegram_bot_config.use_webhook),
+        webhook_url = COALESCE(EXCLUDED.webhook_url, telegram_bot_config.webhook_url),
+        webhook_secret_token = COALESCE(EXCLUDED.webhook_secret_token, telegram_bot_config.webhook_secret_token),
         updated_at = NOW();
-    `, [botToken, chatId, enabled !== false, Boolean(isTestServer)]);
+    `, [
+      botToken,
+      chatId,
+      enabled !== undefined ? Boolean(enabled) : null,
+      isTestServer !== undefined ? Boolean(isTestServer) : null,
+      useWebhook !== undefined ? Boolean(useWebhook) : null,
+      webhookUrl !== undefined ? webhookUrl : null,
+      webhookSecretToken !== undefined ? webhookSecretToken : null
+    ]);
     return true;
   } catch (err) {
     console.warn('[db] saveTelegramConfigToDb notice:', err.message);

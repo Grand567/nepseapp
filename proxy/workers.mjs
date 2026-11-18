@@ -13,6 +13,7 @@ import {
   runBroker58RadarAndDispatch,
   dispatchEodStealthAccumulationOfTheDay,
   pollIncomingTelegramCommands,
+  isTelegramWebhookActive,
   sendTelegramMessage,
   auditMultiSessionTrapRisk
 } from './telegramNotifier.mjs';
@@ -816,6 +817,7 @@ export function startWorkers() {
   // Allows user to chat with the bot and manage personal exit alerts on the fly!
   setInterval(() => {
     try {
+      if (isTelegramWebhookActive()) return;
       pollIncomingTelegramCommands({
         onTrackHolding: trackCustomHolding,
         onUntrackHolding: untrackCustomHolding,

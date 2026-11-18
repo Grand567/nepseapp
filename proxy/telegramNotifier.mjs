@@ -18,7 +18,11 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
+import crypto from 'crypto';
+import dns from 'dns';
+import dnsPromises from 'dns/promises';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 import { auditAntiDematDumpGuard, db } from './db/ledgerStore.js';
 import { getTelegramConfigFromDb, saveTelegramConfigToDb } from './db.mjs';
@@ -27,6 +31,25 @@ import { scanTrackBSyndicateCandidates, formatTrackBSyndicateHtml } from './trac
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const publicResolver = new dnsPromises.Resolver();
+publicResolver.setServers(['1.1.1.1', '8.8.8.8']);
+let cachedTelegramIp = '149.154.166.110';
+
+async function resolveTelegramIp() {
+  try {
+    const ips = await publicResolver.resolve4('api.telegram.org');
+    if (ips && ips.length > 0) cachedTelegramIp = ips[0];
+  } catch (_) {}
+  return cachedTelegramIp;
+}
+
+try {
+  const envPath = path.join(__dirname, '.env');
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+  }
+} catch (_) {}
 const DATA_DIR = (process.env.NEPSE_DATA_DIR && fs.existsSync(process.env.NEPSE_DATA_DIR))
   ? process.env.NEPSE_DATA_DIR
   : path.join(__dirname, 'data');
@@ -74,26 +97,41 @@ function loadConfig() {
 
   // Prefer verified fileConfig if saved by user, otherwise fallback to env
   const botToken = fileToken || envToken;
-  const chatId = fileConfig.chatId !== undefined
+  const fileChatId = (fileConfig.chatId !== undefined && fileConfig.chatId !== null)
     ? String(fileConfig.chatId).trim()
-    : String(process.env.TELEGRAM_CHAT_ID || process.env.CHAT_ID || '').trim();
+    : '';
+  const envChatId = String(process.env.TELEGRAM_CHAT_ID || process.env.CHAT_ID || '').trim();
+  const chatId = fileChatId || envChatId;
+
+  const envIsTest = process.env.TELEGRAM_IS_TEST_SERVER === 'true' || process.env.TELEGRAM_TEST_SERVER === 'true';
+  const isTestServer = Boolean(fileConfig.isTestServer === true || envIsTest);
+
+  const useWebhook = Boolean(fileConfig.useWebhook === true || process.env.TELEGRAM_USE_WEBHOOK === 'true');
+  const webhookUrl = fileConfig.webhookUrl || process.env.TELEGRAM_WEBHOOK_URL || '';
+  const webhookSecretToken = fileConfig.webhookSecretToken || process.env.TELEGRAM_WEBHOOK_SECRET || '';
 
   return {
     botToken,
     chatId,
     enabled: fileConfig.enabled !== false, // default true if token & chatId present
-    isTestServer: Boolean(process.env.TELEGRAM_TEST_SERVER === 'true' || fileConfig.isTestServer === true)
+    isTestServer,
+    useWebhook,
+    webhookUrl,
+    webhookSecretToken
   };
 }
 
-export function saveTelegramConfig({ botToken, chatId, enabled = true, isTestServer }) {
+export function saveTelegramConfig({ botToken, chatId, enabled, isTestServer, useWebhook, webhookUrl, webhookSecretToken }) {
   resetTelegramAuthError();
   const current = loadConfig();
   const nextConfig = {
     botToken: botToken !== undefined ? cleanBotToken(botToken) : current.botToken,
     chatId: chatId !== undefined ? String(chatId).trim() : current.chatId,
-    enabled: Boolean(enabled),
+    enabled: enabled !== undefined ? Boolean(enabled) : current.enabled,
     isTestServer: isTestServer !== undefined ? Boolean(isTestServer) : current.isTestServer,
+    useWebhook: useWebhook !== undefined ? Boolean(useWebhook) : current.useWebhook,
+    webhookUrl: webhookUrl !== undefined ? String(webhookUrl).trim() : current.webhookUrl,
+    webhookSecretToken: webhookSecretToken !== undefined ? String(webhookSecretToken).trim() : current.webhookSecretToken,
     updatedAt: new Date().toISOString()
   };
 
@@ -123,11 +161,14 @@ export async function hydrateTelegramConfigFromDb() {
         chatId: dbCfg.chatId ? String(dbCfg.chatId).trim() : current.chatId,
         enabled: dbCfg.enabled !== false,
         isTestServer: Boolean(dbCfg.isTestServer),
+        useWebhook: dbCfg.useWebhook !== undefined ? Boolean(dbCfg.useWebhook) : current.useWebhook,
+        webhookUrl: dbCfg.webhookUrl || current.webhookUrl || '',
+        webhookSecretToken: dbCfg.webhookSecretToken || current.webhookSecretToken || '',
         updatedAt: new Date().toISOString()
       };
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(nextConfig, null, 2), 'utf8');
       resetTelegramAuthError();
-      console.log(`[TelegramNotifier] ✅ Restored verified Telegram bot configuration from PostgreSQL database (Bot: ${nextConfig.botToken.slice(0, 6)}...${nextConfig.botToken.slice(-4)}, Chat ID: ${nextConfig.chatId || 'pending'}).`);
+      console.log(`[TelegramNotifier] ✅ Restored verified Telegram bot configuration from PostgreSQL database (Bot: ${nextConfig.botToken.slice(0, 6)}...${nextConfig.botToken.slice(-4)}, Chat ID: ${nextConfig.chatId || 'pending'}, Webhook: ${nextConfig.useWebhook ? 'ACTIVE' : 'OFF'}).`);
       return nextConfig;
     }
   } catch (err) {
@@ -156,7 +197,10 @@ export function getTelegramStatus() {
     tokenLength: cfg.botToken ? cfg.botToken.length : 0,
     tokenHasColon: Boolean(cfg.botToken && cfg.botToken.includes(':')),
     isTokenInvalid,
-    isTestServer: cfg.isTestServer
+    isTestServer: cfg.isTestServer,
+    useWebhook: Boolean(cfg.useWebhook),
+    webhookUrl: cfg.webhookUrl || '',
+    hasWebhookSecret: Boolean(cfg.webhookSecretToken)
   };
 }
 
@@ -184,13 +228,12 @@ export async function verifyTelegramToken(rawToken) {
 
 /**
  * Core resilient Telegram API caller.
- * Directly bypasses local ISP DNS poisoning (e.g. Nepal ISP blackhole IPs)
- * by connecting directly to Telegram official core IP (149.154.166.110) with TLS SNI validation.
+ * Primary Path: fetch(`https://api.telegram.org${endpoint}`) (supports test mocks & clean environments)
+ * Failover Path: Direct HTTPS via Cloudflare/Google public DNS (1.1.1.1, 8.8.8.8) to bypass ISP DNS blackholes
  */
 async function callTelegramApi(endpoint, payload = null) {
   const dataStr = payload ? JSON.stringify(payload) : null;
 
-  // Primary Path: Standard HTTPS fetch to api.telegram.org
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 7000);
@@ -203,40 +246,56 @@ async function callTelegramApi(endpoint, payload = null) {
     clearTimeout(timeout);
     return await res.json();
   } catch (fetchErr) {
-    // Secondary Failover: Direct IP with SNI to bypass ISP DNS blackholes
-    try {
-      return await new Promise((resolve, reject) => {
-        const req = https.request({
-          host: '149.154.166.110',
-          port: 443,
-          path: endpoint,
-          method: payload ? 'POST' : 'GET',
-          headers: {
-            'Host': 'api.telegram.org',
-            'Content-Type': 'application/json',
-            ...(dataStr ? { 'Content-Length': Buffer.byteLength(dataStr) } : {})
-          },
-          servername: 'api.telegram.org',
-          timeout: 6000
-        }, (res) => {
-          let buf = '';
-          res.on('data', chunk => buf += chunk);
-          res.on('end', () => {
-            try {
-              resolve(JSON.parse(buf));
-            } catch (_) {
-              resolve({ ok: false, description: buf || 'Invalid response from Telegram' });
-            }
-          });
+    // Failover for ISP DNS sinkholes (e.g. Classic Tech / NTA poisoning):
+    const ip = await resolveTelegramIp();
+    return new Promise((resolve) => {
+      const req = https.request({
+        host: 'api.telegram.org',
+        port: 443,
+        path: endpoint,
+        method: payload ? 'POST' : 'GET',
+        headers: {
+          'Host': 'api.telegram.org',
+          'Content-Type': 'application/json',
+          ...(dataStr ? { 'Content-Length': Buffer.byteLength(dataStr) } : {})
+        },
+        lookup: (hostname, opts, cb) => {
+          if (typeof opts === 'function') {
+            cb = opts;
+            opts = {};
+          }
+          if (hostname === 'api.telegram.org') {
+            if (opts?.all) cb(null, [{ address: ip, family: 4 }]);
+            else cb(null, ip, 4);
+          } else {
+            dns.lookup(hostname, opts, cb);
+          }
+        },
+        timeout: 10000
+      }, (res) => {
+        let buf = '';
+        res.on('data', chunk => buf += chunk);
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(buf));
+          } catch (_) {
+            resolve({ ok: false, description: buf || 'Invalid response from Telegram' });
+          }
         });
-        req.on('error', reject);
-        req.on('timeout', () => { req.destroy(); reject(new Error('Telegram direct connection timed out')); });
-        if (dataStr) req.write(dataStr);
-        req.end();
       });
-    } catch (directErr) {
-      return { ok: false, description: directErr.message || fetchErr.message || 'Telegram network failure' };
-    }
+
+      req.on('error', (err) => {
+        resolve({ ok: false, description: err.message || fetchErr.message || 'Telegram network failure' });
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({ ok: false, description: 'Telegram direct connection timed out' });
+      });
+
+      if (dataStr) req.write(dataStr);
+      req.end();
+    });
   }
 }
 
@@ -5356,6 +5415,191 @@ async function handleTelegramCommand(text, {
 /**
  * Polling worker to fetch and process incoming Telegram commands
  */
+const PROCESSED_UPDATE_IDS = new Set();
+const MAX_PROCESSED_UPDATE_IDS = 1000;
+
+/**
+ * Validates the secret token header provided by Telegram on incoming webhook requests
+ * using timing-safe comparison to prevent side-channel timing attacks.
+ */
+export function validateWebhookSecretToken(expected, provided) {
+  if (!expected) return true; // Optional if not configured
+  if (!provided) return false;
+  try {
+    const expBuf = crypto.createHash('sha256').update(String(expected).trim()).digest();
+    const provBuf = crypto.createHash('sha256').update(String(provided).trim()).digest();
+    return crypto.timingSafeEqual(expBuf, provBuf);
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Returns the secret token configured for the Telegram webhook (internal server use only)
+ */
+export function getTelegramWebhookSecretToken() {
+  const cfg = loadConfig();
+  return cfg.webhookSecretToken || '';
+}
+
+/**
+ * Checks whether Telegram webhook mode is active
+ */
+export function isTelegramWebhookActive() {
+  const cfg = loadConfig();
+  return Boolean(cfg.useWebhook);
+}
+
+/**
+ * Processes an incoming Telegram Update (from either Webhook POST or Long-Polling)
+ */
+export async function handleIncomingTelegramUpdate(update, {
+  chatId: customChatId,
+  onTrackHolding,
+  onUntrackHolding,
+  onGetTrackedHoldings,
+  getLatestStockPrice,
+  onCommandHandled
+} = {}) {
+  if (!update || typeof update !== 'object') {
+    return { processed: false, reason: 'invalid_update' };
+  }
+
+  const uId = update.update_id ? Number(update.update_id) : null;
+  if (uId) {
+    if (PROCESSED_UPDATE_IDS.has(uId)) {
+      return { processed: false, reason: 'duplicate_update_id', updateId: uId };
+    }
+    PROCESSED_UPDATE_IDS.add(uId);
+    if (PROCESSED_UPDATE_IDS.size > MAX_PROCESSED_UPDATE_IDS) {
+      const oldest = PROCESSED_UPDATE_IDS.values().next().value;
+      PROCESSED_UPDATE_IDS.delete(oldest);
+    }
+  }
+
+  const msg = update.message || update.edited_message || update.channel_post;
+  if (!msg || !msg.text) {
+    return { processed: false, reason: 'no_text_message' };
+  }
+
+  const chatId = String(msg.chat?.id || customChatId || '').trim();
+  if (!chatId) {
+    return { processed: false, reason: 'missing_chat_id' };
+  }
+
+  const cfg = loadConfig();
+  // Auto-bind chatId if not set, so bot broadcasts reach this user
+  if (!cfg.chatId) {
+    console.log(`[TelegramNotifier] Auto-bound Telegram Chat ID: ${chatId}`);
+    saveTelegramConfig({ ...cfg, chatId });
+    cfg.chatId = chatId;
+  }
+
+  // Authorization guard: strictly restrict to the authorized owner chatId.
+  // Silently drop unauthorized chat IDs to prevent outbound spam and rate limiting.
+  const isAuthorized = Boolean(cfg.chatId && String(chatId) === String(cfg.chatId));
+  if (!isAuthorized) {
+    console.warn(`[TelegramNotifier] Ignored command from unauthorized chat ID: ${chatId}`);
+    return { processed: false, reason: 'unauthorized_chat_id', chatId };
+  }
+
+  const text = String(msg.text).trim();
+  console.log(`[TelegramNotifier] 📩 Incoming user command: "${text}" from ${msg.from?.first_name || 'User'} (Chat: ${chatId})`);
+
+  await handleTelegramCommand(text, {
+    chatId,
+    onTrackHolding,
+    onUntrackHolding,
+    onGetTrackedHoldings,
+    getLatestStockPrice
+  });
+
+  if (typeof onCommandHandled === 'function') {
+    try { onCommandHandled({ updateId: uId, chatId, text }); } catch (_) {}
+  }
+
+  return { processed: true, updateId: uId, chatId, text };
+}
+
+/**
+ * Registers an HTTPS Webhook with Telegram Bot API
+ */
+export async function setTelegramWebhook({ url, secretToken, dropPendingUpdates = false } = {}) {
+  const cfg = loadConfig();
+  if (!cfg.botToken) {
+    return { success: false, error: 'Telegram Bot Token is not configured.' };
+  }
+
+  const targetUrl = url || cfg.webhookUrl || `${(process.env.RENDER_EXTERNAL_URL || 'https://nepseapp.onrender.com').replace(/\/$/, '')}/api/telegram/webhook`;
+  const token = secretToken !== undefined ? secretToken : (cfg.webhookSecretToken || '');
+
+  if (token && !/^[A-Za-z0-9_-]{1,256}$/.test(token)) {
+    return { success: false, error: 'Telegram secret token must be 1-256 characters and contain only A-Z, a-z, 0-9, _ and -.' };
+  }
+
+  const payload = {
+    url: targetUrl,
+    allowed_updates: ['message', 'edited_message', 'channel_post'],
+    drop_pending_updates: Boolean(dropPendingUpdates)
+  };
+  if (token) {
+    payload.secret_token = token;
+  }
+
+  const res = await callBotApi(cfg.botToken, 'setWebhook', payload);
+  if (res.ok) {
+    saveTelegramConfig({
+      useWebhook: true,
+      webhookUrl: targetUrl,
+      webhookSecretToken: token
+    });
+    console.log(`[TelegramNotifier] ✅ Telegram Webhook configured successfully: ${targetUrl}`);
+    return { success: true, url: targetUrl, result: res.result };
+  } else {
+    console.error(`[TelegramNotifier] ❌ Failed to set Telegram Webhook:`, res.description || res.error_code);
+    return { success: false, error: res.description || 'Failed to set webhook' };
+  }
+}
+
+/**
+ * Deletes the active Telegram Webhook and restores polling mode
+ */
+export async function deleteTelegramWebhook({ dropPendingUpdates = false } = {}) {
+  const cfg = loadConfig();
+  if (!cfg.botToken) {
+    return { success: false, error: 'Telegram Bot Token is not configured.' };
+  }
+
+  const res = await callBotApi(cfg.botToken, 'deleteWebhook', {
+    drop_pending_updates: Boolean(dropPendingUpdates)
+  });
+
+  if (res.ok) {
+    saveTelegramConfig({
+      useWebhook: false
+    });
+    console.log('[TelegramNotifier] ✅ Telegram Webhook deleted. Reverted to polling mode.');
+    return { success: true, result: res.result };
+  } else {
+    return { success: false, error: res.description || 'Failed to delete webhook' };
+  }
+}
+
+/**
+ * Retrieves the live webhook status from Telegram Bot API
+ */
+export async function getTelegramWebhookInfo() {
+  const cfg = loadConfig();
+  if (!cfg.botToken) {
+    return { ok: false, description: 'Bot token not configured' };
+  }
+  return await callBotApi(cfg.botToken, 'getWebhookInfo');
+}
+
+/**
+ * Continuously polls Telegram Bot API for incoming commands (/track, /remove, /list, /status, /help)
+ * when webhook mode is NOT enabled.
+ */
 export async function pollIncomingTelegramCommands({
   onTrackHolding,
   onUntrackHolding,
@@ -5372,6 +5616,7 @@ export async function pollIncomingTelegramCommands({
   if (isPollingInProgress) return;
   const cfg = loadConfig();
   if (!cfg.enabled || !cfg.botToken) return;
+  if (cfg.useWebhook) return; // Webhook mode active: Telegram pushes updates directly to /api/telegram/webhook
 
   isPollingInProgress = true;
   try {
@@ -5387,32 +5632,7 @@ export async function pollIncomingTelegramCommands({
     for (const u of updates) {
       const uId = Number(u.update_id);
       try {
-        const msg = u.message || u.edited_message || u.channel_post;
-        if (!msg || !msg.text) continue;
-
-        const chatId = String(msg.chat?.id || '').trim();
-        if (!chatId) continue;
-
-        // Auto-bind chatId if not set, so bot broadcasts reach this user
-        if (!cfg.chatId) {
-          console.log(`[TelegramNotifier] Auto-bound Telegram Chat ID: ${chatId}`);
-          saveTelegramConfig({ ...cfg, chatId });
-          cfg.chatId = chatId;
-        }
-
-        // Authorization guard: strictly restrict to the authorized owner chatId
-        const isAuthorized = Boolean(cfg.chatId && String(chatId) === String(cfg.chatId));
-        if (!isAuthorized) {
-          console.warn(`[TelegramNotifier] Ignored command from unauthorized chat ID: ${chatId}`);
-          await sendTelegramMessage(`⛔ <b>Unauthorized:</b> This bot is locked to its configured owner.`, { chatId });
-          continue;
-        }
-
-        const text = String(msg.text).trim();
-        console.log(`[TelegramNotifier] 📩 Incoming user command: "${text}" from ${msg.from?.first_name || 'User'} (Chat: ${chatId})`);
-
-        await handleTelegramCommand(text, {
-          chatId,
+        await handleIncomingTelegramUpdate(u, {
           onTrackHolding,
           onUntrackHolding,
           onGetTrackedHoldings,

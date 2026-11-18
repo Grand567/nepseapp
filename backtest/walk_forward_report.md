@@ -1,6 +1,6 @@
 # Drabyashree NEPSE: Walk-Forward Parameter Optimization Report
 
-**Generated At:** 2026-11-14T08:38:03.593Z  
+**Generated At:** 2026-11-17T23:57:11.085Z  
 **Historical Horizon:** 40 NEPSE Trading Sessions  
 **Validation Methodology:** Rolling 60% In-Sample Training / 40% Out-of-Sample Forward Testing  
 **Frictional Deductions:** 5-Tier SEBON Brokerage, 0.015% SEBON fee, Rs. 25 DP fee, 7.5% CGT, Slippage, and T+2 Demat Lock.
@@ -11,7 +11,7 @@
 
 > [!IMPORTANT]
 > **Recommended Calibration: Preset C: Technical Momentum Follower**  
-> Demonstrates the highest forward risk-adjusted return with a Profit Factor of **1.23**, a Win Rate of **60.9%**, and Walk-Forward Efficiency of **-39.4%**.
+> Demonstrates the highest forward risk-adjusted return with a Profit Factor of **1.23**, a Win Rate of **60.9%**, and Walk-Forward Efficiency of **-32.6%**.
 
 ### Optimal Weight Allocation
 | Pillar | Optimized Weight | Description |
@@ -34,10 +34,10 @@
 
 | Preset Candidate | Weight Breakdown (B/T/F/M) | Buy Score | Trades (OOS) | Win Rate % | Profit Factor | Net PnL (NPR) | WFE % | Verdict |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Preset C: Technical Momentum Follower** | 25/45/15/15 | 68 | 64 | 60.9% | **1.23** | Rs. 17,212 | -39.4% | ⚠️ Sensitive |
-| **Preset D: High-Safety Value Conservative** | 30/20/30/20 | 75 | 43 | 48.8% | **0.89** | Rs. -29,187 | -134.8% | ⚠️ Sensitive |
-| **Preset A: Current Baseline Balanced** | 35/25/20/20 | 70 | 45 | 46.7% | **0.84** | Rs. -34,385 | -178.3% | ⚠️ Sensitive |
-| **Preset B: Institutional Flow Dominant** | 45/20/15/20 | 72 | 49 | 44.9% | **0.75** | Rs. -54,883 | -280.7% | ⚠️ Sensitive |
+| **Preset C: Technical Momentum Follower** | 25/45/15/15 | 68 | 64 | 60.9% | **1.23** | Rs. 12,192 | -32.6% | ⚠️ Sensitive |
+| **Preset D: High-Safety Value Conservative** | 30/20/30/20 | 75 | 43 | 48.8% | **0.89** | Rs. -30,747 | -134.8% | ⚠️ Sensitive |
+| **Preset A: Current Baseline Balanced** | 35/25/20/20 | 70 | 45 | 46.7% | **0.84** | Rs. -34,650 | -178.3% | ⚠️ Sensitive |
+| **Preset B: Institutional Flow Dominant** | 45/20/15/20 | 72 | 49 | 44.9% | **0.75** | Rs. -55,039 | -280.7% | ⚠️ Sensitive |
 
 ---
 

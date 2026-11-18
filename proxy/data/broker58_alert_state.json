@@ -1,1 +1,10 @@
-{}
+{
+  "SHPC": {
+    "symbol": "SHPC",
+    "sessionDate": "2026-11-17",
+    "lastTriggeredAt": 1794895641817,
+    "lastLtp": 576,
+    "operatorVwap": 574.5,
+    "isTest": false
+  }
+}

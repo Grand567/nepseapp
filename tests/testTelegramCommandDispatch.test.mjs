@@ -25,6 +25,8 @@ console.log('▶ [SUITE] testTelegramCommandDispatch.test.mjs\n');
 (async () => {
   try {
     // Setup clean config
+    delete process.env.TELEGRAM_CHAT_ID;
+    delete process.env.CHAT_ID;
     saveTelegramConfig({
       botToken: '123456789:ABCDefGhIJKlmNoPQRsTUVwxyZ',
       chatId: '',
