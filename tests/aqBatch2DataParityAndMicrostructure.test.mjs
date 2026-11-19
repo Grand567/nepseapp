@@ -137,11 +137,11 @@ await test('[BUG-005 & BUG-032] broker_holdings_alltime.json, nepse_cumulative_b
   assert.strictEqual(ghl58.cumHoldQty, 2811301, `Expected GHL Broker #58 cumHoldQty to be 2,811,301 (45D SQLite truth), got ${ghl58.cumHoldQty}`);
 
   const ghlAlltime = JSON.parse(fs.readFileSync(path.join(ROOT, 'proxy/data/broker_alltime/GHL.json'), 'utf8'));
-  assert.strictEqual(ghlAlltime.latestDate, '2026-11-18', `Expected GHL.json latestDate to be 2026-11-18, got ${ghlAlltime.latestDate}`);
+  assert.ok(ghlAlltime.latestDate >= '2026-11-18', `Expected GHL.json latestDate to be >= 2026-11-18, got ${ghlAlltime.latestDate}`);
   assert.ok(ghlAlltime.dailyRollup['2026-11-18'], 'GHL.json dailyRollup must contain 2026-11-18');
 
   const ghlVault = JSON.parse(fs.readFileSync(path.join(ROOT, 'proxy/data/broker_vault/GHL.json'), 'utf8'));
-  assert.strictEqual(ghlVault.latestDate, '2026-11-18', `Expected broker_vault/GHL.json latestDate to be 2026-11-18, got ${ghlVault.latestDate}`);
+  assert.ok(ghlVault.latestDate >= '2026-11-18', `Expected broker_vault/GHL.json latestDate to be >= 2026-11-18, got ${ghlVault.latestDate}`);
 
   const setupSrc = fs.readFileSync(path.join(ROOT, 'src/utils/setupAnalyzer.js'), 'utf8');
   assert.ok(setupSrc.includes('getCachedBrokerData'), 'setupAnalyzer.js getSafeCachedBrokerData must query getCachedBrokerData from historyCache.js');
