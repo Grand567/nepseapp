@@ -257,11 +257,30 @@ app.use(compression({
   }
 }));
 
-// ── Live Trading Hours Ultra-Fast HTTP Caching Middleware ──
-// Accelerates rapid polling and multi-component requests during trading hours
+// ── Bandwidth-Defense Ultra-Fast Caching & CDN Optimization Middleware ──
+// Drastically cuts outbound egress bandwidth on Render / Koyeb / Cloudflare by:
+// 1. Serving 304 Not Modified whenever data is unchanged.
+// 2. Caching frozen off-hours market snapshots (3:00 PM – 11:00 AM NPT and weekends).
+// 3. Ensuring private portfolio and auth endpoints remain private, no-store.
 app.use((req, res, next) => {
   if (req.method === 'GET') {
     const p = req.path;
+
+    // Never cache private/authenticated or mutation endpoints
+    if (
+      p.startsWith('/api/sync') ||
+      p.startsWith('/api/meroshare') ||
+      p.startsWith('/admin') ||
+      p.startsWith('/api/admin') ||
+      p.startsWith('/api/auth')
+    ) {
+      res.setHeader('Cache-Control', 'private, no-store');
+      return next();
+    }
+
+    const marketOpen = Boolean(getProxyMarketStatus?.()?.isOpen);
+
+    // 1. Live ticker and intraday prices
     if (
       p === '/api/today-prices' ||
       p === '/api/market-summary' ||
@@ -269,9 +288,57 @@ app.use((req, res, next) => {
       p === '/api/market-indices' ||
       p === '/api/indices' ||
       p === '/api/live-market' ||
-      p === '/api/nepse/live'
+      p === '/api/nepse/live' ||
+      p === '/api/nepalipaisa/index-live' ||
+      p === '/api/nepse/intraday-graph'
     ) {
-      res.setHeader('Cache-Control', 'public, max-age=3, stale-while-revalidate=10');
+      if (marketOpen) {
+        res.setHeader('Cache-Control', 'public, max-age=3, stale-while-revalidate=10');
+      } else {
+        // Off-hours & weekends: market is frozen; cache for 60s at browser, 300s at CDN
+        res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
+      }
+      return next();
+    }
+
+    // 2. Heavy historical ledgers, broker analytics, & smart-money flow
+    if (
+      p.startsWith('/api/ledger/') ||
+      p.startsWith('/api/smart-money/') ||
+      p.startsWith('/api/broker-analysis/') ||
+      p.startsWith('/api/brokers/') ||
+      p.startsWith('/api/scrip/') ||
+      p === '/api/nepse-cumulative-ledger' ||
+      p === '/api/broker-holdings-alltime' ||
+      p === '/api/broker-matrix-latest'
+    ) {
+      const isPastDateQuery = req.query?.date && req.query.date < new Date().toISOString().slice(0, 10);
+      if (isPastDateQuery) {
+        // Historical sessions never change; cache for 24h
+        res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+      } else if (marketOpen) {
+        // During trading: rolling analysis updates every 30s
+        res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=120');
+      } else {
+        // Off-hours: cache for 30m at browser, 1h at CDN
+        res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=3600, stale-while-revalidate=7200');
+      }
+      return next();
+    }
+
+    // 3. Static reference datasets (Holidays, Stock Map, Directives, News, Directory)
+    if (
+      p === '/api/holidays' ||
+      p === '/api/trading-dates' ||
+      p === '/api/stock-map' ||
+      p === '/api/brokers/directory' ||
+      p === '/api/brokers' ||
+      p === '/api/macro/nrb-indicators' ||
+      p === '/api/fundamentals' ||
+      p.startsWith('/api/regulatory/')
+    ) {
+      res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=7200, stale-while-revalidate=14400');
+      return next();
     }
   }
   next();
@@ -3822,10 +3889,20 @@ app.get(['/api/ledger/5day-history', '/api/ledger/4day-history'], (req, res) => 
   try {
     const acceptEncoding = req.headers['accept-encoding'] || '';
     const gzFile = (fs.existsSync(HISTORICAL_5D_GZ) ? HISTORICAL_5D_GZ : (fs.existsSync(HISTORICAL_4D_GZ) ? HISTORICAL_4D_GZ : null));
-    if (acceptEncoding.includes('gzip') && gzFile) {
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Encoding', 'gzip');
-      return fs.createReadStream(gzFile).pipe(res);
+    res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=3600, stale-while-revalidate=7200');
+    if (gzFile) {
+      const stat = fs.statSync(gzFile);
+      const etag = `W/"${stat.size}-${Math.floor(stat.mtimeMs)}"`;
+      res.setHeader('ETag', etag);
+      res.setHeader('Last-Modified', stat.mtime.toUTCString());
+      if (req.headers['if-none-match'] === etag || (req.headers['if-modified-since'] && new Date(req.headers['if-modified-since']) >= stat.mtime)) {
+        return res.status(304).end();
+      }
+      if (acceptEncoding.includes('gzip')) {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Encoding', 'gzip');
+        return fs.createReadStream(gzFile).pipe(res);
+      }
     }
     const ledger = readHistorical5DayLedger();
     return res.json(ledger);
