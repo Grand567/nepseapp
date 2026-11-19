@@ -20,6 +20,6 @@
     "appId": "1:646874388203:web:cd74981599584dc92e50ae"
   },
   "proxy": {
-    "viteProxyUrl": "https://nepseapp.onrender.com"
+    "viteProxyUrl": "https://drabyashree-nepse-hub.onrender.com"
   }
 }

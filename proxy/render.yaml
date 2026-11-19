@@ -18,7 +18,7 @@ services:
       - key: PORT
         value: 10000
       - key: RENDER_EXTERNAL_URL
-        value: https://nepseapp.onrender.com
+        value: https://drabyashree-nepse-hub.onrender.com
       - key: GLM_API_KEY
         sync: false
       - key: ZHIPU_API_KEY

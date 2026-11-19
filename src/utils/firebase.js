@@ -260,7 +260,7 @@ export const getCandidateSyncEndpoints = () => {
   }
 
   // 3. Render cloud proxy
-  const renderProxy = 'https://nepseapp.onrender.com/api/sync';
+  const renderProxy = 'https://drabyashree-nepse-hub.onrender.com/api/sync';
   if (!endpoints.includes(renderProxy)) {
     endpoints.push(renderProxy);
   }

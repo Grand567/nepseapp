@@ -1,5 +1,43 @@
 [
   {
+    "id": "holding_GHL_1795106907056",
+    "ownerId": "admin",
+    "symbol": "GHL",
+    "buyPrice": 270,
+    "currentPrice": 270,
+    "ltp": 270,
+    "triggeredAt": "2026-11-19T16:48:27.056Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-11-19T16:48:27.063Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1795106900319",
+    "ownerId": "admin",
+    "symbol": "SHIVM",
+    "buyPrice": 512,
+    "currentPrice": 512,
+    "ltp": 512,
+    "triggeredAt": "2026-11-19T16:48:20.319Z",
+    "stopLoss": 516.9,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-11-19T16:48:20.338Z",
+    "runnerKitta": 50,
+    "target2Hit": true,
+    "closedAt": "2026-11-19T16:48:25.136Z",
+    "exitPrice": 645
+  },
+  {
     "id": "holding_GHL_1794959804541",
     "symbol": "GHL",
     "buyPrice": 270,
@@ -3692,29 +3730,5 @@
     "source": "MeroLagani Announcements",
     "action": "OPEN_NEWS",
     "triggeredAt": "2026-11-11T01:30:46.012Z"
-  },
-  {
-    "id": "news_fof5jx",
-    "type": "NEWS_ALERT",
-    "category": "general",
-    "title": "📰 PMLI Corporate Announcement",
-    "body": "44,93,833.34 Units of Promoter Share has been converted into Public Share, making the Promoter to Public share ratio of the company 76.20.: 23.80 - Prabhu Mahalaxmi Life Insurance Limited (PMLI)",
-    "symbol": "PMLI",
-    "url": "https://merolagani.com/AnnouncementDetail.aspx?id=68251",
-    "source": "MeroLagani Announcements",
-    "action": "OPEN_NEWS",
-    "triggeredAt": "2026-11-11T01:30:46.010Z"
-  },
-  {
-    "id": "news_ogd1lh",
-    "type": "NEWS_ALERT",
-    "category": "general",
-    "title": "📰 RNLI Corporate Announcement",
-    "body": "Sale of Shares - Reliable Nepal Life Insurance Limited (RNLI)",
-    "symbol": "RNLI",
-    "url": "https://merolagani.com/AnnouncementDetail.aspx?id=68252",
-    "source": "MeroLagani Announcements",
-    "action": "OPEN_NEWS",
-    "triggeredAt": "2026-11-11T01:30:46.008Z"
   }
 ]

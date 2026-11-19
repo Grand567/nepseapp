@@ -783,7 +783,7 @@ const getApiBase = () => {
       return ''; // Vite proxy forwards /api to backend in desktop browser dev mode
     }
   }
-  return import.meta.env.VITE_PROXY_URL || 'https://nepseapp.onrender.com';
+  return import.meta.env.VITE_PROXY_URL || 'https://drabyashree-nepse-hub.onrender.com';
 };
 
 let lastSyncedTimestamp = 0;

@@ -164,10 +164,10 @@ export async function warmUpServer() {
 
   // Ping production Render backend on mobile/remote to guarantee wake up and warm status
   if (typeof window === 'undefined' || (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')) {
-    ping('https://nepseapp.onrender.com', 20000).catch(() => {});
+    ping('https://drabyashree-nepse-hub.onrender.com', 20000).catch(() => {});
   }
   const base = getProxyBase();
-  if (base !== 'https://nepseapp.onrender.com' && !base.includes('localhost')) {
+  if (base !== 'https://drabyashree-nepse-hub.onrender.com' && !base.includes('localhost')) {
     ping(base, 15000).catch(() => {});
   }
 
@@ -911,10 +911,10 @@ export async function fetchFromBackend(path, timeoutMs = 12000) {
   if (isLocalBrowserEnv()) {
     return null;
   }
-  if (base !== 'https://nepseapp.onrender.com') {
+  if (base !== 'https://drabyashree-nepse-hub.onrender.com') {
     try {
       const renderTimeout = Math.max(timeoutMs, 6000);
-      const res = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, renderTimeout);
+      const res = await tryFetchJSON(`https://drabyashree-nepse-hub.onrender.com${path}`, renderTimeout);
       if (res && res.success !== false) {
         _serverWarmTs = Date.now();
         return res;
@@ -926,7 +926,7 @@ export async function fetchFromBackend(path, timeoutMs = 12000) {
     await new Promise(r => setTimeout(r, 1000));
     try {
       const retryTimeout = isServerWarm() ? timeoutMs : Math.max(timeoutMs, 20000);
-      const retryRes = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, retryTimeout);
+      const retryRes = await tryFetchJSON(`https://drabyashree-nepse-hub.onrender.com${path}`, retryTimeout);
       if (retryRes && retryRes.success !== false) {
         _serverWarmTs = Date.now();
         return retryRes;
@@ -1065,7 +1065,7 @@ async function attemptLiveMarket() {
   if (!isLocalBrowserEnv()) {
     for (const endpoint of ['/api/market/live', '/api/today-prices', '/api/mero/market-summary']) {
       try {
-        const j = await tryFetchJSON(`https://nepseapp.onrender.com${endpoint}`, 6000);
+        const j = await tryFetchJSON(`https://drabyashree-nepse-hub.onrender.com${endpoint}`, 6000);
         const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
         if (Array.isArray(arr) && arr.length > 20) {
           const normalized = processLive(arr, null);
@@ -4204,8 +4204,8 @@ export async function fetchPortfolioShield(items = [], days = 30) {
   if (res) return res;
 
   // 2. Fallback to production Render (skip on local browser to avoid CORS)
-  if (!isLocalBrowserEnv() && base !== 'https://nepseapp.onrender.com') {
-    res = await tryPost('https://nepseapp.onrender.com');
+  if (!isLocalBrowserEnv() && base !== 'https://drabyashree-nepse-hub.onrender.com') {
+    res = await tryPost('https://drabyashree-nepse-hub.onrender.com');
     if (res) return res;
   }
 

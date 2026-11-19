@@ -14493,17 +14493,19 @@ app.listen(PORT, '0.0.0.0', async () => {
           seedFromDiskVault();
           rebuildHotCache();
 
-          // Fix 5: Startup Catch-Up Engine - Check for and fill any missed trading sessions if server was asleep
-          try {
-            const lastSettled = latestTradingSession(new Date(), true);
-            const storedDates = getStoredDates(5);
-            if (lastSettled && !storedDates.includes(lastSettled)) {
-              console.log(`[StartupCatchUp] ⚠️ Detected missing completed trading session (${lastSettled}). Triggering catch-up sync...`);
-              await downloadAndArchiveDailyFloorsheet(lastSettled).catch(() => {});
+          // Fix 5: Startup Catch-Up Engine - Check for and fill any missed trading sessions if server was asleep (run in background)
+          setTimeout(() => {
+            try {
+              const lastSettled = latestTradingSession(new Date(), true);
+              const storedDates = getStoredDates(5);
+              if (lastSettled && !storedDates.includes(lastSettled)) {
+                console.log(`[StartupCatchUp] ⚠️ Detected missing completed trading session (${lastSettled}). Triggering background catch-up sync...`);
+                downloadAndArchiveDailyFloorsheet(lastSettled).catch((e) => console.warn('[StartupCatchUp] Catch-up notice:', e.message));
+              }
+            } catch (catchUpErr) {
+              console.warn('[StartupCatchUp] Catch-up notice:', catchUpErr.message);
             }
-          } catch (catchUpErr) {
-            console.warn('[StartupCatchUp] Catch-up notice:', catchUpErr.message);
-          }
+          }, 8000);
           // Warm up popular brokers asynchronously in background to avoid blocking event loop
           setTimeout(() => {
             const popularBrokers = ['58', '77', '45', '34', '17', '28', '49', '57', '38', '14', '22', '42'];

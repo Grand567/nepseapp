@@ -6,7 +6,7 @@
 import https from 'https';
 import { getKathmanduTradingStatus } from './utils/kathmanduTime.mjs';
 
-const RENDER_URL = process.env.RENDER_EXTERNAL_URL || 'https://nepseapp.onrender.com';
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL || 'https://drabyashree-nepse-hub.onrender.com';
 const PING_INTERVAL = 10 * 60 * 1000; // Ping every 10 minutes (safely inside Render 15-min sleep threshold)
 const forcePing = process.argv.includes('--force');
 

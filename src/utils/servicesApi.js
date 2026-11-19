@@ -70,8 +70,8 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
     primary.includes('127.0.0.1')
   );
   const bases = [primary];
-  if (!isLocal && primary !== 'https://nepseapp.onrender.com') {
-    bases.push('https://nepseapp.onrender.com');
+  if (!isLocal && primary !== 'https://drabyashree-nepse-hub.onrender.com') {
+    bases.push('https://drabyashree-nepse-hub.onrender.com');
   }
 
   for (const base of bases) {

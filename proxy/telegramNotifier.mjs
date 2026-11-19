@@ -5809,7 +5809,7 @@ export async function setTelegramWebhook({ url, secretToken, dropPendingUpdates 
     return { success: false, error: 'Telegram Bot Token is not configured.' };
   }
 
-  const targetUrl = url || cfg.webhookUrl || `${(process.env.RENDER_EXTERNAL_URL || 'https://nepseapp.onrender.com').replace(/\/$/, '')}/api/telegram/webhook`;
+  const targetUrl = url || cfg.webhookUrl || `${(process.env.RENDER_EXTERNAL_URL || 'https://drabyashree-nepse-hub.onrender.com').replace(/\/$/, '')}/api/telegram/webhook`;
   const token = secretToken !== undefined ? secretToken : (cfg.webhookSecretToken || '');
 
   if (token && !/^[A-Za-z0-9_-]{1,256}$/.test(token)) {

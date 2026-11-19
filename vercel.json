@@ -5,15 +5,15 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://nepseapp.onrender.com/api/:path*"
+      "destination": "https://drabyashree-nepse-hub.onrender.com/api/:path*"
     },
     {
       "source": "/cdsc-ipo/:path*",
-      "destination": "https://nepseapp.onrender.com/cdsc-ipo/:path*"
+      "destination": "https://drabyashree-nepse-hub.onrender.com/cdsc-ipo/:path*"
     },
     {
       "source": "/health",
-      "destination": "https://nepseapp.onrender.com/health"
+      "destination": "https://drabyashree-nepse-hub.onrender.com/health"
     },
     {
       "source": "/(.*)",

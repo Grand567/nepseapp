@@ -4,6 +4,7 @@
 const LOOPBACK_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 export const CORS_DEFAULTS = [
+  'https://drabyashree-nepse-hub.onrender.com',
   'https://nepseapp.onrender.com',
   'https://drabyashree-nepse-hub6936.vercel.app',
   'https://nepse-hub.vercel.app',
