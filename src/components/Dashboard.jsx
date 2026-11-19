@@ -19,6 +19,7 @@ import {
 } from '../utils/calculations';
 import { calculatePivotPoints, calculateFibonacci } from '../utils/indicators';
 import { runStockScanners } from '../utils/quantEngine';
+import { isPureNepseEquity } from '../utils/nepseEquityFilter.js';
 import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
 import { formatBS } from '../utils/nepaliDate';
 import * as servicesApi from '../utils/servicesApi';
@@ -358,7 +359,7 @@ function TradingChart({
           display: 'flex', gap: 8, alignItems: 'center', zIndex: 20, pointerEvents: 'none'
         }}>
           <span style={{ color: '#8da2be' }}>{activePt.time || activePt.date}</span>
-          <span style={{ color: '#10B981', fontFamily: 'var(--font-mono)' }}>Rs. {activePt.close.toFixed(2)}</span>
+          <span style={{ color: '#10B981', fontFamily: 'var(--font-mono)' }}>Rs. {(Number(activePt.close ?? activePt.price ?? activePt.ltp) || 0).toFixed(2)}</span>
         </div>
       )}
 
@@ -806,11 +807,12 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
 
   const filtered = useMemo(() => {
     let list = [];
-    if (tab === 'advanced') list = stocks.filter(s => (s.pChange || 0) > 0);
-    else if (tab === 'declined') list = stocks.filter(s => (s.pChange || 0) < 0);
-    else if (tab === 'unchanged') list = stocks.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0));
-    else if (tab === 'circuit_pos') list = stocks.filter(s => isCircuitStock(s, 'pos'));
-    else if (tab === 'circuit_neg') list = stocks.filter(s => isCircuitStock(s, 'neg'));
+    const validStocks = stocks.filter(s => isPureNepseEquity(s));
+    if (tab === 'advanced') list = validStocks.filter(s => (s.pChange || 0) > 0);
+    else if (tab === 'declined') list = validStocks.filter(s => (s.pChange || 0) < 0);
+    else if (tab === 'unchanged') list = validStocks.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0));
+    else if (tab === 'circuit_pos') list = validStocks.filter(s => isCircuitStock(s, 'pos'));
+    else if (tab === 'circuit_neg') list = validStocks.filter(s => isCircuitStock(s, 'neg'));
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -1878,7 +1880,7 @@ function Dashboard({
     }
     loadHeroHistory();
     return () => { active = false; };
-  }, [activeHeroIndex.key, activeHeroIndex.name, heroTimeframe, lastSyncTime]);
+  }, [activeHeroIndex.key, activeHeroIndex.name, heroTimeframe]);
 
   const handleHeroTimeframeChange = (tf) => {
     triggerHaptic(25);
@@ -1894,7 +1896,7 @@ function Dashboard({
     if (cachedSummaryForBreadth?.advances != null && (cachedSummaryForBreadth.advances > 0 || cachedSummaryForBreadth.declines > 0)) {
       return cachedSummaryForBreadth.advances;
     }
-    const fromStocks = stocks.filter(s => (s.pChange || 0) > 0).length;
+    const fromStocks = stocks.filter(s => (s.pChange || 0) > 0 && isPureNepseEquity(s)).length;
     if (fromStocks > 0) return fromStocks;
     return cachedSummaryForBreadth?.advances || 0;
   }, [stocks, cachedSummaryForBreadth]);
@@ -1903,7 +1905,7 @@ function Dashboard({
     if (cachedSummaryForBreadth?.declines != null && (cachedSummaryForBreadth.advances > 0 || cachedSummaryForBreadth.declines > 0)) {
       return cachedSummaryForBreadth.declines;
     }
-    const fromStocks = stocks.filter(s => (s.pChange || 0) < 0).length;
+    const fromStocks = stocks.filter(s => (s.pChange || 0) < 0 && isPureNepseEquity(s)).length;
     if (fromStocks > 0) return fromStocks;
     return cachedSummaryForBreadth?.declines || 0;
   }, [stocks, cachedSummaryForBreadth]);
@@ -1912,12 +1914,12 @@ function Dashboard({
     if (cachedSummaryForBreadth?.unchanged != null && (cachedSummaryForBreadth.advances > 0 || cachedSummaryForBreadth.declines > 0)) {
       return cachedSummaryForBreadth.unchanged;
     }
-    const fromStocks = stocks.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0)).length;
+    const fromStocks = stocks.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0) && isPureNepseEquity(s)).length;
     if (fromStocks > 0) return fromStocks;
     return cachedSummaryForBreadth?.unchanged || 0;
   }, [stocks, cachedSummaryForBreadth]);
-  const circuitPosCount = useMemo(() => stocks.filter(s => isCircuitStock(s, 'pos')).length, [stocks]);
-  const circuitNegCount = useMemo(() => stocks.filter(s => isCircuitStock(s, 'neg')).length, [stocks]);
+  const circuitPosCount = useMemo(() => stocks.filter(s => isPureNepseEquity(s) && isCircuitStock(s, 'pos')).length, [stocks]);
+  const circuitNegCount = useMemo(() => stocks.filter(s => isPureNepseEquity(s) && isCircuitStock(s, 'neg')).length, [stocks]);
 
   // ── NEPSE Market Sentiment & Fear & Greed Index (0 - 100) ──
   const fearGreedData = useMemo(() => {
@@ -1978,6 +1980,7 @@ function Dashboard({
   // Robust Movers Data Lists
   const isDebentureOrBond = (s) => {
     if (!s) return false;
+    if (!isPureNepseEquity(s)) return true;
     const sec = String(s.sector || '').toLowerCase();
     if (sec.includes('debenture') || sec.includes('bond')) return true;
     const sym = String(s.symbol || '').toUpperCase();
@@ -1987,26 +1990,28 @@ function Dashboard({
 
   const isMutualFund = (s) => {
     if (!s) return false;
+    if (!isPureNepseEquity(s)) return true;
     const sec = String(s.sector || '').toLowerCase();
     return sec.includes('mutual');
   };
 
   const gainers = useMemo(() => {
     return [...stocks]
-      .filter(s => (Number(s.pChange) || 0) > 0 && !isDebentureOrBond(s) && (Number(s.volume) || 0) >= 100)
+      .filter(s => (Number(s.pChange) || 0) > 0 && !isDebentureOrBond(s) && !isMutualFund(s) && (Number(s.volume) || 0) >= 100)
       .sort((a, b) => (Number(b.pChange) || 0) - (Number(a.pChange) || 0))
       .slice(0, 8);
   }, [stocks]);
 
   const losers = useMemo(() => {
     return [...stocks]
-      .filter(s => (Number(s.pChange) || 0) < 0 && !isDebentureOrBond(s) && (Number(s.volume) || 0) >= 100)
+      .filter(s => (Number(s.pChange) || 0) < 0 && !isDebentureOrBond(s) && !isMutualFund(s) && (Number(s.volume) || 0) >= 100)
       .sort((a, b) => (Number(a.pChange) || 0) - (Number(b.pChange) || 0))
       .slice(0, 8);
   }, [stocks]);
 
   const turnoverLeaders = useMemo(() => {
     return [...stocks]
+      .filter(s => !isDebentureOrBond(s) && !isMutualFund(s))
       .sort((a, b) => {
         const tB = Number(b.turnover) || ((Number(b.ltp) || 0) * (Number(b.volume) || 1));
         const tA = Number(a.turnover) || ((Number(a.ltp) || 0) * (Number(a.volume) || 1));
@@ -2029,14 +2034,14 @@ function Dashboard({
 
   const slowAccumulationStocks = useMemo(() => {
     return [...stocks]
-      .filter(s => ((s.stealthAccumulation || 50) >= 55 || ((s.pChange || 0) >= 0 && (s.pChange || 0) <= 2.5 && (s.volumeSurgeRatio || 1) >= 1.1)))
+      .filter(s => !isDebentureOrBond(s) && !isMutualFund(s) && ((s.stealthAccumulation || 50) >= 55 || ((s.pChange || 0) >= 0 && (s.pChange || 0) <= 2.5 && (s.volumeSurgeRatio || 1) >= 1.1)))
       .sort((a, b) => (b.stealthAccumulation || 50) - (a.stealthAccumulation || 50))
       .slice(0, 8);
   }, [stocks]);
 
   const distributionTrapStocks = useMemo(() => {
     return [...stocks]
-      .filter(s => ((s.pumpDumpRiskScore || 40) >= 50 || ((s.pChange || 0) < 0 && (s.volumeSurgeRatio || 1) >= 1.4)))
+      .filter(s => !isDebentureOrBond(s) && !isMutualFund(s) && ((s.pumpDumpRiskScore || 40) >= 50 || ((s.pChange || 0) < 0 && (s.volumeSurgeRatio || 1) >= 1.4)))
       .sort((a, b) => (b.pumpDumpRiskScore || 40) - (a.pumpDumpRiskScore || 40))
       .slice(0, 8);
   }, [stocks]);
@@ -2396,9 +2401,9 @@ function Dashboard({
                 isVerified,
                 passesAll5,
                 lockinTrap: lockinCheck.isTrap ? lockinCheck.reason : null,
-                rvol: plan.technical?.volume?.rvol || stockObj.rvol || 1.25,
-                winRate: plan.analogResult?.stats?.winRate ?? 50,
-                analogCount: plan.analogResult?.stats?.sampleSize ?? 6,
+                rvol: plan.technical?.volume?.rvol || stockObj.rvol || null,
+                winRate: plan.analogResult?.stats?.winRate ?? null,
+                analogCount: plan.analogResult?.stats?.sampleSize ?? null,
                 confidenceLevel: plan.confidence?.level || 'MEDIUM',
                 levels: plan.levels,
                 entryLow: plan.levels?.entryZone?.min || plan.levels?.entryZone?.low,
@@ -2629,18 +2634,18 @@ function Dashboard({
     }
 
     const hasCachedBreadth = cachedSummaryForBreadth?.advances != null && (cachedSummaryForBreadth.advances > 0 || cachedSummaryForBreadth.declines > 0);
-    const stockAdv = stocks.filter(s => (s.pChange || 0) > 0).length;
-    const stockDec = stocks.filter(s => (s.pChange || 0) < 0).length;
-    const stockUnc = stocks.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0)).length;
+    const stockAdv = stocks.filter(s => (s.pChange || 0) > 0 && isPureNepseEquity(s)).length;
+    const stockDec = stocks.filter(s => (s.pChange || 0) < 0 && isPureNepseEquity(s)).length;
+    const stockUnc = stocks.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0) && isPureNepseEquity(s)).length;
 
     const adv = hasCachedBreadth ? cachedSummaryForBreadth.advances : (stockAdv > 0 || stockDec > 0 ? stockAdv : (cachedSummaryForBreadth?.advances || 0));
     const dec = hasCachedBreadth ? cachedSummaryForBreadth.declines : (stockAdv > 0 || stockDec > 0 ? stockDec : (cachedSummaryForBreadth?.declines || 0));
     const unc = hasCachedBreadth ? cachedSummaryForBreadth.unchanged : (stockAdv > 0 || stockDec > 0 ? stockUnc : (cachedSummaryForBreadth?.unchanged || 0));
     const breadthRatio = dec > 0 ? (adv / dec).toFixed(2) : (adv > 0 ? `${adv}:0` : '1.0');
 
-    const floatVal = indices?.float?.value || 174.35;
-    const floatChg = indices?.float?.change || 0.15;
-    const floatPChg = indices?.float?.pChange || 0.08;
+    const floatVal = indices?.float?.value != null ? indices.float.value : null;
+    const floatChg = indices?.float?.change != null ? indices.float.change : null;
+    const floatPChg = indices?.float?.pChange != null ? indices.float.pChange : null;
 
     return {
       totalTurnover,
@@ -2789,7 +2794,7 @@ function Dashboard({
       {(() => {
         const hasRealStocks = Array.isArray(stocks) && stocks.length > 20 && stocks.some(s => (s.volume || 0) > 0 || (s.turnover || 0) > 0 || s.isRealQuote === true);
         const summarySimulated = getCachedMarketSummary()?.isSimulated === true;
-        const showSimulated = !hasRealStocks && (summarySimulated || stocks.every(s => s?.isSimulated));
+        const showSimulated = !hasRealStocks && (summarySimulated || (stocks.length > 0 && stocks.every(s => s?.isSimulated)));
         const resolvedQuality = !marketStatus?.isOpen ? 'MARKET_CLOSED' : (getCachedMarketSummary()?.dataQuality || 'CONNECTING');
         return (
           <DataQualityBanner
@@ -3531,11 +3536,12 @@ function Dashboard({
 
         let filteredBreadthStocks = [];
         if (breadthFilter && Array.isArray(stocks)) {
-          if (breadthFilter === 'advanced') filteredBreadthStocks = stocks.filter(s => (Number(s.pChange) || 0) > 0).sort((a, b) => (Number(b.pChange) || 0) - (Number(a.pChange) || 0));
-          else if (breadthFilter === 'declined') filteredBreadthStocks = stocks.filter(s => (Number(s.pChange) || 0) < 0).sort((a, b) => (Number(a.pChange) || 0) - (Number(b.pChange) || 0));
-          else if (breadthFilter === 'unchanged') filteredBreadthStocks = stocks.filter(s => (Number(s.pChange) || 0) === 0 && ((Number(s.volume) || 0) > 0 || (Number(s.turnover) || 0) > 0));
-          else if (breadthFilter === 'circuit_pos') filteredBreadthStocks = stocks.filter(s => isCircuitStock(s, 'pos')).sort((a, b) => (Number(b.pChange) || 0) - (Number(a.pChange) || 0));
-          else if (breadthFilter === 'circuit_neg') filteredBreadthStocks = stocks.filter(s => isCircuitStock(s, 'neg')).sort((a, b) => (Number(a.pChange) || 0) - (Number(b.pChange) || 0));
+          const eqStocks = stocks.filter(s => isPureNepseEquity(s));
+          if (breadthFilter === 'advanced') filteredBreadthStocks = eqStocks.filter(s => (Number(s.pChange) || 0) > 0).sort((a, b) => (Number(b.pChange) || 0) - (Number(a.pChange) || 0));
+          else if (breadthFilter === 'declined') filteredBreadthStocks = eqStocks.filter(s => (Number(s.pChange) || 0) < 0).sort((a, b) => (Number(a.pChange) || 0) - (Number(b.pChange) || 0));
+          else if (breadthFilter === 'unchanged') filteredBreadthStocks = eqStocks.filter(s => (Number(s.pChange) || 0) === 0 && ((Number(s.volume) || 0) > 0 || (Number(s.turnover) || 0) > 0));
+          else if (breadthFilter === 'circuit_pos') filteredBreadthStocks = eqStocks.filter(s => isCircuitStock(s, 'pos')).sort((a, b) => (Number(b.pChange) || 0) - (Number(a.pChange) || 0));
+          else if (breadthFilter === 'circuit_neg') filteredBreadthStocks = eqStocks.filter(s => isCircuitStock(s, 'neg')).sort((a, b) => (Number(a.pChange) || 0) - (Number(b.pChange) || 0));
         }
 
         return (
@@ -4460,12 +4466,12 @@ function Dashboard({
               <div>
                 <div style={{ fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#f43f5e' }}>
                   {!getDetailedMarketStatus().isOpen
-                    ? `Market Closed (नेप्से बन्द छ) • Last Session ${getDetailedMarketStatus().targetSessionDate} Frozen`
+                    ? `Market Closed (नेप्से बन्द छ) • Last Session ${getDetailedMarketStatus().lastClosedSessionDate || getDetailedMarketStatus().targetSessionDate} Frozen`
                     : (cashDefenseActive ? 'Systemic Risk Filter • Cash Defense Mode Active' : 'Quantitative Risk Filter • Capital Defense Active')}
                 </div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff' }}>
                   {!getDetailedMarketStatus().isOpen
-                    ? `Session Completed: Capital Preservation Active (${getDetailedMarketStatus().targetSessionDate})`
+                    ? `Session Completed: Capital Preservation Active (${getDetailedMarketStatus().lastClosedSessionDate || getDetailedMarketStatus().targetSessionDate})`
                     : 'Capital Preservation Protocol: No Breakout Buys Issued Today'}
                 </div>
               </div>
@@ -4475,7 +4481,7 @@ function Dashboard({
               background: 'rgba(244, 63, 94, 0.15)', color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.3)'
             }}>
               {!getDetailedMarketStatus().isOpen
-                ? `Session: ${getDetailedMarketStatus().targetSessionDate} (Closed)`
+                ? `Session: ${getDetailedMarketStatus().lastClosedSessionDate || getDetailedMarketStatus().targetSessionDate} (Closed)`
                 : ((masterBreakoutPipeline?.breadthCheck?.breadth50 < 40)
                   ? `Market Breadth: ${masterBreakoutPipeline?.breadthCheck?.breadth50}% (< 40% Threshold)`
                   : '100% Capital Defense: 0 Passing Setups')}
@@ -4483,7 +4489,7 @@ function Dashboard({
           </div>
           <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
             {!getDetailedMarketStatus().isOpen
-              ? `The Nepal Stock Exchange is currently closed (weekend/holiday/off-hours). The Entry/Exit Analyzer setup is locked to the last concluded session (${getDetailedMarketStatus().targetSessionDate}). No active live breakout triggers will be executed until the next official trading window opens.`
+              ? `The Nepal Stock Exchange is currently closed (weekend/holiday/off-hours). The Entry/Exit Analyzer setup is locked to the last concluded session (${getDetailedMarketStatus().lastClosedSessionDate || getDetailedMarketStatus().targetSessionDate}). No active live breakout triggers will be executed until the next official trading window opens.`
               : ((masterBreakoutPipeline?.breadthCheck?.breadth50 < 40)
                 ? 'Fewer than 40% of NEPSE equities are trading above their 50-day moving average. In this market regime, breakout failure rates exceed 75% due to lack of broad institutional participation. The quantitative engine has activated Cash Defense Mode to protect your capital. Avoid new swing entries until breadth recovers.'
                 : 'All evaluated screener candidates failed the 500-session Entry/Exit Analyzer risk/reward verification (must have ≥55% historical analog win-rate, ≤10% downside risk, and a positive momentum setup). The quantitative engine enforced 100% capital preservation rather than issuing high-risk, low-conviction picks.')}
@@ -4768,11 +4774,14 @@ function Dashboard({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   {(() => {
                     const badgeStr = String(preOpenGate.badge || '⚡ Pre-Open');
+                    const badgeChars = Array.from(badgeStr);
+                    const emojiPrefix = badgeChars[0] || '⚡';
+                    const labelRest = badgeChars.slice(1).join('').trim();
                     return (
                       <>
-                        <span style={{ fontSize: 13 }}>{badgeStr.slice(0, 2)}</span>
+                        <span style={{ fontSize: 13 }}>{emojiPrefix}</span>
                         <span style={{ fontSize: 12, fontWeight: 800, color: preOpenGate.color || '#38bdf8', letterSpacing: '0.02em' }}>
-                          {badgeStr.slice(2)}
+                          {labelRest}
                         </span>
                       </>
                     );
@@ -4791,7 +4800,7 @@ function Dashboard({
                       color: '#94a3b8'
                     }}
                   >
-                    <RefreshCw size={11} className={isRefreshingDepth ? 'spin' : ''} />
+                    <RefreshCw size={11} className={isRefreshingDepth ? 'animate-spin' : ''} />
                   </button>
                 </div>
                 {preOpenGate.hasLiveOrders && (
@@ -5601,7 +5610,7 @@ function Dashboard({
                   const lu = getLastDataUpdateTime?.();
                   return lu?.iso ? new Date(lu.iso).getTime() : null;
                 })()}
-                sessionDate={marketStatus?.lastClosedSessionDate}
+                sessionDate={marketStatus?.isOpen ? (marketStatus?.targetSessionDate || marketStatus?.sessionDate || marketStatus?.businessDate) : (marketStatus?.lastClosedSessionDate || marketStatus?.targetSessionDate)}
               />
             </div>
 
@@ -5636,8 +5645,8 @@ function Dashboard({
         <StockDetailModal
           stock={selectedStock}
           allStocks={stocks}
-          selectedDate={selectedStock?.isHistoricalSession ? (selectedStock?.sessionDate || selectedStock?.date || '') : ''}
-          sessionDate={selectedStock?.isHistoricalSession ? (selectedStock?.sessionDate || selectedStock?.date || '') : ''}
+          selectedDate={selectedStock?.sessionDate || selectedStock?.date || ''}
+          sessionDate={selectedStock?.sessionDate || selectedStock?.date || ''}
           onClose={() => setSelectedStock(null)}
           marketStatus={marketStatus}
         />
@@ -5675,7 +5684,7 @@ function Dashboard({
 
       {showTVModal && (
         <AdvancedChartModal
-          symbol={activeHeroIndex.name || 'NEPSE'}
+          symbol={activeHeroIndex.symbol || activeHeroIndex.key || 'NEPSE'}
           stock={{ ltp: heroVal.value, change: heroVal.change, pChange: heroVal.pChange, name: activeHeroIndex.name, sector: 'NEPSE Index' }}
           initialTimeframe={heroTimeframe}
           onClose={() => setShowTVModal(false)}
@@ -5827,7 +5836,7 @@ function Dashboard({
           <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px 8px', overflow: 'hidden' }}>
             <ShareHubChart
               history={slicedHeroHistory}
-              symbol={activeHeroIndex.name}
+              symbol={activeHeroIndex.symbol || activeHeroIndex.key || 'NEPSE'}
               isIndex={true}
               isIntraday={heroTimeframe === '1D'}
               mode={heroChartMode}

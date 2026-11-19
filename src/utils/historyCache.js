@@ -137,20 +137,40 @@ export function buildPrecomputedBrokerMap(matrixData) {
   for (const [sym, data] of Object.entries(scripBrokers)) {
     data.buyers.sort((a, b) => b.buyQty - a.buyQty);
     data.sellers.sort((a, b) => b.sellQty - a.sellQty);
-    data.buyers.forEach((b) => {
-      b.sharePct = data.totalBuyQty > 0 ? +(b.buyQty / data.totalBuyQty * 100).toFixed(2) : 0;
+    data.buyers = data.buyers.map((b) => {
+      const sharePct = data.totalBuyQty > 0 ? +Math.min(100, (b.buyQty / data.totalBuyQty * 100)).toFixed(2) : 0;
+      return {
+        ...b,
+        volume: b.buyQty,
+        amount: b.buyAmt,
+        pct: sharePct,
+        buyPct: sharePct,
+        sharePct
+      };
     });
-    data.sellers.forEach((s) => {
-      s.sharePct = data.totalSellQty > 0 ? +(s.sellQty / data.totalSellQty * 100).toFixed(2) : 0;
+    data.sellers = data.sellers.map((s) => {
+      const sharePct = data.totalSellQty > 0 ? +Math.min(100, (s.sellQty / data.totalSellQty * 100)).toFixed(2) : 0;
+      return {
+        ...s,
+        volume: s.sellQty,
+        amount: s.sellAmt,
+        pct: sharePct,
+        sellPct: sharePct,
+        sharePct
+      };
     });
 
     const topNetBuyers = [...data.allBrokers].filter((b) => b.netQty > 0).sort((a, b) => b.netQty - a.netQty);
     const topNetSellers = [...data.allBrokers].filter((b) => b.netQty < 0).sort((a, b) => a.netQty - b.netQty);
 
     const top3BuyQty = data.buyers.slice(0, 3).reduce((acc, b) => acc + b.buyQty, 0);
+    const top5BuyQty = data.buyers.slice(0, 5).reduce((acc, b) => acc + b.buyQty, 0);
     const top3SellQty = data.sellers.slice(0, 3).reduce((acc, s) => acc + s.sellQty, 0);
-    const bcr3BuyPct = data.totalBuyQty > 0 ? +(top3BuyQty / data.totalBuyQty * 100).toFixed(2) : 0;
-    const bcr3SellPct = data.totalSellQty > 0 ? +(top3SellQty / data.totalSellQty * 100).toFixed(2) : 0;
+    const top5SellQty = data.sellers.slice(0, 5).reduce((acc, s) => acc + s.sellQty, 0);
+    const bcr3BuyPct = data.totalBuyQty > 0 ? +Math.min(100, (top3BuyQty / data.totalBuyQty * 100)).toFixed(2) : 0;
+    const bcr5BuyPct = data.totalBuyQty > 0 ? +Math.min(100, (top5BuyQty / data.totalBuyQty * 100)).toFixed(2) : 0;
+    const bcr3SellPct = data.totalSellQty > 0 ? +Math.min(100, (top3SellQty / data.totalSellQty * 100)).toFixed(2) : 0;
+    const scr5SellPct = data.totalSellQty > 0 ? +Math.min(100, (top5SellQty / data.totalSellQty * 100)).toFixed(2) : 0;
     const netConcentration = +(bcr3BuyPct - bcr3SellPct).toFixed(2);
 
     result[sym] = {
@@ -160,7 +180,10 @@ export function buildPrecomputedBrokerMap(matrixData) {
       totalVolume: data.totalBuyQty,
       totalTurnover: data.totalBuyAmt,
       bcr3BuyPct,
+      bcr5BuyPct,
       bcr3SellPct,
+      scr3SellPct: bcr3SellPct,
+      scr5SellPct,
       grossBuyConcentrationPct: bcr3BuyPct,
       grossSellConcentrationPct: bcr3SellPct,
       smartMoneyNetFlowPct: netConcentration,

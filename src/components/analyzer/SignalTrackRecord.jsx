@@ -19,7 +19,7 @@ function normaliseBackendRow(s) {
     RATCHET_STOP_WIN: 'hit_target', WIN_RATCHET_STOP: 'hit_target',
     STOP_LOSS: 'hit_stop', STOPPED_OUT: 'hit_stop',
     TIME_STOP_STALE: 'expired', TIME_EXPIRED: 'expired',
-    UNFILLABLE_SKIP: 'expired',
+    UNFILLABLE_SKIP: 'unfillable',
   };
   let mappedStatus = statusMap[String(s.status || '').toUpperCase()] || 'expired';
   const rawRet = Number((s.gross_return_pct ?? s.gross_pnl_pct ?? 0).toFixed(2));
@@ -96,8 +96,8 @@ export const SignalTrackRecord = ({ symbol, livePrice = null, allStocks = [] }) 
         });
         merged.sort((a, b) => new Date(b.signalDate || 0) - new Date(a.signalDate || 0));
 
-        // Recompute stats from merged set (including expired trades in denominator)
-        const closed = merged.filter(s => s.status !== 'open');
+        // Recompute stats from merged set (including expired trades in denominator, excluding unfillable skips)
+        const closed = merged.filter(s => s.status !== 'open' && s.status !== 'unfillable' && s.status !== 'skipped');
         const wins = closed.filter(s => s.status === 'hit_target' || (s.status === 'expired' && (s.outcome?.returnPct ?? 0) > 0));
         const losses = closed.filter(s => s.status === 'hit_stop' || (s.status === 'expired' && (s.outcome?.returnPct ?? 0) <= 0));
         const openCount = merged.filter(s => s.status === 'open').length;
@@ -366,10 +366,10 @@ export const SignalTrackRecord = ({ symbol, livePrice = null, allStocks = [] }) 
             color: closedCount > 0 ? (winRate >= 50 ? '#34d399' : '#f87171') : (openCount > 0 ? '#38bdf8' : '#94a3b8'),
             marginTop: 2
           }}>
-            {closedCount > 0 ? `${winRate.toFixed(1)}%` : (openCount > 0 ? 'Active Setup' : '57.7% Model')}
+            {closedCount > 0 ? `${winRate.toFixed(1)}%` : (openCount > 0 ? 'Active Setup' : '—')}
           </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-            {closedCount > 0 ? `${closedCount} resolved` : (openCount > 0 ? `${openCount} trade in progress` : 'NEPSE Benchmark')}
+            {closedCount > 0 ? `${closedCount} resolved` : (openCount > 0 ? `${openCount} trade in progress` : 'No Track Record')}
           </div>
         </div>
 

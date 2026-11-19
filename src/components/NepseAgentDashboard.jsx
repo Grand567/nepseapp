@@ -442,7 +442,7 @@ export default function NepseAgentDashboard({
                     {dossier?.symbol || symbol}
                   </span>
                   <span style={{ fontSize: 12, color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 8 }}>
-                    {dossier?.sector || 'Commercial Banks'}
+                    {dossier?.sector || 'NEPSE Listed Equity'}
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 2 }}>
@@ -505,7 +505,10 @@ export default function NepseAgentDashboard({
                     Confidence
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 900, color: '#60a5fa' }}>
-                    {agentResult?.confidenceScore ?? dossier?.executionPlan?.setupScore ?? 80}/100
+                    {(() => {
+                      const cScore = agentResult?.confidenceScore ?? dossier?.executionPlan?.setupScore;
+                      return cScore != null && Number.isFinite(Number(cScore)) ? `${cScore}/100` : 'Unavailable';
+                    })()}
                   </div>
                 </div>
               </div>
@@ -590,7 +593,11 @@ export default function NepseAgentDashboard({
 
             {activeLangTab === 'english' ? (
               <div style={{ fontSize: 13, lineHeight: 1.6, color: '#cbd5e1' }}>
-                {agentResult?.executiveSummary || `${symbol} is consolidating with quantitative setup score ${dossier?.executionPlan?.setupScore || 75}/100. Refer to the execution blueprint below for authenticated entry zones.`}
+                {agentResult?.executiveSummary || (
+                  dossier?.executionPlan?.setupScore != null
+                    ? `${symbol} quantitative setup score is ${dossier.executionPlan.setupScore}/100. Refer to the execution blueprint below for verified entry zones.`
+                    : `${symbol} multi-factor dossier evaluated below; inspect verified technical, broker, and execution availability before sizing.`
+                )}
               </div>
             ) : (
               <div style={{ fontSize: 13, lineHeight: 1.7, color: '#cbd5e1', background: 'rgba(59, 130, 246, 0.05)', padding: 12, borderRadius: 10, border: '1px solid rgba(59, 130, 246, 0.15)' }}>
@@ -637,10 +644,10 @@ export default function NepseAgentDashboard({
                   </span>
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc' }}>
-                  {agentResult?.executionPlan?.pullbackDipZone || dossier?.executionPlan?.pullbackZone?.label || (dossier?.executionPlan?.available === false ? 'Unavailable — ' + (dossier.executionPlan.reason || 'insufficient data') : 'Unavailable')}
+                  {agentResult?.executionPlan?.pullbackDipZone || (dossier?.executionPlan?.available !== false ? dossier?.executionPlan?.pullbackZone?.label : null) || (dossier?.executionPlan?.available === false ? 'Unavailable — ' + (dossier.executionPlan.reason || 'insufficient data') : 'Unavailable')}
                 </div>
                 <div style={{ fontSize: 12, color: '#94a3b8' }}>
-                  Support: {dossier?.executionPlan?.pullbackZone?.supportRef || '20-EMA base'}
+                  Support: {dossier?.executionPlan?.available !== false && dossier?.executionPlan?.pullbackZone?.supportRef ? dossier.executionPlan.pullbackZone.supportRef : 'Unavailable'}
                 </div>
               </div>
 
@@ -663,10 +670,10 @@ export default function NepseAgentDashboard({
                   </span>
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc' }}>
-                  {agentResult?.executionPlan?.breakoutTrigger || dossier?.executionPlan?.breakoutZone?.label || (dossier?.executionPlan?.available === false ? 'Unavailable — ' + (dossier.executionPlan.reason || 'insufficient data') : 'Unavailable')}
+                  {agentResult?.executionPlan?.breakoutTrigger || (dossier?.executionPlan?.available !== false ? dossier?.executionPlan?.breakoutZone?.label : null) || (dossier?.executionPlan?.available === false ? 'Unavailable — ' + (dossier.executionPlan.reason || 'insufficient data') : 'Unavailable')}
                 </div>
                 <div style={{ fontSize: 12, color: '#94a3b8' }}>
-                  Trigger on RVOL &gt; 1.4x • Cap: Rs. {dossier?.executionPlan?.breakoutZone?.chaseCap || (dossier?.quote?.ltp ? +(dossier.quote.ltp * 1.04).toFixed(1) : '—')}
+                  Trigger on RVOL &gt; 1.4x • Cap: {dossier?.executionPlan?.available !== false && dossier?.executionPlan?.breakoutZone?.chaseCap != null ? `Rs. ${dossier.executionPlan.breakoutZone.chaseCap}` : '—'}
                 </div>
               </div>
 
@@ -795,8 +802,8 @@ export default function NepseAgentDashboard({
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                   <span style={{ color: '#94a3b8' }}>20-Day Relative Volume (RVOL):</span>
-                  <strong style={{ color: (dossier?.technicals?.rvol20 || 1.0) >= 1.3 ? '#34d399' : '#e2e8f0' }}>
-                    {dossier?.technicals?.rvol20 ?? 1.0}x
+                  <strong style={{ color: (Number(dossier?.technicals?.rvol20) || 0) >= 1.3 ? '#34d399' : '#e2e8f0' }}>
+                    {dossier?.technicals?.rvol20 !== null && dossier?.technicals?.rvol20 !== undefined && Number.isFinite(Number(dossier.technicals.rvol20)) ? `${dossier.technicals.rvol20}x` : '—'}
                   </strong>
                 </div>
               </div>
@@ -885,7 +892,13 @@ export default function NepseAgentDashboard({
                   🟢 Bullish Catalysis
                 </div>
                 <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.5 }}>
-                  {agentResult?.scenarios?.bullishCase || `Clearance above Rs. ${dossier?.executionPlan?.breakoutZone?.pivot} with RVOL > 1.4x triggers expansion to target Rs. ${dossier?.executionPlan?.targets?.[0]?.price}.`}
+                  {agentResult?.scenarios?.bullishCase || (() => {
+                    const pivot = dossier?.executionPlan?.breakoutZone?.pivot;
+                    const t1 = dossier?.executionPlan?.targets?.[0]?.price;
+                    return Number.isFinite(Number(pivot)) && Number.isFinite(Number(t1))
+                      ? `Clearance above Rs. ${pivot} with RVOL > 1.4x triggers expansion to target Rs. ${t1}.`
+                      : 'Verified breakout pivot and target levels unavailable.';
+                  })()}
                 </div>
               </div>
 
@@ -895,7 +908,12 @@ export default function NepseAgentDashboard({
                   🔵 Base Trajectory
                 </div>
                 <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.5 }}>
-                  {agentResult?.scenarios?.baseCase || `Healthy consolidation near 20-EMA (Rs. ${dossier?.technicals?.ema20}) offering high-probability pullback accumulation.`}
+                  {agentResult?.scenarios?.baseCase || (() => {
+                    const ema20 = dossier?.technicals?.ema20;
+                    return Number.isFinite(Number(ema20))
+                      ? `Healthy consolidation near 20-EMA (Rs. ${ema20}) offering high-probability pullback accumulation.`
+                      : 'Verified 20-EMA base-case level unavailable.';
+                  })()}
                 </div>
               </div>
 
@@ -905,7 +923,12 @@ export default function NepseAgentDashboard({
                   🔴 Invalidation Trigger
                 </div>
                 <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.5 }}>
-                  {agentResult?.scenarios?.bearishInvalidation || `Daily close below stop-loss Rs. ${dossier?.executionPlan?.stopLoss?.price} terminates the bullish trade thesis.`}
+                  {agentResult?.scenarios?.bearishInvalidation || (() => {
+                    const stop = dossier?.executionPlan?.stopLoss?.price;
+                    return Number.isFinite(Number(stop))
+                      ? `Daily close below stop-loss Rs. ${stop} terminates the bullish trade thesis.`
+                      : 'Verified stop-loss invalidation level unavailable.';
+                  })()}
                 </div>
               </div>
             </div>

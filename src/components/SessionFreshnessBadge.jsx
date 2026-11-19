@@ -37,11 +37,7 @@ export default function SessionFreshnessBadge({
     hour12: true
   });
 
-  const lastUpdate = lastUpdatedMs ? Number(lastUpdatedMs) : now.getTime();
-  const lagMs = Math.max(0, now.getTime() - lastUpdate);
-  const isStale = isOpen && lagMs > staleThresholdMs;
-
-  if (isWarmingUp) {
+  if (isWarmingUp || !lastUpdatedMs) {
     return (
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: 8, padding: compact ? '2px 8px' : '4px 10px', fontSize: compact ? 10.5 : 12, fontWeight: 700, color: '#38bdf8' }}>
         <RefreshCw className="animate-spin" style={{ width: 12, height: 12 }} />
@@ -49,6 +45,10 @@ export default function SessionFreshnessBadge({
       </div>
     );
   }
+
+  const lastUpdate = Number(lastUpdatedMs);
+  const lagMs = Math.max(0, now.getTime() - lastUpdate);
+  const isStale = isOpen && lagMs > staleThresholdMs;
 
   if (isOpen) {
     if (isStale) {

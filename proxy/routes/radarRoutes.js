@@ -23,6 +23,7 @@ import {
   rebuildSignalTrackRecord
 } from "../db/ledgerStore.js";
 import { calculateMultiDayDiagnostics } from "../utils/microstructureEngine.js";
+import { requireAdminSecret } from "../middleware/requireAdminSecret.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,9 +53,10 @@ try {
  */
 function setCachedDiagnostic(key, value) {
   if (HOT_CACHE?.stockDiagnostics) {
-    if (HOT_CACHE.stockDiagnostics.size >= 120) {
+    while (HOT_CACHE.stockDiagnostics.size >= 120) {
       const oldestKey = HOT_CACHE.stockDiagnostics.keys().next().value;
       if (oldestKey) HOT_CACHE.stockDiagnostics.delete(oldestKey);
+      else break;
     }
     HOT_CACHE.stockDiagnostics.set(key, value);
   }
@@ -414,7 +416,7 @@ router.get("/radar/broker-tracker", async (req, res) => {
 
   const allSectors = Array.from(new Set(universe.map((s) => stockMap[s.symbol]?.sector || s.sector || "Others"))).filter(Boolean).sort();
 
-  res.set("Cache-Control", "public, max-age=30");
+  res.set("Cache-Control", "public, max-age=60");
   return res.json({
     success: true,
     timeframeDays: validDays,
@@ -493,7 +495,7 @@ const handleEarlyIgnition = async (req, res) => {
 
   const allSectors = Array.from(new Set(allRecords.map(s => stockMap[s.symbol]?.sector || s.sector || 'Others'))).filter(Boolean).sort();
 
-  res.set("Cache-Control", "public, max-age=30");
+  res.set("Cache-Control", "public, max-age=60");
   return res.json({
     success: true,
     timeframe: 3,
@@ -940,7 +942,7 @@ const handlePortfolioShield = async (req, res) => {
   }
 
   const result = evaluatePortfolioShield(rawItems, validDays);
-  res.set("Cache-Control", "public, max-age=30");
+  res.set("Cache-Control", "private, no-store, no-cache, must-revalidate");
   return res.json(result);
 };
 
@@ -1101,8 +1103,8 @@ const handleBackfillStatus = (req, res) => {
   return res.json(status);
 };
 
-router.get("/admin/backfill-status", handleBackfillStatus);
-router.get("/radar/backfill-status", handleBackfillStatus);
+router.get("/admin/backfill-status", requireAdminSecret, handleBackfillStatus);
+router.get("/radar/backfill-status", requireAdminSecret, handleBackfillStatus);
 
 /**
  * POST /api/admin/backfill-trigger and POST /api/radar/backfill
@@ -1122,8 +1124,8 @@ const handleBackfillTrigger = (req, res) => {
   });
 };
 
-router.post("/admin/backfill-trigger", handleBackfillTrigger);
-router.post("/radar/backfill", handleBackfillTrigger);
+router.post("/admin/backfill-trigger", requireAdminSecret, handleBackfillTrigger);
+router.post("/radar/backfill", requireAdminSecret, handleBackfillTrigger);
 
 /**
  * GET /api/radar/status
@@ -1148,7 +1150,7 @@ router.get("/radar/status", (req, res) => {
  * POST /api/radar/ingest
  * Ingests a session's raw floorsheet trades, compresses into SQLite, and rebuilds RAM cache
  */
-router.post("/radar/ingest", (req, res) => {
+router.post("/radar/ingest", requireAdminSecret, (req, res) => {
   try {
     const { tradeDate, trades } = req.body || {};
     if (!tradeDate || !Array.isArray(trades) || trades.length === 0) {
@@ -1202,14 +1204,13 @@ const handleRebuildCache = (req, res) => {
   }
 };
 
-router.post(["/radar/rebuild-cache", "/admin/rebuild-cache"], handleRebuildCache);
-router.get(["/radar/rebuild-cache", "/admin/rebuild-cache"], handleRebuildCache);
+router.post(["/radar/rebuild-cache", "/admin/rebuild-cache"], requireAdminSecret, handleRebuildCache);
 
 /**
  * POST /api/radar/export-snapshot
  * Forces asynchronous export of ledger_seed_snapshot.json.gz
  */
-router.post("/radar/export-snapshot", async (req, res) => {
+router.post("/radar/export-snapshot", requireAdminSecret, async (req, res) => {
   try {
     const ok = await exportLedgerSnapshotGzAsync();
     return res.json({

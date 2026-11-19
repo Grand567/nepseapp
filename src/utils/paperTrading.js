@@ -114,7 +114,14 @@ export function validateAndExecutePaperOrder({
   }
 
   // 3. SELL Execution with T+2 Settlement Lockup & FIFO CGT Check
-  const sortedLots = [...existingHoldingsLots]
+  const normalizedLots = existingHoldingsLots.map(l => ({
+    ...l,
+    symbol: String(l?.symbol || '').toUpperCase().trim(),
+    qty: Number(l?.qty ?? l?.quantity ?? 0),
+    waccPerShare: Number(l?.waccPerShare ?? l?.wacc ?? l?.buyPrice ?? l?.price ?? price)
+  }));
+
+  const sortedLots = [...normalizedLots]
     .filter(l => l.symbol === sym && Number(l.qty || 0) > 0)
     .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
@@ -140,7 +147,7 @@ export function validateAndExecutePaperOrder({
     if (rem <= 0) break;
     const take = Math.min(rem, Number(lot.qty));
     rem -= take;
-    const lotWacc = Number(lot.waccPerShare || lot.price || price);
+    const lotWacc = Number(lot.waccPerShare || lot.wacc || lot.buyPrice || lot.price || price);
     const days = Math.max(1, Math.floor((orderTimestamp - (lot.timestamp || orderTimestamp)) / (24 * 60 * 60 * 1000)));
     weightedCost += take * lotWacc;
     weightedDays += take * days;
@@ -173,8 +180,21 @@ export function validateAndExecutePaperOrder({
 export function executePaperBuy(symbol, ltp, quantity, targetPrice = null, stopLoss = null, previousClose = null) {
   const state = getPaperState();
   const sym = String(symbol || '').toUpperCase().trim();
-  const qty = Math.max(10, Math.floor(Number(quantity) || 10));
-  const price = Number(ltp) || 100;
+  const parsedQty = Math.floor(Number(quantity));
+  if (!Number.isFinite(parsedQty) || parsedQty < 10) {
+    return {
+      success: false,
+      error: 'Invalid order: Minimum regular NEPSE board lot is 10 kitta.'
+    };
+  }
+  const qty = parsedQty;
+  const price = Number(ltp);
+  if (!Number.isFinite(price) || price <= 0) {
+    return {
+      success: false,
+      error: 'Invalid order: Execution price must be positive.'
+    };
+  }
 
   const validation = validateAndExecutePaperOrder({
     side: 'BUY',
@@ -195,9 +215,11 @@ export function executePaperBuy(symbol, ltp, quantity, targetPrice = null, stopL
   const newPosition = {
     id: `POS-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     symbol: sym,
+    qty,
     quantity: qty,
     buyPrice: price,
     wacc: validation.waccPerShare,
+    waccPerShare: validation.waccPerShare,
     totalCost: validation.totalCashDebited,
     commission: validation.commission,
     sebonFee: validation.sebonFee,
@@ -230,11 +252,12 @@ export function executePaperSell(positionId, currentLtp, previousClose = null, o
 
   const pos = state.positions[idx];
   const sellPrice = Number(currentLtp) || pos.buyPrice;
+  const sellQty = Number(pos.qty ?? pos.quantity ?? 0);
 
   const validation = validateAndExecutePaperOrder({
     side: 'SELL',
     symbol: pos.symbol,
-    quantity: pos.quantity,
+    quantity: sellQty,
     executionPrice: sellPrice,
     previousClose: previousClose || sellPrice,
     availableCash: state.cash,
@@ -252,7 +275,7 @@ export function executePaperSell(positionId, currentLtp, previousClose = null, o
   const closedTrade = {
     ...pos,
     sellPrice,
-    sellValue: validation.fillPrice * pos.quantity,
+    sellValue: validation.fillPrice * sellQty,
     netReceivable: validation.netCashCredited,
     netProfitLoss: validation.netRealizedPnl,
     returnPct: +(((validation.netCashCredited - pos.totalCost) / pos.totalCost) * 100).toFixed(2),

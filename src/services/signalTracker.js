@@ -1,6 +1,6 @@
 import { getCachedRealPriceHistory } from '../utils/historyCache.js';
 import { getNepseBrokerCommissionRate } from '../utils/calculations.js';
-import { formatNptDateIso } from '../utils/nepseCalendar.js';
+import { formatNptDateIso, countNepseTradingSessionsBetween } from '../utils/nepseCalendar.js';
 
 const STORAGE_KEY = 'drabyashree_signals';
 
@@ -292,8 +292,9 @@ export const updateSignalOutcome = (signalId, currentPrice, highSince, lowSince)
     const entryDate = new Date(signal.signalDate);
     const exitDateObj = new Date();
     const holdingDays = Math.max(1, Math.floor((exitDateObj - entryDate) / (1000 * 60 * 60 * 24)));
-    // Invariant: Under NEPSE T+2 settlement, shares cannot be exited prior to Demat delivery
-    if (holdingDays < 2) return signal;
+    const holdSessions = countNepseTradingSessionsBetween(signal.signalDate, formatNptDateIso(exitDateObj));
+    // Invariant: Under NEPSE T+2 settlement, shares cannot be exited prior to Demat delivery (holdSessions >= 2)
+    if (holdSessions < 2 && holdingDays < 2) return signal;
     const entryPrice = signal.entryPrice || currentPrice;
     const returnPct = +(((exitPrice - entryPrice) / entryPrice) * 100).toFixed(2);
     const { netReturnPct, totalFeesPct, cgtPct } = calculateNetReturn(entryPrice, exitPrice, holdingDays);
@@ -556,9 +557,14 @@ export const evaluateOpenSignals = (marketStocks, options = {}) => {
         }
 
         if (cStatus !== 'open') {
+          const holdSessions = countNepseTradingSessionsBetween(sig.signalDate, c.date);
+          if (holdSessions < 2) {
+            // Cannot exit on Day T (0) or Day T+1 (1) under NEPSE T+2 Demat lock
+            continue;
+          }
           const entryDate = new Date(sig.signalDate);
           const exitDate = new Date(c.date);
-          const holdingDays = Math.max(1, Math.round((exitDate - entryDate) / (1000 * 60 * 60 * 24)));
+          const holdingDays = Math.max(2, Math.round((exitDate - entryDate) / (1000 * 60 * 60 * 24)));
           const entryPrice = sig.entryPrice || currentPrice;
           const returnPct = +(((cExit - entryPrice) / entryPrice) * 100).toFixed(2);
           const { netReturnPct, totalFeesPct, cgtPct } = calculateNetReturn(entryPrice, cExit, holdingDays);
@@ -614,6 +620,13 @@ export const evaluateOpenSignals = (marketStocks, options = {}) => {
     } else if (ageDays > 60) {
       newStatus = 'expired';
       exitPrice = currentPrice;
+    }
+
+    if (newStatus !== 'open' && newStatus !== 'expired' && options.enforceSettlementLock) {
+      const holdSessions = countNepseTradingSessionsBetween(sig.signalDate, todayStr);
+      if (holdSessions < 2) {
+        newStatus = 'open';
+      }
     }
 
     if (newStatus !== 'open') {

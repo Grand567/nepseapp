@@ -34,11 +34,13 @@ export function auditAndComputeTrackRecord(
 
   const active = signals.filter((s) => !settled.includes(s));
 
-  // 2. Compute Unified Win Rate (reconciling Strategy Cards & Top Header)
+  // 2. Compute Unified Win Rate (never count STOP_HIT as a win or invent 63.5% on 0% win rate)
   const settledWins = settled.filter((s) => {
     const net = Number(s.net_return_pct ?? s.gross_return_pct ?? s.net_pnl_after_fees_pct ?? 0);
     const st = String(s.status || '').toUpperCase();
-    return net > 0 || st.includes('HIT') || st.includes('WIN');
+    const isStopLoss = st.includes('STOP') || st.includes('LOSS') || st.includes('SL');
+    if (isStopLoss && net <= 0) return false;
+    return net > 0 || st.includes('TARGET_HIT') || st.includes('WIN');
   });
 
   let verifiedWinRatePct =
@@ -46,24 +48,21 @@ export function auditAndComputeTrackRecord(
       ? Number(((settledWins.length / settled.length) * 100).toFixed(1))
       : 0;
 
-  // Fallback to weighted average of the 3 strategy cards (64.29%, 59.09%, 87.5% -> ~63.5%)
-  if (strategyMetrics.length > 0) {
+  // Use weighted average from strategy cards ONLY when settled ledger is empty and cards report >0 signals
+  if (settled.length === 0 && strategyMetrics.length > 0) {
     const totalStratTrades = strategyMetrics.reduce(
-      (acc, m) => acc + Number(m.total_tradable_signals || m.total || 1),
+      (acc, m) => acc + Number(m.total_tradable_signals || m.total || 0),
       0
     );
     const weightedWinSum = strategyMetrics.reduce(
       (acc, m) =>
         acc +
         Number(m.verified_win_rate_pct ?? m.win_rate ?? m.winRate ?? 0) *
-          Number(m.total_tradable_signals || m.total || 1),
+          Number(m.total_tradable_signals || m.total || 0),
       0
     );
-    const weightedStrategyWinRate =
-      totalStratTrades > 0 ? Number((weightedWinSum / totalStratTrades).toFixed(1)) : 0;
-
-    if (weightedStrategyWinRate > verifiedWinRatePct) {
-      verifiedWinRatePct = weightedStrategyWinRate;
+    if (totalStratTrades > 0) {
+      verifiedWinRatePct = Number((weightedWinSum / totalStratTrades).toFixed(1));
     }
   }
 
@@ -126,7 +125,7 @@ export function auditAndComputeTrackRecord(
     isHealthy: passedChecks === checks.length,
     passedChecks,
     totalChecks: checks.length,
-    verifiedWinRatePct: verifiedWinRatePct || 63.5,
+    verifiedWinRatePct: Number.isFinite(verifiedWinRatePct) ? verifiedWinRatePct : 0,
     settledTradesCount: settled.length,
     activeTradesCount: active.length,
     checks,

@@ -22,9 +22,10 @@ export function SignalAgreement({ signalAgreement }: SignalAgreementProps) {
     agreementPct = 50,
   } = signalAgreement;
 
-  const bullWidth = `${Math.round((bullishGroups / totalEvaluated) * 100)}%`;
-  const neutralWidth = `${Math.round((neutralGroups / totalEvaluated) * 100)}%`;
-  const bearWidth = `${Math.round((bearishGroups / totalEvaluated) * 100)}%`;
+  const safeTotal = Math.max(1, Number(totalEvaluated) || (bullishGroups + bearishGroups + neutralGroups) || 1);
+  const bullWidth = `${Math.round((bullishGroups / safeTotal) * 100)}%`;
+  const neutralWidth = `${Math.round((neutralGroups / safeTotal) * 100)}%`;
+  const bearWidth = `${Math.round((bearishGroups / safeTotal) * 100)}%`;
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-[#090d16] p-4 sm:p-5 text-slate-200 shadow-xl space-y-3">

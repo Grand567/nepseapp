@@ -46,19 +46,19 @@ export async function clearCdscCookies() {
 // On native Android/iOS: direct HTTPS (bypasses browser CORS + WAF cookie issue via native OkHttp/URLSession)
 export const MEROSHARE_BASE = isNativeMobile
   ? 'https://webbackend.cdsc.com.np/api/meroShare'
-  : '/api/meroShare';
+  : `${getProxyBase()}/api/meroShare`;
 
 export const MEROSHARE_VIEW_BASE = isNativeMobile
   ? 'https://webbackend.cdsc.com.np/api/meroShareView'
-  : '/api/meroShareView';
+  : `${getProxyBase()}/api/meroShareView`;
 
 export const MEROSHARE_MYPURCHASE_BASE = isNativeMobile
   ? 'https://webbackend.cdsc.com.np/api/myPurchase'
-  : '/api/myPurchase';
+  : `${getProxyBase()}/api/myPurchase`;
 
 export const CDSC_IPO_BASE = isNativeMobile
   ? 'https://iporesult.cdsc.com.np'
-  : '/cdsc-ipo';
+  : `${getProxyBase()}/cdsc-ipo`;
 
 // ─── Unified Cross-Platform CDSC HTTP Client ─────────────────────────────────
 export async function cdscRequest(options) {
@@ -630,7 +630,9 @@ export async function pullMeroShareLivePortfolio(account) {
   if (!auth.success || !auth.token) {
     if (account.holdings?.length) {
       return {
-        success: true,
+        success: false,
+        cachedFallback: true,
+        isLive: false,
         holdings: account.holdings,
         name: account.name || account.accountName,
         boid: account.boid,
@@ -638,7 +640,7 @@ export async function pullMeroShareLivePortfolio(account) {
         messageEn: `Loaded ${account.holdings.length} cached scrips for ${account.name || account.accountName} (offline).`
       };
     }
-    return { success: false, holdings: [], messageNe: auth.messageNe, messageEn: auth.messageEn };
+    return { success: false, cachedFallback: false, holdings: [], messageNe: auth.messageNe, messageEn: auth.messageEn };
   }
 
   const rawToken = auth.token.trim().replace(/^Bearer\s+/i, '');
@@ -704,6 +706,8 @@ export async function pullMeroShareLivePortfolio(account) {
       if (portfolioText.includes('Request Rejected')) {
         return {
           success: false,
+          cachedFallback: Boolean(account.holdings?.length),
+          isLive: false,
           holdings: account.holdings || [],
           messageNe: 'CDSC WAF सुरक्षाले पोर्टफोलियो अनुरोध ब्लक गर्‍यो। कृपया १ मिनेटपछि पुनः प्रयास गर्नुहोस् वा CSV आयात गर्नुहोस्।',
           messageEn: 'CDSC WAF blocked portfolio request. Please retry in 1 minute or use CSV import.'
@@ -711,6 +715,8 @@ export async function pullMeroShareLivePortfolio(account) {
       }
       return {
         success: false,
+        cachedFallback: Boolean(account.holdings?.length),
+        isLive: false,
         holdings: account.holdings || [],
         messageNe: `पोर्टफोलियो डेटा प्राप्त भएन (${portfolioRes.status})`,
         messageEn: `Could not fetch portfolio response from CDSC (${portfolioRes.status})`
@@ -959,6 +965,8 @@ export async function pullMeroShareLivePortfolio(account) {
     return {
       success: false,
       holdings: account.holdings || [],
+      cachedFallback: Boolean(account.holdings?.length),
+      isLive: false,
       messageNe: `त्रुटि: ${error.message?.slice(0, 100)}`,
       messageEn: `Error: ${error.message?.slice(0, 100)}`
     };

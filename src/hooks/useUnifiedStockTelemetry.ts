@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { resolveValidNepseSymbol } from "@/services/aiGuru/runAiQuantitativeAssessment";
+import { getProxyBase } from "@/utils/proxyBase.js";
 import type { AtomicStockTelemetryApiResponse } from "@/types/stockTelemetry";
 
 export function useUnifiedStockTelemetry(rawSymbol?: string | null) {
@@ -24,8 +25,9 @@ export function useUnifiedStockTelemetry(rawSymbol?: string | null) {
       setData((prev) => (prev && prev.symbol === validSymbol ? prev : null));
 
       try {
+        const baseUrl = getProxyBase();
         const res = await fetch(
-          `/api/stocks/${encodeURIComponent(validSymbol)}/telemetry`,
+          `${baseUrl}/api/stocks/${encodeURIComponent(validSymbol)}/telemetry`,
           {
             signal,
             cache: "no-store",

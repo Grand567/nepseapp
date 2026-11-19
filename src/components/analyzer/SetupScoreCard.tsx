@@ -283,7 +283,7 @@ export function SetupScoreCard({
               <div className="text-[10.5px] text-slate-400">Statistical Edge (Δ)</div>
               {(() => {
                 const rawWin = quantMetrics.expectancy?.pWin ?? quantMetrics.winProbability;
-                const empiricalWin = rawWin != null ? (rawWin <= 1 && rawWin > 0 ? +(rawWin * 100).toFixed(1) : rawWin) : null;
+                const empiricalWin = rawWin != null ? (rawWin < 1.0 && rawWin > 0 ? +(rawWin * 100).toFixed(1) : rawWin) : null;
                 const beWin = quantMetrics.expectancy?.breakEvenWinRate;
                 if (empiricalWin == null || beWin == null) {
                   return (

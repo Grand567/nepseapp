@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Play, Activity, AlertOctagon, ShieldAlert, Cpu } from 'lucide-react';
 import { calculateBuyDetails, calculateSellDetails, calculateWacc } from '../utils/calculations';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
+import { getProxyBase } from '../utils/liveData';
+import { saveEncryptedUserProfiles, loadEncryptedUserProfiles } from '../utils/profileVaultStorage';
 // checkIpoAllotmentMock: stub — live CDSC check is used in production
 const checkIpoAllotmentMock = async (shareId, boid) => {
   const boidValid = typeof boid === 'string' && boid.length >= 10 && /^\d+$/.test(boid);
@@ -98,30 +100,33 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
       passed = false;
     }
 
-    // Test 4: LocalStorage Security Verification
+    // Test 4: LocalStorage Security & AES-256-GCM Vault Verification
     await new Promise(r => setTimeout(r, 300));
     addLog('info', '🧪 Test 4: Local Storage profile encryption check');
     try {
-      const testProfile = {
+      const testProfile = [{
+        id: "test_1",
         name: "Test User",
         boid: "1201060001234567",
         username: "testuser",
+        password: "SecretPassword123!",
         crn: "12345",
         pin: "9999"
-      };
+      }];
       
-      localStorage.setItem('nepse_app_test_profile', JSON.stringify(testProfile));
-      const loaded = JSON.parse(localStorage.getItem('nepse_app_test_profile'));
+      await saveEncryptedUserProfiles(testProfile, 'test_user');
+      const loaded = await loadEncryptedUserProfiles('test_user');
       
-      if (loaded && loaded.boid === testProfile.boid && loaded.pin === testProfile.pin) {
-        addLog('success', '✅ Test 4 Passed: Credentials are successfully stored and retrieved locally.');
+      if (Array.isArray(loaded) && loaded.length > 0 && loaded[0].boid === testProfile[0].boid && loaded[0].pin === testProfile[0].pin) {
+        addLog('success', '✅ Test 4 Passed: Credentials are encrypted and securely stored in AES-256-GCM vault.');
       } else {
-        throw new Error("Data retrieval mismatch or local storage blocked.");
+        throw new Error("Encrypted vault verification failed or storage inaccessible.");
       }
-      localStorage.removeItem('nepse_app_test_profile');
     } catch (err) {
       addLog('error', `❌ Test 4 Failed: ${err.message}`);
       passed = false;
+    } finally {
+      localStorage.removeItem('nepse_hub_test_user_profiles');
     }
 
     // Test 5: CDSC Allotment Checker API
@@ -145,9 +150,10 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
     await new Promise(r => setTimeout(r, 300));
     addLog('info', '🧪 Test 6: Live NEPSE Feeds & Market Indices API');
     try {
-      const hResp = await fetch('/api/health');
+      const base = getProxyBase();
+      const hResp = await fetch(`${base}/api/health`);
       const hData = await hResp.json();
-      const iResp = await fetch('/api/market-indices');
+      const iResp = await fetch(`${base}/api/market-indices`);
       const iData = await iResp.json();
       const val = iData?.nepse?.value || iData?.data?.nepse?.value || 0;
       if (hResp.ok && val > 1000) {
@@ -164,7 +170,8 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
     await new Promise(r => setTimeout(r, 300));
     addLog('info', '🧪 Test 7: Floorsheet Zero-Sum Broker Law (Buy Qty == Sell Qty)');
     try {
-      const bResp = await fetch('/api/broker-analysis/NABIL?days=1&refresh=true');
+      const base = getProxyBase();
+      const bResp = await fetch(`${base}/api/broker-analysis/NABIL?days=1&refresh=true`);
       const bData = await bResp.json();
       const brokers = (bData?.data || bData)?.brokers || [];
       const sumBuy = brokers.reduce((s, b) => s + (Number(b.buyVol ?? b.buyQty ?? 0) || 0), 0);

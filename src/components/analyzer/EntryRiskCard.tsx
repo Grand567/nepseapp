@@ -109,8 +109,8 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
   const chaseCapPx = (levels as any)?.chaseCap || +(Number(levels?.entryZone?.high || entryPx * 1.01) * 1.025).toFixed(1);
   const isChaseExceeded = Boolean(currentPrice && currentPrice > chaseCapPx);
 
-  // Enforce max 1.5% - 2.0% portfolio risk ceiling across all tiers
-  const effectiveRiskPct = Math.min(2.0, Math.max(0.75, riskTolerancePct));
+  // Enforce max 1.5% - 2.5% portfolio risk ceiling across all tiers
+  const effectiveRiskPct = Math.min(2.5, Math.max(0.75, riskTolerancePct));
   const maxCapitalAtRisk = portfolioCapital * (effectiveRiskPct / 100);
 
   // Include round-trip broker commission (0.36% starter / 0.33% standard, min Rs. 10), SEBON (0.015%), and Rs. 50 round-trip DP fee
@@ -188,6 +188,10 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
 
   // Sync calc inputs when levels/entryPx change
   const t1Price = levels?.target1?.price || entryPx * 1.10;
+  useEffect(() => {
+    if (t1Price > 0) setCalcSellPrice(t1Price);
+    if (finalShares > 0) setCalcShares(finalShares);
+  }, [entryPx, t1Price, finalShares]);
   const netCalcResult = useMemo(() => {
     if (!levels || !showNetCalc || !entryPx || !calcSellPrice || !calcShares) return null;
     try {
@@ -305,7 +309,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
           </div>
           <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
             <div className="text-[11px] font-bold text-emerald-300">
-              Net: +{levels.target1?.netReturnPct ?? 7.2}% <span className="text-[9.5px] font-normal text-slate-400">(-7.5% CGT/fees)</span>
+              Net: {levels.target1?.netReturnPct != null ? `+${levels.target1.netReturnPct}%` : '—'} <span className="text-[9.5px] font-normal text-slate-400">(-7.5% CGT/fees)</span>
             </div>
             <div className="text-[10.5px] text-slate-400">
               {levels.target1?.horizon || '1–2 Weeks Horizon'}
@@ -325,7 +329,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
           </div>
           <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
             <div className="text-[11px] font-bold text-teal-300">
-              Net: +{levels.target2?.netReturnPct ?? 15.0}% <span className="text-[9.5px] font-normal text-slate-400">(-7.5% CGT/fees)</span>
+              Net: {levels.target2?.netReturnPct != null ? `+${levels.target2.netReturnPct}%` : '—'} <span className="text-[9.5px] font-normal text-slate-400">(-7.5% CGT/fees)</span>
             </div>
             <div className="text-[10.5px] text-slate-400">
               {levels.target2?.horizon || '3–6 Weeks Horizon'}
@@ -673,7 +677,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
       <div className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/60 text-xs text-slate-400">
         <Info size={14} className="text-blue-400 shrink-0 mt-0.5" />
         <span>
-          <strong>Real Net Return & Settlement Accounting:</strong> Net targets incorporate round-trip SEBON fees (0.015%), broker commission (~0.27%-0.40%), DP fee (Rs. 25), and <strong>CGT (7.5% short-term ≤1yr / 5% long-term &gt;1yr)</strong> per Finance Act 2083. NEPSE trades <strong>Monday–Friday, 11:00 AM–3:00 PM NPT</strong>; trades settle T+2 and shares can only be sold from T+3. Position sizing accounts for 2-session lockup volatility.
+          <strong>Real Net Return & Settlement Accounting:</strong> Net targets incorporate round-trip SEBON fees (0.015%), broker commission (~0.24%-0.36%), DP fee (Rs. 25), and <strong>CGT (7.5% short-term ≤1yr / 5% long-term &gt;1yr)</strong> per Finance Act 2083. NEPSE trades <strong>Monday–Friday, 11:00 AM–3:00 PM NPT</strong>; trades settle T+2 and shares can only be sold from T+3. Position sizing accounts for 2-session lockup volatility.
         </span>
       </div>
     </div>

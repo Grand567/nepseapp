@@ -77,7 +77,7 @@ export function TableSkeleton({ rows = 8, cols = 5 }: { rows?: number; cols?: nu
   );
 }
 
-export function Spinner({ text = 'Scanning all 346 NEPSE listed securities…' }: { text?: string }) {
+export function Spinner({ text = 'Loading live market data…' }: { text?: string }) {
   return (
     <div className="flex flex-col items-center px-5 py-14 text-slate-400">
       <div className="mb-4 h-11 w-11 animate-spin rounded-full border-[3px] border-slate-700 border-t-blue-500" />
@@ -295,7 +295,7 @@ export function DataTable({ data = [], cols = [], loading = false, onRowClick }:
   );
 }
 
-export function SourceBar({ count, source, totalCount = 346 }: { count: number; source: string; totalCount?: number }) {
+export function SourceBar({ count, source, totalCount = 247 }: { count: number; source: string; totalCount?: number }) {
   const live = source === 'live';
   const isFiltered = totalCount > 0 && count < totalCount;
   return (

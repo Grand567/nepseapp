@@ -444,7 +444,7 @@ export default function BrokerSmartFlowTracker({
               </div>
             </div>
             <span className="text-xs text-slate-400 font-mono">
-              Scanned: <strong className="text-white">{ignitionSummary?.totalScanned || 367}</strong> stocks
+              Scanned: <strong className="text-white">{ignitionSummary?.totalScanned || stocks.length || '—'}</strong> stocks
             </span>
           </div>
 
@@ -593,7 +593,7 @@ export default function BrokerSmartFlowTracker({
           {ignitionLoading ? (
             <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-3 bg-slate-900/60 rounded-2xl border border-slate-800">
               <RefreshCw className="w-8 h-8 animate-spin text-amber-400" />
-              <span className="text-xs font-bold">Scanning 367 stocks in &lt;1ms for 3-Day Early Ignition signatures...</span>
+              <span className="text-xs font-bold">Scanning {stocks.length || 'NEPSE'} stocks in &lt;1ms for 3-Day Early Ignition signatures...</span>
             </div>
           ) : filteredIgnitionStocks.length === 0 ? (
             <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-3 bg-slate-900/60 rounded-2xl border border-slate-800">

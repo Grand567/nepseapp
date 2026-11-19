@@ -248,12 +248,12 @@ export function evaluateStockSelection({
     const riskPerShare = Number((ltp - stopLoss).toFixed(2));
     const riskPct = Number(((riskPerShare / ltp) * 100).toFixed(2));
 
-    // 3. Targets (Clamped strictly within +15% NEPSE circuit ceiling)
+    // 3. Targets (Target 1 is intraday/near-term clamped to daily circuit; Target 2 is multi-week swing)
     const rawTarget1 = ltp + (riskPerShare * execution.target1RiskMultiplier);
     const rawTarget2 = ltp + (riskPerShare * execution.target2RiskMultiplier);
 
     const target1 = Number(Math.min(circuitCeiling, rawTarget1).toFixed(1));
-    const target2 = Number(Math.min(circuitCeiling, rawTarget2).toFixed(1));
+    const target2 = Number(rawTarget2.toFixed(1));
 
     const reward1 = Number((target1 - ltp).toFixed(2));
     const riskRewardRatio = riskPerShare > 0 ? Number((reward1 / riskPerShare).toFixed(2)) : 0;
@@ -271,9 +271,12 @@ export function evaluateStockSelection({
     // Select the most conservative limit
     let safeShares = Math.min(theoreticalShares, maxSharesByCapital, maxSharesByVolume);
 
-    // Round down to standard NEPSE lot size (10 kitta)
+    // Round down to standard NEPSE lot size (10 kitta); return 0 if unaffordable or below board lot
+    const affordableShares = Math.floor(portfolioCapital / ltp);
     safeShares = Math.floor(safeShares / execution.minLotSize) * execution.minLotSize;
-    if (safeShares < execution.minLotSize) safeShares = execution.minLotSize;
+    if (safeShares < execution.minLotSize || (safeShares * ltp > portfolioCapital) || affordableShares < execution.minLotSize) {
+      safeShares = 0;
+    }
 
     const capitalRequiredNpr = Number((safeShares * ltp).toFixed(2));
     const actualRiskNpr = Number((safeShares * riskPerShare).toFixed(2));

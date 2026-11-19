@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
-import { idbGet, idbSet, idbDel } from './indexedDb.js';
+import { idbGet, idbSet, idbDel, idbClear } from './indexedDb.js';
+import { bsToAd } from './bikramSambat.js';
 import { fetchMerolaganiNews } from '../services/merolaganiNewsService.js';
 import { sortNewsByNepseImpact, deduplicateNews, sortNews } from './newsImpactScorer.js';
 import { getProxyBase } from './proxyBase.js';
@@ -54,10 +55,10 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
     }
   }
 
-  // Dynamic persistent TTL: intraday/live data expires in 30s max; news/reports up to 10-15 mins
+  // Dynamic persistent TTL: intraday/live data expires in 30s max; news/reports respect ttlMs up to 24h
   const idbTtl = isIntradayOrLive
     ? Math.min(ttlMs, 30 * 1000)
-    : (ttlMs <= 360000 ? Math.max(ttlMs, 10 * 60 * 1000) : Math.min(ttlMs, 24 * 3600 * 1000));
+    : Math.min(ttlMs, 24 * 3600 * 1000);
 
   const primary = getProxy();
   const isLocal = typeof window !== 'undefined' && (
@@ -121,7 +122,7 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
           ...(forceRefresh ? { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } : {}),
           ...options.headers
         },
-        body: options.body ? JSON.stringify(options.body) : undefined,
+        body: options.body ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body)) : undefined,
         signal: AbortSignal.timeout(effectiveTimeout),
       });
       if (!resp.ok) continue;
@@ -292,19 +293,21 @@ function computeIpoStatus(closeDateStr, openDateStr, defaultStatus = 'Open') {
       const day = parseInt(match[3], 10);
 
       let targetDate;
-      if (year > 2060) {
-        targetDate = new Date(year - 57, month, day);
+      if (year >= 2050) {
+        targetDate = bsToAd(year, month + 1, day);
       } else {
         targetDate = new Date(year, month, day);
       }
 
-      if (targetDate < today) {
-        return 'Closed';
-      }
-      const diffMs = targetDate.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-      if (diffDays <= 2 && diffDays >= 0) {
-        return 'Closing Soon';
+      if (targetDate) {
+        if (targetDate < today) {
+          return 'Closed';
+        }
+        const diffMs = targetDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+        if (diffDays <= 2 && diffDays >= 0) {
+          return 'Closing Soon';
+        }
       }
     }
 
@@ -314,8 +317,8 @@ function computeIpoStatus(closeDateStr, openDateStr, defaultStatus = 'Open') {
         const oYear = parseInt(oMatch[1], 10);
         const oMonth = parseInt(oMatch[2], 10) - 1;
         const oDay = parseInt(oMatch[3], 10);
-        const oDate = oYear > 2060 ? new Date(oYear - 57, oMonth, oDay) : new Date(oYear, oMonth, oDay);
-        if (oDate > today) return 'Upcoming';
+        const oDate = oYear >= 2050 ? bsToAd(oYear, oMonth + 1, oDay) : new Date(oYear, oMonth, oDay);
+        if (oDate && oDate > today) return 'Upcoming';
       }
     }
   } catch (_) {}
@@ -542,7 +545,16 @@ export const fetchMonthCalendar = (year, month) => {
 
 export const fetchTodayCalendar = () => _proxyFetch('/api/calendar/today', {}, 60000);
 
-export const fetchMeroShareIPOs = (token) => _proxyFetch('/api/meroshare/current-issues?token=' + encodeURIComponent(token), {}, 900000);
+export const fetchMeroShareIPOs = (token) => _proxyFetch(
+  '/api/meroshare/current-issues',
+  {
+    method: 'POST',
+    headers: token
+      ? { Authorization: String(token).startsWith('Bearer ') ? String(token) : `Bearer ${token}` }
+      : {}
+  },
+  900000
+);
 export const fetchApplicationReport = (creds) => _proxyFetch('/api/meroshare/application-report', { body: creds, timeout: 20000 }, 600000);
 
 export const fetchForexRates = () => _proxyFetch('/api/forex/rates', {}, 1800000);
@@ -572,7 +584,10 @@ export const invalidateCache = (path) => {
     }
   } 
 };
-export const clearAllCache = () => _cache.clear();
+export const clearAllCache = () => {
+  _cache.clear();
+  idbClear().catch(() => {});
+};
 
 export const warmupProxy = () => {
   try {

@@ -195,14 +195,20 @@ export function getSectorBenchmark(sector) {
  * @param {Object} stock - Must have { pe, pbv, eps, roe, sector }
  * @returns {{ verdict, peStatus, pbvStatus, score, confidence, explanation, benchmark }}
  */
+const toNullableNum = (v) => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
 export function evaluateValuation(stock) {
   const bench = getSectorBenchmark(stock?.sector || '');
   const pe = Number(stock?.pe || 0);
   const pbv = Number(stock?.pbv || stock?.pb || 0);
-  const eps = Number(stock?.eps || 0);
-  const roe = Number(stock?.roe || 0);
-  const npl = Number(stock?.npl || null);
-  const car = Number(stock?.car || null);
+  const eps = toNullableNum(stock?.eps);
+  const roe = toNullableNum(stock?.roe);
+  const npl = toNullableNum(stock?.npl);
+  const car = toNullableNum(stock?.car);
   const ltp = Number(stock?.ltp || 0);
 
   const reasons = [];
@@ -212,26 +218,27 @@ export function evaluateValuation(stock) {
   // PE evaluation
   let peStatus = 'N/A';
   if (pe > 0 && bench.medianPE > 0) {
+    const medPE = Number(bench.medianPE).toFixed(1);
     const peRatio = pe / bench.medianPE;
     if (peRatio <= 0.75) {
       peStatus = 'UNDERVALUED';
       score += 2;
-      reasons.push(`P/E ${pe.toFixed(1)}x is >25% below sector median (${bench.medianPE}x) — potential value opportunity.`);
+      reasons.push(`P/E ${pe.toFixed(1)}x is >25% below sector median (${medPE}x) — potential value opportunity.`);
     } else if (peRatio <= 0.90) {
       peStatus = 'SLIGHTLY_UNDERVALUED';
       score += 1;
-      reasons.push(`P/E ${pe.toFixed(1)}x slightly below sector median (${bench.medianPE}x).`);
+      reasons.push(`P/E ${pe.toFixed(1)}x slightly below sector median (${medPE}x).`);
     } else if (peRatio <= 1.10) {
       peStatus = 'FAIR';
-      reasons.push(`P/E ${pe.toFixed(1)}x near sector median (${bench.medianPE}x) — fairly valued.`);
+      reasons.push(`P/E ${pe.toFixed(1)}x near sector median (${medPE}x) — fairly valued.`);
     } else if (peRatio <= 1.50) {
       peStatus = 'SLIGHTLY_OVERVALUED';
       score -= 1;
-      reasons.push(`P/E ${pe.toFixed(1)}x above sector median (${bench.medianPE}x) — modest premium.`);
+      reasons.push(`P/E ${pe.toFixed(1)}x above sector median (${medPE}x) — modest premium.`);
     } else {
       peStatus = 'OVERVALUED';
       score -= 2;
-      reasons.push(`P/E ${pe.toFixed(1)}x is >50% above sector median (${bench.medianPE}x) — expensive.`);
+      reasons.push(`P/E ${pe.toFixed(1)}x is >50% above sector median (${medPE}x) — expensive.`);
     }
     confidence = 'MEDIUM';
   } else {
@@ -241,23 +248,27 @@ export function evaluateValuation(stock) {
   // PBV evaluation
   let pbvStatus = 'N/A';
   if (pbv > 0 && bench.medianPBV > 0) {
+    const medPBV = Number(bench.medianPBV).toFixed(2);
     const pbvRatio = pbv / bench.medianPBV;
-    // Special case: banks with PBV < 1.0 may be undervalued if asset quality is sound
-    if (bench.sectorKey === 'commercial_bank' && pbv < 1.0 && (!npl || npl <= 3.0)) {
+    // Special case: banks with PBV < 1.0 may be undervalued only when asset quality (NPL) is verified clean
+    if (bench.sectorKey === 'commercial_bank' && pbv < 1.0 && npl !== null && npl <= 3.0) {
       pbvStatus = 'UNDERVALUED';
       score += 2;
       reasons.push(`P/BV ${pbv.toFixed(2)}x < 1.0 on a bank with clean assets — classic Graham value.`);
+    } else if (bench.sectorKey === 'commercial_bank' && pbv < 1.0 && npl === null) {
+      pbvStatus = 'UNVERIFIED';
+      reasons.push(`P/BV ${pbv.toFixed(2)}x < 1.0 — NPL filing unavailable; asset quality unverified.`);
     } else if (pbvRatio <= 0.80) {
       pbvStatus = 'UNDERVALUED';
       score += 2;
-      reasons.push(`P/BV ${pbv.toFixed(2)}x is 20%+ below sector median (${bench.medianPBV}x).`);
+      reasons.push(`P/BV ${pbv.toFixed(2)}x is 20%+ below sector median (${medPBV}x).`);
     } else if (pbvRatio <= 1.15) {
       pbvStatus = 'FAIR';
-      reasons.push(`P/BV ${pbv.toFixed(2)}x near sector median (${bench.medianPBV}x).`);
+      reasons.push(`P/BV ${pbv.toFixed(2)}x near sector median (${medPBV}x).`);
     } else if (pbvRatio <= 2.0) {
       pbvStatus = 'SLIGHTLY_OVERVALUED';
       score -= 1;
-      reasons.push(`P/BV ${pbv.toFixed(2)}x above sector median (${bench.medianPBV}x).`);
+      reasons.push(`P/BV ${pbv.toFixed(2)}x above sector median (${medPBV}x).`);
     } else {
       pbvStatus = 'OVERVALUED';
       score -= 2;
@@ -267,25 +278,29 @@ export function evaluateValuation(stock) {
   }
 
   // ROE check
-  if (roe > 0 && bench.medianROE > 0) {
+  if (roe !== null && bench.medianROE > 0) {
+    const medROE = Number(bench.medianROE).toFixed(1);
     if (roe >= bench.medianROE * 1.2) {
       score += 1;
-      reasons.push(`ROE ${roe.toFixed(1)}% above sector median (${bench.medianROE}%) — quality compounder.`);
+      reasons.push(`ROE ${roe.toFixed(1)}% above sector median (${medROE}%) — quality compounder.`);
       confidence = 'HIGH';
     } else if (roe < bench.medianROE * 0.7) {
       score -= 1;
-      reasons.push(`ROE ${roe.toFixed(1)}% below sector median (${bench.medianROE}%) — subpar returns.`);
+      reasons.push(`ROE ${roe.toFixed(1)}% below sector median (${medROE}%) — subpar returns.`);
     }
   }
 
   // EPS adequacy
-  if (eps <= 0) {
+  if (eps === null) {
+    reasons.push('EPS not available — earnings adequacy unverified.');
+  } else if (eps <= 0) {
     score -= 2;
     reasons.push('Negative or zero EPS — company is loss-making. Avoid for fundamental investing.');
     confidence = 'LOW';
   } else if (eps < bench.medianEPS * 0.5) {
+    const medEPS = Number(bench.medianEPS).toFixed(2);
     score -= 1;
-    reasons.push(`EPS Rs.${eps.toFixed(2)} well below sector median (Rs.${bench.medianEPS}) — weak earnings.`);
+    reasons.push(`EPS Rs.${eps.toFixed(2)} well below sector median (Rs.${medEPS}) — weak earnings.`);
   }
 
   // Banking-specific NRB regulatory flags
@@ -294,7 +309,7 @@ export function evaluateValuation(stock) {
     reasons.push(`⚠️ CAR ${car.toFixed(1)}% below NRB minimum ${bench.minCAR}% — regulatory risk.`);
     confidence = 'HIGH'; // We are very confident this is negative
   }
-  if (bench.maxNPL && npl !== null && npl > 0 && npl > bench.maxNPL) {
+  if (bench.maxNPL && npl !== null && npl > bench.maxNPL) {
     score -= 3;
     reasons.push(`⚠️ NPL ${npl.toFixed(2)}% exceeds NRB tolerance (${bench.maxNPL}%) — asset quality concern.`);
   }
@@ -337,31 +352,34 @@ export function calculateFundamentalSummary(stock) {
   if (!stock || !stock.symbol) return null;
 
   const ltp = Number(stock.ltp || 0);
-  const eps = Number(stock.eps || 0);
-  const bvps = Number(stock.bvps || stock.bookValue || 0);
-  const pe = eps > 0 ? +(ltp / eps).toFixed(2) : Number(stock.pe || 0);
-  const pbv = bvps > 0 ? +(ltp / bvps).toFixed(2) : Number(stock.pbv || stock.pb || 0);
-  const roe = eps > 0 && bvps > 0 ? +(eps / bvps * 100).toFixed(2) : Number(stock.roe || 0);
+  const rawEps = toNullableNum(stock.eps);
+  const rawBvps = toNullableNum(stock.bvps ?? stock.bookValue);
+  const eps = rawEps ?? 0;
+  const bvps = rawBvps ?? 0;
+  const pe = rawEps !== null && rawEps > 0 ? +(ltp / rawEps).toFixed(2) : Number(stock.pe || 0);
+  const pbv = rawBvps !== null && rawBvps > 0 ? +(ltp / rawBvps).toFixed(2) : Number(stock.pbv || stock.pb || 0);
+  const derivedRoe = rawEps !== null && rawEps > 0 && rawBvps !== null && rawBvps > 0 ? +(rawEps / rawBvps * 100).toFixed(2) : toNullableNum(stock.roe);
+  const roe = derivedRoe;
   const divYield = Number(stock.dividendYield || 0);
-  const npl = Number(stock.npl || null);
-  const car = Number(stock.car || null);
+  const npl = toNullableNum(stock.npl);
+  const car = toNullableNum(stock.car);
   const sharesOut = Number(stock.sharesOut || 0);
   const marketCap = sharesOut > 0 ? sharesOut * 1e6 * ltp : Number(stock.marketCap || 0);
   const paidUpCapital = Number(stock.paidUpCapital || (sharesOut > 0 ? sharesOut * 1e8 : null)); // par Rs.100
 
   const bench = getSectorBenchmark(stock.sector || '');
-  const valuation = evaluateValuation({ ...stock, pe, pbv, roe });
+  const valuation = evaluateValuation({ ...stock, eps: rawEps, pe, pbv, roe, npl, car });
 
   // Composite fundamental score [0, 100]
   let fscore = 50;
   const fReasons = [];
 
   // EPS quality
-  const hasEps = stock.eps !== undefined && stock.eps !== null && !isNaN(Number(stock.eps)) && Number(stock.eps) !== 0;
-  if (hasEps && eps > bench.medianEPS * 1.2) { fscore += 12; fReasons.push(`Strong EPS Rs.${eps.toFixed(2)}`); }
-  else if (hasEps && eps > 0 && eps >= bench.medianEPS * 0.8) { fscore += 6; fReasons.push(`Average EPS Rs.${eps.toFixed(2)}`); }
-  else if (hasEps && eps < 0) { fscore -= 20; fReasons.push('Loss-making — EPS negative'); }
-  else if (hasEps) { fscore -= 5; fReasons.push(`Moderate EPS Rs.${eps.toFixed(2)}`); }
+  const hasEps = rawEps !== null && rawEps !== 0;
+  if (hasEps && rawEps > bench.medianEPS * 1.2) { fscore += 12; fReasons.push(`Strong EPS Rs.${rawEps.toFixed(2)}`); }
+  else if (hasEps && rawEps > 0 && rawEps >= bench.medianEPS * 0.8) { fscore += 6; fReasons.push(`Average EPS Rs.${rawEps.toFixed(2)}`); }
+  else if (hasEps && rawEps < 0) { fscore -= 20; fReasons.push('Loss-making — EPS negative'); }
+  else if (hasEps) { fscore -= 5; fReasons.push(`Moderate EPS Rs.${rawEps.toFixed(2)}`); }
   else { fReasons.push('Periodic filings pending'); }
 
   // PE vs sector
@@ -373,22 +391,24 @@ export function calculateFundamentalSummary(stock) {
 
   // PBV vs sector
   if (pbv > 0) {
-    if (bench.sectorKey === 'commercial_bank' && pbv < 1.0 && (!npl || npl <= 3)) { fscore += 10; fReasons.push('Graham value zone — bank PBV < 1'); }
+    if (bench.sectorKey === 'commercial_bank' && pbv < 1.0 && npl !== null && npl <= 3) { fscore += 10; fReasons.push('Graham value zone — bank PBV < 1'); }
     else if (pbv <= bench.medianPBV * 0.80) { fscore += 8; }
     else if (pbv > bench.medianPBV * 2.0) { fscore -= 8; }
   }
 
   // ROE quality
-  if (roe >= bench.medianROE * 1.2) { fscore += 10; fReasons.push(`High ROE ${roe.toFixed(1)}%`); }
-  else if (roe >= bench.medianROE * 0.8) { fscore += 5; }
-  else if (roe < 5) { fscore -= 8; fReasons.push('Low ROE — poor capital efficiency'); }
+  if (roe !== null) {
+    if (roe >= bench.medianROE * 1.2) { fscore += 10; fReasons.push(`High ROE ${roe.toFixed(1)}%`); }
+    else if (roe >= bench.medianROE * 0.8) { fscore += 5; }
+    else if (roe < 5) { fscore -= 8; fReasons.push('Low ROE — poor capital efficiency'); }
+  }
 
   // Dividend yield
   if (divYield >= 4.0) { fscore += 8; fReasons.push(`Attractive yield ${divYield.toFixed(1)}%`); }
   else if (divYield >= 2.0) { fscore += 4; }
 
   // Bank-specific
-  if (npl !== null && npl > 0) {
+  if (npl !== null) {
     if (npl <= 2.0) { fscore += 6; fReasons.push('Excellent NPL ratio'); }
     else if (npl > 5.0) { fscore -= 15; fReasons.push(`High NPL ${npl.toFixed(2)}% — credit risk`); }
   }

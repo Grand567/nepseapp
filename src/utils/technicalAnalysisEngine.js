@@ -111,13 +111,17 @@ export function analyzeTrend(closes) {
   let recentGoldenCross = false;
   let recentDeathCross = false;
   if (n >= 6 && ema20Arr.length >= 6 && ema50Arr.length >= 6) {
-    const wasBearish = ema20Arr[n - 6] <= ema50Arr[n - 6];
-    const isBullishNow = ema20 > ema50;
-    recentGoldenCross = wasBearish && isBullishNow;
+    const e20Past = ema20Arr[n - 6];
+    const e50Past = ema50Arr[n - 6];
+    if (e20Past !== null && e50Past !== null && ema20 !== null && ema50 !== null) {
+      const wasBearish = e20Past <= e50Past;
+      const isBullishNow = ema20 > ema50;
+      recentGoldenCross = wasBearish && isBullishNow;
 
-    const wasBullish = ema20Arr[n - 6] >= ema50Arr[n - 6];
-    const isBearishNow = ema20 < ema50;
-    recentDeathCross = wasBullish && isBearishNow;
+      const wasBullish = e20Past >= e50Past;
+      const isBearishNow = ema20 < ema50;
+      recentDeathCross = wasBullish && isBearishNow;
+    }
   }
 
   // Stacked alignment

@@ -526,8 +526,16 @@ export function SIPCalculator() {
 
   const runCalc = (f = form) => {
     const m = parseFloat(f.monthly), y = parseFloat(f.years), annualRate = parseFloat(f.rate);
-    if (!m || !y || !annualRate || m <= 0 || y <= 0) return;
-    const r = annualRate / 100 / 12, n = y * 12;
+    if (isNaN(m) || isNaN(y) || isNaN(annualRate) || m <= 0 || y <= 0 || annualRate < 0) {
+      setResult(null);
+      return;
+    }
+    const n = y * 12;
+    if (annualRate === 0) {
+      setResult({ fv: m * n, invested: m * n, returns: 0 });
+      return;
+    }
+    const r = annualRate / 100 / 12;
     const fv = m * ((Math.pow(1 + r, n) - 1) / r) * (1 + r);
     setResult({ fv, invested: m * n, returns: fv - m * n });
   };
@@ -574,8 +582,8 @@ export function RiskRewardCalculator({ stocks: rawStocks = [], initialSymbol = '
   const runCalc = (f = form) => {
     const e = parseFloat(f.entry), t = parseFloat(f.target), s = parseFloat(f.stop);
     const cap = parseFloat(f.capital) || 100000;
-    const rPct = Math.min(1.0, Math.max(0.25, parseFloat(f.riskPct) || 1.0)); // Capped at 1.0% portfolio risk
-    const winProb = 0.635; // Verified system win probability (~63.5%)
+    const rPct = Math.min(10.0, Math.max(0.25, parseFloat(f.riskPct) || 1.0));
+    const winProb = Math.min(0.99, Math.max(0.01, (parseFloat(f.winProbPct) || 58) / 100));
     if (!e || !t || !s || e <= 0 || cap <= 0) return;
 
     // Stop-Loss Inversion Guard: StopLoss >= EntryPrice or Target <= EntryPrice yields 0 kitta
@@ -1384,10 +1392,12 @@ export function WaccAveragingCalculator() {
     const bonusUnits = Math.floor((baseQty * bPct) / 100);
     const rightUnits = Math.floor((baseQty * rPct) / 100);
     const rightCost = rightUnits * rPrice;
+    const bonusTaxTds = bonusUnits * 100 * 0.05; // 5% TDS on bonus share face value (Rs. 100)
 
     const totalQty = baseQty + bonusUnits + rightUnits;
     totalRawCost += rightCost;
-    totalCostWithFees += rightCost;
+    totalFees += bonusTaxTds;
+    totalCostWithFees += (rightCost + bonusTaxTds);
 
     const blendedWacc = totalCostWithFees / totalQty;
 

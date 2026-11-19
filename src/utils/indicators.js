@@ -96,7 +96,14 @@ export function calculateMACD(prices, shortPeriod = 12, longPeriod = 26, signalP
 
   // Extract only the valid (non-null) MACD values for the signal EMA
   const validMacd = macdLine.filter(v => v !== null);
-  const signalArr = calculateEMA(validMacd, signalPeriod);
+  const rawSignalArr = calculateEMA(validMacd, signalPeriod);
+
+  // Pad signalArray with nulls to match macdLine length
+  const signalArr = new Array(prices.length).fill(null);
+  const offset = prices.length - rawSignalArr.length;
+  for (let i = 0; i < rawSignalArr.length; i++) {
+    signalArr[offset + i] = rawSignalArr[i];
+  }
 
   const latestMacd   = macdLine[macdLine.length - 1];
   // Map signal back: the last element of validMacd corresponds to the last element of macdLine

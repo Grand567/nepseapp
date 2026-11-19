@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { openExternalUrl } from '../utils/externalLinks';
 import {
   ExternalLink, BookOpen, Search, ArrowRight, ShieldAlert,
   Flame, Zap, Award, Crown, Radio, Compass, Layers, Activity,
@@ -289,34 +290,34 @@ export default function Resources({ onNavigateTab }) {
           <div className="card" style={{ marginBottom: 16 }}>
             <h3 className="section-title" style={{ marginBottom: 12, color: 'var(--text-primary)' }}>Free Nepal Financial Portals</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
-              <a href="https://meroshare.cdsc.com.np/" target="_blank" rel="noreferrer" className="card-sm clickable" style={{ display: 'flex', flexDirection: 'column', gap: 4, textDecoration: 'none', color: 'var(--text-primary)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+              <div role="button" onClick={() => openExternalUrl('https://meroshare.cdsc.com.np/')} className="card-sm clickable" style={{ display: 'flex', flexDirection: 'column', gap: 4, cursor: 'pointer', color: 'var(--text-primary)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 'bold', color: 'var(--primary-light)' }}>🔑 MeroShare Portal</span>
                   <ExternalLink style={{ width: 12, height: 12, color: 'var(--text-muted)' }} />
                 </div>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Calculate WACC, apply for IPOs, transfer shares via EDIS.</span>
-              </a>
-              <a href="https://iporesult.cdsc.com.np/" target="_blank" rel="noreferrer" className="card-sm clickable" style={{ display: 'flex', flexDirection: 'column', gap: 4, textDecoration: 'none', color: 'var(--text-primary)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+              </div>
+              <div role="button" onClick={() => openExternalUrl('https://iporesult.cdsc.com.np/')} className="card-sm clickable" style={{ display: 'flex', flexDirection: 'column', gap: 4, cursor: 'pointer', color: 'var(--text-primary)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 'bold', color: 'var(--bull)' }}>🎯 IPO Result Checker</span>
                   <ExternalLink style={{ width: 12, height: 12, color: 'var(--text-muted)' }} />
                 </div>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Fastest public lookup for CDSC allotment results.</span>
-              </a>
-              <a href="https://www.sharesansar.com/" target="_blank" rel="noreferrer" className="card-sm clickable" style={{ display: 'flex', flexDirection: 'column', gap: 4, textDecoration: 'none', color: 'var(--text-primary)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+              </div>
+              <div role="button" onClick={() => openExternalUrl('https://www.sharesansar.com/')} className="card-sm clickable" style={{ display: 'flex', flexDirection: 'column', gap: 4, cursor: 'pointer', color: 'var(--text-primary)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 'bold', color: 'var(--accent-cyan)' }}>📰 ShareSansar News</span>
                   <ExternalLink style={{ width: 12, height: 12, color: 'var(--text-muted)' }} />
                 </div>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Track market dividends, corporate announcements, IPO dates.</span>
-              </a>
-              <a href="https://nepsealpha.com/" target="_blank" rel="noreferrer" className="card-sm clickable" style={{ display: 'flex', flexDirection: 'column', gap: 4, textDecoration: 'none', color: 'var(--text-primary)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+              </div>
+              <div role="button" onClick={() => openExternalUrl('https://nepsealpha.com/')} className="card-sm clickable" style={{ display: 'flex', flexDirection: 'column', gap: 4, cursor: 'pointer', color: 'var(--text-primary)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 'bold', color: 'var(--accent-violet)' }}>📊 NepseAlpha Charts</span>
                   <ExternalLink style={{ width: 12, height: 12, color: 'var(--text-muted)' }} />
                 </div>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Advanced technical charting and live market heatmaps.</span>
-              </a>
+              </div>
             </div>
           </div>
 
@@ -375,14 +376,14 @@ export default function Resources({ onNavigateTab }) {
                     <span className="badge badge-primary" style={{ marginRight: 8 }}>TMS #{broker.number}</span>
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{broker.name}</span>
                   </div>
-                  <a 
-                    href={`https://tms${broker.number}.nepalstock.com.np/`} 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    style={{ padding: 6, background: 'var(--primary-subtle)', border: '1px solid rgba(91,94,244,0.2)', borderRadius: 8, color: 'var(--primary-light)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+                  <button 
+                    type="button"
+                    onClick={() => openExternalUrl(`https://tms${broker.number}.nepalstock.com.np/`)}
+                    title={`Open Broker #${broker.number} TMS`}
+                    style={{ padding: 6, background: 'var(--primary-subtle)', border: '1px solid rgba(91,94,244,0.2)', borderRadius: 8, color: 'var(--primary-light)', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer' }}
                   >
                     <ExternalLink style={{ width: 14, height: 14 }} />
-                  </a>
+                  </button>
                 </div>
               ))}
             </div>

@@ -306,7 +306,7 @@ async function getIndexTurnoverStats(memorySummary = null, memoryHistory = null)
     const ratio = +(memorySummary.totalTurnover / 4200000000).toFixed(2);
     return { turnoverRatio: Math.max(0.4, Math.min(2.5, ratio || 1.0)), rollingAvgTurnover: 4200000000, todayTurnover: memorySummary.totalTurnover };
   }
-  return { turnoverRatio: 1.0, rollingAvgTurnover: 4000000000, todayTurnover: 4000000000 };
+  return { turnoverRatio: null, rollingAvgTurnover: null, todayTurnover: null };
 }
 
 /** Advance/decline ratio from today's live-trading snapshot */
@@ -529,7 +529,7 @@ export function computeFiscalCycle(date = new Date()) {
  * 14-day Average True Range (ATR) for the NEPSE Index
  */
 export function computeIndexATR(history, period = 14) {
-  if (!Array.isArray(history) || history.length < period + 1) return 32.0;
+  if (!Array.isArray(history) || history.length < period + 1) return null;
   const trs = [];
   for (let i = 1; i < history.length; i++) {
     const h = Number(history[i].high || history[i].close || 0);
@@ -538,7 +538,7 @@ export function computeIndexATR(history, period = 14) {
     const tr = Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC));
     if (tr > 0) trs.push(tr);
   }
-  if (trs.length < 5) return 32.0;
+  if (trs.length < 5) return null;
   const recent = trs.slice(-period);
   return +(recent.reduce((a, b) => a + b, 0) / recent.length).toFixed(1);
 }
@@ -623,8 +623,8 @@ export async function getMacroFeatures() {
 export async function getPoliticalEventFlag(date = new Date().toISOString().slice(0, 10)) {
   const defaultEvent = {
     flagged: false,
-    severity: 1,
-    description: ['Market operating in stable regulatory environment.']
+    severity: 0,
+    description: []
   };
   if (!pool) return defaultEvent;
   try {
@@ -738,7 +738,7 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
 
   // If stockData object passed directly from live trading cache
   if (stockData && stockData.ltp) {
-    const ltp = Number(stockData.ltp || stockData.closePrice || 100);
+    const ltp = Number(stockData.ltp || stockData.closePrice || 0);
     const pChange = Number(stockData.pChange || stockData.percentageChange || 0);
     const volume = Number(stockData.volume || stockData.totalTradedQuantity || 0);
 
@@ -783,11 +783,13 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
       volumeSurgeRatio = 1.0;
     }
 
-    // Attempt real RSI from DB price history; return null if insufficient
-    let rsi14 = Number(stockData.rsi || 0);
-    if (!rsi14 || Math.abs(rsi14 - 50) < 0.1) {
+    // Preserve authentic RSI values including exact 50.0; only fall back to DB history when absent
+    let rsi14 = (stockData.rsi !== null && stockData.rsi !== undefined && stockData.rsi !== '' && Number.isFinite(Number(stockData.rsi)))
+      ? Number(stockData.rsi)
+      : null;
+    if (rsi14 === null) {
       if (histCloses.length >= 15) {
-        rsi14 = computeRSI(histCloses, Math.min(14, histCloses.length - 1));
+        rsi14 = computeRSI(histCloses, 14);
       } else {
         rsi14 = null; // Authentic missing data
       }
@@ -882,7 +884,7 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
         ? Number((((closes[closes.length - 1] - closes[closes.length - 6]) / closes[closes.length - 6]) * 100).toFixed(2))
         : 0;
 
-    const rsi14 = computeRSI(closes, Math.min(14, closes.length - 1));
+    const rsi14 = closes.length >= 15 ? computeRSI(closes, 14) : null;
     const macdSignal = computeMACDSignal(closes);
 
     const obvSeries = computeOBV(closes, volumes);

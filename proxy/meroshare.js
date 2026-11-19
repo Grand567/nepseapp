@@ -9,11 +9,19 @@ import { wrapper } from 'axios-cookiejar-support';
 
 import { fileURLToPath } from 'url';
 import { getLiveIpoListings } from './ipoHelper.js';
-import { requireAdminSecret } from './middleware/requireAdminSecret.mjs';
+import { requireAdminSecret, isValidAdminRequest } from './middleware/requireAdminSecret.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const router = express.Router();
+
+// Strict Cache-Control for sensitive MeroShare portfolio data
+router.use((req, res, next) => {
+  res.set('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+  res.set('Pragma', 'no-cache');
+  next();
+});
+
 const ACCOUNTS_FILE = path.join(__dirname, 'meroshare_accounts.json');
 
 // Legacy fallback encryption key (used in dev and for backward-compatible migration only)
@@ -418,7 +426,10 @@ router.delete('/accounts/:id', (req, res) => {
 
 // 4. Get Current Active IPOs
 router.get('/ipos', async (req, res) => {
-  const accounts = loadAccounts();
+  if (req.query?.username || req.query?.password || req.query?.token) {
+    return res.status(400).json({ success: false, error: 'Credentials or tokens are not permitted in URL query strings.' });
+  }
+  const accounts = isValidAdminRequest(req) ? loadAccounts() : [];
   if (accounts.length === 0) {
     // Fallback: return public live open IPO listings without requiring server accounts
     try {
@@ -427,7 +438,7 @@ router.get('/ipos', async (req, res) => {
         return res.json({ success: true, data: liveData, source: 'live-listings' });
       }
     } catch (_) {}
-    return res.status(400).json({ success: false, error: 'Please add at least one MeroShare account on the server first.' });
+    return res.status(isValidAdminRequest(req) ? 400 : 401).json({ success: false, error: 'Admin authorization or server account setup required.' });
   }
 
   try {
@@ -646,7 +657,7 @@ router.post('/apply', requireAdminSecret, async (req, res) => {
 });
 
 // 6. Bulk Check Allotment Result (delegates rate limited requests safely)
-router.post('/check-result', async (req, res) => {
+router.post('/check-result', requireAdminSecret, async (req, res) => {
   const { companyShareId, accountIds } = req.body;
   if (!companyShareId || !Array.isArray(accountIds) || accountIds.length === 0) {
     return res.status(400).json({ success: false, error: 'companyShareId and accountIds[] are required.' });

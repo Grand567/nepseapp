@@ -17,6 +17,12 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
   const [plan, setPlan] = useState<any>(null);
 
   useEffect(() => {
+    if (initialSymbol && initialSymbol !== symbol) {
+      setSymbol(initialSymbol);
+    }
+  }, [initialSymbol]);
+
+  useEffect(() => {
     fetchAllSecurities().then(r => {
       if (r?.data) {
         setAllSymbols(r.data.map((s: any) => s.symbol).filter(Boolean).sort());
@@ -31,7 +37,7 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
       const { stocks } = await loadNepseData();
       const info = stocks.find(s => (s.symbol || '').toUpperCase() === cleanSym) || {
         symbol: cleanSym,
-        ltp: 500,
+        ltp: 0,
         pChange: 0,
         volume: 0,
         high52w: 0,
@@ -52,7 +58,7 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
         console.warn('[TradingViewChartService] Error fetching history:', err);
       }
 
-      const ltp = Number(info.ltp || 500);
+      const ltp = Number(info.ltp || 0);
       let parsedCandles: CandleData[] = [];
 
       if (rawHistory.length > 0) {

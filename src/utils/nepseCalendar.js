@@ -441,6 +441,26 @@ export function isNepseTradingDay(date = getAppNow()) {
 }
 
 /**
+ * Adds N valid NEPSE trading days to a starting date, skipping weekends and public holidays.
+ * Useful for T+2 settlement date calculations and holding period projections.
+ *
+ * @param {Date|string} startDate
+ * @param {number} days
+ * @returns {Date}
+ */
+export function addTradingDays(startDate = getAppNow(), days = 2) {
+  const cur = new Date(startDate);
+  let added = 0;
+  while (added < days) {
+    cur.setDate(cur.getDate() + 1);
+    if (isNepseTradingDay(cur)) {
+      added++;
+    }
+  }
+  return cur;
+}
+
+/**
  * Finds the most recent past valid NEPSE Trading Day.
  * If today is Saturday, Sunday, or a Holiday (or trading hasn't started yet),
  * it scans backwards until finding the last active trading session date.
@@ -451,7 +471,12 @@ export function isNepseTradingDay(date = getAppNow()) {
  *   trading day instead of today. Use this when you need fully settled OHLCV data.
  */
 export function getLastValidTradingDay(fromDate = getAppNow(), requireCompleted = false) {
-  const cursor = new Date(fromDate);
+  const ref = new Date(fromDate);
+  const refIso = (fromDate instanceof Date) ? formatNptDateIso(fromDate) : String(fromDate).trim().slice(0, 10);
+  const [ry, rm, rd] = refIso.split('-').map(Number);
+  const cursor = (!isNaN(ry) && !isNaN(rm) && !isNaN(rd))
+    ? new Date(Date.UTC(ry, rm - 1, rd, 12, 0, 0))
+    : new Date(fromDate);
 
   // A6: If caller needs a *completed* session, step back past the current partial day
   if (requireCompleted) {
@@ -460,12 +485,12 @@ export function getLastValidTradingDay(fromDate = getAppNow(), requireCompleted 
       const fmt = new Intl.DateTimeFormat('en-US', {
         timeZone: 'Asia/Kathmandu', hour12: false, hour: 'numeric'
       });
-      nptHours = parseInt(fmt.formatToParts(cursor).find(p => p.type === 'hour').value, 10) % 24;
+      nptHours = parseInt(fmt.formatToParts(ref).find(p => p.type === 'hour').value, 10) % 24;
     } catch (_) {}
 
     // If market may still be open today (before 15:00 NPT on a trading day), go back one day
     if (nptHours < 15 && isNepseTradingDay(cursor)) {
-      cursor.setDate(cursor.getDate() - 1);
+      cursor.setUTCDate(cursor.getUTCDate() - 1);
     }
   }
 
@@ -474,8 +499,8 @@ export function getLastValidTradingDay(fromDate = getAppNow(), requireCompleted 
     if (isNepseTradingDay(cursor)) {
       return new Date(cursor);
     }
-    // Step backwards 1 calendar day
-    cursor.setDate(cursor.getDate() - 1);
+    // Step backwards 1 calendar day in UTC-safe noon anchor
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
     iterations++;
   }
   return new Date(fromDate);
@@ -587,7 +612,7 @@ export function tradingDayWindow(n = 5, endSession = null, options = {}) {
     if (isNepseTradingDay(cursor)) {
       collectedDates.push(formatNptDateIso(cursor));
     }
-    cursor.setDate(cursor.getDate() - 1);
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
     iterations++;
   }
 
@@ -623,14 +648,18 @@ export function formatNptDateIso(date = getAppNow()) {
  * Finds the NEXT active NEPSE trading day strictly skipping weekends and holidays.
  */
 export function getNextValidTradingDay(fromDate = getAppNow()) {
-  const cursor = new Date(fromDate);
-  cursor.setDate(cursor.getDate() + 1);
+  const refIso = (fromDate instanceof Date) ? formatNptDateIso(fromDate) : String(fromDate).trim().slice(0, 10);
+  const [ry, rm, rd] = refIso.split('-').map(Number);
+  const cursor = (!isNaN(ry) && !isNaN(rm) && !isNaN(rd))
+    ? new Date(Date.UTC(ry, rm - 1, rd, 12, 0, 0))
+    : new Date(fromDate);
+  cursor.setUTCDate(cursor.getUTCDate() + 1);
   let iterations = 0;
   while (iterations < 30) {
     if (isNepseTradingDay(cursor)) {
       return new Date(cursor);
     }
-    cursor.setDate(cursor.getDate() + 1);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
     iterations++;
   }
   return new Date(fromDate);
@@ -756,8 +785,8 @@ const _tradingSessionsBetweenCache = new Map();
 export function countNepseTradingSessionsBetween(startDate, endDate) {
   if (!startDate || !endDate) return 0;
 
-  const startKey = (startDate instanceof Date) ? startDate.toISOString().slice(0, 10) : String(startDate).trim().slice(0, 10);
-  const endKey = (endDate instanceof Date) ? endDate.toISOString().slice(0, 10) : String(endDate).trim().slice(0, 10);
+  const startKey = (startDate instanceof Date) ? formatNptDateIso(startDate) : String(startDate).trim().slice(0, 10);
+  const endKey = (endDate instanceof Date) ? formatNptDateIso(endDate) : String(endDate).trim().slice(0, 10);
   const cacheKey = `${startKey}_${endKey}`;
 
   if (_tradingSessionsBetweenCache.has(cacheKey)) {
@@ -765,13 +794,10 @@ export function countNepseTradingSessionsBetween(startDate, endDate) {
   }
 
   const parseToUtcDate = (val) => {
-    if (val instanceof Date) {
-      return new Date(Date.UTC(val.getUTCFullYear(), val.getUTCMonth(), val.getUTCDate()));
-    }
-    const str = String(val).trim().slice(0, 10);
+    const str = (val instanceof Date) ? formatNptDateIso(val) : String(val).trim().slice(0, 10);
     const parts = str.split('-').map(Number);
     if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-      return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+      return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 12, 0, 0));
     }
     return new Date(str);
   };
@@ -809,7 +835,11 @@ export function countNepseTradingSessionsBetween(startDate, endDate) {
  */
 export function generateTradingDaysSequence(count = 365, referenceDate = new Date()) {
   const tradingDays = [];
-  const cursor = new Date(referenceDate);
+  const refIso = (referenceDate instanceof Date) ? formatNptDateIso(referenceDate) : String(referenceDate).trim().slice(0, 10);
+  const [ry, rm, rd] = refIso.split('-').map(Number);
+  const cursor = (!isNaN(ry) && !isNaN(rm) && !isNaN(rd))
+    ? new Date(Date.UTC(ry, rm - 1, rd, 12, 0, 0))
+    : new Date(referenceDate);
 
   // Check if today is a valid trading day during or after market hours
   const todayTrading = isNepseTradingDay(cursor);
@@ -826,8 +856,8 @@ export function generateTradingDaysSequence(count = 365, referenceDate = new Dat
     if (isNepseTradingDay(cursor)) {
       tradingDays.push(new Date(cursor));
     }
-    // Move backwards by 1 calendar day
-    cursor.setDate(cursor.getDate() - 1);
+    // Move backwards by 1 calendar day in UTC-safe noon anchor
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
     iterations++;
   }
 

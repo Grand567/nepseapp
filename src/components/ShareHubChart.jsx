@@ -294,7 +294,6 @@ export default function ShareHubChart({
     loadData();
     return () => {
       isMounted = false;
-      setLoading(false);
     };
   }, [symbol, history]);
 
@@ -343,7 +342,6 @@ export default function ShareHubChart({
     loadIntraday();
     return () => {
       isMounted = false;
-      setLoading(false);
     };
   }, [activeTf, symbol, rawHistory]);
 
@@ -594,7 +592,7 @@ export default function ShareHubChart({
       sliced = allSorted;
     }
 
-    if (stock?.ltp && Number(stock.ltp) > 0 && sliced.length > 0) {
+    if (activeTf === '1D' && !stock?.isHistoricalSession && stock?.ltp && Number(stock.ltp) > 0 && sliced.length > 0) {
       const last = { ...sliced[sliced.length - 1] };
       const target = Number(stock.ltp);
       last.close = target;

@@ -210,7 +210,8 @@ assert(metricsATH.ath === 540, `ATH scanned accurately: expected 540, got ${metr
 assert(metricsATH.athDate === '2021-08-18', `ATH date recorded accurately: got ${metricsATH.athDate}`);
 
 // 2.6 Currency & Quantity Formatting Verification
-assert(formatNprMoney(15000000000) === 'Rs 1.50 Arba', `15B formatted as Arba: got ${formatNprMoney(15000000000)}`);
+assert(formatNprMoney(1500000000) === 'Rs 1.50 Arba', `1.5B formatted as Arba: got ${formatNprMoney(1500000000)}`);
+assert(formatNprMoney(15000000000) === 'Rs 15.00 Arba', `15B formatted as Arba: got ${formatNprMoney(15000000000)}`);
 assert(formatNprMoney(25000000) === 'Rs 2.50 Cr', `25M formatted as Cr: got ${formatNprMoney(25000000)}`);
 assert(formatNprMoney(450000) === 'Rs 4.50 Lkh', `450k formatted as Lkh: got ${formatNprMoney(450000)}`);
 assert(formatNprMoney(null) === '—', 'Null value formatted gracefully as dash');

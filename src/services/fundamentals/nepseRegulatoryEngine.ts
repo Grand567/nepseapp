@@ -66,7 +66,7 @@ export interface EvaluatedFundamentalTelemetry {
     peRatio: number | null;
     pbvRatio: number | null;
     roePct: number;
-    grahamFairValue: number;
+    grahamFairValue: number | null;
     valuationMarginPct: number | null;
     nplPct: number | null;
     carPct: number | null;
@@ -152,7 +152,7 @@ export function evaluateNepseFundamentalsAndLockIn(params: {
   const grahamFairValue =
     epsTtm > 0 && bookValuePerShare > 0
       ? Number(Math.sqrt(22.5 * epsTtm * bookValuePerShare).toFixed(2))
-      : bookValuePerShare;
+      : null;
 
   const valuationMarginPct =
     price !== null && grahamFairValue > 0

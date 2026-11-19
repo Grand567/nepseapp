@@ -58,7 +58,7 @@ export function FestivalSeasonalityCard({
   const isHolidays = !!season.isFestivalHolidays;
 
   const rvolThreshold = season.rvolThreshold || (isFestiveLull ? 1.5 : 1.0);
-  const currentRvol = Number(rvol) || 1.0;
+  const currentRvol = Number.isFinite(Number(rvol)) ? Number(rvol) : 1.0;
   const rvolPassed = currentRvol >= rvolThreshold;
 
   // Phase badge color palette

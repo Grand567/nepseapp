@@ -18,7 +18,7 @@ import { isNepseTradingDay } from '../src/utils/nepseCalendar.js';
 import { calculateLiquiditySlippage } from '../src/utils/nepseWalkForwardBacktest.mjs';
 import { evaluateStockSelection } from '../src/utils/signals/stockScoringEngine.js';
 import { evaluateFundamentalConfluence } from '../src/utils/signals/fundamentalSignals.js';
-import { upsertScripFundamental, getPointInTimeFundamentals } from '../src/utils/signals/fundamentalImporter.js';
+import { upsertScripFundamental, getPointInTimeFundamentals, deleteScripFundamental } from '../src/utils/signals/fundamentalImporter.js';
 
 describe('Audit Item 1: Elimination of Look-Ahead Bias (T+1 Open Fill Execution)', () => {
 
@@ -208,56 +208,61 @@ describe('Audit Item 1: Elimination of Look-Ahead Bias (T+1 Open Fill Execution)
   });
 
   it('5. Point-in-Time Fundamental Isolation Guard: Uses only rows with release_date <= signal date, sets NULL when none exists', () => {
-    // 1. Insert a verified fundamental report with official publication release_date = '2026-10-20'
-    upsertScripFundamental({
-      symbol: 'PIT_TEST_SCRIP',
-      sector: 'Manufacturing And Processing',
-      fiscal_quarter: 'Q4 2081/82',
-      eps_ttm: 35.5,
-      book_value_per_share: 210.0,
-      release_date: '2026-10-20'
-    });
+    try {
+      // 1. Insert a verified fundamental report with official publication release_date = '2026-10-20'
+      upsertScripFundamental({
+        symbol: 'PIT_TEST_SCRIP',
+        sector: 'Manufacturing And Processing',
+        fiscal_quarter: 'Q4 2081/82',
+        eps_ttm: 35.5,
+        book_value_per_share: 210.0,
+        release_date: '2026-10-20'
+      });
 
-    // Case A: Signal evaluated on 2026-09-11 (BEFORE publication date)
-    const beforeRelease = getPointInTimeFundamentals('PIT_TEST_SCRIP', '2026-09-11');
-    assert.strictEqual(beforeRelease, null, 'Must return NULL when signal date is before report release_date');
+      // Case A: Signal evaluated on 2026-09-11 (BEFORE publication date)
+      const beforeRelease = getPointInTimeFundamentals('PIT_TEST_SCRIP', '2026-09-11');
+      assert.strictEqual(beforeRelease, null, 'Must return NULL when signal date is before report release_date');
 
-    // Case B: Signal evaluated on 2026-10-19 (1 day before publication date)
-    const dayBeforeRelease = getPointInTimeFundamentals('PIT_TEST_SCRIP', '2026-10-19');
-    assert.strictEqual(dayBeforeRelease, null, 'Must return NULL 1 day before report release_date');
+      // Case B: Signal evaluated on 2026-10-19 (1 day before publication date)
+      const dayBeforeRelease = getPointInTimeFundamentals('PIT_TEST_SCRIP', '2026-10-19');
+      assert.strictEqual(dayBeforeRelease, null, 'Must return NULL 1 day before report release_date');
 
-    // Case C: Signal evaluated on 2026-10-20 (exact release date)
-    const onRelease = getPointInTimeFundamentals('PIT_TEST_SCRIP', '2026-10-20');
-    assert.ok(onRelease !== null, 'Must return record on exact release date');
-    assert.strictEqual(onRelease.eps_ttm, 35.5);
-    assert.strictEqual(onRelease.release_date, '2026-10-20');
+      // Case C: Signal evaluated on 2026-10-20 (exact release date)
+      const onRelease = getPointInTimeFundamentals('PIT_TEST_SCRIP', '2026-10-20');
+      assert.ok(onRelease !== null, 'Must return record on exact release date');
+      assert.strictEqual(onRelease.eps_ttm, 35.5);
+      assert.strictEqual(onRelease.release_date, '2026-10-20');
 
-    // Case D: Signal evaluated on 2026-10-25 (after release date)
-    const afterRelease = getPointInTimeFundamentals('PIT_TEST_SCRIP', '2026-10-25');
-    assert.ok(afterRelease !== null, 'Must return record after release date');
-    assert.strictEqual(afterRelease.eps_ttm, 35.5);
+      // Case D: Signal evaluated on 2026-10-25 (after release date)
+      const afterRelease = getPointInTimeFundamentals('PIT_TEST_SCRIP', '2026-10-25');
+      assert.ok(afterRelease !== null, 'Must return record after release date');
+      assert.strictEqual(afterRelease.eps_ttm, 35.5);
 
-    // Case E: Scrip with NULL or unverified release_date
-    upsertScripFundamental({
-      symbol: 'PIT_NO_REL',
-      sector: 'Hydro Power',
-      eps_ttm: 15.0,
-      release_date: null
-    });
-    const nullRelease = getPointInTimeFundamentals('PIT_NO_REL', '2026-10-25');
-    assert.strictEqual(nullRelease, null, 'Must return NULL when release_date is null');
+      // Case E: Scrip with NULL or unverified release_date
+      upsertScripFundamental({
+        symbol: 'PIT_NO_REL',
+        sector: 'Hydro Power',
+        eps_ttm: 15.0,
+        release_date: null
+      });
+      const nullRelease = getPointInTimeFundamentals('PIT_NO_REL', '2026-10-25');
+      assert.strictEqual(nullRelease, null, 'Must return NULL when release_date is null');
 
-    // Case F: Verify backtestEngine integrates pointInTimeFundamentals cleanly
-    const candles = generateTestCandles(28);
-    // Candle 21 is '2026-01-22'
-    const backtestRes = runComprehensiveBacktest({
-      symbol: 'PIT_TEST_SCRIP',
-      candles,
-      pointInTimeFundamentals: (sym, date) => getPointInTimeFundamentals(sym, date),
-      initialCapital: 1000000
-    });
-    // Since PIT_TEST_SCRIP release_date is '2026-10-20', for January 2026 candles it must be null (no look-ahead)
-    assert.ok(backtestRes.closedTrades.length >= 1);
+      // Case F: Verify backtestEngine integrates pointInTimeFundamentals cleanly
+      const candles = generateTestCandles(28);
+      // Candle 21 is '2026-01-22'
+      const backtestRes = runComprehensiveBacktest({
+        symbol: 'PIT_TEST_SCRIP',
+        candles,
+        pointInTimeFundamentals: (sym, date) => getPointInTimeFundamentals(sym, date),
+        initialCapital: 1000000
+      });
+      // Since PIT_TEST_SCRIP release_date is '2026-10-20', for January 2026 candles it must be null (no look-ahead)
+      assert.ok(backtestRes.closedTrades.length >= 1);
+    } finally {
+      deleteScripFundamental('PIT_TEST_SCRIP');
+      deleteScripFundamental('PIT_NO_REL');
+    }
   });
 
   it('6. Missing BookValue Guard: bookValue must be strictly null (never 0) when absent', () => {

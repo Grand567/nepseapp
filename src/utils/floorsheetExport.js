@@ -2,160 +2,22 @@ import { fetchRealFloorsheet, fetchRealBrokerAnalysis } from './liveData';
 import { getBrokerName } from './accumulationDistributionEngine';
 
 import { triggerFileDownload } from './fileExport.js';
-export { triggerFileDownload };
+import {
+  sanitizeSpreadsheetCell,
+  escapeCsvCell,
+  buildCsvContent,
+  buildExcelWorkbookXml
+} from './spreadsheetSanitizer.js';
+export {
+  triggerFileDownload,
+  sanitizeSpreadsheetCell,
+  escapeCsvCell,
+  buildCsvContent,
+  buildExcelWorkbookXml
+};
 
-/**
- * Escapes a single CSV cell value safely.
- */
-export function escapeCsvCell(val) {
-  if (val === null || val === undefined) return '';
-  const str = String(val);
-  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
-/**
- * Builds a UTF-8 BOM CSV string (so Excel opens it cleanly with proper encoding).
- */
-export function buildCsvContent(headers, rows, metaComments = []) {
-  const lines = [];
-  if (Array.isArray(metaComments) && metaComments.length > 0) {
-    metaComments.forEach(c => {
-      lines.push( c.map(escapeCsvCell).join(',') );
-    });
-    lines.push('');
-  }
-  lines.push(headers.map(escapeCsvCell).join(','));
-  rows.forEach(row => {
-    lines.push(row.map(escapeCsvCell).join(','));
-  });
-  return '\uFEFF' + lines.join('\r\n');
-}
-
-/**
- * Escapes XML special characters for Excel SpreadsheetML.
- */
-function escapeXml(val) {
-  return String(val ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
-/**
- * Builds a multi-worksheet Microsoft Excel XML SpreadsheetML (.xls) file.
- * Opens natively in Excel, LibreOffice Calc, and WPS Office with separate tabs,
- * styled headers, and native numeric columns for formulas/pivot tables.
- */
-export function buildExcelWorkbookXml(worksheets = []) {
-  const sheetsXml = worksheets.map((sheet, idx) => {
-    const safeSheetName = escapeXml(
-      String(sheet.name || `Sheet${idx + 1}`)
-        .replace(/[\\/?*[\]:]/g, ' ')
-        .slice(0, 31)
-        .trim() || `Sheet${idx + 1}`
-    );
-
-    const metaRowsXml = (sheet.metaRows || []).map(mRow => {
-      const cells = mRow.map((cell, cIdx) => {
-        const styleId = cIdx === 0 ? 'sMetaLabel' : 'sMetaValue';
-        return `<Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`;
-      }).join('');
-      return `<Row ss:Height="18">${cells}</Row>`;
-    }).join('\n');
-
-    const spacerRowXml = (sheet.metaRows && sheet.metaRows.length > 0) ? '<Row ss:Height="10"></Row>' : '';
-
-    const headerCellsXml = (sheet.headers || []).map(h => (
-      `<Cell ss:StyleID="sHeader"><Data ss:Type="String">${escapeXml(h)}</Data></Cell>`
-    )).join('');
-    const headerRowXml = `<Row ss:Height="22">${headerCellsXml}</Row>`;
-
-    const dataRowsXml = (sheet.rows || []).map(row => {
-      const isTotalRow = row[0] === 'TOTAL' || row[0] === 'SUMMARY';
-      const cellsXml = row.map(cell => {
-        if (cell === null || cell === undefined || cell === '') {
-          return `<Cell ss:StyleID="${isTotalRow ? 'sTotalText' : 'sText'}"><Data ss:Type="String"></Data></Cell>`;
-        }
-        const isNumeric = typeof cell === 'number' && Number.isFinite(cell);
-        if (isNumeric) {
-          const style = isTotalRow ? 'sTotalNum' : (Number.isInteger(cell) ? 'sInt' : 'sDec');
-          return `<Cell ss:StyleID="${style}"><Data ss:Type="Number">${cell}</Data></Cell>`;
-        }
-        return `<Cell ss:StyleID="${isTotalRow ? 'sTotalText' : 'sText'}"><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`;
-      }).join('');
-      return `<Row ss:Height="${isTotalRow ? 20 : 17}">${cellsXml}</Row>`;
-    }).join('\n');
-
-    return `
-  <Worksheet ss:Name="${safeSheetName}">
-    <Table>
-      ${metaRowsXml}
-      ${spacerRowXml}
-      ${headerRowXml}
-      ${dataRowsXml}
-    </Table>
-  </Worksheet>`;
-  }).join('\n');
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-  <Styles>
-    <Style ss:ID="Default" ss:Name="Normal">
-      <Alignment ss:Vertical="Center"/>
-      <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#0F172A"/>
-    </Style>
-    <Style ss:ID="sHeader">
-      <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
-      <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
-      <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
-      <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0284C7"/>
-      </Borders>
-    </Style>
-    <Style ss:ID="sMetaLabel">
-      <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#0369A1"/>
-    </Style>
-    <Style ss:ID="sMetaValue">
-      <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#0F172A"/>
-    </Style>
-    <Style ss:ID="sText">
-      <Alignment ss:Vertical="Center"/>
-      <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#1E293B"/>
-    </Style>
-    <Style ss:ID="sInt">
-      <Alignment ss:Vertical="Center" ss:Horizontal="Right"/>
-      <Font ss:FontName="Consolas" ss:Size="10" ss:Color="#0F172A"/>
-      <NumberFormat ss:Format="#,##0"/>
-    </Style>
-    <Style ss:ID="sDec">
-      <Alignment ss:Vertical="Center" ss:Horizontal="Right"/>
-      <Font ss:FontName="Consolas" ss:Size="10" ss:Color="#0F172A"/>
-      <NumberFormat ss:Format="#,##0.00"/>
-    </Style>
-    <Style ss:ID="sTotalText">
-      <Alignment ss:Vertical="Center"/>
-      <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#0F172A"/>
-      <Interior ss:Color="#E0F2FE" ss:Pattern="Solid"/>
-    </Style>
-    <Style ss:ID="sTotalNum">
-      <Alignment ss:Vertical="Center" ss:Horizontal="Right"/>
-      <Font ss:FontName="Consolas" ss:Size="10" ss:Bold="1" ss:Color="#0F172A"/>
-      <Interior ss:Color="#E0F2FE" ss:Pattern="Solid"/>
-      <NumberFormat ss:Format="#,##0.00"/>
-    </Style>
-  </Styles>
-  ${sheetsXml}
-</Workbook>`;
-}
+export const BULK_DEAL_MIN_QTY = 500;
+export const BULK_DEAL_MIN_AMOUNT = 250000;
 
 /**
  * Computes per-broker Buy/Sell/Hold/Matched summary from an array of floorsheet rows.
@@ -461,7 +323,7 @@ export async function exportStockFloorsheet({
     const brokerSummary = computeBrokerSummaryFromRows(rows);
     const dateWiseBrokers = computeDateWiseBrokerRows(rows, sym);
     const priceVolume = computePriceVolumeFromRows(rows);
-    const bulkRows = rows.filter(r => Number(r.qty || r.quantity || 0) >= 200 || Number(r.amount || 0) >= 100000);
+    const bulkRows = rows.filter(r => Number(r.qty || r.quantity || 0) >= BULK_DEAL_MIN_QTY || Number(r.amount || 0) >= BULK_DEAL_MIN_AMOUNT);
     const payload = {
       meta: {
         symbol: sym,
@@ -511,7 +373,7 @@ export async function exportStockFloorsheet({
       const bbName = r.buyerBrokerName || getBrokerName(bb);
       const sbName = r.sellerBrokerName || getBrokerName(sb);
       const isSelf = bb && sb && bb === sb;
-      const isBulk = qty >= 500 || amt >= 250000;
+      const isBulk = qty >= BULK_DEAL_MIN_QTY || amt >= BULK_DEAL_MIN_AMOUNT;
       const tradeType = isSelf ? 'Self-Matched (Cross)' : isBulk ? 'Bulk / Block Deal' : 'Regular';
       sumQty += qty;
       sumAmt += amt;
@@ -558,12 +420,15 @@ export async function exportStockFloorsheet({
       'Position Role'
     ];
     let totBuyQ = 0, totBuyA = 0, totSellQ = 0, totSellA = 0, totMatchQ = 0;
+    let totBuySh = 0, totSellSh = 0;
     const tableRows = brokers.map(b => {
       totBuyQ += b.buyQty;
       totBuyA += b.buyAmt;
       totSellQ += b.sellQty;
       totSellA += b.sellAmt;
       totMatchQ += b.matchedQty;
+      totBuySh += Number(b.buyMktShare || 0);
+      totSellSh += Number(b.sellMktShare || 0);
       return [
         b.brokerId,
         b.brokerName,
@@ -587,23 +452,26 @@ export async function exportStockFloorsheet({
     if (tableRows.length > 0) {
       const vwapB = totBuyQ > 0 ? +(totBuyA / totBuyQ).toFixed(2) : 0;
       const vwapS = totSellQ > 0 ? +(totSellA / totSellQ).toFixed(2) : 0;
+      const totAllQ = totBuyQ + totSellQ;
+      const totBuyPct = totAllQ > 0 ? Math.round((totBuyQ / totAllQ) * 100) : 0;
+      const totSellPct = totAllQ > 0 ? (100 - totBuyPct) : 0;
       tableRows.push([
         'TOTAL',
         `${brokers.length} Active Brokers`,
         totBuyQ,
         +totBuyA.toFixed(2),
         vwapB,
-        100,
+        Math.min(100, +totBuySh.toFixed(2)),
         totSellQ,
         +totSellA.toFixed(2),
         vwapS,
-        100,
+        Math.min(100, +totSellSh.toFixed(2)),
         totBuyQ - totSellQ,
         +(totBuyA - totSellA).toFixed(2),
         totMatchQ,
-        totBuyQ + totSellQ,
-        50,
-        50,
+        totAllQ,
+        totBuyPct,
+        totSellPct,
         'Session Aggregate'
       ]);
     }
@@ -665,7 +533,7 @@ export async function exportStockFloorsheet({
     return { name: 'Price vs Volume', headers, rows: tableRows, metaRows };
   };
 
-  const bulkFilteredRows = rows.filter(r => Number(r.qty || r.quantity || 0) >= 200 || Number(r.amount || 0) >= 100000);
+  const bulkFilteredRows = rows.filter(r => Number(r.qty || r.quantity || 0) >= BULK_DEAL_MIN_QTY || Number(r.amount || 0) >= BULK_DEAL_MIN_AMOUNT);
 
   // Multi-Sheet Excel (.xls) Export
   if (format === 'xls' || dataset === 'all_in_one') {
@@ -806,6 +674,7 @@ export async function exportBrokerAnalysisReport({
   ];
 
   let sumBuyQ = 0, sumBuyA = 0, sumSellQ = 0, sumSellA = 0, sumMatchQ = 0;
+  let sumBuySh = 0, sumSellSh = 0;
   const brokerRows = filteredBrokers.map(b => {
     const id = String(b.brokerId || b.broker || '');
     const name = b.brokerName || getBrokerName(id);
@@ -830,28 +699,33 @@ export async function exportBrokerAnalysisReport({
     sumSellQ += sellQ;
     sumSellA += sellA;
     sumMatchQ += matchQ;
+    sumBuySh += buySh;
+    sumSellSh += sellSh;
 
     return [id, name, buyQ, buyA, avgB, buySh, sellQ, sellA, avgS, sellSh, holdQ, holdA, matchQ, totQ, buyP, sellP, pos];
   });
 
   if (brokerRows.length > 0) {
+    const totAllQ = sumBuyQ + sumSellQ;
+    const sumBuyP = totAllQ > 0 ? Math.round((sumBuyQ / totAllQ) * 100) : 0;
+    const sumSellP = totAllQ > 0 ? (100 - sumBuyP) : 0;
     brokerRows.push([
       'TOTAL',
       `${brokerRows.length} Brokers`,
       sumBuyQ,
       +sumBuyA.toFixed(2),
       sumBuyQ > 0 ? +(sumBuyA / sumBuyQ).toFixed(2) : 0,
-      100,
+      Math.min(100, +sumBuySh.toFixed(2)),
       sumSellQ,
       +sumSellA.toFixed(2),
       sumSellQ > 0 ? +(sumSellA / sumSellQ).toFixed(2) : 0,
-      100,
+      Math.min(100, +sumSellSh.toFixed(2)),
       sumBuyQ - sumSellQ,
       +(sumBuyA - sumSellA).toFixed(2),
       sumMatchQ,
-      sumBuyQ + sumSellQ,
-      50,
-      50,
+      totAllQ,
+      sumBuyP,
+      sumSellP,
       'Aggregate'
     ]);
   }
@@ -929,7 +803,7 @@ export async function exportBrokerAnalysisReport({
   const sessionRows = dailyFlow.map(df => [
     df.date || '',
     sym,
-    Number(df.buyVol || 0),
+    Number(df.volume ?? df.totalQty ?? df.tradedVolume ?? df.buyVol ?? 0),
     +Number(df.turnover || 0).toFixed(2),
     Number(df.totalTrades || 0),
     Number(df.vwap || 0),
@@ -987,12 +861,12 @@ export function exportStockPriceHistory({
 
   const headers = ['Date', 'Symbol', 'Open (Rs)', 'High (Rs)', 'Low (Rs)', 'Close (Rs)', 'Change %', 'Volume (Qty)', 'Turnover (Rs)'];
   const reversed = [...(historyRows || [])].reverse();
+  const paired = reversed.map((h, idx) => ({ h, prevRow: reversed[idx + 1] }));
   const display = filterDate
-    ? reversed.filter(h => String(h.date || '').startsWith(filterDate))
-    : reversed;
+    ? paired.filter(({ h }) => String(h.date || '').startsWith(filterDate))
+    : paired;
 
-  const rows = display.map(h => {
-    const prevRow = reversed[reversed.indexOf(h) + 1];
+  const rows = display.map(({ h, prevRow }) => {
     const prevCl = Number(prevRow?.close || h.open || h.close || 0);
     const chPct = prevCl > 0 ? +(((Number(h.close) - prevCl) / prevCl) * 100).toFixed(2) : 0;
     const turnoverVal = +Number(h.turnover || (Number(h.close || 0) * Number(h.volume || 0))).toFixed(2);

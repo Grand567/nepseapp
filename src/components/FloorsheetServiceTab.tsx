@@ -59,15 +59,14 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
       });
       const json = (await res.json()) as FloorsheetHubApiResponse;
       setData(json);
-      if (json?.asOfDate && !selectedDate) {
-        setSelectedDate(json.asOfDate);
-      }
     } catch (err) {
       if ((err as Error)?.name !== "AbortError") {
         console.error("FloorsheetServiceTab fetch error:", err);
       }
     } finally {
-      setLoading(false);
+      if (!signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [
     selectedDate,
@@ -178,7 +177,7 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
             checked={whaleOnly}
             onChange={(e) => setWhaleOnly(e.target.checked)}
           />
-          <span>🐋 Whale Prints Only (&ge;500k)</span>
+          <span>🐋 Whale Prints Only (≥ Rs. 500k)</span>
         </label>
 
         <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 cursor-pointer text-amber-300 font-medium">

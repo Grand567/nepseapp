@@ -51,7 +51,7 @@ import { getCorporateAlertForSymbol } from '../services/merolaganiNewsService.js
 import { getDetailedMarketStatus, formatNptDateIso, isMarketOpen, latestTradingSession } from '../utils/nepseCalendar';
 import { triggerHaptic } from '../utils/haptics';
 import LoadingShimmerBar from './LoadingShimmerBar';
-import { exportStockFloorsheet, exportStockPriceHistory } from '../utils/floorsheetExport';
+import { exportStockFloorsheet, exportStockPriceHistory, BULK_DEAL_MIN_QTY, BULK_DEAL_MIN_AMOUNT } from '../utils/floorsheetExport';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
 import { runOneDayPriceSelfCheck } from '../utils/systemMonitoring.js';
 import { useBackHandler, useNavigation } from '../context/NavigationContext';
@@ -298,41 +298,37 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
         </div>
       </div>
 
-      {/* Empirical Walk-Forward Backtest Validation Badge */}
+      {/* Quantitative Setup Tier Badge (Historical win rate shown only when live walk-forward telemetry is attached) */}
       {(() => {
+        const stats = entryExitPlan?.historicalStats || entryExitPlan?.analogResult?.stats || null;
         let bucketLabel = '<50 Low Conviction';
-        let bucketWinRate = '38.4%';
-        let bucketAvgGain = '-1.2%';
         let bucketColor = '#f87171';
         let bucketBg = 'rgba(239, 68, 68, 0.08)';
         let bucketBorder = 'rgba(239, 68, 68, 0.25)';
-        let edgeText = 'Negative Expectancy: Historical setups in this bucket underperform.';
+        let edgeText = 'Low conviction setup: await stronger confluence before sizing.';
 
         if (setupScore >= 85) {
           bucketLabel = '85–100 Elite Setup';
-          bucketWinRate = '74.5%';
-          bucketAvgGain = '+11.2%';
           bucketColor = '#34d399';
           bucketBg = 'rgba(16, 185, 129, 0.1)';
           bucketBorder = 'rgba(16, 185, 129, 0.35)';
-          edgeText = 'Strong Out-of-Sample Edge: Highest historical win rate across NEPSE cycles.';
+          edgeText = 'High structural & institutional score alignment; verify empirical stats in Signal Track Record.';
         } else if (setupScore >= 70) {
           bucketLabel = '70–84 Strong Setup';
-          bucketWinRate = '64.2%';
-          bucketAvgGain = '+6.8%';
           bucketColor = '#60a5fa';
           bucketBg = 'rgba(59, 130, 246, 0.1)';
           bucketBorder = 'rgba(59, 130, 246, 0.35)';
-          edgeText = 'Verified Positive Expectancy: Consistent forward returns at T+10.';
+          edgeText = 'Strong quantitative setup criteria met; respect stop-loss and position risk limits.';
         } else if (setupScore >= 50) {
           bucketLabel = '50–69 Moderate Setup';
-          bucketWinRate = '51.0%';
-          bucketAvgGain = '+1.8%';
           bucketColor = '#fbbf24';
           bucketBg = 'rgba(245, 158, 11, 0.1)';
           bucketBorder = 'rgba(245, 158, 11, 0.3)';
-          edgeText = 'Marginal Edge: Requires strict adherence to stop-loss.';
+          edgeText = 'Moderate setup alignment: requires strict adherence to stop-loss.';
         }
+
+        const liveWinRate = stats?.winRatePct != null ? `${Number(stats.winRatePct).toFixed(1)}%` : null;
+        const liveAvgGain = stats?.avgReturnPct != null ? `${Number(stats.avgReturnPct) >= 0 ? '+' : ''}${Number(stats.avgReturnPct).toFixed(1)}%` : null;
 
         return (
           <div style={{
@@ -347,10 +343,14 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
               <span style={{ fontSize: 12, fontWeight: 800, color: bucketColor }}>
-                📊 Walk-Forward Historical Reliability ({bucketLabel})
+                📊 Quantitative Tier ({bucketLabel})
               </span>
               <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
-                Win Rate: <strong style={{ color: bucketColor }}>{bucketWinRate}</strong> • Avg Return (T+10): <strong style={{ color: bucketColor }}>{bucketAvgGain}</strong>
+                {liveWinRate ? (
+                  <>Win Rate: <strong style={{ color: bucketColor }}>{liveWinRate}</strong>{liveAvgGain ? <> • Avg Return: <strong style={{ color: bucketColor }}>{liveAvgGain}</strong></> : null}</>
+                ) : (
+                  <span style={{ color: '#94a3b8' }}>Walk-Forward Reliability: Sync backend track record</span>
+                )}
               </span>
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.4 }}>
@@ -1058,9 +1058,10 @@ function BeginnerConfidenceCard({
   const t2Price = Number(entryExitPlan?.levels?.target2?.price || +(buyPrice * 1.20).toFixed(1));
   const slPrice = Number(entryExitPlan?.levels?.stopLoss?.price || +(buyPrice * 0.94).toFixed(1));
 
-  const sellT1 = calculateSellDetails(kitta, t1Price, buyPrice, 'short') || {};
-  const sellT2 = calculateSellDetails(kitta, t2Price, buyPrice, 'short') || {};
-  const sellSL = calculateSellDetails(kitta, slPrice, buyPrice, 'short') || {};
+  const buyWacc = buyCalc?.costPerShare || (buyCalc?.totalAmount > 0 && kitta > 0 ? +(buyCalc.totalAmount / kitta).toFixed(2) : buyPrice);
+  const sellT1 = calculateSellDetails(kitta, t1Price, buyWacc, 'short') || {};
+  const sellT2 = calculateSellDetails(kitta, t2Price, buyWacc, 'short') || {};
+  const sellSL = calculateSellDetails(kitta, slPrice, buyWacc, 'short') || {};
 
   const profitT1 = Math.round(sellT1.netProfitLoss ?? sellT1.profit ?? 0);
   const profitT2 = Math.round(sellT2.netProfitLoss ?? sellT2.profit ?? 0);
@@ -1558,7 +1559,13 @@ export default function StockDetailModal({
   const [compareData, setCompareData] = useState(null);
   const [compareLoading, setCompareLoading] = useState(false);
   const [comparePeer, setComparePeer] = useState(null);
+  const [peerPriceHistory, setPeerPriceHistory] = useState([]);
   const [compareError, setCompareError] = useState('');
+  const floorsheetSeqRef = useRef(0);
+  const brokerSeqRef = useRef(0);
+  const depthSeqRef = useRef(0);
+  const brokerAccumSeqRef = useRef(0);
+  const compareSeqRef = useRef(0);
   const [liveQuote, setLiveQuote] = useState(null);
   const [clockTime, setClockTime] = useState(() => getDetailedMarketStatus().nptTime);
   const [quarterlyReports, setQuarterlyReports] = useState([]);
@@ -1860,15 +1867,15 @@ export default function StockDetailModal({
     // When promoter lock-in has expired (or promoter = 0), public float is 100% of listed shares
     const rawPromoterPct = liveDetail?.promoterPercentage ?? liveDetail?.promoterPct ??
       s.promoterPercentage ?? s.promoterPct ?? s.promoter_pct;
-    const promoterPercentage = (rawPromoterPct !== undefined && rawPromoterPct !== null && !isNaN(Number(rawPromoterPct)))
-      ? Number(rawPromoterPct)
-      : 0;
+    const hasPromoterData = rawPromoterPct !== undefined && rawPromoterPct !== null && !isNaN(Number(rawPromoterPct));
+    const promoterPercentage = hasPromoterData ? Number(rawPromoterPct) : null;
 
     const rawPublicPct = liveDetail?.publicPercentage ?? liveDetail?.publicFloatPct ?? liveDetail?.publicPct ??
       s.publicPercentage ?? s.publicFloatPct ?? s.publicPct ?? s.public_pct;
-    const publicPercentage = (rawPublicPct !== undefined && rawPublicPct !== null && !isNaN(Number(rawPublicPct)) && Number(rawPublicPct) > 0)
+    const hasPublicData = rawPublicPct !== undefined && rawPublicPct !== null && !isNaN(Number(rawPublicPct)) && Number(rawPublicPct) > 0;
+    const publicPercentage = hasPublicData
       ? Number(rawPublicPct)
-      : (promoterPercentage > 0 ? +(100 - promoterPercentage).toFixed(2) : 100);
+      : (promoterPercentage !== null && promoterPercentage > 0 ? +(100 - promoterPercentage).toFixed(2) : (hasPromoterData ? 100 : null));
 
     const quoteVol = Number(liveQuote?.volume || 0);
     const stockVol = quoteVol > 0 ? quoteVol : Number(s.volume || s.totalTradedQuantity || 0);
@@ -2131,6 +2138,20 @@ export default function StockDetailModal({
 
     // Reset all symbol-scoped states immediately to prevent cross-stock state leakage
     setLiveQuote(null);
+    setBroker1DData(getCachedRealBrokerAnalysis(d.symbol, 1) || null);
+    setBroker5DData(getCachedRealBrokerAnalysis(d.symbol, 5) || null);
+    setCompareSymbol('');
+    setCompareData(null);
+    setComparePeer(null);
+    setPeerPriceHistory([]);
+    setCompareError('');
+    setCompareLoading(false);
+    setRealMarketDepth(null);
+    floorsheetSeqRef.current++;
+    brokerSeqRef.current++;
+    depthSeqRef.current++;
+    brokerAccumSeqRef.current++;
+    compareSeqRef.current++;
     const cachedAll = getCachedRealBrokerAnalysis(d.symbol, 'all');
     if (cachedAll) {
       setAllTimeBrokerAnalysis(cachedAll);
@@ -2266,9 +2287,11 @@ export default function StockDetailModal({
         close: Number(item.close),
         volume: Number(item.volume) || 0
       })));
+    } else {
+      setRealPriceHistory([]);
+      setHistory([]);
     }
 
-    setRealMarketDepth(null);
     setFloorsheetPage(1);
 
     setRealHistoryLoading(!cachedHist || cachedHist.length === 0);
@@ -2432,17 +2455,20 @@ export default function StockDetailModal({
   // Fetch real floorsheet (runs when floorsheet or depth_broker tab is active)
   const fetchFloorsheetData = useCallback(async (page = 1, opts = {}) => {
     if (!d?.symbol) return;
+    const reqSym = d.symbol;
+    const seq = ++floorsheetSeqRef.current;
     const targetDate = opts.date !== undefined ? opts.date : floorsheetDate;
     const targetBuyer = opts.buyer !== undefined ? opts.buyer : floorsheetAppliedBuyer;
     const targetSeller = opts.seller !== undefined ? opts.seller : floorsheetAppliedSeller;
     const targetSize = opts.size !== undefined ? opts.size : floorsheetPageSize;
     setFloorsheetLoading(true);
     try {
-      const data = await fetchRealFloorsheet(d.symbol, targetDate, page, targetSize, {
+      const data = await fetchRealFloorsheet(reqSym, targetDate, page, targetSize, {
         buyer: targetBuyer,
         seller: targetSeller,
         refresh: Boolean(opts.refresh)
       });
+      if (seq !== floorsheetSeqRef.current) return;
       if (data && (Array.isArray(data.rows) ? data.rows.length > 0 : true)) {
         setRealFloorsheet(data);
         setFloorsheetPage(page);
@@ -2453,7 +2479,7 @@ export default function StockDetailModal({
       } else {
         // Date not available in historical subfiles or API: clear stale floorsheet to prevent showing previous date's rows!
         setRealFloorsheet({
-          symbol: d.symbol,
+          symbol: reqSym,
           date: targetDate,
           businessDate: targetDate,
           rows: [],
@@ -2468,8 +2494,9 @@ export default function StockDetailModal({
         setFloorsheetPage(1);
       }
     } catch (_) {
+      if (seq !== floorsheetSeqRef.current) return;
       setRealFloorsheet({
-        symbol: d.symbol,
+        symbol: reqSym,
         date: targetDate,
         businessDate: targetDate,
         rows: [],
@@ -2482,19 +2509,23 @@ export default function StockDetailModal({
         isUnavailable: true
       });
       setFloorsheetPage(1);
+    } finally {
+      if (seq === floorsheetSeqRef.current) setFloorsheetLoading(false);
     }
-    setFloorsheetLoading(false);
   }, [d?.symbol, floorsheetDate, floorsheetAppliedBuyer, floorsheetAppliedSeller, floorsheetPageSize]);
 
   // Fetch real broker analysis (runs when broker_analysis or depth_broker tab active)
   const fetchBrokerAnalysisData = useCallback(async (daysOverride, dateOverride, options = {}) => {
     if (!d?.symbol) return;
+    const reqSym = d.symbol;
+    const seq = ++brokerSeqRef.current;
     const targetDays = daysOverride !== undefined ? daysOverride : brokerDays;
     const targetDate = dateOverride !== undefined ? dateOverride : brokerDate;
     const refresh = options.refresh !== undefined ? options.refresh : false;
     setBrokerAnalysisLoading(true);
     try {
-      const data = await fetchRealBrokerAnalysis(d.symbol, targetDays, { date: targetDate, refresh });
+      const data = await fetchRealBrokerAnalysis(reqSym, targetDays, { date: targetDate, refresh });
+      if (seq !== brokerSeqRef.current) return;
       if (data) {
         setRealBrokerAnalysis(data);
         if (targetDays === 1 && !targetDate) {
@@ -2503,8 +2534,9 @@ export default function StockDetailModal({
           setBroker5DData(data);
         }
       }
-    } catch (_) {}
-    setBrokerAnalysisLoading(false);
+    } catch (_) {} finally {
+      if (seq === brokerSeqRef.current) setBrokerAnalysisLoading(false);
+    }
   }, [d?.symbol, brokerDays, brokerDate]);
 
   const handleModalSessionDateChange = useCallback((newDate) => {
@@ -2519,13 +2551,14 @@ export default function StockDetailModal({
     const sym = d?.symbol;
     if (sym) {
       const targetDays = newDate ? 1 : brokerDays;
+      const dSeq = ++depthSeqRef.current;
       fetchFloorsheetData(1, { date: newDate, refresh: false });
       fetchBrokerAnalysisData(targetDays, newDate, { refresh: false });
       setMarketDepthLoading(true);
       fetchMarketDepth(sym, newDate)
-        .then(depth => { if (depth) setRealMarketDepth(depth); })
+        .then(depth => { if (dSeq === depthSeqRef.current && depth) setRealMarketDepth(depth); })
         .catch(() => {})
-        .finally(() => setMarketDepthLoading(false));
+        .finally(() => { if (dSeq === depthSeqRef.current) setMarketDepthLoading(false); });
     }
   }, [brokerDays, d?.symbol, fetchBrokerAnalysisData, fetchFloorsheetData]);
 
@@ -2604,7 +2637,9 @@ export default function StockDetailModal({
   // Broker Accumulation History: fetch when depth tab active or period selector changes
   // Note: Only updates brokerAccumData for the multi-day history card; does NOT mutate realBrokerAnalysis (1D live state)
   useEffect(() => {
+    let active = true;
     if ((activeTab !== 'market_depth' && activeTab !== 'depth_broker') || !d?.symbol) return;
+    const seq = ++brokerAccumSeqRef.current;
     const daysMap = {
       '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60,
       '90D': 90, '180D': 180, '260D': 260, '500D': 500,
@@ -2616,13 +2651,14 @@ export default function StockDetailModal({
       setBrokerAccumLoading(true);
       fetchRealBrokerAnalysis(d.symbol, days, { refresh: false })
         .then(data => {
-          if (data) {
+          if (active && seq === brokerAccumSeqRef.current && data) {
             setBrokerAccumData(data);
           }
         })
         .catch(() => {})
-        .finally(() => setBrokerAccumLoading(false));
+        .finally(() => { if (active && seq === brokerAccumSeqRef.current) setBrokerAccumLoading(false); });
     }
+    return () => { active = false; };
   }, [activeTab, brokerAccumPeriod, d?.symbol]);
 
   // Trigger real data fetch when switching to Market Depth, Floorsheet, or Broker Analysis tabs
@@ -2678,16 +2714,28 @@ export default function StockDetailModal({
       const peers = getPeerStocks ? getPeerStocks(d, Array.isArray(allStocks) ? allStocks : []) : [];
       const peerSymbol = peers.length > 0 ? peers[0]?.symbol : null;
       if (peerSymbol) {
+        const compSeq = ++compareSeqRef.current;
         setCompareSymbol(peerSymbol);
         setCompareLoading(true);
         setCompareError('');
-        fetchRealPriceHistory(peerSymbol, 365).catch(() => {});
-        fetchCompareStocks(d.symbol, peerSymbol).then(res => {
-          if (!isCancelled && res) {
+        Promise.all([
+          fetchCompareStocks(d.symbol, peerSymbol).catch(() => null),
+          fetchRealPriceHistory(peerSymbol, 365).catch(() => null)
+        ]).then(([res, peerHist]) => {
+          if (isCancelled || compSeq !== compareSeqRef.current) return;
+          if (Array.isArray(peerHist) && peerHist.length > 0) {
+            setPeerPriceHistory(peerHist);
+          } else {
+            const cached = getCachedRealPriceHistory(peerSymbol);
+            setPeerPriceHistory(Array.isArray(cached) ? cached : []);
+          }
+          if (res) {
             setCompareData(res);
             setComparePeer(res.stock2 || res.data?.[1] || null);
           }
-        }).catch(() => {}).finally(() => { if (!isCancelled) setCompareLoading(false); });
+        }).catch(() => {}).finally(() => {
+          if (!isCancelled && compSeq === compareSeqRef.current) setCompareLoading(false);
+        });
       }
     }
     if (scrollRef.current) {
@@ -3126,6 +3174,8 @@ export default function StockDetailModal({
     const graham = calculateGrahamIntrinsicValue(eps, bvpsVal, ltp);
     const lynch = calculatePeterLynchMetrics(d, ltp);
     const nrb = evaluateNrbRegulatorySafety(d);
+    const pubPct = stockMetrics?.publicPct ?? d?.publicPercentage ?? d?.publicFloatPct;
+    const hasFloat = pubPct != null && !isNaN(Number(pubPct)) && Number(pubPct) > 0;
 
     const criteria = [
       { label: 'Positive Net Profit / Earnings (EPS > 0)', pass: hasEps && eps > 0, val: hasEps ? `Rs. ${eps}` : 'No data', hasData: hasEps },
@@ -3135,7 +3185,7 @@ export default function StockDetailModal({
       { label: `Peter Lynch Archetype (${lynch.archetype})`, pass: lynch.isGarp || lynch.archetype === 'Stalwarts', val: lynch.peg > 0 ? `PEG ${lynch.peg}x` : lynch.archetype, hasData: true },
       { label: 'Graham Margin of Safety (LTP ≤ V*)', pass: graham.isUndervalued, val: graham.intrinsicValue > 0 ? `Rs. ${graham.intrinsicValue} (${graham.marginOfSafetyPct > 0 ? '+' : ''}${graham.marginOfSafetyPct}%)` : 'Data pending', hasData: graham.intrinsicValue > 0 },
       ...(nrb.isBfi ? [{ label: 'NRB Regulatory Dividend Safety', pass: nrb.passSafetyGate, val: nrb.dividendRisk, hasData: true }] : []),
-      { label: 'Adequate Liquidity & Free Float', pass: true, val: '35% Public', hasData: true },
+      { label: 'Adequate Liquidity & Free Float', pass: hasFloat && Number(pubPct) >= 20, val: hasFloat ? `${Number(pubPct).toFixed(1)}% Public` : 'No float data', hasData: hasFloat },
       { label: 'Dividend & Bonus Payout History', pass: hasDividend && bonusPayout > 0, val: bonusPayout > 0 ? `${bonusPayout}%` : (hasDividend ? 'No payout' : 'No data'), hasData: hasDividend },
       { label: 'Trend Above 200-Day SMA Support', pass: sma200Ref != null && ltp > 0 && ltp >= sma200Ref, val: sma200Ref != null ? (ltp >= sma200Ref ? 'Bullish' : 'Below SMA') : 'No 200-day data', hasData: sma200Ref != null }
     ];
@@ -3156,13 +3206,13 @@ export default function StockDetailModal({
     else if (score >= 8) { rating = 'Strong Institutional Quality'; color = 'var(--bull)'; }
     else if (score <= 4) { rating = 'High Speculative Risk'; color = '#F43F5E'; }
 
-    return { score, rating, color, criteria, realDataCount, insufficientData };
-  }, [d, history12M]);
+    return { score, rating, color, criteria, realDataCount, insufficientData, totalCriteria: criteria.length };
+  }, [d, history12M, stockMetrics]);
 
   // Calculator State
   const [qtyInput, setQtyInput] = useState('100');
-  const [priceInput, setPriceInput] = useState(String(d.ltp || 350));
-  const [waccInput, setWaccInput] = useState(String(Number((d.ltp || 350) * 0.92).toFixed(1)));
+  const [priceInput, setPriceInput] = useState(String(d?.ltp || ''));
+  const [waccInput, setWaccInput] = useState(String(d?.ltp ? Number(d.ltp * 0.92).toFixed(1) : ''));
   const [holdType, setHoldType] = useState('individual_short');
   const [calcMode, setCalcMode] = useState('buy');
   const [investorType, setInvestorType] = useState('INDIVIDUAL'); // 'INDIVIDUAL' | 'INSTITUTIONAL'
@@ -3175,7 +3225,7 @@ export default function StockDetailModal({
     }
     setInvestorType('INDIVIDUAL');
     setHoldingPeriod('SHORT_TERM');
-  }, [d?.symbol]);
+  }, [d?.symbol, d?.ltp]);
 
   // Statutory NEPSE WACC & CGT Breakdown Helper
   const computeNepseRoundTripTrade = useCallback(({
@@ -3274,7 +3324,7 @@ export default function StockDetailModal({
     let cancelled = false;
     (async () => {
       try {
-        const resp = await fetch(`/api/stocks/${encodeURIComponent(sym)}/ledger-telemetry`, {
+        const resp = await fetch(`${getProxyBase()}/api/stocks/${encodeURIComponent(sym)}/ledger-telemetry`, {
           headers: { Accept: 'application/json' }
         });
         if (!cancelled && resp.ok) {
@@ -3873,8 +3923,8 @@ export default function StockDetailModal({
           const overviewEntryZone = horizonTargets?.entryZone;
           const isVetoed = Boolean(overviewOrderFlowVeto?.isVetoed || modalIsAvoid);
           const isOverextended = overviewEntryZone?.isOverextended === true || operatorPremiumPct > 10.0;
-          const overviewStopLoss = horizonTargets?.stopLoss;
-          const overviewTarget1 = horizonTargets?.target1;
+          const overviewStopLoss = entryExitPlan?.levels?.stopLoss || horizonTargets?.stopLoss;
+          const overviewTarget1 = entryExitPlan?.levels?.target1 || horizonTargets?.target1;
           const topAccumulators = cumLedger?.topAccumulators || [];
           const leadBrokerStr = topAccumulators.length > 0
             ? topAccumulators.slice(0, 2).map(a => {
@@ -3961,7 +4011,7 @@ export default function StockDetailModal({
                       fontWeight: 800,
                       fontFamily: 'var(--font-mono)'
                     }}>
-                      ⚡ RVOL {modalRvol != null ? `${Number(modalRvol).toFixed(2)}x` : '1.00x'}
+                      ⚡ RVOL {modalRvol != null ? `${Number(modalRvol).toFixed(2)}x` : '—'}
                     </span>
                   </div>
                 </div>
@@ -3986,7 +4036,7 @@ export default function StockDetailModal({
                         alignItems: 'center',
                         gap: 4
                       }}>
-                        {d.change > 0 ? '▲ +' : d.change < 0 ? '▼ -' : (d.pChange >= 0 ? '▲ +' : '▼ -')}{fmt(Math.abs(d.change || 0))} ({d.pChange > 0 ? '+' : ''}{Math.abs(d.pChange || 0).toFixed(2)}%)
+                        {d.change > 0 ? '▲ +' : d.change < 0 ? '▼ -' : (d.pChange >= 0 ? '▲ +' : '▼ -')}{fmt(Math.abs(d.change || 0))} ({d.pChange > 0 ? '+' : d.pChange < 0 ? '-' : ''}{Math.abs(d.pChange || 0).toFixed(2)}%)
                       </span>
                     </div>
                     <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -4092,8 +4142,8 @@ export default function StockDetailModal({
                           return clockTime ? `Today, ${clockTime}` : 'Live Session';
                         }
                         const settledDate = d.businessDate || d.date || marketStatus?.lastTradingDay;
-                        const dateFormatted = settledDate ? new Date(settledDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Nov 6';
-                        return `${dateFormatted}, 15:00 NPT`;
+                        const dateFormatted = settledDate ? new Date(settledDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Market Closed';
+                        return dateFormatted === 'Market Closed' ? 'Market Closed' : `${dateFormatted}, 15:00 NPT`;
                       })()}
                     </div>
                   </div>
@@ -4220,11 +4270,14 @@ export default function StockDetailModal({
                         Safe Entry Action
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', marginTop: 2 }}>
-                        {isVetoed
+                        {overviewOrderFlowVeto?.isVetoed
                           ? `Order Flow Veto Law Active: Heavy institutional distribution detected. All accumulation signals are strictly overridden. DO NOT BUY!`
-                          : (isOverextended
-                              ? `Pullback Required: Wait for dip between Rs. ${overviewEntryZone?.min || (d.ltp * 0.92).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 0.96).toFixed(1)}. Do NOT chase at Rs. ${fmt(d.ltp)}!`
-                              : `Accumulate between Rs. ${overviewEntryZone?.min || (d.ltp * 0.98).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 1.01).toFixed(1)} (Entry Window: 1:15–2:30 PM • Protected by Operator Floor)`
+                          : (isVetoed
+                              ? `Avoid Entry: Unfavorable quantitative risk-reward or consolidation. Await confirmed setup.`
+                              : (isOverextended
+                                  ? `Pullback Required: Wait for dip between Rs. ${overviewEntryZone?.min || (d.ltp * 0.92).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 0.96).toFixed(1)}. Do NOT chase at Rs. ${fmt(d.ltp)}!`
+                                  : `Accumulate between Rs. ${overviewEntryZone?.min || (d.ltp * 0.98).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 1.01).toFixed(1)} (Entry Window: 1:15–2:30 PM • Protected by Operator Floor)`
+                                )
                             )
                         }
                       </div>
@@ -4238,7 +4291,7 @@ export default function StockDetailModal({
                       fontWeight: 800,
                       color: isVetoed ? '#ef4444' : (isOverextended ? '#f59e0b' : '#10b981')
                     }}>
-                      {isVetoed ? '🚨 AVOID ENTRY (VETOED)' : (isOverextended ? '⚠️ DO NOT CHASE' : '🟢 SAFE TO ACCUMULATE')}
+                      {overviewOrderFlowVeto?.isVetoed ? '🚨 AVOID ENTRY (VETOED)' : (isVetoed ? '🛑 AVOID ENTRY' : (isOverextended ? '⚠️ DO NOT CHASE' : '🟢 SAFE TO ACCUMULATE'))}
                     </div>
                   </div>
                 </div>
@@ -4501,6 +4554,7 @@ export default function StockDetailModal({
                 <StockTechnicalGaugeCard
                   stock={d}
                   history={realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory : (history || [])}
+                  brokerData={realBrokerAnalysis || d?.realBrokerAnalysis || d?.brokerAnalysis || d?.brokerData || null}
                 />
               </div>
 
@@ -4697,7 +4751,7 @@ export default function StockDetailModal({
                           fontFamily: 'var(--font-mono)',
                           marginTop: 4
                         }}>
-                          {modalRvol != null ? `${Number(modalRvol).toFixed(2)}x` : '1.00x'}
+                          {modalRvol != null ? `${Number(modalRvol).toFixed(2)}x` : '—'}
                         </div>
                         <div style={{ fontSize: 12, color: (modalRvol != null && modalRvol >= 1.4) ? '#34d399' : '#94a3b8', marginTop: 2, fontWeight: 600 }}>
                           {(modalRvol != null && modalRvol >= 1.4) ? 'Surge' : 'Normal'}
@@ -4906,23 +4960,49 @@ export default function StockDetailModal({
                           cursor: 'pointer'
                         }}
                       >
-                        {allTimeBrokerAnalysis?.coverage?.sessionCount
-                          ? `NET ACCUMULATION (${allTimeBrokerAnalysis.coverage.sessionCount}S since ${allTimeBrokerAnalysis.coverage.startDate || '2026-08-27'})`
-                          : 'NET ACCUMULATION (43S since 2026-08-27)'}
+                        {(() => {
+                          const sCount = allTimeBrokerAnalysis?.coverage?.sessionCount || allTimeBrokerAnalysis?.tradingDays || allTimeBrokerAnalysis?.availableDates?.length;
+                          const sStart = allTimeBrokerAnalysis?.coverage?.startDate || '2026-08-27';
+                          return sCount
+                            ? `NET ACCUMULATION (${sCount}S since ${sStart})`
+                            : `NET ACCUMULATION (Since ${sStart})`;
+                        })()}
                       </button>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      padding: '3px 10px',
-                      borderRadius: 8,
-                      background: (overviewBrokerTapeMode === '1D_LIVE' ? (pure1DBa?.adSignal === 'Accumulation') : overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.adSignal === 'Accumulation') : brokerConcentration.smartMoneyBias.includes('Cornering')) ? 'rgba(16, 185, 129, 0.15)' : (overviewBrokerTapeMode === '1D_LIVE' ? (pure1DBa?.adSignal === 'Distribution') : overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.adSignal === 'Distribution') : brokerConcentration.smartMoneyBias.includes('Offloading')) ? 'rgba(244, 63, 94, 0.15)' : 'rgba(56, 189, 248, 0.15)',
-                      color: (overviewBrokerTapeMode === '1D_LIVE' ? (pure1DBa?.adSignal === 'Accumulation') : overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.adSignal === 'Accumulation') : brokerConcentration.smartMoneyBias.includes('Cornering')) ? '#34d399' : (overviewBrokerTapeMode === '1D_LIVE' ? (pure1DBa?.adSignal === 'Distribution') : overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.adSignal === 'Distribution') : brokerConcentration.smartMoneyBias.includes('Offloading')) ? '#f87171' : '#38bdf8'
-                    }}>
-                      {overviewBrokerTapeMode === '1D_LIVE' ? (pure1DBa?.adSignal ? `Live: ${pure1DBa.adSignal}` : 'Live: Syncing...') : overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.adSignal ? `5D: ${broker5DData.adSignal}` : '5D: Syncing...') : brokerConcentration.smartMoneyBias}
-                    </span>
+                    {(() => {
+                      const allBuyTotal = (allTimeBrokerAnalysis?.topAccumulators || allTimeBrokerAnalysis?.allHoldings || []).reduce((s, b) => s + Math.max(0, Number(b.netQty ?? b.holdQty ?? 0)), 0);
+                      const allSellTotal = (allTimeBrokerAnalysis?.topDistributors || allTimeBrokerAnalysis?.allDistributors || allTimeBrokerAnalysis?.topSellers || []).reduce((s, b) => s + Math.abs(Number(b.netQty ?? b.sellQty ?? 0)), 0);
+                      const allTimeSignal = allTimeBrokerAnalysis?.adSignal || (allBuyTotal > allSellTotal * 1.15 ? 'Smart Money Accumulation' : allSellTotal > allBuyTotal * 1.15 ? 'Operator Offloading' : 'Balanced Cumulative Flow');
+                      const isAcc = overviewBrokerTapeMode === '1D_LIVE'
+                        ? (pure1DBa?.adSignal === 'Accumulation')
+                        : overviewBrokerTapeMode === '5D_SWING'
+                          ? (broker5DData?.adSignal === 'Accumulation')
+                          : (allTimeSignal.includes('Accumulation') || allTimeSignal.includes('Cornering'));
+                      const isDist = overviewBrokerTapeMode === '1D_LIVE'
+                        ? (pure1DBa?.adSignal === 'Distribution')
+                        : overviewBrokerTapeMode === '5D_SWING'
+                          ? (broker5DData?.adSignal === 'Distribution')
+                          : (allTimeSignal.includes('Distribution') || allTimeSignal.includes('Offloading'));
+                      const label = overviewBrokerTapeMode === '1D_LIVE'
+                        ? (pure1DBa?.adSignal ? `Live: ${pure1DBa.adSignal}` : 'Live: Syncing...')
+                        : overviewBrokerTapeMode === '5D_SWING'
+                          ? (broker5DData?.adSignal ? `5D: ${broker5DData.adSignal}` : '5D: Syncing...')
+                          : allTimeSignal;
+                      return (
+                        <span style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          padding: '3px 10px',
+                          borderRadius: 8,
+                          background: isAcc ? 'rgba(16, 185, 129, 0.15)' : isDist ? 'rgba(244, 63, 94, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                          color: isAcc ? '#34d399' : isDist ? '#f87171' : '#38bdf8'
+                        }}>
+                          {label}
+                        </span>
+                      );
+                    })()}
                     <button
                       type="button"
                       onClick={() => setActiveTab('broker_analysis')}
@@ -5084,7 +5164,7 @@ export default function StockDetailModal({
                   }}>
                     <div>
                       <span style={{ color: '#a5b4fc', fontWeight: 800 }}>
-                        {allTimeBrokerAnalysis?.coverage?.label || 'Since 2026-08-27 (42 sessions)'}
+                        {allTimeBrokerAnalysis?.coverage?.label || (allTimeBrokerAnalysis?.coverage?.sessionCount ? `Since ${allTimeBrokerAnalysis.coverage.startDate || '2026-08-27'} (${allTimeBrokerAnalysis.coverage.sessionCount} sessions)` : `Since ${allTimeBrokerAnalysis?.coverage?.startDate || '2026-08-27'}`)}
                       </span>
                       <span style={{ marginLeft: 6 }}>
                         • Pre-{allTimeBrokerAnalysis?.coverage?.startDate || '2026-08-27'} baseline unknown • Unadjusted for splits / bonus shares
@@ -5102,7 +5182,11 @@ export default function StockDetailModal({
                   <div style={{ background: 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: 12, padding: '12px 14px' }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#34d399', textTransform: 'uppercase', marginBottom: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
                       <span>Top Accumulators</span>
-                      <span>BCR₃: {overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.bcr3BuyPct ?? 0) : (brokerConcentration.bcr3BuyPct ?? 0)}%</span>
+                      <span>BCR₃: {overviewBrokerTapeMode === '5D_SWING'
+                        ? (broker5DData?.bcr3BuyPct ?? '—')
+                        : overviewBrokerTapeMode === 'ALL_TIME'
+                          ? (allTimeBrokerAnalysis?.bcr3BuyPct ?? brokerConcentration.bcr3BuyPct ?? 0)
+                          : (pure1DBa?.bcr3BuyPct ?? brokerConcentration.bcr3BuyPct ?? 0)}%</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {(() => {
@@ -5110,7 +5194,7 @@ export default function StockDetailModal({
                           ? (pure1DBa?.topNetBuyers?.length ? pure1DBa.topNetBuyers : (pure1DBa?.topAccumulators?.length ? pure1DBa.topAccumulators : (pure1DBa?.topBuyers?.length ? pure1DBa.topBuyers : (brokerConcentration.topNetAccumulators || []))))
                           : overviewBrokerTapeMode === '5D_SWING'
                             ? (broker5DData?.topAccumulators?.length ? broker5DData.topAccumulators : (broker5DData?.topNetBuyers || []))
-                            : (allTimeBrokerAnalysis?.topHoldings?.length ? allTimeBrokerAnalysis.topHoldings : (brokerConcentration.topNetAccumulators || []));
+                            : (allTimeBrokerAnalysis?.topHoldings?.length ? allTimeBrokerAnalysis.topHoldings : (allTimeBrokerAnalysis?.topAccumulators || []));
                         if (!accList || accList.length === 0) {
                           return <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '8px 0' }}>No buyer records</div>;
                         }
@@ -5150,7 +5234,11 @@ export default function StockDetailModal({
                   <div style={{ background: 'rgba(244, 63, 94, 0.04)', border: '1px solid rgba(244, 63, 94, 0.2)', borderRadius: 12, padding: '12px 14px' }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#f87171', textTransform: 'uppercase', marginBottom: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
                       <span>Top Distributors</span>
-                      <span>BCR₃: {overviewBrokerTapeMode === '5D_SWING' ? (broker5DData?.bcr3SellPct ?? 0) : (brokerConcentration.bcr3SellPct || 0)}%</span>
+                      <span>BCR₃: {overviewBrokerTapeMode === '5D_SWING'
+                        ? (broker5DData?.bcr3SellPct ?? '—')
+                        : overviewBrokerTapeMode === 'ALL_TIME'
+                          ? (allTimeBrokerAnalysis?.bcr3SellPct ?? allTimeBrokerAnalysis?.scr3SellPct ?? '—')
+                          : (pure1DBa?.bcr3SellPct ?? brokerConcentration.bcr3SellPct ?? 0)}%</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {(() => {
@@ -5158,7 +5246,7 @@ export default function StockDetailModal({
                           ? (pure1DBa?.topNetSellers?.length ? pure1DBa.topNetSellers : (pure1DBa?.topDistributors?.length ? pure1DBa.topDistributors : (pure1DBa?.topSellers?.length ? pure1DBa.topSellers : (brokerConcentration.topNetDistributors || []))))
                           : overviewBrokerTapeMode === '5D_SWING'
                             ? (broker5DData?.topDistributors?.length ? broker5DData.topDistributors : (broker5DData?.topNetSellers || []))
-                            : (brokerConcentration.topNetDistributors || []);
+                            : (allTimeBrokerAnalysis?.topDistributors?.length ? allTimeBrokerAnalysis.topDistributors : (allTimeBrokerAnalysis?.allDistributors?.length ? allTimeBrokerAnalysis.allDistributors : (allTimeBrokerAnalysis?.topSellers || [])));
                         if (!distList || distList.length === 0) {
                           return <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '8px 0' }}>No seller records</div>;
                         }
@@ -5236,7 +5324,7 @@ export default function StockDetailModal({
               </div>
 
               {/* ── 9. Shareholding Pattern ── */}
-              {(d.promoterPercentage > 0 || d.promoterPct > 0 || d.publicPercentage > 0 || d.publicFloatPct > 0 || d.listedShares > 0 || stockMetrics.promoterPct > 0) && (
+              {(d.promoterPercentage != null || d.publicPercentage != null || d.listedShares > 0) && (
                 <div style={{
                   background: '#111827',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -5247,27 +5335,35 @@ export default function StockDetailModal({
                   <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc', marginBottom: 12 }}>
                     Shareholding Breakdown
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: '#cbd5e1', marginBottom: 8, fontWeight: 700, flexWrap: 'wrap', gap: 6 }}>
-                    <span style={{ color: '#38bdf8' }}>
-                      ● Promoter Shares: {Number(stockMetrics.promoterShares).toLocaleString()} ({stockMetrics.promoterPct.toFixed(1)}%)
-                    </span>
-                    <span style={{ color: '#10B981' }}>
-                      ● Public Shares: {Number(stockMetrics.publicShares).toLocaleString()} ({stockMetrics.publicPct.toFixed(1)}%)
-                    </span>
-                  </div>
+                  {stockMetrics.promoterPct != null ? (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: '#cbd5e1', marginBottom: 8, fontWeight: 700, flexWrap: 'wrap', gap: 6 }}>
+                        <span style={{ color: '#38bdf8' }}>
+                          ● Promoter Shares: {Number(stockMetrics.promoterShares).toLocaleString()} ({stockMetrics.promoterPct.toFixed(1)}%)
+                        </span>
+                        <span style={{ color: '#10B981' }}>
+                          ● Public Shares: {Number(stockMetrics.publicShares).toLocaleString()} ({stockMetrics.publicPct.toFixed(1)}%)
+                        </span>
+                      </div>
 
-                  <div style={{ display: 'flex', height: 24, borderRadius: 8, overflow: 'hidden', fontWeight: 800, fontSize: 12, textAlign: 'center', lineHeight: '24px' }}>
-                    {stockMetrics.promoterPct > 0 && (
-                      <div style={{ width: `${stockMetrics.promoterPct}%`, background: '#0284c7', color: '#ffffff' }}>
-                        {stockMetrics.promoterPct >= 10 ? `${stockMetrics.promoterPct.toFixed(1)}%` : ''}
+                      <div style={{ display: 'flex', height: 24, borderRadius: 8, overflow: 'hidden', fontWeight: 800, fontSize: 12, textAlign: 'center', lineHeight: '24px' }}>
+                        {stockMetrics.promoterPct > 0 && (
+                          <div style={{ width: `${stockMetrics.promoterPct}%`, background: '#0284c7', color: '#ffffff' }}>
+                            {stockMetrics.promoterPct >= 10 ? `${stockMetrics.promoterPct.toFixed(1)}%` : ''}
+                          </div>
+                        )}
+                        {stockMetrics.publicPct > 0 && (
+                          <div style={{ width: `${stockMetrics.promoterPct > 0 ? stockMetrics.publicPct : 100}%`, background: '#10B981', color: '#0f172a' }}>
+                            {stockMetrics.publicPct >= 10 ? `${stockMetrics.publicPct.toFixed(1)}% Public Float` : ''}
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {stockMetrics.publicPct > 0 && (
-                      <div style={{ width: `${stockMetrics.promoterPct > 0 ? stockMetrics.publicPct : 100}%`, background: '#10B981', color: '#0f172a' }}>
-                        {stockMetrics.publicPct >= 10 ? `${stockMetrics.publicPct.toFixed(1)}% Public Float` : ''}
-                      </div>
-                    )}
-                  </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 12.5, color: '#94a3b8', fontStyle: 'italic', padding: '6px 0' }}>
+                      Promoter & Public float distribution: Unverified / Not Disclosed in Filings
+                    </div>
+                  )}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#94a3b8', marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                     <span>Total Listed Shares</span>
@@ -5289,6 +5385,7 @@ export default function StockDetailModal({
               <StockTechnicalGaugeCard
                 stock={d}
                 history={realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory : (history || [])}
+                brokerData={realBrokerAnalysis || d?.realBrokerAnalysis || d?.brokerAnalysis || d?.brokerData || null}
               />
             </div>
 
@@ -7088,7 +7185,7 @@ export default function StockDetailModal({
           // Bulk transactions list
           const bulkList = (Array.isArray(realFloorsheet?.bulkTransactions) && realFloorsheet.bulkTransactions.length > 0)
             ? realFloorsheet.bulkTransactions
-            : [...fsRows].filter(r => Number(r.qty || 0) >= 500 || Number(r.amount || 0) >= 250000).sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0));
+            : [...fsRows].filter(r => Number(r.qty || 0) >= BULK_DEAL_MIN_QTY || Number(r.amount || 0) >= BULK_DEAL_MIN_AMOUNT).sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0));
 
           const handleApplyFloorsheetFilter = () => {
             const b = floorsheetBuyerInput.trim();
@@ -8176,7 +8273,7 @@ export default function StockDetailModal({
                   {(() => {
                     const yr = performanceValues[5];
                     return <div style={{ fontSize: 13, fontWeight: 900, color: yr ? (yr.bull ? 'var(--bull)' : '#F43F5E') : 'var(--bull)' }}>
-                      {yr ? yr.val : '+14.8%'}
+                      {yr ? yr.val : '—'}
                       {yr?.isReal && <span style={{ fontSize: 12, display: 'block', color: '#10B981', fontWeight: 700 }}>● Live</span>}
                     </div>;
                   })()}
@@ -8533,14 +8630,14 @@ export default function StockDetailModal({
                     fontWeight: 900,
                     fontFamily: 'var(--font-mono)'
                   }}>
-                    {piotroskiScore.insufficientData ? '—' : `${piotroskiScore.score} / 9`}
+                    {piotroskiScore.insufficientData ? '—' : `${piotroskiScore.score} / ${piotroskiScore.totalCriteria || 9}`}
                   </span>
                   <div style={{ fontSize: 12, fontWeight: 800, color: piotroskiScore.color, marginTop: 4 }}>
                     {piotroskiScore.rating}
                   </div>
                   {piotroskiScore.insufficientData && (
                     <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                      {piotroskiScore.realDataCount}/9 criteria with NEPSE data
+                      {piotroskiScore.realDataCount}/${piotroskiScore.totalCriteria || 9} criteria with NEPSE data
                     </div>
                   )}
                 </div>
@@ -8672,7 +8769,7 @@ export default function StockDetailModal({
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>Rs. {fmt(p.ltp)}</span>
-                      <span style={{ fontSize: 12, color: 'var(--bull)', marginLeft: 8 }}>P/E: {fmt(p.pe || 22)}x</span>
+                      <span style={{ fontSize: 12, color: 'var(--bull)', marginLeft: 8 }}>P/E: {p.pe ? `${fmt(p.pe)}x` : '—'}</span>
                     </div>
                   </div>
                 ))}
@@ -8684,19 +8781,27 @@ export default function StockDetailModal({
 
         {/* ════ TAB 6: COMPARE (Share Hub 3-Section Reference Parity) ════ */}
         {activeTab === 'compare' && (() => {
-          const handleCompare = async () => {
-            const sym = compareSymbol.trim().toUpperCase();
+          const handleCompare = async (overrideSym) => {
+            const sym = String(overrideSym ?? compareSymbol ?? '').trim().toUpperCase();
             if (!sym || sym === d.symbol) return;
             const match = Array.isArray(allStocks) ? allStocks.find(s => String(s.symbol).toUpperCase() === sym) : null;
-            if (!match && Array.isArray(allStocks) && allStocks.length > 0) {
+            if (!overrideSym && !match && Array.isArray(allStocks) && allStocks.length > 0) {
               setCompareError(`No matching stock found for '${sym}'. Please enter a valid NEPSE ticker.`);
               return;
             }
-            setCompareError('');
+            const compSeq = ++compareSeqRef.current;
             setCompareLoading(true);
+            setCompareError('');
             try {
-              fetchRealPriceHistory(sym, 365).catch(() => {});
-              const result = await fetchCompareStocks(d.symbol, sym);
+              const [result, peerHist] = await Promise.all([
+                fetchCompareStocks(d.symbol, sym),
+                fetchRealPriceHistory(sym, 365).catch(() => null)
+              ]);
+              if (compSeq !== compareSeqRef.current) return;
+              const resolvedHist = Array.isArray(peerHist) && peerHist.length > 0
+                ? peerHist
+                : (getCachedRealPriceHistory(sym) || []);
+              setPeerPriceHistory(Array.isArray(resolvedHist) ? resolvedHist : []);
               if (result && result.stock2 && (result.stock2.ltp || result.stock2.companyName || result.stock2.symbol === sym)) {
                 setCompareData(result);
                 setComparePeer(result.stock2 || result.data?.[1] || null);
@@ -8704,9 +8809,12 @@ export default function StockDetailModal({
                 setCompareError(`No matching stock found for '${sym}'.`);
               }
             } catch (_) {
-              setCompareError(`Failed to load comparison data for '${sym}'.`);
+              if (compSeq === compareSeqRef.current) {
+                setCompareError(`Failed to load comparison data for '${sym}'.`);
+              }
+            } finally {
+              if (compSeq === compareSeqRef.current) setCompareLoading(false);
             }
-            setCompareLoading(false);
           };
 
           const rawS1 = compareData?.stock1 || d;
@@ -8714,8 +8822,12 @@ export default function StockDetailModal({
           const s1 = { ...d, ...(rawS1 || {}) };
           const s2 = rawS2 ? { ...rawS2 } : null;
 
+          const effectivePeerHist = (Array.isArray(peerPriceHistory) && peerPriceHistory.length > 0)
+            ? peerPriceHistory
+            : (s2?.symbol ? (getCachedRealPriceHistory(s2.symbol) || []) : []);
+
           const m1 = calculateStockMetrics(s1, realPriceHistory || []);
-          const m2 = s2 ? calculateStockMetrics(s2, []) : null;
+          const m2 = s2 ? calculateStockMetrics(s2, effectivePeerHist) : null;
 
           const getPerf = (st, idx) => {
             if (!st) return null;
@@ -8749,12 +8861,6 @@ export default function StockDetailModal({
               if (pastClose > 0 && curClose > 0) {
                 return +(((curClose - pastClose) / pastClose) * 100).toFixed(2);
               }
-            }
-            if (st.pChange != null && !isNaN(Number(st.pChange))) {
-              const dayP = Number(st.pChange);
-              const multipliers = [1.2, 1.8, 3.2, 5.5, 8.2, 12.0];
-              const est = dayP * (multipliers[idx] || 1);
-              return +Math.max(-15, Math.min(15, est)).toFixed(2);
             }
             return null;
           };
@@ -8854,7 +8960,7 @@ export default function StockDetailModal({
                     style={{ flex: 1, background: '#0a1020', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, color: '#fff', fontSize: 13, padding: '9px 12px' }}
                   />
                   <button
-                    onClick={handleCompare}
+                    onClick={() => handleCompare()}
                     disabled={compareLoading}
                     style={{ background: '#10B981', color: '#042f2e', border: 'none', borderRadius: 10, padding: '9px 18px', fontSize: 12.5, fontWeight: 900, cursor: 'pointer' }}
                   >
@@ -8886,13 +8992,7 @@ export default function StockDetailModal({
                               type="button"
                               onClick={() => {
                                 setCompareSymbol(p.symbol);
-                                setCompareLoading(true);
-                                fetchCompareStocks(d.symbol, p.symbol).then(res => {
-                                  if (res) {
-                                    setCompareData(res);
-                                    setComparePeer(res.stock2 || res.data?.[1] || p);
-                                  }
-                                }).catch(() => {}).finally(() => setCompareLoading(false));
+                                handleCompare(p.symbol);
                               }}
                               style={{
                                 padding: '6px 12px',

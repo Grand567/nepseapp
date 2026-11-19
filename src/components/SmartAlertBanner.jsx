@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Bell, ArrowRight, X } from 'lucide-react';
 
 export function SmartAlertBanner({ onOpenCard }) {
   const [activeAlert, setActiveAlert] = useState(null);
   const [visible, setVisible] = useState(false);
+  const timerRef = useRef(null);
 
   useEffect(() => {
     const handleAlertReceived = (e) => {
@@ -13,15 +14,15 @@ export function SmartAlertBanner({ onOpenCard }) {
       setVisible(true);
 
       // Auto dismiss banner after 12 seconds if not interacted
-      const timer = setTimeout(() => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
         setVisible(false);
       }, 12000);
-
-      return () => clearTimeout(timer);
     };
 
     window.addEventListener('dravyashree_smart_alert_received', handleAlertReceived);
     return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
       window.removeEventListener('dravyashree_smart_alert_received', handleAlertReceived);
     };
   }, []);

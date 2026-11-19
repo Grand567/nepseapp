@@ -1101,12 +1101,12 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
   const scr3SellPct = bcr3SellPct;
 
   const concentrationPct = bcr3BuyPct;
-  const bcr3 = totalTradedQty > 0 ? +(top3BuyTotal / totalTradedQty).toFixed(4) : 0;
-  const bcr5 = totalTradedQty > 0 ? +(top5BuyTotal / totalTradedQty).toFixed(4) : 0;
+  const bcr3 = genuineTradedQty > 0 ? +(top3BuyTotal / genuineTradedQty).toFixed(4) : 0;
+  const bcr5 = genuineTradedQty > 0 ? +(top5BuyTotal / genuineTradedQty).toFixed(4) : 0;
   const bcr3Buy = bcr3;
   const bcr5Buy = bcr5;
-  const bcr3Sell = totalTradedQty > 0 ? +(top3SellTotal / totalTradedQty).toFixed(4) : 0;
-  const bcr5Sell = totalTradedQty > 0 ? +(top5SellTotal / totalTradedQty).toFixed(4) : 0;
+  const bcr3Sell = genuineTradedQty > 0 ? +(top3SellTotal / genuineTradedQty).toFixed(4) : 0;
+  const bcr5Sell = genuineTradedQty > 0 ? +(top5SellTotal / genuineTradedQty).toFixed(4) : 0;
 
   const dailyFlow = Object.values(dateMap).map(df => {
     const dayBrokers = Object.values(df.brokerMap).map(b => ({
@@ -1146,10 +1146,10 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
       totalTrades: dayTrades,
       vwap: dayVol > 0 ? +(dayTurnover / dayVol).toFixed(2) : 0,
       netFlow: top3DayNetBuy - top3DayNetSell,
-      bcr3BuyPct: +((dayTop3BuyTotal / dayBaseBuyVol) * 100).toFixed(1),
-      bcr5BuyPct: +((dayTop5BuyTotal / dayBaseBuyVol) * 100).toFixed(1),
-      bcr3SellPct: +((dayTop3SellTotal / dayBaseSellVol) * 100).toFixed(1),
-      bcr5SellPct: +((dayTop5SellTotal / dayBaseSellVol) * 100).toFixed(1),
+      bcr3BuyPct: Math.min(100.0, +((dayTop3BuyTotal / Math.max(1, dayBaseBuyVol)) * 100).toFixed(1)),
+      bcr5BuyPct: Math.min(100.0, +((dayTop5BuyTotal / Math.max(1, dayBaseBuyVol)) * 100).toFixed(1)),
+      bcr3SellPct: Math.min(100.0, +((dayTop3SellTotal / Math.max(1, dayBaseSellVol)) * 100).toFixed(1)),
+      bcr5SellPct: Math.min(100.0, +((dayTop5SellTotal / Math.max(1, dayBaseSellVol)) * 100).toFixed(1)),
       topBuyer: dayTopBuyers[0] || null,
       topSeller: dayTopSellers[0] || null,
       topHolder: dayTopHolders[0] || null,

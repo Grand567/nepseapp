@@ -8,6 +8,7 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, FacebookAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut as firebaseSignOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
+import { clearSensitiveStorageOnSignOut } from './profileVaultStorage.js';
 
 // ─── Firebase Setup (only activates if real keys are present) ─────────────────
 
@@ -57,9 +58,15 @@ if (isFirebaseConfigured) {
 
 const LOCAL_USERS_KEY = 'nepse_hub_local_users';
 const LOCAL_SESSION_KEY = 'nepse_hub_local_session';
+const SYNC_TOKEN_SESSION_KEY = 'nepse_sync_session_token';
 
-const hashSimple = (str) => {
-  // A simple deterministic hash (not cryptographic — data is local-only)
+function getWebCryptoSubtle() {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.subtle) return globalThis.crypto.subtle;
+  if (typeof crypto !== 'undefined' && crypto.webcrypto?.subtle) return crypto.webcrypto.subtle;
+  return null;
+}
+
+const legacyHashSimple = (str) => {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
@@ -67,6 +74,55 @@ const hashSimple = (str) => {
     hash |= 0;
   }
   return Math.abs(hash).toString(36);
+};
+
+async function sha256Hex(str) {
+  const subtle = getWebCryptoSubtle();
+  if (!subtle) return legacyHashSimple(str);
+  const digest = await subtle.digest('SHA-256', new TextEncoder().encode(String(str)));
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hashPasswordClient(password, emailKey) {
+  const subtle = getWebCryptoSubtle();
+  if (!subtle) {
+    throw new Error('Secure WebCrypto PBKDF2 hashing is required.');
+  }
+  const enc = new TextEncoder();
+  const baseKey = await subtle.importKey('raw', enc.encode(String(password)), { name: 'PBKDF2' }, false, ['deriveBits']);
+  const bits = await subtle.deriveBits(
+    { name: 'PBKDF2', salt: enc.encode(`drabyashree-auth-v2:${emailKey}`), iterations: 100000, hash: 'SHA-256' },
+    baseKey,
+    256
+  );
+  return 'pbkdf2_v2_' + Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+let _syncSessionToken = (() => {
+  try {
+    return typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SYNC_TOKEN_SESSION_KEY) : null;
+  } catch {
+    return null;
+  }
+})();
+
+export const getSyncSessionToken = () => {
+  if (_syncSessionToken) return _syncSessionToken;
+  try {
+    return typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SYNC_TOKEN_SESSION_KEY) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const setSyncSessionToken = (token) => {
+  _syncSessionToken = token || null;
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      if (token) sessionStorage.setItem(SYNC_TOKEN_SESSION_KEY, token);
+      else sessionStorage.removeItem(SYNC_TOKEN_SESSION_KEY);
+    }
+  } catch (_) {}
 };
 
 const getLocalUsers = () => {
@@ -260,21 +316,31 @@ pingSyncServer();
  * Hydrates cloud data directly into localStorage and dispatches reactive events.
  */
 export const hydrateLocalDataFromCloud = (uid, cloudData) => {
-  if (!cloudData || typeof cloudData !== 'object') return;
+  if (!cloudData || typeof cloudData !== 'object' || !uid) return;
 
   try {
-    const userProfileKey  = `nepse_hub_${uid}_profiles`;
-    const userTxKey       = `nepse_hub_${uid}_transactions`;
-    const bulkAccountsKey = 'nepse_hub_bulk_ipo_accounts';
+    const userProfileKey = `nepse_hub_${uid}_profiles`;
+    const userTxKey = `nepse_hub_${uid}_transactions`;
 
-    // 1. Profiles & Bulk Accounts
+    // 1. Scoped User Profiles only (preserve local AES-GCM vaultEnvelopes, never mirror to global keys)
     const profiles = cloudData.profiles || cloudData.bulkAccounts || [];
     if (Array.isArray(profiles) && profiles.length > 0) {
-      localStorage.setItem(userProfileKey, JSON.stringify(profiles));
-      localStorage.setItem(bulkAccountsKey, JSON.stringify(profiles));
-      window.dispatchEvent(new StorageEvent('storage', { key: userProfileKey, newValue: JSON.stringify(profiles) }));
-      window.dispatchEvent(new StorageEvent('storage', { key: bulkAccountsKey, newValue: JSON.stringify(profiles) }));
-      window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: userProfileKey, profiles } }));
+      let existingLocal = [];
+      try {
+        const rawLocal = localStorage.getItem(userProfileKey);
+        if (rawLocal) existingLocal = JSON.parse(rawLocal);
+      } catch (_) {}
+      const mergedProfiles = profiles.map(cp => {
+        const localMatch = Array.isArray(existingLocal)
+          ? existingLocal.find(lp => (cp.boid && lp.boid === cp.boid) || (cp.id && lp.id === cp.id))
+          : null;
+        return localMatch?.vaultEnvelope
+          ? { ...cp, vaultEnvelope: localMatch.vaultEnvelope, hasLocalCredentials: true }
+          : cp;
+      });
+      localStorage.setItem(userProfileKey, JSON.stringify(mergedProfiles));
+      window.dispatchEvent(new StorageEvent('storage', { key: userProfileKey, newValue: JSON.stringify(mergedProfiles) }));
+      window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { userId: uid, key: userProfileKey } }));
     }
 
     // 2. Transactions
@@ -320,24 +386,17 @@ export const hydrateLocalDataFromCloud = (uid, cloudData) => {
       }
     }
 
-    // 8. Credentials Vault
-    if (Array.isArray(cloudData.credentials) && cloudData.credentials.length > 0) {
-      localStorage.setItem('nepse_credentials_vault', JSON.stringify(cloudData.credentials));
-    }
-
-    // 9. Dispatch custom sync restoration event
+    // 8. Dispatch custom sync restoration event (no raw secrets)
     window.dispatchEvent(new CustomEvent('nepse_cloud_data_restored', {
       detail: {
         uid,
         profiles,
         transactions: cloudData.transactions || [],
-        bulkAccounts: profiles,
         watchlist: cloudData.watchlist || [],
         tradeNotes: cloudData.tradeNotes || [],
         stockAlerts: cloudData.stockAlerts || [],
         tradeJournal: cloudData.tradeJournal || [],
-        paperTrading: cloudData.paperTrading || null,
-        credentials: cloudData.credentials || []
+        paperTrading: cloudData.paperTrading || null
       }
     }));
 
@@ -398,16 +457,19 @@ export const registerLocal = async (displayName, email, password) => {
   const users = getLocalUsers();
   const emailKey = email.trim().toLowerCase();
 
-  const hashedPw = hashSimple(password + emailKey);
-  const uid = 'usr_' + hashSimple(emailKey);
+  const hashedPw = await hashPasswordClient(password, emailKey);
+  let uid = 'usr_' + (await sha256Hex(emailKey)).slice(0, 12);
 
-  // Collect any pre-existing guest data to sync into new account
+  // Collect pre-existing non-secret guest metadata only (never upload passwords/PINs/vaults)
   let initialData = {};
   try {
-    const bulkAccountsKey = 'nepse_hub_bulk_ipo_accounts';
-    const guestProfiles = JSON.parse(localStorage.getItem('nepse_hub_guest_local_profiles') || '[]');
-    const rawBulk = JSON.parse(localStorage.getItem(bulkAccountsKey) || '[]');
-    const profiles = rawBulk.length > 0 ? rawBulk : guestProfiles;
+    const guestProfilesRaw = JSON.parse(localStorage.getItem('nepse_hub_guest_local_profiles') || '[]');
+    const profiles = Array.isArray(guestProfilesRaw)
+      ? guestProfilesRaw.map(({ password: _p, crn: _c, pin: _pn, transactionPin: _tp, vaultEnvelope: _ve, ...safe }) => ({
+          ...safe,
+          hasLocalCredentials: Boolean(_p || _pn || _tp || _ve)
+        }))
+      : [];
     const watchlist = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]');
     const notes = JSON.parse(localStorage.getItem('nepse_trade_notes') || '[]');
     const alerts = JSON.parse(localStorage.getItem('nepse_stock_alerts') || '[]');
@@ -442,6 +504,8 @@ export const registerLocal = async (displayName, email, password) => {
 
     if (regRes.ok) {
       const regJson = await regRes.json();
+      if (regJson.token) setSyncSessionToken(regJson.token);
+      if (regJson.user?.uid) uid = regJson.user.uid;
       if (regJson.data && typeof regJson.data === 'object') {
         _cachedCloudData = regJson.data;
         hydrateLocalDataFromCloud(uid, regJson.data);
@@ -480,13 +544,13 @@ export const signInLocal = async (email, password) => {
 
   const users = getLocalUsers();
   const emailKey = email.trim().toLowerCase();
-  const hashedPw = hashSimple(password + emailKey);
-  const uid = 'usr_' + hashSimple(emailKey);
+  const hashedPw = await hashPasswordClient(password, emailKey);
+  const legacyPwHash = legacyHashSimple(password + emailKey);
   let record = users[emailKey];
+  let uid = record?.uid || ('usr_' + (await sha256Hex(emailKey)).slice(0, 12));
 
   let serverAuthSuccess = false;
 
-  // Try checking the remote Cloud Sync API on login (cross-device account restoration)
   try {
     const res = await callSyncProxy('/login', {
       method: 'POST',
@@ -495,7 +559,7 @@ export const signInLocal = async (email, password) => {
         app: 'nepse',
         email: emailKey,
         passwordHash: hashedPw,
-        autoRegisterIfMissing: false
+        legacyPasswordHash: legacyPwHash
       })
     });
 
@@ -503,11 +567,12 @@ export const signInLocal = async (email, password) => {
       const json = await res.json();
       if (json.success) {
         serverAuthSuccess = true;
+        if (json.token) setSyncSessionToken(json.token);
+        if (json.user?.uid) uid = json.user.uid;
         if (json.data && typeof json.data === 'object' && Object.keys(json.data).length > 0) {
           _cachedCloudData = json.data;
           hydrateLocalDataFromCloud(uid, json.data);
         }
-        // Update or populate local user record
         record = {
           uid,
           displayName: json.user?.name || record?.displayName || email.split('@')[0],
@@ -532,12 +597,11 @@ export const signInLocal = async (email, password) => {
     console.warn('[CloudSync] Remote sync login notice:', err.message);
   }
 
-  // If server was unreachable, check local credentials
   if (!serverAuthSuccess) {
     if (!record) {
       throw new Error('Unable to connect to sync server. Please verify your internet connection or click "Register" to create a new account.');
     }
-    if (record.passwordHash && record.passwordHash !== hashedPw) {
+    if (record.passwordHash && record.passwordHash !== hashedPw && record.passwordHash !== legacyPwHash) {
       throw new Error('Incorrect password. Please try again.');
     }
   }
@@ -573,9 +637,13 @@ export const signInGuest = () => {
 // ─── Sign Out ─────────────────────────────────────────────────────────────────
 
 export const signOut = async () => {
+  const currentUid = getLocalSession()?.uid || _localUser?.uid || null;
   if (isFirebaseConfigured && auth) {
     try { await firebaseSignOut(auth); } catch (_) {}
   }
+  setSyncSessionToken(null);
+  _cachedCloudData = null;
+  clearSensitiveStorageOnSignOut(currentUid);
   notifyLocalAuth(null);
 };
 
@@ -586,10 +654,11 @@ export const isConfigured = () => isFirebaseConfigured;
 export const getCurrentAuthToken = async () => {
   if (isFirebaseConfigured && auth && auth.currentUser) {
     try {
-      return await auth.currentUser.getIdToken();
+      const idTok = await auth.currentUser.getIdToken();
+      if (idTok) return idTok;
     } catch (_) {}
   }
-  return null;
+  return getSyncSessionToken();
 };
 
 export const checkRedirectResult = async () => {
@@ -622,9 +691,9 @@ export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null
 
   const sanitizeProfilesForCloud = (profiles) => {
     if (!Array.isArray(profiles)) return [];
-    return profiles.map(({ password, crn, pin, transactionPin, ...safeProfile }) => ({
+    return profiles.map(({ password, crn, pin, transactionPin, vaultEnvelope, ...safeProfile }) => ({
       ...safeProfile,
-      hasLocalCredentials: Boolean(password || pin || transactionPin)
+      hasLocalCredentials: Boolean(password || pin || transactionPin || vaultEnvelope)
     }));
   };
 
@@ -634,14 +703,19 @@ export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null
     ...(Array.isArray(normalizedPayload.bulkAccounts) ? { bulkAccounts: sanitizeProfilesForCloud(normalizedPayload.bulkAccounts) } : {}),
     lastUpdatedAt: Date.now()
   };
+  delete dataToSave.credentials;
   if (email) dataToSave.email = email;
 
-  // 1. Primary: Push to Cloud Sync Bridge
-  if (email && email.includes('@')) {
+  // 1. Primary: Push to Cloud Sync Bridge with signed bearer token
+  const syncToken = getSyncSessionToken();
+  if (email && email.includes('@') && syncToken) {
     try {
       const res = await callSyncProxy('/push', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${syncToken}`
+        },
         body: JSON.stringify({
           app: 'nepse',
           email: email.trim().toLowerCase(),
@@ -686,12 +760,16 @@ export const fetchUserDataFromCloud = async (userId, userEmail = null) => {
 
   const email = resolveUserEmail(userId, userEmail);
 
-  // 1. Primary: Pull from Cloud Sync Bridge
-  if (email && email.includes('@')) {
+  // 1. Primary: Pull from Cloud Sync Bridge with signed bearer token
+  const syncToken = getSyncSessionToken();
+  if (email && email.includes('@') && syncToken) {
     try {
       const res = await callSyncProxy('/pull', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${syncToken}`
+        },
         body: JSON.stringify({
           app: 'nepse',
           email: email.trim().toLowerCase()

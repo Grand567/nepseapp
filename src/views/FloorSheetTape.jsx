@@ -71,8 +71,7 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
 
     try {
       const sym = filterScrip !== 'ALL' ? filterScrip : (searchQuery.trim() ? searchQuery.trim().toUpperCase() : '');
-      // Cap tick-by-tick contract query to max 5 days to prevent mobile WebView OOM crashes
-      const numDays = Math.min(daysMap[currentTf] || 1, 5);
+      const numDays = daysMap[currentTf] || 1;
       const opts = {
         buyer: buyerFilter.trim(),
         seller: sellerFilter.trim(),
@@ -408,15 +407,16 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
             const isBlock = kitta >= 5000 || amount >= 1000000;
             const isInst = kitta >= 2000 || amount >= 500000;
 
+            const isCross = b !== '—' && b === s;
             const tag = isBlock
               ? (isNe ? 'ब्लक ट्रेड' : 'Block')
               : isInst
               ? (isNe ? 'संस्थागत' : 'Inst.')
-              : b === s
+              : isCross
               ? (isNe ? 'म्याचिङ' : 'Cross')
               : (isNe ? 'नियमित' : 'Regular');
 
-            const tagColor = isBlock ? 'rose' : isInst ? 'sky' : b === s ? 'amber' : 'slate';
+            const tagColor = isBlock ? 'rose' : isInst ? 'sky' : isCross ? 'amber' : 'slate';
 
             return (
               <div

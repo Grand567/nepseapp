@@ -26,7 +26,7 @@ export function StockSelectionScreener({
 
   // Filter States
   const [actionFilter, setActionFilter] = useState<'ALL' | 'BUY' | 'WATCH' | 'AVOID'>('ALL');
-  const [floorFilter, setFloorFilter] = useState<'ALL' | 'AT_FLOOR' | 'EXTENDED' | 'UNDERWATER'>('ALL');
+  const [floorFilter, setFloorFilter] = useState<'ALL' | 'SWING_LEADERS' | 'AT_FLOOR' | 'EXTENDED' | 'UNDERWATER'>('ALL');
   const [selectedSector, setSelectedSector] = useState<string>('ALL');
   const [minScore, setMinScore] = useState<number>(50);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -93,12 +93,12 @@ export function StockSelectionScreener({
           prevClose,
           volume,
           turnover,
-          eps: Number(stock.eps ?? 18),
-          bookValue: Number(stock.bookValue ?? 160),
+          eps: stock.eps != null ? Number(stock.eps) : null,
+          bookValue: (stock.bookValue != null || stock.bvps != null) ? Number(stock.bookValue ?? stock.bvps) : null,
           npl: stock.npl ?? null,
           car: stock.car ?? null,
-          listedShares: stock.listedShares ?? 10000000,
-          publicPercentage: stock.publicPercentage ?? 40
+          listedShares: stock.listedShares != null ? Number(stock.listedShares) : null,
+          publicPercentage: stock.publicPercentage != null ? Number(stock.publicPercentage) : null
         },
         brokerSignals: {
           compositeScore: bcr3Buy > 0 ? Math.min(100, Math.max(10, Math.round(bcr3Buy * 1.4 + (nbar - 1.0) * 20))) : 55
@@ -107,7 +107,7 @@ export function StockSelectionScreener({
           compositeScore: pChange > 0 && volume > 20000 ? 75 : 50,
           signals: { volatility: { atr14: ltp * 0.03 } }
         },
-        fundamentalSignals: { compositeScore: (stock.eps ?? 18) > 0 ? 70 : 30 },
+        fundamentalSignals: { compositeScore: (stock.eps != null && stock.eps > 0) ? 70 : 30 },
         marketSignals: { compositeScore: 60 }
       });
 

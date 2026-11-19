@@ -18,6 +18,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { TrendingUp, Award, Zap, Filter, ChevronRight, Target, BarChart2, RefreshCw } from 'lucide-react';
 import { calculateStealthAccumulationScore } from '../utils/accumulationDistributionEngine';
 import { getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
+import { isPureNepseEquity } from '../utils/nepseEquityFilter.js';
 
 interface Props {
   stocks?: any[];
@@ -43,22 +44,28 @@ const MINERVINI_CHECKS = [
  * C5 check: stock's 52W RS > nepse's 52W RS (using index pChange as proxy)
  */
 function computeMultiPeriodRS(s: any, nepseChange: number): { rsScore: number; rsVsNepse: boolean } {
-  const ltp     = Number(s.ltp    || 0);
-  const low52w  = Number(s.low52w || ltp * 0.70);
-  const high52w = Number(s.high52w || ltp * 1.30);
+  const ltp     = Number(s.ltp || 0);
+  const low52w  = Number(s.low52w || s.low52 || s.fiftyTwoWeekLow || 0);
+  const high52w = Number(s.high52w || s.high52 || s.fiftyTwoWeekHigh || 0);
+
+  if (ltp <= 0 || low52w <= 0 || high52w <= 0) {
+    const dayRel = s.pChange != null && Number.isFinite(Number(s.pChange))
+      ? Number(s.pChange) > nepseChange
+      : false;
+    return { rsScore: 0, rsVsNepse: dayRel };
+  }
 
   // 52-Week recovery score (0–100): how much has it recovered from its annual low?
-  const recovery52w = low52w > 0 ? ((ltp - low52w) / low52w) * 100 : 0;
+  const recovery52w = ((ltp - low52w) / low52w) * 100;
 
   // Position within 52W range (0=at low, 100=at high): measures trend health
   const rangePosition = (high52w > low52w) ? ((ltp - low52w) / (high52w - low52w)) * 100 : 50;
 
   // Composite RS score: 60% recovery + 40% range position
-  const rsScore = Math.round(0.60 * Math.min(recovery52w, 100) + 0.40 * rangePosition);
+  const rsScore = Math.round(0.60 * Math.min(recovery52w, 100) + 0.40 * Math.max(0, Math.min(100, rangePosition)));
 
-  // RS vs NEPSE: stock's recent momentum > index momentum (day-over-day as available signal)
-  // Also pass if 52W recovery > 30% (structurally strong regardless of today's tick)
-  const rsVsNepse = Number(s.pChange || 0) > (nepseChange - 0.5) || recovery52w > 30;
+  // RS vs NEPSE: stock's recent momentum > index momentum (never fabricate recovery52w > 30 from 0.70*ltp!)
+  const rsVsNepse = Number(s.pChange || 0) > nepseChange || recovery52w > 30;
 
   return { rsScore, rsVsNepse };
 }
@@ -67,8 +74,8 @@ function evaluateMinervini(s: any, nepseChange: number): { checks: boolean[]; sc
   const ltp        = Number(s.ltp   || 0);
   const ema20      = Number(s.ema20 || 0);
   const ema50      = Number(s.ema50 || 0);
-  const high52w    = Number(s.high52w || ltp * 1.15);
-  const low52w     = Number(s.low52w  || ltp * 0.75);
+  const high52w    = Number(s.high52w || s.high52 || s.fiftyTwoWeekHigh || 0);
+  const low52w     = Number(s.low52w  || s.low52  || s.fiftyTwoWeekLow  || 0);
   const volZ       = Number(s.volumeZScore || 0);
   const volSurge   = Number(s.volumeSurgeRatio || 1);
 
@@ -76,8 +83,8 @@ function evaluateMinervini(s: any, nepseChange: number): { checks: boolean[]; sc
 
   const c1 = ltp > 0 && ema50 > 0 && ltp > ema50;
   const c2 = ema50 > 0 && ema20 > 0 && ema20 >= ema50 * 0.99;  // EMA20 not far below EMA50
-  const c3 = high52w > 0 && ltp >= high52w * 0.75;              // within 25% of 52W high
-  const c4 = low52w  > 0 && ltp >= low52w  * 1.30;              // > 30% above 52W low
+  const c3 = ltp > 0 && high52w > 0 && ltp >= high52w * 0.75;   // within 25% of verified 52W high
+  const c4 = ltp > 0 && low52w  > 0 && ltp >= low52w  * 1.30;   // > 30% above verified 52W low
   const c5 = rsVsNepse;                                          // P5: multi-period RS vs NEPSE
   const c6 = (Number(s.pChange || 0) > 0.5) && (volZ >= 0.5 || volSurge >= 1.3); // volume on advance
 
@@ -131,7 +138,7 @@ export function MinerviniLeaderboard({ stocks: rawStocks = [], indices, onSelect
 
   const evaluated = useMemo(() => {
     return stocks
-      .filter(s => s && s.symbol && Number(s.ltp || 0) > 0)
+      .filter(s => s && s.symbol && Number(s.ltp || 0) > 0 && isPureNepseEquity(s))
       .map(s => {
         const { checks, score } = evaluateMinervini(s, nepseChange);
         const { rsScore } = computeMultiPeriodRS(s, nepseChange);  // P5
@@ -336,7 +343,10 @@ export function MinerviniLeaderboard({ stocks: rawStocks = [], indices, onSelect
                     </td>
                     <td className="py-2.5 px-2 text-right text-xs">
                       {(() => {
-                        const dpiVal = s.dpi != null ? Math.round(Number(s.dpi)) : s.oami;
+                        const dpiVal = s.dpi != null && Number.isFinite(Number(s.dpi)) ? Math.round(Number(s.dpi)) : null;
+                        if (dpiVal === null) {
+                          return <span className="font-semibold text-slate-500">—</span>;
+                        }
                         return (
                           <span className={`font-semibold ${dpiVal >= 70 ? 'text-emerald-400' : dpiVal >= 55 ? 'text-amber-400' : 'text-slate-400'}`}>
                             {dpiVal}
@@ -366,7 +376,7 @@ export function MinerviniLeaderboard({ stocks: rawStocks = [], indices, onSelect
       {/* Footer */}
       <div className="text-[10px] text-slate-500 text-center">
         Minervini checks: Price&gt;EMA50, EMA50 structure, within 25% of 52W-High, 30%+ above 52W-Low, RS vs NEPSE, Volume thrust
-        | OAMI = 40% Stealth + 35% Volume-Z + 25% Momentum
+        | OAMI = 35% Stealth + 30% Volume-Z + 20% Momentum + 15% 52W-RS
       </div>
     </div>
   );

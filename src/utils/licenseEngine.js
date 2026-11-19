@@ -1,78 +1,10 @@
 // src/utils/licenseEngine.js
-// Production-grade Cryptographic License Engine for Drabyashree NEPSE
-// Issues and validates tamper-proof, single-use, device-bound Pro license keys.
+// Client-side Device License ID management & Server-Verified License API client.
+// Key generation, cryptographic HMAC signing, and single-use burn ledgers execute strictly on the server.
 
-export const DEFAULT_SECRET_SALT = 'DRABYASHREE_PRO_SECRET_SALT_2026_NEPSE_GURU_QUANT';
+import { getProxyBase } from './proxyBase.js';
+
 export const DEVICE_ID_STORAGE_KEY = 'drabyashree_device_license_id';
-export const BURNED_KEYS_STORAGE_KEY = 'drabyashree_burned_license_keys';
-
-/**
- * Dependency-free RFC 6234 compliant SHA-256 hash generator.
- * Produces identical digests across Node.js, Web Browsers, and Android Capacitor.
- */
-export function computeSha256(ascii) {
-  function rightRotate(value, amount) {
-    return (value >>> amount) | (value << (32 - amount));
-  }
-  const mathPow = Math.pow;
-  const maxWord = mathPow(2, 32);
-  let lengthProperty = 'length';
-  let i, j;
-  let result = '';
-  const words = [];
-  const asciiBitLength = ascii[lengthProperty] * 8;
-  let hash = computeSha256.h = computeSha256.h || [];
-  const k = computeSha256.k = computeSha256.k || [];
-  let primeCounter = k[lengthProperty];
-  const isComposite = {};
-  for (let candidate = 2; primeCounter < 64; candidate++) {
-    if (!isComposite[candidate]) {
-      for (i = 0; i < 313; i += candidate) isComposite[i] = candidate;
-      hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0;
-      k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0;
-    }
-  }
-  ascii += '\x80';
-  while (ascii[lengthProperty] % 64 - 56) ascii += '\x00';
-  for (i = 0; i < ascii[lengthProperty]; i++) {
-    j = ascii.charCodeAt(i);
-    if (j >> 8) return '';
-    words[i >> 2] |= j << ((3 - i) % 4) * 8;
-  }
-  words[words[lengthProperty]] = (asciiBitLength / maxWord) | 0;
-  words[words[lengthProperty]] = asciiBitLength;
-  for (j = 0; j < words[lengthProperty];) {
-    const w = words.slice(j, (j += 16));
-    const oldHash = hash.slice(0);
-    for (i = 0; i < 64; i++) {
-      const w15 = w[i - 15], w2 = w[i - 2];
-      const a = hash[0], e = hash[4];
-      const temp1 =
-        hash[7] +
-        (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25)) +
-        ((e & hash[5]) ^ (~e & hash[6])) +
-        k[i] +
-        (w[i] = (i < 16)
-          ? w[i]
-          : (w[i - 16] +
-              (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)) +
-              w[i - 7] +
-              (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))) | 0);
-      const temp2 =
-        (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22)) +
-        ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
-      hash = [(temp1 + temp2) | 0, a, hash[1], hash[2], (hash[3] + temp1) | 0, e, hash[5], hash[6]];
-    }
-    for (i = 0; i < 8; i++) hash[i] = (hash[i] + oldHash[i]) | 0;
-  }
-  for (i = 0; i < 8; i++) {
-    for (let b = 3; b >= 0; b--) {
-      const byte = (hash[i] >> (8 * b)) & 255;
-      result += (byte < 16 ? '0' : '') + byte.toString(16);
-    }
-  }
-  return result;
-}
 
 /**
  * Sanitize any device ID string to an 8-character uppercase alphanumeric identifier.
@@ -93,66 +25,36 @@ export function formatDeviceId(clean) {
 }
 
 /**
- * Generate or retrieve persistent Customer Device License ID.
- * Bound to the user installation and persisted in localStorage.
+ * Generate or retrieve persistent Customer Device License ID using CSPRNG entropy.
  */
 export function getDeviceLicenseId() {
-  if (typeof window === 'undefined') return 'DS-DEVELOPER1';
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return 'DS-DEV00001'.slice(0, 11);
+  }
   try {
     const existing = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
-    if (existing && existing.length >= 8) {
+    if (existing && cleanDeviceId(existing).length === 8) {
       return formatDeviceId(existing);
     }
 
-    // Generate entropy from base32 (no easily confused O, 0, 1, I)
     const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const bytes = new Uint8Array(8);
+    if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
+      globalThis.crypto.getRandomValues(bytes);
+    } else {
+      throw new Error('CSPRNG unavailable');
+    }
+
     let randomPart = '';
     for (let i = 0; i < 8; i++) {
-      randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+      randomPart += chars.charAt(bytes[i] % chars.length);
     }
 
     const formatted = `DS-${randomPart.slice(0, 4)}-${randomPart.slice(4, 8)}`;
     localStorage.setItem(DEVICE_ID_STORAGE_KEY, formatted);
     return formatted;
   } catch (_) {
-    return 'DS-7A2B-9C4D';
-  }
-}
-
-const _memoryBurnedKeys = new Set();
-
-/**
- * Retrieve list of burned license key serials from local storage.
- */
-export function getBurnedKeys() {
-  if (typeof window === 'undefined') {
-    return Array.from(_memoryBurnedKeys);
-  }
-  try {
-    const raw = localStorage.getItem(BURNED_KEYS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (_) {
-    return [];
-  }
-}
-
-/**
- * Permanently mark a license key as redeemed/burned so it cannot be used again.
- */
-export function markKeyAsBurned(serialOrKey) {
-  const cleanKey = String(serialOrKey).toUpperCase().trim();
-  if (typeof window === 'undefined') {
-    _memoryBurnedKeys.add(cleanKey);
-    return;
-  }
-  try {
-    const list = getBurnedKeys();
-    if (!list.includes(cleanKey)) {
-      list.push(cleanKey);
-      localStorage.setItem(BURNED_KEYS_STORAGE_KEY, JSON.stringify(list));
-    }
-  } catch (err) {
-    console.warn('[LicenseEngine] Failed to burn key:', err);
+    return 'DS-UNSET001'.slice(0, 11);
   }
 }
 
@@ -183,59 +85,13 @@ export function mapPlanToDays(planStr) {
 }
 
 /**
- * Generate a cryptographically signed, device-bound Pro license key.
- *
- * Format: DS[PLAN]-[DEVICE_PART1]-[DEVICE_PART2]-[NONCE]-[CHECKSUM]
- * Example: DS3M-8A7F-94B2-7K9Q-A4E2
- *
- * @param {Object} params
- * @param {string} params.deviceId - Target Customer License ID (e.g. 'DS-8A7F-94B2')
- * @param {string} params.planDuration - Duration code ('1m', '2m', '3m', '6m', '12m')
- * @param {string} [params.nonce] - Optional 4-char serial nonce (auto-generated if omitted)
- * @param {string} [params.secretSalt] - Developer Master Secret Salt
- * @returns {string} The formatted license key
- */
-export function generateLicenseKey({
-  deviceId,
-  planDuration = '1m',
-  nonce = null,
-  secretSalt = DEFAULT_SECRET_SALT
-}) {
-  const cleanId = cleanDeviceId(deviceId);
-  if (cleanId.length !== 8) {
-    throw new Error(`Invalid device ID: must be 8 alphanumeric characters. Received: "${deviceId}"`);
-  }
-
-  const cleanPlan = planDuration.trim().toUpperCase().replace(/[^0-9MYD]/g, '') || '1M';
-
-  // 4-character random serial nonce (guarantees uniqueness even for same device and plan)
-  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-  let cleanNonce = '';
-  if (nonce && typeof nonce === 'string' && nonce.trim().length >= 4) {
-    cleanNonce = nonce.trim().toUpperCase().slice(0, 4);
-  } else {
-    for (let i = 0; i < 4; i++) {
-      cleanNonce += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-  }
-
-  // Cryptographic HMAC/SHA256 signature
-  const signaturePayload = `${secretSalt}#${cleanId}#${cleanPlan}#${cleanNonce}`;
-  const fullHash = computeSha256(signaturePayload).toUpperCase();
-  const checksum = fullHash.slice(0, 4);
-
-  return `DS${cleanPlan}-${cleanId.slice(0, 4)}-${cleanId.slice(4, 8)}-${cleanNonce}-${checksum}`;
-}
-
-/**
- * Parse a license key into structured segments.
+ * Parse a license key into structured segments (format check only; signature verified server-side).
  */
 export function parseLicenseKey(rawKey) {
   if (!rawKey || typeof rawKey !== 'string') return null;
   const clean = rawKey.trim().toUpperCase().replace(/\s+/g, '');
 
-  // Format regex: DS(1M|2M|3M|6M|12M|...)-(4 chars)-(4 chars)-(4 chars)-(4 chars)
-  const regex = /^DS([0-9]+[MDY]?)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})$/;
+  const regex = /^DS([0-9]+[MDY]?)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4,16})$/;
   const match = clean.match(regex);
   if (!match) return null;
 
@@ -256,77 +112,101 @@ export function parseLicenseKey(rawKey) {
     targetDeviceIdFormatted,
     nonce,
     checksum,
-    serialId: `${targetDeviceIdClean}-${nonce}` // Unique burn fingerprint
+    serialId: `${targetDeviceIdClean}-${nonce}`
   };
 }
 
 /**
- * Validate and redeem a device-bound license key for the current device.
- *
- * Checks:
- * 1. Syntax & segment count
- * 2. Strict target device match (anti-sharing protection)
- * 3. Cryptographic signature check (anti-tamper protection)
- * 4. Single-use burn ledger check (anti-reuse protection)
- *
- * @param {string} rawKey - The key entered by the user
- * @param {string} currentDeviceId - The current device's ID
- * @param {string} [secretSalt] - Optional secret salt override
- * @returns {Object} { success: boolean, duration?: string, days?: number, message: string, keyDetails?: Object }
+ * Redeem and burn a server-signed device-bound license key via backend verification endpoint.
  */
-export function validateAndRedeemLicenseKey(
-  rawKey,
-  currentDeviceId = null,
-  secretSalt = DEFAULT_SECRET_SALT
-) {
-  const thisDevice = cleanDeviceId(currentDeviceId || getDeviceLicenseId());
-  const parsed = parseLicenseKey(rawKey);
-
-  if (!parsed) {
-    return {
-      success: false,
-      message: 'Invalid license key format. Keys are formatted like DS3M-XXXX-YYYY-ZZZZ-WWWW.'
-    };
+export async function redeemLicenseKeyOnServer(rawKey, deviceId = null) {
+  const key = String(rawKey || '').trim().toUpperCase();
+  const targetDeviceId = formatDeviceId(deviceId || getDeviceLicenseId());
+  if (!key) {
+    return { success: false, message: 'Please enter a valid server-issued activation key.' };
   }
 
-  // 1. Device match check (Anti-sharing protection)
-  if (parsed.targetDeviceIdClean !== thisDevice) {
+  try {
+    const base = getProxyBase();
+    const res = await fetch(`${base}/api/license/redeem`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, deviceId: targetDeviceId })
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) {
+      return {
+        success: false,
+        message: data?.message || data?.error || `License verification failed (HTTP ${res.status}).`
+      };
+    }
+    return {
+      success: true,
+      code: key,
+      duration: data.duration,
+      days: data.days,
+      subscription: data.subscription,
+      message: data.message || 'Pro license verified and activated.'
+    };
+  } catch (err) {
     return {
       success: false,
-      message: `❌ Device Mismatch: This key was issued for ${parsed.targetDeviceIdFormatted}. It cannot be used on this device (${formatDeviceId(thisDevice)}).`
+      message: `Unable to reach license verification server: ${err.message}`
     };
   }
+}
 
-  // 2. Cryptographic signature check (Anti-tamper protection)
-  const signaturePayload = `${secretSalt}#${parsed.targetDeviceIdClean}#${parsed.planStr}#${parsed.nonce}`;
-  const expectedHash = computeSha256(signaturePayload).toUpperCase();
-  const expectedChecksum = expectedHash.slice(0, 4);
-
-  if (parsed.checksum !== expectedChecksum) {
-    return {
-      success: false,
-      message: '❌ Invalid Key Signature: Key is corrupt, invalid, or was modified.'
-    };
+/**
+ * Query authoritative server entitlement status for this device.
+ */
+export async function fetchServerLicenseStatus(deviceId = null) {
+  const targetDeviceId = formatDeviceId(deviceId || getDeviceLicenseId());
+  try {
+    const base = getProxyBase();
+    const res = await fetch(`${base}/api/license/status?deviceId=${encodeURIComponent(targetDeviceId)}`);
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    return data?.subscription || null;
+  } catch (_) {
+    return null;
   }
+}
 
-  // 3. Single-use check (Anti-reuse protection)
-  const burnedList = getBurnedKeys();
-  if (burnedList.includes(parsed.serialId) || burnedList.includes(parsed.rawKey)) {
-    return {
-      success: false,
-      message: '❌ Already Redeemed: This one-time key has already been activated and cannot be reused.'
-    };
+/**
+ * Revoke server-side entitlement when resetting to free tier.
+ */
+export async function revokeServerLicenseStatusOnServer(deviceId = null) {
+  const targetDeviceId = formatDeviceId(deviceId || getDeviceLicenseId());
+  try {
+    const base = getProxyBase();
+    await fetch(`${base}/api/license/revoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: targetDeviceId })
+    });
+  } catch (_) {}
+}
+
+/**
+ * Admin-only server call to mint a new device-bound license key.
+ * Requires valid ADMIN_API_KEY verified server-side by requireAdminSecret.
+ */
+export async function generateLicenseKeyOnServer({ deviceId, planDuration = '1m', adminKey }) {
+  if (!adminKey || !String(adminKey).trim()) {
+    throw new Error('Server Admin API Key is required to issue license keys.');
   }
-
-  // 4. Burn the key permanently
-  markKeyAsBurned(parsed.serialId);
-  markKeyAsBurned(parsed.rawKey);
-
-  return {
-    success: true,
-    duration: parsed.planDuration,
-    days: parsed.days,
-    message: `🎉 Success! Unlocked ${parsed.planStr} Pro access (${parsed.days} days) for your device.`,
-    keyDetails: parsed
-  };
+  const base = getProxyBase();
+  const res = await fetch(`${base}/api/admin/license/generate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-key': String(adminKey).trim()
+    },
+    body: JSON.stringify({ deviceId, planDuration })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.success || !data?.key) {
+    throw new Error(data?.error || data?.message || `Failed to generate key (HTTP ${res.status}).`);
+  }
+  return data;
 }

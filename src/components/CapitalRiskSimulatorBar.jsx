@@ -68,7 +68,7 @@ export function CapitalRiskSimulatorBar({ onCapitalChange, className = '' }) {
       // Search for stored holdings or portfolio data
       const keys = Object.keys(localStorage);
       for (const k of keys) {
-        if (k.startsWith('nepse_portfolio_txs_') || k === 'nepse_holdings') {
+        if (k.startsWith('nepse_portfolio_txs_') || k.startsWith('nepse_hub_') || k === 'nepse_holdings' || k === 'nepse_portfolio_v1') {
           try {
             const parsed = JSON.parse(localStorage.getItem(k) || '[]');
             if (Array.isArray(parsed) && parsed.length > 0) {

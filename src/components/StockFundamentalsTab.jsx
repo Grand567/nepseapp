@@ -35,23 +35,33 @@ export default function StockFundamentalsTab({ stock = {}, fundamentals = {}, pe
 
   const [backendQuarterData, setBackendQuarterData] = useState(null);
   const [backendIndustryData, setBackendIndustryData] = useState(null);
+  const [quartersLoading, setQuartersLoading] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    setBackendQuarterData(null);
+    setBackendIndustryData(null);
     if (sym && sym !== 'STOCK') {
+      setQuartersLoading(true);
       fetchCompanyQuarterlyReports(sym).then(res => {
+        if (!active) return;
         const data = res?.data || res;
         if (data && data.quarters) {
           setBackendQuarterData(data);
         }
-      }).catch(() => {});
+      }).catch(() => {}).finally(() => {
+        if (active) setQuartersLoading(false);
+      });
 
       fetchCompanyIndustryComparison(sym).then(res => {
+        if (!active) return;
         const data = res?.data || res;
         if (data && data.comparison) {
           setBackendIndustryData(data);
         }
       }).catch(() => {});
     }
+    return () => { active = false; };
   }, [sym]);
 
   const sectorBench = useMemo(() => {
@@ -59,245 +69,151 @@ export default function StockFundamentalsTab({ stock = {}, fundamentals = {}, pe
       return backendIndustryData.benchmark;
     }
     try {
-      return getSectorBenchmark(rawSector) || { pe: 22, pb: 2.4, eps: 16, bvps: 145, roe: 11.5 };
+      return getSectorBenchmark(rawSector) || { medianPE: 22, medianPBV: 2.4, medianEPS: 16, medianROE: 11.5 };
     } catch (_) {
-      return { pe: 22, pb: 2.4, eps: 16, bvps: 145, roe: 11.5 };
+      return { medianPE: 22, medianPBV: 2.4, medianEPS: 16, medianROE: 11.5 };
     }
   }, [rawSector, backendIndustryData]);
 
-  // Multi-Quarter historical trend data points
-  const quartersList = [
-    { id: '082/083 Q1', short: '082/083, q1', label: '082/083 Q1', fiscalYear: '2082/83', period: 'Q1', mult: 1.0 },
-    { id: '081/082 Q4', short: '081/082, q4', label: '081/082 Q4', fiscalYear: '2081/82', period: 'Q4', mult: 0.94 },
-    { id: '081/082 Q3', short: '081/082, q3', label: '081/082 Q3', fiscalYear: '2081/82', period: 'Q3', mult: 0.88 },
-    { id: '080/081 Q4', short: '080/081, q4', label: '080/081 Q4', fiscalYear: '2080/81', period: 'Q4', mult: 0.80 },
-    { id: '079/080 Q4', short: '079/080, q4', label: '079/080 Q4', fiscalYear: '2079/80', period: 'Q4', mult: 0.65 },
-    { id: '078/079 Q4', short: '078/079, q4', label: '078/079 Q4', fiscalYear: '2078/79', period: 'Q4', mult: 0.48 }
-  ];
+  // Verified Multi-Quarter filings strictly from backend data (zero synthetic historical multipliers)
+  const verifiedQuarters = useMemo(() => {
+    const rawQ = Array.isArray(backendQuarterData?.quarters) ? backendQuarterData.quarters : [];
+    return rawQ.map((q, idx) => {
+      const label = q.quarter || q.period || `Reported Period ${idx + 1}`;
+      return {
+        id: label,
+        short: label,
+        label,
+        fiscalYear: q.fiscalYear || label,
+        period: q.period || label,
+        eps: q.eps != null && Number.isFinite(Number(q.eps)) ? Number(q.eps) : null,
+        profitCr: q.netProfit != null && Number.isFinite(Number(q.netProfit)) ? Number(q.netProfit) : null,
+        netWorth: q.netWorth != null && Number.isFinite(Number(q.netWorth)) ? Number(q.netWorth) : null,
+        paidUp: q.paidUp != null && Number.isFinite(Number(q.paidUp)) ? Number(q.paidUp) : null,
+        roe: q.roe != null && Number.isFinite(Number(q.roe)) ? Number(q.roe) : null,
+        npl: q.npl != null && Number.isFinite(Number(q.npl)) ? Number(q.npl) : null,
+        source: q.source || 'NEPSE Filing'
+      };
+    });
+  }, [backendQuarterData]);
 
-  // Base financial fundamentals from verified data or official stock fundamentals
-  const ltp = Number(safeStock.ltp || safeStock.close || 350);
-  const rawEps = Number(safeFund.eps ?? safeStock.eps ?? 12.5);
-  const baseEps = Number.isFinite(rawEps) && rawEps !== 0 ? rawEps : 12.5;
-  const rawBv = Number(safeFund.bookValue ?? safeFund.netWorth ?? safeStock.bookValue ?? safeStock.bv ?? 135);
-  const baseBv = Number.isFinite(rawBv) && rawBv > 0 ? rawBv : 135;
-  const rawPe = Number(safeFund.pe ?? safeStock.pe ?? (baseEps > 0 ? ltp / baseEps : 0));
-  const basePe = Number.isFinite(rawPe) && rawPe !== 0 ? +rawPe.toFixed(2) : 0;
-  const rawPb = Number(safeFund.pbv ?? safeFund.pb ?? safeStock.pb ?? (baseBv > 0 ? ltp / baseBv : 0));
-  const basePb = Number.isFinite(rawPb) && rawPb > 0 ? +rawPb.toFixed(2) : +(ltp / Math.max(1, baseBv)).toFixed(2);
-  const rawRoe = Number(safeFund.roe ?? safeStock.roe ?? (baseBv > 0 ? (baseEps / baseBv) * 100 : 9.2));
-  const baseRoe = Number.isFinite(rawRoe) ? +rawRoe.toFixed(2) : 9.2;
-  const listedShares = Number(safeFund.listedShares ?? safeStock.listedShares ?? 10000000) || 10000000;
-  const rawProfitCr = Number(safeFund.netProfitCr ?? (baseEps * listedShares / 10000000));
-  const baseProfitCr = Number.isFinite(rawProfitCr) && rawProfitCr !== 0 ? rawProfitCr : +(baseEps * 0.85).toFixed(2);
+  const quartersList = verifiedQuarters;
 
-  // Historical data series mapped over the fiscal years
+  // Base financial fundamentals strictly from verified disclosures (null when unavailable)
+  const toNullNum = (v) => (v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
+  const latestQ = verifiedQuarters[0] || backendQuarterData?.latest || null;
+  const ltp = toNullNum(safeStock.ltp ?? safeStock.close) ?? 0;
+  const baseEps = toNullNum(latestQ?.eps ?? safeFund.eps ?? safeStock.eps);
+  const baseBv = toNullNum(latestQ?.netWorth ?? safeFund.bookValue ?? safeFund.netWorth ?? safeStock.bookValue ?? safeStock.bv);
+  const basePe = baseEps !== null && baseEps > 0 && ltp > 0 ? +(ltp / baseEps).toFixed(2) : toNullNum(safeFund.pe ?? safeStock.pe);
+  const basePb = baseBv !== null && baseBv > 0 && ltp > 0 ? +(ltp / baseBv).toFixed(2) : toNullNum(safeFund.pbv ?? safeFund.pb ?? safeStock.pb);
+  const baseRoe = toNullNum(latestQ?.roe ?? safeFund.roe ?? safeStock.roe) ?? (baseEps !== null && baseBv !== null && baseBv > 0 ? +((baseEps / baseBv) * 100).toFixed(2) : null);
+  const baseNpl = toNullNum(latestQ?.npl ?? safeFund.npl ?? safeStock.npl);
+  const baseProfitCr = toNullNum(latestQ?.profitCr ?? safeFund.netProfitCr);
+  const basePaidUp = toNullNum(latestQ?.paidUp ?? safeFund.paidUpCapital ?? safeStock.paidUpCapital);
+
+  // Sync selectedQuarter / compareQuarter cleanly whenever verified quarters load or switch
+  useEffect(() => {
+    if (verifiedQuarters.length > 0) {
+      setSelectedQuarter(verifiedQuarters[0].id);
+      setCompareQuarter(verifiedQuarters[1]?.id || verifiedQuarters[0].id);
+      setActiveChartQuarters(verifiedQuarters.map(q => q.id));
+    } else {
+      setSelectedQuarter('Latest Filing');
+      setCompareQuarter('Prior Period');
+      setActiveChartQuarters([]);
+    }
+  }, [verifiedQuarters]);
+
+  // Historical data series strictly from verified multi-quarter filings
   const allTrendData = useMemo(() => {
-    return [
-      {
-        quarter: '078/079 Q4',
-        eps: +(baseEps * 0.45).toFixed(2),
-        profitCr: +(baseProfitCr * 0.4).toFixed(2),
-        netWorth: +(baseBv * 0.88).toFixed(1),
-        roe: +(baseRoe * 0.5).toFixed(1),
-        pe: basePe > 0 ? +(basePe * 1.35).toFixed(1) : 0,
-        npl: isBank ? 1.85 : null
-      },
-      {
-        quarter: '079/080 Q4',
-        eps: +(baseEps * 0.65).toFixed(2),
-        profitCr: +(baseProfitCr * 0.6).toFixed(2),
-        netWorth: +(baseBv * 0.92).toFixed(1),
-        roe: +(baseRoe * 0.7).toFixed(1),
-        pe: basePe > 0 ? +(basePe * 1.2).toFixed(1) : 0,
-        npl: isBank ? 2.10 : null
-      },
-      {
-        quarter: '080/081 Q4',
-        eps: +(baseEps * 0.85).toFixed(2),
-        profitCr: +(baseProfitCr * 0.8).toFixed(2),
-        netWorth: +(baseBv * 0.96).toFixed(1),
-        roe: +(baseRoe * 0.85).toFixed(1),
-        pe: basePe > 0 ? +(basePe * 1.08).toFixed(1) : 0,
-        npl: isBank ? 2.45 : null
-      },
-      {
-        quarter: '081/082 Q3',
-        eps: +(baseEps * 0.89).toFixed(2),
-        profitCr: +(baseProfitCr * 0.86).toFixed(2),
-        netWorth: +(baseBv * 0.97).toFixed(1),
-        roe: +(baseRoe * 0.9).toFixed(1),
-        pe: basePe > 0 ? +(basePe * 1.05).toFixed(1) : 0,
-        npl: isBank ? 2.38 : null
-      },
-      {
-        quarter: '081/082 Q4',
-        eps: +(baseEps * 0.94).toFixed(2),
-        profitCr: +(baseProfitCr * 0.92).toFixed(2),
-        netWorth: +(baseBv * 0.98).toFixed(1),
-        roe: +(baseRoe * 0.95).toFixed(1),
-        pe: basePe > 0 ? +(basePe * 1.03).toFixed(1) : 0,
-        npl: isBank ? 2.30 : null
-      },
-      {
-        quarter: '082/083 Q1',
-        eps: +baseEps.toFixed(2),
-        profitCr: +baseProfitCr.toFixed(2),
-        netWorth: +baseBv.toFixed(1),
-        roe: +baseRoe.toFixed(1),
-        pe: +basePe.toFixed(1),
-        npl: isBank ? 2.15 : null
-      }
-    ];
-  }, [baseEps, baseBv, baseProfitCr, baseRoe, basePe, isBank]);
+    if (verifiedQuarters.length < 2) return [];
+    return [...verifiedQuarters].reverse().map(q => ({
+      quarter: q.label,
+      eps: q.eps,
+      profitCr: q.profitCr,
+      netWorth: q.netWorth,
+      roe: q.roe,
+      pe: (q.eps !== null && q.eps > 0 && ltp > 0) ? +(ltp / q.eps).toFixed(1) : null,
+      npl: isBank ? q.npl : null
+    }));
+  }, [verifiedQuarters, ltp, isBank]);
 
   const trendData = useMemo(() => {
+    if (allTrendData.length < 2) return [];
     const filtered = allTrendData.filter(d => activeChartQuarters.includes(d.quarter));
     return filtered.length >= 2 ? filtered : allTrendData;
   }, [allTrendData, activeChartQuarters]);
 
-  // Selected vs Compare Quarter multipliers for Reports & Tabular View
-  const q1Mult = quartersList.find(q => q.id === selectedQuarter)?.mult || 1.0;
-  const q2Mult = quartersList.find(q => q.id === compareQuarter)?.mult || 0.80;
-
-  // Financial Statement Line-Items table (Current Quarter vs Previous Quarter — Share Hub frame_038.jpg)
+  // Financial Statement Line-Items table strictly from verified quarter disclosures (null -> '—')
   const statementLineItems = useMemo(() => {
-    const revenueLabel = isHydro ? 'Income from Sales of Electricity' : (isBank ? 'Net Interest Income' : 'Revenue / Total Income');
-    const revenueVal = +( (isHydro ? 13.69 : (isBank ? 84.50 : 25.40)) * q1Mult ).toFixed(2);
-    const revenuePrev = +( (isHydro ? 13.69 : (isBank ? 84.50 : 25.40)) * q2Mult ).toFixed(2);
+    const q1 = verifiedQuarters.find(q => q.id === selectedQuarter) || verifiedQuarters[0] || null;
+    const q2 = verifiedQuarters.length >= 2 ? (verifiedQuarters.find(q => q.id === compareQuarter) || verifiedQuarters[1] || null) : null;
+    const calcDiff = (c, p) => (c != null && p != null && p !== 0 ? +(((c - p) / Math.abs(p)) * 100).toFixed(2) : null);
 
-    const epsCurr = +(baseEps * q1Mult).toFixed(2);
-    const epsPrev = +(baseEps * q2Mult).toFixed(2);
-    const epsDiff = epsPrev !== 0 ? +(((epsCurr - epsPrev) / Math.abs(epsPrev)) * 100).toFixed(2) : 0;
-
-    const profCurr = +(baseProfitCr * q1Mult).toFixed(2);
-    const profPrev = +(baseProfitCr * q2Mult).toFixed(2);
-    const profDiff = profPrev !== 0 ? +(((profCurr - profPrev) / Math.abs(profPrev)) * 100).toFixed(2) : 0;
-
-    const bvCurr = +(baseBv * (0.85 + q1Mult * 0.15)).toFixed(2);
-    const bvPrev = +(baseBv * (0.85 + q2Mult * 0.15)).toFixed(2);
-    const bvDiff = bvPrev !== 0 ? +(((bvCurr - bvPrev) / Math.abs(bvPrev)) * 100).toFixed(2) : 0;
+    const epsCurr = q1?.eps ?? baseEps;
+    const epsPrev = q2?.eps ?? null;
+    const bvCurr = q1?.netWorth ?? baseBv;
+    const bvPrev = q2?.netWorth ?? null;
+    const profCurr = q1?.profitCr ?? baseProfitCr;
+    const profPrev = q2?.profitCr ?? null;
+    const roeCurr = q1?.roe ?? baseRoe;
+    const roePrev = q2?.roe ?? null;
+    const paidCurr = q1?.paidUp ?? basePaidUp;
+    const paidPrev = q2?.paidUp ?? null;
 
     const items = [
       {
         metric: 'EPS (Reported)',
-        current: `${epsCurr}`,
-        prev: `${epsPrev}`,
-        change: epsDiff,
-        isPositiveGood: true
-      },
-      {
-        metric: 'Administrative Expenses',
-        current: isHydro ? '85.99 Lkh' : '6.45 Cr',
-        prev: isHydro ? '94.38 Lkh' : '6.85 Cr',
-        change: isHydro ? -8.90 : -5.84,
-        isPositiveGood: false
-      },
-      {
-        metric: 'Deposit / Cash Reserves',
-        current: isHydro ? '14.93 Lkh' : '4,850 Cr',
-        prev: isHydro ? '1.99 Cr' : '4,520 Cr',
-        change: isHydro ? -92.50 : +7.30,
-        isPositiveGood: true
-      },
-      {
-        metric: 'Depreciation',
-        current: isHydro ? '5.65 Cr' : '1.20 Cr',
-        prev: isHydro ? '5.54 Cr' : '1.18 Cr',
-        change: +1.94,
-        isPositiveGood: false
-      },
-      {
-        metric: 'Distributable EPS',
-        current: `${(epsCurr * 0.88).toFixed(2)}`,
-        prev: `${(epsPrev * 0.85).toFixed(2)}`,
-        change: epsDiff,
-        isPositiveGood: true
-      },
-      {
-        metric: 'EPS (Annualized)',
-        current: `${epsCurr}`,
-        prev: `${epsPrev}`,
-        change: epsDiff,
-        isPositiveGood: true
-      },
-      {
-        metric: 'Financial Expenses',
-        current: isHydro ? '5.51 Cr' : '22.40 Cr',
-        prev: isHydro ? '7.34 Cr' : '26.10 Cr',
-        change: isHydro ? -24.93 : -14.18,
-        isPositiveGood: false
-      },
-      {
-        metric: 'Income from Other Sources',
-        current: isHydro ? '46,133.21' : '1.85 Cr',
-        prev: isHydro ? '1.07 Lkh' : '1.42 Cr',
-        change: isHydro ? -56.88 : +30.28,
-        isPositiveGood: true
-      },
-      {
-        metric: revenueLabel,
-        current: `${revenueVal.toFixed(2)} Cr`,
-        prev: `${revenuePrev.toFixed(2)} Cr`,
-        change: +(((revenueVal - revenuePrev) / Math.max(0.01, revenuePrev)) * 100).toFixed(2),
-        isPositiveGood: true
-      },
-      {
-        metric: 'Investments',
-        current: isHydro ? '92.30 Cr' : '450.20 Cr',
-        prev: isHydro ? '92.30 Cr' : '420.10 Cr',
-        change: null,
-        isPositiveGood: true
-      },
-      {
-        metric: 'Loans and Long Term Liabilities',
-        current: isHydro ? '65.60 Cr' : '3,200 Cr',
-        prev: isHydro ? '68.59 Cr' : '3,350 Cr',
-        change: -4.36,
-        isPositiveGood: false
-      },
-      {
-        metric: 'Net Current Assets',
-        current: isHydro ? '5.40 Cr' : '120.40 Cr',
-        prev: isHydro ? '5.20 Cr' : '114.80 Cr',
-        change: null,
+        current: epsCurr != null ? `Rs. ${epsCurr.toFixed(2)}` : '—',
+        prev: epsPrev != null ? `Rs. ${epsPrev.toFixed(2)}` : '—',
+        change: calcDiff(epsCurr, epsPrev),
         isPositiveGood: true
       },
       {
         metric: 'Net Profit',
-        current: `${profCurr} Cr`,
-        prev: `${profPrev} Cr`,
-        change: profDiff,
+        current: profCurr != null ? `${profCurr.toFixed(2)} Cr` : '—',
+        prev: profPrev != null ? `${profPrev.toFixed(2)} Cr` : '—',
+        change: calcDiff(profCurr, profPrev),
         isPositiveGood: true
       },
       {
-        metric: 'Net Worth',
-        current: `${bvCurr}`,
-        prev: `${bvPrev}`,
-        change: bvDiff,
+        metric: 'Net Worth (Book Value / Share)',
+        current: bvCurr != null ? `Rs. ${bvCurr.toFixed(2)}` : '—',
+        prev: bvPrev != null ? `Rs. ${bvPrev.toFixed(2)}` : '—',
+        change: calcDiff(bvCurr, bvPrev),
+        isPositiveGood: true
+      },
+      {
+        metric: 'Paid-Up Capital',
+        current: paidCurr != null ? `Rs. ${Number(paidCurr).toLocaleString('en-IN')}` : '—',
+        prev: paidPrev != null ? `Rs. ${Number(paidPrev).toLocaleString('en-IN')}` : '—',
+        change: calcDiff(paidCurr, paidPrev),
         isPositiveGood: true
       },
       {
         metric: 'Return on Equity (ROE)',
-        current: `${(baseRoe * q1Mult).toFixed(2)}%`,
-        prev: `${(baseRoe * q2Mult).toFixed(2)}%`,
-        change: +(((q1Mult - q2Mult) / q2Mult) * 100).toFixed(2),
+        current: roeCurr != null ? `${roeCurr.toFixed(2)}%` : '—',
+        prev: roePrev != null ? `${roePrev.toFixed(2)}%` : '—',
+        change: calcDiff(roeCurr, roePrev),
         isPositiveGood: true
       }
     ];
 
     if (isBank) {
+      const nplCurr = q1?.npl ?? baseNpl;
+      const nplPrev = q2?.npl ?? null;
       items.push({
         metric: 'Non-Performing Loans (NPL)',
-        current: '2.15%',
-        prev: '2.45%',
-        change: -12.24,
+        current: nplCurr != null ? `${nplCurr.toFixed(2)}%` : '—',
+        prev: nplPrev != null ? `${nplPrev.toFixed(2)}%` : '—',
+        change: calcDiff(nplCurr, nplPrev),
         isPositiveGood: false
       });
     }
 
     return items;
-  }, [baseProfitCr, baseEps, baseBv, baseRoe, isHydro, isBank, q1Mult, q2Mult]);
+  }, [verifiedQuarters, selectedQuarter, compareQuarter, baseEps, baseBv, baseProfitCr, baseRoe, basePaidUp, baseNpl, isBank]);
 
   const filteredReportItems = useMemo(() => {
     const q = reportSearch.trim().toLowerCase();
@@ -307,52 +223,52 @@ export default function StockFundamentalsTab({ stock = {}, fundamentals = {}, pe
 
   // Stock Vs Industry comparison rows
   const industryComparisons = useMemo(() => {
-    const indEps = Number(sectorBench?.eps || 16);
-    const indPe = Number(sectorBench?.pe || 22);
-    const indPb = Number(sectorBench?.pb || 2.4);
-    const indBv = Number(sectorBench?.bvps || 145);
-    const indRoe = Number(sectorBench?.roe || 11.5);
+    const indEps = toNullNum(sectorBench?.eps ?? sectorBench?.medianEPS) ?? 16;
+    const indPe = toNullNum(sectorBench?.pe ?? sectorBench?.medianPE) ?? 22;
+    const indPb = toNullNum(sectorBench?.pbv ?? sectorBench?.pb ?? sectorBench?.medianPBV) ?? 2.4;
+    const indBv = toNullNum(sectorBench?.bvps) ?? 145;
+    const indRoe = toNullNum(sectorBench?.roe ?? sectorBench?.medianROE) ?? 11.5;
 
     return [
       {
         label: 'Earnings Per Share (EPS)',
         stockVal: baseEps,
         indVal: indEps,
-        fmt: v => `Rs. ${Number(v).toFixed(2)}`,
-        better: baseEps >= indEps,
-        verdict: baseEps >= indEps ? 'Outperforming Sector' : 'Below Sector Avg'
+        fmt: v => (v != null ? `Rs. ${Number(v).toFixed(2)}` : '—'),
+        better: baseEps != null && baseEps >= indEps,
+        verdict: baseEps == null ? 'Data Unavailable' : (baseEps >= indEps ? 'Outperforming Sector' : 'Below Sector Avg')
       },
       {
         label: 'P/E Valuation Multiple',
-        stockVal: basePe > 0 ? basePe : 0,
+        stockVal: basePe != null && basePe > 0 ? basePe : null,
         indVal: indPe,
-        fmt: v => (v > 0 ? `${Number(v).toFixed(2)}x` : 'Neg / N/A'),
-        better: basePe > 0 && basePe <= indPe,
-        verdict: basePe > 0 && basePe <= indPe ? 'Cheaper than Sector' : (basePe <= 0 ? 'Loss Making' : 'Premium to Sector')
+        fmt: v => (v != null && v > 0 ? `${Number(v).toFixed(2)}x` : '—'),
+        better: basePe != null && basePe > 0 && basePe <= indPe,
+        verdict: basePe == null ? 'Data Unavailable' : (basePe > 0 && basePe <= indPe ? 'Cheaper than Sector' : (basePe <= 0 ? 'Loss Making' : 'Premium to Sector'))
       },
       {
         label: 'Book Value (Net Worth / Share)',
         stockVal: baseBv,
         indVal: indBv,
-        fmt: v => `Rs. ${Number(v).toFixed(2)}`,
-        better: baseBv >= indBv,
-        verdict: baseBv >= indBv ? 'Stronger Asset Backing' : 'Below Sector Avg'
+        fmt: v => (v != null ? `Rs. ${Number(v).toFixed(2)}` : '—'),
+        better: baseBv != null && baseBv >= indBv,
+        verdict: baseBv == null ? 'Data Unavailable' : (baseBv >= indBv ? 'Stronger Asset Backing' : 'Below Sector Avg')
       },
       {
         label: 'PBV (Price-to-Book Ratio)',
         stockVal: basePb,
         indVal: indPb,
-        fmt: v => `${Number(v).toFixed(2)}x`,
-        better: basePb > 0 && basePb <= indPb,
-        verdict: basePb > 0 && basePb <= indPb ? 'Discounted PBV' : 'Higher PBV Multiple'
+        fmt: v => (v != null ? `${Number(v).toFixed(2)}x` : '—'),
+        better: basePb != null && basePb > 0 && basePb <= indPb,
+        verdict: basePb == null ? 'Data Unavailable' : (basePb > 0 && basePb <= indPb ? 'Discounted PBV' : 'Higher PBV Multiple')
       },
       {
         label: 'Return on Equity (ROE %)',
         stockVal: baseRoe,
         indVal: indRoe,
-        fmt: v => `${Number(v).toFixed(2)}%`,
-        better: baseRoe >= indRoe,
-        verdict: baseRoe >= indRoe ? 'Superior Capital Return' : 'Lower ROE vs Peers'
+        fmt: v => (v != null ? `${Number(v).toFixed(2)}%` : '—'),
+        better: baseRoe != null && baseRoe >= indRoe,
+        verdict: baseRoe == null ? 'Data Unavailable' : (baseRoe >= indRoe ? 'Superior Capital Return' : 'Lower ROE vs Peers')
       }
     ];
   }, [baseEps, basePe, baseBv, basePb, baseRoe, sectorBench]);
@@ -662,12 +578,30 @@ export default function StockFundamentalsTab({ stock = {}, fundamentals = {}, pe
               </div>
 
               <div>
-                {selectedMetrics.includes('eps') && renderTrendSvg('eps', 'EPS (Reported)', 'Rs.')}
-                {selectedMetrics.includes('profitCr') && renderTrendSvg('profitCr', 'Net Profit', 'Cr')}
-                {selectedMetrics.includes('netWorth') && renderTrendSvg('netWorth', 'Net Worth (Book Value)', 'Rs.')}
-                {selectedMetrics.includes('roe') && renderTrendSvg('roe', 'Return on Equity (ROE)', '%')}
-                {selectedMetrics.includes('pe') && renderTrendSvg('pe', 'P/E Ratio', 'x')}
-                {isBank && selectedMetrics.includes('npl') && renderTrendSvg('npl', 'Non-Performing Loans (NPL)', '%')}
+                {trendData.length < 2 ? (
+                  <div style={{
+                    background: '#111827',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: 14,
+                    padding: '18px 16px',
+                    textAlign: 'center',
+                    color: '#94a3b8',
+                    fontSize: 12.5
+                  }}>
+                    {quartersLoading
+                      ? `Loading verified quarterly filings for ${sym}...`
+                      : `Multi-quarter trend curves require at least 2 verified NEPSE quarterly filings for ${sym}. Switch to Tabular View or Reports for latest disclosed figures.`}
+                  </div>
+                ) : (
+                  <>
+                    {selectedMetrics.includes('eps') && renderTrendSvg('eps', 'EPS (Reported)', 'Rs.')}
+                    {selectedMetrics.includes('profitCr') && renderTrendSvg('profitCr', 'Net Profit', 'Cr')}
+                    {selectedMetrics.includes('netWorth') && renderTrendSvg('netWorth', 'Net Worth (Book Value)', 'Rs.')}
+                    {selectedMetrics.includes('roe') && renderTrendSvg('roe', 'Return on Equity (ROE)', '%')}
+                    {selectedMetrics.includes('pe') && renderTrendSvg('pe', 'P/E Ratio', 'x')}
+                    {isBank && selectedMetrics.includes('npl') && renderTrendSvg('npl', 'Non-Performing Loans (NPL)', '%')}
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1101,11 +1035,11 @@ export default function StockFundamentalsTab({ stock = {}, fundamentals = {}, pe
                   { symbol: sym, ltp, eps: baseEps, pe: basePe, bookValue: baseBv, pb: basePb, isSelf: true },
                   ...(Array.isArray(peerStocks) ? peerStocks.slice(0, 6) : [])
                 ].map((p, idx) => {
-                  const pLtp = Number(p.ltp || p.close || 0);
-                  const pEps = Number(p.eps ?? (baseEps * (0.85 + idx * 0.08)));
-                  const pBv = Number(p.bookValue ?? (baseBv * (0.9 + idx * 0.05)));
-                  const pPe = Number(p.pe ?? (pEps > 0 ? pLtp / pEps : 0));
-                  const pPb = Number(p.pb ?? (pBv > 0 ? pLtp / pBv : 0));
+                  const pLtp = toNullNum(p.ltp ?? p.close);
+                  const pEps = toNullNum(p.eps);
+                  const pBv = toNullNum(p.bookValue ?? p.bvps);
+                  const pPe = toNullNum(p.pe) ?? (pEps !== null && pEps > 0 && pLtp !== null ? +(pLtp / pEps).toFixed(2) : null);
+                  const pPb = toNullNum(p.pb ?? p.pbv) ?? (pBv !== null && pBv > 0 && pLtp !== null ? +(pLtp / pBv).toFixed(2) : null);
                   return (
                     <tr
                       key={p.symbol || idx}
@@ -1118,19 +1052,19 @@ export default function StockFundamentalsTab({ stock = {}, fundamentals = {}, pe
                         {p.symbol} {p.isSelf ? '★' : ''}
                       </td>
                       <td style={{ padding: '9px 6px', textAlign: 'right', color: '#f8fafc', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                        Rs. {pLtp.toLocaleString('en-IN', { maximumFractionDigits: 1 })}
+                        {pLtp != null ? `Rs. ${pLtp.toLocaleString('en-IN', { maximumFractionDigits: 1 })}` : '—'}
                       </td>
-                      <td style={{ padding: '9px 6px', textAlign: 'right', color: pEps >= 0 ? '#34d399' : '#f43f5e', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                        {pEps.toFixed(2)}
+                      <td style={{ padding: '9px 6px', textAlign: 'right', color: pEps == null ? '#64748b' : (pEps >= 0 ? '#34d399' : '#f43f5e'), fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                        {pEps != null ? pEps.toFixed(2) : '—'}
                       </td>
                       <td style={{ padding: '9px 6px', textAlign: 'right', color: '#38bdf8', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                        {pPe > 0 ? `${pPe.toFixed(1)}x` : '—'}
+                        {pPe != null && pPe > 0 ? `${pPe.toFixed(1)}x` : '—'}
                       </td>
                       <td style={{ padding: '9px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>
-                        {pBv.toFixed(1)}
+                        {pBv != null ? pBv.toFixed(1) : '—'}
                       </td>
                       <td style={{ padding: '9px 6px', textAlign: 'right', color: '#c084fc', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                        {pPb > 0 ? `${pPb.toFixed(2)}x` : '—'}
+                        {pPb != null && pPb > 0 ? `${pPb.toFixed(2)}x` : '—'}
                       </td>
                     </tr>
                   );

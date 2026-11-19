@@ -18,6 +18,7 @@ interface BreakoutPanelProps {
 
 export function BreakoutPanel({ breakout, setupType }: BreakoutPanelProps) {
   const isBreakout = breakout?.detected;
+  const isBearish = breakout?.direction === 'bearish' || breakout?.direction === 'down' || breakout?.type === 'breakdown';
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-[#090d16] p-4 sm:p-5 text-slate-200 shadow-xl space-y-3">
@@ -39,11 +40,13 @@ export function BreakoutPanel({ breakout, setupType }: BreakoutPanelProps) {
         <span
           className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
             isBreakout
-              ? 'bg-emerald-950/60 border-emerald-700/80 text-emerald-300'
+              ? (isBearish
+                  ? 'bg-rose-950/60 border-rose-700/80 text-rose-300'
+                  : 'bg-emerald-950/60 border-emerald-700/80 text-emerald-300')
               : 'bg-slate-900 border-slate-800 text-slate-400'
           }`}
         >
-          {isBreakout ? '⚡ ACTIVE BREAKOUT' : 'RANGE BOUND'}
+          {isBreakout ? (isBearish ? '🚨 ACTIVE BREAKDOWN' : '⚡ ACTIVE BREAKOUT') : 'RANGE BOUND'}
         </span>
       </div>
 
@@ -59,7 +62,7 @@ export function BreakoutPanel({ breakout, setupType }: BreakoutPanelProps) {
 
             <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-2.5">
               <div className="text-[11px] text-slate-400 mb-0.5">Breakout Execution</div>
-              <div className="font-bold text-emerald-400 text-sm">
+              <div className={`font-bold text-sm ${isBearish ? 'text-rose-400' : 'text-emerald-400'}`}>
                 Confirmed (Rs. {breakout.breakoutPrice})
               </div>
             </div>
@@ -68,7 +71,7 @@ export function BreakoutPanel({ breakout, setupType }: BreakoutPanelProps) {
               <div className="text-[11px] text-slate-400 mb-0.5">Volume Confirmation</div>
               <div
                 className={`font-bold text-sm ${
-                  breakout.volumeConfirmed ? 'text-emerald-400' : 'text-amber-400'
+                  breakout.volumeConfirmed ? (isBearish ? 'text-rose-400' : 'text-emerald-400') : 'text-amber-400'
                 }`}
               >
                 {breakout.volumeConfirmed ? '✓ Confirmed' : '⚠️ Light Volume'}
@@ -83,7 +86,11 @@ export function BreakoutPanel({ breakout, setupType }: BreakoutPanelProps) {
             </div>
           </div>
 
-          <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-800/40 text-xs text-emerald-300 leading-relaxed">
+          <div className={`p-3 rounded-xl border text-xs leading-relaxed ${
+            isBearish
+              ? 'bg-rose-950/20 border-rose-800/40 text-rose-300'
+              : 'bg-emerald-950/20 border-emerald-800/40 text-emerald-300'
+          }`}>
             {breakout.description}
           </div>
 

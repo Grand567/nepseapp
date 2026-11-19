@@ -32,7 +32,7 @@ export default function BreakoutAlertDialog({
   onSaved = null
 }) {
   const sym = symbol ? String(symbol).trim().toUpperCase() : '';
-  const ltp = Number(stock?.ltp || entryExitPlan?.ltp || 100);
+  const ltp = Number(stock?.ltp || entryExitPlan?.ltp || 0);
   const currentRvol = calculateStockRvol(stock);
 
   // Initialize config
@@ -78,7 +78,7 @@ export default function BreakoutAlertDialog({
       setPushEnabled(true);
       setSyncedBadge(true);
     }
-  }, [isOpen, sym, stock, entryExitPlan]);
+  }, [isOpen, sym]);
 
   useBackHandler(() => {
     if (isOpen) {

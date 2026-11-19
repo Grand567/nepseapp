@@ -111,7 +111,7 @@ export function CandlestickPatternScannerService({ stocks: rawStocks = [] }: { s
           <div>
             <h2 className="text-base font-black">28 Candlestick Pattern Scanner</h2>
             <p className="text-xs text-slate-400">
-              Drabyashree Institutional 28-Pattern SVG recognition across all {stocks.length || 346} NEPSE scrips
+              Drabyashree Institutional 28-Pattern SVG recognition across all {stocks.length || 247} NEPSE scrips
             </p>
           </div>
         </div>
@@ -319,7 +319,7 @@ export function TechnicalRatingsGaugeService({ stocks: rawStocks = [] }: { stock
       const bItem = backendRatings.find(b => b.symbol === stock.symbol);
       const speedo = calculateTechnicalSpeedometer(stock);
       const rating = bItem?.rating || speedo.overallRating;
-      const score = bItem?.needleAngle ? Math.round(((bItem.needleAngle + 90) / 180) * 100) : speedo.score;
+      const score = bItem?.needleAngle != null ? Math.round(((bItem.needleAngle + 90) / 180) * 100) : speedo.score;
 
       return {
         ...stock,
@@ -480,7 +480,7 @@ export function TechnicalRatingsGaugeService({ stocks: rawStocks = [] }: { stock
                     <span className="text-emerald-400 font-bold">{sp.oscSummary.buy}B</span> · <span className="text-slate-400">{sp.oscSummary.neutral}N</span> · <span className="text-rose-400 font-bold">{sp.oscSummary.sell}S</span>
                   </td>
                   <td className="p-3 text-right font-mono font-bold text-slate-300">
-                    {s.rsi != null ? Number(s.rsi).toFixed(1) : '50.0'}
+                    {s.rsi != null ? Number(s.rsi).toFixed(1) : '—'}
                   </td>
                 </tr>
               );
@@ -565,8 +565,8 @@ export function GdpVsNepseMacroService({ stocks: rawStocks = [] }: { stocks?: an
     advice = 'High macro multiple contraction risk. Maintain defensive cash reserves.';
   }
 
-  // 10-Year Historical Trajectory (FY 2073/74 to FY 2082/83)
-  const macroHistory = [
+    const liveIndex = Number(macroApiData?.nepseIndex || macroApiData?.index || 0);
+    const macroHistory = [
     { fy: '2073/74', index: 1582, capArab: 1856, gdpArab: 2674, ratio: 69.4 },
     { fy: '2074/75', index: 1212, capArab: 1435, gdpArab: 3044, ratio: 47.1 },
     { fy: '2075/76', index: 1259, capArab: 1567, gdpArab: 3458, ratio: 45.3 },
@@ -575,7 +575,7 @@ export function GdpVsNepseMacroService({ stocks: rawStocks = [] }: { stocks?: an
     { fy: '2078/79', index: 2009, capArab: 2869, gdpArab: 4851, ratio: 59.1 },
     { fy: '2079/80', index: 2097, capArab: 3082, gdpArab: 5381, ratio: 57.3 },
     { fy: '2080/81', index: 2240, capArab: 3550, gdpArab: 5705, ratio: 62.2 },
-    { fy: '2081/82', index: 2750, capArab: liveMarketCapArab, gdpArab: nepalGdpArab, ratio: buffettRatio }
+    { fy: '2081/82', index: liveIndex > 0 ? liveIndex : 'Live', capArab: liveMarketCapArab, gdpArab: nepalGdpArab, ratio: buffettRatio }
   ];
 
   return (

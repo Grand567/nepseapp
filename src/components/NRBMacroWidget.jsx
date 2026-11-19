@@ -9,7 +9,7 @@
  *   compact={false} → full card with guidance (for Settings / macro panel)
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getProxyBase } from '../utils/liveData';
 import { formatNptDateIso } from '../utils/nepseCalendar';
 
@@ -81,7 +81,7 @@ export function buildBaselineNrbMacroData(overrides = {}) {
   return {
     liveDataAvailable: Boolean(overrides?.liveDataAvailable),
     source: overrides?.source || 'NRB Monetary Baseline Vault',
-    asOf: overrides?.asOf || formatNptDateIso(new Date()),
+    asOf: overrides?.asOf || 'NRB Baseline',
     macroRegime: {
       ...normalizedRegime,
       ...rawRegime,
@@ -109,32 +109,43 @@ export function NRBMacroWidget({ compact = false }) {
   const [macroData, setMacroData] = useState(() => buildBaselineNrbMacroData());
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const abortRef = useRef(null);
+  const isMountedRef = useRef(true);
 
   const fetchMacro = useCallback(async () => {
-    setLoading(true);
+    if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
+    abortRef.current = controller;
     const timer = setTimeout(() => controller.abort(), 10000);
+
+    setLoading(true);
     try {
       const base = getProxyBase();
       const res = await fetch(`${base}/api/macro/nrb-indicators`, { signal: controller.signal });
       const json = await res.json();
+      if (!isMountedRef.current) return;
       if (json && json.success && json.data?.macroRegime) {
         setMacroData(buildBaselineNrbMacroData(json.data));
       } else {
         setMacroData(prev => prev || buildBaselineNrbMacroData());
       }
     } catch (_) {
-      setMacroData(prev => prev || buildBaselineNrbMacroData());
+      if (isMountedRef.current) setMacroData(prev => prev || buildBaselineNrbMacroData());
     } finally {
       clearTimeout(timer);
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
     fetchMacro();
     const interval = setInterval(fetchMacro, 6 * 60 * 60 * 1000);
-    return () => clearInterval(interval);
+    return () => {
+      isMountedRef.current = false;
+      if (abortRef.current) abortRef.current.abort();
+      clearInterval(interval);
+    };
   }, [fetchMacro]);
 
   const activeData = macroData || buildBaselineNrbMacroData();

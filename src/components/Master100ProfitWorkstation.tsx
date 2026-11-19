@@ -12,6 +12,7 @@ import {
   runMasterGuideAudit,
   evaluateMasterStock,
   calculateNetTradeGain,
+  computeMasterPositionSizing,
   type MasterStockEvaluation,
   type MasterAuditReport
 } from '../utils/masterProfitEngine';
@@ -55,13 +56,8 @@ export function Master100ProfitWorkstation({
 
   // Telegram Alert State
   const [telegramStatus, setTelegramStatus] = useState<{ isConfigured: boolean; enabled: boolean; maskedToken: string; chatId: string } | null>(null);
-  const [telegramToken, setTelegramToken] = useState(() => {
-    try {
-      return localStorage.getItem('drabyashree_telegram_token') || '';
-    } catch {
-      return '';
-    }
-  });
+  const [telegramToken, setTelegramToken] = useState('');
+  const [telegramAdminKey, setTelegramAdminKey] = useState('');
   const [telegramChatId, setTelegramChatId] = useState(() => {
     try {
       return localStorage.getItem('drabyashree_telegram_chat_id') || '';
@@ -73,12 +69,20 @@ export function Master100ProfitWorkstation({
   const [telegramTestMsg, setTelegramTestMsg] = useState<{ type: 'success' | 'error'; text: string; link?: string; linkText?: string } | null>(null);
   const [telegramSaving, setTelegramSaving] = useState(false);
 
+  const buildTelegramHeaders = () => ({
+    'Content-Type': 'application/json',
+    ...(telegramAdminKey.trim() ? { 'x-admin-key': telegramAdminKey.trim() } : {})
+  });
+
   const cleanBotToken = (raw: string) => {
     if (!raw) return '';
     return raw.replace(/\s+/g, '').replace(/^bot/i, '').replace(/["']/g, '');
   };
 
   useEffect(() => {
+    // Purge any legacy plaintext bot token left in browser storage
+    try { localStorage.removeItem('drabyashree_telegram_token'); } catch {}
+
     const fetchTgStatus = async () => {
       try {
         const base = getProxyBase();
@@ -105,9 +109,8 @@ export function Master100ProfitWorkstation({
     const token = cleanBotToken(telegramToken);
     const chat = String(telegramChatId || '').trim();
 
-    // Immediately save locally so it is never lost
+    // Persist only non-secret Chat ID locally; bot token stays memory-only until saved on server
     try {
-      if (token) localStorage.setItem('drabyashree_telegram_token', token);
       if (chat) localStorage.setItem('drabyashree_telegram_chat_id', chat);
     } catch {}
 
@@ -115,13 +118,14 @@ export function Master100ProfitWorkstation({
       const base = getProxyBase();
       const res = await fetch(`${base}/api/telegram/config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildTelegramHeaders(),
         body: JSON.stringify({ botToken: token, chatId: chat, enabled: true })
       });
       const text = await res.text();
       let data: any = null;
       try { data = text ? JSON.parse(text) : null; } catch {}
       if (data && data.success) {
+        setTelegramToken('');
         setTelegramTestMsg({ type: 'success', text: data.message || '✅ Telegram Bot configuration saved successfully!' });
         try {
           const sRes = await fetch(`${base}/api/telegram/status`);
@@ -160,7 +164,7 @@ export function Master100ProfitWorkstation({
       const base = getProxyBase();
       const res = await fetch(`${base}/api/telegram/test`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildTelegramHeaders(),
         body: JSON.stringify({ botToken: token, chatId: chat })
       });
       const text = await res.text();
@@ -205,7 +209,7 @@ export function Master100ProfitWorkstation({
       const base = getProxyBase();
       const res = await fetch(`${base}/api/telegram/test-alert`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildTelegramHeaders(),
         body: JSON.stringify({
           symbol: inspectedStock?.symbol || 'HATHY',
           ltp: inspectedStock?.ltp || 420
@@ -233,7 +237,7 @@ export function Master100ProfitWorkstation({
       const base = getProxyBase();
       const res = await fetch(`${base}/api/telegram/dispatch-morning-digest`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildTelegramHeaders(),
         body: JSON.stringify({})
       });
       const text = await res.text();
@@ -275,7 +279,7 @@ export function Master100ProfitWorkstation({
       const base = getProxyBase();
       const res = await fetch(`${base}/api/telegram/detect-chat-id`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildTelegramHeaders(),
         body: JSON.stringify({ botToken: token })
       });
       const text = await res.text();
@@ -439,50 +443,28 @@ export function Master100ProfitWorkstation({
     return auditReport.crownedWinner;
   }, [selectedStockSymbol, auditReport, stocks]);
 
-  // Derived Position Sizing for inspected stock with 5% ADV Liquidity and Capital Outlay Cap
+  // Derived Position Sizing for inspected stock with NEPSE 10-kitta min-lot, 5% ADV Liquidity, and Capital Outlay Cap
   const sizing = useMemo(() => {
     if (!inspectedStock) return null;
-    const ltp = Number(inspectedStock.ltp) || 100;
-    const stopLoss = Number(inspectedStock.stopLoss) || Number((ltp * 0.95).toFixed(1));
-    const target1Gross = Number(inspectedStock.target1Gross) || Number((ltp * 1.08).toFixed(1));
-    const safeCapital = Math.max(10000, Number(portfolioCapital) || 100000);
-    const safeRiskPct = Math.max(0.5, Number(riskTolerancePct) || 1.5);
-    const maxRiskCapital = safeCapital * (safeRiskPct / 100);
-    const riskPerShare = Math.max(1.0, +(ltp - stopLoss).toFixed(2));
-    const unconstrainedShares = Math.max(10, Math.floor(maxRiskCapital / riskPerShare));
-    const adv20 = Number(inspectedStock.adv20 || inspectedStock.volume || 15000);
-    const maxLiquidityShares = Math.max(10, Math.floor(adv20 * 0.05));
-    const maxAffordableShares = Math.max(10, Math.floor(safeCapital / ltp));
-
-    const isLiquidityCapped = unconstrainedShares > maxLiquidityShares;
-    const sharesBeforeCapitalCap = isLiquidityCapped ? maxLiquidityShares : unconstrainedShares;
-    const isCapitalCapped = sharesBeforeCapitalCap > maxAffordableShares;
-    const allowedShares = isCapitalCapped ? maxAffordableShares : sharesBeforeCapitalCap;
-    const capitalOutlay = allowedShares * ltp;
-    const allocationPct = +((capitalOutlay / safeCapital) * 100).toFixed(1);
-    const netDetails = calculateNetTradeGain(ltp, target1Gross, allowedShares);
-
-    return {
-      maxRiskCapital,
-      riskPerShare,
-      unconstrainedShares,
-      maxLiquidityShares,
-      isLiquidityCapped,
-      isCapitalCapped,
-      allowedShares,
-      capitalOutlay,
-      allocationPct,
-      netDetails
-    };
+    return computeMasterPositionSizing({
+      ltp: inspectedStock.ltp,
+      stopLoss: inspectedStock.stopLoss,
+      target1Gross: inspectedStock.target1Gross,
+      portfolioCapital,
+      riskTolerancePct,
+      adv20: Number(inspectedStock.adv20 || inspectedStock.volume || 15000)
+    });
   }, [inspectedStock, portfolioCapital, riskTolerancePct]);
 
   const handleCopyTms = () => {
     if (!inspectedStock || !sizing) return;
-    const capNote = sizing.isLiquidityCapped 
-      ? ` [Capped to 5% Daily Vol: ${sizing.maxLiquidityShares} units]` 
-      : sizing.isCapitalCapped 
-        ? ` [Capped to Portfolio Capital: ${sizing.allowedShares} units]` 
-        : '';
+    const capNote = sizing.isBelowMinLot
+      ? ` [Below 10-kitta NEPSE minimum lot for budget/risk]`
+      : sizing.isLiquidityCapped
+        ? ` [Capped to 5% Daily Vol: ${sizing.maxLiquidityShares} units]`
+        : sizing.isCapitalCapped
+          ? ` [Capped to Portfolio Capital: ${sizing.allowedShares} units]`
+          : '';
     const trackNote = inspectedStock.track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum';
     const setupNote = inspectedStock.setupArchetype === 'SUPPORT_BOUNCE' ? '🔄 Support Bounce' : inspectedStock.setupArchetype;
     const text = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${inspectedStock.symbol} | Type: LIMIT ORDER\nTrack: ${trackNote} | Setup: ${setupNote}\nEntry Limit: Rs. ${inspectedStock.entryLow} (Chase Cap: Rs. ${inspectedStock.chaseCap})\nAllocated Qty: ${sizing.allowedShares} Shares (Capital: Rs. ${sizing.capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${inspectedStock.stopLoss} (-${inspectedStock.stopLossPct}%)\nTarget 1: Rs. ${inspectedStock.target1Gross} (+${inspectedStock.target1NetPct}% Net after 7.5% CGT)`;
@@ -659,7 +641,10 @@ export function Master100ProfitWorkstation({
           }}>
             <span style={{ color: '#94a3b8' }}>📅 10-Yr Seasonality:</span>
             <span style={{ fontWeight: 800, color: auditReport.macroGate.seasonPassed ? '#34d399' : '#f59e0b' }}>
-              {auditReport.macroGate.season?.phase || 'Current Cycle'} ({auditReport.macroGate.season?.historicalWinRate || 65}% Win Rate)
+              {auditReport.macroGate.season?.phase || 'Current Cycle'} ({(() => {
+                const rawHwr = String(auditReport.macroGate.season?.historicalWinRate || '65% Win Rate');
+                return rawHwr.includes('Win Rate') ? rawHwr : (rawHwr.includes('%') ? `${rawHwr} Win Rate` : `${rawHwr}% Win Rate`);
+              })()})
             </span>
           </div>
 
@@ -1111,12 +1096,14 @@ export function Master100ProfitWorkstation({
                     marginLeft: 'auto',
                     fontSize: 12,
                     fontWeight: 800,
-                    color: '#34d399',
-                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: inspectedStock.obir != null && inspectedStock.obir > 0 ? '#34d399' : '#94a3b8',
+                    background: inspectedStock.obir != null && inspectedStock.obir > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.06)',
                     padding: '3px 8px',
                     borderRadius: 6
                   }}>
-                    OBIR +0.32 (Positive Matching Depth)
+                    {inspectedStock.obir != null
+                      ? `OBIR ${inspectedStock.obir >= 0 ? '+' : ''}${inspectedStock.obir.toFixed(2)} (${inspectedStock.obir >= 0.2 ? 'Positive Matching Depth' : 'Neutral Depth'})`
+                      : 'OBIR: Pre-Open Only (10:30–11:00)'}
                   </div>
                 </div>
               </div>
@@ -1180,9 +1167,14 @@ export function Master100ProfitWorkstation({
                   }}>
                     <div>
                       <div style={{ fontSize: 12, color: '#94a3b8' }}>MAX ALLOWABLE SHARES</div>
-                      <div style={{ fontSize: 20, fontWeight: 900, color: '#38bdf8', marginTop: 2 }}>
+                      <div style={{ fontSize: 20, fontWeight: 900, color: sizing.isBelowMinLot ? '#f59e0b' : '#38bdf8', marginTop: 2 }}>
                         {sizing.allowedShares.toLocaleString()} <span style={{ fontSize: 12, color: '#94a3b8' }}>kitta</span>
                       </div>
+                      {sizing.isBelowMinLot && (
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>
+                          Below 10-kitta NEPSE min lot for budget/risk
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -1697,7 +1689,7 @@ export function Master100ProfitWorkstation({
             }}>
               {(() => {
                 const startCap = Number(auditReport.compoundSimulation.startingCapital || 100000);
-                const endCap = Number(auditReport.compoundSimulation.endingCapital || startCap * 2.19);
+                const endCap = Number(auditReport.compoundSimulation.endingCapital || (auditReport.crownedWinner ? startCap * 2.19 : startCap));
                 const totalGrowth = endCap / Math.max(1, startCap);
                 const fmtStep = (stepIdx: number) => {
                   const factor = Math.pow(totalGrowth, stepIdx / 5);
@@ -1753,7 +1745,7 @@ export function Master100ProfitWorkstation({
                 {Math.round((auditReport.crownedWinner.ltp - auditReport.crownedWinner.stopLoss) * auditReport.crownedWinner.kellyShares).toLocaleString()}) = <b>derived from {auditReport.crownedWinner.symbol} trade levels</b>.
               </>
             ) : (
-              <>E = (0.65 &times; Rs. 45,000) &minus; (0.35 &times; Rs. 24,000) = <b>+Rs. 20,850 per trade</b>.</>
+              <span>No active trade setup meets all 8 quantitative gates. Mathematical expectancy cannot be computed without a confirmed setup (100% Capital Defense).</span>
             )}
             <br />
             Deploying Half-Kelly (&asymp; 25% of capital per position) across 20 sequential trades produces approximately{' '}
@@ -2039,16 +2031,16 @@ export function Master100ProfitWorkstation({
                       Telegram Bot Token (from @BotFather)
                     </label>
                     <input
-                      type="text"
+                      type="password"
                       autoCapitalize="off"
                       autoCorrect="off"
+                      autoComplete="off"
                       spellCheck="false"
                       placeholder={telegramStatus?.maskedToken ? `Saved: ${telegramStatus.maskedToken}` : "e.g. 7123456789:AAHq_xyz..."}
                       value={telegramToken}
                       onChange={(e) => {
                         const val = e.target.value.replace(/\s+/g, '');
                         setTelegramToken(val);
-                        try { localStorage.setItem('drabyashree_telegram_token', val); } catch {}
                       }}
                       style={{
                         width: '100%',
@@ -2117,6 +2109,33 @@ export function Master100ProfitWorkstation({
                     <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
                       Open your bot on Telegram ➔ tap <b>START</b> or send "hello" ➔ tap <b>Auto-Detect My ID</b>
                     </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#cbd5e1', marginBottom: 6 }}>
+                      Proxy Admin Key (Optional, Session-Only)
+                    </label>
+                    <input
+                      type="password"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      autoComplete="off"
+                      spellCheck="false"
+                      placeholder="ADMIN_API_KEY (never saved to browser storage)"
+                      value={telegramAdminKey}
+                      onChange={(e) => setTelegramAdminKey(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        color: '#fff',
+                        fontSize: 13,
+                        fontFamily: 'monospace',
+                        outline: 'none'
+                      }}
+                    />
                   </div>
                 </div>
 

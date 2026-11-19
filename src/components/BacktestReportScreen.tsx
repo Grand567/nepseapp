@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   BarChart3, TrendingUp, AlertTriangle, ShieldAlert,
   Play, RefreshCw, FileText, CheckCircle2, XCircle, ArrowUpRight,
@@ -51,44 +51,6 @@ interface BacktestMetrics {
   }>;
 }
 
-const FALLBACK_METRICS: BacktestMetrics = {
-  symbol: 'NABIL',
-  sector: 'Commercial Banks',
-  totalSessions: 245,
-  initialCapital: 1000000,
-  endingEquity: 1184500,
-  netProfitNpr: 184500,
-  totalReturnPct: 18.45,
-  totalTrades: 12,
-  winRatePct: 66.7,
-  avgWinNpr: 28500,
-  avgLossNpr: -12800,
-  avgWinPct: 7.4,
-  avgLossPct: -3.2,
-  winLossRatio: 2.23,
-  profitFactor: 2.31,
-  expectancyNpr: 15375,
-  maxDrawdownPct: 6.8,
-  maxDrawdownDurationSessions: 14,
-  sharpeRatio: 1.45,
-  sortinoRatio: 2.15,
-  sampleSizeWarning: null,
-  isSampleUnderpowered: false,
-  regimeBreakdown: {
-    BULL: { tradesCount: 7, winRatePct: 71.4, netPnlNpr: 135000 },
-    NEUTRAL: { tradesCount: 3, winRatePct: 66.7, netPnlNpr: 42000 },
-    BEAR: { tradesCount: 2, winRatePct: 50.0, netPnlNpr: 7500 },
-  },
-  totalCommissionPaid: 7650,
-  totalCgtPaid: 14945,
-  survivorshipBiasNote: 'Simulated over trailing 1-year historical trading sessions with standard NEPSE friction models.',
-  closedTrades: [
-    { symbol: 'NABIL', entryDate: '2026-02-15', exitDate: '2026-03-02', shares: 200, entryPrice: 485, exitPrice: 522, returnPct: 7.63, realizedPnl: 6420, holdSessions: 12, exitReason: 'Target 1 Reached', regime: 'BULL', cgtPaid: 535, commissionPaid: 650 },
-    { symbol: 'NABIL', entryDate: '2026-03-18', exitDate: '2026-04-05', shares: 200, entryPrice: 510, exitPrice: 545, returnPct: 6.86, realizedPnl: 6150, holdSessions: 14, exitReason: 'Target 1 Reached', regime: 'BULL', cgtPaid: 512, commissionPaid: 680 },
-    { symbol: 'NABIL', entryDate: '2026-04-20', exitDate: '2026-05-02', shares: 250, entryPrice: 535, exitPrice: 518, returnPct: -3.18, realizedPnl: -4750, holdSessions: 9, exitReason: 'Trailing Stop Hit', regime: 'NEUTRAL', cgtPaid: 0, commissionPaid: 810 },
-  ],
-};
-
 export function BacktestReportScreen() {
   const [symbol, setSymbol] = useState<string>('NABIL');
   const [capital, setCapital] = useState<number>(1000000);
@@ -97,44 +59,72 @@ export function BacktestReportScreen() {
   const [metrics, setMetrics] = useState<BacktestMetrics | null>(null);
   const [markdown, setMarkdown] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'overview' | 'trades' | 'markdown'>('overview');
+  const abortRef = useRef<AbortController | null>(null);
+  const reqSeqRef = useRef<number>(0);
 
-  const runBacktest = useCallback(async (targetSymbol = symbol) => {
+  const runBacktest = useCallback(async (targetSymbol = symbol, targetCapital = capital) => {
+    const cleanSym = String(targetSymbol || '').trim().toUpperCase();
+    if (!cleanSym) return;
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const seq = ++reqSeqRef.current;
+
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(`${getProxyBase()}/api/backtest/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: targetSymbol, initialCapital: capital, days: 365 })
+        body: JSON.stringify({ symbol: cleanSym, initialCapital: targetCapital, days: 365 }),
+        signal: controller.signal
       });
+      if (!res.ok) {
+        throw new Error(`Backtest server returned HTTP ${res.status}`);
+      }
       const json = await res.json();
+      if (seq !== reqSeqRef.current) return;
       if (json.success && json.data && Array.isArray(json.data.closedTrades)) {
         setMetrics(json.data);
         setMarkdown(json.markdown || '');
       } else {
-        setMetrics(FALLBACK_METRICS);
-        setMarkdown('# Quantitative Backtest Report (Simulation Fallback)\n\nDeterministic walk-forward simulation active.');
+        setMetrics(null);
+        setError(json.error || `No verified backtest metrics available for ${cleanSym}.`);
       }
-    } catch {
-      setMetrics(FALLBACK_METRICS);
-      setMarkdown('# Quantitative Backtest Report (Simulation Fallback)\n\nDeterministic walk-forward simulation active.');
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || seq !== reqSeqRef.current) return;
+      setMetrics(null);
+      setError(err?.message || `Failed to run backtest for ${cleanSym}. Ensure backend proxy is reachable.`);
     } finally {
-      setLoading(false);
+      if (seq === reqSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, [symbol, capital]);
 
-  // Load latest report or run initial backtest on mount
+  // Run initial bootstrap ONCE on mount (never snap symbol back to 'NABIL' on symbol/capital edits)
   useEffect(() => {
-    fetch(`${getProxyBase()}/api/backtest/latest`)
-      .then(res => res.json())
+    const controller = new AbortController();
+    fetch(`${getProxyBase()}/api/backtest/latest`, { signal: controller.signal })
+      .then(res => (res.ok ? res.json() : null))
       .then(json => {
-        if (json.success && json.exists && json.markdown) {
+        if (json?.success && json?.exists && json?.markdown) {
           setMarkdown(json.markdown);
         }
-        runBacktest('NABIL');
       })
-      .catch(() => runBacktest('NABIL'));
-  }, [runBacktest]);
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          runBacktest('NABIL', 1000000);
+        }
+      });
+    return () => {
+      controller.abort();
+      if (abortRef.current) abortRef.current.abort();
+    };
+  }, []);
 
   const closedTrades = Array.isArray(metrics?.closedTrades) ? metrics.closedTrades : [];
   const winRatePct = metrics?.winRatePct ?? 0;

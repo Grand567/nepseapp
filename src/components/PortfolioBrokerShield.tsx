@@ -109,7 +109,7 @@ export default function PortfolioBrokerShield({
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (_) {}
-    return DEFAULT_SAMPLE_SHIELD_ITEMS;
+    return [];
   });
 
   // Evaluated Data states
@@ -176,7 +176,44 @@ export default function PortfolioBrokerShield({
   };
 
   useEffect(() => {
-    evaluateShield();
+    let active = true;
+    const run = async () => {
+      if (shieldItems.length === 0) {
+        if (active) {
+          setEvaluatedStocks([]);
+          setSummary(null);
+          setLoading(false);
+        }
+        return;
+      }
+      setLoading(true);
+      setErrorMsg('');
+      try {
+        const res = await fetchPortfolioShield(shieldItems, days);
+        if (!active) return;
+        if (res?.success) {
+          setEvaluatedStocks(res.items || []);
+          setSummary(res.portfolioSummary || null);
+          setCapitalRotations(res.capitalRotations || []);
+          setLastEvaluatedTime(new Date().toLocaleTimeString());
+        } else {
+          setErrorMsg('Microstructure shield evaluation pending sync. Retrying...');
+        }
+      } catch (err: any) {
+        if (!active) return;
+        console.warn('[PortfolioBrokerShield] Evaluation failed:', err);
+        setErrorMsg('Failed to connect to broker shield backend.');
+      } finally {
+        if (active) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    };
+    run();
+    return () => {
+      active = false;
+    };
   }, [shieldItems, days]);
 
   // Add Item to Shield

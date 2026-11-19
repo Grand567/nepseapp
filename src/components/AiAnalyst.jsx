@@ -58,13 +58,18 @@ function synthesizeGuruQuantReport({
   symbol, price, technical, financials, candles, adi, wyckoff, graham, atr, targets, zone, rrr, volumeZ, marketData,
   circuitMetrics, backtestResult, signalTriggers, brokerAnalysis = null
 }) {
-  const ltp = Number(price.closePrice || price.lastTradedPrice || price.ltp || 100);
+  const rawLtp = Number(price.closePrice || price.lastTradedPrice || price.ltp || 0);
+  const ltp = Number.isFinite(rawLtp) && rawLtp > 0 ? rawLtp : 0;
   const pChg = Number(price.percentageChange || price.pChange || 0);
-  const vol = Number(price.totalTradedQuantity || price.volume || 10000);
+  const vol = Number(price.totalTradedQuantity || price.volume || 0);
   const finData = financials?.data || {};
-  const eps = Number(finData.eps ?? price.eps ?? 0);
-  const bvps = Number(finData.bvps ?? finData.bookValuePerShare ?? finData.bookValue ?? price.bvps ?? 100);
-  const pe = Number(finData.pe ?? price.pe ?? (eps > 0 ? ltp / eps : 0));
+  const rawEps = finData.eps ?? price.eps ?? null;
+  const hasEps = rawEps !== null && rawEps !== undefined && rawEps !== '' && Number.isFinite(Number(rawEps));
+  const eps = hasEps ? Number(rawEps) : 0;
+  const rawBvps = finData.bvps ?? finData.bookValuePerShare ?? finData.bookValue ?? price.bvps ?? null;
+  const hasBvps = rawBvps !== null && rawBvps !== undefined && rawBvps !== '' && Number.isFinite(Number(rawBvps));
+  const bvps = hasBvps ? Number(rawBvps) : 0;
+  const pe = Number(finData.pe ?? price.pe ?? (eps > 0 && ltp > 0 ? ltp / eps : 0));
   const rsi = Number(technical?.indicators?.rsi || resolveDynamicStockRSI({ ...price, symbol, ltp, pChange: pChg, candles }));
   const sector = String(price.sector || finData.sector || '').toLowerCase();
 
@@ -295,9 +300,9 @@ function synthesizeGuruQuantReport({
       intrinsicValue: graham.intrinsicValue,
       marginOfSafetyPct: graham.marginOfSafetyPct,
       valuationStatus: graham.valuationStatus,
-      pe: pe.toFixed(1),
-      eps: eps.toFixed(1),
-      bvps: bvps.toFixed(1)
+      pe: pe > 0 ? pe.toFixed(1) : 'N/A',
+      eps: hasEps ? eps.toFixed(1) : 'N/A',
+      bvps: hasBvps ? bvps.toFixed(1) : 'N/A'
     },
     targetPrice: {
       oneMonth: targets.target1.price,
@@ -314,7 +319,7 @@ function synthesizeGuruQuantReport({
     entryZone: targets.entryZone.label,
     riskRewardRatio: rrr.rrr,
     riskRewardVerdict: rrr.verdict,
-    analysis: `${symbol} is currently positioned in the ${zone.zone} with ${wyckoff.phase}. Quantitative analysis confirms ${adi.trend.toLowerCase()} at Rs. ${ltp}. Benjamin Graham valuation indicates an intrinsic baseline of Rs. ${graham.intrinsicValue} (${graham.marginOfSafetyPct >= 0 ? '+' : ''}${graham.marginOfSafetyPct}% margin of safety). With an initial ATR swing target of ${targets.target1.label} against a capital risk floor of ${targets.stopLoss.label}, the calculated Risk-to-Reward ratio stands at ${rrr.rrr}:1.`,
+    analysis: `${symbol} is currently positioned in the ${zone.zone} with ${wyckoff.phase}. Quantitative analysis confirms ${adi.trend.toLowerCase()} at ${ltp > 0 ? `Rs. ${ltp}` : 'an unavailable live quote'}. Benjamin Graham valuation indicates an intrinsic baseline of Rs. ${graham.intrinsicValue} (${graham.marginOfSafetyPct >= 0 ? '+' : ''}${graham.marginOfSafetyPct}% margin of safety). With an initial ATR swing target of ${targets.target1.label} against a capital risk floor of ${targets.stopLoss.label}, the calculated Risk-to-Reward ratio stands at ${rrr.rrr}:1.`,
     keyReasons: reasons,
     risks,
     investmentTips: isCounterTrendBounce || isLockInVeto || isBfiRegulatoryVeto || isHydroCapexVeto
@@ -329,38 +334,91 @@ function synthesizeGuruQuantReport({
 
 // ── MARKET OUTLOOK SYNTHESIZER (CLIENT-SIDE QUANT FALLBACK) ─────
 export function synthesizeGuruMarketOutlook(marketData, topGainers = [], topLosers = []) {
-  const nepseVal = Number(marketData?.data?.nepseIndex || 2740);
-  const chgPct = Number(marketData?.data?.changePercent || 0);
-  const turnover = Number(marketData?.data?.totalTurnover || 5.2e9);
-  const turnoverBn = (turnover / 1e9).toFixed(2);
-  const txnCount = Number(marketData?.data?.totalTransactions || 85000);
+  const rawNepse = Number(marketData?.data?.nepseIndex);
+  const nepseVal = Number.isFinite(rawNepse) && rawNepse > 0 ? rawNepse : null;
+  const rawChg = marketData?.data?.changePercent;
+  const chgPct = rawChg !== null && rawChg !== undefined && rawChg !== '' && Number.isFinite(Number(rawChg))
+    ? Number(rawChg)
+    : null;
+  const rawTurnover = Number(marketData?.data?.totalTurnover);
+  const turnover = Number.isFinite(rawTurnover) && rawTurnover > 0 ? rawTurnover : null;
+  const turnoverBn = turnover !== null ? (turnover / 1e9).toFixed(2) : null;
+  const rawTxn = Number(marketData?.data?.totalTransactions);
+  const txnCount = Number.isFinite(rawTxn) && rawTxn > 0 ? rawTxn : null;
 
-  const isBullish = chgPct > 0.3;
-  const isBearish = chgPct < -0.3;
+  const nowTime = new Date().toLocaleTimeString('en-NP', { hour: '2-digit', minute: '2-digit' });
+  const nowDate = new Date().toLocaleDateString('en-NP');
+
+  if (nepseVal === null) {
+    return {
+      isOfflineFallback: true,
+      lastUpdated: `${nowDate} ${nowTime} NPT (Live Market Telemetry Unavailable)`,
+      verdict: 'DATA UNAVAILABLE',
+      marketSentiment: 'UNAVAILABLE',
+      actionZoneBadge: 'LIVE MARKET TELEMETRY UNAVAILABLE',
+      confidence: null,
+      scores: {
+        technical: null,
+        fundamental: null,
+        risk: null,
+        composite: null
+      },
+      keyLevels: {
+        nepseSupport: null,
+        nepseResistance: null
+      },
+      sectorsToWatch: [],
+      stocksToWatch: [],
+      marketAnalysis: 'Live NEPSE index telemetry is unavailable. Reconnect to the live proxy feed to view verified market breadth, turnover, and index support/resistance levels.',
+      keyReasons: [
+        'Live NEPSE index feed returned no active index value.'
+      ],
+      risks: [
+        'Avoid discretionary index positioning while live market breadth and turnover feeds are unavailable.',
+        'Individual NEPSE equity daily circuit bands remain ±15% under SEBON rules.'
+      ],
+      nepseSpecific: 'Under SEBON regulations, daily individual stock fluctuations are capped at ±15% under T+2 clearing.',
+      investorAdvice: 'Reconnect to live market telemetry before evaluating index-level entries or sector rotation.'
+    };
+  }
+
+  const effectiveChg = chgPct ?? 0;
+  const isBullish = effectiveChg > 0.3;
+  const isBearish = effectiveChg < -0.3;
   const sentiment = isBullish ? 'BULLISH' : isBearish ? 'BEARISH' : 'NEUTRAL';
   const verdict = isBullish ? 'ACCUMULATION EXPANSION' : isBearish ? 'SELECTIVE CONSOLIDATION' : 'BALANCED REGIME';
-  const confidence = Math.min(88, Math.max(62, Math.round(70 + Math.abs(chgPct) * 5)));
+  const confidence = Math.min(88, Math.max(62, Math.round(70 + Math.abs(effectiveChg) * 5)));
 
   const support = Math.round(nepseVal * 0.97);
   const resistance = Math.round(nepseVal * 1.03);
 
   const gainersList = Array.isArray(topGainers) && topGainers.length > 0
     ? topGainers.slice(0, 5).map(g => `${g.symbol || g.scrip} (+${Number(g.percentageChange || g.pChange || 0).toFixed(1)}%)`)
-    : ['NABIL (+2.8%)', 'AKJCL (+9.9%)', 'SHIVM (+3.4%)'];
+    : [];
 
   const losersList = Array.isArray(topLosers) && topLosers.length > 0
     ? topLosers.slice(0, 5).map(l => `${l.symbol || l.scrip} (${Number(l.percentageChange || l.pChange || 0).toFixed(1)}%)`)
-    : ['NICA (-1.2%)', 'GBIME (-0.8%)'];
+    : [];
 
-  const nowTime = new Date().toLocaleTimeString('en-NP', { hour: '2-digit', minute: '2-digit' });
-  const nowDate = new Date().toLocaleDateString('en-NP');
+  const stocksToWatch = Array.isArray(topGainers) && topGainers.length > 0
+    ? topGainers.slice(0, 4).map(g => String(g.symbol || g.scrip || '').toUpperCase().trim()).filter(Boolean)
+    : [];
+  const sectorsToWatch = Array.from(new Set(
+    [...(Array.isArray(topGainers) ? topGainers : []), ...(Array.isArray(topLosers) ? topLosers : [])]
+      .map(s => String(s?.sector || s?.sectorName || '').trim())
+      .filter(Boolean)
+  )).slice(0, 3);
+
+  const turnoverSummary = turnoverBn !== null
+    ? ` with aggregate daily turnover at NPR ${turnoverBn}B${txnCount !== null ? ` across ${txnCount.toLocaleString()} transactions` : ''}`
+    : '';
 
   return {
     isOfflineFallback: true,
-    lastUpdated: `${nowDate} ${nowTime} NPT (Offline Quant Synthesis)`,
+    lastUpdated: `${nowDate} ${nowTime} NPT (Quant Market Snapshot)`,
     verdict,
     marketSentiment: sentiment,
-    actionZoneBadge: `OFFLINE QUANT SYNTHESIS (${isBullish ? 'BULLISH' : isBearish ? 'DEFENSIVE' : 'NEUTRAL'})`,
+    actionZoneBadge: `QUANT SYNTHESIS (${isBullish ? 'BULLISH' : isBearish ? 'DEFENSIVE' : 'NEUTRAL'})`,
     confidence,
     scores: {
       technical: isBullish ? 76 : isBearish ? 48 : 62,
@@ -372,13 +430,19 @@ export function synthesizeGuruMarketOutlook(marketData, topGainers = [], topLose
       nepseSupport: support,
       nepseResistance: resistance
     },
-    sectorsToWatch: ['Commercial Banks', 'Hydropower', 'Non-Life Insurance'],
-    stocksToWatch: ['NABIL', 'AKJCL', 'SHIVM', 'CIT'],
-    marketAnalysis: `NEPSE is currently trading at ${nepseVal.toFixed(2)} (${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%) with aggregate daily turnover at NPR ${turnoverBn}B across ${txnCount.toLocaleString()} transactions. Market structure shows ${isBullish ? 'steady institutional accumulation and expanding breadth' : isBearish ? 'profit-taking pressure and defensive rotation' : 'two-way consolidation between key support and resistance zones'}. Support is established around ${support.toLocaleString()} and immediate resistance is tracked near ${resistance.toLocaleString()}.`,
+    sectorsToWatch,
+    stocksToWatch,
+    marketAnalysis: `NEPSE is trading at ${nepseVal.toFixed(2)}${chgPct !== null ? ` (${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%)` : ''}${turnoverSummary}. Derived support sits near ${support.toLocaleString()} with resistance near ${resistance.toLocaleString()}.`,
     keyReasons: [
-      `Aggregate daily turnover clocked at NPR ${turnoverBn}B across ${txnCount.toLocaleString()} floor transactions`,
-      `Breadth indicators show top gainers including ${gainersList.slice(0, 3).join(', ')}`,
-      `Commercial banking liquidity remains accommodative with interbank rates held within NRB corridor limits`
+      turnoverBn !== null
+        ? `Aggregate daily turnover clocked at NPR ${turnoverBn}B${txnCount !== null ? ` across ${txnCount.toLocaleString()} transactions` : ''}`
+        : `NEPSE index level verified at ${nepseVal.toFixed(2)}`,
+      gainersList.length > 0
+        ? `Breadth leaders include ${gainersList.slice(0, 3).join(', ')}`
+        : 'Top-gainers breadth feed not supplied for this snapshot',
+      losersList.length > 0
+        ? `Primary laggards include ${losersList.slice(0, 3).join(', ')}`
+        : 'Top-losers breadth feed not supplied for this snapshot'
     ],
     risks: [
       'Short-term profit-taking at key psychological resistance levels',
@@ -417,22 +481,22 @@ RSI (14): ${technical?.indicators?.rsi?.toFixed(1) || 'N/A'} | MACD: ${technical
 
 Respond in this exact JSON format:
 {
-  "recommendation": "${quantMetrics?.report?.recommendation || 'BUY / ACCUMULATE'}",
-  "confidence": ${quantMetrics?.report?.confidence || 85},
-  "riskLevel": "${quantMetrics?.report?.riskLevel || 'LOW'}",
-  "currentPrice": ${price.closePrice || price.lastTradedPrice || 0},
+  "recommendation": "${quantMetrics?.report?.recommendation || 'HOLD'}",
+  "confidence": ${quantMetrics?.report?.confidence ?? 'null'},
+  "riskLevel": "${quantMetrics?.report?.riskLevel || 'MEDIUM'}",
+  "currentPrice": ${price.closePrice || price.lastTradedPrice || 'null'},
   "targetPrice": {
-    "oneMonth": ${quantMetrics?.targets?.target1?.price || (price.closePrice ? Number((price.closePrice * 1.05).toFixed(1)) : 'null')},
-    "threeMonths": ${quantMetrics?.targets?.target2?.price || (price.closePrice ? Number((price.closePrice * 1.12).toFixed(1)) : 'null')},
-    "sixMonths": ${quantMetrics?.targets?.target3?.price || (price.closePrice ? Number((price.closePrice * 1.20).toFixed(1)) : 'null')}
+    "oneMonth": ${quantMetrics?.targets?.target1?.price ?? 'null'},
+    "threeMonths": ${quantMetrics?.targets?.target2?.price ?? 'null'},
+    "sixMonths": ${quantMetrics?.targets?.target3?.price ?? 'null'}
   },
-  "stopLoss": ${quantMetrics?.targets?.stopLoss?.price || (price.closePrice ? Number((price.closePrice * 0.94).toFixed(1)) : 'null')},
+  "stopLoss": ${quantMetrics?.targets?.stopLoss?.price ?? 'null'},
   "analysis": "<3-4 sentence comprehensive institutional investment thesis based on the accumulation and valuation>",
   "keyReasons": ["<reason1>", "<reason2>", "<reason3>"],
   "risks": ["<risk1>", "<risk2>"],
   "investmentTips": "<actionable entry & stop-loss rules>",
   "nepseSpecific": "<Nepal market and policy context>",
-  "sentiment": "${quantMetrics?.report?.sentiment || 'BULLISH'}"
+  "sentiment": "${quantMetrics?.report?.sentiment || 'NEUTRAL'}"
 }`;
 }
 
@@ -500,14 +564,15 @@ Provide NEPSE market outlook in JSON:
 }
 
 // ── CONFIDENCE GAUGE METER (0–100%) ───────────────────────────────
-const ConfidenceGauge = ({ value = 75 }) => {
-  const clamp = Math.max(0, Math.min(100, Number(value) || 0));
+const ConfidenceGauge = ({ value = null }) => {
+  const hasValue = value !== null && value !== undefined && Number.isFinite(Number(value));
+  const clamp = hasValue ? Math.max(0, Math.min(100, Number(value))) : 0;
   const radius = 38;
   const stroke = 8;
   const normalizedRadius = radius - stroke * 0.5;
   const circumference = normalizedRadius * Math.PI;
   const strokeDashoffset = circumference - (clamp / 100) * circumference;
-  const color = clamp >= 80 ? '#10B981' : clamp >= 60 ? '#38BDF8' : clamp >= 40 ? '#FBBF24' : '#F43F5E';
+  const color = !hasValue ? '#475569' : (clamp >= 80 ? '#10B981' : clamp >= 60 ? '#38BDF8' : clamp >= 40 ? '#FBBF24' : '#F43F5E');
 
   return (
     <div className="flex flex-col items-center justify-center">
@@ -532,7 +597,7 @@ const ConfidenceGauge = ({ value = 75 }) => {
           />
         </svg>
         <div className="absolute bottom-0 text-center font-mono font-black text-white text-base tabular-nums">
-          {clamp}%
+          {hasValue ? `${clamp}%` : '—'}
         </div>
       </div>
       <span className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">AI Confidence</span>
@@ -570,9 +635,13 @@ const VerdictBadge = ({ verdict = 'HOLD' }) => {
 
 // ── THREE-PILLAR RADAR/SCORE BAR (1–10) ───────────────────────────
 const ThreePillarScores = ({ scores }) => {
-  const fund = Math.min(10, Math.max(1, Number(scores?.fundamental || 7)));
-  const tech = Math.min(10, Math.max(1, Number(scores?.technical || 7)));
-  const smart = Math.min(10, Math.max(1, Number(scores?.smartMoney || 8)));
+  const parsePillar = (raw) => {
+    if (raw === null || raw === undefined || !Number.isFinite(Number(raw))) return null;
+    return Math.min(10, Math.max(1, Number(raw)));
+  };
+  const fund = parsePillar(scores?.fundamental);
+  const tech = parsePillar(scores?.technical);
+  const smart = parsePillar(scores?.smartMoney);
 
   const pillars = [
     { label: 'Fundamental', score: fund, color: 'bg-blue-500', text: 'text-blue-400' },
@@ -594,12 +663,14 @@ const ThreePillarScores = ({ scores }) => {
           <div key={p.label} className="space-y-1">
             <div className="flex justify-between text-xs font-semibold">
               <span className="text-slate-300">{p.label}</span>
-              <span className={`font-mono font-bold ${p.text} tabular-nums`}>{p.score} / 10</span>
+              <span className={`font-mono font-bold ${p.score !== null ? p.text : 'text-slate-500'} tabular-nums`}>
+                {p.score !== null ? `${p.score} / 10` : '— / 10'}
+              </span>
             </div>
             <div className="h-1.5 w-full rounded-full bg-slate-800/80 overflow-hidden">
               <div
                 className={`h-full rounded-full ${p.color} transition-all duration-700`}
-                style={{ width: `${p.score * 10}%` }}
+                style={{ width: `${p.score !== null ? p.score * 10 : 0}%` }}
               />
             </div>
           </div>
@@ -610,26 +681,27 @@ const ThreePillarScores = ({ scores }) => {
 };
 
 // ── TRADE EXECUTION SETUP CARDS ──────────────────────────────────
-const TradeExecutionCards = ({ targets, stopLoss, entryZone, rrr, currentPrice }) => {
+const TradeExecutionCards = ({ targets, stopLoss, entryZone, rrr }) => {
   const t1 = targets?.oneMonth || targets?.target1;
   const t2 = targets?.threeMonths || targets?.target2;
 
-  let entryNum = 0;
-  if (entryZone) {
-    const matches = String(entryZone).match(/\d+(\.\d+)?/g);
-    if (matches && matches.length > 0) {
-      entryNum = Number(matches[0]);
+  const fmtLevel = (val) => {
+    if (typeof val === 'number' && Number.isFinite(val) && val > 0) {
+      return `Rs. ${val.toLocaleString()}`;
     }
-  }
-  const basePrice = entryNum > 0 ? entryNum : (Number(currentPrice) || 0);
-  const fallbackT1 = basePrice > 0 ? `Rs. ${(basePrice * 1.08).toFixed(1)}` : 'Rs. —';
-  const fallbackT2 = basePrice > 0 ? `Rs. ${(basePrice * 1.15).toFixed(1)}` : 'Rs. —';
-  const fallbackSL = basePrice > 0 ? `Rs. ${(basePrice * 0.95).toFixed(1)}` : 'Rs. —';
-  const fallbackEntry = basePrice > 0 ? `Rs. ${(basePrice * 0.98).toFixed(1)}–${(basePrice * 1.02).toFixed(1)}` : 'Rs. —';
+    if (typeof val === 'string' && val.trim() && !/undefined|null|nan/i.test(val)) {
+      return val;
+    }
+    return 'Rs. —';
+  };
 
-  const t1Val = typeof t1 === 'number' ? `Rs. ${t1.toLocaleString()}` : (t1 || fallbackT1);
-  const t2Val = typeof t2 === 'number' ? `Rs. ${t2.toLocaleString()}` : (t2 || fallbackT2);
-  const slVal = typeof stopLoss === 'number' ? `Rs. ${stopLoss.toLocaleString()}` : (stopLoss || fallbackSL);
+  const t1Val = fmtLevel(t1);
+  const t2Val = fmtLevel(t2);
+  const slVal = fmtLevel(stopLoss);
+  const entryVal = entryZone && !/undefined|null|nan/i.test(String(entryZone)) ? entryZone : 'Rs. —';
+  const rrrVal = rrr !== null && rrr !== undefined && Number.isFinite(Number(rrr)) && Number(rrr) > 0
+    ? Number(rrr).toFixed(1).replace(/\.0$/, '')
+    : null;
 
   return (
     <div className="rounded-xl border border-slate-800/60 bg-slate-900/80 p-4 space-y-3">
@@ -639,14 +711,14 @@ const TradeExecutionCards = ({ targets, stopLoss, entryZone, rrr, currentPrice }
           <span>Tactical Execution Setup (ATR Calibrated)</span>
         </span>
         <span className="font-mono text-[11px] text-emerald-400 font-semibold tabular-nums">
-          R:R {rrr || '2.2'}:1
+          {rrrVal ? `R:R ${rrrVal}:1` : 'R:R —'}
         </span>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <div className="rounded-lg border border-slate-800/80 bg-slate-950/60 p-2.5 text-center">
           <div className="text-[10px] font-bold text-slate-400 uppercase">Entry Zone</div>
           <div className="text-xs sm:text-sm font-black font-mono text-white mt-0.5 tabular-nums truncate">
-            {entryZone || fallbackEntry}
+            {entryVal}
           </div>
         </div>
         <div className="rounded-lg border border-slate-800/80 bg-slate-950/60 p-2.5 text-center">
@@ -670,7 +742,7 @@ const TradeExecutionCards = ({ targets, stopLoss, entryZone, rrr, currentPrice }
         <div className="rounded-lg border border-slate-800/80 bg-slate-950/60 p-2.5 text-center col-span-2 sm:col-span-1">
           <div className="text-[10px] font-bold text-slate-400 uppercase">Risk : Reward</div>
           <div className="text-xs sm:text-sm font-black font-mono text-emerald-400 mt-0.5 tabular-nums">
-            1 : {rrr || '2.2'}
+            {rrrVal ? `1 : ${rrrVal}` : '—'}
           </div>
         </div>
       </div>
@@ -894,13 +966,9 @@ const GuruResponse = ({ data, type, onDeployPaperTrade }) => {
     );
   }
 
-  const verdict = parsed.verdict || parsed.recommendation || parsed.marketSentiment || parsed.overallHealth || 'HOLD';
-  const confidence = parsed.confidenceScore ?? parsed.confidence ?? 78;
-  const scores = parsed.scores || {
-    fundamental: parsed.grahamValuation?.marginOfSafetyPct > 10 ? 8 : 6,
-    technical: parsed.confidenceScore > 80 ? 8 : 6,
-    smartMoney: parsed.accumulationDistribution?.wyckoffPhase?.includes('Accumulation') ? 9 : 7
-  };
+  const verdict = parsed.verdict || parsed.recommendation || parsed.marketSentiment || parsed.overallHealth || 'UNAVAILABLE';
+  const confidence = parsed.confidenceScore ?? parsed.confidence ?? null;
+  const scores = parsed.scores || null;
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -1637,13 +1705,13 @@ export default function AiAnalyst({
       const rawCandles = Array.isArray(historyRes) ? historyRes : (historyRes?.data || []);
       const candles = normalizeCorporateActionPrices(rawCandles);
       const price = stockData?.data || {};
-      const ltp = Number(price.closePrice || price.lastTradedPrice || price.ltp || 100);
-      const eps = Number(financials?.data?.eps || price.eps || 0);
-      const bvps = Number(financials?.data?.bvps || financials?.data?.bookValuePerShare || financials?.data?.bookValue || price.bvps || 100);
-      const volume = Number(price.totalTradedQuantity || price.volume || 10000);
+      const ltp = Number(price.closePrice || price.lastTradedPrice || price.ltp || 0);
+      const eps = Number(financials?.data?.eps ?? price.eps ?? 0);
+      const bvps = Number(financials?.data?.bvps ?? financials?.data?.bookValuePerShare ?? financials?.data?.bookValue ?? price.bvps ?? 0);
+      const volume = Number(price.totalTradedQuantity || price.volume || 0);
       const pChg = Number(price.percentageChange || price.pChange || 0);
-      const high52 = Number(price.fiftyTwoWeekHigh || price.high52w || (ltp * 1.3));
-      const low52 = Number(price.fiftyTwoWeekLow || price.low52w || (ltp * 0.7));
+      const high52 = Number(price.fiftyTwoWeekHigh || price.high52w || 0) || null;
+      const low52 = Number(price.fiftyTwoWeekLow || price.low52w || 0) || null;
 
       // Floorsheet Smart Money Broker Data
       const brokerData = brokerRes?.data || brokerRes || {};
@@ -2769,7 +2837,9 @@ Format as plain text (not JSON) for this conversational response.`;
             <div className="grid grid-cols-3 gap-2 text-center text-xs">
               <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-2">
                 <div className="text-[10px] font-bold text-slate-400 uppercase">Current LTP</div>
-                <div className="font-mono font-bold text-white mt-0.5">Rs. {Number(paperModalScrip.currentPrice || 100).toLocaleString()}</div>
+                <div className="font-mono font-bold text-white mt-0.5">
+                  {Number(paperModalScrip.currentPrice) > 0 ? `Rs. ${Number(paperModalScrip.currentPrice).toLocaleString()}` : '—'}
+                </div>
               </div>
               <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-2">
                 <div className="text-[10px] font-bold text-slate-400 uppercase">Target 1</div>
@@ -2809,7 +2879,7 @@ Format as plain text (not JSON) for this conversational response.`;
 
             {/* Estimated cost calculation */}
             {(() => {
-              const ltp = Number(paperModalScrip.currentPrice || 100);
+              const ltp = Number(paperModalScrip.currentPrice) || 0;
               const totalVal = paperShares * ltp;
               const commRate =
                 totalVal <= 50000

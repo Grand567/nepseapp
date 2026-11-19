@@ -21,12 +21,17 @@ export const SECTORS = [
   'Manufacturing & Processing',
   'Trading',
   'Mutual Funds',
+  'Corporate Debenture',
+  'Promoter Share',
   'Investment',
   'Others',
 ] as const;
 
 export function normalizeSectorName(rawSector: string): string {
   const s = String(rawSector || '').trim().toLowerCase();
+  if (s.includes('debenture') || s.includes('bond') || s.includes('rinpatra')) return 'Corporate Debenture';
+  if (s.includes('promoter') || s.includes('preference')) return 'Promoter Share';
+  if (s.includes('mutual')) return 'Mutual Funds';
   if (s.includes('hydro')) return 'Hydropower';
   if (s.includes('non-life') || s.includes('non life')) return 'Non-Life Insurance';
   if (s.includes('life')) return 'Life Insurance';
@@ -37,7 +42,6 @@ export function normalizeSectorName(rawSector: string): string {
   if (s.includes('hotel')) return 'Hotels & Tourism';
   if (s.includes('manufacturing')) return 'Manufacturing & Processing';
   if (s.includes('trading')) return 'Trading';
-  if (s.includes('mutual')) return 'Mutual Funds';
   if (s.includes('invest')) return 'Investment';
   return 'Others';
 }
@@ -397,11 +401,12 @@ const unifiedList: NepseCompany[] = [];
 for (const c of RAW_NEPSE_UNIVERSE) {
   if (c && c.symbol) {
     const sym = c.symbol.toUpperCase();
+    const mappedSector = (stockmapData as Record<string, { name: string; sector?: string }>)?.[sym]?.sector || c.sector;
     symbolSet.add(sym);
     unifiedList.push({
       ...c,
       symbol: sym,
-      sector: normalizeSectorName(c.sector)
+      sector: normalizeSectorName(mappedSector)
     });
   }
 }

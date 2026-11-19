@@ -1,4 +1,5 @@
 // src/services/aiGuru/runAiQuantitativeAssessment.ts
+import { getProxyBase } from "../../utils/proxyBase.js";
 
 export type PriceSourceType =
   | "LIVE_LTP"
@@ -438,7 +439,8 @@ export async function runAiQuantitativeAssessment(params: {
   if (!effectiveLedger || effectiveCandles.length === 0) {
     try {
       if (typeof window !== "undefined" && typeof fetch === "function") {
-        const resp = await fetch(`/api/stocks/${encodeURIComponent(resolvedSymbol)}/ledger-telemetry`, {
+        const baseUrl = getProxyBase();
+        const resp = await fetch(`${baseUrl}/api/stocks/${encodeURIComponent(resolvedSymbol)}/ledger-telemetry`, {
           headers: { Accept: "application/json" }
         });
         if (resp.ok) {

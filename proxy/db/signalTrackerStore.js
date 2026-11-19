@@ -646,7 +646,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
       const target1Price = Number((entryPrice * (lowBeta ? 1.055 : 1.075)).toFixed(2));
       const target2Price = Number((entryPrice * (lowBeta ? 1.11 : 1.15)).toFixed(2));
       const stopLossPrice = Number((entryPrice * (lowBeta ? 0.96 : 0.95)).toFixed(2));
-      const t2UnlockDate = i + 2 < dates.length ? dates[i + 2] : "POST_DASHAIN_T2";
+      const t2UnlockDate = entryIdx + 2 < dates.length ? dates[entryIdx + 2] : "POST_DASHAIN_T2";
 
       // Trailing Profit Floor threshold (+5.0% low-beta, +6.0% high-beta)
       const thresholdPeak = entryPrice * (lowBeta ? 1.050 : 1.060);
@@ -655,7 +655,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
       // Lead broker resolution
       const leadBrokerName = TOP_NEPSE_BROKERS[leadBrokerId] || `Broker #${leadBrokerId}`;
 
-      // 4. Strict NEPSE T+2 Forward Path Evaluation (sessions j = i + 1 to latestDateIndex)
+      // 4. Strict NEPSE T+2 Forward Path Evaluation (sessions j = entryIdx to latestDateIndex)
       let peakPrice = entryPrice;
       let status = isLockedUpperCircuitTrap ? "UNFILLABLE_SKIP" : "OPEN_ACTIVE";
       let exitPrice = entryPrice;
@@ -668,7 +668,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
       let maePct = 0;
 
       if (!isLockedUpperCircuitTrap) {
-        for (let j = i + 1; j <= latestDateIndex; j++) {
+        for (let j = entryIdx; j <= latestDateIndex; j++) {
           const fwdDate = dates[j];
           const fwdRec = symbolDateMap.get(`${symbol}_${fwdDate}`);
           if (!fwdRec) continue;
@@ -684,13 +684,13 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
             maePct = dayDrawdownPct;
           }
 
-          // Invariant: Exits can ONLY occur when j >= i + 2 (holding_days >= 2)
-          if (j >= i + 2) {
+          // Invariant: Entry occurs at entryIdx = i + 1; T+2 Demat unlock requires >= 2 elapsed sessions after entry (j >= entryIdx + 2 === i + 3)
+          if (j >= entryIdx + 2) {
             if (fwdHigh >= target2Price) {
               status = "WIN_T2";
               exitPrice = target2Price;
               exitDate = fwdDate;
-              holdingDays = j - i;
+              holdingDays = j - entryIdx;
               break;
             }
 
@@ -710,14 +710,14 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
                 status = "WIN_T1";
                 exitPrice = target1Price;
                 exitDate = fwdDate;
-                holdingDays = j - i;
+                holdingDays = j - entryIdx;
                 break;
               }
-              if (j >= i + 4) {
+              if (j >= entryIdx + 3) {
                 status = "WIN_T1";
                 exitPrice = Math.max(target1Price, fwdClose);
                 exitDate = fwdDate;
-                holdingDays = j - i;
+                holdingDays = j - entryIdx;
                 break;
               }
             } else if (hasHitTrailFloor) {
@@ -726,7 +726,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
                 const { netReturnPct: trailNet } = calculateNepseNetReturn(entryPrice, exitPrice);
                 status = trailNet > 0 ? "WIN_RATCHET_STOP" : "STOPPED_OUT";
                 exitDate = fwdDate;
-                holdingDays = j - i;
+                holdingDays = j - entryIdx;
                 break;
               }
             } else {
@@ -734,31 +734,31 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
                 status = "STOPPED_OUT";
                 exitPrice = fwdClose;
                 exitDate = fwdDate;
-                holdingDays = j - i;
+                holdingDays = j - entryIdx;
                 break;
               }
             }
 
             // 12-Session Time-Stop
-            if (j - i >= 12) {
+            if (j - entryIdx >= 12) {
               exitPrice = Number(fwdClose.toFixed(2));
               const { netReturnPct: timeNet } = calculateNepseNetReturn(entryPrice, exitPrice);
               status = timeNet > 0 && fwdClose >= entryPrice * 1.015 ? "WIN_T1" : "TIME_EXPIRED";
               exitDate = fwdDate;
-              holdingDays = j - i;
+              holdingDays = j - entryIdx;
               break;
             }
           }
         }
       }
 
-      // If still open at the latest session (2026-10-16):
+      // If still open at the latest session:
       if (status === "OPEN_ACTIVE") {
-        holdingDays = latestDateIndex - i;
+        holdingDays = Math.max(0, latestDateIndex - entryIdx);
         const latestRec = symbolDateMap.get(`${symbol}_${dates[latestDateIndex]}`);
         const latestClose = latestRec ? latestRec.closePrice : entryPrice;
 
-        if (latestDateIndex >= i + 2 && (hasHitT1 || peakPrice >= target1Price)) {
+        if (latestDateIndex >= entryIdx + 2 && (hasHitT1 || peakPrice >= target1Price)) {
           status = "WIN_T1";
           exitPrice = target1Price;
           exitDate = dates[latestDateIndex];

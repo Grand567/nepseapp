@@ -337,7 +337,7 @@ export function evaluateHydropowerValuation(stockMetadata, currentDate = new Dat
   if (lockInExpiry) {
     const diffMs = new Date(lockInExpiry).getTime() - currentDate.getTime();
     daysToUnlock = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    if (daysToUnlock >= 0 && daysToUnlock <= 60) {
+    if (daysToUnlock >= 0 && daysToUnlock <= 120) {
       isLockInThreat = true;
       lockInWarning = `🚨 PROMOTER LOCK-IN IMMINENT: Lock-in expires in ${daysToUnlock} session(s) (${lockInExpiry}). High risk of institutional promoter offloading into retail liquidity.`;
     } else if (daysToUnlock < 0) {

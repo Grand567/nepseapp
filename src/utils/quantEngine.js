@@ -14,6 +14,7 @@
  */
 import { calculateRSI, calculateEMA, calculateMACD } from './indicators.js';
 import { getCachedRealPriceHistory, getCumulativeBrokerData } from './historyCache.js';
+import { isPureNepseEquity } from './nepseEquityFilter.js';
 
 /**
  * Dynamic resolution helpers to guarantee authentic, stock-specific metrics for all scrips
@@ -122,18 +123,15 @@ export function calculateGrahamIntrinsicValue(eps, bookValue, ltp) {
 
   if (e <= 0 || bv <= 0) {
     const tangibleFloor = bv > 0 ? Number((bv * 0.67).toFixed(2)) : 0;
-    const mosPct = tangibleFloor > 0 && price > 0
-      ? Number((((tangibleFloor - price) / tangibleFloor) * 100).toFixed(2))
-      : 0;
     return {
-      intrinsicValue: tangibleFloor,
-      marginOfSafetyPct: mosPct,
-      isUndervalued: price > 0 && tangibleFloor > 0 && price < tangibleFloor,
-      valuationStatus: e <= 0 ? 'Loss-Making (Tangible Asset Floor Applied)' : 'Book Value Deficient',
-      grahamNumber: tangibleFloor,
+      intrinsicValue: 0,
+      marginOfSafetyPct: 0,
+      isUndervalued: false,
+      valuationStatus: e <= 0 ? 'Loss-Making (Negative/Zero EPS)' : 'Book Value Deficient',
+      grahamNumber: null,
       peLimit: 15,
       pbLimit: 1.5,
-      pePbProduct: e > 0 && bv > 0 && price > 0 ? Number(((price / e) * (price / bv)).toFixed(2)) : 0,
+      pePbProduct: 0,
       isLossMaking: e <= 0,
       tangibleBookFloor: tangibleFloor,
       hasValidEarnings: false
@@ -347,41 +345,73 @@ export function evaluateNrbRegulatorySafety(stock = {}) {
     };
   }
 
-  const npl = Number(stock?.npl != null ? stock.npl : 2.5);
-  const car = Number(stock?.car != null ? stock.car : 12.0);
-  const cdRatio = Number(stock?.cdRatio != null ? stock.cdRatio : 82.5);
-  const roe = Number(stock?.roe != null ? stock.roe : 12.0);
+  const toNullNum = (v) => {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const npl = toNullNum(stock?.npl);
+  const car = toNullNum(stock?.car);
+  const cdRatio = toNullNum(stock?.cdRatio);
+  const roe = toNullNum(stock?.roe);
+
+  const missingMetrics = [];
+  if (npl === null) missingMetrics.push('NPL');
+  if (car === null) missingMetrics.push('CAR');
+  if (cdRatio === null) missingMetrics.push('CD Ratio');
+  if (roe === null) missingMetrics.push('ROE');
+  const isVerified = missingMetrics.length === 0;
 
   const issues = [];
+  let hasHardBreach = false;
   let passSafetyGate = true;
 
-  if (npl > 5.0) {
-    passSafetyGate = false;
-    issues.push(`Critical NPL (${npl}% > 5.0%): Exceeds NRB regulatory dividend threshold. Dividends will be frozen.`);
-  } else if (npl > 3.0) {
-    issues.push(`Elevated NPL (${npl}%): Higher loan loss provisioning required; profit contraction risk.`);
+  if (npl !== null) {
+    if (npl > 5.0) {
+      passSafetyGate = false;
+      hasHardBreach = true;
+      issues.push(`Critical NPL (${npl}% > 5.0%): Exceeds NRB regulatory dividend threshold. Dividends will be frozen.`);
+    } else if (npl > 3.0) {
+      issues.push(`Elevated NPL (${npl}%): Higher loan loss provisioning required; profit contraction risk.`);
+    }
   }
 
-  if (car < 11.0) {
-    passSafetyGate = false;
-    issues.push(`Capital Adequacy Breach (${car}% < 11.0% NRB minimum): Tier-1 capital impaired; dividend halt mandatory.`);
-  } else if (car < 11.5) {
-    issues.push(`Tight Capital Buffer (${car}%): Very close to the 11.0% mandatory minimum.`);
+  if (car !== null) {
+    if (car < 11.0) {
+      passSafetyGate = false;
+      hasHardBreach = true;
+      issues.push(`Capital Adequacy Breach (${car}% < 11.0% NRB minimum): Tier-1 capital impaired; dividend halt mandatory.`);
+    } else if (car < 11.5) {
+      issues.push(`Tight Capital Buffer (${car}%): Very close to the 11.0% mandatory minimum.`);
+    }
   }
 
-  if (cdRatio > 90.0) {
+  if (cdRatio !== null) {
+    if (cdRatio > 90.0) {
+      passSafetyGate = false;
+      hasHardBreach = true;
+      issues.push(`Credit-to-Deposit Ceiling Breach (${cdRatio}% > 90.0%): Statutory lending freeze active.`);
+    } else if (cdRatio > 88.0) {
+      issues.push(`Tight Liquidity (${cdRatio}%): Close to 90% regulatory cap; credit growth restricted.`);
+    }
+  }
+
+  if (npl === null || car === null) {
     passSafetyGate = false;
-    issues.push(`Credit-to-Deposit Ceiling Breach (${cdRatio}% > 90.0%): Statutory lending freeze active.`);
-  } else if (cdRatio > 88.0) {
-    issues.push(`Tight Liquidity (${cdRatio}%): Close to 90% regulatory cap; credit growth restricted.`);
+  }
+  if (missingMetrics.length > 0) {
+    issues.push(`Unverified NRB filing: missing ${missingMetrics.join(', ')}.`);
   }
 
   let dividendRisk = 'Safe / Eligible';
-  if (!passSafetyGate) dividendRisk = 'High Risk / Frozen';
+  if (hasHardBreach) dividendRisk = 'High Risk / Frozen';
+  else if (!passSafetyGate || missingMetrics.length > 0) dividendRisk = 'Unverified / Data Unavailable';
   else if (issues.length > 0) dividendRisk = 'Caution / Monitor';
 
   return {
     isBfi: true,
+    isVerified,
+    missingMetrics,
     passSafetyGate,
     dividendRisk,
     npl,
@@ -601,13 +631,14 @@ export function calculateCompositeTechnicalScore(stock) {
  * FS = w_pe * S(P/E) + w_pb * S(P/B) + w_roe * S(ROE) + w_npl * S(NPL) + w_div * S(Yield)
  */
 export function calculateFundamentalScore(stock) {
-  const eps = Number(stock?.eps) || 0;
-  const pe = Number(stock?.pe) || 0;
-  const pb = Number(stock?.pb || stock?.pbv) || 0;
-  const roe = Number(stock?.roe) || 0;
-  const divYield = Number(stock?.divYield) || 0;
-  const npl = Number(stock?.npl) || 2.5;
-  const car = Number(stock?.car) || 12.8;
+  const toNullNum = (v) => (v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
+  const eps = toNullNum(stock?.eps);
+  const pe = toNullNum(stock?.pe) ?? 0;
+  const pb = toNullNum(stock?.pb ?? stock?.pbv) ?? 0;
+  const roe = toNullNum(stock?.roe);
+  const divYield = toNullNum(stock?.divYield) ?? 0;
+  const npl = toNullNum(stock?.npl);
+  const car = toNullNum(stock?.car);
   const sector = (stock?.sector || '').toLowerCase();
   let score = 50;
 
@@ -637,9 +668,11 @@ export function calculateFundamentalScore(stock) {
   }
 
   // EPS check
-  if (eps >= 25) score += 12;
-  else if (eps >= 15) score += 8;
-  else if (eps <= 0) score -= 25;
+  if (eps !== null) {
+    if (eps >= 25) score += 12;
+    else if (eps >= 15) score += 8;
+    else if (eps <= 0) score -= 25;
+  }
 
   // Sector-Relative P/E Valuation (Never evaluate across sectors without relative baseline)
   if (pe > 0) {
@@ -652,15 +685,15 @@ export function calculateFundamentalScore(stock) {
     }
 
     // Penalize momentum crowding / FOMO buying where P/E > 40 without supporting EPS growth
-    if (pe >= 40 && eps < 15) {
+    if (pe >= 40 && (eps === null || eps < 15)) {
       score -= 10;
     }
   }
 
   // Sector-Relative P/B Valuation
   if (pb > 0) {
-    // Bank specific: sub-1.0 P/BV indicates undervaluation if asset quality (NPL) is sound
-    if (sector.includes('bank') && pb < 1.0 && npl <= 3.0) {
+    // Bank specific: sub-1.0 P/BV indicates undervaluation only if verified NPL is sound
+    if (sector.includes('bank') && pb < 1.0 && npl !== null && npl <= 3.0) {
       score += 12;
     } else if (pb <= sectorMedianPB * 0.85) {
       score += 10;
@@ -672,21 +705,27 @@ export function calculateFundamentalScore(stock) {
   }
 
   // ROE quality
-  if (roe >= 15) score += 12;
-  else if (roe >= 10) score += 7;
-  else if (roe < 5) score -= 8;
+  if (roe !== null) {
+    if (roe >= 15) score += 12;
+    else if (roe >= 10) score += 7;
+    else if (roe < 5) score -= 8;
+  }
 
   // Dividend yield
   if (divYield >= 4.0) score += 8;
   else if (divYield >= 2.0) score += 4;
 
-  // Sector-specific adjustments for Banks & Microfinance (NPL & CAR regulatory rules)
+  // Sector-specific adjustments for Banks & Microfinance (strictly when verified non-null)
   if (sector.includes('bank') || sector.includes('finance') || sector.includes('micro')) {
-    if (npl <= 2.0) score += 6;
-    else if (npl > 5.0) score -= 15; // High Non-Performing Loan penalty
+    if (npl !== null) {
+      if (npl <= 2.0) score += 6;
+      else if (npl > 5.0) score -= 15; // High Non-Performing Loan penalty
+    }
 
-    if (car >= 12.0) score += 5;
-    else if (car < 11.0) score -= 10; // Low Capital Adequacy penalty
+    if (car !== null) {
+      if (car >= 12.0) score += 5;
+      else if (car < 11.0) score -= 10; // Low Capital Adequacy penalty
+    }
   }
 
   const finalScore = Math.max(10, Math.min(95, Math.round(score)));
@@ -1272,6 +1311,21 @@ export function calculateRiskRewardRatio(entryPrice, targetPrice, stopLossPrice)
   const target = Number(targetPrice) || (entry * 1.10);
   const stop = Number(stopLossPrice) || (entry * 0.95);
 
+  if (stop >= entry) {
+    return {
+      entry,
+      target,
+      stop,
+      potentialReward: Math.max(0, target - entry),
+      potentialRisk: 0,
+      rewardPct: Number(((Math.max(0, target - entry) / entry) * 100).toFixed(2)),
+      riskPct: 0,
+      rrr: 0,
+      isViable: false,
+      verdict: '⚠️ Inverted Stop Loss: Stop price must be below entry for long trade'
+    };
+  }
+
   const potentialReward = Math.max(0, target - entry);
   const potentialRisk = Math.max(0.1, entry - stop);
   const rrr = Number((potentialReward / potentialRisk).toFixed(2));
@@ -1786,7 +1840,10 @@ export function calculateTradeLabRankScore(stock) {
   const rsi = resolveDynamicStockRSI(stock);
   const macd = resolveDynamicStockMACD(stock);
   const rvol = Number(stock?.volumeSurgeRatio) || (stock?.volume && stock?.avgVolume20D ? stock.volume / stock.avgVolume20D : 1.0);
-  const bcr3 = Number(stock?.bcr3) || (stock?.stealthAccumulation?.bcr3) || (stock?.pChange > 0 ? 0.45 : 0.20);
+  const rawBcr3 = stock?.bcr3 ?? stock?.stealthAccumulation?.bcr3 ?? null;
+  const parsedBcr3 = rawBcr3 !== null && rawBcr3 !== undefined && rawBcr3 !== '' ? Number(rawBcr3) : null;
+  const bcr3 = Number.isFinite(parsedBcr3) ? parsedBcr3 : null;
+  const brokerVerified = bcr3 !== null;
 
   // 1. I_RSI (55 to 70 is optimal momentum zone = 100)
   let iRsi = 50;
@@ -1806,8 +1863,8 @@ export function calculateTradeLabRankScore(stock) {
     iMacd = Math.max(10, 40 - Math.abs(macd.hist || 0) * 10);
   }
 
-  // 3. I_Broker (Institutional Net Accumulation over rolling window)
-  const iBroker = Math.min(100, Math.max(0, bcr3 * 150));
+  // 3. I_Broker (Institutional Net Accumulation over rolling window — 0 unless verified)
+  const iBroker = brokerVerified ? Math.min(100, Math.max(0, bcr3 * 150)) : 0;
 
   // 4. I_Volume (Relative volume expansion RVOL)
   let iVolume = 50;
@@ -1816,15 +1873,23 @@ export function calculateTradeLabRankScore(stock) {
   else if (rvol >= 1.0) iVolume = 65;
   else iVolume = Math.max(20, rvol * 50);
 
-  // Weighted S_rank calculation
-  const sRank = Number(((0.20 * iRsi) + (0.25 * iMacd) + (0.35 * iBroker) + (0.20 * iVolume)).toFixed(1));
-  const isHighProbabilityBreakout = sRank >= 80 && rvol >= 2.0;
+  // Weighted S_rank calculation (reweighted over verified pillars when broker flow missing)
+  const totalWeight = brokerVerified ? 1.0 : 0.65;
+  const sRank = Number((((0.20 * iRsi) + (0.25 * iMacd) + (brokerVerified ? 0.35 * iBroker : 0) + (0.20 * iVolume)) / totalWeight).toFixed(1));
+  const isHighProbabilityBreakout = brokerVerified && sRank >= 80 && rvol >= 2.0;
 
   return {
     sRank,
     rvol: Number(rvol.toFixed(2)),
+    bcr3,
+    brokerVerified,
     isHighProbabilityBreakout,
     classification: isHighProbabilityBreakout ? '🔥 High-Probability Institutional Breakout (S_rank >= 80, RVOL >= 2.0)' : sRank >= 65 ? '⚡ Actionable Trade Setup' : 'Normal Neutral Setup',
+    factors: {
+      bcr3,
+      brokerVerified,
+      rvol: Number(rvol.toFixed(2))
+    },
     components: {
       iRsi: Number(iRsi.toFixed(1)),
       iMacd: Number(iMacd.toFixed(1)),
@@ -2028,17 +2093,17 @@ export function detectWyckoffPhase(history = [], currentVolume = 0, brokerAnalys
       action: 'Smart Money Absorption',
       description: 'Smart Money absorbing supply at deep discount floors before markup initiation.'
     };
-  } else if (currentPos >= 80 && netChg >= 15) {
-    return {
-      phase: 'Phase D: Markup Breakout / Sign of Strength (SOS)',
-      action: 'Momentum Trend Continuation',
-      description: 'Confirmed breakout above historical accumulation base with institutional buyer support.'
-    };
   } else if (currentPos >= 85 && netChg >= 35) {
     return {
       phase: 'Phase D/E: Distribution / Upthrust After Distribution (UTAD)',
       action: 'Institutional Scale-Out',
       description: 'Smart Money offloading into retail liquidity spikes near multi-month highs.'
+    };
+  } else if (currentPos >= 80 && netChg >= 15) {
+    return {
+      phase: 'Phase D: Markup Breakout / Sign of Strength (SOS)',
+      action: 'Momentum Trend Continuation',
+      description: 'Confirmed breakout above historical accumulation base with institutional buyer support.'
     };
   }
 
@@ -2157,7 +2222,11 @@ export function calculateCircuitAndLiquidityMetrics(ltp, prevClose, volume = 0, 
  * Falls back to overnight step-drop detection (>8.5% to 52%) when exact metadata is absent.
  */
 export function normalizeCorporateActionPrices(candles = [], corporateActions = []) {
-  if (!candles || candles.length < 5) return candles || [];
+  if (!candles || candles.length < 2) {
+    const emptyRes = Array.isArray(candles) ? [...candles] : [];
+    emptyRes.corporateActionCount = 0;
+    return emptyRes;
+  }
 
   const sorted = [...candles].sort((a, b) => new Date(a.date || a.t || 0) - new Date(b.date || b.t || 0));
   const normalized = [];
@@ -2216,11 +2285,35 @@ export function normalizeCorporateActionPrices(candles = [], corporateActions = 
       }
     }
 
-    // Require confirmed corporate action match in corporateActions / dividendHistory
+    // Require confirmed corporate action match in corporateActions / dividendHistory bounded to bookClosureDate
     if (Array.isArray(corporateActions) && corporateActions.length > 0 && prev && prevClose > 0 && currClose > 0) {
       const dropPct = ((prevClose - currClose) / prevClose) * 100;
+      const isPostApril2026Regime = currDate && currDate >= '2026-04-20';
+      const minHeuristicDrop = isPostApril2026Regime ? 15.2 : 8.5;
       if (dropPct >= 8.5 && dropPct <= 52.0) {
+        const currTime = currDate ? new Date(currDate).getTime() : NaN;
         const hasConfirmedMatch = corporateActions.some(ca => {
+          const caDateStr = ca.bookCloseDate || ca.bookClosureDate || ca.exDate || ca.date || '';
+          if (caDateStr) {
+            const caTime = new Date(caDateStr).getTime();
+            if (!isNaN(currTime) && !isNaN(caTime)) {
+              const diffDays = Math.abs(currTime - caTime) / (1000 * 60 * 60 * 24);
+              if (diffDays > 7) return false;
+            }
+          } else {
+            if (dropPct < minHeuristicDrop) return false;
+            const fyMatch = String(ca.fiscalYear || '').match(/(\d{4})[-/–](\d{2,4})/);
+            if (fyMatch && !isNaN(currTime)) {
+              const y1 = parseInt(fyMatch[1], 10) - 57;
+              const y2 = (parseInt(fyMatch[2], 10) < 100 ? Math.floor(parseInt(fyMatch[1], 10) / 100) * 100 + parseInt(fyMatch[2], 10) : parseInt(fyMatch[2], 10)) - 57;
+              const rangeStart = new Date(`${y1}-07-01`).getTime();
+              const rangeEnd = new Date(`${y2 + 1}-04-15`).getTime();
+              if (currTime < rangeStart || currTime > rangeEnd) return false;
+            } else {
+              return false;
+            }
+          }
+
           const bPct = Number(ca.bonusPct || ca.bonusShare || 0);
           const rPct = Number(ca.rightPct || ca.rightShare || 0);
           if (bPct > 0) {
@@ -2846,7 +2939,7 @@ export function evaluateMarketBreadthCashDefense(stocks = []) {
     totalEvaluated: totalWithEma > 0 ? totalWithEma : totalActive,
     regimeLabel: cashDefenseActive ? '🛑 CASH DEFENSE MODE' : '✅ BULLISH / EXPANSION REGIME',
     message: cashDefenseActive
-      ? `Systemic Market Defense Active: Market breadth is weak (${effectiveBreadth}% advances / ${declinePct}% declines). Preserving cash; high-risk breakout buys blocked.`
+      ? `Systemic Market Defense Active: Market breadth is weak (${effectiveBreadth}% ${totalWithEma >= 15 ? 'above 50-DMA' : 'advances'} / ${declinePct}% declines). Preserving cash; high-risk breakout buys blocked.`
       : `Market breadth is healthy (${effectiveBreadth}% positive regime). Breakout setups supported.`
   };
 }
@@ -2870,6 +2963,7 @@ export function runAmalgamatedBreakoutPipeline(stocks = [], priceHistories = {},
   const turnoverHurdle = totalMarketTurnover >= 3000000000 ? 15000000 : 7500000;
 
   for (const stock of stocks) {
+    if (!isPureNepseEquity(stock)) continue;
     const sym = String(stock.symbol || stock.scrip || '').toUpperCase().trim();
     const ltp = Number(stock.ltp || stock.price || 0);
     const pCh = Number(stock.pChange || 0);
@@ -2880,16 +2974,17 @@ export function runAmalgamatedBreakoutPipeline(stocks = [], priceHistories = {},
     // Safety Gate 1: Liquidity & Basic Pricing
     if (ltp < 80 || turnover < turnoverHurdle || candles.length < 25) continue;
 
-    // Safety Gate 2: Positive Earnings Filter
-    const eps = Number(stock.eps || 0);
-    if (stock.eps !== undefined && eps < 0) continue;
+    // Safety Gate 2: Positive Earnings Filter (reject missing/null/non-positive EPS)
+    const rawEps = stock.eps !== null && stock.eps !== undefined && stock.eps !== '' ? Number(stock.eps) : null;
+    if (rawEps === null || !Number.isFinite(rawEps) || rawEps <= 0) continue;
+    const eps = rawEps;
 
-    // Safety Gate 3: Promoter Share Lock-In Expiry Blackout (45-Day window)
+    // Safety Gate 3: Promoter Share Lock-In Expiry Blackout (120-Day window)
     if (stock.lockinExpiry || stock.promoterLockinDays !== undefined) {
       const daysToUnlock = stock.promoterLockinDays !== undefined
         ? Number(stock.promoterLockinDays)
         : Math.ceil((new Date(stock.lockinExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-      if (daysToUnlock >= 0 && daysToUnlock <= 45) {
+      if (daysToUnlock >= 0 && daysToUnlock <= 120) {
         continue; // Exclude impending promoter unlock scrips
       }
     }
@@ -3165,7 +3260,7 @@ export function calculateKellyCriterion(winRatePct = 55, payoffRatio = 2.0) {
     halfKellyPct,
     quarterKellyPct,
     isViable: rawKelly > 0,
-    recommendationPct: halfKellyPct > 0 ? halfKellyPct : 5.0, // Default 5% safe floor if negative
+    recommendationPct: halfKellyPct > 0 ? halfKellyPct : 0, // 0 floor if negative edge
     rationale: rawKelly > 0
       ? `Half-Kelly suggests allocating max ${halfKellyPct}% of total trading capital into this single setup.`
       : 'Mathematical expectancy is non-positive. Do not allocate capital under Kelly.'
@@ -3777,13 +3872,25 @@ export function runStockScanners(stocks = [], filterKey) {
       return stocks.filter(s => s.floatTurnoverPct >= 1.5 && s.pChange >= 1.2).sort((a,b) => (b.floatTurnoverPct || 0) - (a.floatTurnoverPct || 0)).slice(0, 20);
 
     case 'large_cap':
-      return stocks.filter(s => (s.marketCap || 0) >= 15000).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
+      return stocks.filter(s => {
+        const cap = Number(s.marketCap || 0);
+        const capM = cap > 1e6 ? (cap / 1e6) : cap;
+        return capM >= 15000;
+      }).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
     
     case 'mid_cap':
-      return stocks.filter(s => (s.marketCap || 0) >= 4000 && (s.marketCap || 0) < 15000).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
+      return stocks.filter(s => {
+        const cap = Number(s.marketCap || 0);
+        const capM = cap > 1e6 ? (cap / 1e6) : cap;
+        return capM >= 4000 && capM < 15000;
+      }).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
 
     case 'small_cap':
-      return stocks.filter(s => (s.marketCap || 0) < 4000).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
+      return stocks.filter(s => {
+        const cap = Number(s.marketCap || 0);
+        const capM = cap > 1e6 ? (cap / 1e6) : cap;
+        return capM > 0 && capM < 4000;
+      }).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
 
     case 'price_vs_volume':
       return stocks.filter(s => s.pChange >= 1.5 && (s.volumeSurgeRatio >= 1.2 || s.floatTurnoverPct >= 1.0)).slice(0, 20);
@@ -3853,18 +3960,28 @@ export function runStockScanners(stocks = [], filterKey) {
       return stocks.filter(s => (s.eps && s.eps >= 15) && (s.bookValue && s.bookValue >= 140) && ((s.marginOfSafetyPct || 0) >= 0)).sort((a, b) => (b.eps || 0) - (a.eps || 0)).slice(0, 25);
 
     // ── Smart Money Categories ──
-    case 'aggressive_accumulators':
-      return stocks.filter(s => (s.bcr3 && s.bcr3 >= 0.35) || (s.pChange >= 2.0 && (s.volumeSurgeRatio >= 1.5 || s.turnover > 15000000))).sort((a, b) => (b.bcr3 || 0) - (a.bcr3 || 0)).slice(0, 25);
-    case 'distribution_leaders':
-      return stocks.filter(s => s.pChange <= -1.8 && (s.turnover || 0) > 12000000).sort((a, b) => a.pChange - b.pChange).slice(0, 25);
-    case 'broker_dominance':
-      return stocks.filter(s => (s.bcr3 && s.bcr3 >= 0.30) || (s.volume || 0) > 35000).sort((a, b) => (b.bcr3 || 0) - (a.bcr3 || 0)).slice(0, 25);
-    case 'aggressive_holdings':
-      return stocks.filter(s => s.pChange > 0 && s.pe > 0 && s.pe < 28 && (s.bcr3 || 0) >= 0.25).slice(0, 25);
+    case 'aggressive_accumulators': {
+      const getBcr3Pct = (s) => Number(s.bcr3BuyPct ?? ((Number(s.bcr3 || 0) > 0 && Number(s.bcr3 || 0) <= 1) ? Number(s.bcr3) * 100 : Number(s.bcr3 || 0)));
+      return stocks.filter(s => getBcr3Pct(s) >= 35).sort((a, b) => getBcr3Pct(b) - getBcr3Pct(a)).slice(0, 25);
+    }
+    case 'distribution_leaders': {
+      const getScr3Pct = (s) => Number(s.scr3SellPct ?? s.bcr3SellPct ?? ((Number(s.scr3 || 0) > 0 && Number(s.scr3 || 0) <= 1) ? Number(s.scr3) * 100 : Number(s.scr3 || 0)));
+      return stocks.filter(s => getScr3Pct(s) >= 35 || (s.adSignal === 'Distribution' && s.pChange <= -1.0)).sort((a, b) => getScr3Pct(b) - getScr3Pct(a) || (a.pChange - b.pChange)).slice(0, 25);
+    }
+    case 'broker_dominance': {
+      const getBcr3Pct = (s) => Number(s.bcr3BuyPct ?? ((Number(s.bcr3 || 0) > 0 && Number(s.bcr3 || 0) <= 1) ? Number(s.bcr3) * 100 : Number(s.bcr3 || 0)));
+      return stocks.filter(s => getBcr3Pct(s) >= 30).sort((a, b) => getBcr3Pct(b) - getBcr3Pct(a)).slice(0, 25);
+    }
+    case 'aggressive_holdings': {
+      const getBcr3Pct = (s) => Number(s.bcr3BuyPct ?? ((Number(s.bcr3 || 0) > 0 && Number(s.bcr3 || 0) <= 1) ? Number(s.bcr3) * 100 : Number(s.bcr3 || 0)));
+      return stocks.filter(s => s.pChange > 0 && s.pe > 0 && s.pe < 28 && getBcr3Pct(s) >= 25).slice(0, 25);
+    }
     case 'matching_trades':
       return stocks.filter(s => (s.volume || 0) > 30000 && (s.floatTurnoverPct >= 1.0 || s.volumeSurgeRatio >= 1.3)).slice(0, 25);
-    case 'slow_accumulation':
-      return stocks.filter(s => s.isStealthAccumulation || (s.pChange >= 0.1 && s.pChange <= 1.8 && (s.bcr3 || 0) >= 0.30)).sort((a, b) => (b.sai || 0) - (a.sai || 0)).slice(0, 25);
+    case 'slow_accumulation': {
+      const getBcr3Pct = (s) => Number(s.bcr3BuyPct ?? ((Number(s.bcr3 || 0) > 0 && Number(s.bcr3 || 0) <= 1) ? Number(s.bcr3) * 100 : Number(s.bcr3 || 0)));
+      return stocks.filter(s => s.isStealthAccumulation || (s.pChange >= 0.1 && s.pChange <= 1.8 && getBcr3Pct(s) >= 30)).sort((a, b) => (b.sai || 0) - (a.sai || 0)).slice(0, 25);
+    }
 
     // ── Fast Circuits & Signals ──
     case 'buyers_choice':

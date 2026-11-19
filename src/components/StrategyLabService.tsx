@@ -203,18 +203,23 @@ export function StrategyLabService() {
     return stocks.filter(activeStrategy.filterFn).slice(0, 15);
   }, [stocks, activeStrategy]);
 
+  const [isSyntheticCandles, setIsSyntheticCandles] = useState(false);
+
   // Execute Backtest on Real Historical Candles
   const executeRealBacktest = useCallback(async (sym: string, days: number, stratId: string) => {
     if (!sym) return;
     setBacktestLoading(true);
     try {
+      let isSyn = false;
       let hist = await fetchPriceHistory(sym, days);
       if (!Array.isArray(hist) || hist.length < 20) {
         const matched = stocks.find((s: any) => s.symbol === sym);
         if (matched) {
           hist = resolveDynamicStockCandles(matched, Math.min(days, 60));
+          isSyn = true;
         }
       }
+      setIsSyntheticCandles(isSyn);
       if (Array.isArray(hist) && hist.length >= 15) {
         setCandles(hist);
         const prices = hist.map((c) => Number(c.close || c.ltp || 0)).filter((p) => p > 0);
@@ -285,8 +290,12 @@ export function StrategyLabService() {
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-base font-bold text-white tracking-wide">NEPSE Strategy Lab &amp; Quantitative Backtester</h3>
-            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700/60">
-              REAL HISTORICAL OHLCV
+            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+              isSyntheticCandles
+                ? 'bg-amber-950/60 text-amber-300 border-amber-700/60'
+                : 'bg-emerald-950 text-emerald-300 border-emerald-700/60'
+            }`}>
+              {isSyntheticCandles ? 'SYNTHETIC ESTIMATION' : 'VERIFIED HISTORICAL OHLCV'}
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">Empirical historical backtests, statistical win-rates, expectancy calculator, and live candidates.</p>
@@ -573,9 +582,9 @@ export function StrategyLabService() {
               </thead>
               <tbody className="divide-y divide-slate-800/40 font-mono">
                 {matchingStocks.map((s) => {
-                  const ltp = Number(s.ltp || s.closePrice || 500);
-                  const target = +(ltp * (1 + targetProfitPct / 100)).toFixed(1);
-                  const stop = +(ltp * (1 - stopLossPct / 100)).toFixed(1);
+                  const ltp = Number(s.ltp || s.closePrice || 0);
+                  const target = ltp > 0 ? +(ltp * (1 + targetProfitPct / 100)).toFixed(1) : 0;
+                  const stop = ltp > 0 ? +(ltp * (1 - stopLossPct / 100)).toFixed(1) : 0;
                   const up = (Number(s.pChange) || 0) >= 0;
                   return (
                     <tr key={s.symbol} className="hover:bg-slate-900/40 transition">
@@ -583,16 +592,16 @@ export function StrategyLabService() {
                         {s.symbol}
                       </td>
                       <td className="p-3 text-right font-black text-white">
-                        Rs. {ltp}
+                        {ltp > 0 ? `Rs. ${ltp}` : '—'}
                       </td>
                       <td className={`p-3 text-right font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {up ? '+' : ''}{Number(s.pChange || 0).toFixed(2)}%
                       </td>
                       <td className="p-3 text-right text-slate-300">
-                        {s.rsi ? Number(s.rsi).toFixed(1) : '52.0'}
+                        {s.rsi ? Number(s.rsi).toFixed(1) : '—'}
                       </td>
                       <td className="p-3 text-right font-bold text-blue-400">
-                        {s.technicalScore || 65}/100
+                        {s.technicalScore != null ? `${s.technicalScore}/100` : '—'}
                       </td>
                       <td className="p-3 text-right font-bold text-emerald-400">
                         Rs. {target}

@@ -379,10 +379,12 @@ const unifiedList = [];
 for (const c of RAW_NEPSE_UNIVERSE) {
   if (c && c.symbol) {
     const sym = c.symbol.toUpperCase();
+    const mappedSector = stockmapData?.[sym]?.sector || c.sector;
     symbolSet.add(sym);
     unifiedList.push({
       ...c,
-      symbol: sym
+      symbol: sym,
+      sector: mappedSector
     });
   }
 }

@@ -428,7 +428,8 @@ const NON_EQUITY_EXCLUSION_SET = new Set([
 
 const PURE_EQUITY_WHITELIST = new Set([
   'UPPER', 'SHPC', 'NHPC', 'CHCL', 'AHPC', 'RHPL', 'UNHPL', 'MHNL', 'DHPL',
-  'PMHPL', 'KPCL', 'BPCL', 'AKPL', 'SPDL', 'SMD', 'NFD', 'HIDCL', 'RADHI'
+  'PMHPL', 'KPCL', 'BPCL', 'AKPL', 'SPDL', 'SMD', 'NFD', 'HIDCL', 'RADHI',
+  'NMBMF', 'SWMF', 'CITY', 'HATHY', 'SANIMA', 'SHIVM', 'NADEP'
 ]);
 
 function isNonEquityScrip(symbol) {
@@ -545,7 +546,7 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
 
     let s = stockAggMap.get(symbol);
     if (!s) {
-      const initialRate = rate > 0 ? rate : amt > 0 ? amt / qty : 100;
+      const initialRate = rate > 0 ? rate : (qty > 0 && amt > 0 ? +(amt / qty).toFixed(2) : 0);
       s = {
         open: initialRate,
         high: initialRate,
@@ -830,7 +831,9 @@ export function backupRawFloorsheet(tradeDate, rawTrades, metadata = {}) {
     });
     const compressed = zlib.gzipSync(Buffer.from(payload, 'utf8'), { level: 9 });
     const targetFile = path.join(RAW_BACKUP_DIR, `floorsheet-raw-${tradeDate}.json.gz`);
-    fs.writeFileSync(targetFile, compressed);
+    const tempFile = `${targetFile}.tmp`;
+    fs.writeFileSync(tempFile, compressed);
+    fs.renameSync(tempFile, targetFile);
     console.log(`[RawFloorsheetVault] Archived ${rawTrades.length} trades for ${tradeDate} to ${targetFile} (${(compressed.length / 1024).toFixed(1)} KB)`);
     return {
       success: true,
@@ -1113,7 +1116,9 @@ export function exportLedgerSnapshotGz() {
 
     const compressed = zlib.gzipSync(Buffer.from(payload, "utf8"), { level: 6 });
     const targetFile = path.join(DATA_DIR, "ledger_seed_snapshot.json.gz");
-    fs.writeFileSync(targetFile, compressed);
+    const tempFile = `${targetFile}.tmp`;
+    fs.writeFileSync(tempFile, compressed);
+    fs.renameSync(tempFile, targetFile);
 
     console.log(
       `[Drabyashree Ledger] Exported compressed snapshot to ${targetFile} (${(compressed.length / 1024 / 1024).toFixed(2)} MB, ${dates.length} dates, ${stockSummaries.length} summaries, ${brokerLedger.length} broker rows)`

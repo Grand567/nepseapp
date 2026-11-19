@@ -310,7 +310,7 @@ export class UnifiedNepseClient {
     if (this.nepseman?.session) {
       try {
         return await this.executeWithBackoff(
-          () => this.nepseman.session.post(endpoint, 'general'),
+          () => this.nepseman.session.post(endpoint, payload || 'general'),
           `POST ${endpoint} (Nepseman WASM)`
         );
       } catch (err1) {

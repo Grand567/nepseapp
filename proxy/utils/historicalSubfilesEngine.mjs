@@ -109,6 +109,7 @@ function calculateRSI14(candles, targetIndex) {
   }
   const avgGain = gains / 14;
   const avgLoss = losses / 14;
+  if (avgGain === 0 && avgLoss === 0) return 50.0;
   if (avgLoss === 0) return 100.0;
   const rs = avgGain / avgLoss;
   return Number((100 - (100 / (1 + rs))).toFixed(2));
@@ -135,21 +136,23 @@ function calculateEMA(candles, period, targetIndex) {
  */
 export function compileHistoricalSubfiles(options = {}) {
   const t0 = Date.now();
+  const ownsDb = !options.db;
   const db = options.db || new Database(DB_PATH, { readonly: true, timeout: 10000 });
-  try { db.pragma('busy_timeout = 10000'); } catch (_) {}
-  const stockmap = loadStockmap();
+  try {
+    try { db.pragma('busy_timeout = 10000'); } catch (_) {}
+    const stockmap = loadStockmap();
 
-  // 1. Query the most recent completed trading sessions (default 5 trading days)
-  const maxDays = Math.max(1, parseInt(options.maxDays || 5, 10) || 5);
-  const sessionRows = db
-    .prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT ?')
-    .all(maxDays);
+    // 1. Query the most recent completed trading sessions (default 5 trading days)
+    const maxDays = Math.max(1, parseInt(options.maxDays || 5, 10) || 5);
+    const sessionRows = db
+      .prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT ?')
+      .all(maxDays);
 
-  const tradingSessions = sessionRows.map(r => r.trade_date);
-  if (tradingSessions.length === 0) {
-    console.warn('[HistoricalSubfiles] No trading sessions found in SQLite ledger.');
-    return null;
-  }
+    const tradingSessions = sessionRows.map(r => r.trade_date);
+    if (tradingSessions.length === 0) {
+      console.warn('[HistoricalSubfiles] No trading sessions found in SQLite ledger.');
+      return null;
+    }
 
   // 2. Fetch price summaries for the past 60 sessions to compute authentic technical indicators
   const allPriceRows = db.prepare(`
@@ -695,8 +698,13 @@ export function compileHistoricalSubfiles(options = {}) {
     console.warn('[HistoricalSubfiles] Notice: Public bundle sync skipped:', syncErr.message);
   }
 
-  console.log(`[HistoricalSubfiles] 🚀 Subfiles compilation finished in ${Date.now() - t0}ms. ${generatedSubfiles.length} Sub-files + Index saved to proxy/data/subfiles/ and synced to public/data/`);
-  return manifest;
+    console.log(`[HistoricalSubfiles] 🚀 Subfiles compilation finished in ${Date.now() - t0}ms. ${generatedSubfiles.length} Sub-files + Index saved to proxy/data/subfiles/ and synced to public/data/`);
+    return manifest;
+  } finally {
+    if (ownsDb && db) {
+      try { db.close(); } catch (_) {}
+    }
+  }
 }
 
 /**

@@ -78,7 +78,10 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={onClose}
+    >
       <div 
         className="w-full max-w-lg bg-slate-900 border border-emerald-500/30 rounded-2xl shadow-2xl shadow-emerald-950/50 overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
@@ -159,7 +162,11 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
             {/* Condition 2: Buyer Concentration */}
             <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                {concentration >= 50 ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                )}
                 <div>
                   <div className="text-xs font-bold text-slate-200">Condition 2: Buyer Concentration &gt; 50%</div>
                   <div className="text-[11px] text-slate-400">
@@ -195,7 +202,7 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
               <div className="text-[10px] text-slate-400 font-semibold uppercase">Stop Loss</div>
               <div className="mt-1 text-sm font-black font-mono text-rose-400">NPR {stopLoss}</div>
               <div className="text-[10px] text-rose-500/80 font-mono mt-0.5">
-                -{(((ltp - stopLoss) / ltp) * 100).toFixed(1)}%
+                {ltp > 0 ? `-${(((ltp - stopLoss) / ltp) * 100).toFixed(1)}%` : '—'}
               </div>
             </div>
 
@@ -203,7 +210,7 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
               <div className="text-[10px] text-slate-400 font-semibold uppercase">Target 1</div>
               <div className="mt-1 text-sm font-black font-mono text-emerald-400">NPR {target1}</div>
               <div className="text-[10px] text-emerald-500/80 font-mono mt-0.5">
-                +{(((target1 - ltp) / ltp) * 100).toFixed(1)}%
+                {ltp > 0 ? `+${(((target1 - ltp) / ltp) * 100).toFixed(1)}%` : '—'}
               </div>
             </div>
 
@@ -211,7 +218,7 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
               <div className="text-[10px] text-slate-400 font-semibold uppercase">Target 2</div>
               <div className="mt-1 text-sm font-black font-mono text-emerald-300">NPR {target2}</div>
               <div className="text-[10px] text-emerald-500/80 font-mono mt-0.5">
-                +{(((target2 - ltp) / ltp) * 100).toFixed(1)}%
+                {ltp > 0 ? `+${(((target2 - ltp) / ltp) * 100).toFixed(1)}%` : '—'}
               </div>
             </div>
           </div>

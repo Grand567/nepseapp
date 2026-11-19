@@ -67,12 +67,12 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
   const handleAddStock = (sym: string) => {
     if (!sym) return;
     const s = sym.toUpperCase().trim();
-    const ltp = marketQuotes[s] || 500;
-    const entryMin = Number((ltp * 0.992).toFixed(1));
-    const entryMax = Number((ltp * 1.004).toFixed(1));
-    const stopLoss = Number((ltp * 0.954).toFixed(1)); // 4.6% stop
-    const target1 = Number((ltp * 1.069).toFixed(1)); // 6.9% target
-    const target2 = Number((ltp * 1.115).toFixed(1)); // 11.5% target
+    const ltp = marketQuotes[s] || 0;
+    const entryMin = ltp > 0 ? Number((ltp * 0.992).toFixed(1)) : 0;
+    const entryMax = ltp > 0 ? Number((ltp * 1.004).toFixed(1)) : 0;
+    const stopLoss = ltp > 0 ? Number((ltp * 0.954).toFixed(1)) : 0; // 4.6% stop
+    const target1 = ltp > 0 ? Number((ltp * 1.069).toFixed(1)) : 0; // 6.9% target
+    const target2 = ltp > 0 ? Number((ltp * 1.115).toFixed(1)) : 0; // 11.5% target
 
     const newCfg = {
       symbol: s,
@@ -116,14 +116,6 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
       const target1Reached = ltp >= t1;
       const target2Reached = ltp >= t2;
 
-      // Trigger alerts if newly fired
-      if (cfg.alertEnabled && (inEntryZone || nearStopLoss || target1Reached || target2Reached)) {
-        if (audioEnabled) {
-          playBreakoutChime();
-          triggerBreakoutVibration();
-        }
-      }
-
       return {
         symbol: sym,
         entryZone: [entryMin, entryMax] as [number, number],
@@ -138,7 +130,19 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
         alertEnabled: cfg.alertEnabled !== false
       };
     });
-  }, [configs, marketQuotes, audioEnabled]);
+  }, [configs, marketQuotes]);
+
+  // Audio and vibration side-effects isolated strictly to useEffect lifecycle
+  useEffect(() => {
+    if (!audioEnabled) return;
+    const hasTriggered = activeAlertItems.some(
+      item => item.alertEnabled && (item.inEntryZone || item.nearStopLoss || item.target1Reached || item.target2Reached)
+    );
+    if (hasTriggered) {
+      playBreakoutChime();
+      triggerBreakoutVibration();
+    }
+  }, [activeAlertItems, audioEnabled]);
 
   return (
     <div className="space-y-6 pb-12">

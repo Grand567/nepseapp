@@ -3,6 +3,7 @@
  * Prioritizes news that directly or indirectly impacts NEPSE, listed stocks,
  * dividends, corporate actions, and monetary/capital market policies.
  */
+import { bsToAd } from './bikramSambat.js';
 
 export function getNepseImpactScore(article) {
   if (!article) return { score: 0, impactType: null };
@@ -128,7 +129,7 @@ export const ENTITY_GROUPS = [
   { id: 'SBL', aliases: ['सिद्धार्थ', 'sbl'] },
   { id: 'SANIMA', aliases: ['सानिमा', 'sanima'] },
   { id: 'EBL', aliases: ['एभरेष्ट', 'ebl'] },
-  { id: 'LXBL', aliases: ['लक्ष्मी सनराइज', 'लक्ष्मी', 'lxbl'] },
+  { id: 'LSL', aliases: ['लक्ष्मी सनराइज', 'लक्ष्मी', 'lsl', 'lxbl'] },
   { id: 'MBL', aliases: ['माछापुच्छ्रे', 'mbl'] },
   { id: 'NMB', aliases: ['एनएमबि', 'nmb'] },
   { id: 'PBL', aliases: ['प्राइम', 'pbl'] },
@@ -138,8 +139,8 @@ export const ENTITY_GROUPS = [
   { id: 'CZBIL', aliases: ['सिटिजन्स', 'czbil'] },
   // Development Banks
   { id: 'MNBBL', aliases: ['मुक्तिनाथ', 'mnbbl'] },
-  { id: 'GBLBS', aliases: ['गरिमा', 'gblbs'] },
-  { id: 'JEBL', aliases: ['ज्योति', 'jebl'] },
+  { id: 'GBBL', aliases: ['गरिमा', 'gbbl', 'gblbs'] },
+  { id: 'JBBL', aliases: ['ज्योति', 'jbbl', 'jebl'] },
   { id: 'KDLBL', aliases: ['कामना', 'kdlbl'] },
   { id: 'MLBL', aliases: ['महालक्ष्मी', 'mlbl'] },
   { id: 'SADBL', aliases: ['सांग्रिला', 'sadbl'] },
@@ -161,7 +162,7 @@ export const ENTITY_GROUPS = [
   { id: 'NLIC', aliases: ['नेपाल लाइफ', 'nlic'] },
   { id: 'LICN', aliases: ['लाइफ इन्स्योरेन्स', 'licn'] },
   { id: 'SICL', aliases: ['शिखर', 'sicl'] },
-  { id: 'HEIC', aliases: ['हिमालयन एभरेष्ट', 'heic'] },
+  { id: 'HEI', aliases: ['हिमालयन एभरेष्ट', 'hei', 'heic', 'haic'] },
   { id: 'SALICO', aliases: ['सगरमाथा', 'salico'] },
   // Regulatory Bodies & Core Institutions
   { id: 'NRB', aliases: ['नेपाल राष्ट्र बैंक', 'राष्ट्र बैंक', 'nrb'] },
@@ -304,9 +305,19 @@ export function deduplicateNews(newsList = [], activeSource = 'all') {
 
   let inputList = newsList;
   if (activeSource && activeSource !== 'all') {
+    const target = activeSource.toLowerCase().trim();
     inputList = newsList.filter(item => {
-      const src = String(item.source || '').toLowerCase();
-      return src.includes(activeSource.toLowerCase());
+      const src = String(item.source || item.portal || '').toLowerCase();
+      if (target === 'sharesansar') return src.includes('sharesansar');
+      if (target === 'merolagani') return src.includes('merolagani');
+      if (target === 'nepalipaisa') return src.includes('nepali paisa') || src.includes('nepalipaisa');
+      if (target === 'clickmandu') return src.includes('clickmandu');
+      if (target === 'karobar') return src.includes('karobar') && !src.includes('artha');
+      if (target === 'bizshala') return src.includes('bizshala');
+      if (target === 'bikashnews') return src.includes('bikash');
+      if (target === 'arthakendra') return src.includes('kendra');
+      if (target === 'arthasarokar') return src.includes('sarokar') || src.includes('artha karobar');
+      return src.includes(target);
     });
   }
 
@@ -367,10 +378,21 @@ export function parseNewsTimestamp(item) {
   const rawDate = item.pubDate || item.date || '';
   if (!rawDate) return 0;
 
-  // 1. Direct standard JS date parsing
-  const parsed = Date.parse(rawDate);
-  if (!isNaN(parsed) && parsed > 0) {
-    return parsed;
+  // 1. Direct standard JS date parsing (guard against BS year >= 2050 being parsed as future Gregorian)
+  const bsMatch = String(rawDate).trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (bsMatch && parseInt(bsMatch[1], 10) >= 2050) {
+    try {
+      const bsYear = parseInt(bsMatch[1], 10);
+      const bsMonth = parseInt(bsMatch[2], 10);
+      const bsDay = parseInt(bsMatch[3], 10);
+      const adDate = bsToAd(bsYear, bsMonth, bsDay);
+      if (adDate && !isNaN(adDate.getTime())) return adDate.getTime();
+    } catch (_) {}
+  } else {
+    const parsed = Date.parse(rawDate);
+    if (!isNaN(parsed) && parsed > 0 && parsed <= Date.now() + 86400000) {
+      return parsed;
+    }
   }
 
   // 2. Relative time strings in Nepali & English
@@ -473,6 +495,10 @@ export function calculateTradingSessionHoursElapsed(fromTimestampMs, toTimestamp
   const tEnd = Math.max(fromTimestampMs, toTimestampMs);
   if (tEnd - tStart <= 0) return 0;
 
+  // Max 30 trading days clamp to prevent unbounded multi-year iteration
+  const MAX_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+  const effectiveStart = Math.max(tStart, tEnd - MAX_WINDOW_MS);
+
   // Step in 15-minute increments
   const stepMs = 15 * 60 * 1000;
   let tradingMinutes = 0;
@@ -480,7 +506,7 @@ export function calculateTradingSessionHoursElapsed(fromTimestampMs, toTimestamp
   // Convert to NPT (UTC + 5:45)
   const NPT_OFFSET = (5 * 60 + 45) * 60 * 1000;
 
-  for (let t = tStart; t < tEnd; t += stepMs) {
+  for (let t = effectiveStart; t < tEnd; t += stepMs) {
     const nptDate = new Date(t + NPT_OFFSET);
     const day = nptDate.getUTCDay(); // 0: Sun, 1: Mon, 2: Tue, 3: Wed, 4: Thu, 5: Fri, 6: Sat
     const mins = nptDate.getUTCHours() * 60 + nptDate.getUTCMinutes();

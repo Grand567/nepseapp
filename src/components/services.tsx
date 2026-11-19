@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2, X, ChevronLeft, Flame, Target, Award, ArrowUpRight, TrendingUp, Clock, Shield, AlertTriangle, Users, Zap, Play, CheckCircle2, XCircle, ShieldCheck, Terminal, Check, LayoutGrid } from 'lucide-react';
+import { isPureNepseEquity } from '../utils/nepseEquityFilter.js';
+import { NEPSE_UNIVERSE } from '../data/nepseUniverse.js';
+import { bsToAd } from '../utils/bikramSambat.js';
 import { useBackHandler } from '../context/NavigationContext';
 import { calculateBuyDetails, calculateSellDetails, calculateWacc } from '../utils/calculations';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
@@ -10,7 +13,7 @@ import {
   fetchAllSecurities, fetchPriceHistory,
   loadNepseData, fetchIndices, fetchFloorSheet, ENDPOINT_REGISTRY, getCachedStocks, getCachedIndices,
   getCachedRealPriceHistory, getCachedRealBrokerAnalysis, setCachedRealBrokerAnalysis,
-  fetchRealBrokerAnalysis, fetchAvailableTradingDates,
+  fetchRealBrokerAnalysis, fetchAvailableTradingDates, getProxyBase,
 } from '../utils/liveData';
 import { getWatchlist, addToWatchlist, removeFromWatchlist } from '../utils/watchlist';
 
@@ -21,6 +24,7 @@ import {
   fetchFloorsheet as fetchServicesFloorsheet,
   fetchSectorHeatmap as fetchServicesSectorHeatmap,
   fetchNewsArticle, fetchBrokerHeatmap, fetchMarketDepth,
+  fetchIPOResultCompanies,
 } from '../utils/servicesApi';
 import { getHydroSeasonality, calculateMultiHorizonTargets, resolveDynamicStockRSI, calculateCompositeTechnicalScore, calculateDecisionProbabilityIndex } from '../utils/quantEngine';
 import { calculateStealthAccumulationScore, detectSyndicateCluster, getBrokerName, type SyndicateClusterAnalysis } from '../utils/accumulationDistributionEngine';
@@ -105,9 +109,9 @@ function calcWilderRsi(closes: number[], period = 14): number {
 // ── Authentic Multi-Timeframe Performance Engine for all NEPSE Securities ──
 const tfMetricsCache = new WeakMap<object, any>();
 
-function computeStockTimeframeMetrics(stock: any) {
+function computeStockTimeframeMetrics(stock: any, activeDate = '') {
   if (!stock || typeof stock !== 'object') return null;
-  if (tfMetricsCache.has(stock)) {
+  if (!activeDate && tfMetricsCache.has(stock)) {
     return tfMetricsCache.get(stock);
   }
 
@@ -122,7 +126,10 @@ function computeStockTimeframeMetrics(stock: any) {
   const pos52 = Math.max(0, Math.min(1, (ltp - lo52) / range));
 
   const sym = String(stock.symbol || '').toUpperCase().trim();
-  const cachedHist = stock.history || stock.candles || stock.priceHistory || (sym ? getCachedRealPriceHistory(sym) : null);
+  const rawHist = stock.history || stock.candles || stock.priceHistory || (sym ? getCachedRealPriceHistory(sym) : null);
+  const cachedHist = (Array.isArray(rawHist) && activeDate)
+    ? rawHist.filter((c: any) => String(c?.date || '').slice(0, 10) <= activeDate)
+    : rawHist;
   const realBroker = stock.brokerAnalysis || stock.realBrokerAnalysis || (sym ? getCachedRealBrokerAnalysis(sym) : null) || undefined;
 
   const baseStealth = Number(stock.stealthAccumulation) || calculateStealthAccumulationScore(
@@ -194,10 +201,12 @@ function computeStockTimeframeMetrics(stock: any) {
         isVolumeShocker: sliceZScore >= 1.5 || volumeSurgeRatio >= 1.8,
         high,
         low,
+        open: startPrice,
         isBreakout,
         stealthAccumulation: stealth,
         rsi,
         technicalScore: tech,
+        isHistoryPending: false,
       };
     };
 
@@ -211,10 +220,12 @@ function computeStockTimeframeMetrics(stock: any) {
         isVolumeShocker: dailyShocker,
         high: Number(stock.high) || ltp,
         low: Number(stock.low) || ltp,
+        open: Number(stock.open || stock.openPrice || ltp || 0),
         isBreakout: Boolean(stock.isBreakout),
         stealthAccumulation: baseStealth,
         rsi: baseRsi,
         technicalScore: baseTech,
+        isHistoryPending: false,
       },
       '1W': computeSlice(5),
       '1M': computeSlice(22),
@@ -222,11 +233,13 @@ function computeStockTimeframeMetrics(stock: any) {
       '6M': computeSlice(132),
       '1Y': computeSlice(250),
     };
-    tfMetricsCache.set(stock, result);
+    if (!activeDate) {
+      tfMetricsCache.set(stock, result);
+    }
     return result;
   }
 
-  // Exchange-calibrated metrics when candles are pending fetch (ZERO synthetic noise or fabricated returns)
+  // Exchange-calibrated metrics when candles are pending fetch (DO NOT cache pending results in WeakMap!)
   const fallbackSurge = Number(stock.volumeSurgeRatio) || 1.0;
   const fallbackZScore = Number(stock.volumeZScore) || (fallbackSurge >= 1.4 ? Number(((fallbackSurge - 1.0) * 2.0).toFixed(2)) : 0);
   const fallbackShocker = fallbackZScore >= 1.5 || fallbackSurge >= 1.8;
@@ -247,7 +260,7 @@ function computeStockTimeframeMetrics(stock: any) {
     isHistoryPending: true,
   });
 
-  const result = {
+  return {
     '1D': {
       pChange: dailyP,
       volume: dailyVol,
@@ -269,13 +282,11 @@ function computeStockTimeframeMetrics(stock: any) {
     '6M': makePendingTf(132),
     '1Y': makePendingTf(250),
   };
-  tfMetricsCache.set(stock, result);
-  return result;
 }
 
 // ── Universal screener: Powers sub-tabs with interactive TimeframeFilterBar where applicable ──
 export function UniversalScreener({
-  filterFn, sortFn, customCols = [], banner, insight, defaultLimit = null, cols, title, hideTimeframe = false,
+  filterFn, sortFn, customCols = [], banner, insight, defaultLimit = null, cols, title, hideTimeframe = false, includeNonEquities = false,
 }: {
   filterFn?: (s: EnrichedStock, tf?: string) => any;
   sortFn?: (a: EnrichedStock, b: EnrichedStock, tf?: string) => number;
@@ -286,32 +297,39 @@ export function UniversalScreener({
   cols?: ColDef[];
   title?: string;
   hideTimeframe?: boolean;
+  includeNonEquities?: boolean;
 }) {
   const [data, setData] = useState<any[]>([]);
   const [source, setSource] = useState('');
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState('1D');
   const [refreshing, setRefreshing] = useState(false);
-  const [rawTotal, setRawTotal] = useState(346);
+  const [rawTotal, setRawTotal] = useState(() => (Array.isArray(NEPSE_UNIVERSE) && NEPSE_UNIVERSE.length) || 247);
   const [fallbackNotice, setFallbackNotice] = useState('');
 
-  const loadData = async (activeTf = timeframe) => {
+  const loadData = async (activeTf = timeframe, isCancelled?: () => boolean) => {
     try {
-      const { stocks, source: src } = await loadNepseData();
-      if (stocks?.length) setRawTotal(stocks.length);
+      const { stocks: rawStocks, source: src } = await loadNepseData();
+      const stocks = includeNonEquities ? (rawStocks || []) : (rawStocks || []).filter((s) => isPureNepseEquity(s));
+      if (rawStocks?.length) setRawTotal(stocks.length);
 
-      // Pre-warm authentic price history for top active securities when multi-timeframe horizon is active
+      // Pre-warm authentic price history for top active securities in batches of 8 to avoid socket starvation
       if (!hideTimeframe && activeTf !== '1D' && stocks?.length) {
         const topToWarm = stocks.slice(0, 60);
-        await Promise.allSettled(
-          topToWarm.map(s => {
-            const sym = s.symbol;
-            if (sym && !getCachedRealPriceHistory(sym)) {
-              return fetchPriceHistory(sym, 365);
-            }
-            return Promise.resolve(null);
-          })
-        );
+        const BATCH_SIZE = 8;
+        for (let i = 0; i < topToWarm.length; i += BATCH_SIZE) {
+          if (isCancelled && isCancelled()) break;
+          const batch = topToWarm.slice(i, i + BATCH_SIZE);
+          await Promise.allSettled(
+            batch.map(s => {
+              const sym = s.symbol;
+              if (sym && !getCachedRealPriceHistory(sym)) {
+                return fetchPriceHistory(sym, 365);
+              }
+              return Promise.resolve(null);
+            })
+          );
+        }
       }
 
       // Compute multi-timeframe horizon return and metrics for each stock
@@ -319,7 +337,7 @@ export function UniversalScreener({
         const metricsMap = computeStockTimeframeMetrics(stock);
         const tfMetrics = metricsMap[activeTf as keyof typeof metricsMap] || metricsMap['1D'];
 
-        const o = Number(stock.open || stock.openPrice || tfMetrics.low || stock.ltp || 100);
+        const o = Number(tfMetrics.open || stock.open || stock.openPrice || tfMetrics.low || stock.ltp || 0);
         const h = Number(tfMetrics.high || stock.high || stock.highPrice || stock.ltp || 100);
         const l = Number(tfMetrics.low || stock.low || stock.lowPrice || stock.ltp || 100);
         const c = Number(stock.ltp || stock.closePrice || 100);
@@ -339,8 +357,8 @@ export function UniversalScreener({
           else if (Math.abs(stock.pChange || 0) >= 3.5) pattern = isGreen ? 'Strong Bullish Thrust' : 'Strong Bearish Breakdown';
         }
 
-        const hi52 = Number(stock.high52w || stock.fiftyTwoWeekHigh || (c > 0 ? c * 1.35 : 500));
-        const lo52 = Number(stock.low52w || stock.fiftyTwoWeekLow || (c > 0 ? c * 0.65 : 200));
+        const hi52 = Number(stock.high52w || stock.fiftyTwoWeekHigh || 0) || null;
+        const lo52 = Number(stock.low52w || stock.fiftyTwoWeekLow || 0) || null;
 
         let dynamicDpi = Number(stock.dpi) || 50;
         let dpiDecision = 'Neutral / Hold';
@@ -436,40 +454,31 @@ export function UniversalScreener({
           candlestickPattern: pattern,
           high52w: hi52,
           low52w: lo52,
-          floatTurnoverPct: Number(stock.floatTurnoverPct) || +((Number(tfMetrics.turnover || stock.turnover || 0) / Math.max(1000000, (Number(stock.marketCap) || (c * 12 * 1e6)) * 0.45)) * 100).toFixed(2),
+          floatTurnoverPct: Number(stock.floatTurnoverPct) || (Number(stock.marketCap) > 0 ? +((Number(tfMetrics.turnover || stock.turnover || 0) / Number(stock.marketCap)) * 100).toFixed(2) : null),
         };
       });
 
-      let processed = [...enrichedForTf];
-      let fallbackMsg = '';
-      if (filterFn) {
-        const strictlyMatched = processed.filter(s => filterFn(s, hideTimeframe ? '1D' : activeTf));
-        if (strictlyMatched.length > 0) {
-          processed = strictlyMatched;
-          fallbackMsg = '';
-        } else {
-          // Graceful fallback for non-trading hours or quiet sessions:
-          const sortedAll = [...enrichedForTf].sort((a, b) => {
-            if (sortFn) return sortFn(a, b, hideTimeframe ? '1D' : activeTf);
-            return Math.abs(b.displayPChange || 0) - Math.abs(a.displayPChange || 0);
-          });
-          processed = sortedAll.slice(0, defaultLimit || 20);
-          fallbackMsg = `No scrips triggered this exact filter on the ${hideTimeframe ? '1D' : activeTf} horizon today. Displaying top ranked candidates for current market conditions.`;
-        }
-      }
-      if (sortFn && !fallbackMsg) processed = processed.sort((a, b) => sortFn(a, b, hideTimeframe ? '1D' : activeTf));
-      else if (!sortFn && !fallbackMsg) processed = processed.sort((a, b) => (b.displayPChange || 0) - (a.displayPChange || 0));
+      if (isCancelled?.()) return;
 
-      if (defaultLimit && !fallbackMsg) processed = processed.slice(0, defaultLimit);
+      let processed = [...enrichedForTf];
+      if (filterFn) {
+        processed = processed.filter(s => filterFn(s, hideTimeframe ? '1D' : activeTf));
+      }
+      if (sortFn) processed = processed.sort((a, b) => sortFn(a, b, hideTimeframe ? '1D' : activeTf));
+      else processed = processed.sort((a, b) => (b.displayPChange || 0) - (a.displayPChange || 0));
+
+      if (defaultLimit) processed = processed.slice(0, defaultLimit);
       setData(processed);
-      setFallbackNotice(fallbackMsg);
+      setFallbackNotice('');
       setSource(src);
     } catch (_) {}
     setLoading(false);
   };
 
   useEffect(() => {
-    loadData(hideTimeframe ? '1D' : timeframe);
+    let active = true;
+    loadData(hideTimeframe ? '1D' : timeframe, () => !active);
+    return () => { active = false; };
   }, [timeframe, hideTimeframe]);
 
   const handleRefresh = async () => {
@@ -502,7 +511,7 @@ export function UniversalScreener({
     ...customCols
   ];
 
-  if (loading) return <Spinner text="Scanning all 346 NEPSE listed securities…" />;
+  if (loading) return <Spinner text="Scanning all listed NEPSE securities…" />;
   return (
     <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3">
       {/* Interactive Timeframe Filter Bar placed on sub-tabs that genuinely benefit from multi-horizon analysis */}
@@ -714,12 +723,13 @@ export function StockMomentumAnalyzer({ stocks = [], initialSymbol = 'NABIL' }: 
                     const hi = Number(activeData.high || 0);
                     const lo = Number(activeData.low || 0);
                     const stObj = stocks.find(s => String(s.symbol || '').toUpperCase() === symbol.toUpperCase()) || {};
+                    const currPrice = Number(metrics?.currentPrice || metrics?.ltp || stObj.ltp || stObj.closePrice || hi || 0);
                     const proxy = {
                       ...stObj,
                       symbol,
-                      ltp: Number(metrics?.today || hi || 100),
-                      high: hi || Number(metrics?.today || 100),
-                      low: lo || Number(metrics?.today || 100),
+                      ltp: currPrice,
+                      high: hi || currPrice,
+                      low: lo || currPrice,
                       pChange: chg,
                       volumeSurgeRatio: Number(stObj.volumeSurgeRatio || 1.0)
                     };
@@ -1030,11 +1040,12 @@ export function TopPerformersService({
 
   const loadData = async (activeTf = timeframe) => {
     try {
-      const { stocks } = (propStocks && propStocks.length > 0 && !activeDate)
+      const { stocks: rawStocks } = (propStocks && propStocks.length > 0 && !activeDate)
         ? { stocks: propStocks }
         : await loadNepseData(activeDate);
+      const stocks = (rawStocks || []).filter((s) => isPureNepseEquity(s));
 
-      // Pre-warm authentic price history for top active securities when multi-timeframe horizon is selected
+      // Pre-warm authentic price history for top active securities when multi-timeframe horizon is active
       if (activeTf !== '1D' && stocks?.length) {
         const topPool = stocks.slice(0, 60);
         await Promise.allSettled(
@@ -1068,7 +1079,7 @@ export function TopPerformersService({
         const fnMap: any = { gainers: fetchTopGainers, losers: fetchTopLosers, volume: fetchTopVolume, turnover: fetchTopTurnover, transactions: fetchTopTransactions };
         try {
           const r: any = await (fnMap[type] || fetchTopGainers)(activeDate);
-          if (r?.data && r.data.length > 0) d = r.data;
+          if (r?.data && r.data.length > 0) d = r.data.filter((s: any) => isPureNepseEquity(s));
         } catch (_) {}
       }
 
@@ -1154,7 +1165,7 @@ function checkIpoStatus(closeDateStr?: string, openDateStr?: string, initialStat
       const month = parseInt(match[2], 10) - 1;
       const day = parseInt(match[3], 10);
 
-      const targetDate = year > 2060 ? new Date(year - 57, month, day) : new Date(year, month, day);
+      const targetDate = year > 2060 ? bsToAd(year, month + 1, day) : new Date(year, month, day);
       if (targetDate < today) {
         return 'Closed';
       }
@@ -1171,7 +1182,7 @@ function checkIpoStatus(closeDateStr?: string, openDateStr?: string, initialStat
         const oYear = parseInt(oMatch[1], 10);
         const oMonth = parseInt(oMatch[2], 10) - 1;
         const oDay = parseInt(oMatch[3], 10);
-        const oDate = oYear > 2060 ? new Date(oYear - 57, oMonth, oDay) : new Date(oYear, oMonth, oDay);
+        const oDate = oYear > 2060 ? bsToAd(oYear, oMonth + 1, oDay) : new Date(oYear, oMonth, oDay);
         if (oDate > today) return 'Upcoming';
       }
     }
@@ -1207,6 +1218,25 @@ export function IPOTracker({ type }: { type: 'current' | 'results' }) {
               sector: item.sector,
             };
           }));
+          setLoading(false);
+          return;
+        }
+      } else {
+        const resCompanies = await fetchIPOResultCompanies().catch(() => null);
+        const list = Array.isArray(resCompanies) ? resCompanies : (Array.isArray(resCompanies?.data) ? resCompanies.data : []);
+        if (list.length > 0) {
+          setData(list.map((item: any) => ({
+            ...item,
+            companyName: item.companyName || item.name || item.scrip || '—',
+            shareType: item.shareType || item.type || 'Allotment Result',
+            issuePrice: item.issuePrice || item.price || 100,
+            openDate: item.openDate || '—',
+            closeDate: item.allotmentDate || item.closeDate || '—',
+            status: 'Alloted',
+            units: item.units,
+            issueManager: item.issueManager || 'CDSC / Registrar',
+            sector: item.sector || 'General',
+          })));
           setLoading(false);
           return;
         }
@@ -1877,18 +1907,19 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
       const brokerData = s.brokerAnalysis || s.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym);
       const brokerBonus = (brokerData && Number(brokerData.adRatio || 0) > 0.05) ? 8 : 0;
 
-      // RVOL computed BEFORE compositeScore so distribution penalty can reference it
-      const rvolVal = Number(s.volumeSurgeRatio || (s.avgVolume20D ? +(s.volume / s.avgVolume20D).toFixed(2) : +(1.0 + (vol / 50000) * 0.5).toFixed(2)));
+      // Verified RVOL only (never fabricate from single-session volume)
+      const rawRvol = s.rvol ?? s.volumeSurgeRatio ?? (s.avgVolume20D && Number(s.avgVolume20D) > 0 ? +(vol / Number(s.avgVolume20D)).toFixed(2) : null);
+      const rvolVal = rawRvol != null && Number.isFinite(Number(rawRvol)) ? Number(rawRvol) : null;
 
       // Distribution penalty: high pChange + high volume = churn, not a prime pick
-      const isDistChurn = (pCh > 6 && rvolVal > 2.2) || pCh > 12;
+      const isDistChurn = (pCh > 6 && (rvolVal ?? 0) > 2.2) || pCh > 12;
       const distPenalty = isDistChurn ? -25 : 0;
 
       const compositeScore = Math.min(98, Math.max(35, +(46 + momScore * 0.50 + liqScore * 0.30 + volScore * 0.20 + hydroAdjustment + brokerBonus + distPenalty).toFixed(1)));
 
       // Dynamic ATR-based Corridor using multi-horizon engine
       const atrEst = Math.max(ltp * 0.02, Number(s.high || ltp) - Number(s.low || ltp));
-      const dynTargets = calculateMultiHorizonTargets(ltp, s.high52w || s.high52, s.low52w || s.low52, atrEst, pCh);
+      const dynTargets = calculateMultiHorizonTargets(ltp, s.high52w || s.high52, s.low52w || s.low52, atrEst, pCh, sym);
       const entryLow = Number(dynTargets.entryZone.min);
       const entryHigh = Number(dynTargets.entryZone.max);
       const target1 = Number(dynTargets.target1.price);
@@ -1904,7 +1935,7 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
         target2,
         stopLoss,
         rvol: rvolVal,
-        catalyst: (pCh > 6 && rvolVal > 2.0) ? 'Distribution Alert: Operator Offloading into Retail'
+        catalyst: (pCh > 6 && (rvolVal ?? 0) > 2.0) ? 'Distribution Alert: Operator Offloading into Retail'
           : pCh > 10 ? 'Near Upper Circuit — Euphoria / Churn Risk'
           : pCh > 2.5 ? 'Bullish Volume Breakout + Momentum Expansion'
           : pCh > 0 ? 'Support Rebound + Accumulation Base'
@@ -2042,7 +2073,7 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
             borderTop: '1px solid rgba(255,255,255,0.06)'
           }}>
             <div style={{ fontSize: 12, color: '#94a3b8' }}>
-              Setup: <strong style={{ color: '#ffffff' }}>{topPick.catalyst}</strong> (Edge Score: {topPick.compositeScore}/100, RVOL: {topPick.rvol}x)
+              Setup: <strong style={{ color: '#ffffff' }}>{topPick.catalyst}</strong> (Edge Score: {topPick.compositeScore}/100, RVOL: {topPick.rvol != null ? `${topPick.rvol}x` : '—'})
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
@@ -2173,31 +2204,68 @@ export function SectorHeatmapService({ selectedDate: propSelectedDate, date: pro
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState('1D');
   const [refreshing, setRefreshing] = useState(false);
+  const heatmapSeqRef = useRef(0);
 
   const loadData = async (activeTf = timeframe) => {
+    const seq = ++heatmapSeqRef.current;
     setLoading(true);
     try {
-      const { stocks } = await loadNepseData(activeDate);
+      const { stocks: rawStocks } = await loadNepseData(activeDate);
+      if (seq !== heatmapSeqRef.current) return;
+      const stocks = (rawStocks || []).filter((s: any) => isPureNepseEquity(s));
 
-      // Pre-warm anchor stocks from each sector to ensure authentic multi-timeframe sector rotation
-      if (activeTf !== '1D' && stocks?.length) {
-        const sectorAnchors = ['NABIL', 'GBIME', 'SHIVM', 'CHCL', 'CIT', 'HDL', 'NRIC', 'NICA', 'UNL', 'STC', 'NTC', 'HATHY', 'SONA'];
-        await Promise.allSettled(
-          sectorAnchors.map(sym => !getCachedRealPriceHistory(sym) ? fetchPriceHistory(sym, 365) : Promise.resolve(null))
-        );
+      // Warm top representative pure equities from EVERY sector so multi-TF rotation doesn't fall back to 1D ticks
+      if (activeTf !== '1D' && stocks.length > 0) {
+        const bySector: Record<string, any[]> = {};
+        stocks.forEach((s: any) => {
+          const sec = s.sector || 'Others';
+          if (!bySector[sec]) bySector[sec] = [];
+          bySector[sec].push(s);
+        });
+        const warmSyms: string[] = [];
+        Object.values(bySector).forEach((secList) => {
+          secList
+            .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0))
+            .slice(0, 2)
+            .forEach((s) => {
+              const sym = String(s.symbol || '').toUpperCase().trim();
+              if (sym && !getCachedRealPriceHistory(sym)) warmSyms.push(sym);
+            });
+        });
+        if (warmSyms.length > 0) {
+          await Promise.allSettled(warmSyms.slice(0, 28).map(sym => fetchPriceHistory(sym, 365)));
+          if (seq !== heatmapSeqRef.current) return;
+        }
       }
 
       const map: Record<string, any> = {};
       stocks.forEach((s) => {
         const sec = s.sector || 'Others';
-        const allTf = computeStockTimeframeMetrics(s);
+        const allTf = computeStockTimeframeMetrics(s, activeDate);
         const tfMetrics = allTf?.[activeTf as keyof ReturnType<typeof computeStockTimeframeMetrics>] || allTf?.['1D'] || {};
-        const p = tfMetrics.pChange;
-        const v = tfMetrics.volume;
-        const t = tfMetrics.turnover;
-
-        if (!map[sec]) map[sec] = { sector: sec, stockCount: 0, totalChange: 0, volume: 0, turnover: 0, advancers: 0, decliners: 0, unchanged: 0 };
+        if (!map[sec]) {
+          map[sec] = {
+            sector: sec,
+            stockCount: 0,
+            verifiedCount: 0,
+            pendingCount: 0,
+            totalChange: 0,
+            volume: 0,
+            turnover: 0,
+            advancers: 0,
+            decliners: 0,
+            unchanged: 0
+          };
+        }
         map[sec].stockCount++;
+        if (activeTf !== '1D' && tfMetrics.isHistoryPending) {
+          map[sec].pendingCount++;
+          return;
+        }
+        const p = Number(tfMetrics.pChange || 0);
+        const v = Number(tfMetrics.volume || 0);
+        const t = Number(tfMetrics.turnover || 0);
+        map[sec].verifiedCount++;
         map[sec].totalChange += p;
         map[sec].volume += v;
         map[sec].turnover += t;
@@ -2205,13 +2273,21 @@ export function SectorHeatmapService({ selectedDate: propSelectedDate, date: pro
         else if (p < 0) map[sec].decliners++;
         else map[sec].unchanged++;
       });
-      const list = Object.values(map).map((s: any) => ({ ...s, pChange: +(s.totalChange / s.stockCount).toFixed(2) }));
-      setSectors(list.sort((a: any, b: any) => (b.pChange || 0) - (a.pChange || 0)));
-    } catch (_) {}
-    setLoading(false);
+      const list = Object.values(map).map((s: any) => ({
+        ...s,
+        pChange: s.verifiedCount > 0 ? +(s.totalChange / s.verifiedCount).toFixed(2) : null
+      }));
+      if (seq !== heatmapSeqRef.current) return;
+      setSectors(list.sort((a: any, b: any) => (b.pChange ?? -999) - (a.pChange ?? -999)));
+    } catch (_) {} finally {
+      if (seq === heatmapSeqRef.current) setLoading(false);
+    }
   };
 
-  useEffect(() => { loadData(timeframe); }, [timeframe, activeDate]);
+  useEffect(() => {
+    loadData(timeframe);
+    return () => { heatmapSeqRef.current++; };
+  }, [timeframe, activeDate]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -2219,8 +2295,8 @@ export function SectorHeatmapService({ selectedDate: propSelectedDate, date: pro
     setRefreshing(false);
   };
 
-  const topSector = sectors[0];
-  const bottomSector = sectors[sectors.length - 1];
+  const topSector = sectors.find((s) => s.pChange != null) || sectors[0];
+  const bottomSector = [...sectors].reverse().find((s) => s.pChange != null) || sectors[sectors.length - 1];
   const totalTurnover = useMemo(() => sectors.reduce((sum, s) => sum + (Number(s.turnover) || 0), 0), [sectors]);
   const totalAdvancers = useMemo(() => sectors.reduce((sum, s) => sum + (Number(s.advancers) || 0), 0), [sectors]);
   const totalDecliners = useMemo(() => sectors.reduce((sum, s) => sum + (Number(s.decliners) || 0), 0), [sectors]);
@@ -2241,8 +2317,8 @@ export function SectorHeatmapService({ selectedDate: propSelectedDate, date: pro
       />
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <StatCard label="Leading Sector" value={topSector ? `${topSector.sector}` : '—'} subtitle={topSector ? `+${Number(topSector.pChange).toFixed(2)}%` : undefined} color="#10b981" />
-        <StatCard label="Lagging Sector" value={bottomSector ? `${bottomSector.sector}` : '—'} subtitle={bottomSector ? `${Number(bottomSector.pChange).toFixed(2)}%` : undefined} color="#f43f5e" />
+        <StatCard label="Leading Sector" value={topSector ? `${topSector.sector}` : '—'} subtitle={topSector?.pChange != null ? `${topSector.pChange >= 0 ? '+' : ''}${Number(topSector.pChange).toFixed(2)}%` : undefined} color="#10b981" />
+        <StatCard label="Lagging Sector" value={bottomSector ? `${bottomSector.sector}` : '—'} subtitle={bottomSector?.pChange != null ? `${bottomSector.pChange >= 0 ? '+' : ''}${Number(bottomSector.pChange).toFixed(2)}%` : undefined} color="#f43f5e" />
         <StatCard label="Sector Turnover" value={`Rs. ${(totalTurnover / 1e7).toFixed(1)} Cr`} big color="#3b82f6" />
         <StatCard label="A/D Breadth Ratio" value={`${adRatio}x`} subtitle={`${totalAdvancers} Adv / ${totalDecliners} Dec`} color={adRatio >= 1 ? '#10b981' : '#f43f5e'} />
       </div>
@@ -2267,25 +2343,28 @@ export function SectorHeatmapService({ selectedDate: propSelectedDate, date: pro
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {sectors.map((s) => {
+          const hasPerf = s.pChange != null;
           const up = (Number(s.pChange) || 0) >= 0;
           return (
             <div
               key={s.sector}
               className={`rounded-xl border p-3.5 transition-all hover:scale-[1.01] ${
-                up
-                  ? 'border-emerald-800/60 bg-emerald-950/30 shadow-sm'
-                  : 'border-rose-800/60 bg-rose-950/30 shadow-sm'
+                !hasPerf
+                  ? 'border-slate-700/60 bg-slate-900/40 shadow-sm'
+                  : up
+                    ? 'border-emerald-800/60 bg-emerald-950/30 shadow-sm'
+                    : 'border-rose-800/60 bg-rose-950/30 shadow-sm'
               }`}
             >
               <div className="flex items-center justify-between text-xs font-bold text-white">
                 <span className="truncate pr-1">{s.sector}</span>
-                <span className={`font-mono text-sm font-black ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {up ? '+' : ''}{Number(s.pChange || 0).toFixed(2)}%
+                <span className={`font-mono text-sm font-black ${!hasPerf ? 'text-slate-400' : up ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {hasPerf ? `${up ? '+' : ''}${Number(s.pChange).toFixed(2)}%` : 'Pending'}
                 </span>
               </div>
               <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-                <span>{s.stockCount || 0} stocks</span>
-                <span className="font-mono text-slate-300">Rs. {((Number(s.turnover) || 0) / 1e7).toFixed(1)} Cr</span>
+                <span>{s.stockCount || 0} equities{timeframe !== '1D' && s.verifiedCount != null ? ` (${s.verifiedCount} hist)` : ''}</span>
+                <span className="font-mono text-slate-300">{hasPerf ? `Rs. ${((Number(s.turnover) || 0) / 1e7).toFixed(1)} Cr` : '—'}</span>
               </div>
               <div className="mt-2 flex items-center gap-2 text-[10px] text-slate-400 border-t border-slate-800/50 pt-1.5 font-mono">
                 <span className="text-emerald-400 font-bold">▲ {s.advancers || 0}</span>
@@ -2317,8 +2396,8 @@ export function SectorHeatmapService({ selectedDate: propSelectedDate, date: pro
                 <tr key={s.sector || i} className={`transition-colors ${i % 2 === 0 ? 'bg-slate-950/40' : 'bg-slate-900/20'} hover:bg-slate-800/50`}>
                   <td className="whitespace-nowrap px-3.5 py-2.5 font-bold text-white">{s.sector}</td>
                   <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono text-slate-300">{s.stockCount}</td>
-                  <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono font-bold" style={{ color: up ? '#10b981' : '#f43f5e' }}>
-                    {up ? '+' : ''}{Number(s.pChange || 0).toFixed(2)}%
+                  <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono font-bold" style={{ color: s.pChange == null ? '#94a3b8' : up ? '#10b981' : '#f43f5e' }}>
+                    {s.pChange != null ? `${up ? '+' : ''}${Number(s.pChange).toFixed(2)}%` : 'Pending'}
                   </td>
                   <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono text-emerald-400 font-semibold">{s.advancers || 0}</td>
                   <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono text-rose-400 font-semibold">{s.decliners || 0}</td>
@@ -2442,8 +2521,8 @@ export function LiveFloorsheetService({
           // Use verified share count from matrix if available, otherwise sum scrips or fallback
           const scripsBuyQty = Array.isArray(m.scrips) ? m.scrips.reduce((acc: number, sc: any) => acc + Number(sc.buyQty || sc.buyUnits || 0), 0) : 0;
           const scripsSellQty = Array.isArray(m.scrips) ? m.scrips.reduce((acc: number, sc: any) => acc + Number(sc.sellQty || sc.sellUnits || 0), 0) : 0;
-          const buyQty = m.totalBuyQty != null ? Number(m.totalBuyQty) : (m.buyQty != null ? Number(m.buyQty) : (scripsBuyQty > 0 ? scripsBuyQty : Math.round(buyAmt / 450)));
-          const sellQty = m.totalSellQty != null ? Number(m.totalSellQty) : (m.sellQty != null ? Number(m.sellQty) : (scripsSellQty > 0 ? scripsSellQty : Math.round(sellAmt / 450)));
+          const buyQty = m.totalBuyQty != null ? Number(m.totalBuyQty) : (m.buyQty != null ? Number(m.buyQty) : (scripsBuyQty > 0 ? scripsBuyQty : 0));
+          const sellQty = m.totalSellQty != null ? Number(m.totalSellQty) : (m.sellQty != null ? Number(m.sellQty) : (scripsSellQty > 0 ? scripsSellQty : 0));
           const netQty = m.netQty != null ? Number(m.netQty) : (buyQty - sellQty);
 
           return {
@@ -2791,6 +2870,7 @@ export function BrokerHeatmapService({ selectedDate: propSelectedDate, date: pro
   const [brokerFilter, setBrokerFilter] = useState<'all' | 'buyers' | 'sellers' | 'top10'>('all');
   const [viewTab, setViewTab] = useState<'matrix' | 'top10_rankings'>('matrix');
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
+  const [isBundledFallback, setIsBundledFallback] = useState(false);
   const [modalTab, setModalTab] = useState<'accumulation' | 'distribution'>('accumulation');
   const [modalMetric, setModalMetric] = useState<'netFlow' | 'netQty' | 'grossBuyAmt' | 'grossBuyQty'>('netFlow');
   const [availableTradingDates, setAvailableTradingDates] = useState<string[]>([]);
@@ -2860,19 +2940,25 @@ export function BrokerHeatmapService({ selectedDate: propSelectedDate, date: pro
         // Fallback to latestBrokerMatrix which contains all 91 brokers and 247+ stocks across the entire market!
         if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix) && (latestBrokerMatrix as any).matrix.length > 0) {
           setData(latestBrokerMatrix);
+          setIsBundledFallback(activeTf !== '1D');
         } else if (Array.isArray(d?.matrix) && d.matrix.length > 0) {
           setData(d);
+          setIsBundledFallback(false);
         }
       } else if (Array.isArray(d?.matrix) && d.matrix.length > 0) {
         setData(d);
+        setIsBundledFallback(false);
       } else if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         setData(latestBrokerMatrix);
+        setIsBundledFallback(activeTf !== '1D');
       } else if (d && (d.matrix || d.topBrokers)) {
         setData(d);
+        setIsBundledFallback(false);
       }
     } catch (_) {
       if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         setData(latestBrokerMatrix);
+        setIsBundledFallback(activeTf !== '1D');
       }
     }
     setLoading(false);
@@ -3051,6 +3137,13 @@ export function BrokerHeatmapService({ selectedDate: propSelectedDate, date: pro
           </button>
         )}
       </div>
+
+      {/* Multi-day fallback notice */}
+      {isBundledFallback && (
+        <div className="w-full rounded-xl border border-sky-500/30 bg-sky-950/30 p-2.5 text-xs text-sky-300">
+          ℹ️ Notice: Multi-day broker matrix is compiling; displaying latest 1D verified broker session snapshot.
+        </div>
+      )}
 
       {/* Date Notice Banner if selected date has no compiled records */}
       {selectedDate && Array.isArray(data?.availableDates) && !data.availableDates.includes(selectedDate) && (
@@ -3704,7 +3797,7 @@ export function BrokerFavouritesService({
         matrix.forEach((b: any) => {
           (b.scrips || []).forEach((s: any) => {
             if (s.symbol && !scripMap.has(s.symbol)) {
-              scripMap.set(s.symbol, { symbol: s.symbol, ltp: 500 });
+              scripMap.set(s.symbol, { symbol: s.symbol, ltp: Number(s.close || s.ltp || 0) });
             }
           });
         });
@@ -4422,7 +4515,7 @@ export function BrokerAnalysisService({
           </div>
 
           <Insight>
-            Institutional buying by Brokers 58 (Nabil Stock Dealer), 34, or 45 exceeding 25% concentration signals Wyckoff Phase C accumulation prior to markup.
+            Institutional buying by Brokers 58 (Naasa Securities), 77 (Nabil Stock Dealer), 34, or 45 exceeding 25% concentration signals Wyckoff Phase C accumulation prior to markup.
           </Insight>
         </div>
       ) : selectedSymbol ? (
@@ -4451,25 +4544,29 @@ export function BrokersDirectoryService() {
 
   const loadData = async () => {
     setLoading(true);
+    let fallbackBrokers = [
+      { id: 58, name: 'Naasa Securities Co. Ltd.', location: 'Kathmandu', contact: '—', tmsUrl: 'https://tms58.nepalstock.com.np/' },
+      { id: 77, name: 'Nabil Stock Dealer Ltd.', location: 'Kathmandu', contact: '01-5970014', tmsUrl: 'https://tms77.nepalstock.com.np/' },
+      { id: 34, name: 'Vision Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4233215', tmsUrl: 'https://tms34.nepalstock.com.np/' },
+      { id: 45, name: 'Imperial Securities Co. Pvt. Ltd.', location: 'Kathmandu', contact: '01-4445811', tmsUrl: 'https://tms45.nepalstock.com.np/' },
+      { id: 33, name: 'Dakshinkali Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4228912', tmsUrl: 'https://tms33.nepalstock.com.np/' },
+      { id: 17, name: 'ABC Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4437299', tmsUrl: 'https://tms17.nepalstock.com.np/' },
+      { id: 49, name: 'Online Securities Ltd.', location: 'Kathmandu', contact: '01-4240375', tmsUrl: 'https://tms49.nepalstock.com.np/' },
+      { id: 28, name: 'Shree Krishna Securities Ltd.', location: 'Kathmandu', contact: '01-4227317', tmsUrl: 'https://tms28.nepalstock.com.np/' },
+      { id: 14, name: 'Nepal Stock House Pvt. Ltd.', location: 'Kathmandu', contact: '01-4222013', tmsUrl: 'https://tms14.nepalstock.com.np/' },
+      { id: 38, name: 'Dipshikha Dhitopatra Karobar Co.', location: 'Kathmandu', contact: '01-4223298', tmsUrl: 'https://tms38.nepalstock.com.np/' },
+      { id: 60, name: 'Nagarik Stock Dealer Ltd.', location: 'Kathmandu', contact: '—', tmsUrl: 'https://tms60.nepalstock.com.np/' },
+    ];
     try {
       const res = await fetchBrokersDirectory();
       let list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
       if (!list.length) {
-        list = [
-          { id: 58, name: 'Nabil Stock Dealer Ltd.', location: 'Kathmandu', contact: '01-5970014', tmsUrl: 'https://tms58.nepalstock.com.np/' },
-          { id: 34, name: 'Vision Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4233215', tmsUrl: 'https://tms34.nepalstock.com.np/' },
-          { id: 45, name: 'Imperial Securities Co. Pvt. Ltd.', location: 'Kathmandu', contact: '01-4445811', tmsUrl: 'https://tms45.nepalstock.com.np/' },
-          { id: 33, name: 'Dakshinkali Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4228912', tmsUrl: 'https://tms33.nepalstock.com.np/' },
-          { id: 17, name: 'ABC Securities Pvt. Ltd.', location: 'Kathmandu', contact: '01-4437299', tmsUrl: 'https://tms17.nepalstock.com.np/' },
-          { id: 49, name: 'Online Securities Ltd.', location: 'Kathmandu', contact: '01-4240375', tmsUrl: 'https://tms49.nepalstock.com.np/' },
-          { id: 28, name: 'Shree Krishna Securities Ltd.', location: 'Kathmandu', contact: '01-4227317', tmsUrl: 'https://tms28.nepalstock.com.np/' },
-          { id: 14, name: 'Nepal Stock House Pvt. Ltd.', location: 'Kathmandu', contact: '01-4222013', tmsUrl: 'https://tms14.nepalstock.com.np/' },
-          { id: 38, name: 'Dipshikha Dhitopatra Karobar Co.', location: 'Kathmandu', contact: '01-4223298', tmsUrl: 'https://tms38.nepalstock.com.np/' },
-          { id: 60, name: 'Nagarik Stock Dealer Ltd.', location: 'Kathmandu', contact: '01-4250000', tmsUrl: 'https://tms60.nepalstock.com.np/' },
-        ];
+        list = fallbackBrokers;
       }
       setBrokers(list);
-    } catch (_) {}
+    } catch (_) {
+      setBrokers(fallbackBrokers);
+    }
     setLoading(false);
   };
 
@@ -4638,7 +4735,7 @@ export function BrokersDirectoryService() {
       </div>
 
       <Insight>
-        Broker #58 (Nabil Stock Dealer) and #60 (Nagarik Stock Dealer) are institutional market makers. Retail trade flow is heavily concentrated in Brokers 34, 45, 33, 17, and 49.
+        Broker #77 (Nabil Stock Dealer) and #60 (Nagarik Stock Dealer) are institutional market makers. Retail trade flow is heavily concentrated in Brokers 58 (Naasa Securities), 34, 45, 33, 17, and 49.
       </Insight>
     </div>
   );
@@ -5013,33 +5110,52 @@ export function CompareStocks() {
 
   const tfa = sa ? (computeStockTimeframeMetrics(sa)[timeframe] || computeStockTimeframeMetrics(sa)['1D']) : null;
   const tfb = sb ? (computeStockTimeframeMetrics(sb)[timeframe] || computeStockTimeframeMetrics(sb)['1D']) : null;
+  const aPending = Boolean(timeframe !== '1D' && tfa?.isHistoryPending);
+  const bPending = Boolean(timeframe !== '1D' && tfb?.isHistoryPending);
+
+  const fmtPct = (v: any, pending: boolean) =>
+    pending ? 'Syncing…' : v != null && Number.isFinite(Number(v)) ? `${Number(v) >= 0 ? '+' : ''}${Number(v).toFixed(2)}%` : '—';
+  const fmtPrice = (v: any, pending = false) =>
+    pending ? '—' : v != null && Number.isFinite(Number(v)) && Number(v) > 0 ? `Rs. ${Number(v).toFixed(1)}` : '—';
 
   const rows = sa && sb && tfa && tfb ? [
-    { m: 'LTP (Current)', a: `Rs. ${sa.ltp}`, b: `Rs. ${sb.ltp}` },
+    { m: 'LTP (Current)', a: sa.ltp != null ? `Rs. ${sa.ltp}` : '—', b: sb.ltp != null ? `Rs. ${sb.ltp}` : '—' },
     {
       m: `${timeframe} Horizon Return`,
-      a: `${tfa.pChange >= 0 ? '+' : ''}${tfa.pChange.toFixed(2)}%`,
-      b: `${tfb.pChange >= 0 ? '+' : ''}${tfb.pChange.toFixed(2)}%`,
+      a: fmtPct(tfa.pChange, aPending),
+      b: fmtPct(tfb.pChange, bPending),
     },
-    { m: `${timeframe} Period High`, a: `Rs. ${tfa.high.toFixed(1)}`, b: `Rs. ${tfb.high.toFixed(1)}` },
-    { m: `${timeframe} Period Low`, a: `Rs. ${tfa.low.toFixed(1)}`, b: `Rs. ${tfb.low.toFixed(1)}` },
+    { m: `${timeframe} Period High`, a: fmtPrice(tfa.high, aPending), b: fmtPrice(tfb.high, bPending) },
+    { m: `${timeframe} Period Low`, a: fmtPrice(tfa.low, aPending), b: fmtPrice(tfb.low, bPending) },
     {
       m: `${timeframe} Traded Volume`,
-      a: tfa.volume >= 1e6 ? `${(tfa.volume / 1e6).toFixed(2)}M` : tfa.volume.toLocaleString(),
-      b: tfb.volume >= 1e6 ? `${(tfb.volume / 1e6).toFixed(2)}M` : tfb.volume.toLocaleString(),
+      a: aPending ? '—' : (Number(tfa.volume) >= 1e6 ? `${(Number(tfa.volume) / 1e6).toFixed(2)}M` : (tfa.volume != null ? Number(tfa.volume).toLocaleString() : '—')),
+      b: bPending ? '—' : (Number(tfb.volume) >= 1e6 ? `${(Number(tfb.volume) / 1e6).toFixed(2)}M` : (tfb.volume != null ? Number(tfb.volume).toLocaleString() : '—')),
     },
     {
       m: `${timeframe} Turnover`,
-      a: tfa.turnover >= 1e7 ? `Rs. ${(tfa.turnover / 1e7).toFixed(2)} Cr` : `Rs. ${tfa.turnover.toLocaleString()}`,
-      b: tfb.turnover >= 1e7 ? `Rs. ${(tfb.turnover / 1e7).toFixed(2)} Cr` : `Rs. ${tfb.turnover.toLocaleString()}`,
+      a: aPending ? '—' : (Number(tfa.turnover) >= 1e7 ? `Rs. ${(Number(tfa.turnover) / 1e7).toFixed(2)} Cr` : (tfa.turnover != null ? `Rs. ${Number(tfa.turnover).toLocaleString()}` : '—')),
+      b: bPending ? '—' : (Number(tfb.turnover) >= 1e7 ? `Rs. ${(Number(tfb.turnover) / 1e7).toFixed(2)} Cr` : (tfb.turnover != null ? `Rs. ${Number(tfb.turnover).toLocaleString()}` : '—')),
     },
     { m: 'P/E Ratio', a: sa.pe || '—', b: sb.pe || '—' },
-    { m: 'EPS', a: sa.eps ? `Rs. ${sa.eps}` : '—', b: sb.eps ? `Rs. ${sb.eps}` : '—' },
-    { m: 'Book Value (BVPS)', a: sa.bvps ? `Rs. ${sa.bvps}` : '—', b: sb.bvps ? `Rs. ${sb.bvps}` : '—' },
-    { m: 'RSI (14)', a: sa.rsi || '—', b: sb.rsi || '—' },
-    { m: 'Technical Score', a: `${sa.technicalScore}/100`, b: `${sb.technicalScore}/100` },
-    { m: 'DPI (Decision Index)', a: `${sa.dpi}/100`, b: `${sb.dpi}/100` },
-    { m: 'Market Capitalization', a: `Rs. ${(sa.marketCap / 1e9).toFixed(2)}B`, b: `Rs. ${(sb.marketCap / 1e9).toFixed(2)}B` },
+    { m: 'EPS', a: sa.eps != null ? `Rs. ${sa.eps}` : '—', b: sb.eps != null ? `Rs. ${sb.eps}` : '—' },
+    { m: 'Book Value (BVPS)', a: (sa.bvps ?? sa.bookValue) != null ? `Rs. ${sa.bvps ?? sa.bookValue}` : '—', b: (sb.bvps ?? sb.bookValue) != null ? `Rs. ${sb.bvps ?? sb.bookValue}` : '—' },
+    { m: 'RSI (14)', a: sa.rsi ?? tfa.rsi ?? '—', b: sb.rsi ?? tfb.rsi ?? '—' },
+    {
+      m: 'Technical Score',
+      a: (sa.technicalScore ?? tfa.technicalScore) != null ? `${sa.technicalScore ?? tfa.technicalScore}/100` : '—',
+      b: (sb.technicalScore ?? tfb.technicalScore) != null ? `${sb.technicalScore ?? tfb.technicalScore}/100` : '—'
+    },
+    {
+      m: 'DPI (Decision Index)',
+      a: sa.dpi != null && Number.isFinite(Number(sa.dpi)) ? `${sa.dpi}/100` : '—',
+      b: sb.dpi != null && Number.isFinite(Number(sb.dpi)) ? `${sb.dpi}/100` : '—'
+    },
+    {
+      m: 'Market Capitalization',
+      a: Number(sa.marketCap) > 0 ? `Rs. ${(Number(sa.marketCap) / 1e9).toFixed(2)}B` : '—',
+      b: Number(sb.marketCap) > 0 ? `Rs. ${(Number(sb.marketCap) / 1e9).toFixed(2)}B` : '—'
+    },
     { m: 'Sector', a: sa.sector || '—', b: sb.sector || '—' },
     { m: 'Institutional Rating', a: sa.technicalRating || 'Neutral', b: sb.technicalRating || 'Neutral' },
   ] : [];
@@ -5056,11 +5172,11 @@ export function CompareStocks() {
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-400">Stock A (Primary)</label>
-          <StockSearchSelect value={a} onChange={setA} placeholder="Search Stock A…" />
+          <StockSearchSelect value={a} onChange={setA} stocks={stocks} placeholder="Search Stock A…" />
         </div>
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-400">Stock B (Peer / Competitor)</label>
-          <StockSearchSelect value={b} onChange={setB} placeholder="Search Stock B…" />
+          <StockSearchSelect value={b} onChange={setB} stocks={stocks} placeholder="Search Stock B…" />
         </div>
       </div>
       {rows.length > 0 ? (
@@ -5107,7 +5223,7 @@ export function PortfolioTool() {
   const ltpOf = (s: string) => stocks.find((x) => x.symbol === s)?.ltp || 0;
   const add = () => {
     const q = parseFloat(f.qty), r = parseFloat(f.rate);
-    if (!f.symbol || !q || !r) return;
+    if (!f.symbol || isNaN(q) || q <= 0 || isNaN(r) || r <= 0) return;
     setRows([...rows, { id: Date.now(), symbol: f.symbol, qty: q, rate: r }]);
     setF({ ...f, qty: '', rate: '' });
   };
@@ -5115,7 +5231,10 @@ export function PortfolioTool() {
     setRows(rows.filter((r) => r.id !== id));
   };
   const totalCost = rows.reduce((a, r) => a + r.qty * r.rate, 0);
-  const totalVal = rows.reduce((a, r) => a + r.qty * ltpOf(r.symbol), 0);
+  const totalVal = rows.reduce((a, r) => {
+    const ltp = ltpOf(r.symbol);
+    return a + (ltp > 0 ? r.qty * ltp : r.qty * r.rate);
+  }, 0);
   const pnl = totalVal - totalCost;
   const pnlPctTotal = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
   return (
@@ -5148,13 +5267,14 @@ export function PortfolioTool() {
           </div>
           <DataTable data={rows.map((r) => {
             const ltp = ltpOf(r.symbol);
-            const pnlR = (ltp - r.rate) * r.qty;
-            const pnlPct = r.rate > 0 ? ((ltp - r.rate) / r.rate) * 100 : 0;
+            const hasLtp = ltp > 0;
+            const pnlR = hasLtp ? (ltp - r.rate) * r.qty : 0;
+            const pnlPct = hasLtp && r.rate > 0 ? ((ltp - r.rate) / r.rate) * 100 : 0;
             return {
               ...r,
-              ltp: `Rs. ${ltp}`,
-              value: `Rs. ${Math.floor(ltp * r.qty).toLocaleString()}`,
-              pnl: `${pnlR >= 0 ? '+' : ''}Rs. ${Math.floor(pnlR).toLocaleString()} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)`,
+              ltp: hasLtp ? `Rs. ${ltp}` : '—',
+              value: hasLtp ? `Rs. ${Math.floor(ltp * r.qty).toLocaleString()}` : '—',
+              pnl: hasLtp ? `${pnlR >= 0 ? '+' : ''}Rs. ${Math.floor(pnlR).toLocaleString()} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)` : 'Pending live price',
               pnlN: pnlR,
               rowId: r.id
             };
@@ -6205,7 +6325,7 @@ export function AlertsTool() {
   useEffect(() => { loadNepseData().then(({ stocks }) => setStocks(stocks)); }, []);
   const hit = (al: any) => {
     const s = stocks.find((x) => x.symbol === al.symbol);
-    if (!s) return false;
+    if (!s || !s.ltp || s.ltp <= 0) return false;
     return al.dir === 'above' ? s.ltp >= al.level : s.ltp <= al.level;
   };
   return (
@@ -6299,10 +6419,12 @@ export function ApiStatusService() {
     };
 
     try {
+      const base = getProxyBase();
+
       // ── Category A: Core Market Feeds ──
       const t0 = Date.now();
       try {
-        const resp = await fetch('/api/health');
+        const resp = await fetch(`${base}/api/health`);
         const d = await resp.json();
         const ok = resp.ok && (d.status === 'HEALTHY' || d.status === 'OK' || d.status === 'ok');
         record('Category A: Market Feeds', 'Proxy Health & NPT Clock (/api/health)', ok, `Status: ${d.status || 'OK'} • Market: ${d.nepseTime || d.time || 'NPT'}`, Date.now() - t0);
@@ -6312,7 +6434,7 @@ export function ApiStatusService() {
 
       const t1 = Date.now();
       try {
-        const resp = await fetch('/api/market-indices');
+        const resp = await fetch(`${base}/api/market-indices`);
         const d = await resp.json();
         const val = d?.nepse?.value || d?.data?.nepse?.value || 0;
         const subCount = (d?.subIndices || d?.data?.subIndices || []).length;
@@ -6323,7 +6445,7 @@ export function ApiStatusService() {
 
       const t2 = Date.now();
       try {
-        const resp = await fetch('/api/today-prices');
+        const resp = await fetch(`${base}/api/today-prices`);
         const d = await resp.json();
         const rows = Array.isArray(d) ? d : (d?.data || []);
         const enrichedCount = rows.filter((r: any) => r.brokerAnalysis || r.bcr3BuyPct != null).length;
@@ -6335,7 +6457,7 @@ export function ApiStatusService() {
       // ── Category B: Broker Mathematical Invariants & Floorsheet ──
       const t3 = Date.now();
       try {
-        const brokerResp = await fetch('/api/broker-analysis/NABIL?days=1&refresh=true');
+        const brokerResp = await fetch(`${base}/api/broker-analysis/NABIL?days=1&refresh=true`);
         const bData = await brokerResp.json();
         const payload = bData?.data || bData;
         const brokers = payload?.brokers || [];
@@ -6367,9 +6489,13 @@ export function ApiStatusService() {
         }));
         const plan = generateEntryExitPlan(mockStock, mockCandles);
         const scoreValid = typeof plan?.score === 'number' && plan.score >= 0 && plan.score <= 100;
-        const geomValid = plan?.stopLoss && plan?.entryMin && plan?.target1
-          ? (plan.stopLoss < plan.entryMin && plan.entryMin <= plan.target1)
-          : true;
+        const geomValid = Boolean(
+          typeof plan?.stopLoss === 'number' &&
+          typeof plan?.entryMin === 'number' &&
+          typeof plan?.target1 === 'number' &&
+          plan.stopLoss < plan.entryMin &&
+          plan.entryMin <= plan.target1
+        );
         record('Category C: Quant Setup Engine', 'Order Geometry (StopLoss < Entry <= Target 1)', scoreValid && geomValid, `Score: ${plan?.score ?? 0}/100 • Action: ${plan?.action || 'HOLD'} • SL: Rs.${plan?.stopLoss ?? 'N/A'} • Entry: Rs.${plan?.entryMin ?? 'N/A'} • T1: Rs.${plan?.target1 ?? 'N/A'}`, Date.now() - t4);
       } catch (e: any) {
         record('Category C: Quant Setup Engine', 'Quant Setup Generation', false, e.message, Date.now() - t4);

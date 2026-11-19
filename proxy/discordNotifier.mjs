@@ -41,10 +41,40 @@ function loadConfig() {
   };
 }
 
+const ALLOWED_DISCORD_HOSTS = new Set([
+  'discord.com',
+  'discordapp.com',
+  'ptb.discord.com',
+  'canary.discord.com'
+]);
+
+/**
+ * Strictly validates Discord Webhook URLs against SSRF, credentialed URLs, and path traversal.
+ */
+export function isValidDiscordWebhookUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  const trimmed = rawUrl.trim();
+  if (!trimmed || trimmed.includes('..') || trimmed.includes('\\')) return false;
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol !== 'https:') return false;
+    if (u.username || u.password || u.port) return false;
+    if (!ALLOWED_DISCORD_HOSTS.has(u.hostname.toLowerCase())) return false;
+    if (u.search || u.hash) return false;
+    return /^\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+$/.test(u.pathname);
+  } catch (_) {
+    return false;
+  }
+}
+
 export function saveDiscordConfig({ webhookUrl, enabled = true }) {
+  const cleanUrl = webhookUrl !== undefined ? String(webhookUrl).trim() : '';
+  if (cleanUrl && !isValidDiscordWebhookUrl(cleanUrl)) {
+    return { success: false, error: 'Invalid Discord Webhook URL. Must be an HTTPS https://discord.com/api/webhooks/<id>/<token> URL.' };
+  }
   const nextConfig = {
-    webhookUrl: webhookUrl !== undefined ? String(webhookUrl).trim() : '',
-    enabled: Boolean(enabled),
+    webhookUrl: cleanUrl,
+    enabled: Boolean(enabled) && Boolean(cleanUrl),
     updatedAt: new Date().toISOString()
   };
 
@@ -60,7 +90,7 @@ export function saveDiscordConfig({ webhookUrl, enabled = true }) {
 
 export function getDiscordStatus() {
   const cfg = loadConfig();
-  const hasUrl = Boolean(cfg.webhookUrl && cfg.webhookUrl.startsWith('https://discord.com/api/webhooks/'));
+  const hasUrl = isValidDiscordWebhookUrl(cfg.webhookUrl);
   const maskedUrl = hasUrl
     ? `${cfg.webhookUrl.slice(0, 38)}...${cfg.webhookUrl.slice(-6)}`
     : '';
@@ -78,8 +108,8 @@ export function getDiscordStatus() {
  */
 export async function sendDiscordPayload(payload) {
   const cfg = loadConfig();
-  if (!cfg.enabled || !cfg.webhookUrl) {
-    return { success: false, reason: 'Discord webhook not configured' };
+  if (!cfg.enabled || !isValidDiscordWebhookUrl(cfg.webhookUrl)) {
+    return { success: false, reason: 'Discord webhook not configured or invalid' };
   }
 
   try {
@@ -90,6 +120,7 @@ export async function sendDiscordPayload(payload) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      redirect: 'error',
       signal: controller.signal
     });
     clearTimeout(timeout);
@@ -115,8 +146,8 @@ export async function testDiscordWebhook(customUrl) {
   const cfg = loadConfig();
   const url = customUrl || cfg.webhookUrl;
 
-  if (!url || !url.startsWith('https://discord.com/api/webhooks/')) {
-    return { success: false, error: 'Valid Discord Webhook URL is required.' };
+  if (!isValidDiscordWebhookUrl(url)) {
+    return { success: false, error: 'Valid HTTPS Discord Webhook URL (https://discord.com/api/webhooks/...) is required.' };
   }
 
   const payload = {
@@ -139,10 +170,11 @@ export async function testDiscordWebhook(customUrl) {
   };
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(url.trim(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      redirect: 'error'
     });
     if (res.status === 204 || res.status === 200) {
       return { success: true, message: 'Test message sent successfully to your Discord channel!' };

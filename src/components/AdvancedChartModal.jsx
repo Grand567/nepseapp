@@ -23,6 +23,10 @@ export default function AdvancedChartModal({
   const [chartMode, setChartMode] = useState('pro'); // 'pro' | 'ribbon'
   const [isLandscape, setIsLandscape] = useState(false);
 
+  useEffect(() => {
+    if (initialTimeframe) setTimeframe(initialTimeframe);
+  }, [initialTimeframe]);
+
   // Landscape full-screen orientation handler for mobile workstations
   const toggleLandscape = useCallback(async () => {
     try {

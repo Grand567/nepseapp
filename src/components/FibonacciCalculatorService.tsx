@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Target, SlidersHorizontal, ArrowUpRight, ArrowDownRight, RefreshCw, Shield, Sparkles, CheckCircle2 } from 'lucide-react';
-import { loadNepseData } from '../utils/liveData';
+import { loadNepseData, getCachedRealPriceHistory } from '../utils/liveData';
 import { StockSearchSelect, StatCard, InfoBanner, Insight } from './ui';
 
 export function FibonacciCalculatorService() {
@@ -11,33 +11,60 @@ export function FibonacciCalculatorService() {
   const [currentLtp, setCurrentLtp] = useState<number>(540);
   const [trend, setTrend] = useState<'up' | 'down'>('up');
   const [useCustom, setUseCustom] = useState(false);
+  const [isEstimatedBounds, setIsEstimatedBounds] = useState(false);
+
+  const resolveBoundsForStock = (sel: any) => {
+    const ltp = Number(sel?.ltp || sel?.closePrice || 0);
+    const cachedHist = sel?.symbol ? getCachedRealPriceHistory(sel.symbol) : null;
+    const validHighs = Array.isArray(cachedHist) ? cachedHist.map((c: any) => Number(c?.high || c?.close || 0)).filter((v: number) => v > 0) : [];
+    const validLows = Array.isArray(cachedHist) ? cachedHist.map((c: any) => Number(c?.low || c?.close || 0)).filter((v: number) => v > 0) : [];
+
+    const hasVerified52W = Number(sel?.high52w || sel?.high52) > 0 && Number(sel?.low52w || sel?.low52) > 0;
+    const hasHistBounds = validHighs.length >= 10 && validLows.length >= 10;
+
+    let hi = Number(sel?.high52w || sel?.high52 || 0);
+    let lo = Number(sel?.low52w || sel?.low52 || 0);
+    let estimated = false;
+    if (!hasVerified52W) {
+      if (hasHistBounds) {
+        hi = Math.max(...validHighs.slice(-252));
+        lo = Math.min(...validLows.slice(-252));
+      } else {
+        hi = sel?.high ? Number(sel.high) * 1.05 : ltp * 1.25;
+        lo = sel?.low ? Number(sel.low) * 0.95 : ltp * 0.75;
+        estimated = true;
+      }
+    }
+    return { ltp, hi: Math.round(hi), lo: Math.round(lo), estimated };
+  };
 
   useEffect(() => {
+    let active = true;
     loadNepseData().then(({ stocks }) => {
+      if (!active) return;
       setStocks(stocks);
       const sel = stocks.find(s => (s.symbol || '').toUpperCase() === 'NABIL') || stocks[0];
       if (sel) {
-        const ltp = Number(sel.ltp || sel.closePrice || 100);
-        const hi = Number(sel.high52w || (sel.high ? sel.high * 1.05 : ltp * 1.25));
-        const lo = Number(sel.low52w || (sel.low ? sel.low * 0.95 : ltp * 0.75));
+        const bounds = resolveBoundsForStock(sel);
         setSymbol(sel.symbol || 'NABIL');
-        setCurrentLtp(ltp);
-        setHighPrice(Math.round(hi));
-        setLowPrice(Math.round(lo));
+        setCurrentLtp(bounds.ltp);
+        setHighPrice(bounds.hi);
+        setLowPrice(bounds.lo);
+        setIsEstimatedBounds(bounds.estimated);
       }
-    });
+    }).catch(() => {});
+    return () => { active = false; };
   }, []);
 
   const handleSelectSymbol = (sym: string) => {
     setSymbol(sym);
     const sel = stocks.find(s => (s.symbol || '').toUpperCase() === sym.toUpperCase());
     if (sel) {
-      const ltp = Number(sel.ltp || 500);
-      const hi = Number(sel.high52w || (sel.high ? sel.high * 1.05 : ltp * 1.25));
-      const lo = Number(sel.low52w || (sel.low ? sel.low * 0.95 : ltp * 0.75));
-      setCurrentLtp(ltp);
-      setHighPrice(Math.round(hi));
-      setLowPrice(Math.round(lo));
+      const bounds = resolveBoundsForStock(sel);
+      setCurrentLtp(bounds.ltp);
+      setHighPrice(bounds.hi);
+      setLowPrice(bounds.lo);
+      setIsEstimatedBounds(bounds.estimated);
     }
   };
 
@@ -85,7 +112,7 @@ export function FibonacciCalculatorService() {
     }
   }, [highPrice, lowPrice, trend, diff]);
 
-  // Nearest Fibonacci level to current LTP
+  // Nearest Fibonacci level to current LTP (guard div-by-zero when currentLtp <= 0)
   const nearestLevel = useMemo(() => {
     let best = retracements[0];
     let minD = Math.abs(currentLtp - best.price);
@@ -96,10 +123,16 @@ export function FibonacciCalculatorService() {
         best = lvl;
       }
     }
-    return { ...best, diff: minD, diffPct: ((minD / currentLtp) * 100).toFixed(1) };
+    const diffPct = currentLtp > 0 ? ((minD / currentLtp) * 100).toFixed(1) : '—';
+    return { ...best, diff: minD, diffPct };
   }, [currentLtp, retracements]);
 
-  const inGoldenZone = currentLtp >= (highPrice - diff * 0.62) && currentLtp <= (highPrice - diff * 0.49);
+  const golden50Price = trend === 'up' ? (highPrice - diff * 0.5) : (lowPrice + diff * 0.5);
+  const golden618Price = trend === 'up' ? (highPrice - diff * 0.618) : (lowPrice + diff * 0.618);
+  const stop786Price = trend === 'up' ? (highPrice - diff * 0.786) : (lowPrice + diff * 0.786);
+  const goldenMin = Math.min(golden50Price, golden618Price);
+  const goldenMax = Math.max(golden50Price, golden618Price);
+  const inGoldenZone = currentLtp > 0 && currentLtp >= goldenMin && currentLtp <= goldenMax;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4">
@@ -110,6 +143,7 @@ export function FibonacciCalculatorService() {
             <StockSearchSelect
               value={symbol}
               onChange={handleSelectSymbol}
+              stocks={stocks}
               placeholder="Select scrip (e.g. NABIL)…"
             />
           </div>
@@ -136,6 +170,12 @@ export function FibonacciCalculatorService() {
           {useCustom ? 'Use 52W High/Low' : 'Enter Custom Swing Points'}
         </button>
       </div>
+
+      {isEstimatedBounds && !useCustom && (
+        <InfoBanner type="warning">
+          52-Week High/Low unavailable for <strong>{symbol}</strong> — showing estimated bounds. Switch to <strong>Enter Custom Swing Points</strong> to specify exact swing peaks/troughs.
+        </InfoBanner>
+      )}
 
       {/* Input levels */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 bg-slate-900/50 p-3.5 rounded-2xl border border-slate-800/80">
@@ -178,15 +218,18 @@ export function FibonacciCalculatorService() {
 
       {/* Summary HUD */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <StatCard label="Current LTP" value={`Rs. ${currentLtp}`} big color="#3b82f6" />
+        <StatCard label="Current LTP" value={currentLtp > 0 ? `Rs. ${currentLtp}` : '—'} big color="#3b82f6" />
         <StatCard label="Nearest Fibonacci" value={`Rs. ${nearestLevel.price}`} subtitle={`${nearestLevel.ratio} (${nearestLevel.diffPct}% away)`} color={nearestLevel.isGolden ? '#10b981' : '#f59e0b'} />
-        <StatCard label="Golden Pocket (61.8%)" value={`Rs. ${(highPrice - diff * 0.618).toFixed(1)}`} subtitle="High-Probability Entry" color="#10b981" />
+        <StatCard label="Golden Pocket (61.8%)" value={`Rs. ${golden618Price.toFixed(1)}`} subtitle={trend === 'up' ? 'High-Probability Support Entry' : 'Key Downtrend Resistance'} color="#10b981" />
         <StatCard label="Golden Pocket Status" value={inGoldenZone ? 'INSIDE GOLDEN ZONE' : 'Outside Golden Zone'} color={inGoldenZone ? '#10b981' : '#64748b'} />
       </div>
 
       {inGoldenZone && (
         <InfoBanner type="success">
-          ✨ <strong>{symbol} is currently trading inside the 50%–61.8% Golden Retracement Pocket!</strong> Historically, this zone offers the best risk-to-reward ratio with stop-loss placed just below the 78.6% level (Rs. {(highPrice - diff * 0.786).toFixed(1)}).
+          ✨ <strong>{symbol} is currently inside the 50%–61.8% {trend === 'up' ? 'Golden Pullback Support' : 'Golden Bounce Resistance'} Pocket!</strong>{' '}
+          {trend === 'up'
+            ? `Historically, pullbacks here offer asymmetric upside with stop-loss below 78.6% (Rs. ${stop786Price.toFixed(1)}).`
+            : `Downtrend rallies into Rs. ${goldenMin.toFixed(1)}–${goldenMax.toFixed(1)} frequently meet supply; invalidation sits above 78.6% (Rs. ${stop786Price.toFixed(1)}).`}
         </InfoBanner>
       )}
 
@@ -207,7 +250,7 @@ export function FibonacciCalculatorService() {
             </thead>
             <tbody className="divide-y divide-slate-800/40 font-mono">
               {retracements.map((lvl) => {
-                const isNear = Math.abs(currentLtp - lvl.price) / currentLtp < 0.02;
+                const isNear = currentLtp > 0 && Math.abs(currentLtp - lvl.price) / currentLtp < 0.02;
                 const dist = currentLtp - lvl.price;
                 return (
                   <tr
@@ -257,7 +300,12 @@ export function FibonacciCalculatorService() {
                 Rs. {ext.price.toLocaleString()}
               </div>
               <div className="text-[11px] text-slate-400 mt-1">
-                Potential upside: <strong className="text-emerald-400">+{(((ext.price - currentLtp) / currentLtp) * 100).toFixed(1)}%</strong>
+                {trend === 'up' ? 'Potential upside:' : 'Potential downside:'}{' '}
+                <strong className={trend === 'up' ? 'text-emerald-400' : 'text-rose-400'}>
+                  {currentLtp > 0
+                    ? `${((ext.price - currentLtp) / currentLtp) >= 0 ? '+' : ''}${(((ext.price - currentLtp) / currentLtp) * 100).toFixed(1)}%`
+                    : '—'}
+                </strong>
               </div>
             </div>
           ))}

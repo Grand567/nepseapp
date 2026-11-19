@@ -87,10 +87,11 @@ export function calculateStockSignals(symbol, currentQuote = {}, priceHistory = 
   // 3. Consecutive Up/Down Streak
   if (closes.length >= 2) {
     let streakCount = 0;
-    let streakBull = closes[0] >= closes[1];
+    let streakBull = closes[0] > closes[1];
 
     for (let i = 0; i < closes.length - 1; i++) {
-      const isUp = closes[i] >= closes[i + 1];
+      if (closes[i] === closes[i + 1]) break; // flat days break streaks
+      const isUp = closes[i] > closes[i + 1];
       if (isUp === streakBull) {
         streakCount++;
       } else {

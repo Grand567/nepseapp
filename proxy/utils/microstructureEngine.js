@@ -268,10 +268,10 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
       const sVol = Math.max(0, Number(b.sellVol || b.sellQty || 0));
       const cVol = Math.max(0, Number(b.crossVol || b.cross_vol || 0));
       const bAmt = bVol > 0
-        ? Number(b.buyAmt ?? b.buyAmount ?? (sVol === 0 && b.amount ? b.amount : 0) ?? (bVol * Number(b.avgBuyPrice || b.rate || 0)))
+        ? Number(b.buyAmt ?? b.buyAmount ?? ((sVol === 0 && b.amount) ? b.amount : null) ?? (bVol * Number(b.avgBuyPrice || b.rate || 0)))
         : 0;
       const sAmt = sVol > 0
-        ? Number(b.sellAmt ?? b.sellAmount ?? (bVol === 0 && b.amount ? b.amount : 0) ?? (sVol * Number(b.avgSellPrice || b.rate || 0)))
+        ? Number(b.sellAmt ?? b.sellAmount ?? ((bVol === 0 && b.amount) ? b.amount : null) ?? (sVol * Number(b.avgSellPrice || b.rate || 0)))
         : 0;
 
       prev.buyVol += bVol;
@@ -595,10 +595,10 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
       const bVol = Math.max(0, Number(b.buyVol || b.buyQty || b.shares || 0));
       const sVol = Math.max(0, Number(b.sellVol || b.sellQty || 0));
       const bAmt = bVol > 0
-        ? Number(b.buyAmt ?? b.buyAmount ?? (sVol === 0 && b.amount ? b.amount : 0) ?? (bVol * Number(b.avgBuyPrice || b.rate || 0)))
+        ? Number(b.buyAmt ?? b.buyAmount ?? ((sVol === 0 && b.amount) ? b.amount : null) ?? (bVol * Number(b.avgBuyPrice || b.rate || 0)))
         : 0;
       const sAmt = sVol > 0
-        ? Number(b.sellAmt ?? b.sellAmount ?? (bVol === 0 && b.amount ? b.amount : 0) ?? (sVol * Number(b.avgSellPrice || b.rate || 0)))
+        ? Number(b.sellAmt ?? b.sellAmount ?? ((bVol === 0 && b.amount) ? b.amount : null) ?? (sVol * Number(b.avgSellPrice || b.rate || 0)))
         : 0;
       return {
         brokerId: bId,

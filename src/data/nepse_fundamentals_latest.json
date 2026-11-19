@@ -55,34 +55,6 @@
     "promoterUnlockDate": null,
     "distributableEps": 32
   },
-  "PIT_TEST_SCRIP": {
-    "symbol": "PIT_TEST_SCRIP",
-    "sector": "Manufacturing And Processing",
-    "eps": 35.5,
-    "bookValue": 210,
-    "bvps": 210,
-    "roe": 16.9,
-    "roePct": 16.9,
-    "fiscalQuarter": "Q4 2081/82",
-    "promoterSharePct": null,
-    "publicSharePct": null,
-    "promoterUnlockDate": null,
-    "distributableEps": null
-  },
-  "PIT_NO_REL": {
-    "symbol": "PIT_NO_REL",
-    "sector": "Hydro Power",
-    "eps": 15,
-    "bookValue": null,
-    "bvps": null,
-    "roe": null,
-    "roePct": null,
-    "fiscalQuarter": "Q4 2081/82",
-    "promoterSharePct": null,
-    "publicSharePct": null,
-    "promoterUnlockDate": null,
-    "distributableEps": null
-  },
   "ACLBSL": {
     "symbol": "ACLBSL",
     "sector": "Microfinance",

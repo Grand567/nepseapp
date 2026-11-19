@@ -15,7 +15,7 @@ import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { db } from '../db/ledgerStore.js';
-import { getFullSessionFloorsheet, setContractsIngestor } from '../brokerVault.mjs';
+import { getFullSessionFloorsheet, setContractsIngestor, getBrokerName } from '../brokerVault.mjs';
 import { uploadDailyFloorsheetToR2, fetchFloorsheetFromR2 } from './cloudFloorsheetVault.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -296,9 +296,226 @@ export function exportCumulativeBrokerLedger(databaseInstance = db) {
     } catch (writeErr) {
       console.warn(`[dailyFloorsheetCollector] Failed to write cumulative broker ledger file:`, writeErr.message);
     }
+
+    // Also export src/data/broker_holdings_alltime.json from SQLite daily_broker_ledger so client seed matches live SQLite truth (BUG-005 & BUG-032)
+    try {
+      exportBrokerHoldingsAllTimeSeed(databaseInstance);
+    } catch (seedErr) {
+      console.warn(`[dailyFloorsheetCollector] Failed to export broker_holdings_alltime.json:`, seedErr.message);
+    }
+
     return ledgerMap;
   } catch (err) {
     console.error(`[dailyFloorsheetCollector] exportCumulativeBrokerLedger error:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Synchronizes proxy/data/broker_alltime/*.json and proxy/data/broker_vault/*.json with SQLite daily_broker_ledger
+ * so every symbol's dailyRollup, rowsByDate/preAggregated, and latestDate stay current through the latest closed session (BUG-005 & BUG-032).
+ */
+export function syncBrokerAllTimeAndVaultFiles(databaseInstance = db) {
+  if (!databaseInstance) return { updatedAlltime: 0, updatedVault: 0 };
+  const alltimeDir = path.resolve(process.cwd(), 'proxy', 'data', 'broker_alltime');
+  const vaultDir = path.resolve(process.cwd(), 'proxy', 'data', 'broker_vault');
+  let updatedAlltime = 0;
+  let updatedVault = 0;
+
+  try {
+    const dbRows = databaseInstance.prepare(`
+      SELECT symbol, trade_date, broker_id, buy_vol, sell_vol, buy_amt, sell_amt
+      FROM daily_broker_ledger
+      WHERE (is_quarantined = 0 OR is_quarantined IS NULL)
+      ORDER BY trade_date ASC
+    `).all();
+
+    const bySym = new Map();
+    for (const r of dbRows) {
+      const sym = String(r.symbol || '').toUpperCase().trim();
+      if (!sym || !r.trade_date) continue;
+      if (!bySym.has(sym)) bySym.set(sym, new Map());
+      const dateMap = bySym.get(sym);
+      if (!dateMap.has(r.trade_date)) dateMap.set(r.trade_date, {});
+      dateMap.get(r.trade_date)[String(r.broker_id)] = [
+        Number(r.buy_vol || 0),
+        Number(r.sell_vol || 0),
+        Number(r.buy_amt || 0),
+        Number(r.sell_amt || 0),
+        1
+      ];
+    }
+
+    if (fs.existsSync(alltimeDir)) {
+      for (const [sym, dateMap] of bySym.entries()) {
+        if (!/^[A-Z0-9_-]+$/.test(sym)) continue;
+        const p = path.join(alltimeDir, `${sym}.json`);
+        try {
+          let obj = null;
+          if (fs.existsSync(p)) {
+            try { obj = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) {}
+          }
+          if (!obj || typeof obj !== 'object') {
+            obj = {
+              symbol: sym,
+              version: 1,
+              updatedAt: null,
+              isCompleteHistory: false,
+              earliestDate: null,
+              latestDate: null,
+              sessionsCount: 0,
+              dailyRollup: {}
+            };
+          }
+          if (!obj.dailyRollup) obj.dailyRollup = {};
+          let changed = false;
+          for (const [dt, dayBrokers] of dateMap.entries()) {
+            if (!obj.dailyRollup[dt] || Object.keys(obj.dailyRollup[dt]).length === 0) {
+              obj.dailyRollup[dt] = dayBrokers;
+              changed = true;
+            }
+          }
+          const dts = Object.keys(obj.dailyRollup).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort((a, b) => b.localeCompare(a));
+          const newest = dts[0] || null;
+          const oldest = dts[dts.length - 1] || null;
+          if (changed || obj.latestDate !== newest || obj.sessionsCount !== dts.length) {
+            obj.latestDate = newest;
+            obj.earliestDate = oldest;
+            obj.sessionsCount = dts.length;
+            obj.updatedAt = new Date().toISOString();
+            fs.writeFileSync(p, JSON.stringify(obj), 'utf8');
+            updatedAlltime++;
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (fs.existsSync(vaultDir)) {
+      const files = fs.readdirSync(vaultDir).filter(f => f.endsWith('.json'));
+      for (const file of files) {
+        const sym = file.replace(/\.json$/i, '').toUpperCase();
+        const p = path.join(vaultDir, file);
+        try {
+          const vObj = JSON.parse(fs.readFileSync(p, 'utf8'));
+          if (!vObj || typeof vObj !== 'object') continue;
+          if (!vObj.rowsByDate) vObj.rowsByDate = {};
+          const symDates = bySym.get(sym);
+          let changed = false;
+          if (symDates) {
+            for (const [dt, dayBrokers] of symDates.entries()) {
+              if (!vObj.rowsByDate[dt] || !Array.isArray(vObj.rowsByDate[dt]) || vObj.rowsByDate[dt].length === 0) {
+                const synthRows = [];
+                for (const [bId, arr] of Object.entries(dayBrokers)) {
+                  const [bVol, sVol, bAmt, sAmt] = arr;
+                  if (bVol > 0) {
+                    synthRows.push({ buyerBroker: bId, sellerBroker: '', qty: bVol, rate: +(bAmt / bVol).toFixed(2), amount: bAmt, businessDate: dt });
+                  }
+                  if (sVol > 0) {
+                    synthRows.push({ buyerBroker: '', sellerBroker: bId, qty: sVol, rate: +(sAmt / sVol).toFixed(2), amount: sAmt, businessDate: dt });
+                  }
+                }
+                if (synthRows.length > 0) {
+                  vObj.rowsByDate[dt] = synthRows;
+                  changed = true;
+                }
+              }
+            }
+          }
+          const dts = Object.keys(vObj.rowsByDate).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort((a, b) => b.localeCompare(a));
+          const newest = dts[0] || null;
+          if (changed || vObj.latestDate !== newest) {
+            vObj.latestDate = newest;
+            vObj.updatedAt = new Date().toISOString();
+            fs.writeFileSync(p, JSON.stringify(vObj), 'utf8');
+            updatedVault++;
+          }
+        } catch (_) {}
+      }
+    }
+  } catch (err) {
+    console.warn('[dailyFloorsheetCollector] syncBrokerAllTimeAndVaultFiles error:', err.message);
+  }
+
+  return { updatedAlltime, updatedVault };
+}
+
+/**
+ * Exports per-broker top net holdings from SQLite daily_broker_ledger into src/data/broker_holdings_alltime.json
+ */
+export function exportBrokerHoldingsAllTimeSeed(databaseInstance = db) {
+  if (!databaseInstance) return null;
+  try {
+    const brokerRows = databaseInstance.prepare(`
+      SELECT DISTINCT broker_id FROM daily_broker_ledger WHERE broker_id IS NOT NULL ORDER BY broker_id ASC
+    `).all();
+    const queryForBroker = databaseInstance.prepare(`
+      SELECT UPPER(symbol) as symbol,
+             SUM(buy_vol) as totalBuyVol,
+             SUM(sell_vol) as totalSellVol,
+             SUM(buy_vol) - SUM(sell_vol) as cumHoldQty,
+             SUM(buy_amt) as totalBuyAmt,
+             SUM(sell_amt) as totalSellAmt,
+             COUNT(DISTINCT trade_date) as activeSessions
+      FROM daily_broker_ledger
+      WHERE broker_id = ?
+      GROUP BY UPPER(symbol)
+      HAVING cumHoldQty > 0
+      ORDER BY cumHoldQty DESC
+      LIMIT 25
+    `);
+
+    const seedMap = {};
+    for (const br of brokerRows) {
+      const bNum = Number(br.broker_id);
+      if (!bNum) continue;
+      const bId = String(bNum);
+      const brokerName = getBrokerName(bId);
+      const rows = queryForBroker.all(bNum);
+      let totalSharesHeld = 0;
+      const topHoldings = rows.map((r, idx) => {
+        const buyVol = Number(r.totalBuyVol || 0);
+        const sellVol = Number(r.totalSellVol || 0);
+        const holdQty = Number(r.cumHoldQty || 0);
+        const buyAmt = Number(r.totalBuyAmt || 0);
+        const sellAmt = Number(r.totalSellAmt || 0);
+        const avgBuyRate = buyVol > 0 ? +(buyAmt / buyVol).toFixed(2) : 0;
+        const avgSellRate = sellVol > 0 ? +(sellAmt / sellVol).toFixed(2) : 0;
+        const retentionPct = buyVol > 0 ? +((holdQty / buyVol) * 100).toFixed(1) : 100;
+        const netAmt = Math.round(holdQty * avgBuyRate);
+        totalSharesHeld += holdQty;
+        return {
+          rank: idx + 1,
+          symbol: r.symbol,
+          brokerId: bId,
+          brokerName,
+          cumHoldQty: holdQty,
+          netQty: holdQty,
+          totalBuyVol: buyVol,
+          totalSellVol: sellVol,
+          avgBuyRate,
+          avgSellRate,
+          retentionPct,
+          totalBuyAmt: buyAmt,
+          totalSellAmt: sellAmt,
+          netAmt,
+          activeSessions: r.activeSessions
+        };
+      });
+
+      seedMap[bId] = {
+        brokerId: bId,
+        brokerName,
+        totalHoldingsCount: topHoldings.length,
+        totalSharesHeld,
+        topHoldings
+      };
+    }
+
+    const seedPath = path.resolve(process.cwd(), 'src', 'data', 'broker_holdings_alltime.json');
+    fs.writeFileSync(seedPath, JSON.stringify(seedMap, null, 2), 'utf8');
+    return seedMap;
+  } catch (err) {
+    console.warn('[dailyFloorsheetCollector] exportBrokerHoldingsAllTimeSeed error:', err.message);
     return null;
   }
 }
@@ -349,6 +566,9 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
         return timeA.localeCompare(timeB);
       });
 
+      const lastRateBySym = new Map();
+      const lastAggBySym = new Map();
+
       for (const t of sortedRows) {
         const cNo = String(t.contractId || t.contractNo || t.id || `${cleanDate.replace(/-/g, '')}-${inserted}`);
         const sym = String(t.stockSymbol || t.symbol || '').toUpperCase().trim();
@@ -362,7 +582,17 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
         const tTime = String(t.tradeTime || t.businessDate || `${cleanDate} 15:00:00`);
         const isCross = bBroker > 0 && bBroker === sBroker ? 1 : 0;
         const isWhale = kitta >= 500 ? 1 : 0;
-        const agg = t.aggressor || (bBroker > sBroker ? 'BUY' : 'SELL');
+        
+        // Accurate side classification using Tick Rule instead of broker number comparison
+        const prevRate = lastRateBySym.get(sym);
+        let agg = t.aggressor || 'UNKNOWN';
+        if (!t.aggressor && prevRate !== undefined) {
+          if (rate > prevRate) agg = 'BUY';
+          else if (rate < prevRate) agg = 'SELL';
+          else agg = lastAggBySym.get(sym) || 'UNKNOWN';
+        }
+        lastRateBySym.set(sym, rate);
+        lastAggBySym.set(sym, agg);
 
         insertContract.run(
           cNo, sym, cleanDate, tTime,
@@ -447,6 +677,7 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
 
     // Automatically recalculate and sync cumulative broker ledger JSON for frontend / offline APK
     try {
+      syncBrokerAllTimeAndVaultFiles(db);
       exportCumulativeBrokerLedger(db);
     } catch (exportErr) {
       console.warn('[dailyFloorsheetCollector] Auto-export cumulative ledger warning:', exportErr.message);

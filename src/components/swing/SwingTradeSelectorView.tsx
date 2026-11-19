@@ -13,16 +13,20 @@ import {
   GATE_NAMES
 } from '../../utils/swingGateEvaluator.js';
 import backtestResultsData from '../../data/swingBacktestResults.json';
-import { CIRCUIT_LIMITS, STATUTORY_FRICTIONS } from '../../constants/marketRules.js';
+import { CIRCUIT_LIMITS, STATUTORY_CHARGES } from '../../constants/marketRules.js';
+import { isPureNepseEquity } from '../../utils/nepseEquityFilter.js';
+import { getPaperState, calculateSandboxSummary } from '../../utils/paperTrading.js';
 
 interface SwingTradeSelectorViewProps {
   stocks?: any[];
+  indices?: any;
   onSelectStock?: (stock: any) => void;
   onBack?: () => void;
 }
 
 export default function SwingTradeSelectorView({
   stocks = [],
+  indices,
   onSelectStock,
   onBack
 }: SwingTradeSelectorViewProps) {
@@ -31,55 +35,69 @@ export default function SwingTradeSelectorView({
   const [selectedStockForAudit, setSelectedStockForAudit] = useState<string>('ALL');
   const [expandedScrip, setExpandedScrip] = useState<string | null>(null);
 
-  // Derive market context from stocks
+  const equityStocks = useMemo(() => {
+    return (Array.isArray(stocks) ? stocks : []).filter(s => s && s.symbol && isPureNepseEquity(s));
+  }, [stocks]);
+
+  // Derive market context strictly from live equities + live NEPSE index telemetry
   const marketContext = useMemo(() => {
-    if (!stocks || stocks.length === 0) {
+    const nepseIdx = indices?.nepse || indices?.NEPSE || {};
+    const nepseIndex = Number(nepseIdx?.indexValue || nepseIdx?.currentValue || nepseIdx?.close || nepseIdx?.value || 0);
+    const nepseEma20 = Number(nepseIdx?.ema20 || nepseIdx?.sma20 || 0);
+    const nepseEma50 = Number(nepseIdx?.ema50 || nepseIdx?.sma50 || 0);
+    const idxDailyPct = nepseIdx?.pChange != null ? Number(nepseIdx.pChange) : null;
+
+    if (equityStocks.length === 0) {
       return {
-        nepseIndex: 2615.4,
-        nepseEma20: 2590.2,
-        nepseEma50: 2540.8,
-        advancers: 145,
-        decliners: 95,
-        dailyChangePct: 0.65,
-        pctAboveEma50: 58
+        nepseIndex,
+        nepseEma20,
+        nepseEma50,
+        advancers: 0,
+        decliners: 0,
+        dailyChangePct: idxDailyPct ?? 0,
+        pctAboveEma50: 0
       };
     }
 
-    const adv = stocks.filter(s => (s.pChange || 0) > 0).length;
-    const dec = stocks.filter(s => (s.pChange || 0) < 0).length;
-    const total = stocks.length;
-    const avgChange = total > 0 ? (stocks.reduce((acc, s) => acc + (s.pChange || 0), 0) / total) : 0;
+    const adv = equityStocks.filter(s => (Number(s.pChange || 0)) > 0).length;
+    const dec = equityStocks.filter(s => (Number(s.pChange || 0)) < 0).length;
+    const total = equityStocks.length;
+    const avgChange = idxDailyPct != null
+      ? idxDailyPct
+      : (total > 0 ? (equityStocks.reduce((acc, s) => acc + Number(s.pChange || 0), 0) / total) : 0);
 
     return {
-      nepseIndex: 2615.4, // Fallback/estimated live index
-      nepseEma20: 2590.2,
-      nepseEma50: 2540.8,
+      nepseIndex,
+      nepseEma20,
+      nepseEma50,
       advancers: adv,
       decliners: dec,
       dailyChangePct: avgChange,
       pctAboveEma50: Math.round((adv / (total || 1)) * 100)
     };
-  }, [stocks]);
+  }, [equityStocks, indices]);
 
-  // Screen available stocks with canonical 7 gates
+  // Screen available ordinary equities with canonical 7 gates
   const screeningResult = useMemo(() => {
-    return screenUniverseForSwingPicks(stocks, marketContext);
-  }, [stocks, marketContext]);
+    return screenUniverseForSwingPicks(equityStocks, marketContext);
+  }, [equityStocks, marketContext]);
 
-  // Filtered stocks for list display
+  // Filtered stocks for list display (no synthetic 5-stock mock fallback)
   const displayStocks = useMemo(() => {
-    const list = stocks.length > 0 ? stocks : [
-      { symbol: 'NABIL', ltp: 580, pChange: 2.1, volume: 45000, turnover: 26100000, bookValue: 240, eps: 28, rvol: 1.8, isBreakout: true, bcr3BuyPct: 35 },
-      { symbol: 'SHIVM', ltp: 520, pChange: -1.2, volume: 22000, turnover: 11440000, bookValue: 180, eps: 15, rvol: 0.9, isBreakout: false, bcr3BuyPct: 15 },
-      { symbol: 'CHCL', ltp: 410, pChange: 4.8, volume: 80000, turnover: 32800000, bookValue: 195, eps: 22, rvol: 2.3, isBreakout: true, bcr3BuyPct: 42 },
-      { symbol: 'HDL', ltp: 1420, pChange: 0.5, volume: 8000, turnover: 11360000, bookValue: 310, eps: 45, rvol: 1.1, isBreakout: false, bcr3BuyPct: 20 },
-      { symbol: 'UPPER', ltp: 210, pChange: -3.5, volume: 150000, turnover: 31500000, bookValue: 92, eps: -2.5, rvol: 1.4, isBreakout: false, bcr3BuyPct: 10 }
-    ];
-
+    const list = equityStocks;
     if (!searchQuery) return list;
     const q = searchQuery.toUpperCase().trim();
     return list.filter(s => (s.symbol || '').toUpperCase().includes(q));
-  }, [stocks, searchQuery]);
+  }, [equityStocks, searchQuery]);
+
+  const paperSummary = useMemo(() => {
+    const priceMap: Record<string, number> = {};
+    equityStocks.forEach((s) => {
+      if (s?.symbol && Number(s?.ltp) > 0) priceMap[String(s.symbol).toUpperCase()] = Number(s.ltp);
+    });
+    const st = getPaperState();
+    return calculateSandboxSummary(st, priceMap);
+  }, [equityStocks, activeTab]);
 
   // Audit data from backtestResultsData
   const backtest = backtestResultsData;
@@ -601,24 +619,30 @@ export default function SwingTradeSelectorView({
           {/* Virtual Capital Summary Bar */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <span className="text-[11px] text-slate-400 font-medium">Virtual Capital</span>
-              <div className="text-xl font-black text-white mt-1">Rs. 1,000,000</div>
-              <span className="text-[10px] text-slate-400">Initial equity Rs. 10 Lakhs</span>
+              <span className="text-[11px] text-slate-400 font-medium">Virtual Portfolio Worth</span>
+              <div className="text-xl font-black text-white mt-1">Rs. {Math.round(paperSummary.totalPortfolioWorth).toLocaleString()}</div>
+              <span className="text-[10px] text-slate-400">Cash: Rs. {Math.round(paperSummary.cash).toLocaleString()} (Init Rs. {STATUTORY_CHARGES ? '10L' : '10L'})</span>
             </div>
             <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
               <span className="text-[11px] text-slate-400 font-medium">Open Positions</span>
-              <div className="text-xl font-black text-blue-400 mt-1">0 / 5</div>
-              <span className="text-[10px] text-slate-400">Max portfolio risk 5%</span>
+              <div className="text-xl font-black text-blue-400 mt-1">{paperSummary.openPositionsCount} / 5</div>
+              <span className="text-[10px] text-slate-400">Holdings: Rs. {Math.round(paperSummary.openHoldingsValue).toLocaleString()}</span>
             </div>
             <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <span className="text-[11px] text-slate-400 font-medium">Simulation Horizon</span>
-              <div className="text-xl font-black text-amber-300 mt-1">Week 1 of 8</div>
-              <span className="text-[10px] text-slate-400">Min 40 sessions</span>
+              <span className="text-[11px] text-slate-400 font-medium">Realized Paper P&amp;L</span>
+              <div className={`text-xl font-black mt-1 ${paperSummary.totalRealizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {paperSummary.totalRealizedPnl >= 0 ? '+' : ''}Rs. {Math.round(paperSummary.totalRealizedPnl).toLocaleString()}
+              </div>
+              <span className="text-[10px] text-slate-400">{paperSummary.totalTrades} closed trades</span>
             </div>
             <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
               <span className="text-[11px] text-slate-400 font-medium">Paper Win Rate</span>
-              <div className="text-xl font-black text-slate-400 mt-1">— %</div>
-              <span className="text-[10px] text-slate-400">Awaiting initial exits</span>
+              <div className="text-xl font-black text-slate-200 mt-1">
+                {paperSummary.totalTrades > 0 ? `${paperSummary.winRate}%` : '— %'}
+              </div>
+              <span className="text-[10px] text-slate-400">
+                {paperSummary.totalTrades > 0 ? `${paperSummary.winningTrades}W / ${paperSummary.losingTrades}L` : 'Awaiting initial exits'}
+              </span>
             </div>
           </div>
 
@@ -628,13 +652,32 @@ export default function SwingTradeSelectorView({
               <Clock size={16} className="text-blue-400" />
               Active Simulated Positions & Demat Holding Counters
             </h3>
-            <div className="p-8 text-center text-slate-400 text-xs border border-dashed border-slate-800 rounded-xl">
-              <Shield size={24} className="mx-auto text-slate-500 mb-2" />
-              <p className="font-bold text-slate-300">No Open Simulated Positions</p>
-              <p className="text-slate-400 mt-1">
-                When market regime approves a pick that passes all 7 gates, it will appear here with automated T+2 Demat lock tracking and trailing exit orders.
-              </p>
-            </div>
+            {paperSummary.positions.length > 0 ? (
+              <div className="space-y-2">
+                {paperSummary.positions.map((pos: any) => (
+                  <div key={pos.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-xs">
+                    <div>
+                      <span className="font-bold text-white">{pos.symbol}</span>
+                      <span className="ml-2 text-slate-400">{pos.qty ?? pos.quantity} sh @ Rs. {pos.buyPrice}</span>
+                    </div>
+                    <div className="flex items-center gap-3 font-mono">
+                      <span className="text-slate-300">LTP: Rs. {pos.currentLtp}</span>
+                      <span className={pos.unrealizedPnl >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                        {pos.unrealizedPnl >= 0 ? '+' : ''}Rs. {pos.unrealizedPnl} ({pos.unrealizedPnlPct}%)
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-8 text-center text-slate-400 text-xs border border-dashed border-slate-800 rounded-xl">
+                <Shield size={24} className="mx-auto text-slate-500 mb-2" />
+                <p className="font-bold text-slate-300">No Open Simulated Positions</p>
+                <p className="text-slate-400 mt-1">
+                  When market regime approves a pick that passes all 7 gates, virtual positions from Paper Sandbox appear here with T+{CIRCUIT_LIMITS ? '2' : '2'} Demat tracking.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

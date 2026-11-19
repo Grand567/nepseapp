@@ -14,7 +14,7 @@ import {
   getCapitalTierConfig 
 } from '../utils/dynamicCapitalEngine';
 import { formatNptDateIso } from '../utils/nepseCalendar';
-import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
+import { loadEncryptedUserProfiles, saveEncryptedUserProfiles, resolveActiveUserId } from '../utils/profileVaultStorage';
 import { triggerHaptic } from '../utils/haptics';
 import { triggerFileDownload } from '../utils/fileExport';
 
@@ -43,12 +43,25 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
     try {
       const base = getProxyBase();
       const res = await fetch(`${base}/api/system/monitoring-health`);
-      if (res.ok) {
-        const json = await res.json();
-        setMonitoringData(json.data || json);
+      if (res.ok || res.status === 503) {
+        const json = await res.json().catch(() => null);
+        if (json) {
+          setMonitoringData(json.data || json);
+          return;
+        }
       }
-    } catch (_) {}
-    finally {
+      setMonitoringData({
+        overallStatus: 'DEGRADED',
+        completeness: { status: 'CRITICAL', completenessPct: 0, storedRowCount: 0, exchangeReportedCount: 0, warningMessage: `Health endpoint returned HTTP ${res.status}` },
+        freshness: { freshness: 'STALE', isStale: true, message: 'Backend monitoring endpoint returned an error.' }
+      });
+    } catch (_) {
+      setMonitoringData({
+        overallStatus: 'DEGRADED',
+        completeness: { status: 'CRITICAL', completenessPct: 0, storedRowCount: 0, exchangeReportedCount: 0, warningMessage: 'Backend proxy offline or unreachable.' },
+        freshness: { freshness: 'OFFLINE', isStale: true, message: 'Unable to reach backend proxy server.' }
+      });
+    } finally {
       setLoadingHealth(false);
     }
   };
@@ -59,15 +72,16 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
     }
   }, [activeTab]);
 
-  // MeroShare Credentials Vault State
-  const [accounts, setAccounts] = useState<any[]>(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem('nepse_hub_bulk_ipo_accounts') || '[]');
-      return Array.isArray(raw) ? raw.map((a: any) => decryptProfileCredentials(a)) : [];
-    } catch {
-      return [];
-    }
-  });
+  // MeroShare Credentials Vault State (per-user WebCrypto AES-256-GCM vault)
+  const activeUserId = resolveActiveUserId();
+  const [accounts, setAccounts] = useState<any[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    loadEncryptedUserProfiles(activeUserId).then((loaded) => {
+      if (mounted) setAccounts(loaded);
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, [activeUserId]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showPassword, setShowPassword] = useState<Record<string, boolean>>({});
   const [newAcc, setNewAcc] = useState({ name: '', boid: '', username: '', password: '', crn: '', pin: '' });
@@ -111,7 +125,7 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
   };
 
   // MeroShare Account Actions
-  const handleSaveAccount = (e: React.FormEvent) => {
+  const handleSaveAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setAccError('');
     if (!newAcc.name.trim() || !newAcc.boid.trim() || !newAcc.username.trim() || !newAcc.password.trim()) {
@@ -136,9 +150,7 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
 
     const updated = [...accounts, entry];
     setAccounts(updated);
-    const updatedEncrypted = updated.map((a: any) => encryptProfileCredentials(a));
-    localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(updatedEncrypted));
-    window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { profiles: updatedEncrypted } }));
+    await saveEncryptedUserProfiles(updated, activeUserId);
 
     setNewAcc({ name: '', boid: '', username: '', password: '', crn: '', pin: '' });
     setShowAddForm(false);
@@ -146,13 +158,11 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
     setTimeout(() => setAccSuccess(''), 4000);
   };
 
-  const handleDeleteAccount = (id: string, name: string) => {
+  const handleDeleteAccount = async (id: string, name: string) => {
     if (!window.confirm(`Remove MeroShare credentials for "${name}" from this device?`)) return;
     const updated = accounts.filter(a => a.id !== id);
     setAccounts(updated);
-    const updatedEncrypted = updated.map((a: any) => encryptProfileCredentials(a));
-    localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(updatedEncrypted));
-    window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { profiles: updatedEncrypted } }));
+    await saveEncryptedUserProfiles(updated, activeUserId);
   };
 
   // Backup Export
@@ -632,20 +642,20 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
 
           {/* Quick Metrics Grid */}
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <StatCard label="Memory Securities" value={cachedStocksCount || '346 Stocks'} color="#3b82f6" />
+            <StatCard label="Memory Securities" value={cachedStocksCount || '247 Stocks'} color="#3b82f6" />
             <StatCard 
               label="Data Completeness" 
-              value={monitoringData?.completeness?.completenessPct ? `${monitoringData.completeness.completenessPct}%` : '100%'} 
+              value={monitoringData?.completeness?.completenessPct != null ? `${monitoringData.completeness.completenessPct}%` : 'N/A'} 
               color={monitoringData?.completeness?.status === 'CRITICAL' ? '#f43f5e' : monitoringData?.completeness?.status === 'WARNING' ? '#f59e0b' : '#10b981'} 
             />
             <StatCard 
               label="Scraper Network" 
-              value={monitoringData?.overallStatus === 'DEGRADED' ? 'Degraded' : 'Active (4/4)'} 
-              color={monitoringData?.overallStatus === 'DEGRADED' ? '#f43f5e' : '#10b981'} 
+              value={monitoringData?.overallStatus === 'DEGRADED' ? 'Degraded' : (monitoringData?.overallStatus === 'WARNING' ? 'Warning' : 'Active (4/4)')} 
+              color={monitoringData?.overallStatus === 'DEGRADED' ? '#f43f5e' : (monitoringData?.overallStatus === 'WARNING' ? '#f59e0b' : '#10b981')} 
             />
             <StatCard 
               label="Data Freshness" 
-              value={monitoringData?.freshness?.freshness || 'FRESH'} 
+              value={monitoringData?.freshness?.freshness || 'N/A'} 
               color={monitoringData?.freshness?.isStale ? '#f59e0b' : '#10b981'} 
             />
           </div>

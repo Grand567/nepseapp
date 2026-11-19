@@ -123,7 +123,7 @@ export function TechnicalDashboard({
                   (momentum?.macd?.histogram || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
                 }`}
               >
-                {momentum?.macd?.histogram != null ? `${momentum.macd.histogram > 0 ? '+' : ''}${momentum.macd.histogram}` : '0.00'}
+                {momentum?.macd?.histogram != null ? `${momentum.macd.histogram > 0 ? '+' : ''}${momentum.macd.histogram}` : '—'}
               </div>
             </div>
           </div>
@@ -132,13 +132,13 @@ export function TechnicalDashboard({
             <div>
               <div className="text-slate-500">5-Day Return</div>
               <div className={`font-bold mt-0.5 ${(momentum?.returns?.ret5 || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {momentum?.returns?.ret5 != null ? `${momentum.returns.ret5 >= 0 ? '+' : ''}${momentum.returns.ret5}%` : '0.0%'}
+                {momentum?.returns?.ret5 != null ? `${momentum.returns.ret5 >= 0 ? '+' : ''}${momentum.returns.ret5}%` : '—'}
               </div>
             </div>
             <div>
               <div className="text-slate-500">20-Day Return</div>
               <div className={`font-bold mt-0.5 ${(momentum?.returns?.ret20 || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {momentum?.returns?.ret20 != null ? `${momentum.returns.ret20 >= 0 ? '+' : ''}${momentum.returns.ret20}%` : '0.0%'}
+                {momentum?.returns?.ret20 != null ? `${momentum.returns.ret20 >= 0 ? '+' : ''}${momentum.returns.ret20}%` : '—'}
               </div>
             </div>
           </div>
@@ -155,7 +155,7 @@ export function TechnicalDashboard({
               <BarChart3 size={14} className="text-purple-400" /> Volume & Conviction
             </div>
             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-purple-300">
-              RVOL {volume?.rvol ?? 1.0}x
+              RVOL {volume?.rvol != null ? `${volume.rvol}x` : '—'}
             </span>
           </div>
 

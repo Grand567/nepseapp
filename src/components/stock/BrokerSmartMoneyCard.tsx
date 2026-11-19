@@ -197,15 +197,15 @@ export function normalizeAndAggregateBrokerData(
     const rawSellAmt = safeNum(item.sellAmount ?? item.sell_turnover_npr ?? item.sellAmt, 0);
     const sellTurnover = rawSellAmt > 0 ? rawSellAmt : (sellVol * avgSellPx);
 
-    // Estimate trade tickets if backend omitted transaction count
+    // Transaction tickets count
     const rawBuyTrades = safeNum(
       item.buyTrades ?? item.buy_trades_count ?? item.buyTransactions ?? item.trades,
       0
     );
     const rawSellTrades = safeNum(item.sellTrades ?? item.sell_trades_count, 0);
 
-    const buyTrades = rawBuyTrades > 0 ? rawBuyTrades : buyVol > 0 ? Math.max(1, Math.round(buyVol / 80)) : 0;
-    const sellTrades = rawSellTrades > 0 ? rawSellTrades : sellVol > 0 ? Math.max(1, Math.round(sellVol / 80)) : 0;
+    const buyTrades = rawBuyTrades;
+    const sellTrades = rawSellTrades;
 
     const existing = rollupMap.get(brokerId) || {
       buyVol: 0,
@@ -435,6 +435,11 @@ function BrokerSmartMoneyCardInner({
   };
 
   useEffect(() => {
+    setCached1DPayload(null);
+    setRawPayload(null);
+  }, [cleanSymbol]);
+
+  useEffect(() => {
     const isMultiDay = Boolean(
       (initialData as any)?.tradingDays > 1 || 
       (initialData as any)?.timeframeDays > 1 || 
@@ -655,11 +660,17 @@ function BrokerSmartMoneyCardInner({
     const allHoldersList = allBrokers
       .filter((b) => b.netVolume > 0)
       .sort((a, b) => b.netVolume - a.netVolume)
-      .map((b) => ({
-        ...b,
-        shareOfHoldPct: totalSharesHeldTillNow > 0 ? Number(((b.netVolume / totalSharesHeldTillNow) * 100).toFixed(1)) : 0,
-        holdValueRs: b.netVolume * (currentPrice || b.buyVwap || 100),
-      }));
+      .map((b) => {
+        const retentionRatePct = b.buyVolume > 0
+          ? Math.max(0, Math.min(100, Math.round((b.netVolume / b.buyVolume) * 100)))
+          : (b.netVolume > 0 ? 100 : 0);
+        return {
+          ...b,
+          shareOfHoldPct: totalSharesHeldTillNow > 0 ? Number(((b.netVolume / totalSharesHeldTillNow) * 100).toFixed(1)) : 0,
+          holdValueRs: b.netVolume * (currentPrice || b.buyVwap || 100),
+          retentionRatePct,
+        };
+      });
 
     return {
       topAccumulators: accumulators,

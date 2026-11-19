@@ -445,8 +445,8 @@ export function evaluateWatchlistAlerts(stocks = [], watchedSymbols = [], onTrig
 
     const isTriggered = (isPriceMet && isVolumeMet) || isStealthAccumulation || isDistributionTrap;
 
-    // Check if triggered today already
-    const lastDate = config.lastTriggeredAt ? new Date(config.lastTriggeredAt).toISOString().slice(0, 10) : null;
+    // Check if triggered today already using NPT calendar
+    const lastDate = config.lastTriggeredAt ? formatNptDateIso(new Date(config.lastTriggeredAt)) : null;
     const alreadyTriggeredToday = config.triggeredToday && lastDate === todayStr;
 
     // Trigger Notification if newly triggered

@@ -39,7 +39,7 @@ export default function StockSeasonalityCard({ symbol = '', sector = '' }) {
               Historical Seasonality Patterns
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8' }}>
-              {symbol} & {sector || 'Market'} 10-Year Monthly Return Distribution
+              NEPSE Index Macro Baseline (Multi-year history pending for {symbol || 'stock'})
             </div>
           </div>
         </div>

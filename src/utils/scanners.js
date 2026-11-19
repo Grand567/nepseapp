@@ -17,28 +17,30 @@ export function evaluateSectorFundamentalAndLockinTraps({
   const sec = String(sector || '').toLowerCase();
   const f = fundamentals || {};
 
-  // 1. Promoter & Mutual Fund Lock-In Expiry Guard (90 to 180 Days)
+  // 1. Promoter & Mutual Fund Lock-In Expiry Guard (-30 to 180 Days: catches imminent 0-89d expirations, 90-180d front-running, & recent 30d unlock overhang)
   if (daysToLockInExpiry !== null && daysToLockInExpiry !== undefined && daysToLockInExpiry !== '') {
     const days = Number(daysToLockInExpiry);
-    if (Number.isFinite(days) && days >= 90 && days <= 180) {
+    if (Number.isFinite(days) && days >= -30 && days <= 180) {
       traps.push({
         code: 'VETO_LOCKIN_EXPIRY_CLIFF',
-        reason: `Lock-in Supply Cliff: ${lockinType === 'mutual_fund' ? '6-month Mutual Fund' : '3-year Promoter'} lock-in expires in ${days} days (Blackout: 90-180 days to prevent pre-unlock institutional front-running)`
+        reason: `Lock-in Supply Cliff: ${lockinType === 'mutual_fund' ? '6-month Mutual Fund' : '3-year Promoter'} lock-in ${days < 0 ? `expired ${Math.abs(days)} days ago` : `expires in ${days} days`} (Blackout: -30 to 180 days to prevent pre-unlock institutional front-running and imminent supply dumps)`
       });
     }
   }
 
-  // 2. Commercial & Development Banks:
+  // 2. Commercial & Development Banks (only evaluate when actual fundamental metrics are present — never fabricate passing defaults):
   if (sec.includes('bank')) {
-    const npl = Number(f.npl ?? f.nonPerformingLoan ?? 0);
-    const distEps = Number(f.distributableEps ?? f.distributableProfit ?? 16);
-    if (npl > 4.5) {
+    const rawNpl = f.npl ?? f.nonPerformingLoan;
+    const rawDistEps = f.distributableEps ?? f.distributableProfit;
+    if (rawNpl != null && Number.isFinite(Number(rawNpl)) && Number(rawNpl) > 4.5) {
+      const npl = Number(rawNpl);
       traps.push({
         code: 'VETO_BANK_HIGH_NPL',
         reason: `Asset Quality Stress: Bank NPL is ${npl.toFixed(2)}% (Max regulatory threshold: 4.5%)`
       });
     }
-    if (distEps < 0) {
+    if (rawDistEps != null && Number.isFinite(Number(rawDistEps)) && Number(rawDistEps) < 0) {
+      const distEps = Number(rawDistEps);
       traps.push({
         code: 'VETO_BANK_NEGATIVE_DISTRIBUTABLE',
         reason: `Capital Impairment: Bank distributable EPS is negative (Rs. ${distEps.toFixed(2)})`
@@ -48,15 +50,17 @@ export function evaluateSectorFundamentalAndLockinTraps({
 
   // 3. Microfinance (Laghubitta):
   if (sec.includes('microfinance')) {
-    const npl = Number(f.npl ?? 0);
-    const epsGrowth = Number(f.epsYoYGrowth ?? f.epsGrowth ?? 26);
-    if (npl > 5.0) {
+    const rawNpl = f.npl ?? f.nonPerformingLoan;
+    const rawEpsGrowth = f.epsYoYGrowth ?? f.epsGrowth;
+    if (rawNpl != null && Number.isFinite(Number(rawNpl)) && Number(rawNpl) > 5.0) {
+      const npl = Number(rawNpl);
       traps.push({
         code: 'VETO_MICROFINANCE_ASSET_QUALITY',
         reason: `Microfinance NPL Stress: NPL is ${npl.toFixed(2)}% (> 5.0% NRB supervisory watchlist)`
       });
     }
-    if (epsGrowth <= 0) {
+    if (rawEpsGrowth != null && Number.isFinite(Number(rawEpsGrowth)) && Number(rawEpsGrowth) <= 0) {
+      const epsGrowth = Number(rawEpsGrowth);
       traps.push({
         code: 'VETO_MICROFINANCE_DECLINING_GROWTH',
         reason: `Microfinance Contraction: EPS YoY growth is ${epsGrowth.toFixed(1)}% (<= 0%)`
@@ -67,8 +71,8 @@ export function evaluateSectorFundamentalAndLockinTraps({
   // 4. Hydropower:
   if (sec.includes('hydro')) {
     const codCompleted = f.codCompleted !== undefined ? Boolean(f.codCompleted) : true;
-    const costPerMW = Number(f.costPerMW ?? f.perMwCost ?? 18);
-    const bv = Number(f.bookValue ?? f.nav ?? 115);
+    const rawCostPerMW = f.costPerMW ?? f.perMwCost;
+    const rawBv = f.bookValue ?? f.nav;
 
     if (!codCompleted) {
       traps.push({
@@ -76,13 +80,15 @@ export function evaluateSectorFundamentalAndLockinTraps({
         reason: 'Hydropower Execution Risk: COD (Commercial Operation Date) not completed or under prolonged delay'
       });
     }
-    if (costPerMW > 22.0) {
+    if (rawCostPerMW != null && Number.isFinite(Number(rawCostPerMW)) && Number(rawCostPerMW) > 22.0) {
+      const costPerMW = Number(rawCostPerMW);
       traps.push({
         code: 'VETO_HYDRO_EXCESSIVE_CAPEX',
         reason: `Hydropower Capex Inflation: Cost per MW is Rs. ${costPerMW.toFixed(1)} Cr (> Rs. 22 Cr/MW ceiling)`
       });
     }
-    if (bv < 100.0) {
+    if (rawBv != null && Number.isFinite(Number(rawBv)) && Number(rawBv) > 0 && Number(rawBv) < 100.0) {
+      const bv = Number(rawBv);
       traps.push({
         code: 'VETO_HYDRO_SUB_PAR_BOOK_VALUE',
         reason: `Eroded Equity Base: Book Value is Rs. ${bv.toFixed(1)} (< Rs. 100 par value)`
@@ -92,16 +98,18 @@ export function evaluateSectorFundamentalAndLockinTraps({
 
   // 5. Insurance (Life & Non-Life):
   if (sec.includes('insurance')) {
-    const pe = Number(f.pe ?? f.peRatio ?? 22);
-    const invGrowth = Number(f.investmentBookGrowthQoQ ?? f.investmentGrowth ?? 5);
+    const rawPe = f.pe ?? f.peRatio;
+    const rawInvGrowth = f.investmentBookGrowthQoQ ?? f.investmentGrowth;
 
-    if (pe > 45.0) {
+    if (rawPe != null && Number.isFinite(Number(rawPe)) && Number(rawPe) > 45.0) {
+      const pe = Number(rawPe);
       traps.push({
         code: 'VETO_INSURANCE_OVERVALUATION',
         reason: `Insurance Multiples Euphoria: P/E ratio is ${pe.toFixed(1)}x (> 45.0x ceiling)`
       });
     }
-    if (invGrowth < 0) {
+    if (rawInvGrowth != null && Number.isFinite(Number(rawInvGrowth)) && Number(rawInvGrowth) < 0) {
+      const invGrowth = Number(rawInvGrowth);
       traps.push({
         code: 'VETO_INSURANCE_CONTRACTING_BOOK',
         reason: `Insurance Book Contraction: Investment portfolio shrank ${invGrowth.toFixed(1)}% QoQ`
@@ -128,10 +136,10 @@ export function isLockInSupplyCliffTrap(stock = {}) {
 
   if (daysToLockIn !== null && daysToLockIn !== undefined && daysToLockIn !== '') {
     const d = Number(daysToLockIn);
-    if (Number.isFinite(d) && d >= 90 && d <= 180) {
+    if (Number.isFinite(d) && d >= -30 && d <= 180) {
       return {
         isTrap: true,
-        reason: `Lock-in Supply Cliff: ${lockinType === 'mutual_fund' ? 'Mutual Fund' : 'Promoter'} lock-in expires in ${d} days (90–180d blackout window).`
+        reason: `Lock-in Supply Cliff: ${lockinType === 'mutual_fund' ? 'Mutual Fund' : 'Promoter'} lock-in ${d < 0 ? `expired ${Math.abs(d)} days ago` : `expires in ${d} days`} (-30 to 180d blackout window).`
       };
     }
   }

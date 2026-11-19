@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, ShieldCheck, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink, Download, Share2, Copy, Check, Globe, Building2, Flame } from 'lucide-react';
 import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap, fetchAvailableTradingDates } from '../utils/liveData';
 import { isNepseTradingDay, formatNptDateIso, isMarketOpen, latestTradingSession } from '../utils/nepseCalendar';
@@ -173,6 +173,9 @@ export function BrokerFlowDominanceService({
   const [brokerRetentionData, setBrokerRetentionData] = useState<any>(null);
   const [loadingBrokerRetention, setLoadingBrokerRetention] = useState<boolean>(false);
   const [copiedBrokerRetentionCard, setCopiedBrokerRetentionCard] = useState<boolean>(false);
+  const loadDataSeqRef = useRef<number>(0);
+  const brokerRetSeqRef = useRef<number>(0);
+  const stockRetSeqRef = useRef<number>(0);
 
   // Sync unified broker selection
   const handleSelectBroker = (bId: string) => {
@@ -260,10 +263,13 @@ export function BrokerFlowDominanceService({
   }, [propAvailableDates, fetchedDates, heatmapData, floorsheet]);
 
   const sessionDate = useMemo(() => {
-    if (sessionDateFilter) return sessionDateFilter;
-    if (selectedDate || date) return selectedDate || date;
-    if (availableDates.length > 0) return availableDates[0];
+    if (heatmapData?.businessDate && (!sessionDateFilter || heatmapData.businessDate === sessionDateFilter)) {
+      return heatmapData.businessDate;
+    }
+    if (sessionDateFilter) return heatmapData?.businessDate || sessionDateFilter;
+    if (selectedDate || date) return heatmapData?.businessDate || selectedDate || date;
     if (heatmapData?.businessDate) return heatmapData.businessDate;
+    if (availableDates.length > 0) return availableDates[0];
     if (floorsheet && floorsheet.length > 0) {
       const fsDate = floorsheet.find(f => f.businessDate || f.date);
       if (fsDate?.businessDate || fsDate?.date) return String(fsDate.businessDate || fsDate.date).split('T')[0];
@@ -333,14 +339,27 @@ export function BrokerFlowDominanceService({
         const netAmount = buyAmt - sellAmt;
 
         const isNetMode = brokerWiseTab === 'net_buyers' || brokerWiseTab === 'net_sellers';
-        const qty = isNetMode
-          ? (brokerWiseTab === 'net_buyers' ? netKitta : Math.abs(netKitta))
-          : (brokerWiseTab === 'sellers' ? (sellQty || s.qty || 0) : (buyQty || s.qty || 0));
-        const amt = isNetMode
-          ? (brokerWiseTab === 'net_buyers' ? netAmount : Math.abs(netAmount))
-          : (brokerWiseTab === 'sellers' ? (sellAmt || s.amount || 0) : (buyAmt || s.amount || 0));
+        let qty = 0;
+        let amt = 0;
+        if (brokerWiseTab === 'net_buyers') {
+          qty = netKitta > 0 ? netKitta : 0;
+          amt = netKitta > 0 ? Math.max(0, netAmount) : 0;
+        } else if (brokerWiseTab === 'net_sellers') {
+          // Strictly require netKitta < 0 so net buyers are NEVER promoted to net_sellers via Math.abs
+          qty = netKitta < 0 ? Math.abs(netKitta) : 0;
+          amt = netKitta < 0 ? Math.abs(Math.min(0, netAmount)) : 0;
+        } else if (brokerWiseTab === 'sellers') {
+          qty = sellQty || (isSellMode ? (s.qty || 0) : 0);
+          amt = sellAmt || (isSellMode ? (s.amount || 0) : 0);
+        } else {
+          qty = buyQty || s.qty || 0;
+          amt = buyAmt || s.amount || 0;
+        }
 
         if (qty > 0) {
+          const avgRateVal = isSellMode
+            ? (s.avgSellRate || s.avgSellPrice || (sellQty > 0 && sellAmt > 0 ? +(sellAmt / sellQty).toFixed(2) : 0) || (qty > 0 ? +(amt / qty).toFixed(2) : 0))
+            : (s.avgBuyRate || s.avgBuyPrice || (buyQty > 0 && buyAmt > 0 ? +(buyAmt / buyQty).toFixed(2) : 0) || (qty > 0 ? +(amt / qty).toFixed(2) : 0));
           items.push({
             symbol: s.symbol,
             sellerBroker: brokerId,
@@ -352,7 +371,7 @@ export function BrokerFlowDominanceService({
             sellQty,
             amount: amt,
             amountCr: +(amt / 1e7).toFixed(2),
-            avgRate: s.avgBuyRate || s.avgSellRate || (qty > 0 ? +(amt / qty).toFixed(2) : 0),
+            avgRate: avgRateVal,
             trades: s.trades || 0,
             cumHoldQty: s.cumHoldQty,
             cumAvgBuy: s.cumAvgBuy
@@ -384,9 +403,10 @@ export function BrokerFlowDominanceService({
     const targetId = String(bId || selectedRetentionBrokerId || '58').trim();
     if (!targetId) return;
 
+    const reqSeq = ++brokerRetSeqRef.current;
     const effDate = asOfDate !== undefined ? asOfDate : (sessionDateFilter || '');
     // Use seed fallback so broker holdings render instantly (0ms) without waiting for network
-    const seed = (allTimeBrokerHoldingsSeed as Record<string, any>)?.[targetId] || null;
+    const seed = !effDate ? ((allTimeBrokerHoldingsSeed as Record<string, any>)?.[targetId] || null) : null;
     if (seed && (!brokerRetentionData || String(brokerRetentionData.brokerId || '').replace(/^0+/, '') !== targetId.replace(/^0+/, ''))) {
       setBrokerRetentionData(seed);
     }
@@ -394,6 +414,7 @@ export function BrokerFlowDominanceService({
     setLoadingBrokerRetention(true);
     try {
       const res: any = await fetchBrokerHoldings(targetId, effDate);
+      if (reqSeq !== brokerRetSeqRef.current) return;
       const payload: any = (res && Array.isArray(res.topHoldings) && res.topHoldings.length > 0)
         ? res
         : (res?.data && Array.isArray(res.data.topHoldings) && res.data.topHoldings.length > 0)
@@ -408,6 +429,7 @@ export function BrokerFlowDominanceService({
         setBrokerRetentionData(null);
       }
     } catch (err) {
+      if (reqSeq !== brokerRetSeqRef.current) return;
       console.warn('Failed to load broker retention from network:', err);
       if (seed) {
         setBrokerRetentionData(seed);
@@ -415,7 +437,9 @@ export function BrokerFlowDominanceService({
         setBrokerRetentionData(null);
       }
     } finally {
-      setLoadingBrokerRetention(false);
+      if (reqSeq === brokerRetSeqRef.current) {
+        setLoadingBrokerRetention(false);
+      }
     }
   };
 
@@ -454,10 +478,12 @@ export function BrokerFlowDominanceService({
   const loadStockRetention = async (sym: string, force = false, asOfDate?: string) => {
     const targetSym = (sym || selectedStockRetention || 'BARUN').toUpperCase().trim();
     if (!targetSym) return;
+    const reqSeq = ++stockRetSeqRef.current;
     const effDate = asOfDate !== undefined ? asOfDate : (sessionDateFilter || '');
     setLoadingRetention(true);
     try {
       const res: any = await fetchBrokerAnalysis(targetSym, 'all', { refresh: force, days: 'all', date: effDate || undefined });
+      if (reqSeq !== stockRetSeqRef.current) return;
       // Robust unwrap: handle when res has topHoldings, or res.data has topHoldings, or res is already data
       let payload: any = (res && Array.isArray(res.topHoldings) && res.topHoldings.length > 0)
         ? res
@@ -474,7 +500,7 @@ export function BrokerFlowDominanceService({
           const scrips = Array.isArray(b.scrips) ? b.scrips : [];
           const match = scrips.find((s: any) => String(s.symbol || '').toUpperCase() === targetSym);
           if (match && ((match.buyQty || match.buy || 0) > 0 || (match.sellQty || match.sell || 0) > 0)) {
-            const netKitta = Number(match.netQty || match.buyQty || 0);
+            const netKitta = Number(match.netQty ?? match.buyQty ?? 0);
             brokersWithScrip.push({
               id: String(b.broker || b.id || ''),
               brokerId: String(b.broker || b.id || ''),
@@ -537,10 +563,13 @@ export function BrokerFlowDominanceService({
         setStockRetentionData(null);
       }
     } catch (err) {
+      if (reqSeq !== stockRetSeqRef.current) return;
       console.error('Failed to load stock retention:', err);
       setStockRetentionData(null);
     } finally {
-      setLoadingRetention(false);
+      if (reqSeq === stockRetSeqRef.current) {
+        setLoadingRetention(false);
+      }
     }
   };
 
@@ -626,6 +655,7 @@ export function BrokerFlowDominanceService({
     targetFrom = fromDate,
     targetTo = toDate
   ) => {
+    const reqSeq = ++loadDataSeqRef.current;
     // Only show full loading spinner if we have zero data in memory
     if (!heatmapData) setLoading(true);
     setRefreshing(true);
@@ -634,15 +664,15 @@ export function BrokerFlowDominanceService({
       const days = DAYS_MAP[activeTf] || 1;
       const effDate = targetDate || sessionDate || latestTradingSession(new Date(), !isMarketOpen(new Date()));
 
-      // Immediate local baseline switch (0ms) from pre-compiled historical matrices
-      const histSeed = effDate ? (historicalMatricesSeed as any)?.[effDate] : null;
+      // Immediate local baseline switch (0ms) from pre-compiled historical matrices (ONLY when 1D and date matches)
+      const histSeed = (days === 1 && effDate) ? (historicalMatricesSeed as any)?.[effDate] : null;
       const histList: any[] = Array.isArray(histSeed?.matrix)
         ? histSeed.matrix
         : (histSeed?.matrix && typeof histSeed.matrix === 'object' ? Object.values(histSeed.matrix) : []);
 
-      if (histList.length > 0) {
-        setHeatmapData({ ...histSeed, matrix: histList });
-      } else if (latestBrokerMatrix && ((latestBrokerMatrix as any)?.businessDate === effDate || !targetDate) && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
+      if (days === 1 && histList.length > 0 && (!histSeed?.businessDate || histSeed.businessDate === effDate)) {
+        setHeatmapData({ ...histSeed, businessDate: effDate, matrix: histList });
+      } else if (days === 1 && latestBrokerMatrix && ((latestBrokerMatrix as any)?.businessDate === effDate || !targetDate) && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         setHeatmapData(latestBrokerMatrix);
       }
 
@@ -652,6 +682,8 @@ export function BrokerFlowDominanceService({
         fetchBrokerHeatmap({ days, date: effDate, fromDate: targetFrom, toDate: targetTo }),
         fetchMarketWideBrokerSummaryMap(days, { date: effDate })
       ]);
+
+      if (reqSeq !== loadDataSeqRef.current) return;
 
       if (liveDataRes.status === 'fulfilled') {
         const liveStocks = liveDataRes.value?.stocks || [];
@@ -698,8 +730,8 @@ export function BrokerFlowDominanceService({
             scrips: found.scrips || prev.scrips
           };
         });
-      } else if (histList.length > 0) {
-        setHeatmapData({ ...histSeed, matrix: histList });
+      } else if (days === 1 && histList.length > 0 && (!histSeed?.businessDate || histSeed.businessDate === effDate)) {
+        setHeatmapData({ ...histSeed, businessDate: effDate, matrix: histList });
       } else if (!targetDate && latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         // Safe fallback: only if no specific historical date was picked
         setHeatmapData(latestBrokerMatrix);
@@ -708,6 +740,7 @@ export function BrokerFlowDominanceService({
       // Fetch floorsheet sample for bilateral deals asynchronously in background (sane size: 250 rows instead of 100k)
       fetchRealFloorsheet(null, effDate, 1, 250, { days, fromDate: targetFrom, toDate: targetTo })
         .then((fs) => {
+          if (reqSeq !== loadDataSeqRef.current) return;
           const fsData = Array.isArray(fs?.content)
             ? fs.content
             : Array.isArray(fs?.data)
@@ -728,8 +761,10 @@ export function BrokerFlowDominanceService({
       loadBrokerRetention(selectedRetentionBrokerId, retentionDate);
       loadStockRetention(selectedStockRetention, false, retentionDate);
     } catch (_) {}
-    setLoading(false);
-    setRefreshing(false);
+    if (reqSeq === loadDataSeqRef.current) {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
   useEffect(() => {
@@ -1277,7 +1312,7 @@ export function BrokerFlowDominanceService({
         const rba = st.brokerAnalysis || st.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym);
         if (rba && (rba.topBuyers?.length > 0 || rba.buyers?.length > 0 || (rba.bcr3BuyPct != null && rba.bcr3BuyPct > 0) || (rba.totalBuyAmount || 0) > 0)) {
           seenSymbols.add(sym);
-          const ltp = Number(st.ltp || st.closePrice || 500);
+          const ltp = Number(st.ltp || st.closePrice || 0);
           const pChange = Number(st.pChange || 0);
           const turnover = Number(st.turnover || rba.totalBuyAmount || 0);
           const val = stockBrokerMap.get(sym) || { totalBuy: turnover, totalSell: turnover, buyers: new Map(), sellers: new Map() };
@@ -1313,7 +1348,7 @@ export function BrokerFlowDominanceService({
         sortedSellers.sort((a, b) => b.amt - a.amt);
 
         const matchedStock = stocks.find(s => s.symbol === sym);
-        const ltp = Number(matchedStock?.ltp || matchedStock?.closePrice || 500);
+        const ltp = Number(matchedStock?.ltp || matchedStock?.closePrice || 0);
         const pChange = Number(matchedStock?.pChange || 0);
         const turnover = Number(matchedStock?.turnover || val.totalBuy);
 
@@ -1370,7 +1405,7 @@ export function BrokerFlowDominanceService({
         const rba = st.brokerAnalysis || st.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym);
         if (rba && (rba.topBuyers?.length > 0 || rba.buyers?.length > 0 || (rba.bcr3BuyPct != null && rba.bcr3BuyPct > 0) || (rba.totalBuyAmount || 0) > 0)) {
           seenSymbols.add(sym);
-          const ltp = Number(st.ltp || st.closePrice || 500);
+          const ltp = Number(st.ltp || st.closePrice || 0);
           const pChange = Number(st.pChange || 0);
           const turnover = Number(st.turnover || rba.totalBuyAmount || 0);
           const val = stockBrokerMap.get(sym) || { totalBuy: turnover, totalSell: turnover, buyers: new Map(), sellers: new Map() };
@@ -1406,7 +1441,7 @@ export function BrokerFlowDominanceService({
         sortedSellers.sort((a, b) => b.amt - a.amt);
 
         const matchedStock = stocks.find(s => s.symbol === sym);
-        const ltp = Number(matchedStock?.ltp || matchedStock?.closePrice || 500);
+        const ltp = Number(matchedStock?.ltp || matchedStock?.closePrice || 0);
         const pChange = Number(matchedStock?.pChange || 0);
         const turnover = Number(matchedStock?.turnover || val.totalBuy);
 
@@ -1434,7 +1469,7 @@ export function BrokerFlowDominanceService({
     if (stocksWithBroker.length > 0) {
       const res: DominanceItem[] = stocksWithBroker.map(st => {
         const sym = st.symbol;
-        const ltp = Number(st.ltp || st.closePrice || 500);
+        const ltp = Number(st.ltp || st.closePrice || 0);
         const pChange = Number(st.pChange || 0);
         const rba = st.brokerAnalysis || st.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym);
         const turnover = Number(st.turnover || rba?.totalBuyAmount || 0);
@@ -1456,7 +1491,7 @@ export function BrokerFlowDominanceService({
     return active.map(s => ({
       symbol: s.symbol,
       name: s.companyName || s.name || s.symbol,
-      ltp: Number(s.ltp || s.closePrice || 500),
+      ltp: Number(s.ltp || s.closePrice || 0),
       pChange: Number(s.pChange || 0),
       turnover: Number(s.turnover || 0),
       topBrokerId: '—',

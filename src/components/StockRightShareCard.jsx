@@ -6,17 +6,39 @@ export default function StockRightShareCard({ stock: rawStock = {}, rightShareDa
   const sym = stock.symbol || '';
   const sector = stock.sector || 'Hydropower';
 
-  // Extract right share details from prop or verified company profile
-  const units = rightShareData?.units || (stock.listedShares ? Math.round(stock.listedShares * 0.5) : 11000000);
-  const ratio = rightShareData?.ratio || stock.rightRatio || '1:1';
-  const issueAmount = rightShareData?.issueAmount || (units * 100);
-  const issueManager = rightShareData?.issueManager || stock.issueManager || 'Muktinath Capital Limited';
-  const openingDate = rightShareData?.openingDate || stock.rightOpeningDate || '26 Nov 2023';
-  const closingDate = rightShareData?.closingDate || stock.rightClosingDate || '01 Jan 2024';
-  const status = rightShareData?.status || stock.rightStatus || 'CLOSED';
+  // Extract right share details strictly from verified props or API payload (never fabricate defaults)
+  const units = rightShareData?.units ?? stock.rightUnits ?? null;
+  const ratio = rightShareData?.ratio || stock.rightRatio || null;
+  const issueAmount = rightShareData?.issueAmount ?? (units != null ? units * 100 : null);
+  const issueManager = rightShareData?.issueManager || stock.issueManager || '—';
+  const openingDate = rightShareData?.openingDate || stock.rightOpeningDate || '—';
+  const closingDate = rightShareData?.closingDate || stock.rightClosingDate || '—';
+  const status = rightShareData?.status || stock.rightStatus || '';
+  const hasVerifiedRightShare = Boolean(ratio || units || rightShareData?.openingDate || rightShareData?.status || stock.rightOpeningDate || stock.rightStatus);
 
-  const isClosed = status.toUpperCase() === 'CLOSED';
-  const isOpen = status.toUpperCase() === 'OPEN';
+  if (!hasVerifiedRightShare) {
+    return (
+      <div style={{
+        background: '#111827',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: 16,
+        padding: '16px 18px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6
+      }}>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: '#e2e8f0' }}>
+          No Verified Right Share Issue on Record{sym ? ` (${sym})` : ''}
+        </div>
+        <div style={{ fontSize: 12, color: '#94a3b8' }}>
+          Official CDSC / SEBON right-share filing data is not active or pending verification for this security.
+        </div>
+      </div>
+    );
+  }
+
+  const isClosed = String(status).toUpperCase() === 'CLOSED';
+  const isOpen = String(status).toUpperCase() === 'OPEN';
 
   return (
     <div style={{

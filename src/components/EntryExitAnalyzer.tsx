@@ -116,6 +116,7 @@ export function EntryExitAnalyzer({
     initialSymbol && typeof initialSymbol === 'string' ? initialSymbol.trim().toUpperCase() : ''
   );
   const initialMountDone = useRef<boolean>(false);
+  const loadSeqRef = useRef<number>(0);
 
   // Prepopulate symbol list for instant autocomplete
   useEffect(() => {
@@ -131,6 +132,7 @@ export function EntryExitAnalyzer({
   const analyze = useCallback(
     async (targetSymbol: string) => {
       if (!targetSymbol) return;
+      const reqSeq = ++loadSeqRef.current;
       const sym = targetSymbol.toUpperCase().trim();
       setSymbol(sym);
       lastAnalyzedSymbolRef.current = sym;
@@ -144,6 +146,7 @@ export function EntryExitAnalyzer({
       setDividendData([]);
       const cachedFund = getCachedStockFundamentals(sym);
       if (cachedFund) setFundamentals(cachedFund);
+      else setFundamentals(null);
 
       // Check if Prime Pick already computed this plan within the last 5 minutes
       // Only accept if cached plan is a genuine full setup plan (with levels, technical & candles)
@@ -164,11 +167,12 @@ export function EntryExitAnalyzer({
           );
 
           if (isFullSetupPlan && isActionableBuySignal(cached.plan)) {
+            if (reqSeq !== loadSeqRef.current) return;
             const stock = (stocksRef.current || []).find((s: any) => s.symbol === sym) || { symbol: sym, ltp: cached.plan.ltp };
             setStockInfo(stock);
             if (!cachedFund) {
               fetchStockFundamentals(sym).then((f) => {
-                if (f) setFundamentals(f);
+                if (reqSeq === loadSeqRef.current && f) setFundamentals(f);
               }).catch(() => {});
             }
             const normalizedPlan = {
@@ -204,6 +208,7 @@ export function EntryExitAnalyzer({
           fetchRealBrokerAnalysis(sym, 30).catch(() => null),
           fetchStockFundamentals(sym).catch(() => null),
         ]);
+        if (reqSeq !== loadSeqRef.current) return;
 
         if (fundRes) {
           setFundamentals(fundRes);
@@ -235,14 +240,21 @@ export function EntryExitAnalyzer({
           candleList = stock.candles;
         }
 
-        // Lock to last confirmed completed trading session when market is halted or today had 0 trades
+        // Only slice today's bar when pre-open, weekend, holiday, halted, or 0-volume (keep completed post-3PM NPT bar!)
         const curMkt = getDetailedMarketStatus();
         const todayIso = getIsoDateInNPT();
         if (candleList.length > 1) {
           const lastBar = candleList[candleList.length - 1];
           const isTodayBar = lastBar && (lastBar.date === todayIso || String(lastBar.date).slice(0, 10) === todayIso);
           const isZeroVol = Number(lastBar?.volume || 0) === 0;
-          if (isTodayBar && (curMkt.isEmergencyHalt || !curMkt.isOpen || isZeroVol)) {
+          const shouldDropIncompleteTodayBar =
+            curMkt.isEmergencyHalt ||
+            curMkt.isPreOpen ||
+            curMkt.isHoliday ||
+            curMkt.isWeekend ||
+            (curMkt.isOpen && isZeroVol) ||
+            (!curMkt.isOpen && isZeroVol);
+          if (isTodayBar && shouldDropIncompleteTodayBar) {
             candleList = candleList.slice(0, -1);
           }
         }
@@ -251,6 +263,7 @@ export function EntryExitAnalyzer({
         if (!candleList || candleList.length < 20) {
           throw new Error(`Only ${candleList?.length || 0} real trading sessions available for ${sym} — at least 20 are required. Analysis unavailable.`);
         }
+        if (reqSeq !== loadSeqRef.current) return;
         setRawCandles(candleList);
 
         if (divRes?.dividends && Array.isArray(divRes.dividends)) {
@@ -368,10 +381,12 @@ export function EntryExitAnalyzer({
           } catch (_) {}
         }
       } catch (e: any) {
-        setError(e.message || 'Failed to analyze this stock.');
+        if (reqSeq === loadSeqRef.current) setError(e.message || 'Failed to analyze this stock.');
       } finally {
-        setLoading(false);
-        setLoadingStep('');
+        if (reqSeq === loadSeqRef.current) {
+          setLoading(false);
+          setLoadingStep('');
+        }
       }
     },
     []
@@ -808,7 +823,7 @@ export function EntryExitAnalyzer({
 
               <FestivalSeasonalityCard
                 festivalSeason={plan.festivalSeason}
-                rvol={plan.technical?.volume?.rvol}
+                rvol={plan.volume?.rvol ?? plan.technical?.volume?.rvol}
               />
 
               <GrahamSafetyCard

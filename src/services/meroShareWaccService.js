@@ -13,10 +13,10 @@
 export function normalizeScripSymbol(rawSymbol) {
   if (!rawSymbol || typeof rawSymbol !== 'string') return '';
   let clean = rawSymbol.trim().toUpperCase();
-  // Strip common NEPSE suffixes like .N0000, .P, _PO, _PR, etc.
+  // Strip internal demat notation like .N0000, but preserve distinct promoter classes (PO / PROM)
   clean = clean.replace(/\.N[0-9]+$/i, '');
-  clean = clean.replace(/[_\.](PO|PR|PROM|P)$/i, '');
-  return clean.replace(/[^A-Z0-9]/g, '');
+  clean = clean.replace(/[-\s]+/g, '_');
+  return clean.replace(/[^A-Z0-9_]/g, '');
 }
 
 /**

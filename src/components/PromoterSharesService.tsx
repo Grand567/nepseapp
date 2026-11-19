@@ -10,8 +10,8 @@ interface PromoterStock {
   name: string;
   sector: string;
   ltp: number;
-  promoterPct: number;
-  publicPct: number;
+  promoterPct: number | null;
+  publicPct: number | null;
   sharesOutstanding: number;
   promoterShares: number;
   publicShares: number;
@@ -70,21 +70,22 @@ export function PromoterSharesService() {
         const ltp = Number(s.ltp || s.closePrice || 0);
         const sec = apiItem?.sector || s.sector || 'Others';
 
-        // Authentic promoter holding: prioritize official filing disclosures, then live stock holding
+        // Authentic promoter holding: prioritize official filing disclosures, then live stock holding (no fabricated 51%/49% defaults)
         let promoterPct: number | null = null;
-        if (apiItem?.promoterRatio != null) {
-          promoterPct = Number(apiItem.promoterRatio);
-        } else if (s.promoterHolding && Number(s.promoterHolding) > 0) {
-          promoterPct = Number(s.promoterHolding);
+        if (apiItem?.promoterRatio != null && Number.isFinite(Number(apiItem.promoterRatio)) && Number(apiItem.promoterRatio) > 0) {
+          promoterPct = Math.min(99, Math.max(1, +Number(apiItem.promoterRatio).toFixed(1)));
+        } else if (s.promoterHolding != null && Number.isFinite(Number(s.promoterHolding)) && Number(s.promoterHolding) > 0) {
+          promoterPct = Math.min(99, Math.max(1, +Number(s.promoterHolding).toFixed(1)));
+        } else if (s.promoterSharePct != null && Number.isFinite(Number(s.promoterSharePct)) && Number(s.promoterSharePct) > 0) {
+          promoterPct = Math.min(99, Math.max(1, +Number(s.promoterSharePct).toFixed(1)));
         }
 
-        const validPromoterPct = promoterPct != null ? Math.min(95, Math.max(5, +promoterPct.toFixed(1))) : 51;
-        const publicPct = +(100 - validPromoterPct).toFixed(1);
+        const publicPct: number | null = promoterPct != null ? +(100 - promoterPct).toFixed(1) : null;
 
         const sharesM = Number(s.sharesOut || (apiItem?.totalShares ? parseInt(String(apiItem.totalShares).replace(/,/g, ''), 10) / 1e6 : (s.listedShares ? s.listedShares / 1e6 : 0)));
         const totalShares = Math.round(sharesM * 1e6);
-        const promoterShares = Math.round(totalShares * (validPromoterPct / 100));
-        const publicShares = totalShares - promoterShares;
+        const promoterShares = promoterPct != null ? Math.round(totalShares * (promoterPct / 100)) : 0;
+        const publicShares = promoterPct != null ? (totalShares - promoterShares) : 0;
 
         // Authentic lock-in tracking from verified filings
         let lockInStatus: 'Locked' | 'Critical Supply Shock' | 'Expiring Soon' | 'Unlocked' = 'Unlocked';
@@ -120,7 +121,7 @@ export function PromoterSharesService() {
         const riskLevel: 'Low' | 'Medium' | 'High' =
           lockInStatus === 'Critical Supply Shock' || lockInStatus === 'Expiring Soon'
             ? 'High'
-            : publicPct > 45
+            : (publicPct != null && publicPct > 45)
             ? 'Medium'
             : 'Low';
 
@@ -151,10 +152,12 @@ export function PromoterSharesService() {
         if (a.lockInStatus === 'Locked' && b.lockInStatus === 'Unlocked') return -1;
         if (b.lockInStatus === 'Locked' && a.lockInStatus === 'Unlocked') return 1;
         if (a.daysRemaining > 0 && b.daysRemaining > 0) return a.daysRemaining - b.daysRemaining;
-        return b.publicPct - a.publicPct;
+        return (b.publicPct ?? -1) - (a.publicPct ?? -1);
       });
 
       setStocks(processed);
+      setLoading(false);
+    }).catch(() => {
       setLoading(false);
     });
   }, []);
@@ -166,7 +169,7 @@ export function PromoterSharesService() {
       if (selectedFilter === 'critical') return s.lockInStatus === 'Critical Supply Shock';
       if (selectedFilter === 'locked') return s.lockInStatus === 'Locked';
       if (selectedFilter === 'expiring') return s.lockInStatus === 'Expiring Soon' || s.lockInStatus === 'Critical Supply Shock';
-      if (selectedFilter === 'high_float') return s.publicPct >= 40;
+      if (selectedFilter === 'high_float') return s.publicPct != null && s.publicPct >= 40;
       return true;
     });
   }, [stocks, search, selectedFilter]);
@@ -174,8 +177,9 @@ export function PromoterSharesService() {
   const criticalCount = useMemo(() => stocks.filter(s => s.lockInStatus === 'Critical Supply Shock').length, [stocks]);
   const expiringCount = useMemo(() => stocks.filter(s => s.lockInStatus === 'Expiring Soon' || s.lockInStatus === 'Critical Supply Shock').length, [stocks]);
   const avgPromoterHolding = useMemo(() => {
-    if (!stocks.length) return '0';
-    return (stocks.reduce((acc, s) => acc + s.promoterPct, 0) / stocks.length).toFixed(1);
+    const valid = stocks.filter(s => s.promoterPct != null && Number.isFinite(s.promoterPct));
+    if (!valid.length) return 'N/A';
+    return (valid.reduce((acc, s) => acc + Number(s.promoterPct), 0) / valid.length).toFixed(1);
   }, [stocks]);
 
   if (loading) return <Spinner text="Loading Promoter vs Public Shareholding Board…" />;
@@ -263,28 +267,34 @@ export function PromoterSharesService() {
                     Rs. {s.ltp}
                   </td>
                   <td className="p-3 w-40">
-                    <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
-                      <div
-                        className="bg-blue-500 h-full"
-                        style={{ width: `${s.promoterPct}%` }}
-                        title={`Promoter: ${s.promoterPct}%`}
-                      />
-                      <div
-                        className="bg-emerald-500 h-full"
-                        style={{ width: `${s.publicPct}%` }}
-                        title={`Public: ${s.publicPct}%`}
-                      />
-                    </div>
-                    <div className="flex justify-between text-[9px] text-slate-400 mt-1 font-sans">
-                      <span className="text-blue-400">Promoter {s.promoterPct}%</span>
-                      <span className="text-emerald-400">Public {s.publicPct}%</span>
-                    </div>
+                    {s.promoterPct != null && s.publicPct != null ? (
+                      <>
+                        <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
+                          <div
+                            className="bg-blue-500 h-full"
+                            style={{ width: `${s.promoterPct}%` }}
+                            title={`Promoter: ${s.promoterPct}%`}
+                          />
+                          <div
+                            className="bg-emerald-500 h-full"
+                            style={{ width: `${s.publicPct}%` }}
+                            title={`Public: ${s.publicPct}%`}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[9px] text-slate-400 mt-1 font-sans">
+                          <span className="text-blue-400">Promoter {s.promoterPct}%</span>
+                          <span className="text-emerald-400">Public {s.publicPct}%</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-[10px] text-slate-500 font-sans italic">Disclosure N/A</div>
+                    )}
                   </td>
                   <td className="p-3 text-right font-bold text-blue-400">
-                    {s.promoterPct}%
+                    {s.promoterPct != null ? `${s.promoterPct}%` : 'N/A'}
                   </td>
                   <td className="p-3 text-right font-bold text-emerald-400">
-                    {s.publicPct}%
+                    {s.publicPct != null ? `${s.publicPct}%` : 'N/A'}
                   </td>
                   <td className="p-3 text-center font-sans">
                     {s.lockInStatus === 'Critical Supply Shock' ? (

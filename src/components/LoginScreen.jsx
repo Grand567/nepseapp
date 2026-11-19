@@ -237,8 +237,8 @@ export default function LoginScreen({ onLogin }) {
           </form>
 
           <p style={{ fontSize: 12, color:'var(--text-muted)', textAlign:'center', marginTop:16, lineHeight:1.5 }}>
-            Your data is saved <strong style={{ color:'var(--bull)' }}>locally on this device only</strong>.<br />
-            No data is sent to any server.
+            Your MeroShare credentials stay <strong style={{ color:'var(--bull)' }}>encrypted locally on this device</strong>.<br />
+            Portfolio holdings &amp; preferences sync securely to your cloud account.
           </p>
 
           <p style={{ fontSize:12, color:'var(--text-muted)', textAlign:'center', marginTop:12 }}>
@@ -353,9 +353,9 @@ export default function LoginScreen({ onLogin }) {
         <ErrorBanner error={error} />
       </div>
 
-      <p style={{ marginTop:24, fontSize: 12, color:'var(--text-muted)', textAlign:'center', lineHeight:1.6, maxWidth:300 }}>
-        Email accounts are stored <strong style={{ color:'var(--bull)' }}>only on this device</strong>.<br />
-        No financial data is shared with third parties.
+      <p style={{ marginTop:24, fontSize: 12, color:'var(--text-muted)', textAlign:'center', lineHeight:1.6, maxWidth:320 }}>
+        MeroShare credentials stay <strong style={{ color:'var(--bull)' }}>encrypted locally on this device</strong>.<br />
+        Portfolio holdings &amp; preferences sync securely to your cloud account.
       </p>
     </Wrapper>
   );

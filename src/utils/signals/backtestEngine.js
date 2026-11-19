@@ -89,7 +89,8 @@ export function runComprehensiveBacktest({
 
       const buyCommission = calculateBrokerCommission(actualOrderCost);
       const buySebon = calculateSebonFee(actualOrderCost);
-      const totalOutflow = actualOrderCost + buyCommission + buySebon;
+      const buyDp = STATUTORY_FEES.dpCharge;
+      const totalOutflow = actualOrderCost + buyCommission + buySebon + buyDp;
 
       if (capital >= totalOutflow && shares >= 10) {
         capital -= totalOutflow;
@@ -103,7 +104,11 @@ export function runComprehensiveBacktest({
           entryDate: today.date,
           entryIdx: i,
           shares,
+          initialShares: shares,
           entryPrice: actualEntryPrice,
+          buyCommission,
+          buySebon,
+          buyDp,
           stopLoss,
           target1,
           target2,
@@ -157,9 +162,18 @@ export function runComprehensiveBacktest({
             const sellSebon = calculateSebonFee(actualProceedsRaw);
             const netProceeds = actualProceedsRaw - sellCommission - sellSebon - STATUTORY_FEES.dpCharge;
 
-            const costBasis = sharesToSell * pos.entryPrice;
+            const shareRatio = sharesToSell / (pos.initialShares || pos.shares || sharesToSell);
+            const buyCommAlloc = Number(((pos.buyCommission || 0) * shareRatio).toFixed(2));
+            const buySebonAlloc = Number(((pos.buySebon || 0) * shareRatio).toFixed(2));
+            const buyDpAlloc = Number(((pos.buyDp || 0) * shareRatio).toFixed(2));
+            const buyFeesPaid = Number((buyCommAlloc + buySebonAlloc + buyDpAlloc).toFixed(2));
+            const costBasis = Number((sharesToSell * pos.entryPrice + buyFeesPaid).toFixed(2));
             const grossGain = netProceeds - costBasis;
-            const cgt = grossGain > 0 ? Number((grossGain * STATUTORY_FEES.cgtShortTermRate).toFixed(2)) : 0;
+            const calendarDays = (pos.entryDate && today.date)
+              ? Math.floor((Date.parse(`${today.date}T00:00:00Z`) - Date.parse(`${pos.entryDate}T00:00:00Z`)) / 86400000)
+              : holdSessions;
+            const cgtRate = calendarDays > 365 ? STATUTORY_FEES.cgtLongTermRate : STATUTORY_FEES.cgtShortTermRate;
+            const cgt = grossGain > 0 ? Number((grossGain * cgtRate).toFixed(2)) : 0;
             const realizedPnl = Number((grossGain - cgt).toFixed(2));
 
             capital += (netProceeds - cgt);
@@ -174,9 +188,12 @@ export function runComprehensiveBacktest({
               returnPct: Number(((realizedPnl / costBasis) * 100).toFixed(2)),
               exitReason: 'Target 1 (50% Profit Booked)',
               holdSessions,
+              calendarDays,
               regime: pos.regime,
               cgtPaid: cgt,
-              commissionPaid: sellCommission
+              buyFeesPaid,
+              sellFeesPaid: Number((sellCommission + sellSebon + STATUTORY_FEES.dpCharge).toFixed(2)),
+              commissionPaid: Number((buyCommAlloc + sellCommission).toFixed(2))
             });
 
             pos.shares -= sharesToSell;
@@ -198,9 +215,17 @@ export function runComprehensiveBacktest({
         const sellSebon = calculateSebonFee(actualProceedsRaw);
         const netProceeds = actualProceedsRaw - sellCommission - sellSebon - STATUTORY_FEES.dpCharge;
 
-        const costBasis = pos.shares * pos.entryPrice;
+        const shareRatio = pos.shares / (pos.initialShares || pos.shares);
+        const buyCommAlloc = Number(((pos.buyCommission || 0) * shareRatio).toFixed(2));
+        const buySebonAlloc = Number(((pos.buySebon || 0) * shareRatio).toFixed(2));
+        const buyDpAlloc = Number(((pos.buyDp || 0) * shareRatio).toFixed(2));
+        const buyFeesPaid = Number((buyCommAlloc + buySebonAlloc + buyDpAlloc).toFixed(2));
+        const costBasis = Number((pos.shares * pos.entryPrice + buyFeesPaid).toFixed(2));
         const grossGain = netProceeds - costBasis;
-        const isLongTerm = holdSessions > 365;
+        const calendarDays = (pos.entryDate && today.date)
+          ? Math.floor((Date.parse(`${today.date}T00:00:00Z`) - Date.parse(`${pos.entryDate}T00:00:00Z`)) / 86400000)
+          : holdSessions;
+        const isLongTerm = calendarDays > 365;
         const cgtRate = isLongTerm ? STATUTORY_FEES.cgtLongTermRate : STATUTORY_FEES.cgtShortTermRate;
         const cgt = grossGain > 0 ? Number((grossGain * cgtRate).toFixed(2)) : 0;
         const realizedPnl = Number((grossGain - cgt).toFixed(2));
@@ -217,9 +242,12 @@ export function runComprehensiveBacktest({
           returnPct: Number(((realizedPnl / costBasis) * 100).toFixed(2)),
           exitReason,
           holdSessions,
+          calendarDays,
           regime: pos.regime,
           cgtPaid: cgt,
-          commissionPaid: sellCommission
+          buyFeesPaid,
+          sellFeesPaid: Number((sellCommission + sellSebon + STATUTORY_FEES.dpCharge).toFixed(2)),
+          commissionPaid: Number((buyCommAlloc + sellCommission).toFixed(2))
         });
       } else {
         remainingPositions.push(pos);

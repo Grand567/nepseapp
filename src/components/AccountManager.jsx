@@ -8,43 +8,10 @@ import { MEROSHARE_DP_LIST, pullMeroShareLivePortfolio } from '../services/meroS
 import { sanitizeMeroShareHoldings, stripHoldingForStorage, safeStorageSetItem } from '../utils/calculations';
 import { syncUserDataToCloud } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
-import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
+import { loadEncryptedUserProfiles, saveEncryptedUserProfiles, resolveActiveUserId } from '../utils/profileVaultStorage';
 
-// localStorage key for bulk IPO accounts
-const BULK_ACCOUNTS_KEY = 'nepse_hub_bulk_ipo_accounts';
-
-function loadLocalAccounts(userId = null) {
-  try {
-    const bulkRaw = localStorage.getItem(BULK_ACCOUNTS_KEY);
-    const userProfileKey = userId ? `nepse_hub_${userId}_profiles` : null;
-    const userRaw = userProfileKey ? localStorage.getItem(userProfileKey) : null;
-    const bulk = bulkRaw ? JSON.parse(bulkRaw).map(a => decryptProfileCredentials(a, userId || 'guest_local')) : [];
-    const userAccs = userRaw ? JSON.parse(userRaw).map(a => decryptProfileCredentials(a, userId || 'guest_local')) : [];
-
-    const merged = Array.isArray(bulk) ? [...bulk] : [];
-    if (Array.isArray(userAccs)) {
-      userAccs.forEach(acc => {
-        if (!acc) return;
-        const idx = merged.findIndex(m => (acc.boid && m.boid === acc.boid) || (acc.id && m.id === acc.id));
-        if (idx === -1) {
-          merged.push(acc);
-        } else if (acc.holdings?.length > 0 && (!merged[idx].holdings || merged[idx].holdings.length === 0)) {
-          merged[idx] = { ...merged[idx], ...acc };
-        }
-      });
-    }
-    return merged;
-  } catch {
-    return [];
-  }
-}
-
-function saveLocalAccounts(accounts, userId = 'guest_local') {
-  const encryptedAccounts = (accounts || []).map(a => encryptProfileCredentials(a, userId));
-  safeStorageSetItem(BULK_ACCOUNTS_KEY, encryptedAccounts);
-}
-
-export default function AccountManager({ userId = 'guest_local' }) {
+export default function AccountManager({ userId = null }) {
+  const activeUserId = resolveActiveUserId(userId);
   const [accounts, setAccounts] = useState([]);
   const [dpList, setDpList] = useState(MEROSHARE_DP_LIST);
   const [isLoading, setIsLoading] = useState(false);
@@ -68,28 +35,39 @@ export default function AccountManager({ userId = 'guest_local' }) {
   const isNative = Capacitor.isNativePlatform();
   const proxyBase = getProxyBase();
 
-  const fetchAccounts = () => {
+  const fetchAccounts = async () => {
     setIsLoading(true);
     setError('');
-    const local = loadLocalAccounts(userId);
-    setAccounts(local);
-    setIsLoading(false);
+    try {
+      const local = await loadEncryptedUserProfiles(activeUserId);
+      setAccounts(local);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
-    fetchAccounts();
+    let active = true;
+    loadEncryptedUserProfiles(activeUserId).then(local => {
+      if (active) setAccounts(local);
+    }).catch(() => {});
     fetchDpList();
 
-    const handleRefresh = () => fetchAccounts();
+    const handleRefresh = () => {
+      loadEncryptedUserProfiles(activeUserId).then(local => {
+        if (active) setAccounts(local);
+      }).catch(() => {});
+    };
     window.addEventListener('bulkAccountsChanged', handleRefresh);
     window.addEventListener('nepse_cloud_data_restored', handleRefresh);
     window.addEventListener('storage', handleRefresh);
     return () => {
+      active = false;
       window.removeEventListener('bulkAccountsChanged', handleRefresh);
       window.removeEventListener('nepse_cloud_data_restored', handleRefresh);
       window.removeEventListener('storage', handleRefresh);
     };
-  }, [userId]);
+  }, [activeUserId]);
 
   const fetchDpList = async () => {
     try {
@@ -152,34 +130,17 @@ export default function AccountManager({ userId = 'guest_local' }) {
     };
 
     try {
-      // Always save to localStorage first (works on native + web)
-      const existing = loadLocalAccounts(userId);
+      const existing = await loadEncryptedUserProfiles(activeUserId);
       const filtered = existing.filter(a => a.boid !== boid);
       const updated = [...filtered, newAccount];
-      saveLocalAccounts(updated);
+      await saveEncryptedUserProfiles(updated, activeUserId);
       setAccounts(updated);
 
-      // Also sync with Portfolio tab profiles
-      let updatedProfiles = updated;
-      try {
-        const profileKey = `nepse_hub_${userId}_profiles`;
-        const saved = localStorage.getItem(profileKey) || '[]';
-        const existingProfiles = JSON.parse(saved);
-        updatedProfiles = [...existingProfiles.filter(p => p.boid !== boid), newAccount];
-        const encryptedProfiles = updatedProfiles.map(p => encryptProfileCredentials(p, userId));
-        safeStorageSetItem(profileKey, JSON.stringify(encryptedProfiles));
-        window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(encryptedProfiles) }));
-        window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: encryptedProfiles } }));
-      } catch (localErr) {
-        console.warn('[AccountManager Sync]:', localErr.message);
-      }
-
       // Sync with cloud vault (sanitize: zero credentials uploaded to cloud)
-      if (userId && !userId.startsWith('guest')) {
+      if (activeUserId && !activeUserId.startsWith('guest')) {
         try {
-          const sanitizedProfiles = (updatedProfiles || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
-          const sanitizedBulk = (updated || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
-          syncUserDataToCloud(userId, { profiles: sanitizedProfiles, bulkAccounts: sanitizedBulk });
+          const sanitizedProfiles = (updated || []).map(({ password, crn, pin, transactionPin, vaultEnvelope, ...safe }) => safe);
+          syncUserDataToCloud(activeUserId, { profiles: sanitizedProfiles, bulkAccounts: sanitizedProfiles });
         } catch (_) {}
       }
 
@@ -236,7 +197,7 @@ export default function AccountManager({ userId = 'guest_local' }) {
           return fresh;
         });
 
-        const parsedHoldings = sanitizeMeroShareHoldings(mergedHoldings, userId, acc.id || acc.boid);
+        const parsedHoldings = sanitizeMeroShareHoldings(mergedHoldings, activeUserId, acc.id || acc.boid);
         const storedHoldings = parsedHoldings.map(h => stripHoldingForStorage(h)).filter(Boolean);
 
         const updatedAccount = {
@@ -246,28 +207,16 @@ export default function AccountManager({ userId = 'guest_local' }) {
           lastSyncedAt: Date.now()
         };
 
-        // Update bulk accounts
-        const existing = loadLocalAccounts(userId);
-        const updatedAccounts = existing.map(a => a.id === acc.id ? updatedAccount : a);
-        saveLocalAccounts(updatedAccounts, userId);
+        const existing = await loadEncryptedUserProfiles(activeUserId);
+        const updatedAccounts = existing.map(a => (a.id === acc.id || (acc.boid && a.boid === acc.boid)) ? updatedAccount : a);
+        await saveEncryptedUserProfiles(updatedAccounts, activeUserId);
         setAccounts(updatedAccounts);
 
-        // Update profiles with encrypted credentials in localStorage
-        const profileKey = `nepse_hub_${userId}_profiles`;
-        const saved = localStorage.getItem(profileKey) || '[]';
-        const existingProfiles = JSON.parse(saved);
-        const updatedProfiles = existingProfiles.map(p => p.boid === acc.boid || p.id === acc.id ? updatedAccount : p);
-        const encryptedProfiles = updatedProfiles.map(p => encryptProfileCredentials(p, userId));
-        safeStorageSetItem(profileKey, JSON.stringify(encryptedProfiles));
-        window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(encryptedProfiles) }));
-        window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: encryptedProfiles } }));
-
         // Sync with cloud vault (sanitize: zero credentials uploaded to cloud)
-        if (userId && !userId.startsWith('guest')) {
+        if (activeUserId && !activeUserId.startsWith('guest')) {
           try {
-            const sanitizedProfiles = (updatedProfiles || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
-            const sanitizedBulk = (updatedAccounts || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
-            syncUserDataToCloud(userId, { profiles: sanitizedProfiles, bulkAccounts: sanitizedBulk });
+            const sanitizedProfiles = (updatedAccounts || []).map(({ password, crn, pin, transactionPin, vaultEnvelope, ...safe }) => safe);
+            syncUserDataToCloud(activeUserId, { profiles: sanitizedProfiles, bulkAccounts: sanitizedProfiles });
           } catch (_) {}
         }
 
@@ -287,34 +236,16 @@ export default function AccountManager({ userId = 'guest_local' }) {
     setError('');
     setSuccess('');
 
-    // Remove from localStorage
-    const updated = loadLocalAccounts(userId).filter(a => a.id !== id);
-    saveLocalAccounts(updated);
+    const existing = await loadEncryptedUserProfiles(activeUserId);
+    const updated = existing.filter(a => a.id !== id);
+    await saveEncryptedUserProfiles(updated, activeUserId);
     setAccounts(updated);
 
-    // Sync Portfolio profiles — remove the deleted account
-    let filteredProfiles = updated;
-    try {
-      const profileKey = `nepse_hub_${userId}_profiles`;
-      const saved = localStorage.getItem(profileKey);
-      if (saved) {
-        const acc = accounts.find(a => a.id === id);
-        if (acc) {
-          const existing = JSON.parse(saved);
-          filteredProfiles = existing.filter(p => p.boid !== acc.boid);
-          safeStorageSetItem(profileKey, JSON.stringify(filteredProfiles));
-          window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(filteredProfiles) }));
-          window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: filteredProfiles } }));
-        }
-      }
-    } catch (_) {}
-
     // Sync with cloud vault (sanitize: zero credentials uploaded to cloud)
-    if (userId && !userId.startsWith('guest')) {
+    if (activeUserId && !activeUserId.startsWith('guest')) {
       try {
-        const sanitizedProfiles = (filteredProfiles || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
-        const sanitizedBulk = (updated || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
-        syncUserDataToCloud(userId, { profiles: sanitizedProfiles, bulkAccounts: sanitizedBulk });
+        const sanitizedProfiles = (updated || []).map(({ password, crn, pin, transactionPin, vaultEnvelope, ...safe }) => safe);
+        syncUserDataToCloud(activeUserId, { profiles: sanitizedProfiles, bulkAccounts: sanitizedProfiles });
       } catch (_) {}
     }
 

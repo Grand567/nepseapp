@@ -53,6 +53,7 @@ import {
   getDetailedMarketStatus,
   formatNptDateIso,
   getLastValidTradingDay,
+  isMarketOpen,
 } from "@/utils/nepseCalendar";
 import { getNepaliDate } from "@/utils/bikramSambat";
 import type {
@@ -266,7 +267,7 @@ const BIKRAM_SAMBAT_SEASONALITY = [
   { monthNp: "Ashwin (Sep–Oct)", regime: "Pre-Dashain Festive Cash Drain & Low Turnover", winRatePct: 41, avgReturnPct: -2.8, bias: "CAUTION" },
   { monthNp: "Kartik (Oct–Nov)", regime: "Post-Tihar Institutional Re-Accumulation", winRatePct: 56, avgReturnPct: 2.3, bias: "NEUTRAL" },
   { monthNp: "Mangsir (Nov–Dec)", regime: "Dividend Declaration & AGM Season Ignition", winRatePct: 74, avgReturnPct: 7.9, bias: "BULLISH" },
-  { monthNp: "Poush (Dec–Jan)", regime: "Book-Closure & Q2 Interest Settlement", winRatePct: 62, avgReturnPct: 4.0, bias: "BULLISH" },
+  { monthNp: "Poush (Dec–Jan)", regime: "Book-Closure & Q2 Interest Settlement", winRatePct: 40, avgReturnPct: -1.25, bias: "BEARISH" },
   { monthNp: "Magh (Jan–Feb)", regime: "AGM Completion & Post-Bonus Adjustment", winRatePct: 54, avgReturnPct: 1.8, bias: "NEUTRAL" },
   { monthNp: "Falgun (Feb–Mar)", regime: "Mid-Year Sector Rotation (Hydro & Microfinance)", winRatePct: 57, avgReturnPct: 2.9, bias: "NEUTRAL" },
   { monthNp: "Chaitra (Mar–Apr)", regime: "Q3 Quarter-End Margin Settlement", winRatePct: 46, avgReturnPct: -1.4, bias: "CAUTION" },
@@ -360,26 +361,33 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   );
 
   useEffect(() => {
-    fetch('/api/reconciliation/latest')
-      .then((r) => r.json())
+    let active = true;
+    const base = getProxyBase();
+    fetch(`${base}/api/reconciliation/latest`)
+      .then((r) => (r.ok ? r.json() : null))
       .then((res) => {
-        if (res?.success && res?.data) {
+        if (active && res?.success && res?.data) {
           setReconciliationAudit(res.data);
         }
       })
       .catch(() => {});
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    if (!resolvedSymbol) return;
-    fetch(`/api/stocks/${encodeURIComponent(resolvedSymbol)}/promoter-lockin`)
-      .then((r) => r.json())
+    let active = true;
+    setPromoterLockinData(null);
+    if (!resolvedSymbol) return () => { active = false; };
+    const base = getProxyBase();
+    fetch(`${base}/api/stocks/${encodeURIComponent(resolvedSymbol)}/promoter-lockin`)
+      .then((r) => (r.ok ? r.json() : null))
       .then((res) => {
-        if (res?.success && res?.data) {
+        if (active && res?.success && res?.data) {
           setPromoterLockinData(res.data);
         }
       })
       .catch(() => {});
+    return () => { active = false; };
   }, [resolvedSymbol]);
 
   const {
@@ -422,6 +430,12 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     liveFloorsheetRef.current = liveFloorsheetContracts;
   }, [liveFloorsheetContracts]);
 
+  // Reset live broker & floorsheet state on symbol switch to eliminate cross-stock leakage
+  useEffect(() => {
+    setLiveBrokerPayload(broker5DPayload || null);
+    setLiveFloorsheetContracts(rawFloorsheetContracts || []);
+  }, [resolvedSymbol]);
+
   useEffect(() => {
     if (broker5DPayload) setLiveBrokerPayload(broker5DPayload);
   }, [broker5DPayload]);
@@ -434,26 +448,29 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
 
   // ── Auto-fetch Floorsheet & Broker Data upon Past Session Date Selection ──
   useEffect(() => {
+    let active = true;
     if (activeSubfileDate && activeSubfileDate !== "ALL" && resolvedSymbol && resolvedSymbol !== 'UNSELECTED') {
       setIsLiveFloorsheetUpdating(true);
       fetchRealFloorsheet(resolvedSymbol, activeSubfileDate, 1, 1000)
         .then((res: any) => {
+          if (!active) return;
           const rows = res?.rows || res?.data || res?.contracts || [];
           if (Array.isArray(rows) && rows.length > 0) {
             setLiveFloorsheetContracts(rows);
           }
         })
         .catch(() => {})
-        .finally(() => setIsLiveFloorsheetUpdating(false));
+        .finally(() => { if (active) setIsLiveFloorsheetUpdating(false); });
 
       fetchRealBrokerAnalysis(resolvedSymbol, 1, { date: activeSubfileDate })
         .then((bRes: any) => {
-          if (bRes && (bRes.brokers || bRes.topBuyers)) {
+          if (active && bRes && (bRes.brokers || bRes.topBuyers)) {
             setLiveBrokerPayload(bRes);
           }
         })
         .catch(() => {});
     }
+    return () => { active = false; };
   }, [activeSubfileDate, resolvedSymbol]);
 
   useEffect(() => {
@@ -461,12 +478,6 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     if (!sym || sym === 'UNSELECTED') return;
 
     let isMounted = true;
-    const isMarketOpen = () => {
-      const now = new Date();
-      const utcMins = now.getUTCHours() * 60 + now.getUTCMinutes();
-      const nptMins = (utcMins + 5 * 60 + 45) % (24 * 60);
-      return nptMins >= 660 && nptMins <= 900; // Continuous session: 11:00 AM – 3:00 PM NPT
-    };
 
     const isRelevantTab =
       activeTab === 'BROKER_FLOW' ||
@@ -578,16 +589,16 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     ]
   );
 
-  const ltp = telemetry.overview.verifiedPrice ?? 500;
+  const ltp = telemetry.overview.verifiedPrice ?? Number(quoteData?.ltp || quoteData?.closePrice || selectedScrip?.ltp || 0);
   const dailyPrevClose = Number(
     quoteData?.previousClose ??
     quoteData?.prevClose ??
     selectedScrip?.previousClose ??
     selectedScrip?.prevClose ??
     historicalCandles?.[historicalCandles.length - 2]?.close ??
-    (ltp > 0 ? ltp : 500)
+    0
   );
-  const { floor: dailyLowerCircuit, ceiling: dailyUpperCircuit } = getCircuitLimits(ltp);
+  const { floor: dailyLowerCircuit, ceiling: dailyUpperCircuit } = getCircuitLimits(dailyPrevClose > 0 ? dailyPrevClose : ltp);
 
   // Statutory NEPSE Rupee Profit Simulator:
   // - 5 SEBON Commission Slabs (0.36%, 0.33%, 0.31%, 0.27%, 0.24% with Rs. 10 floor)
@@ -655,28 +666,34 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
 
   // Quantitative Stock Selection & Scoring Confluence Result
   const stockSelectionResult = useMemo(() => {
+    const epsVal = (telemetry as any)?.fundamentals?.eps ?? (quoteData as any)?.eps ?? (selectedScrip as any)?.eps ?? null;
+    const bvVal = (telemetry as any)?.fundamentals?.bookValue ?? (quoteData as any)?.bookValue ?? (selectedScrip as any)?.bookValue ?? null;
+    const volVal = Number(quoteData?.totalTradedQuantity || (quoteData as any)?.volume || (selectedScrip as any)?.volume || 0);
+    const turnVal = Number(quoteData?.totalTradedValue || (quoteData as any)?.turnover || (selectedScrip as any)?.turnover || (ltp > 0 ? ltp * volVal : 0));
+    const listedVal = Number((quoteData as any)?.listedShares || (selectedScrip as any)?.listedShares || 0) || null;
+    const pubPct = (quoteData as any)?.publicPercentage ?? (selectedScrip as any)?.publicPercentage ?? null;
     return evaluateStockSelection({
       stock: {
         symbol: resolvedSymbol,
         sector: selectedScrip?.sector || 'Unknown',
         ltp,
         prevClose: dailyPrevClose,
-        volume: Number(quoteData?.totalTradedQuantity || 25000),
-        turnover: Number(quoteData?.totalTradedValue || (ltp * 25000)),
-        eps: Number(telemetry.fundamentals?.eps ?? 22),
-        bookValue: Number(telemetry.fundamentals?.bookValue ?? 180),
-        npl: telemetry.fundamentals?.npl ?? null,
-        car: telemetry.fundamentals?.car ?? null,
-        listedShares: Number(quoteData?.listedShares || 10000000),
-        publicPercentage: Number(quoteData?.publicPercentage || 40)
+        volume: volVal,
+        turnover: turnVal,
+        eps: epsVal != null ? Number(epsVal) : null,
+        bookValue: bvVal != null ? Number(bvVal) : null,
+        npl: (telemetry as any)?.fundamentals?.npl ?? (quoteData as any)?.npl ?? null,
+        car: (telemetry as any)?.fundamentals?.car ?? (quoteData as any)?.car ?? null,
+        listedShares: listedVal,
+        publicPercentage: pubPct != null ? Number(pubPct) : null
       },
-      brokerSignals: { compositeScore: telemetry.smartMoney5D?.netAccumulationRatio ? Math.min(100, Math.max(0, 50 + telemetry.smartMoney5D.netAccumulationRatio)) : 65 },
+      brokerSignals: { compositeScore: telemetry.smartMoney5D?.netAccumulationRatio != null ? Math.min(100, Math.max(0, 50 + telemetry.smartMoney5D.netAccumulationRatio)) : null },
       technicalSignals: {
-        compositeScore: 65,
-        signals: { volatility: { atr14: (ltp * 0.035) } }
+        compositeScore: (telemetry as any)?.technical?.score ?? null,
+        signals: { volatility: { atr14: ltp > 0 ? (ltp * 0.035) : 0 } }
       },
-      fundamentalSignals: { compositeScore: (telemetry.fundamentals?.eps ?? 22) > 0 ? 75 : 30 },
-      marketSignals: { compositeScore: 65 }
+      fundamentalSignals: { compositeScore: epsVal != null ? (Number(epsVal) > 0 ? 75 : 30) : null },
+      marketSignals: { compositeScore: null }
     });
   }, [resolvedSymbol, selectedScrip, ltp, dailyPrevClose, quoteData, telemetry]);
 
@@ -685,7 +702,8 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
 
   useEffect(() => {
     let active = true;
-    if (!resolvedSymbol) return;
+    setInternalHoldings([]);
+    if (!resolvedSymbol) return () => { active = false; };
     fetchFromBackend(`/api/stocks/${encodeURIComponent(resolvedSymbol)}/smart-money?days=all`, 12000)
       .then((res: any) => {
         if (!active || !res) return;
@@ -3168,7 +3186,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                 ).map((p) => (
                   <tr key={p.symbol} className="hover:bg-slate-900/50">
                     <td className="p-2.5 font-bold text-white">{p.symbol}</td>
-                    <td className="p-2.5 text-right">Rs {(p.ltp ?? ltp).toLocaleString()}</td>
+                    <td className="p-2.5 text-right">{p.ltp != null ? `Rs ${Number(p.ltp).toLocaleString()}` : '—'}</td>
                     <td
                       className={`p-2.5 text-right font-bold ${
                         (p.pChange ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"

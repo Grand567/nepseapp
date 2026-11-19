@@ -90,7 +90,12 @@ export class ErrorBoundary extends React.Component {
             </button>
             {this.props.onNavigateDashboard && (
               <button 
-                onClick={this.props.onNavigateDashboard}
+                onClick={() => {
+                  this.handleReset();
+                  if (typeof this.props.onNavigateDashboard === 'function') {
+                    try { this.props.onNavigateDashboard(); } catch (_) {}
+                  }
+                }}
                 style={{
                   flex: 1,
                   minWidth: 140,

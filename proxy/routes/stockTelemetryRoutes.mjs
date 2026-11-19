@@ -272,8 +272,8 @@ export function handleStockTelemetry(req, res) {
                 ROUND(SUM(sell_amt) / NULLIF(SUM(sell_vol), 0), 2) AS avgSellPrice,
                 ROUND((SUM(buy_amt) + SUM(sell_amt)) / NULLIF(SUM(buy_vol) + SUM(sell_vol), 0), 2) AS vwap,
                 COUNT(*) AS trades,
-                1.0 AS anomalyScore,
-                ROUND(SUM(buy_vol + sell_vol) / 10) AS avgTicketKitta
+                0.0 AS anomalyScore,
+                ROUND((SUM(buy_vol) + SUM(sell_vol)) / NULLIF(COUNT(*), 0), 2) AS avgTicketKitta
               FROM daily_broker_ledger
               WHERE UPPER(symbol) = ?
                 ${targetDates.length > 0 ? `AND trade_date IN (${placeholders})` : ''}

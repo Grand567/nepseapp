@@ -7,14 +7,22 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { getProxyBase } from '../utils/proxyBase.js';
 import { setDynamicMarketHalt, clearDynamicMarketHalt, getDynamicMarketHalt, getIsoDateInNPT } from '../utils/nepseCalendar.js';
+export { setDynamicMarketHalt, clearDynamicMarketHalt, getDynamicMarketHalt };
+import { NEPSE_UNIVERSE } from '../data/nepseUniverse.js';
+import stockmapData from '../utils/stockmap.json' with { type: 'json' };
+
+const VALID_NEPSE_SYMBOLS = new Set([
+  ...Object.keys(stockmapData || {}).map((s) => String(s).toUpperCase().trim()),
+  ...(Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE.map((s) => String(s?.symbol || '').toUpperCase().trim()).filter(Boolean) : []),
+]);
 
 let cachedNews = null;
 let lastFetchTime = 0;
 const CACHE_TTL_MS = 6 * 60 * 1000; // 6 minutes cache
 
-export async function fetchMerolaganiNews() {
+export async function fetchMerolaganiNews(force = false) {
   const now = Date.now();
-  if (cachedNews && (now - lastFetchTime) < CACHE_TTL_MS) {
+  if (!force && cachedNews && (now - lastFetchTime) < CACHE_TTL_MS) {
     return cachedNews;
   }
 
@@ -108,48 +116,8 @@ export async function fetchMerolaganiNews() {
     console.warn('[MerolaganiNews] Scraper fallback failed:', err.message);
   }
 
-  // Fallback curated live market headlines with complete stories & paragraphs
-  return [
-    {
-      id: 'n1',
-      title: 'वाणिज्य बैंकहरूको लाभांश प्रस्ताव र वितरण योजना तीव्र गतिमा अघि बढ्दै',
-      headline: 'वाणिज्य बैंकहरूको लाभांश प्रस्ताव र वितरण योजना तीव्र गतिमा अघि बढ्दै',
-      source: 'MeroLagani',
-      date: 'Today',
-      url: 'https://merolagani.com/NewsList.aspx',
-      description: 'नेपाल राष्ट्र बैंकको स्वीकृति पश्चात् वाणिज्य बैंकहरूले आफ्ना शेयरधनीहरूका लागि लाभांश घोषणा गर्न थालेका छन्।',
-      paragraphs: [
-        'नेपाल राष्ट्र बैंकको स्वीकृति पश्चात् वाणिज्य बैंकहरूले आफ्ना शेयरधनीहरूका लागि आर्थिक वर्षको लाभांश घोषणा गर्न थालेका छन्।',
-        'बैंकहरूको पूँजी कोष सुदृढ बन्दै गएको र निष्कृय कर्जा नियन्त्रण उन्मुख रहेको वित्तीय विवरणहरूले देखाएका छन्। यसले शेयरबजारमा बैंकिङ्ग समूहमा लगानीकर्ताको आकर्षण बढाएको छ।'
-      ]
-    },
-    {
-      id: 'n2',
-      title: 'नेपाल राष्ट्र बैंकको मौद्रिक नीति समीक्षा: बैंकिङ प्रणालीमा तरलता सहज',
-      headline: 'नेपाल राष्ट्र बैंकको मौद्रिक नीति समीक्षा: बैंकिङ प्रणालीमा तरलता सहज',
-      source: 'ShareSansar',
-      date: 'Today',
-      url: 'https://sharesansar.com',
-      description: 'बैंकिङ प्रणालीमा अधिक तरलता कायम रहँदा अन्तरबैंक ब्याजदर र कर्जाको ब्याजदर न्यून विन्दुमा झरेको छ।',
-      paragraphs: [
-        'बैंकिङ प्रणालीमा अधिक तरलता कायम रहँदा अन्तरबैंक ब्याजदर र कर्जाको ब्याजदर न्यून विन्दुमा झरेको नेपाल राष्ट्र बैंकले जनाएको छ।',
-        'कर्जाको ब्याजदर एकल अंकमा झरेसँगै शेयर धितो कर्जा (मार्जिन लेन्डिङ) तथा उत्पादनशील क्षेत्रमा लगानी प्रवाह विस्तार हुन थालेको छ।'
-      ]
-    },
-    {
-      id: 'n3',
-      title: 'पूँजीबजार सुधार कार्यदलद्वारा नीतिगत सिफारिस: ब्रोकर कमिसन र मार्जिन प्रणाली आधुनिकिकरण',
-      headline: 'पूँजीबजार सुधार कार्यदलद्वारा नीतिगत सिफारिस: ब्रोकर कमिसन र मार्जिन प्रणाली आधुनिकिकरण',
-      source: 'ShareSansar',
-      date: 'Today',
-      url: 'https://sharesansar.com',
-      description: 'धितोपत्र बोर्ड (सेबोन) र नेप्सेद्वारा लगानीकर्ताको मनोबल उकास्न तथा आधुनिक कारोबार प्रणाली लागू गर्न तयारी।',
-      paragraphs: [
-        'धितोपत्र बोर्ड (सेबोन) र नेप्सेद्वारा लगानीकर्ताको मनोबल उकास्न तथा आधुनिक कारोबार प्रणाली लागू गर्न नयाँ कार्ययोजना अघि बढाइएको छ।',
-        'लगानीकर्ताहरूलाई अनलाइन ट्रेडिङ, रियल-टाइम सेटलमेन्ट र आधुनिक ब्रोकर सर्भिस सहज बनाउने दिशातर्फ काम भइरहेको सरोकारवालाहरूले बताएका छन्।'
-      ]
-    }
-  ];
+  // Do not fabricate placeholder "Today" headlines when live feeds are unreachable
+  return [];
 }
 
 /**
@@ -158,10 +126,10 @@ export async function fetchMerolaganiNews() {
 export function analyzePoliticalAndMarketPulse(newsArticles = []) {
   if (!Array.isArray(newsArticles) || newsArticles.length === 0) {
     return {
-      sentiment: 'Neutral / Supportive',
-      score: 65,
-      keyHighlights: ['NRB accommodative monetary stance continues', 'Sub-10% interest rate environment supporting equities'],
-      politicalTone: 'Political negotiations stable; policy continuity expected.'
+      sentiment: 'Unavailable',
+      score: null,
+      keyHighlights: [],
+      politicalTone: 'Live news feed unavailable.'
     };
   }
 
@@ -245,14 +213,14 @@ export const NEPALI_NAME_TO_SYMBOL = {
   'लुम्बिनी विकास': 'LBBL',
   'मन्जुश्री': 'MFIL',
   'गुहेश्वरी': 'GMFIL',
-  'गुडविल': 'GWFD',
+  'गुडविल': 'GFCL',
   'आइसिएफसी': 'ICFC',
   'श्री इन्भेष्टमेन्ट': 'SIFC',
   'पोखरा फाइनान्स': 'PFL',
   'जानकी': 'JFL',
   'सेन्ट्रल': 'CFCL',
   'प्रोग्रेसिभ': 'PROFL',
-  'रिलायन्स': 'RLF',
+  'रिलायन्स': 'RLFL',
   'मल्टिपर्पस': 'MPFL',
   'बेस्ट फाइनान्स': 'BFC',
   'छिमेक': 'CBBL',
@@ -288,10 +256,10 @@ export const NEPALI_NAME_TO_SYMBOL = {
   'आइजीआई': 'IGI',
   'प्रभु इन्स्योरेन्स': 'PRIN',
   'नेको': 'NIL',
-  'युनाइटेड अजोड': 'UAJIL',
+  'युनाइटेड अजोड': 'UAIL',
   'सिक्लेस': 'SIKLES',
   'सान्जेन': 'SJCL',
-  'रसुवागढी': 'RGHP',
+  'रसुवागढी': 'RHPL',
   'तामाकोशी': 'UPPER',
   'चिलिमे': 'CHCL',
   'बुटवल पावर': 'BPCL',
@@ -310,11 +278,22 @@ export const NEPALI_NAME_TO_SYMBOL = {
 
 export function resolveSymbolFromText(text) {
   if (!text) return null;
-  const symMatch = text.match(/\(([A-Z0-9]+)\)/) || text.match(/\b([A-Z]{3,6})\b/);
-  if (symMatch) return symMatch[1].toUpperCase();
+  const rawText = String(text);
+
+  const parenMatch = rawText.match(/\(([A-Z0-9]{2,10})\)/);
+  if (parenMatch) {
+    const candidate = parenMatch[1].toUpperCase().trim();
+    if (VALID_NEPSE_SYMBOLS.has(candidate)) return candidate;
+  }
+
+  const wordMatches = rawText.match(/\b[A-Z0-9]{2,10}\b/g) || [];
+  for (const rawWord of wordMatches) {
+    const candidate = rawWord.toUpperCase().trim();
+    if (VALID_NEPSE_SYMBOLS.has(candidate)) return candidate;
+  }
 
   for (const [nepaliName, sym] of Object.entries(NEPALI_NAME_TO_SYMBOL)) {
-    if (text.includes(nepaliName)) return sym;
+    if (rawText.includes(nepaliName)) return sym;
   }
   return null;
 }

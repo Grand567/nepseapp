@@ -1,5 +1,6 @@
 // src/components/AiGuruQuantitativeCard.tsx
 import React, { useEffect, useState, useCallback } from "react";
+import { getProxyBase } from "../utils/proxyBase";
 import {
   runAiQuantitativeAssessment,
   resolveValidNepseSymbol,
@@ -34,6 +35,7 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [analysisMarkdown, setAnalysisMarkdown] = useState<string>("");
   const [engineSource, setEngineSource] = useState<string>("");
+  const activeSymbolRef = React.useRef<string | null>(null);
 
   // Resolve real ticker without ever defaulting to "STOCK"
   const activeSymbol = resolveValidNepseSymbol(
@@ -46,15 +48,20 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
     ledgerTelemetry?.symbol
   );
 
+  activeSymbolRef.current = activeSymbol;
+
   const executeAssessment = useCallback(async () => {
     if (!activeSymbol) {
       setAssessment(null);
       setAnalysisMarkdown("");
       return;
     }
+    const currentTarget = activeSymbol;
+    setAssessment(null);
+    setAnalysisMarkdown("");
     setLoading(true);
     try {
-      const response = await fetch("/api/ai-guru/assess", {
+      const response = await fetch(`${getProxyBase()}/api/ai-guru/assess`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -68,6 +75,7 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
 
       if (response.ok) {
         const data = await response.json();
+        if (activeSymbolRef.current !== currentTarget) return;
         setAssessment(data);
         setAnalysisMarkdown(data.analysisMarkdown || data.errorMarkdown || "");
         setEngineSource(data.engine || "DETERMINISTIC_QUANT");
@@ -86,6 +94,7 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
         ledgerTelemetry,
         broker5DRawPayload: broker5DPayload,
       });
+      if (activeSymbolRef.current !== currentTarget) return;
       setAssessment(localResult);
       setAnalysisMarkdown(localResult.errorMarkdown || "");
       setEngineSource("DETERMINISTIC_QUANT");
@@ -93,7 +102,9 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
         onAssessmentReady(localResult);
       }
     } finally {
-      setLoading(false);
+      if (activeSymbolRef.current === currentTarget) {
+        setLoading(false);
+      }
     }
   }, [activeSymbol, quoteData, historicalCandles, ledgerTelemetry, broker5DPayload, onAssessmentReady]);
 
@@ -237,38 +248,51 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
         </div>
 
         {/* 2. Excursion (MFE / MAE) */}
-        <div style={{
-          borderRadius: 10,
-          background: 'rgba(30, 41, 59, 0.65)',
-          padding: 10,
-          border: '1px solid rgba(255, 255, 255, 0.08)'
-        }}>
-          <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700 }}>Excursion (MFE / MAE)</div>
-          <div style={{ fontSize: 13, fontWeight: 800, marginTop: 3 }}>
-            <span style={{ color: '#34d399' }}>+{m.mfePct.toFixed(2)}%</span>
-            <span style={{ color: '#64748b', margin: '0 4px' }}>/</span>
-            <span style={{ color: '#fb7185' }}>{m.maePct.toFixed(2)}%</span>
-          </div>
-          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-            NEPSE Alpha: {m.nepseAlphaPct >= 0 ? '+' : ''}{m.nepseAlphaPct.toFixed(2)}%
-          </div>
-        </div>
+        {(() => {
+          const hasTelemetry = Boolean(m.mfePct !== 0 || m.maePct !== 0 || m.nepseAlphaPct !== 0 || m.avgTicketKitta > 0);
+          return (
+            <>
+              <div style={{
+                borderRadius: 10,
+                background: 'rgba(30, 41, 59, 0.65)',
+                padding: 10,
+                border: '1px solid rgba(255, 255, 255, 0.08)'
+              }}>
+                <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700 }}>Excursion (MFE / MAE)</div>
+                <div style={{ fontSize: 13, fontWeight: 800, marginTop: 3 }}>
+                  {hasTelemetry ? (
+                    <>
+                      <span style={{ color: '#34d399' }}>+{m.mfePct.toFixed(2)}%</span>
+                      <span style={{ color: '#64748b', margin: '0 4px' }}>/</span>
+                      <span style={{ color: '#fb7185' }}>{m.maePct.toFixed(2)}%</span>
+                    </>
+                  ) : (
+                    <span style={{ color: '#64748b' }}>— <span style={{ fontSize: 10, fontWeight: 500 }}>(Awaiting Sync)</span></span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                  NEPSE Alpha: {hasTelemetry ? `${m.nepseAlphaPct >= 0 ? '+' : ''}${m.nepseAlphaPct.toFixed(2)}%` : '—'}
+                </div>
+              </div>
 
-        {/* 3. Broker Anomaly Score */}
-        <div style={{
-          borderRadius: 10,
-          background: 'rgba(30, 41, 59, 0.65)',
-          padding: 10,
-          border: '1px solid rgba(255, 255, 255, 0.08)'
-        }}>
-          <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700 }}>Broker Anomaly Score</div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#818cf8', marginTop: 3 }}>
-            {m.brokerAnomalyScore.toFixed(2)}x Baseline
-          </div>
-          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-            Avg Ticket: {Math.round(m.avgTicketKitta)} kitta
-          </div>
-        </div>
+              {/* 3. Broker Anomaly Score */}
+              <div style={{
+                borderRadius: 10,
+                background: 'rgba(30, 41, 59, 0.65)',
+                padding: 10,
+                border: '1px solid rgba(255, 255, 255, 0.08)'
+              }}>
+                <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700 }}>Broker Anomaly Score</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#818cf8', marginTop: 3 }}>
+                  {hasTelemetry ? `${m.brokerAnomalyScore.toFixed(2)}x Baseline` : '— (Neutral)'}
+                </div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                  Avg Ticket: {hasTelemetry && m.avgTicketKitta > 0 ? `${Math.round(m.avgTicketKitta)} kitta` : '—'}
+                </div>
+              </div>
+            </>
+          );
+        })()}
 
         {/* 4. 5D Smart Money Regime */}
         <div style={{

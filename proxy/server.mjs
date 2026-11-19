@@ -19,7 +19,7 @@ import { getLiveIpoListings } from './ipoHelper.js';
 import { predictIndexDirection, scoreAllStocks, getScoredNewsSentiment, predictMultiHorizonProbabilities } from './quant/predictorEngine.mjs';
 import { getMacroFeatures, getPoliticalEventFlag, computeStockFeatures } from './quant/featureEngine.mjs';
 import { setNewsCache } from './quant/newsCache.mjs';
-import { setMacroCache } from './quant/macroCache.mjs';
+import { setMacroCache, getMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
 import { requireAdminSecret, isValidAdminRequest } from './middleware/requireAdminSecret.mjs';
 import { requirePortfolioAuth } from './middleware/requirePortfolioAuth.mjs';
@@ -85,6 +85,8 @@ import {
   formatBroker58RadarHtml,
   dispatchTop5Broker58Breakouts,
   dispatchSpecialTrackBTelegramMessage,
+  runDailyStockSelectionGuideAndDispatch,
+  dispatchScheduledDailySelectionGuide,
   handleIncomingTelegramUpdate,
   validateWebhookSecretToken,
   getTelegramWebhookSecretToken,
@@ -98,8 +100,16 @@ import {
   saveDiscordConfig,
   testDiscordWebhook,
   sendDiscordSmartAlert,
-  sendDiscordPrimePickAlert
+  sendDiscordPrimePickAlert,
+  isValidDiscordWebhookUrl
 } from './discordNotifier.mjs';
+import { isLoopbackRequest, createCorsOptions, CORS_DEFAULTS } from './utils/corsConfig.mjs';
+import {
+  generateServerLicenseKey,
+  redeemServerLicenseKey,
+  getServerLicenseStatus,
+  revokeServerLicenseStatus
+} from './utils/licenseServerEngine.mjs';
 import { assembleScripDossier, buildAgentAnalysisPrompt } from './agentTools.mjs';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseTradingDay, formatNptDateIso, setLiveMarketOverride, generateTradingDaysSequence, getLastValidTradingDay, isMarketOpen, latestTradingSession, tradingDayWindow, getAppNow, setAppFakeNow } from '../src/utils/nepseCalendar.js';
 import { getKathmanduTradingStatus } from './utils/kathmanduTime.mjs';
@@ -229,66 +239,10 @@ app.set('trust proxy', 1);
 // ── A7 Security Fix: Restrict CORS to known front-end origins only.
 // The wildcard '*' was removed because this server proxies credentialled
 // MeroShare/CDSC sessions — open CORS allows any web page to abuse it.
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
-  .split(',')
-  .map(o => o.trim())
-  .filter(Boolean);
-
-const CORS_DEFAULTS = [
-  'https://nepseapp.onrender.com',
-  'https://drabyashree-nepse-hub6936.vercel.app',
-  'https://nepse-hub.vercel.app',
-  'https://drabyashree-nepse-hub-2347.vercel.app',
-  'https://drabyashree-nepse-hub-11ef9.firebaseapp.com',
-  'https://drabyashree-nepse-hub-11ef9.web.app',
-  'http://localhost:5173',  // Vite dev server
-  'http://127.0.0.1:5173',
-  'http://localhost:5000',  // local proxy dev
-  'http://127.0.0.1:5000',
-  'http://localhost:4173',  // Vite preview
-  'http://127.0.0.1:4173',
-  'http://localhost:3000',  // Local dev server
-  'http://127.0.0.1:3000',
-  'capacitor://localhost',  // Capacitor Android WebView
-  'http://localhost',
-  'https://localhost',
-  'http://127.0.0.1',
-  'https://127.0.0.1'
-];
-
-const ALL_ALLOWED = [...new Set([...CORS_DEFAULTS, ...ALLOWED_ORIGINS])];
-const ALLOWED_SET = new Set(ALL_ALLOWED);
-
-const corsOptions = {
-  origin: (origin, cb) => {
-    // Allow server-to-server (no origin), local origins, and LAN subnets
-    if (
-      !origin ||
-      ALLOWED_SET.has(origin) ||
-      /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin)
-    ) {
-      return cb(null, true);
-    }
-    console.warn(`[CORS] Blocked origin: ${origin}`);
-    cb(new Error(`CORS policy: origin '${origin}' not allowed`));
-  },
-  credentials: true,
-  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'x-api-key',
-    'x-openrouter-key',
-    'x-glm-key',
-    'x-no-compression',
-    'Cache-Control',
-    'Pragma',
-    'X-Requested-With',
-    'Accept',
-    'Origin'
-  ],
-  optionsSuccessStatus: 204
-};
+// Authentic domains maintained in corsConfig.mjs:
+//   'drabyashree-nepse-hub6936.vercel.app', 'nepse-hub.vercel.app'
+const corsOptions = createCorsOptions();
+void CORS_DEFAULTS;
 
 app.use(cors(corsOptions));
 
@@ -324,20 +278,9 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '25mb' }));
-app.use('/api/sync', syncRouter);
-app.use('/api/ai-guru', aiGuruRouter);
-app.use('/api/floorsheet/hub', floorsheetHubRouter);
-app.get(['/api/floorsheet/stream', '/floorsheet/stream'], (req, res, next) => {
-  req.url = '/stream';
-  floorsheetHubRouter(req, res, next);
-});
-app.use(['/api/stocks', '/api/stock', '/api/stock-telemetry'], stockTelemetryRouter);
-app.use('/api/signals', signalTrackRecordRouter);
-app.use('/api', radarRouter);
-app.use('/admin', radarRouter);
 
-// ── A7: Rate limiting — prevents API abuse and protects upstream data sources ──
-// General API: 600 req/min per IP (supports continuous background live tickers)
+// ── A7: Rate limiting mounted ABOVE all API/Admin routers ──
+// General API: 600 req/min per socket-verified IP (supports continuous background live tickers)
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 600,
@@ -345,8 +288,7 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, error: 'Rate limit exceeded. Please wait a minute.' },
   skip: (req) => {
-    const ip = req.ip || req.connection?.remoteAddress || '';
-    if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost') return true;
+    if (isLoopbackRequest(req)) return true;
     if (req.path === '/api/ping' || req.path === '/ping' || req.path === '/health' || req.path === '/api/health') return true;
     if (
       req.path.startsWith('/api/market-indices') ||
@@ -367,16 +309,25 @@ const scrapeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many requests to data endpoints. Please wait.' },
-  skip: (req) => {
-    const ip = req.ip || req.connection?.remoteAddress || '';
-    if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost') return true;
-    return false;
-  }
+  skip: (req) => isLoopbackRequest(req)
 });
 app.use('/api', apiLimiter);
+app.use('/admin', apiLimiter);
 app.use('/api/price-history', scrapeLimiter);
 app.use('/api/floorsheet', scrapeLimiter);
 app.use('/api/broker-analysis', scrapeLimiter);
+
+app.use('/api/sync', syncRouter);
+app.use('/api/ai-guru', aiGuruRouter);
+app.use('/api/floorsheet/hub', floorsheetHubRouter);
+app.get(['/api/floorsheet/stream', '/floorsheet/stream'], (req, res, next) => {
+  req.url = '/stream';
+  floorsheetHubRouter(req, res, next);
+});
+app.use(['/api/stocks', '/api/stock', '/api/stock-telemetry'], stockTelemetryRouter);
+app.use('/api/signals', signalTrackRecordRouter);
+app.use('/api', radarRouter);
+app.use('/admin', radarRouter);
 
 // ── A8: Reusable symbol sanitizer ─────────────────────────────────────────────
 // Validates that a stock symbol contains only safe characters (letters + digits,
@@ -862,15 +813,63 @@ app.get(['/api/admin/data-freshness', '/api/system/data-freshness'], (req, res) 
   res.json(dataFreshnessTracker.getStatus());
 });
 
-// Fake Clock Diagnostic & Replay Control Endpoint
-app.get('/api/test/fake-clock', (req, res) => {
+// ── PRO LICENSE VERIFICATION & ADMIN KEY ISSUANCE ROUTES (BUG-046) ──
+app.post('/api/admin/license/generate', requireAdminSecret, (req, res) => {
+  try {
+    const { deviceId, planDuration = '1m', nonce = null } = req.body || {};
+    const key = generateServerLicenseKey({ deviceId, planDuration, nonce });
+    return res.json({ success: true, key, deviceId, planDuration });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/license/redeem', (req, res) => {
+  try {
+    const { key, deviceId } = req.body || {};
+    const result = redeemServerLicenseKey(key, deviceId);
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/license/status', (req, res) => {
+  try {
+    const deviceId = String(req.query?.deviceId || '').trim();
+    const subscription = getServerLicenseStatus(deviceId);
+    return res.json({ success: true, subscription });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/license/revoke', requireAdminSecret, (req, res) => {
+  try {
+    const deviceId = String(req.body?.deviceId || '').trim();
+    const subscription = revokeServerLicenseStatus(deviceId);
+    return res.json({ success: true, subscription });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Fake Clock Diagnostic & Replay Control Endpoint (Strictly disabled in production & gated by admin secret)
+function guardFakeClockEnv(req, res, next) {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ success: false, error: 'Not found' });
+  }
+  return next();
+}
+
+app.get('/api/test/fake-clock', guardFakeClockEnv, requireAdminSecret, (req, res) => {
   res.json({
     fakeNow: process.env.APP_FAKE_NOW || null,
     appNow: getAppNow().toISOString()
   });
 });
 
-app.post('/api/test/fake-clock', (req, res) => {
+app.post('/api/test/fake-clock', guardFakeClockEnv, requireAdminSecret, (req, res) => {
   const { fakeNow } = req.body || {};
   if (fakeNow) {
     setAppFakeNow(fakeNow);
@@ -884,7 +883,7 @@ app.post('/api/test/fake-clock', (req, res) => {
   });
 });
 
-app.delete('/api/test/fake-clock', (req, res) => {
+app.delete('/api/test/fake-clock', guardFakeClockEnv, requireAdminSecret, (req, res) => {
   setAppFakeNow(null);
   res.json({
     success: true,
@@ -2049,12 +2048,10 @@ app.post('/api/meroshare/login', async (req, res) => {
     }
 
     if (!token) {
-      console.log('[meroshare/login] Full response data:', JSON.stringify(response.data));
-      console.log('[meroshare/login] Full response headers:', JSON.stringify(response.headers));
+      console.warn('[meroshare/login] Auth succeeded without token; status:', response.status);
       return res.status(401).json({
         success: false,
-        message: 'Login succeeded but no token found. Check credentials.',
-        raw: response.data,
+        message: 'Login succeeded but no token found. Check credentials.'
       });
     }
     console.log('[meroshare/login] Token acquired successfully.');
@@ -2175,8 +2172,12 @@ app.post('/api/meroshare/own-detail', async (req, res) => {
 });
 
 /* ENDPOINT 9 — Get active IPO issues from CDSC */
-app.get('/api/meroshare/current-issues', async (req, res) => {
-  const { token } = req.query;
+async function handleMeroShareCurrentIssues(req, res) {
+  if (req.query?.token) {
+    return res.status(400).json({ success: false, message: 'Tokens are not permitted in URL query parameters. Pass Authorization header or use POST body.' });
+  }
+  const rawAuth = req.body?.token || req.headers?.authorization || '';
+  const token = String(rawAuth || '').trim();
   if (!token) {
     return res.status(400).json({ success: false, message: 'Auth token is required.' });
   }
@@ -2202,79 +2203,29 @@ app.get('/api/meroshare/current-issues', async (req, res) => {
     console.error('[meroshare/current-issues] Error:', status, msg);
     res.status(status || 500).json({ success: false, message: msg || 'Failed to fetch current issues.', status });
   }
-});
+}
 
-/* ENDPOINT 9.05 — Get active IPO issues by logging in (supporting web client fallback) */
+app.get('/api/meroshare/current-issues', handleMeroShareCurrentIssues);
+app.post('/api/meroshare/current-issues', handleMeroShareCurrentIssues);
+
+/* ENDPOINT 9.05 — Public live IPO listings fallback only (no query credentials) */
 app.get('/api/meroshare/ipos', async (req, res) => {
-  const { clientId, username, password, token } = req.query;
-  
-  try {
-    const client = await createMeroShareSession();
-    await primeSession(client);
-    
-    let sessionToken = token;
-    if (!sessionToken && clientId && username && password) {
-      const loginResponse = await client.post(`${MEROSHARE_BASE}/auth/`, {
-        clientId: Number(clientId),
-        username,
-        password
-      }, {
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (isWafBlocked(loginResponse)) {
-        return res.status(503).json({ success: false, message: 'MeroShare security firewall blocked the login request. Please try again.' });
-      }
-
-      const authHeaderKey = Object.keys(loginResponse.headers).find(k => k.toLowerCase() === 'authorization');
-      sessionToken = loginResponse.data?.token || loginResponse.data?.Authorization || loginResponse.data?.accessToken || (authHeaderKey ? loginResponse.headers[authHeaderKey] : null);
-      if (sessionToken && typeof sessionToken === 'string' && !sessionToken.startsWith('Bearer ')) {
-        sessionToken = `Bearer ${sessionToken}`;
-      }
-    }
-    
-    if (!sessionToken) {
-      // Fallback: return live open IPO listings without requiring credentials
-      try {
-        const liveData = await getLiveIpoListings();
-        if (liveData && liveData.length > 0) {
-          return res.json({ success: true, data: liveData, source: 'live-listings' });
-        }
-      } catch (_) {}
-      return res.status(400).json({ success: false, message: 'Auth token or credentials (clientId, username, password) are required.' });
-    }
-
-    const response = await client.get(`${MEROSHARE_BASE}/companyShare/currentIssue`, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': sessionToken,
-      },
+  if (req.query?.username || req.query?.password || req.query?.token) {
+    return res.status(400).json({
+      success: false,
+      message: 'Credentials or tokens are not permitted in URL query parameters. Use POST /api/meroshare/ipos.'
     });
-
-    if (isWafBlocked(response)) {
-      return res.status(503).json({ success: false, message: 'MeroShare WAF blocked the request.' });
+  }
+  try {
+    const liveData = await getLiveIpoListings();
+    if (liveData && liveData.length > 0) {
+      return res.json({ success: true, data: liveData, source: 'live-listings' });
     }
-
-    // Standardize to the format expected by IPOList
-    const mapped = (Array.isArray(response.data) ? response.data : []).map(item => ({
-      id: item.companyShareId,
-      name: item.companyName,
-      scrip: item.scrip || '',
-      type: item.shareTypeName || 'IPO',
-      status: computeIpoStatus(item.issueCloseDate || item.closeDate, item.issueOpenDate || item.openDate),
-      minKitta: item.minKitta || 10,
-      maxKitta: item.maxKitta || 10000,
-      amountPerShare: item.amountPerShare || 100,
-      openDate: item.issueOpenDate || '',
-      closeDate: item.issueCloseDate || '',
-    }));
-
-    res.json({ success: true, data: mapped });
+    return res.status(400).json({ success: false, message: 'No active IPOs returned; authenticate with POST /api/meroshare/ipos.' });
   } catch (error) {
     const status = error.response?.status;
-    const msg = error.response?.data?.message || error.response?.data || error.message;
-    console.error('[meroshare/ipos] Error:', status, msg);
-    res.status(status || 500).json({ success: false, message: msg || 'Failed to fetch current issues.', status });
+    console.error('[meroshare/ipos GET] Error:', status || error.message);
+    return res.status(status || 500).json({ success: false, message: 'Failed to fetch IPO listings.' });
   }
 });
 
@@ -2439,8 +2390,11 @@ app.post('/api/meroshare/application-report', async (req, res) => {
 });
 
 /* ENDPOINT 9.2 — Get user-specific applicable issues from CDSC */
-app.get('/api/meroshare/applicable-issues', async (req, res) => {
-  const { token } = req.query;
+async function handleApplicableIssues(req, res) {
+  if (req.query?.token) {
+    return res.status(400).json({ success: false, message: 'Auth token must not be passed in URL query parameters.' });
+  }
+  const token = req.headers?.authorization || req.body?.token;
   if (!token) {
     return res.status(400).json({ success: false, message: 'Auth token is required.' });
   }
@@ -2466,7 +2420,9 @@ app.get('/api/meroshare/applicable-issues', async (req, res) => {
     console.error('[meroshare/applicable-issues] Error:', status, msg);
     res.status(status || 500).json({ success: false, message: msg || 'Failed to fetch applicable issues.', status });
   }
-});
+}
+app.get('/api/meroshare/applicable-issues', handleApplicableIssues);
+app.post('/api/meroshare/applicable-issues', handleApplicableIssues);
 
 /* ENDPOINT 9.5 — Submit IPO Application */
 app.post('/api/meroshare/apply', async (req, res) => {
@@ -2911,10 +2867,10 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
     paidUpCapital: 0,
     npl: null,
     roe: 0,
-    publicShares: 0,
-    publicPercentage: 0,
-    promoterShares: 0,
-    promoterPercentage: 0,
+    publicShares: null,
+    publicPercentage: null,
+    promoterShares: null,
+    promoterPercentage: null,
     listingDate: '',
     isin: '',
     fiscalYear: '',
@@ -2928,6 +2884,10 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
     if (nepseData) {
       const daily = nepseData.securityDailyTradeDto || {};
       const sec = nepseData.security || {};
+      const toOptPos = (val) => {
+        const n = parseFloat(val);
+        return Number.isFinite(n) && n > 0 ? n : null;
+      };
       detail.companyName = sec.securityName || nepseData.companyName || symbol;
       detail.high52w = parseFloat(daily.fiftyTwoWeekHigh || 0);
       detail.low52w = parseFloat(daily.fiftyTwoWeekLow || 0);
@@ -2941,10 +2901,10 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
       detail.sharesOutstanding = parseFloat(nepseData.stockListedShares || 0);
       detail.paidUpCapital = parseFloat(nepseData.paidUpCapital || 0);
       detail.marketCap = parseFloat(nepseData.marketCapitalization || (detail.marketPrice * detail.listedShares) || 0);
-      detail.publicShares = parseFloat(nepseData.publicShares || 0);
-      detail.publicPercentage = parseFloat(nepseData.publicPercentage || 0);
-      detail.promoterShares = parseFloat(nepseData.promoterShares || 0);
-      detail.promoterPercentage = parseFloat(nepseData.promoterPercentage || 0);
+      detail.publicShares = toOptPos(nepseData.publicShares);
+      detail.publicPercentage = toOptPos(nepseData.publicPercentage);
+      detail.promoterShares = toOptPos(nepseData.promoterShares);
+      detail.promoterPercentage = toOptPos(nepseData.promoterPercentage);
       detail.listingDate = sec.listingDate || '';
       detail.isin = sec.isin || '';
       detail.sector = sec.companyId?.sectorMaster?.sectorDescription || sec.instrumentType?.description || '';
@@ -3771,7 +3731,7 @@ app.get('/api/floorsheet/daily-archive', async (req, res) => {
   }
 });
 
-app.post('/api/floorsheet/download-daily', async (req, res) => {
+app.post('/api/floorsheet/download-daily', requireAdminSecret, async (req, res) => {
   try {
     const targetDate = String(req.body?.date || req.query?.date || '').trim();
     const force = req.body?.force === true || req.query?.force === 'true';
@@ -3822,7 +3782,7 @@ app.get('/api/floorsheet/cloud/status', async (req, res) => {
   }
 });
 
-app.post('/api/floorsheet/cloud/sync', async (req, res) => {
+app.post('/api/floorsheet/cloud/sync', requireAdminSecret, async (req, res) => {
   try {
     const provider = getActiveCloudProvider();
     if (provider === 'LOCAL_ONLY') {
@@ -3838,7 +3798,7 @@ app.post('/api/floorsheet/cloud/sync', async (req, res) => {
   }
 });
 
-app.post('/api/floorsheet/cloud/upload/:date', async (req, res) => {
+app.post('/api/floorsheet/cloud/upload/:date', requireAdminSecret, async (req, res) => {
   try {
     const targetDate = String(req.params.date || '').trim();
     const uploadResult = await uploadDailyFloorsheetToCloud(targetDate);
@@ -3932,10 +3892,7 @@ app.get('/api/ledger/subfiles/date/:date', (req, res) => {
     // Fast-path: Check if pre-compressed gz exists in index
     if (acceptEncoding.includes('gzip')) {
       const index = readHistoricalSubfilesIndex();
-      let entry = index?.subfiles?.find(s => s.session_date === dateStr);
-      if (!entry && index?.subfiles?.length > 0) {
-        entry = index.subfiles[0];
-      }
+      const entry = index?.subfiles?.find(s => s.session_date === dateStr);
       if (entry?.file_gz_path && fs.existsSync(entry.file_gz_path)) {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Encoding', 'gzip');
@@ -3943,10 +3900,7 @@ app.get('/api/ledger/subfiles/date/:date', (req, res) => {
       }
     }
 
-    let subfile = readHistoricalSubfile(dateStr);
-    if (!subfile) {
-      subfile = readHistoricalSubfile(1);
-    }
+    const subfile = readHistoricalSubfile(dateStr);
     if (!subfile) return res.status(404).json({ success: false, error: `Subfile for date ${dateStr} not found` });
     return res.json(subfile);
   } catch (err) {
@@ -4141,7 +4095,7 @@ app.get('/api/realtime/stream', (req, res) => {
   });
 });
 
-app.post('/api/today/tick', (req, res) => {
+app.post('/api/today/tick', requireAdminSecret, (req, res) => {
   try {
     const { symbol, ...payload } = req.body || {};
     if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
@@ -4152,7 +4106,7 @@ app.post('/api/today/tick', (req, res) => {
   }
 });
 
-app.post('/api/today/compile-static', (req, res) => {
+app.post('/api/today/compile-static', requireAdminSecret, (req, res) => {
   try {
     const analytics = compileTodayStaticAnalytics();
     return res.json({ success: true, total_scrips: analytics.total_scrips, session_date: analytics.session_date });
@@ -4174,7 +4128,7 @@ app.get('/api/ledger/scrip/:symbol', (req, res) => {
   }
 });
 
-app.post('/api/ledger/transition', async (req, res) => {
+app.post('/api/ledger/transition', requireAdminSecret, async (req, res) => {
   try {
     const force = Boolean(req.body?.force);
     const targetDate = req.body?.targetDate;
@@ -4191,21 +4145,41 @@ export async function getMarketTradingDates() {
   if (_cachedTradingDates.dates.length >= 10 && (now - _cachedTradingDates.timestamp < 5 * 60 * 1000)) {
     return _cachedTradingDates.dates;
   }
-  const todayIso = formatNptDateIso(new Date());
+  const nowObj = new Date();
+  const todayIso = formatNptDateIso(nowObj);
+  const nptMinutesOfDay = (nowObj.getUTCHours() * 60 + nowObj.getUTCMinutes() + 345) % 1440;
+  // Pre-market guard (BUG-027): Only advertise todayIso after 10:30 AM NPT on a trading day OR if actual database/floorsheet trades already exist for todayIso
+  const isTodaySessionStarted = isNepseTradingDay(nowObj) && nptMinutesOfDay >= (10 * 60 + 30);
   const datesSet = new Set();
+  const verifiedTodaySet = new Set();
   try {
     const rows = db.prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE (is_quarantined = 0 OR is_quarantined IS NULL) AND trade_date <= ? ORDER BY trade_date DESC LIMIT 500`).all(todayIso);
-    rows.forEach(r => r.trade_date && datesSet.add(r.trade_date));
+    rows.forEach(r => {
+      if (r.trade_date) {
+        datesSet.add(r.trade_date);
+        verifiedTodaySet.add(r.trade_date);
+      }
+    });
   } catch (_) {}
   try {
     const rows = db.prepare(`SELECT DISTINCT trade_date FROM floorsheet_contracts WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT 500`).all(todayIso);
-    rows.forEach(r => r.trade_date && datesSet.add(r.trade_date));
+    rows.forEach(r => {
+      if (r.trade_date) {
+        datesSet.add(r.trade_date);
+        verifiedTodaySet.add(r.trade_date);
+      }
+    });
   } catch (_) {}
   try {
     const archivePath = path.join(__dirname, 'data', 'daily_floorsheets', 'archive_index.json');
     if (fs.existsSync(archivePath)) {
       const list = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
-      list.forEach(a => a.date && a.date <= todayIso && datesSet.add(a.date));
+      list.forEach(a => {
+        if (a.date && a.date <= todayIso) {
+          datesSet.add(a.date);
+          verifiedTodaySet.add(a.date);
+        }
+      });
     }
   } catch (_) {}
   try {
@@ -4219,27 +4193,35 @@ export async function getMarketTradingDates() {
         const files = fs.readdirSync(dDir).filter(f => f.startsWith('floorsheet-full-') && f.endsWith('.json'));
         files.forEach(f => {
           const m = f.match(/floorsheet-full-(\d{4}-\d{2}-\d{2})\.json/);
-          if (m && m[1] && m[1] <= todayIso) datesSet.add(m[1]);
+          if (m && m[1] && m[1] <= todayIso) {
+            datesSet.add(m[1]);
+            verifiedTodaySet.add(m[1]);
+          }
         });
       }
     }
   } catch (_) {}
   try {
     const ext = await fetchSymbolTradingDates('NABIL');
-    if (Array.isArray(ext)) ext.slice(0, 500).forEach(d => d && d <= todayIso && datesSet.add(d));
+    if (Array.isArray(ext)) ext.slice(0, 500).forEach(d => d && d < todayIso && datesSet.add(d));
   } catch (_) {}
 
   try {
     const calendarDates = generateTradingDaysSequence(60).map(d => formatNptDateIso(d));
-    calendarDates.forEach(d => d && d <= todayIso && datesSet.add(d));
-    ['2026-11-03', '2026-11-02', '2026-10-30', '2026-10-29', '2026-10-28', '2026-10-27', '2026-10-26'].forEach(d => d <= todayIso && datesSet.add(d));
+    calendarDates.forEach(d => {
+      if (d && (d < todayIso || (d === todayIso && (isTodaySessionStarted || verifiedTodaySet.has(todayIso))))) {
+        datesSet.add(d);
+      }
+    });
+    ['2026-11-18', '2026-11-17', '2026-11-13', '2026-11-06', '2026-11-05', '2026-11-04', '2026-11-03', '2026-11-02', '2026-10-30', '2026-10-29', '2026-10-28', '2026-10-27', '2026-10-26'].forEach(d => d < todayIso && datesSet.add(d));
   } catch (_) {}
 
-  // Strict Calendar & Trading Day Filter: Never future, never weekends (Sat/Sun), never public holidays
+  // Strict Calendar & Trading Day Filter: Never future, never pre-market today without trades, never weekends (Sat/Sun), never public holidays
   const sorted = Array.from(datesSet)
     .filter(d => {
       if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
       if (d > todayIso) return false;
+      if (d === todayIso && !isTodaySessionStarted && !verifiedTodaySet.has(todayIso)) return false;
       return isNepseTradingDay(new Date(d + 'T12:00:00+05:45'));
     })
     .sort((a, b) => String(b).localeCompare(String(a)));
@@ -5259,10 +5241,32 @@ try {
 
 function saveMarketDepthSnapshot(symbol, depthData) {
   try {
-    marketDepthSnapshots[symbol] = { ...depthData, savedAt: new Date().toISOString() };
+    const nowIso = new Date().toISOString();
+    marketDepthSnapshots[symbol] = { ...depthData, savedAt: nowIso };
     const dir = path.dirname(MARKET_DEPTH_SNAPSHOTS_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(MARKET_DEPTH_SNAPSHOTS_FILE, JSON.stringify(marketDepthSnapshots, null, 2), 'utf8');
+    // Also persist into SQLite market_depth_cache for telemetry/audit parity (BUG-032)
+    if (db) {
+      try {
+        const bids = Array.isArray(depthData?.bids) ? depthData.bids : [];
+        const asks = Array.isArray(depthData?.asks) ? depthData.asks : [];
+        const totalBidKitta = Number(depthData?.totalBidQty || 0) || bids.reduce((s, b) => s + Number(b.quantity || b.qty || 0), 0);
+        const totalAskKitta = Number(depthData?.totalAskQty || 0) || asks.reduce((s, a) => s + Number(a.quantity || a.qty || 0), 0);
+        db.prepare(`
+          INSERT OR REPLACE INTO market_depth_cache
+          (symbol, updated_at, total_bid_kitta, total_ask_kitta, bids_json, asks_json)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+          String(symbol || '').toUpperCase().trim(),
+          nowIso,
+          Math.round(totalBidKitta),
+          Math.round(totalAskKitta),
+          JSON.stringify(bids),
+          JSON.stringify(asks)
+        );
+      } catch (_) {}
+    }
   } catch (err) {
     console.warn('[market-depth] Failed to save snapshot:', err.message);
   }
@@ -5957,13 +5961,25 @@ app.get('/api/scanner/bulk', async (req, res) => {
       return res.status(503).json({ success: false, message: 'No market data available for scanning.' });
     }
 
-    // Approximate RSI from pChange (bulk mode; for accurate RSI use /api/price-history/:symbol)
-    const calcRSI14 = (s) => {
-      const p = Number(s.pChange || 0);
-      let rsi = 50;
-      if (p > 0) rsi += Math.min(30, p * 6);
-      if (p < 0) rsi -= Math.min(30, Math.abs(p) * 6);
-      return Math.max(5, Math.min(95, rsi));
+    // Compute real 14-day Wilder RSI from daily_stock_summary history when >= 15 sessions exist
+    const calcRealRSI14 = (sym) => {
+      if (!sym) return null;
+      try {
+        const rows = db.prepare(
+          'SELECT close_price FROM daily_stock_summary WHERE symbol = ? ORDER BY trade_date DESC LIMIT 20'
+        ).all(String(sym).toUpperCase().trim());
+        const closes = (rows || []).reverse().map(r => Number(r.close_price)).filter(c => Number.isFinite(c) && c > 0);
+        if (closes.length < 15) return null;
+        let gains = 0, losses = 0;
+        for (let i = closes.length - 14; i < closes.length; i++) {
+          const diff = closes[i] - closes[i - 1];
+          if (diff >= 0) gains += diff; else losses -= diff;
+        }
+        const rs = losses === 0 ? 100 : gains / losses;
+        return Number((100 - (100 / (1 + rs))).toFixed(2));
+      } catch (_) {
+        return null;
+      }
     };
 
     const calcPivotPoint = (s) => {
@@ -5991,8 +6007,9 @@ app.get('/api/scanner/bulk', async (req, res) => {
     switch (type) {
       case 'rsi': {
         const mode = (req.query.mode || 'all').toLowerCase();
-        results = allStocks.map(s => ({ ...s, rsi: calcRSI14(s) }))
-          .filter(s => mode === 'oversold' ? s.rsi < 35 : mode === 'overbought' ? s.rsi > 65 : s.rsi < 35 || s.rsi > 65)
+        results = allStocks
+          .map(s => ({ ...s, rsi: calcRealRSI14(s.symbol) }))
+          .filter(s => s.rsi !== null && (mode === 'oversold' ? s.rsi < 35 : mode === 'overbought' ? s.rsi > 65 : s.rsi < 35 || s.rsi > 65))
           .sort((a, b) => a.rsi - b.rsi);
         break;
       }
@@ -6012,9 +6029,41 @@ app.get('/api/scanner/bulk', async (req, res) => {
         break;
       }
       case 'macd': {
-        results = allStocks.filter(s => Number(s.pChange||0) > 0.5)
-          .map(s => { const p = Number(s.pChange||0); return { ...s, macdLine: p*1.8, signalLine: p*1.4, histogram: p*0.4, signal: 'Bullish MACD Cross' }; })
-          .sort((a, b) => b.pChange - a.pChange);
+        results = [];
+        for (const s of allStocks) {
+          if (Number(s.pChange || 0) <= 0.5 || !s.symbol) continue;
+          try {
+            const rows = db.prepare(
+              'SELECT close_price FROM daily_stock_summary WHERE symbol = ? ORDER BY trade_date DESC LIMIT 45'
+            ).all(String(s.symbol).toUpperCase().trim());
+            if (!rows || rows.length < 35) continue;
+            const closes = rows.reverse().map(r => Number(r.close_price)).filter(c => Number.isFinite(c) && c > 0);
+            if (closes.length < 35) continue;
+            const calcEmaSeries = (arr, period) => {
+              const k = 2 / (period + 1);
+              let ema = arr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+              const out = [ema];
+              for (let i = period; i < arr.length; i++) {
+                ema = arr[i] * k + ema * (1 - k);
+                out.push(ema);
+              }
+              return out;
+            };
+            const ema12 = calcEmaSeries(closes, 12);
+            const ema26 = calcEmaSeries(closes, 26);
+            const offset = ema12.length - ema26.length;
+            const macdSeries = ema26.map((v, i) => ema12[i + offset] - v);
+            if (macdSeries.length < 9) continue;
+            const signalSeries = calcEmaSeries(macdSeries, 9);
+            const macdLine = Number(macdSeries[macdSeries.length - 1].toFixed(3));
+            const signalLine = Number(signalSeries[signalSeries.length - 1].toFixed(3));
+            const histogram = Number((macdLine - signalLine).toFixed(3));
+            if (macdLine > signalLine && histogram > 0) {
+              results.push({ ...s, macdLine, signalLine, histogram, signal: 'Bullish MACD Cross' });
+            }
+          } catch (_) {}
+        }
+        results.sort((a, b) => b.histogram - a.histogram);
         break;
       }
       case 'volume': {
@@ -6051,9 +6100,42 @@ app.get('/api/scanner/bulk', async (req, res) => {
         break;
       }
       case 'strong_trend': {
-        results = allStocks.filter(s => Math.abs(Number(s.pChange||0)) >= 2)
-          .map(s => ({ ...s, adxApprox: Math.min(90, 25+Math.abs(Number(s.pChange||0))*5), trend: Number(s.pChange||0) > 0 ? 'Uptrend' : 'Downtrend' }))
-          .sort((a, b) => b.adxApprox - a.adxApprox);
+        results = [];
+        for (const s of allStocks) {
+          if (Math.abs(Number(s.pChange || 0)) < 2 || !s.symbol) continue;
+          try {
+            const rows = db.prepare(
+              'SELECT high_price, low_price, close_price FROM daily_stock_summary WHERE symbol = ? ORDER BY trade_date DESC LIMIT 30'
+            ).all(String(s.symbol).toUpperCase().trim());
+            if (!rows || rows.length < 28) continue;
+            const bars = rows.reverse();
+            let trSum = 0, plusDm = 0, minusDm = 0;
+            for (let i = 1; i <= 14; i++) {
+              const idx = bars.length - i;
+              const cur = bars[idx], prev = bars[idx - 1];
+              const h = Number(cur.high_price || cur.close_price || 0);
+              const l = Number(cur.low_price || cur.close_price || 0);
+              const prevH = Number(prev.high_price || prev.close_price || 0);
+              const prevL = Number(prev.low_price || prev.close_price || 0);
+              const prevC = Number(prev.close_price || 0);
+              const tr = Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC));
+              const up = h - prevH;
+              const down = prevL - l;
+              trSum += tr;
+              if (up > down && up > 0) plusDm += up;
+              if (down > up && down > 0) minusDm += down;
+            }
+            if (trSum <= 0) continue;
+            const plusDi = (plusDm / trSum) * 100;
+            const minusDi = (minusDm / trSum) * 100;
+            const diSum = plusDi + minusDi;
+            const dx = diSum > 0 ? Math.round((Math.abs(plusDi - minusDi) / diSum) * 100) : 0;
+            if (dx >= 25) {
+              results.push({ ...s, adx: dx, trend: plusDi >= minusDi ? 'Uptrend' : 'Downtrend' });
+            }
+          } catch (_) {}
+        }
+        results.sort((a, b) => b.adx - a.adx);
         break;
       }
       case 'trend_continuation': {
@@ -6521,25 +6603,26 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
           } catch (_) {}
           aggData.availableDates = availableDates;
           setCache(cacheKey, aggData, 5 * 60 * 1000);
-          try {
-            const outPath = path.join(__dirname, 'data', 'broker_matrix_latest.json');
-            fs.writeFileSync(outPath, JSON.stringify(aggData, null, 2), 'utf8');
-            const srcPath = path.join(process.cwd(), 'src', 'data', 'broker_matrix_latest.json');
-            if (fs.existsSync(path.dirname(srcPath))) {
-              fs.writeFileSync(srcPath, JSON.stringify(aggData, null, 2), 'utf8');
-            }
-            const srcHistPath = path.join(process.cwd(), 'src', 'data', 'broker_matrices_historical.json');
-            if (fs.existsSync(srcHistPath) && aggData.businessDate) {
-              const histSeed = JSON.parse(fs.readFileSync(srcHistPath, 'utf8'));
-              const lightMatrix = (aggData.matrix || []).map(({ scrips, ...rest }) => rest);
-              histSeed[aggData.businessDate] = { ...aggData, matrix: lightMatrix };
-              // Keep only the 5 most recent dates
-              const recentDates = Object.keys(histSeed).sort().reverse().slice(0, 5);
-              const prunedSeed = {};
-              for (const rd of recentDates) prunedSeed[rd] = histSeed[rd];
-              fs.writeFileSync(srcHistPath, JSON.stringify(prunedSeed), 'utf8');
-            }
-          } catch (_) {}
+          setImmediate(async () => {
+            try {
+              const outPath = path.join(__dirname, 'data', 'broker_matrix_latest.json');
+              await fs.promises.writeFile(outPath, JSON.stringify(aggData, null, 2), 'utf8');
+              const srcPath = path.join(process.cwd(), 'src', 'data', 'broker_matrix_latest.json');
+              if (fs.existsSync(path.dirname(srcPath))) {
+                await fs.promises.writeFile(srcPath, JSON.stringify(aggData, null, 2), 'utf8');
+              }
+              const srcHistPath = path.join(process.cwd(), 'src', 'data', 'broker_matrices_historical.json');
+              if (fs.existsSync(srcHistPath) && aggData.businessDate) {
+                const histSeed = JSON.parse(await fs.promises.readFile(srcHistPath, 'utf8'));
+                const lightMatrix = (aggData.matrix || []).map(({ scrips, ...rest }) => rest);
+                histSeed[aggData.businessDate] = { ...aggData, matrix: lightMatrix };
+                const recentDates = Object.keys(histSeed).sort().reverse().slice(0, 5);
+                const prunedSeed = {};
+                for (const rd of recentDates) prunedSeed[rd] = histSeed[rd];
+                await fs.promises.writeFile(srcHistPath, JSON.stringify(prunedSeed), 'utf8');
+              }
+            } catch (_) {}
+          });
           return res.json({ success: true, data: aggData, source: 'full_session_floorsheet_authentic' });
         }
 
@@ -7241,11 +7324,21 @@ app.get('/api/predictor/:symbol', async (req, res) => {
       ORDER BY trade_date DESC LIMIT 30
     `).all(symbol).reverse();
 
-    const closes = history.map(h => Number(h.close || 0)).filter(c => c > 0);
-    const ltp = Number(quote.ltp || (closes.length > 0 ? closes[closes.length - 1] : 500));
+    const closes = history.map(h => Number(h.close || 0)).filter(c => Number.isFinite(c) && c > 0);
+    const rawLtp = Number(quote.ltp || (closes.length > 0 ? closes[closes.length - 1] : 0));
+    const ltp = Number.isFinite(rawLtp) && rawLtp > 0 ? rawLtp : null;
 
-    let rsi = 50;
-    if (closes.length >= 14) {
+    if (ltp === null) {
+      return res.status(404).json({
+        success: false,
+        unavailable: true,
+        symbol,
+        error: `No verified historical or live quote available for ${symbol}`
+      });
+    }
+
+    let rsi = null;
+    if (closes.length >= 15) {
       let gains = 0, losses = 0;
       for (let i = 1; i <= 14; i++) {
         const diff = closes[closes.length - i] - closes[closes.length - i - 1];
@@ -7255,26 +7348,45 @@ app.get('/api/predictor/:symbol', async (req, res) => {
       rsi = Math.round(100 - (100 / (1 + rs)));
     }
 
-    let prediction = 'BUY';
-    let confidence = 75;
-    let rationale = 'Healthy accumulation base with favorable risk/reward setup.';
+    let prediction = 'INSUFFICIENT_HISTORY';
+    let confidence = null;
+    let rationale = 'Insufficient 15-session verified close history to derive RSI or probability targets.';
+    let targetPrice = null;
+    let stopLoss = null;
+    let technicalScore = null;
+    let timeHorizon = null;
 
-    if (rsi < 35) {
-      prediction = 'STRONG BUY';
-      confidence = 82;
-      rationale = 'Oversold reversal inflection zone supported by institutional accumulation.';
-    } else if (rsi > 68) {
-      prediction = 'TAKE PROFIT / SELL';
-      confidence = 78;
-      rationale = 'Overheated technical extension near overhead supply ceiling.';
-    } else if (rsi >= 50) {
-      prediction = 'ACCUMULATE / BUY';
-      confidence = 74;
-      rationale = 'Bullish momentum continuation above key moving average supports.';
-    } else {
-      prediction = 'HOLD';
-      confidence = 68;
-      rationale = 'Consolidation phase awaiting volume breakout trigger.';
+    if (rsi !== null) {
+      const recentReturns = [];
+      for (let i = Math.max(1, closes.length - 14); i < closes.length; i++) {
+        recentReturns.push(Math.abs(closes[i] - closes[i - 1]));
+      }
+      const avgDailyMove = recentReturns.length > 0
+        ? Math.max(ltp * 0.01, recentReturns.reduce((a, b) => a + b, 0) / recentReturns.length)
+        : ltp * 0.015;
+
+      timeHorizon = '1-3 Weeks';
+      targetPrice = Math.round(ltp + avgDailyMove * 4);
+      stopLoss = Math.max(1, Math.round(ltp - avgDailyMove * 2.5));
+      technicalScore = Math.min(95, Math.max(30, rsi + 15));
+
+      if (rsi < 35) {
+        prediction = 'STRONG BUY';
+        confidence = 82;
+        rationale = 'Oversold reversal inflection zone supported by historical price mean reversion.';
+      } else if (rsi > 68) {
+        prediction = 'TAKE PROFIT / SELL';
+        confidence = 78;
+        rationale = 'Overheated technical extension near overhead supply ceiling.';
+      } else if (rsi >= 50) {
+        prediction = 'ACCUMULATE / BUY';
+        confidence = 74;
+        rationale = 'Bullish momentum continuation above intermediate trend supports.';
+      } else {
+        prediction = 'HOLD';
+        confidence = 68;
+        rationale = 'Consolidation phase awaiting volume breakout trigger.';
+      }
     }
 
     return res.json({
@@ -7283,13 +7395,14 @@ app.get('/api/predictor/:symbol', async (req, res) => {
       data: {
         symbol,
         ltp,
+        rsi,
         prediction,
         confidence,
         rationale,
-        timeHorizon: '1-3 Weeks',
-        targetPrice: Math.round(ltp * 1.08),
-        stopLoss: Math.round(ltp * 0.95),
-        technicalScore: Math.min(95, Math.max(30, rsi + 15))
+        timeHorizon,
+        targetPrice,
+        stopLoss,
+        technicalScore
       }
     });
   } catch (err) {
@@ -7347,15 +7460,17 @@ app.get('/api/market/calendar', (req, res) => {
 app.get('/api/macro/ibor', (req, res) => {
   try {
     const cachedMacro = getCache('macro-indicators') || {};
+    const unavailable = Object.keys(cachedMacro).length === 0;
     return res.json({
       success: true,
+      unavailable,
       data: {
-        ibor: cachedMacro.ibor || 4.5,
-        interbankRate: cachedMacro.interbankRate || 4.5,
-        cpiInflation: cachedMacro.cpi_inflation_pct || 6.34,
-        m2Growth: cachedMacro.m2_growth_pct || 12.8,
-        tbill91d: cachedMacro.tbill91d || 4.2,
-        repoRate: cachedMacro.repoRate || 5.0,
+        ibor: cachedMacro.ibor ?? null,
+        interbankRate: cachedMacro.interbankRate ?? null,
+        cpiInflation: cachedMacro.cpi_inflation_pct ?? null,
+        m2Growth: cachedMacro.m2_growth_pct ?? null,
+        tbill91d: cachedMacro.tbill91d ?? null,
+        repoRate: cachedMacro.repoRate ?? null,
         ...cachedMacro
       }
     });
@@ -7413,7 +7528,7 @@ const NEPSE_BROKERS_LIST = Object.entries(BROKER_NAMES).map(([idStr, name]) => {
     id,
     name: name.includes('Securities') || name.includes('Dealer') || name.includes('Broking') ? `${name} Pvt. Ltd.` : `${name} Ltd.`,
     location: 'Kathmandu',
-    contact: '01-4400000',
+    contact: '—',
     tmsUrl: `https://tms${id}.nepalstock.com.np/`
   };
 }).sort((a, b) => a.id - b.id);
@@ -7454,8 +7569,12 @@ app.get('/api/mutual-funds', async (req, res) => {
         const ltp     = parseMoney($(tds[3]).text());
         const pChange = parseMoney($(tds[4]).text());
         if (symbol && !isNaN(nav) && nav > 0) {
-          const premium = ltp > 0 && nav > 0 ? Number(((ltp-nav)/nav*100).toFixed(2)) : 0;
-          funds.push({ symbol, name, nav: isNaN(nav)?0:nav, ltp: isNaN(ltp)?nav:ltp, pChange: isNaN(pChange)?0:pChange, premium, premiumLabel: premium > 0 ? `+${premium}% Premium` : premium < 0 ? `${premium}% Discount` : 'At NAV', source: 'sharesansar' });
+          const validLtp = !isNaN(ltp) && ltp > 0 ? ltp : null;
+          const premium = validLtp !== null ? Number(((validLtp - nav) / nav * 100).toFixed(2)) : null;
+          const premiumLabel = premium === null
+            ? 'Quote Unavailable'
+            : (premium > 0 ? `+${premium}% Premium` : premium < 0 ? `${premium}% Discount` : 'At NAV');
+          funds.push({ symbol, name, nav, ltp: validLtp, pChange: isNaN(pChange) ? null : pChange, premium, premiumLabel, source: 'sharesansar' });
         }
       }
     });
@@ -7506,19 +7625,20 @@ app.get('/api/mutual-funds', async (req, res) => {
 
     knownFunds.forEach(kf => {
       const live = priceMap[kf.symbol];
-      const ltp = live && live.ltp > 0 ? live.ltp : kf.nav * 0.92;
-      const pChange = live ? (live.pChange || 0) : 0;
+      const hasLiveLtp = Boolean(live && Number(live.ltp) > 0);
+      const ltp = hasLiveLtp ? Number(Number(live.ltp).toFixed(2)) : null;
+      const pChange = hasLiveLtp && Number.isFinite(Number(live.pChange)) ? Number(Number(live.pChange).toFixed(2)) : null;
       const nav = kf.nav;
-      const premium = Number(((ltp - nav) / nav * 100).toFixed(2));
+      const premium = ltp !== null && nav > 0 ? Number(((ltp - nav) / nav * 100).toFixed(2)) : null;
       funds.push({
         symbol: kf.symbol,
         name: stockMap[kf.symbol]?.name || kf.name,
         nav,
-        ltp: Number(ltp.toFixed(2)),
-        pChange: Number(pChange.toFixed(2)),
+        ltp,
+        pChange,
         premium,
-        premiumLabel: premium > 0 ? `+${premium}% Premium` : `${premium}% Discount`,
-        source: 'nepse-live'
+        premiumLabel: premium === null ? 'Quote Unavailable' : (premium > 0 ? `+${premium}% Premium` : `${premium}% Discount`),
+        source: hasLiveLtp ? 'nepse-live' : 'nav-reference-only'
       });
     });
   }
@@ -8010,9 +8130,9 @@ app.get('/api/market/summary', async (req, res) => {
         totalScrips: scrips,
         totalStocks: scrips,
         marketCapitalization: marketCap,
-        advances: advances ?? 174,
-        declines: declines ?? 172,
-        unchanged: unchanged ?? 14,
+        advances: advances ?? null,
+        declines: declines ?? null,
+        unchanged: unchanged ?? null,
         asOf: nepseIndexItem?.generatedTime || new Date().toISOString()
       }
     });
@@ -8872,26 +8992,31 @@ app.get('/api/sectors', async (req, res) => {
 
 app.get('/api/brokers', async (req, res) => {
   try {
-    const list = [
-      { id: 1, brokerCode: '1', brokerName: 'Kumari Securities Pvt. Ltd.' },
-      { id: 4, brokerCode: '4', brokerName: 'Opal Securities Investment Pvt. Ltd.' },
-      { id: 14, brokerCode: '14', brokerName: 'Premier Securities Company Ltd.' },
-      { id: 17, brokerCode: '17', brokerName: 'ABC Securities Pvt. Ltd.' },
-      { id: 25, brokerCode: '25', brokerName: 'Sweta Securities Pvt. Ltd.' },
-      { id: 34, brokerCode: '34', brokerName: 'Vision Securities Pvt. Ltd.' },
-      { id: 45, brokerCode: '45', brokerName: 'Imperial Securities Co. Pvt. Ltd.' },
-      { id: 49, brokerCode: '49', brokerName: 'Online Securities Ltd.' },
-      { id: 58, brokerCode: '58', brokerName: 'Naasa Securities Co. Ltd.' },
-      { id: 61, brokerCode: '61', brokerName: 'Bhole Ganesh Securities Ltd.' }
-    ];
-    res.json({ success: true, isMockData: false, source: 'LIVE - NEPSE Brokers', count: list.length, data: list });
+    const list = NEPSE_BROKERS_LIST.map(b => ({
+      id: b.id,
+      brokerCode: String(b.id),
+      brokerName: b.name,
+      location: b.location,
+      tmsUrl: b.tmsUrl
+    }));
+    res.json({ success: true, isMockData: false, source: 'STATIC_SEBON_BROKER_DIRECTORY', count: list.length, data: list });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message, isMockData: false });
   }
 });
 
 app.get('/api/brokers/:id', async (req, res) => {
-  res.json({ success: true, isMockData: false, source: 'LIVE - NEPSE', data: { id: req.params.id, brokerCode: req.params.id } });
+  const idNum = parseInt(req.params.id, 10);
+  const found = Number.isFinite(idNum) ? NEPSE_BROKERS_LIST.find(b => b.id === idNum) : null;
+  if (!found) {
+    return res.status(404).json({ success: false, error: `Broker #${req.params.id} not found in SEBON directory`, isMockData: false });
+  }
+  return res.json({
+    success: true,
+    isMockData: false,
+    source: 'STATIC_SEBON_BROKER_DIRECTORY',
+    data: { id: found.id, brokerCode: String(found.id), brokerName: found.name, location: found.location, tmsUrl: found.tmsUrl }
+  });
 });
 
 app.get('/api/ipo/current', async (req, res) => {
@@ -9955,22 +10080,11 @@ app.get(['/api/forex/rates', '/api/forex'], async (req, res) => {
     console.warn('[forex/rates] Secondary NRB fetch failed:', err2.message);
   }
 
-  const fallbackRates = {
-    date: new Date().toISOString().split('T')[0],
-    source: 'NRB Daily Reference Benchmark',
-    rates: [
-      { currency: 'Indian Rupee', iso3: 'INR', unit: 100, buy: 160.00, sell: 160.15 },
-      { currency: 'U.S. Dollar', iso3: 'USD', unit: 1, buy: 134.20, sell: 134.80 },
-      { currency: 'European Euro', iso3: 'EUR', unit: 1, buy: 147.10, sell: 147.75 },
-      { currency: 'UK Pound Sterling', iso3: 'GBP', unit: 1, buy: 175.40, sell: 176.20 },
-      { currency: 'Australian Dollar', iso3: 'AUD', unit: 1, buy: 89.80, sell: 90.25 },
-      { currency: 'Japanese Yen', iso3: 'JPY', unit: 10, buy: 9.35, sell: 9.40 },
-      { currency: 'Qatari Riyal', iso3: 'QAR', unit: 1, buy: 36.80, sell: 36.95 },
-      { currency: 'UAE Dirham', iso3: 'AED', unit: 1, buy: 36.54, sell: 36.70 }
-    ]
-  };
-  setCache(cacheKey, fallbackRates, 30 * 60 * 1000);
-  return res.json({ success: true, data: fallbackRates, fallback: true });
+  return res.status(503).json({
+    success: false,
+    unavailable: true,
+    error: 'Live NRB forex rates temporarily unavailable.'
+  });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -10259,11 +10373,11 @@ app.get(['/api/macro/nrb-indicators', '/api/macro/indicators'], async (req, res)
       riskWeightShareLoans: { value: 125, unit: '%', label: 'BFI Risk-Weighted Asset (RWA) Weight' }
     },
     sebonTradingRules: {
-      brokerCommissionTier1: '0.40% (Up to Rs. 50,000)',
-      brokerCommissionTier2: '0.37% (Rs. 50,001 - Rs. 500,000)',
-      brokerCommissionTier3: '0.34% (Rs. 500,001 - Rs. 2,000,000)',
-      brokerCommissionTier4: '0.30% (Rs. 2,000,001 - Rs. 10,000,000)',
-      brokerCommissionTier5: '0.27% (Above Rs. 10,000,000)',
+      brokerCommissionTier1: '0.36% (Up to Rs. 50,000)',
+      brokerCommissionTier2: '0.33% (Rs. 50,001 - Rs. 500,000)',
+      brokerCommissionTier3: '0.31% (Rs. 500,001 - Rs. 2,000,000)',
+      brokerCommissionTier4: '0.27% (Rs. 2,000,001 - Rs. 10,000,000)',
+      brokerCommissionTier5: '0.24% (Above Rs. 10,000,000)',
       minBrokerageFee: 'Rs. 10 per transaction',
       sebonRegulatoryFee: '0.015% of transaction amount',
       cdscDpFee: 'Rs. 25 flat per transaction',
@@ -10317,14 +10431,11 @@ app.get(['/api/commodities/bullion', '/api/bullion/rates'], async (req, res) => 
     console.warn('[commodities/bullion] Live fetch error:', err.message);
   }
 
-  const fallbackBullion = {
-    date: new Date().toISOString().split('T')[0],
-    source: 'FENEGOSIDA Market Benchmark',
-    fineGold24k: { tola: 168500, per10g: 144460 },
-    tejabiGold: { tola: 167800, per10g: 143860 },
-    silver: { tola: 2015, per10g: 1728 }
-  };
-  return res.json({ success: true, data: fallbackBullion, fallback: true });
+  return res.status(503).json({
+    success: false,
+    unavailable: true,
+    error: 'Live FENEGOSIDA bullion rates temporarily unavailable.'
+  });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -10964,33 +11075,64 @@ ${explanation}
 
     // ── CASE B: General NEPSE Market Inquiry ───────────────────
     const indices = await getMarketIndicesInternal().catch(() => ({}));
-    const nepseVal = indices?.nepse?.value || 2560.84;
-    const nepseChg = indices?.nepse?.change || 0;
-    const nepsePChg = indices?.nepse?.pChange || 0;
+    const rawNepse = Number(indices?.nepse?.value);
+    const nepseVal = Number.isFinite(rawNepse) && rawNepse > 0 ? rawNepse : null;
+    const nepseChg = indices?.nepse?.change != null && Number.isFinite(Number(indices.nepse.change)) ? Number(indices.nepse.change) : null;
+    const nepsePChg = indices?.nepse?.pChange != null && Number.isFinite(Number(indices.nepse.pChange)) ? Number(indices.nepse.pChange) : null;
+
+    if (nepseVal === null) {
+      if (prompt.includes('marketSentiment') || prompt.includes('weeklyOutlook') || analysisType === 'market') {
+        return JSON.stringify({
+          marketSentiment: 'UNAVAILABLE',
+          weeklyOutlook: 'UNAVAILABLE',
+          confidence: null,
+          nepseSupport: null,
+          nepseResistance: null,
+          marketAnalysis: 'Live NEPSE index quote is unavailable. Reconnect live feed to evaluate market breadth and technical levels.',
+          sectorsToWatch: [],
+          stocksToWatch: [],
+          investorAdvice: 'Verify live index telemetry before taking discretionary index-level exposure.',
+          riskFactors: ['Live NEPSE index telemetry unavailable'],
+          opportunities: [],
+          nepseSpecificInsight: 'Individual equity fluctuations remain subject to ±15% daily circuit bands under SEBON rules.'
+        });
+      }
+      return `### 📈 NEPSE Market Intelligence\n\n- **Live NEPSE Index**: Unavailable — live upstream market telemetry is disconnected.\n- **Guidance**: Reconnect the NEPSE market feed or mention a specific scrip symbol to query stored daily history.`;
+    }
+
+    const livePrices = Array.isArray(getCache('today-prices')) ? getCache('today-prices') : [];
+    const liveGainers = livePrices
+      .filter(s => s?.symbol && Number(s.pChange || 0) > 0)
+      .sort((a, b) => Number(b.pChange || 0) - Number(a.pChange || 0));
+    const stocksToWatch = liveGainers.slice(0, 3).map(s => String(s.symbol).toUpperCase().trim());
+    const sectorsToWatch = Array.from(new Set(liveGainers.map(s => String(s.sector || '').trim()).filter(Boolean))).slice(0, 3);
 
     if (prompt.includes('marketSentiment') || prompt.includes('weeklyOutlook') || analysisType === 'market') {
+      const chg = nepseChg ?? 0;
+      const pChg = nepsePChg ?? 0;
       return JSON.stringify({
-        marketSentiment: nepseChg >= 0 ? 'BULLISH' : 'NEUTRAL',
-        weeklyOutlook: nepseChg >= 0 ? 'UP' : 'SIDEWAYS',
-        confidence: 80,
+        marketSentiment: chg > 0 ? 'BULLISH' : chg < 0 ? 'BEARISH' : 'NEUTRAL',
+        weeklyOutlook: chg > 0 ? 'UP' : chg < 0 ? 'DOWN' : 'SIDEWAYS',
+        confidence: null,
         nepseSupport: Math.round(nepseVal * 0.97),
         nepseResistance: Math.round(nepseVal * 1.03),
-        marketAnalysis: `NEPSE is trading at ${nepseVal.toFixed(2)} (${nepsePChg >= 0 ? '+' : ''}${nepsePChg.toFixed(2)}%). Market structure shows consolidation above key moving averages with rotating sector liquidity.`,
-        sectorsToWatch: ["Commercial Banks", "Hydropower", "Microfinance"],
-        stocksToWatch: ["NABIL", "GLBSL", "SHIVM"],
-        investorAdvice: "Focus on fundamentally sound dividend payers near major demand levels while maintaining strict risk-reward discipline.",
+        marketAnalysis: `NEPSE is trading at ${nepseVal.toFixed(2)} (${pChg >= 0 ? '+' : ''}${pChg.toFixed(2)}%). Support is tracked near ${Math.round(nepseVal * 0.97)} and overhead resistance near ${Math.round(nepseVal * 1.03)}.`,
+        sectorsToWatch,
+        stocksToWatch,
+        investorAdvice: "Focus on fundamentally sound dividend payers near verified demand levels while maintaining strict risk-reward discipline.",
         riskFactors: ["Interbank liquidity adjustments", "Policy revisions by NRB and SEBON"],
-        opportunities: ["Undervalued financial scrips", "Monsoon hydro power dividend plays"],
-        nepseSpecificInsight: "Track weekly banking surplus liquidity and loan-against-shares limits for momentum clues."
+        opportunities: liveGainers.length > 0 ? [`Active gainers led by ${stocksToWatch.join(', ')}`] : [],
+        nepseSpecificInsight: "Track weekly banking surplus liquidity and NRB policy corridor rates alongside market breadth."
       });
     }
 
+    const chgVal = nepseChg ?? 0;
+    const pChgVal = nepsePChg ?? 0;
     return `### 📈 NEPSE Market Intelligence & Overview
 
-- **NEPSE Benchmark Index**: **${nepseVal.toFixed(2)}** (${nepseChg >= 0 ? '+' : ''}${nepseChg.toFixed(2)} pts | ${nepsePChg >= 0 ? '+' : ''}${nepsePChg.toFixed(2)}%)
-- **Market Structure**: Trading in a defined consolidation band. Buyers are defending key structural support near **${Math.round(nepseVal * 0.97)}**, with primary overhead resistance at **${Math.round(nepseVal * 1.03)}**.
-- **Sector Rotation**: Active institutional flow observed across Commercial Banks, Hydropower, and Microfinance.
-- **Smart Money Guidance**: For stock-specific queries (e.g. *"is GLBSL accumulated or distributed?"* or *"Analyze NABIL support and targets"*), mention the ticker symbol for a full quantitative breakdown including 30-day Chaikin A/D flow, Wyckoff phases, and price targets.`;
+- **NEPSE Benchmark Index**: **${nepseVal.toFixed(2)}** (${chgVal >= 0 ? '+' : ''}${chgVal.toFixed(2)} pts | ${pChgVal >= 0 ? '+' : ''}${pChgVal.toFixed(2)}%)
+- **Derived Bands (±3%)**: Support near **${Math.round(nepseVal * 0.97)}**, resistance near **${Math.round(nepseVal * 1.03)}**.${sectorsToWatch.length > 0 ? `\n- **Leading Sectors (Today's Tape)**: ${sectorsToWatch.join(', ')}.` : ''}
+- **Smart Money Guidance**: Mention a specific ticker symbol for its quantitative history, A/D flow, and price targets.`;
   } catch (err) {
     console.warn('[proxy] generateLocalGuruResponse error:', err.message);
     return "NEPSE Guru provides intelligent, data-driven equity analytics and quantitative insights for the Nepal Stock Exchange.";
@@ -11809,7 +11951,16 @@ Respond in JSON: {"direction":"UP|DOWN|SIDEWAYS","confidence":<0-100>,"timeframe
       try { result = await callGLM(prompt, 'glm-4-flash', glmKey); } catch (_) {}
     }
     if (!result) {
-      result = await callPollinations(prompt, 'stock').catch(() => ({ text: '{}', provider: 'guru-quant-engine' }));
+      result = await callPollinations(prompt, 'stock').catch(() => null);
+    }
+    if (!result || !result.text || result.text.trim() === '{}') {
+      return res.status(503).json({
+        success: false,
+        unavailable: true,
+        error: 'AI prediction providers unavailable',
+        symbol: rawSymbol,
+        isMockData: false
+      });
     }
 
     const { parsed } = parseAIResponse(result.text, 'stock');
@@ -12118,7 +12269,7 @@ app.get('/api/notifications', (req, res) => {
   }
 });
 
-app.post('/api/notifications/test', async (req, res) => {
+app.post('/api/notifications/test', requireAdminSecret, async (req, res) => {
   try {
     const { symbol } = req.body || {};
     const alert = await testTriggerAlert(symbol || 'NABIL');
@@ -12171,7 +12322,7 @@ app.post('/api/notifications/test-dispatch', requireAdminSecret, async (req, res
   }
 });
 
-app.post('/api/smart-alerts/test-trigger', async (req, res) => {
+app.post('/api/smart-alerts/test-trigger', requireAdminSecret, async (req, res) => {
   try {
     const { symbol, ltp, vwap } = req.body || {};
     const result = await testTriggerAlert(symbol || 'GHL', { ltp, vwap });
@@ -12194,7 +12345,7 @@ app.get(['/api/smart-alerts/broker58-radar', '/api/alerts/broker58-radar'], asyn
   }
 });
 
-app.post('/api/smart-alerts/test-broker58', async (req, res) => {
+app.post('/api/smart-alerts/test-broker58', requireAdminSecret, async (req, res) => {
   try {
     const { symbol, ltp, operatorVwap, buyVol, sellVol, marketSharePct, pChange } = req.body || {};
     const result = await testTriggerBroker58Alert(symbol || 'GHL', { ltp, operatorVwap, buyVol, sellVol, marketSharePct, pChange });
@@ -12204,7 +12355,7 @@ app.post('/api/smart-alerts/test-broker58', async (req, res) => {
   }
 });
 
-app.post('/api/telegram/dispatch-broker58-radar', async (req, res) => {
+app.post('/api/telegram/dispatch-broker58-radar', requireAdminSecret, async (req, res) => {
   try {
     const { symbol } = req.body || {};
     const result = await runBroker58RadarAndDispatch(symbol);
@@ -12214,9 +12365,9 @@ app.post('/api/telegram/dispatch-broker58-radar', async (req, res) => {
   }
 });
 
-app.all('/api/telegram/dispatch-top5-breakouts', async (req, res) => {
+app.post('/api/telegram/dispatch-top5-breakouts', requireAdminSecret, async (req, res) => {
   try {
-    const { chatId } = req.body || req.query || {};
+    const { chatId } = req.body || {};
     const result = await dispatchTop5Broker58Breakouts({ chatId });
     res.json({ success: true, message: 'Top 5 Broker #58 breakouts dispatched to Telegram', result });
   } catch (err) {
@@ -12266,6 +12417,66 @@ app.get('/api/telegram/preview-trackb', async (req, res) => {
   }
 });
 
+// Daily 4-Gate Stock Selection Guide Dispatch & Preview Routes
+let selectionGuidePreviewCache = null;
+let selectionGuidePreviewCacheTime = 0;
+
+app.post('/api/telegram/dispatch-selection-guide', requireAdminSecret, async (req, res) => {
+  try {
+    const rawDate = req.body?.targetDate ? String(req.body.targetDate).trim() : null;
+    if (rawDate && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      return res.status(400).json({ success: false, error: 'Invalid targetDate format (expected YYYY-MM-DD)' });
+    }
+    let chatId = null;
+    if (req.body?.chatId !== undefined && req.body?.chatId !== null && String(req.body.chatId).trim() !== '') {
+      const candidateChatId = String(req.body.chatId).trim();
+      if (!/^-?\d{1,20}$/.test(candidateChatId)) {
+        return res.status(400).json({ success: false, error: 'Invalid chatId format' });
+      }
+      chatId = candidateChatId;
+    }
+    const dryRun = Boolean(req.body?.dryRun);
+    const force = Boolean(req.body?.force);
+
+    const result = (!force && !dryRun && !chatId)
+      ? await dispatchScheduledDailySelectionGuide({ targetDate: rawDate })
+      : await runDailyStockSelectionGuideAndDispatch({ chatId, targetDate: rawDate, dryRun });
+
+    res.json({
+      success: Boolean(result?.success || result?.dispatched),
+      message: result?.skipped
+        ? `Skipped (${result.reason}) for ${result.sessionDate}`
+        : (result?.qualifiedCount > 0
+            ? `Selection Guide dispatched (${result.qualifiedCount} stock(s) selected)`
+            : 'Selection Guide dispatched (No Stock Selected — Hold Cash)'),
+      result
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/telegram/preview-selection-guide', async (req, res) => {
+  try {
+    const rawDate = req.query?.targetDate ? String(req.query.targetDate).trim() : null;
+    if (rawDate && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      return res.status(400).json({ success: false, error: 'Invalid targetDate format (expected YYYY-MM-DD)' });
+    }
+    const now = Date.now();
+    if (!rawDate && selectionGuidePreviewCache && (now - selectionGuidePreviewCacheTime < TRACK_B_CACHE_TTL_MS)) {
+      return res.json({ success: true, cached: true, result: selectionGuidePreviewCache });
+    }
+    const result = await runDailyStockSelectionGuideAndDispatch({ targetDate: rawDate, dryRun: true });
+    if (!rawDate && result) {
+      selectionGuidePreviewCache = result;
+      selectionGuidePreviewCacheTime = now;
+    }
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // SSE endpoint for live browser/app updates
 app.get('/api/smart-alerts/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -12280,7 +12491,7 @@ app.get('/api/smart-alerts/events', (req, res) => {
 // ── PERSONAL PORTFOLIO STOP-LOSS & TARGET MONITORING ROUTES ──
 app.get('/api/portfolio/tracked-holdings', requirePortfolioAuth, (req, res) => {
   try {
-    const holdings = getUserTrackedHoldings();
+    const holdings = getUserTrackedHoldings(req.portfolioOwnerId || 'admin');
     res.json({ success: true, count: holdings.length, data: holdings });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -12318,7 +12529,8 @@ app.post('/api/portfolio/track-holding', requirePortfolioAuth, (req, res) => {
       stopLoss: effectiveSl, 
       target1: effectiveT1, 
       target2: effectiveT2, 
-      kitta: effectiveKitta 
+      kitta: effectiveKitta,
+      ownerId: req.portfolioOwnerId || 'admin'
     });
 
     const pnlPct = userBuy > 0 && curPrice > 0 ? (((curPrice - userBuy) / userBuy) * 100).toFixed(1) : '0.0';
@@ -12351,7 +12563,7 @@ app.post('/api/portfolio/untrack-holding', requirePortfolioAuth, (req, res) => {
   try {
     const { symbol } = req.body || {};
     if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
-    const removed = untrackCustomHolding(symbol);
+    const removed = untrackCustomHolding(symbol, req.portfolioOwnerId || 'admin');
 
     if (removed) {
       sendTelegramMessage(`🗑️ <b>Exit Guard Removed:</b> Stopped monitoring <code>${symbol}</code>.`).catch(() => {});
@@ -12367,7 +12579,8 @@ app.post('/api/portfolio/sync-holdings', requirePortfolioAuth, (req, res) => {
   try {
     const { holdings } = req.body || {};
     if (!Array.isArray(holdings)) return res.status(400).json({ success: false, error: 'Holdings array required' });
-    const items = holdings.map(h => trackCustomHolding(h)).filter(Boolean);
+    const ownerId = req.portfolioOwnerId || 'admin';
+    const items = holdings.map(h => trackCustomHolding({ ...h, ownerId })).filter(Boolean);
 
     if (items.length > 0) {
       const lines = items.slice(0, 8).map(it => {
@@ -12425,13 +12638,12 @@ app.get('/api/telegram/status', (req, res) => {
   }
 });
 
-app.all('/api/telegram/config', async (req, res) => {
+app.post('/api/telegram/config', requireAdminSecret, async (req, res) => {
   try {
-    const rawBotToken = req.body?.botToken || req.query?.botToken || req.query?.token;
-    const rawChatId = req.body?.chatId || req.query?.chatId || req.query?.chat;
-    const enabled = req.body?.enabled !== undefined ? Boolean(req.body.enabled) : (req.query?.enabled !== undefined ? req.query.enabled === 'true' : true);
+    const rawBotToken = req.body?.botToken;
+    const rawChatId = req.body?.chatId;
+    const enabled = req.body?.enabled !== undefined ? Boolean(req.body.enabled) : true;
 
-    const hasAdminKey = Boolean(isValidAdminRequest(req));
     const token = cleanBotToken(rawBotToken);
 
     if (!token) {
@@ -12439,7 +12651,7 @@ app.all('/api/telegram/config', async (req, res) => {
     }
 
     // Always verify the token live with Telegram getMe API (unless force=true) to prevent false positive "Connected" states
-    const forceSave = Boolean(req.body?.force || req.query?.force);
+    const forceSave = Boolean(req.body?.force);
     let testRes = { ok: true, result: { username: 'ConfiguredBot' }, isTestServer: false };
     if (!forceSave) {
       testRes = await verifyTelegramToken(token);
@@ -12456,9 +12668,9 @@ app.all('/api/telegram/config', async (req, res) => {
     }
 
     const botUser = testRes.result?.username ? `@${testRes.result.username}` : (testRes.result?.first_name || 'Bot');
-    const isTestServer = req.body?.isTestServer !== undefined 
+    const isTestServer = req.body?.isTestServer !== undefined
       ? Boolean(req.body.isTestServer)
-      : (req.query?.isTestServer !== undefined ? req.query.isTestServer === 'true' : testRes.isTestServer);
+      : testRes.isTestServer;
 
     const result = saveTelegramConfig({
       botToken: token,
@@ -12484,10 +12696,10 @@ app.all('/api/telegram/config', async (req, res) => {
   }
 });
 
-app.all(['/api/telegram/test', '/api/telegram/test-ping'], async (req, res) => {
+app.post(['/api/telegram/test', '/api/telegram/test-ping'], requireAdminSecret, async (req, res) => {
   try {
-    const botToken = req.body?.botToken || req.query?.botToken || req.query?.token || undefined;
-    const chatId = req.body?.chatId || req.query?.chatId || req.query?.chat || undefined;
+    const botToken = req.body?.botToken || undefined;
+    const chatId = req.body?.chatId || undefined;
     const result = await testTelegramConnection(botToken, chatId);
     res.json(result);
   } catch (err) {
@@ -12495,9 +12707,9 @@ app.all(['/api/telegram/test', '/api/telegram/test-ping'], async (req, res) => {
   }
 });
 
-app.all('/api/telegram/detect-chat-id', async (req, res) => {
+app.post('/api/telegram/detect-chat-id', requireAdminSecret, async (req, res) => {
   try {
-    const botToken = req.body?.botToken || req.query?.botToken || req.query?.token || undefined;
+    const botToken = req.body?.botToken || undefined;
     const result = await autoDetectChatId(botToken);
     res.json(result);
   } catch (err) {
@@ -12512,9 +12724,13 @@ app.post('/api/telegram/webhook', async (req, res) => {
   try {
     const webhookSecret = getTelegramWebhookSecretToken();
     const secretHeader = req.headers['x-telegram-bot-api-secret-token'];
-    
-    // Validate secret token if configured (OWASP spoofing prevention)
-    if (webhookSecret && !validateWebhookSecretToken(webhookSecret, secretHeader)) {
+
+    // Fail closed: webhook secret must be configured and validated (OWASP spoofing prevention)
+    if (!webhookSecret) {
+      console.warn('[TelegramWebhook] ⛔ Rejected webhook request: webhook secret not configured');
+      return res.status(503).json({ ok: false, error: 'Telegram webhook secret is not configured' });
+    }
+    if (!validateWebhookSecretToken(webhookSecret, secretHeader)) {
       console.warn('[TelegramWebhook] ⛔ Rejected webhook request: invalid x-telegram-bot-api-secret-token');
       return res.status(401).json({ ok: false, error: 'Unauthorized: invalid webhook secret token' });
     }
@@ -12590,12 +12806,12 @@ app.all(['/api/telegram/webhook/info', '/api/telegram/webhook/status'], requireA
   }
 });
 
-app.all('/api/telegram/test-alert', async (req, res) => {
+app.post('/api/telegram/test-alert', requireAdminSecret, async (req, res) => {
   try {
-    const sym = String(req.body?.symbol || req.query?.symbol || 'NTC').toUpperCase().trim();
-    const ltp = Number(req.body?.ltp || req.query?.ltp || (sym === 'NTC' ? 937.5 : 438.0));
-    const companyName = req.body?.companyName || req.query?.companyName || (sym === 'NTC' ? 'Nepal Telecom' : sym);
-    const sector = req.body?.sector || req.query?.sector || (sym === 'NTC' ? 'Telecom' : 'Equities');
+    const sym = String(req.body?.symbol || 'NTC').toUpperCase().trim();
+    const ltp = Number(req.body?.ltp || (sym === 'NTC' ? 937.5 : 438.0));
+    const companyName = req.body?.companyName || (sym === 'NTC' ? 'Nepal Telecom' : sym);
+    const sector = req.body?.sector || (sym === 'NTC' ? 'Telecom' : 'Equities');
 
     // Dynamic execution levels strictly anchored to LTP & v2.0 flowchart rules:
     const entryLow = Number(req.body?.entryLow || req.body?.buyZone?.low || (ltp * 0.995).toFixed(1));
@@ -12616,13 +12832,13 @@ app.all('/api/telegram/test-alert', async (req, res) => {
       ltp,
       bcr3AvgPrice,
       costBasisFloorPct: req.body?.costBasisFloorPct !== undefined ? Number(req.body.costBasisFloorPct) : +(((ltp - bcr3AvgPrice) / bcr3AvgPrice) * 100).toFixed(1),
-      leadBrokerId: req.body?.leadBrokerId || req.query?.leadBrokerId || '58',
-      leadBrokerName: req.body?.leadBrokerName || req.query?.leadBrokerName || 'Naasa Securities',
-      netKitta: Number(req.body?.netKitta || req.query?.netKitta || 26300),
-      bcr3: Number(req.body?.bcr3 || req.query?.bcr3 || 88.3),
-      bcr3Buy: Number(req.body?.bcr3Buy || req.query?.bcr3Buy || 88.3),
-      bcr3Sell: Number(req.body?.bcr3Sell || req.query?.bcr3Sell || 34.7),
-      cmf: Number(req.body?.cmf !== undefined ? req.body.cmf : (req.query?.cmf !== undefined ? req.query.cmf : 0.14)),
+      leadBrokerId: req.body?.leadBrokerId || '58',
+      leadBrokerName: req.body?.leadBrokerName || 'Naasa Securities',
+      netKitta: Number(req.body?.netKitta || 26300),
+      bcr3: Number(req.body?.bcr3 || 88.3),
+      bcr3Buy: Number(req.body?.bcr3Buy || 88.3),
+      bcr3Sell: Number(req.body?.bcr3Sell || 34.7),
+      cmf: Number(req.body?.cmf !== undefined ? req.body.cmf : 0.14),
       buyZone: { low: entryLow, high: entryHigh },
       entryLow,
       entryHigh,
@@ -12634,9 +12850,9 @@ app.all('/api/telegram/test-alert', async (req, res) => {
       t1Pct: 8.0,
       target2,
       t2Pct: 15.0,
-      vduRatio: Number(req.body?.vduRatio || req.query?.vduRatio || 0.52),
+      vduRatio: Number(req.body?.vduRatio || 0.52),
       vdu: Number(req.body?.vdu || 0.52),
-      bbwPct: Number(req.body?.bbwPct || req.query?.bbwPct || 8.4),
+      bbwPct: Number(req.body?.bbwPct || 8.4),
       bbw: Number(req.body?.bbw || 8.4),
       chaseCap,
       retention10D: Number(req.body?.retention10D || 87),
@@ -12654,7 +12870,7 @@ app.all('/api/telegram/test-alert', async (req, res) => {
   }
 });
 
-app.all('/api/telegram/dispatch-upgraded-stealth', async (req, res) => {
+app.post('/api/telegram/dispatch-upgraded-stealth', requireAdminSecret, async (req, res) => {
   try {
     const candidate = req.body?.candidate || {
       symbol: req.body?.symbol || 'NTC',
@@ -12689,7 +12905,7 @@ app.all('/api/telegram/dispatch-upgraded-stealth', async (req, res) => {
   }
 });
 
-app.post('/api/telegram/trigger-premarket', async (req, res) => {
+app.post('/api/telegram/trigger-premarket', requireAdminSecret, async (req, res) => {
   try {
     const { runPreMarketMorningScan } = await import('./workers.mjs');
     await runPreMarketMorningScan(true);
@@ -12699,7 +12915,7 @@ app.post('/api/telegram/trigger-premarket', async (req, res) => {
   }
 });
 
-app.post('/api/telegram/trigger-preopen', async (req, res) => {
+app.post('/api/telegram/trigger-preopen', requireAdminSecret, async (req, res) => {
   try {
     const { runPreOpenGateScan } = await import('./workers.mjs');
     await runPreOpenGateScan(true);
@@ -12709,7 +12925,7 @@ app.post('/api/telegram/trigger-preopen', async (req, res) => {
   }
 });
 
-app.post('/api/telegram/dispatch-morning-digest', async (req, res) => {
+app.post('/api/telegram/dispatch-morning-digest', requireAdminSecret, async (req, res) => {
   try {
     const { sessionDate } = req.body || {};
     const { runMorningStockSelectionDigestWorker } = await import('./workers.mjs');
@@ -12721,7 +12937,7 @@ app.post('/api/telegram/dispatch-morning-digest', async (req, res) => {
 });
 
 // ── AUTOMATED METHOD 1 & 2 INSTITUTIONAL PLAYBOOK NOTIFIER ──
-app.post('/api/telegram/dispatch-playbook-pick', async (req, res) => {
+app.post('/api/telegram/dispatch-playbook-pick', requireAdminSecret, async (req, res) => {
   try {
     const result = await autoSelectAndDispatchPlaybookPick();
     res.json(result);
@@ -12756,16 +12972,22 @@ app.get('/api/discord/status', (req, res) => {
 app.post('/api/discord/config', requireAdminSecret, (req, res) => {
   try {
     const { webhookUrl, enabled } = req.body || {};
+    if (webhookUrl && !isValidDiscordWebhookUrl(webhookUrl)) {
+      return res.status(400).json({ success: false, error: 'Invalid Discord Webhook URL.' });
+    }
     const result = saveDiscordConfig({ webhookUrl, enabled });
-    res.json({ success: result.success, message: result.success ? 'Discord webhook saved successfully' : result.error });
+    res.status(result.success ? 200 : 400).json({ success: result.success, message: result.success ? 'Discord webhook saved successfully' : result.error });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-app.post('/api/discord/test', async (req, res) => {
+app.post('/api/discord/test', requireAdminSecret, async (req, res) => {
   try {
     const { webhookUrl } = req.body || {};
+    if (webhookUrl && !isValidDiscordWebhookUrl(webhookUrl)) {
+      return res.status(400).json({ success: false, error: 'Invalid Discord Webhook URL.' });
+    }
     const result = await testDiscordWebhook(webhookUrl);
     res.json(result);
   } catch (err) {
@@ -12773,7 +12995,7 @@ app.post('/api/discord/test', async (req, res) => {
   }
 });
 
-app.post('/api/discord/test-alert', async (req, res) => {
+app.post('/api/discord/test-alert', requireAdminSecret, async (req, res) => {
   try {
     const mockAlert = {
       symbol: req.body?.symbol || 'HATHY',
@@ -13308,18 +13530,16 @@ async function runMacroScraper() {
     setMacroCache(updates);
     console.log('[macroWorker] ✅ Updated macro indicators:', updates);
     // Persist to DB if available
-    if (pool) {
-      const today = new Date().toISOString().slice(0, 10);
-      for (const [indicator, value] of Object.entries(updates)) {
-        try {
-          await pool.query(
-            `INSERT INTO macro_indicators (indicator, value, as_of_date)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (indicator, as_of_date) DO UPDATE SET value = EXCLUDED.value`,
-            [indicator, value, today]
-          );
-        } catch (_) {}
-      }
+    const today = new Date().toISOString().slice(0, 10);
+    for (const [indicator, value] of Object.entries(updates)) {
+      try {
+        await query(
+          `INSERT INTO macro_indicators (indicator, value, as_of_date)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (indicator, as_of_date) DO UPDATE SET value = EXCLUDED.value`,
+          [indicator, value, today]
+        );
+      } catch (_) {}
     }
   } else {
     console.warn('[macroWorker] No macro data scraped — using cached/default values');
@@ -13918,65 +14138,89 @@ app.get('/api/scanner/technical-ratings', async (req, res) => {
     const meroSummary = await fetchInternalMeroMarketSummary();
     const stocks = meroSummary?.stocks || [];
 
+    const histStmt = db.prepare(
+      'SELECT close_price, high_price, low_price FROM daily_stock_summary WHERE symbol = ? ORDER BY trade_date DESC LIMIT 60'
+    );
+
     const evaluated = stocks.map(s => {
+      const sym = String(s.symbol || '').toUpperCase().trim();
       const ltp = Number(s.ltp || 0);
-      const prevClose = Number(s.prevClose || ltp);
       const pChange = Number(s.pChange || 0);
-      const high = Number(s.high || ltp);
-      const low = Number(s.low || ltp);
+
+      let histRows = [];
+      try {
+        histRows = sym ? histStmt.all(sym).reverse() : [];
+      } catch (_) {}
+
+      const closes = histRows.map(r => Number(r.close_price)).filter(c => Number.isFinite(c) && c > 0);
+      if (closes.length < 20 || ltp <= 0) {
+        return {
+          symbol: s.symbol,
+          name: s.name,
+          sector: s.sector,
+          ltp,
+          pChange,
+          volume: s.volume,
+          turnover: s.turnover,
+          insufficientHistory: true,
+          rating: 'Unavailable',
+          needleAngle: null,
+          buyCount: 0,
+          neutralCount: 0,
+          sellCount: 0,
+          totalIndicators: 0
+        };
+      }
 
       let buyCount = 0;
       let sellCount = 0;
       let neutralCount = 0;
 
-      const checkMA = (threshold) => {
-        if (ltp > threshold * 1.005) buyCount++;
-        else if (ltp < threshold * 0.995) sellCount++;
+      const evalMA = (period) => {
+        if (closes.length < period) return;
+        const sma = closes.slice(-period).reduce((a, b) => a + b, 0) / period;
+        if (ltp > sma * 1.005) buyCount++;
+        else if (ltp < sma * 0.995) sellCount++;
         else neutralCount++;
       };
 
-      checkMA(prevClose * (1 - pChange * 0.003));
-      checkMA(prevClose * (1 - pChange * 0.006));
-      checkMA(prevClose * 0.985);
-      checkMA(prevClose * 0.970);
-      checkMA(prevClose * 0.950);
-      checkMA(prevClose * 0.980);
+      evalMA(5);
+      evalMA(10);
+      evalMA(20);
+      if (closes.length >= 50) evalMA(50);
 
-      const rsiEst = Math.max(10, Math.min(90, 50 + pChange * 5));
-      if (rsiEst > 55) buyCount++;
-      else if (rsiEst < 45) sellCount++;
-      else neutralCount++;
+      if (closes.length >= 15) {
+        let gains = 0, losses = 0;
+        for (let i = closes.length - 14; i < closes.length; i++) {
+          const diff = closes[i] - closes[i - 1];
+          if (diff >= 0) gains += diff; else losses -= diff;
+        }
+        const rs = losses === 0 ? 100 : gains / losses;
+        const rsi14 = 100 - (100 / (1 + rs));
+        if (rsi14 > 55) buyCount++;
+        else if (rsi14 < 45) sellCount++;
+        else neutralCount++;
+      }
 
-      const stochEst = high > low ? ((ltp - low) / (high - low)) * 100 : 50;
-      if (stochEst > 60) buyCount++;
-      else if (stochEst < 40) sellCount++;
-      else neutralCount++;
-
-      if (pChange > 0.5) buyCount++;
-      else if (pChange < -0.5) sellCount++;
-      else neutralCount++;
-
-      if (pChange > 1.2) buyCount++;
-      else if (pChange < -1.2) sellCount++;
-      else neutralCount++;
-
-      if (Math.abs(pChange) > 2.0) buyCount++;
-      else neutralCount++;
-
-      if (ltp >= high * 0.99 && pChange > 0) buyCount++;
-      else if (ltp <= low * 1.01 && pChange < 0) sellCount++;
-      else neutralCount++;
+      const recentBars = histRows.slice(-14);
+      const h14 = Math.max(...recentBars.map(r => Number(r.high_price || r.close_price || 0)));
+      const l14 = Math.min(...recentBars.map(r => Number(r.low_price || r.close_price || 0)).filter(v => v > 0));
+      if (h14 > l14 && l14 > 0) {
+        const stochK = ((ltp - l14) / (h14 - l14)) * 100;
+        if (stochK > 60) buyCount++;
+        else if (stochK < 40) sellCount++;
+        else neutralCount++;
+      }
 
       const total = buyCount + sellCount + neutralCount;
       const net = buyCount - sellCount;
       let rating = 'Neutral';
       let needleAngle = 0;
 
-      if (net >= 5) { rating = 'Strong Buy'; needleAngle = 65; }
+      if (net >= 4) { rating = 'Strong Buy'; needleAngle = 65; }
       else if (net >= 2) { rating = 'Buy'; needleAngle = 35; }
-      else if (net <= -5) { rating = 'Strong Sell'; needleAngle = -65; }
+      else if (net <= -4) { rating = 'Strong Sell'; needleAngle = -65; }
       else if (net <= -2) { rating = 'Sell'; needleAngle = -35; }
-      else { rating = 'Neutral'; needleAngle = 0; }
 
       return {
         symbol: s.symbol,
@@ -13986,6 +14230,7 @@ app.get('/api/scanner/technical-ratings', async (req, res) => {
         pChange,
         volume: s.volume,
         turnover: s.turnover,
+        insufficientHistory: false,
         rating,
         needleAngle,
         buyCount,
@@ -14094,31 +14339,57 @@ app.get('/api/company/:symbol/industry-comparison', async (req, res) => {
       base = await fetchStockFundamentals(sym);
     } catch (_) {}
 
-    const sector = base?.sector || stockMap[sym]?.sector || 'Commercial Banks';
-    const eps = Number(base?.eps || 18.2);
-    const pe = Number(base?.pe || 21.4);
-    const bvps = Number(base?.bookValue || 174.5);
-    const pbv = Number(base?.pbv || base?.pb || 2.1);
-    const roe = Number(base?.roe || (eps > 0 && bvps > 0 ? (eps / bvps) * 100 : 11.2));
+    const toOptNum = (v) => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
 
-    const isHydro = String(sector).toLowerCase().includes('hydro');
-    const isMicro = String(sector).toLowerCase().includes('micro');
-    const isIns = String(sector).toLowerCase().includes('insurance');
+    const sector = base?.sector || stockMap[sym]?.sector || null;
+    const eps = toOptNum(base?.eps);
+    const pe = toOptNum(base?.pe);
+    const bvps = toOptNum(base?.bookValue ?? base?.bvps);
+    const pbv = toOptNum(base?.pbv ?? base?.pb);
+    const derivedRoe = (eps !== null && bvps !== null && bvps > 0) ? +((eps / bvps) * 100).toFixed(2) : null;
+    const roe = toOptNum(base?.roe) ?? derivedRoe;
 
-    const benchmark = isHydro
-      ? { sector: 'Hydro Power', pe: 28.5, pbv: 2.8, eps: 12.4, bvps: 135.0, roe: 8.8 }
-      : isMicro
-      ? { sector: 'Microfinance', pe: 34.2, pbv: 3.4, eps: 24.5, bvps: 185.0, roe: 14.2 }
-      : isIns
-      ? { sector: 'Life / Non-Life Insurance', pe: 26.8, pbv: 2.6, eps: 19.8, bvps: 165.0, roe: 12.1 }
-      : { sector: 'Commercial Banks', pe: 20.5, pbv: 1.85, eps: 16.4, bvps: 154.0, roe: 10.9 };
+    // Aggregate authentic sector peer metrics from available peer fundamentals (no synthetic sector defaults)
+    const peerValues = { pe: [], pbv: [], eps: [], bvps: [], roe: [] };
+    if (sector) {
+      for (const [peerSym, peerMeta] of Object.entries(stockMap || {})) {
+        if (peerSym === sym) continue;
+        if (String(peerMeta?.sector || '').toLowerCase() !== String(sector).toLowerCase()) continue;
+        const cachedPeer = getCache(`company-fundamentals-${peerSym}`);
+        if (!cachedPeer) continue;
+        const pEps = toOptNum(cachedPeer.eps);
+        const pPe = toOptNum(cachedPeer.pe);
+        const pBvps = toOptNum(cachedPeer.bookValue ?? cachedPeer.bvps);
+        const pPbv = toOptNum(cachedPeer.pbv ?? cachedPeer.pb);
+        const pRoe = toOptNum(cachedPeer.roe);
+        if (pEps !== null) peerValues.eps.push(pEps);
+        if (pPe !== null && pPe > 0) peerValues.pe.push(pPe);
+        if (pBvps !== null && pBvps > 0) peerValues.bvps.push(pBvps);
+        if (pPbv !== null && pPbv > 0) peerValues.pbv.push(pPbv);
+        if (pRoe !== null) peerValues.roe.push(pRoe);
+      }
+    }
+    const meanOrNull = (arr) => arr.length > 0 ? +(arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2) : null;
+    const benchmark = {
+      sector: sector || 'Unclassified',
+      pe: meanOrNull(peerValues.pe),
+      pbv: meanOrNull(peerValues.pbv),
+      eps: meanOrNull(peerValues.eps),
+      bvps: meanOrNull(peerValues.bvps),
+      roe: meanOrNull(peerValues.roe),
+      peerCount: Math.max(...Object.values(peerValues).map(a => a.length), 0)
+    };
 
     const comparison = [
-      { metric: 'EPS (Rs.)', stockVal: eps, industryVal: benchmark.eps, unit: 'Rs.', outperforming: eps >= benchmark.eps },
-      { metric: 'P/E Ratio', stockVal: pe, industryVal: benchmark.pe, unit: 'x', outperforming: pe <= benchmark.pe },
-      { metric: 'Book Value (BVPS)', stockVal: bvps, industryVal: benchmark.bvps, unit: 'Rs.', outperforming: bvps >= benchmark.bvps },
-      { metric: 'PBV (Price to Book)', stockVal: pbv, industryVal: benchmark.pbv, unit: 'x', outperforming: pbv <= benchmark.pbv },
-      { metric: 'ROE (%)', stockVal: +roe.toFixed(2), industryVal: benchmark.roe, unit: '%', outperforming: roe >= benchmark.roe }
+      { metric: 'EPS (Rs.)', stockVal: eps, industryVal: benchmark.eps, unit: 'Rs.', outperforming: eps !== null && benchmark.eps !== null ? eps >= benchmark.eps : null },
+      { metric: 'P/E Ratio', stockVal: pe, industryVal: benchmark.pe, unit: 'x', outperforming: pe !== null && benchmark.pe !== null && pe > 0 ? pe <= benchmark.pe : null },
+      { metric: 'Book Value (BVPS)', stockVal: bvps, industryVal: benchmark.bvps, unit: 'Rs.', outperforming: bvps !== null && benchmark.bvps !== null ? bvps >= benchmark.bvps : null },
+      { metric: 'PBV (Price to Book)', stockVal: pbv, industryVal: benchmark.pbv, unit: 'x', outperforming: pbv !== null && benchmark.pbv !== null && pbv > 0 ? pbv <= benchmark.pbv : null },
+      { metric: 'ROE (%)', stockVal: roe !== null ? +roe.toFixed(2) : null, industryVal: benchmark.roe, unit: '%', outperforming: roe !== null && benchmark.roe !== null ? roe >= benchmark.roe : null }
     ];
 
     const result = {

@@ -76,15 +76,40 @@ export const TOP_NEPSE_BROKERS = {
   "65": "Sharepro Securities (#65)",
   "66": "Miyo Securities (#66)",
   "67": "Property Wizard (#67)",
-  "68": "Reliable Securities (#68)",
-  "69": "Elite Stock (#69)",
+  "68": "Elite Stock House (#68)",
+  "69": "Index Securities (#69)",
   "70": "Infinity Securities (#70)",
-  "71": "Index Securities (#71)",
-  "72": "Subha Securities (#72)",
-  "73": "Kalash Stock (#73)",
-  "74": "Magnet Securities (#74)",
-  "75": "Nabil Stock Dealer (#75)",
-  "96": "Himalayan Securities (#96)"
+  "71": "Shubhakamana Securities (#71)",
+  "72": "Hatemalo Financial Services (#72)",
+  "73": "Money World Share Exchange (#73)",
+  "74": "Kalash Stock Market (#74)",
+  "75": "Mega Stock Markets (#75)",
+  "76": "Machhapuchchhre Securities (#76)",
+  "77": "Nabil Stock Dealer (#77)",
+  "78": "Garima Securities (#78)",
+  "79": "Pahi Investment (#79)",
+  "80": "Indira Securities (#80)",
+  "81": "Aakashbhairab Securities (#81)",
+  "82": "N.M.B. Securities (#82)",
+  "83": "Sanima Securities (#83)",
+  "84": "Milky Way Share Broker (#84)",
+  "85": "Capital Hub (#85)",
+  "86": "Stoxkart Securities (#86)",
+  "87": "S.P.S.A. Securities (#87)",
+  "88": "Blue Chip Securities (#88)",
+  "89": "JBNL Securities (#89)",
+  "90": "Sajilo Broker (#90)",
+  "91": "CBIL Securities (#91)",
+  "92": "Roadshow Securities (#92)",
+  "93": "Beni Securities (#93)",
+  "94": "K.B.L. Securities (#94)",
+  "95": "Magnet Securities & Investment (#95)",
+  "96": "Himalayan Securities (#96)",
+  "97": "R.B.B. Securities (#97)",
+  "98": "Trademow Securities (#98)",
+  "99": "Prabhu Stock Market (#99)",
+  "100": "Sunrise Securities (#100)",
+  "101": "Apple Securities (#101)"
 };
 
 export function getBrokerName(id) {
@@ -744,7 +769,9 @@ export function aggregateBrokerMicrostructure(params = {}) {
     const combinedVol = b.buyVol + b.sellVol;
     const vwap = combinedVol > 0 ? Number(((b.buyAmt + b.sellAmt) / combinedVol).toFixed(2)) : 0;
     const retentionPct = b.buyVol > 0 ? Number(((Math.max(0, netQty) / b.buyVol) * 100).toFixed(1)) : 0;
-    const pct = totalVolume > 0 ? Number(((b.buyVol / totalVolume) * 100).toFixed(1)) : 0;
+    const buyPct = totalVolume > 0 ? Number(Math.min(100, Math.max(0, (b.buyVol / totalVolume) * 100)).toFixed(1)) : 0;
+    const sellPct = totalVolume > 0 ? Number(Math.min(100, Math.max(0, (b.sellVol / totalVolume) * 100)).toFixed(1)) : 0;
+    const pct = buyPct;
 
     return {
       broker: b.brokerId,
@@ -783,6 +810,9 @@ export function aggregateBrokerMicrostructure(params = {}) {
       signedHoldQty: netQty,
       retentionPct,
       pct,
+      buyPct,
+      sellPct,
+      sharePct: buyPct,
       trades: b.buyTrades + b.sellTrades,
       buyTrades: b.buyTrades,
       sellTrades: b.sellTrades
@@ -790,7 +820,16 @@ export function aggregateBrokerMicrostructure(params = {}) {
   });
 
   const sortedBuyers = [...allBrokers].sort((a, b) => (b.buyVol - a.buyVol) || (b.buyAmt - a.buyAmt) || String(a.brokerId).localeCompare(String(b.brokerId), undefined, { numeric: true }));
-  const sortedSellers = [...allBrokers].sort((a, b) => (b.sellVol - a.sellVol) || (b.sellAmt - a.sellAmt) || String(a.brokerId).localeCompare(String(b.brokerId), undefined, { numeric: true }));
+  const sortedSellers = [...allBrokers]
+    .sort((a, b) => (b.sellVol - a.sellVol) || (b.sellAmt - a.sellAmt) || String(a.brokerId).localeCompare(String(b.brokerId), undefined, { numeric: true }))
+    .map(s => ({
+      ...s,
+      volume: s.sellVol,
+      nonCrossVolume: s.nonCrossSellVol,
+      amount: s.sellAmt,
+      pct: s.sellPct,
+      sharePct: s.sellPct
+    }));
   const topAccumulators = [...allBrokers].filter(b => b.netQty > 0).sort((a, b) => (b.netQty - a.netQty) || (b.netAmt - a.netAmt) || String(a.brokerId).localeCompare(String(b.brokerId), undefined, { numeric: true }));
   const topDistributors = [...allBrokers].filter(b => b.netQty < 0).sort((a, b) => (a.netQty - b.netQty) || (a.netAmt - b.netAmt) || String(a.brokerId).localeCompare(String(b.brokerId), undefined, { numeric: true }));
 
@@ -804,18 +843,20 @@ export function aggregateBrokerMicrostructure(params = {}) {
   const effBuyVol = totalNonCrossBuyVol;
   const effSellVol = totalNonCrossSellVol;
 
-  let bcr3BuyPct = effBuyVol > 0 ? Number(Math.min(100.0, (top3GrossBuyVol / effBuyVol) * 100).toFixed(1)) : 0;
-  let bcr5BuyPct = effBuyVol > 0 ? Number(Math.min(100.0, (top5GrossBuyVol / effBuyVol) * 100).toFixed(1)) : 0;
-  let scr3SellPct = effSellVol > 0 ? Number(Math.min(100.0, (top3GrossSellVol / effSellVol) * 100).toFixed(1)) : 0;
+  let bcr3BuyPct = effBuyVol > 0 ? Number(Math.min(100.0, Math.max(0, (top3GrossBuyVol / effBuyVol) * 100)).toFixed(1)) : 0;
+  let bcr5BuyPct = effBuyVol > 0 ? Number(Math.min(100.0, Math.max(0, (top5GrossBuyVol / effBuyVol) * 100)).toFixed(1)) : 0;
+  let scr3SellPct = effSellVol > 0 ? Number(Math.min(100.0, Math.max(0, (top3GrossSellVol / effSellVol) * 100)).toFixed(1)) : 0;
 
   // If authentic concentration was already supplied in rba without raw trades
   const rbaData = p.realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis;
   if (rawTrades.length === 0 && rbaData?.bcr3BuyPct !== undefined) {
-    bcr3BuyPct = Number(rbaData.bcr3BuyPct);
-    bcr5BuyPct = Number(rbaData.bcr5BuyPct || (bcr3BuyPct / 0.77).toFixed(1));
+    bcr3BuyPct = Number(Math.min(100.0, Math.max(0, Number(rbaData.bcr3BuyPct))).toFixed(1));
+    const computedBcr5 = bcr5BuyPct >= bcr3BuyPct ? bcr5BuyPct : Number((bcr3BuyPct / 0.77).toFixed(1));
+    bcr5BuyPct = Number(Math.min(100.0, Math.max(bcr3BuyPct, Number(rbaData.bcr5BuyPct || computedBcr5))).toFixed(1));
   } else if (rawTrades.length === 0 && rbaData?.concentrationPct !== undefined) {
-    bcr3BuyPct = Number(rbaData.concentrationPct);
-    bcr5BuyPct = Number(rbaData.bcr5BuyPct || (bcr3BuyPct / 0.77).toFixed(1));
+    bcr3BuyPct = Number(Math.min(100.0, Math.max(0, Number(rbaData.concentrationPct))).toFixed(1));
+    const computedBcr5 = bcr5BuyPct >= bcr3BuyPct ? bcr5BuyPct : Number((bcr3BuyPct / 0.77).toFixed(1));
+    bcr5BuyPct = Number(Math.min(100.0, Math.max(bcr3BuyPct, Number(rbaData.bcr5BuyPct || computedBcr5))).toFixed(1));
   }
 
   // Bilateral Cross-Trade Neutralization (Part D)
@@ -842,10 +883,10 @@ export function aggregateBrokerMicrostructure(params = {}) {
   const top5NetBuyVol = topAccumulators.slice(0, 5).reduce((sum, b) => sum + b.netQty, 0);
   const top3NetSellVol = topDistributors.slice(0, 3).reduce((sum, s) => sum + Math.abs(s.netQty), 0);
 
-  const bcr3NetPct = effBuyVol > 0 ? Number(((top3NetBuyVol / effBuyVol) * 100).toFixed(1)) : 0;
-  const bcr5NetPct = effBuyVol > 0 ? Number(((top5NetBuyVol / effBuyVol) * 100).toFixed(1)) : 0;
-  const scr3NetPct = effSellVol > 0 ? Number(((top3NetSellVol / effSellVol) * 100).toFixed(1)) : 0;
-  const scr3GrossSellPct = effSellVol > 0 ? Number(((top3GrossSellVol / effSellVol) * 100).toFixed(1)) : 0;
+  const bcr3NetPct = effBuyVol > 0 ? Number(Math.min(100.0, Math.max(0, (top3NetBuyVol / effBuyVol) * 100)).toFixed(1)) : 0;
+  const bcr5NetPct = effBuyVol > 0 ? Number(Math.min(100.0, Math.max(0, (top5NetBuyVol / effBuyVol) * 100)).toFixed(1)) : 0;
+  const scr3NetPct = effSellVol > 0 ? Number(Math.min(100.0, Math.max(0, (top3NetSellVol / effSellVol) * 100)).toFixed(1)) : 0;
+  const scr3GrossSellPct = effSellVol > 0 ? Number(Math.min(100.0, Math.max(0, (top3GrossSellVol / effSellVol) * 100)).toFixed(1)) : 0;
 
   // Average Trade Sizes & Asymmetry
   const top3BuyerTrades = sortedBuyers.slice(0, 3).reduce((sum, b) => sum + Math.max(1, b.buyTrades), 0);

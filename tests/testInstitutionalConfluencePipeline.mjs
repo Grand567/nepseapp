@@ -285,6 +285,8 @@ const fullAlert = evaluateInstitutionalAlert({
   totalBuyQty: 65000,
   totalSellQty: 48000,
   rolling5DBrokerData: { grossBuy5D: 280000, netBuy5D: 235000 },
+  ema50: 260,
+  ema50Prev: 259.5,
   sector: 'Hydro Power',
   sectorRank10D: 2,
   stock10DReturn: 6.8,

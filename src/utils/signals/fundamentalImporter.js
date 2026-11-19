@@ -120,3 +120,10 @@ export function getScripFundamental(symbol) {
   const row = db.prepare('SELECT * FROM scrip_fundamentals WHERE UPPER(symbol) = ?').get(sym);
   return row || null;
 }
+
+export function deleteScripFundamental(symbol) {
+  if (!symbol) return { deleted: 0 };
+  const sym = String(symbol).toUpperCase().trim();
+  const res = db.prepare('DELETE FROM scrip_fundamentals WHERE UPPER(symbol) = ?').run(sym);
+  return { deleted: res.changes || 0 };
+}

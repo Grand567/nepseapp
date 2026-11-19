@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   TrendingUp, TrendingDown, Layers, ShieldCheck, Filter,
   ArrowUpRight, ArrowDownRight, RefreshCw, BarChart2, PieChart, Info,
@@ -44,6 +44,12 @@ function formatShareHubCurrency(val) {
   if (abs >= 1e5) return `${sign}${(abs / 1e5).toFixed(2)} L`;
   if (abs >= 1e3) return `${sign}${(abs / 1e3).toFixed(2)} K`;
   return `${sign}Rs ${abs.toFixed(0)}`;
+}
+
+export function formatBrokerDisplay(id, name) {
+  if (!name || name === `Broker #${id}` || name === `#${id}`) return `Broker #${id}`;
+  if (name.startsWith(`Broker #${id}`) || name.startsWith(`#${id}`)) return name;
+  return `#${id} ${name}`;
 }
 
 function StockBrokerAnalysisTabInner({
@@ -138,6 +144,14 @@ function StockBrokerAnalysisTabInner({
     if (selectedDate !== undefined) setLocalDate(selectedDate);
   }, [selectedDate]);
 
+  // Track active symbol and sequence counters to discard stale async broker responses
+  const activeSymbolRef = useRef(symbol);
+  const fetchSeqRef = useRef(0);
+  useEffect(() => {
+    activeSymbolRef.current = symbol;
+    fetchSeqRef.current++;
+  }, [symbol]);
+
   // Immediately hydrate all available trading dates from prop or background API
   useEffect(() => {
     if (Array.isArray(propAvailableDates) && propAvailableDates.length > 0) {
@@ -157,7 +171,14 @@ function StockBrokerAnalysisTabInner({
   // Prefetch Multi-Day / 30-Day Cumulative Broker Holding Baseline Till Today & Full Month Sessions
   useEffect(() => {
     let active = true;
+    let pollTimer = null;
     if (!symbol) return;
+
+    // Immediately reset symbol-scoped holding states before hydrating the new symbol
+    setInternalBrokerData(null);
+    setCumulativeHoldingMap({});
+    setMultiDayDailyFlow([]);
+    setTotalCumulativeHoldingKitta(0);
 
     const parseAndSetHoldings = (bList, dateList = [], flowList = []) => {
       if (!Array.isArray(bList) || bList.length === 0) return false;
@@ -282,7 +303,7 @@ function StockBrokerAnalysisTabInner({
             scr3SellPct: scr3,
             adSignal: sig,
             netFlow: net,
-            totalTrades: Number(f.totalTrades || f.trades || (vol > 0 ? Math.max(1, Math.round(vol / 420)) : 0))
+            totalTrades: Number(f.totalTrades || f.trades || 0)
           });
         }
       });
@@ -340,7 +361,7 @@ function StockBrokerAnalysisTabInner({
 
       // If symbol's all-time historical floorsheet is still syncing in the background, poll every 4s until complete
       if (resSm && resSm.isCompleteHistory === false) {
-        const pollTimer = setTimeout(() => {
+        pollTimer = setTimeout(() => {
           if (!active) return;
           fetchFromBackend(`/api/stocks/${encodeURIComponent(symbol)}/smart-money?days=all`, 12000)
             .then(updatedSm => {
@@ -356,11 +377,13 @@ function StockBrokerAnalysisTabInner({
             })
             .catch(() => {});
         }, 4000);
-        return () => clearTimeout(pollTimer);
       }
     });
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+      if (pollTimer) clearTimeout(pollTimer);
+    };
   }, [symbol, ltp, allTimeHoldingData]);
 
   // Auto-fetch if brokerData is missing, empty, or from a different timeframe
@@ -498,10 +521,10 @@ function StockBrokerAnalysisTabInner({
       if (internalBrokerData && (internalBrokerData.timeframe === 'ALL' || internalBrokerData.tradingDays >= 30)) {
         return internalBrokerData;
       }
-      if (brokerData && (brokerData.timeframe === 'ALL' || brokerData.tradingDays >= 30)) {
+      if (brokerData && (brokerData.symbol === symbol || !brokerData.symbol) && (brokerData.timeframe === 'ALL' || brokerData.tradingDays >= 30)) {
         return brokerData;
       }
-      if (allTimeHoldingData && (Array.isArray(allTimeHoldingData.topHoldings) || Array.isArray(allTimeHoldingData.allHoldings) || Array.isArray(allTimeHoldingData.brokers))) {
+      if (allTimeHoldingData && (allTimeHoldingData.symbol === symbol || !allTimeHoldingData.symbol) && (Array.isArray(allTimeHoldingData.topHoldings) || Array.isArray(allTimeHoldingData.allHoldings) || Array.isArray(allTimeHoldingData.brokers))) {
         return allTimeHoldingData;
       }
       const cum = getCumulativeBrokerData(symbol);
@@ -594,7 +617,7 @@ function StockBrokerAnalysisTabInner({
         return internalBrokerData;
       }
     }
-    if (brokerData) {
+    if (brokerData && (brokerData.symbol === symbol || !brokerData.symbol)) {
       const parentDays = brokerData.timeframeDays || brokerData.tradingDays || brokerData.days;
       if (effectiveDays === 'all' || effectiveDays === 'ALL') {
         if (brokerData.timeframe === 'ALL' || Number(parentDays) >= 30) {
@@ -610,6 +633,8 @@ function StockBrokerAnalysisTabInner({
   const isTabLoading = Boolean(loading || internalLoading);
 
   const handleDaysSelect = (d) => {
+    const reqSym = symbol;
+    const seq = ++fetchSeqRef.current;
     setLocalDays(d);
     setLocalDate('');
     setLocalFromDate('');
@@ -620,13 +645,15 @@ function StockBrokerAnalysisTabInner({
       onDaysChange(d);
     }
     setInternalLoading(true);
-    fetchRealBrokerAnalysis(symbol, d, { date: '', refresh: false })
-      .then(res => { if (res) setInternalBrokerData(res); })
+    fetchRealBrokerAnalysis(reqSym, d, { date: '', refresh: false })
+      .then(res => { if (res && seq === fetchSeqRef.current && activeSymbolRef.current === reqSym) setInternalBrokerData(res); })
       .catch(() => {})
-      .finally(() => setInternalLoading(false));
+      .finally(() => { if (seq === fetchSeqRef.current && activeSymbolRef.current === reqSym) setInternalLoading(false); });
   };
 
   const handleDateSelect = (dt) => {
+    const reqSym = symbol;
+    const seq = ++fetchSeqRef.current;
     setLocalDate(dt);
     setLocalFromDate('');
     setLocalToDate('');
@@ -640,24 +667,26 @@ function StockBrokerAnalysisTabInner({
       onDateChange(dt);
     }
     // Always trigger direct offline subfile / API fetch so activeBrokerData resolves in 0ms!
-    if (dt && symbol) {
+    if (dt && reqSym) {
       setInternalLoading(true);
-      fetchRealBrokerAnalysis(symbol, 1, { date: dt, refresh: false })
-        .then(res => { if (res) setInternalBrokerData(res); })
+      fetchRealBrokerAnalysis(reqSym, 1, { date: dt, refresh: false })
+        .then(res => { if (res && seq === fetchSeqRef.current && activeSymbolRef.current === reqSym) setInternalBrokerData(res); })
         .catch(() => {})
-        .finally(() => setInternalLoading(false));
+        .finally(() => { if (seq === fetchSeqRef.current && activeSymbolRef.current === reqSym) setInternalLoading(false); });
     }
   };
 
   const handleRangeApply = (fromVal = localFromDate, toVal = localToDate) => {
     if (!fromVal && !toVal) return;
+    const reqSym = symbol;
+    const seq = ++fetchSeqRef.current;
     setLocalDate('');
     // Retain internalBrokerData during fetch to eliminate transient empty / 0-shares jitter
     setInternalLoading(true);
-    fetchRealBrokerAnalysis(symbol, 500, { fromDate: fromVal, toDate: toVal, refresh: false })
-      .then(res => { if (res) setInternalBrokerData(res); })
+    fetchRealBrokerAnalysis(reqSym, 500, { fromDate: fromVal, toDate: toVal, refresh: false })
+      .then(res => { if (res && seq === fetchSeqRef.current && activeSymbolRef.current === reqSym) setInternalBrokerData(res); })
       .catch(() => {})
-      .finally(() => setInternalLoading(false));
+      .finally(() => { if (seq === fetchSeqRef.current && activeSymbolRef.current === reqSym) setInternalLoading(false); });
   };
 
   const handleRangeReset = () => {
@@ -899,13 +928,18 @@ function StockBrokerAnalysisTabInner({
       const hasCumData = cumulativeHoldingMap && Object.keys(cumulativeHoldingMap).length > 0;
       const cum = cumulativeHoldingMap[idKey] || cumulativeHoldingMap[String(r.id)] || null;
       const rawCumHold = cum ? (cum.totalHeldQty || (cum.netQty > 0 ? cum.netQty : 0)) : 0;
-      // Invariant: Total holding till today reflects authentic cumulative multi-year holding from archive
-      // If viewing a single session, restrict to authentic session values
-      const effectiveCumHold = isSingleSession ? holdQty : (hasCumData ? rawCumHold : (cum ? (cum.totalHeldQty || Math.max(0, cum.netQty || 0)) : undefined));
-      const cumAmt = isSingleSession ? holdAmt : (cum ? (cum.totalHeldAmt || ((effectiveCumHold || 0) * (cum.avgBuyRate || avgBuy || ltp || 100))) : ((effectiveCumHold || 0) * (avgBuy || ltp || 100)));
-      const cumBuyPx = isSingleSession ? (avgBuy || 0) : (cum && cum.avgBuyRate > 0 ? cum.avgBuyRate : (avgBuy || 0));
-      const cumSellPx = isSingleSession ? (avgSell || 0) : (cum && cum.avgSellRate > 0 ? cum.avgSellRate : (avgSell || 0));
-      const cumRet = isSingleSession ? holdPctOfBuy : (cum && cum.retentionPct !== undefined ? cum.retentionPct : (r.buyQty > 0 ? Math.round((Math.max(0, netQty) / r.buyQty) * 100) : 0));
+      // Invariant: TOTAL HELD TILL TODAY always reflects authentic cumulative multi-session holding from archive
+      const effectiveCumHold = hasCumData
+        ? rawCumHold
+        : (cum ? (cum.totalHeldQty || Math.max(0, cum.netQty || 0)) : (isSingleSession ? undefined : holdQty));
+      const cumAmt = cum
+        ? (cum.totalHeldAmt || ((effectiveCumHold || 0) * (cum.avgBuyRate || avgBuy || ltp || 100)))
+        : (effectiveCumHold !== undefined ? ((effectiveCumHold || 0) * (avgBuy || ltp || 100)) : holdAmt);
+      const cumBuyPx = (cum && cum.avgBuyRate > 0) ? cum.avgBuyRate : (avgBuy || 0);
+      const cumSellPx = (cum && cum.avgSellRate > 0) ? cum.avgSellRate : (avgSell || 0);
+      const cumRet = (cum && cum.retentionPct !== undefined)
+        ? cum.retentionPct
+        : (r.buyQty > 0 ? Math.round((Math.max(0, netQty) / r.buyQty) * 100) : 0);
 
       return {
         ...r,
@@ -987,7 +1021,7 @@ function StockBrokerAnalysisTabInner({
       // Default: netQty (Actual Total Kitta Held Till Today or in this session!)
       const enriched = brokerRecords.map(b => ({
         ...b,
-        effectiveHoldQty: isSingleSession ? Math.max(0, b.signedHoldQty || 0) : ((b.cumHoldQty !== undefined && b.cumHoldQty > 0) ? b.cumHoldQty : (b.signedHoldQty > 0 ? b.signedHoldQty : (b.totalHeldQty || b.buyQty || 0)))
+        effectiveHoldQty: isSingleSession ? Math.max(0, b.signedHoldQty || 0) : ((b.cumHoldQty !== undefined && b.cumHoldQty > 0) ? b.cumHoldQty : (b.signedHoldQty > 0 ? b.signedHoldQty : (b.totalHeldQty || 0)))
       })).filter(b => b.effectiveHoldQty > 0);
       const list = enriched.length > 0 ? enriched : brokerRecords;
       return [...list]
@@ -1794,7 +1828,7 @@ function StockBrokerAnalysisTabInner({
 
           {isTabLoading && (
             <span style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <RefreshCw style={{ width: 11, height: 11, animation: 'spin 1s linear infinite' }} />
+              <RefreshCw className="animate-spin" style={{ width: 11, height: 11 }} />
               Loading Brokers...
             </span>
           )}
@@ -2462,9 +2496,7 @@ function StockBrokerAnalysisTabInner({
                         <td style={{ padding: '9px 6px', textAlign: 'right', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>
                           {(() => {
                             const trades = Number(df.totalTrades || df.trades || 0);
-                            if (trades > 0) return trades.toLocaleString();
-                            const vol = Number(df.buyVol || df.totalVolume || 0);
-                            return vol > 0 ? Math.max(1, Math.round(vol / 420)).toLocaleString() : '—';
+                            return trades > 0 ? trades.toLocaleString() : '—';
                           })()}
                         </td>
                       </tr>
@@ -2618,7 +2650,7 @@ function StockBrokerAnalysisTabInner({
                       return (
                         <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                           <td style={{ padding: '8px 6px', color: '#ffffff', fontWeight: 700 }}>
-                            #{b.id} <span style={{ color: '#94a3b8', fontWeight: 500 }}>{b.name}</span>
+                            {formatBrokerDisplay(b.id, b.name)}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#10b981', fontFamily: 'var(--font-mono)' }}>
                             {safeFmtInt(b.buyQty)}
@@ -2664,7 +2696,7 @@ function StockBrokerAnalysisTabInner({
                             {idx + 1}
                           </td>
                           <td style={{ padding: '8px 6px', color: '#ffffff', fontWeight: 700 }}>
-                            #{b.id} <span style={{ color: '#94a3b8', fontWeight: 500 }}>{b.name}</span>
+                            {formatBrokerDisplay(b.id, b.name)}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
                             +{safeFmtInt(holdQty)}
@@ -2991,7 +3023,7 @@ function StockBrokerAnalysisTabInner({
               </div>
             </div>
             <div style={{ padding: 10, borderRadius: 12, background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-              <div style={{ fontSize: 11, color: '#fbbf24', fontWeight: 700 }}>A/D Signal ({activeBrokerData?.period || `${effectiveDays}D`})</div>
+              <div style={{ fontSize: 11, color: '#fbbf24', fontWeight: 700 }}>A/D Signal ({activeBrokerData?.period || (String(effectiveDays).toLowerCase() === 'all' ? 'All-Time' : `${effectiveDays}D`)})</div>
               <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                 {activeBrokerData?.adSignal || 'Neutral'} {activeBrokerData?.adStrength ? `(${activeBrokerData.adStrength})` : ''}
               </div>
@@ -3048,7 +3080,7 @@ function StockBrokerAnalysisTabInner({
                 return accs.map((b, idx) => (
                   <div key={b.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: idx < accs.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>#{b.id} {b.name}</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>{formatBrokerDisplay(b.id, b.name)}</span>
                       <span style={{ fontSize: 10, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
                         Avg Buy: Rs. {b.avgBuy > 0 ? safeNum(b.avgBuy).toFixed(2) : (b.buyQty > 0 && b.buyAmt > 0 ? (b.buyAmt / b.buyQty).toFixed(2) : '--')} • Turnover: {formatShareHubCurrency(b.buyAmt || 0)}
                       </span>
@@ -3080,7 +3112,7 @@ function StockBrokerAnalysisTabInner({
                 return dists.map((b, idx) => (
                   <div key={b.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: idx < dists.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>#{b.id} {b.name}</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>{formatBrokerDisplay(b.id, b.name)}</span>
                       <span style={{ fontSize: 10, color: '#fb7185', fontFamily: 'var(--font-mono)' }}>
                         Avg Sell: Rs. {b.avgSell > 0 ? safeNum(b.avgSell).toFixed(2) : (b.sellQty > 0 && b.sellAmt > 0 ? (b.sellAmt / b.sellQty).toFixed(2) : '--')} • Turnover: {formatShareHubCurrency(b.sellAmt || 0)}
                       </span>
@@ -3320,7 +3352,7 @@ function StockBrokerAnalysisTabInner({
                   return (
                     <tr key={b.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                       <td style={{ padding: '8px 6px', color: '#ffffff', fontWeight: 600 }}>
-                        #{b.id} {b.name}
+                        {formatBrokerDisplay(b.id, b.name)}
                       </td>
                       <td style={{ padding: '8px 6px', textAlign: 'right', color: '#10b981', fontFamily: 'var(--font-mono)' }}>
                         {buyDisplay}

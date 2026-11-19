@@ -100,28 +100,35 @@ export const STATUTORY_RULES = {
  */
 export function compileTodayStaticAnalytics(options = {}) {
   const t0 = Date.now();
+  const ownsDb = !options.db;
   const db = options.db || new Database(DB_PATH, { readonly: true, timeout: 10000 });
-  try { db.pragma('busy_timeout = 10000'); } catch (_) {}
+  try {
+    try { db.pragma('busy_timeout = 10000'); } catch (_) {}
 
-  // Get distinct trade dates to determine latest and historical window
-  const dateRows = db
-    .prepare('SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 30')
-    .all();
-  
-  if (dateRows.length === 0) {
-    console.warn('[TodayDataEngine] No historical records found in drabyashree_ledger.db');
-    return null;
-  }
+    // Get distinct trade dates to determine latest and historical window
+    const dateRows = db
+      .prepare('SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 30')
+      .all();
+    
+    if (dateRows.length === 0) {
+      console.warn('[TodayDataEngine] No historical records found in drabyashree_ledger.db');
+      return null;
+    }
 
-  const latestDate = options.targetDate || dateRows[0].trade_date;
-  const recentDates = dateRows.slice(0, 5).map(r => r.trade_date);
+    const latestDate = options.targetDate || dateRows[0].trade_date;
+    const recentDates = dateRows.slice(0, 5).map(r => r.trade_date);
 
-  // Ingest Fundamentals
-  const fundRows = db.prepare('SELECT * FROM scrip_fundamentals').all();
-  const fundMap = new Map();
-  for (const f of fundRows) {
-    fundMap.set(f.symbol.toUpperCase(), f);
-  }
+    // Ingest Fundamentals safely (guard against missing scrip_fundamentals table)
+    const fundMap = new Map();
+    try {
+      const hasFundTable = db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='scrip_fundamentals'`).get();
+      if (hasFundTable) {
+        const fundRows = db.prepare('SELECT * FROM scrip_fundamentals').all();
+        for (const f of fundRows) {
+          if (f?.symbol) fundMap.set(f.symbol.toUpperCase(), f);
+        }
+      }
+    } catch (_) {}
 
   // Ingest Price Summaries for the latest 30 sessions
   const priceRows = db.prepare(`
@@ -348,9 +355,9 @@ export function compileTodayStaticAnalytics(options = {}) {
     const publicFloatKitta = Number(fund.public_float_kitta || Math.round(totalListedShares * 0.49));
     const publicFloatPct = Number(fund.public_share_pct || 49.0);
     const promoterSharePct = Number(fund.promoter_share_pct || 51.0);
-    const epsTtm = Number(fund.eps_ttm || 15.0);
-    const bvps = Number(fund.book_value_per_share || 150.0);
-    const roePct = Number(fund.roe_pct || 10.0);
+    const epsTtm = fund.eps_ttm != null ? Number(fund.eps_ttm) : null;
+    const bvps = fund.book_value_per_share != null ? Number(fund.book_value_per_share) : null;
+    const roePct = fund.roe_pct != null ? Number(fund.roe_pct) : null;
     const nplPct = fund.npl_pct != null ? Number(fund.npl_pct) : null;
     const carPct = fund.car_pct != null ? Number(fund.car_pct) : null;
     const unlockDate = fund.promoter_unlock_date || 'UNLOCKED_MATURE';
@@ -529,7 +536,12 @@ export function compileTodayStaticAnalytics(options = {}) {
     console.error('[TodayDataEngine] Failed to write today_static_analytics.json:', err.message);
   }
 
-  return payload;
+    return payload;
+  } finally {
+    if (ownsDb && db) {
+      try { db.close(); } catch (_) {}
+    }
+  }
 }
 
 /**

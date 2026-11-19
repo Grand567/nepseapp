@@ -38,6 +38,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { fetchHolidays, fetchNepseIntradayGraph } from './utils/servicesApi.js';
 import { getUpcomingHolidays, toNepaliDigits } from './utils/bikramSambat.js';
+import { loadEncryptedUserProfiles, saveEncryptedUserProfiles, clearSensitiveStorageOnSignOut } from './utils/profileVaultStorage.js';
 
 import { initLocalLedger } from './utils/localLedgerManager';
 import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices, warmUpServer, getServerWarmupInfo, subscribeServerWarmup } from './utils/liveData';
@@ -568,10 +569,10 @@ function AppInner() {
   const handleOpenRadarFromAlert = (symbol) => {
     setSmartAlertModal({ isOpen: false, alert: null });
     try {
-      localStorage.setItem('open_service_id', 'stealth-accumulation');
+      localStorage.setItem('open_service_id', 'stealth-accumulation-tracker');
       localStorage.setItem('selected_entry_exit_symbol', symbol);
       setActiveTab('services');
-      window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'stealth-accumulation', symbol } }));
+      window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'stealth-accumulation-tracker', symbol } }));
     } catch (_) {}
   };
 
@@ -632,31 +633,23 @@ function AppInner() {
 
   // ── Listen for Firebase auth state changes & sync cloud user profiles ──
   useEffect(() => {
-    // Fast safety fallback: If auth resolution takes longer than 350ms, unlock the app with local session or null
-    const authTimeout = setTimeout(() => {
-      setUser(prev => (prev === undefined ? (getLocalSession() || null) : prev));
-    }, 350);
-
     // Check if returning from a mobile OAuth redirect
     checkRedirectResult().then(redirectUser => {
       if (redirectUser) setUser(redirectUser);
     }).catch(console.error);
 
     const unsubscribe = onAuthChange(async (firebaseUser) => {
-      clearTimeout(authTimeout);
       setUser(firebaseUser); // null if signed out
 
       // ── Broad Migration & Cloud Synchronization Sequence ──
       if (firebaseUser && firebaseUser.uid) {
         const uid = firebaseUser.uid;
         const email = firebaseUser.email || '';
-        const userTxKey      = `nepse_hub_${uid}_transactions`;
-        const userProfileKey = `nepse_hub_${uid}_profiles`;
-        const bulkAccountsKey = 'nepse_hub_bulk_ipo_accounts';
+        const userTxKey = `nepse_hub_${uid}_transactions`;
 
         console.log(`[Firebase Sync] Active User (${email || uid}) logged in. Starting cloud restoration...`);
 
-        // 1. Fetch cloud backups from Firestore
+        // 1. Fetch non-secret cloud backups (strictly scoped to current uid)
         let cloudProfiles = null;
         let cloudTransactions = null;
         let cloudBulkAccounts = null;
@@ -665,7 +658,6 @@ function AppInner() {
         let cloudStockAlerts = null;
         let cloudTradeJournal = null;
         let cloudPaperTrading = null;
-        let cloudCredentials = null;
 
         try {
           const cloudData = await fetchUserDataFromCloud(uid, email);
@@ -678,7 +670,6 @@ function AppInner() {
             if (Array.isArray(cloudData.stockAlerts)) cloudStockAlerts = cloudData.stockAlerts;
             if (Array.isArray(cloudData.tradeJournal)) cloudTradeJournal = cloudData.tradeJournal;
             if (cloudData.paperTrading) cloudPaperTrading = cloudData.paperTrading;
-            if (Array.isArray(cloudData.credentials)) cloudCredentials = cloudData.credentials;
             if (cloudData.subscription) syncFromCloud(cloudData.subscription);
 
             console.log(`[Firebase Sync] Cloud data fetched for ${email || uid}.`);
@@ -687,90 +678,35 @@ function AppInner() {
           console.warn('[Firebase Sync] Failed to fetch cloud data:', e.message);
         }
 
-        // 2. Restore Bulk MeroShare Accounts
-        const existingBulkRaw = localStorage.getItem(bulkAccountsKey);
-        let existingBulk = [];
-        try { existingBulk = existingBulkRaw ? JSON.parse(existingBulkRaw) : []; } catch (_) {}
-        const mergedBulk = [...existingBulk];
-
-        if (cloudBulkAccounts && Array.isArray(cloudBulkAccounts)) {
-          cloudBulkAccounts.forEach(cb => {
-            const idx = mergedBulk.findIndex(mb => (cb.boid && mb.boid === cb.boid) || (cb.id && mb.id === cb.id));
-            if (idx === -1) {
-              mergedBulk.push(cb);
-            } else if (cb.holdings?.length > 0 && (!mergedBulk[idx].holdings || mergedBulk[idx].holdings.length === 0)) {
-              mergedBulk[idx] = { ...mergedBulk[idx], ...cb };
-            }
-          });
-        }
-        if (cloudProfiles && Array.isArray(cloudProfiles)) {
-          cloudProfiles.forEach(cp => {
-            const idx = mergedBulk.findIndex(mb => (cp.boid && mb.boid === cp.boid) || (cp.id && mb.id === cp.id));
-            if (idx === -1) {
-              mergedBulk.push(cp);
-            }
-          });
-        }
-        safeStorageSetItem(bulkAccountsKey, JSON.stringify(mergedBulk));
-
-        // 3. Sync MeroShare Profiles for this specific user ID
-        const existingProfilesRaw = localStorage.getItem(userProfileKey);
-        let existingProfiles = [];
-        try { existingProfiles = existingProfilesRaw ? JSON.parse(existingProfilesRaw) : []; } catch (_) {}
+        // 2. Load strictly THIS user's scoped encrypted local profiles (zero cross-user harvesting)
+        const existingProfiles = await loadEncryptedUserProfiles(uid);
         const mergedProfiles = [...existingProfiles];
 
-        if (cloudProfiles && Array.isArray(cloudProfiles)) {
-          cloudProfiles.forEach(cp => {
+        const mergeCloudProfileList = (list) => {
+          if (!Array.isArray(list)) return;
+          list.forEach(cp => {
+            if (!cp || typeof cp !== 'object') return;
             const idx = mergedProfiles.findIndex(mp => (cp.boid && mp.boid === cp.boid) || (cp.id && mp.id === cp.id));
             if (idx === -1) {
               mergedProfiles.push(cp);
             } else if (cp.holdings?.length > 0 && (!mergedProfiles[idx].holdings || mergedProfiles[idx].holdings.length === 0)) {
-              mergedProfiles[idx] = { ...mergedProfiles[idx], ...cp };
+              mergedProfiles[idx] = {
+                ...cp,
+                password: mergedProfiles[idx].password || '',
+                crn: mergedProfiles[idx].crn || '',
+                pin: mergedProfiles[idx].pin || ''
+              };
             }
           });
-        }
+        };
 
-        // Also merge any existing accounts created in guest mode or other local keys
-        const localCandidateKeys = ['nepse_hub_guest_local_profiles', 'nepse_hub_profiles'];
-        try {
-          for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k && k.startsWith('nepse_hub_') && k.endsWith('_profiles') && k !== userProfileKey) {
-              localCandidateKeys.push(k);
-            }
-          }
-        } catch (_) {}
+        mergeCloudProfileList(cloudProfiles);
+        mergeCloudProfileList(cloudBulkAccounts);
 
-        localCandidateKeys.forEach(candKey => {
-          try {
-            const raw = localStorage.getItem(candKey);
-            if (!raw) return;
-            const parsedList = JSON.parse(raw);
-            if (Array.isArray(parsedList)) {
-              parsedList.forEach(cp => {
-                const idx = mergedProfiles.findIndex(mp => (cp.boid && mp.boid === cp.boid) || (cp.id && mp.id === cp.id));
-                if (idx === -1) {
-                  mergedProfiles.push(cp);
-                }
-              });
-            }
-          } catch (_) {}
-        });
+        // Save strictly to uid-scoped AES-256-GCM encrypted storage
+        await saveEncryptedUserProfiles(mergedProfiles, uid);
 
-        mergedBulk.forEach(mb => {
-          const idx = mergedProfiles.findIndex(mp => (mb.boid && mp.boid === mb.boid) || (mb.id && mp.id === mb.id));
-          if (idx === -1) {
-            mergedProfiles.push(mb);
-          }
-        });
-
-        // Save merged profiles locally
-        safeStorageSetItem(userProfileKey, JSON.stringify(mergedProfiles));
-        safeStorageSetItem(bulkAccountsKey, JSON.stringify(mergedProfiles));
-        window.dispatchEvent(new StorageEvent('storage', { key: userProfileKey, newValue: JSON.stringify(mergedProfiles) }));
-        window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: userProfileKey, profiles: mergedProfiles } }));
-
-        // 4. Sync Demat Holdings Transactions
+        // 3. Sync Demat Holdings Transactions
         const existingTxsRaw = localStorage.getItem(userTxKey);
         let existingTxs = [];
         try { existingTxs = existingTxsRaw ? JSON.parse(existingTxsRaw) : []; } catch (_) {}
@@ -786,50 +722,44 @@ function AppInner() {
         safeStorageSetItem(userTxKey, JSON.stringify(mergedTxs));
         window.dispatchEvent(new StorageEvent('storage', { key: userTxKey, newValue: JSON.stringify(mergedTxs) }));
 
-        // 5. Restore Watchlist
+        // 4. Restore Watchlist
         if (cloudWatchlist && Array.isArray(cloudWatchlist)) {
           safeStorageSetItem('nepse_user_watchlist', JSON.stringify(cloudWatchlist));
         }
 
-        // 6. Restore Trade Notes
+        // 5. Restore Trade Notes
         if (cloudTradeNotes && Array.isArray(cloudTradeNotes)) {
           safeStorageSetItem('nepse_trade_notes', JSON.stringify(cloudTradeNotes));
         }
 
-        // 7. Restore Stock Alerts
+        // 6. Restore Stock Alerts
         if (cloudStockAlerts && Array.isArray(cloudStockAlerts)) {
           safeStorageSetItem('nepse_stock_alerts', JSON.stringify(cloudStockAlerts));
         }
 
-        // 8. Restore Trade Journal
+        // 7. Restore Trade Journal
         if (cloudTradeJournal && Array.isArray(cloudTradeJournal)) {
           safeStorageSetItem('nepse_trade_journal', JSON.stringify(cloudTradeJournal));
         }
 
-        // 9. Restore Paper Trading Simulator State
+        // 8. Restore Paper Trading Simulator State
         if (cloudPaperTrading) {
           if (cloudPaperTrading.balance !== undefined) safeStorageSetItem('nepse_paper_balance', cloudPaperTrading.balance.toString());
           if (cloudPaperTrading.positions) safeStorageSetItem('nepse_paper_positions', JSON.stringify(cloudPaperTrading.positions));
           if (cloudPaperTrading.orders) safeStorageSetItem('nepse_paper_orders', JSON.stringify(cloudPaperTrading.orders));
         }
 
-        // 10. Restore Credentials Vault
-        if (cloudCredentials && Array.isArray(cloudCredentials)) {
-          safeStorageSetItem('nepse_credentials_vault', JSON.stringify(cloudCredentials));
-        }
-
-        // Broadcast dedicated custom event so active tabs (Portfolio, MeroShareHub) immediately refresh state
+        // Broadcast sanitized custom event so active tabs refresh state
         window.dispatchEvent(new CustomEvent('nepse_cloud_data_restored', {
           detail: {
             uid,
-            profiles: mergedProfiles,
+            profiles: mergedProfiles.map(({ password: _p, crn: _c, pin: _pn, transactionPin: _tp, ...safe }) => safe),
             transactions: mergedTxs,
-            bulkAccounts: mergedBulk,
             watchlist: cloudWatchlist
           }
         }));
 
-        // 11. Push comprehensive multi-device backup to cloud ONLY if there is real data
+        // 9. Push sanitized multi-device backup to cloud ONLY if there is real data (zero credentials uploaded)
         const currentWatchlist = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]');
         const currentNotes = JSON.parse(localStorage.getItem('nepse_trade_notes') || '[]');
         const currentAlerts = JSON.parse(localStorage.getItem('nepse_stock_alerts') || '[]');
@@ -837,11 +767,9 @@ function AppInner() {
         const currentPaperBal = parseFloat(localStorage.getItem('nepse_paper_balance') || '1000000');
         const currentPaperPos = JSON.parse(localStorage.getItem('nepse_paper_positions') || '[]');
         const currentPaperOrd = JSON.parse(localStorage.getItem('nepse_paper_orders') || '[]');
-        const currentCreds = JSON.parse(localStorage.getItem('nepse_credentials_vault') || '[]');
 
         const hasDataToPreserve = mergedProfiles.length > 0 ||
                                   mergedTxs.length > 0 ||
-                                  mergedBulk.length > 0 ||
                                   currentWatchlist.length > 0 ||
                                   currentNotes.length > 0 ||
                                   currentAlerts.length > 0 ||
@@ -849,11 +777,10 @@ function AppInner() {
                                   currentPaperPos.length > 0;
         if (hasDataToPreserve) {
           try {
-
+            const sanitizedProfiles = mergedProfiles.map(({ password: _p, crn: _c, pin: _pn, transactionPin: _tp, vaultEnvelope: _ve, ...safe }) => safe);
             await syncUserDataToCloud(uid, {
-              profiles: mergedProfiles,
+              profiles: sanitizedProfiles,
               transactions: mergedTxs,
-              bulkAccounts: mergedBulk,
               watchlist: currentWatchlist,
               tradeNotes: currentNotes,
               stockAlerts: currentAlerts,
@@ -862,8 +789,7 @@ function AppInner() {
                 balance: currentPaperBal,
                 positions: currentPaperPos,
                 orders: currentPaperOrd
-              },
-              credentials: currentCreds
+              }
             }, email);
 
             console.log(`[Firebase Sync] Cloud restoration & sync complete for account: ${email || uid}.`);
@@ -874,7 +800,6 @@ function AppInner() {
       }
     });
     return () => {
-      clearTimeout(authTimeout);
       unsubscribe();
     };
   }, []);
@@ -1313,13 +1238,14 @@ function AppInner() {
   }, []);
 
   const handleSignOut = async () => {
+    const signingOutUid = user?.uid || null;
     setShowUserMenu(false);
     try {
       await signOut();
     } catch (err) {
       console.error('Sign out error:', err);
     }
-    localStorage.removeItem('nepse_hub_local_session');
+    clearSensitiveStorageOnSignOut(signingOutUid);
     setUser(null); // Explicitly clear React state instantly
     // Reset market state for next login
     liveStocksRef.current = _cachedStocks;

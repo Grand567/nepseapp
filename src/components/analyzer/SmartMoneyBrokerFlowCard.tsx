@@ -26,9 +26,9 @@ export function SmartMoneyBrokerFlowCard({
     : Array.isArray(brokerAnalysis?.topNetBuyers) && brokerAnalysis.topNetBuyers.length > 0
     ? brokerAnalysis.topNetBuyers
     : (Array.isArray(brokerAnalysis?.topBuyers)
-        ? brokerAnalysis.topBuyers.filter((b: any) => Number(b.netQty) > 0)
+        ? brokerAnalysis.topBuyers.filter((b: any) => Number(b.netQty ?? b.netKitta ?? b.kitta ?? 0) > 0)
         : Array.isArray(brokerAnalysis?.topBuyerBrokers)
-        ? brokerAnalysis.topBuyerBrokers.filter((b: any) => Number(b.netQty) > 0)
+        ? brokerAnalysis.topBuyerBrokers.filter((b: any) => Number(b.netQty ?? b.netKitta ?? b.kitta ?? 0) > 0)
         : []);
 
   const netDistributors: any[] = Array.isArray(brokerAnalysis?.topNetDistributors) && brokerAnalysis.topNetDistributors.length > 0
@@ -36,9 +36,9 @@ export function SmartMoneyBrokerFlowCard({
     : Array.isArray(brokerAnalysis?.topNetSellers) && brokerAnalysis.topNetSellers.length > 0
     ? brokerAnalysis.topNetSellers
     : (Array.isArray(brokerAnalysis?.topSellers)
-        ? brokerAnalysis.topSellers.filter((s: any) => Number(s.netQty) < 0)
+        ? brokerAnalysis.topSellers.filter((s: any) => Number(s.netQty ?? s.netKitta ?? s.kitta ?? 0) < 0)
         : Array.isArray(brokerAnalysis?.topSellerBrokers)
-        ? brokerAnalysis.topSellerBrokers.filter((s: any) => Number(s.netQty) < 0)
+        ? brokerAnalysis.topSellerBrokers.filter((s: any) => Number(s.netQty ?? s.netKitta ?? s.kitta ?? 0) < 0)
         : []);
 
   const isDumping = Boolean(
@@ -51,7 +51,7 @@ export function SmartMoneyBrokerFlowCard({
 
   // Distribution Trap & Invalidation:
   // If top brokers are net distributing, fresh buying is avoided regardless of whether the day is green or red.
-  const isGreenOrExcited = pChange >= 0;
+  const isGreenOrExcited = pChange > 0;
   const isDistributionTrap = isDumping && isGreenOrExcited;
 
   // Institutional Accumulation:

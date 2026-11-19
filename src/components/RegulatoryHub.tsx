@@ -74,7 +74,7 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
     setMacroLoading(true);
     try {
       const res: any = await fetchMacroIndicators();
-      if (res && (res.indicators || res.data || res.inflationRate != null)) {
+      if (res && (res.monetaryPolicy || res.indicators || res.data || res.inflationRate != null)) {
         setMacroData(res.data || res);
       }
     } catch (e) {
@@ -89,7 +89,7 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
     setBullionLoading(true);
     try {
       const res: any = await fetchBullionRates();
-      if (res && (res.fineGold || res.data || res.silver)) {
+      if (res && (res.fineGold24k || res.fineGold || res.data || res.silver)) {
         setBullionData(res.data || res);
       }
     } catch (e) {
@@ -153,6 +153,7 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
     if (converterDirection === 'to_npr') {
       return (amount / unit) * buyRate;
     } else {
+      if (sellRate <= 0) return 0;
       return (amount / sellRate) * unit;
     }
   };
@@ -378,25 +379,25 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatCard
               label="Consumer Price Inflation (CPI)"
-              value={macroData?.monetaryPolicy?.cpiInflation?.value ? `${macroData.monetaryPolicy.cpiInflation.value}%` : '5.14%'}
+              value={macroData?.monetaryPolicy?.cpiInflation?.value != null ? `${macroData.monetaryPolicy.cpiInflation.value}%` : (macroLoading ? 'Syncing…' : '—')}
               color="#f59e0b"
               big
             />
             <StatCard
               label="Standing Liquidity Facility (SLF)"
-              value={macroData?.monetaryPolicy?.slfRate?.value ? `${macroData.monetaryPolicy.slfRate.value}%` : '5.75%'}
+              value={macroData?.monetaryPolicy?.slfRate?.value != null ? `${macroData.monetaryPolicy.slfRate.value}%` : (macroLoading ? 'Syncing…' : '—')}
               color="#38bdf8"
               big
             />
             <StatCard
               label="Weighted Interbank Rate"
-              value={macroData?.monetaryPolicy?.interbankRate?.value ? `${macroData.monetaryPolicy.interbankRate.value}%` : '2.75%'}
+              value={macroData?.monetaryPolicy?.interbankRate?.value != null ? `${macroData.monetaryPolicy.interbankRate.value}%` : (macroLoading ? 'Syncing…' : '—')}
               color="#10b981"
               big
             />
             <StatCard
               label="Cash Reserve Ratio (CRR)"
-              value={macroData?.monetaryPolicy?.cashReserveRatio?.value ? `${macroData.monetaryPolicy.cashReserveRatio.value}%` : '4.00%'}
+              value={macroData?.monetaryPolicy?.cashReserveRatio?.value != null ? `${macroData.monetaryPolicy.cashReserveRatio.value}%` : (macroLoading ? 'Syncing…' : '—')}
               big
             />
           </div>
@@ -458,11 +459,11 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
                 <div className="font-bold text-slate-300 mb-2">Broker Commission Slabs</div>
                 <div className="space-y-1 font-mono text-[11px] text-slate-400">
-                  <div className="flex justify-between"><span>Up to Rs. 50K:</span> <span className="text-white font-bold">0.40%</span></div>
-                  <div className="flex justify-between"><span>Rs. 50K – 500K:</span> <span className="text-white font-bold">0.37%</span></div>
-                  <div className="flex justify-between"><span>Rs. 500K – 2M:</span> <span className="text-white font-bold">0.34%</span></div>
-                  <div className="flex justify-between"><span>Rs. 2M – 10M:</span> <span className="text-white font-bold">0.30%</span></div>
-                  <div className="flex justify-between"><span>Above Rs. 10M:</span> <span className="text-white font-bold">0.27%</span></div>
+                  <div className="flex justify-between"><span>Up to Rs. 50K:</span> <span className="text-white font-bold">0.36%</span></div>
+                  <div className="flex justify-between"><span>Rs. 50K – 500K:</span> <span className="text-white font-bold">0.33%</span></div>
+                  <div className="flex justify-between"><span>Rs. 500K – 2M:</span> <span className="text-white font-bold">0.31%</span></div>
+                  <div className="flex justify-between"><span>Rs. 2M – 10M:</span> <span className="text-white font-bold">0.27%</span></div>
+                  <div className="flex justify-between"><span>Above Rs. 10M:</span> <span className="text-white font-bold">0.24%</span></div>
                   <div className="flex justify-between pt-1 border-t border-slate-800"><span>Minimum:</span> <span className="text-amber-400">Rs. 10</span></div>
                 </div>
               </div>
@@ -561,13 +562,13 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
                 <h4 className="font-bold text-sm">Fine Gold 24K (छापावाल सुन)</h4>
               </div>
               <div className="text-3xl font-black font-mono text-amber-300">
-                Rs. {bullionData?.fineGold24k?.tola?.toLocaleString() || '168,500'}
+                {bullionData?.fineGold24k?.tola != null ? `Rs. ${bullionData.fineGold24k.tola.toLocaleString()}` : (bullionLoading ? 'Syncing…' : 'Unavailable')}
               </div>
               <div className="text-xs text-slate-400 mt-1">per tola (11.664 grams)</div>
               <div className="mt-4 pt-3 border-t border-amber-900/40 flex justify-between text-xs">
                 <span className="text-slate-400">Per 10 Grams:</span>
                 <span className="font-bold font-mono text-amber-200">
-                  Rs. {bullionData?.fineGold24k?.per10g?.toLocaleString() || '144,460'}
+                  {bullionData?.fineGold24k?.per10g != null ? `Rs. ${bullionData.fineGold24k.per10g.toLocaleString()}` : '—'}
                 </span>
               </div>
             </div>
@@ -578,13 +579,13 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
                 <h4 className="font-bold text-sm">Tejabi Gold (तेजाबी सुन)</h4>
               </div>
               <div className="text-3xl font-black font-mono text-yellow-300">
-                Rs. {bullionData?.tejabiGold?.tola?.toLocaleString() || '167,800'}
+                {bullionData?.tejabiGold?.tola != null ? `Rs. ${bullionData.tejabiGold.tola.toLocaleString()}` : (bullionLoading ? 'Syncing…' : 'Unavailable')}
               </div>
               <div className="text-xs text-slate-400 mt-1">per tola (11.664 grams)</div>
               <div className="mt-4 pt-3 border-t border-yellow-900/40 flex justify-between text-xs">
                 <span className="text-slate-400">Per 10 Grams:</span>
                 <span className="font-bold font-mono text-yellow-200">
-                  Rs. {bullionData?.tejabiGold?.per10g?.toLocaleString() || '143,860'}
+                  {bullionData?.tejabiGold?.per10g != null ? `Rs. ${bullionData.tejabiGold.per10g.toLocaleString()}` : '—'}
                 </span>
               </div>
             </div>
@@ -595,13 +596,13 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
                 <h4 className="font-bold text-sm">Silver (चाँदी)</h4>
               </div>
               <div className="text-3xl font-black font-mono text-slate-200">
-                Rs. {bullionData?.silver?.tola?.toLocaleString() || '2,015'}
+                {bullionData?.silver?.tola != null ? `Rs. ${bullionData.silver.tola.toLocaleString()}` : (bullionLoading ? 'Syncing…' : 'Unavailable')}
               </div>
               <div className="text-xs text-slate-400 mt-1">per tola (11.664 grams)</div>
               <div className="mt-4 pt-3 border-t border-slate-800 flex justify-between text-xs">
                 <span className="text-slate-400">Per 10 Grams:</span>
                 <span className="font-bold font-mono text-slate-300">
-                  Rs. {bullionData?.silver?.per10g?.toLocaleString() || '1,728'}
+                  {bullionData?.silver?.per10g != null ? `Rs. ${bullionData.silver.per10g.toLocaleString()}` : '—'}
                 </span>
               </div>
             </div>
@@ -676,17 +677,26 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
                       {item.title}
                     </h4>
                   </div>
-                  {item.href && (
-                    <a
-                      href={item.href.startsWith('http') ? item.href : (circularSource === 'nrb' ? `https://www.nrb.org.np${item.href}` : `https://www.sebon.gov.np${item.href}`)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-blue-400 hover:bg-slate-700 shrink-0"
-                    >
-                      <span>View</span>
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
+                  {(() => {
+                    const rawUrl = item.url || item.href;
+                    if (!rawUrl) return null;
+                    const resolvedUrl = /^https?:\/\//i.test(rawUrl)
+                      ? rawUrl
+                      : (circularSource === 'nrb'
+                        ? `https://www.nrb.org.np${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`
+                        : `https://www.sebon.gov.np${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`);
+                    return (
+                      <a
+                        href={resolvedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-blue-400 hover:bg-slate-700 shrink-0"
+                      >
+                        <span>View</span>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    );
+                  })()}
                 </div>
               ))}
             </div>

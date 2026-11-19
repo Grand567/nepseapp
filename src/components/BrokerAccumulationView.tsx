@@ -62,7 +62,7 @@ export function BrokerAccumulationView({ initialSymbol = 'SHIVM' }: { initialSym
   // Extract available trading dates
   const availableDates = useMemo(() => {
     const list = Array.isArray(brokerData?.availableDates) ? brokerData.availableDates : [];
-    return list.slice(0, 15);
+    return list;
   }, [brokerData]);
 
   // Run Step 2a Broker Floorsheet Signals
@@ -183,7 +183,7 @@ export function BrokerAccumulationView({ initialSymbol = 'SHIVM' }: { initialSym
       {selectedDate && !availableDates.includes(selectedDate) && (
         <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300 flex items-center justify-between gap-3">
           <span>
-            ⚠️ No floorsheet records compiled yet for <strong>{selectedDate}</strong> (session in progress or settlement pending). Showing latest completed session: <strong>{availableDates[0] || '2026-10-29'}</strong>.
+            ⚠️ No floorsheet records compiled yet for <strong>{selectedDate}</strong> (session in progress or settlement pending). Showing latest completed session: <strong>{availableDates[0] || 'Latest'}</strong>.
           </span>
           <button
             type="button"

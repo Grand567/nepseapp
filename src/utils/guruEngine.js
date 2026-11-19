@@ -25,6 +25,7 @@ import {
 } from './quantEngine.js';
 
 import { getDetailedMarketStatus, formatNptDateIso } from './nepseCalendar.js';
+import { isPureNepseEquity } from './nepseEquityFilter.js';
 
 import {
   runAnalogBacktest,
@@ -545,15 +546,29 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
   const activeBreakouts = [];
   const nextBreakouts = [];
 
+  function isDisqualifiedNonEquityOrLossMaking(s) {
+    const sym = String(s?.symbol || s?.scrip || '').toUpperCase().trim();
+    const ltpVal = Number(s?.ltp || s?.price || 0);
+    if (!isPureNepseEquity(s)) return true;
+    if (ltpVal > 0 && ltpVal < 50) return true;
+
+    const cachedFund = getCachedStockFundamentals(sym);
+    const rawEps = (cachedFund?.eps !== undefined && cachedFund?.eps !== null)
+      ? Number(cachedFund.eps)
+      : (s?.eps !== undefined && s?.eps !== null && s?.eps !== '' ? Number(s.eps) : null);
+    if (rawEps !== null && Number.isFinite(rawEps) && rawEps < 0) return true;
+
+    return false;
+  }
+
   for (const s of stocks) {
     const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
     if (!sym) continue;
+    if (isDisqualifiedNonEquityOrLossMaking(s)) continue;
 
     const ltp = Number(s.ltp || s.price || 0);
     const vol = Number(s.volume || s.totalTradedQuantity || 0);
     const turnover = Number(s.turnover || (ltp * vol) || 0);
-    const cachedFund = getCachedStockFundamentals(sym);
-    const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (s.eps || 0));
 
     // Fundamental & Liquidity safety hurdles (broadened to capture all active market participants)
     if (ltp < 30 || turnover < 300000) continue;
@@ -606,30 +621,6 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     );
     candidates.push(...safeCandidates.slice(0, 10));
   }
-
-function isDisqualifiedNonEquityOrLossMaking(s) {
-  const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
-  const sec = String(s.sector || s.sectorName || '').toLowerCase();
-  const n = String(s.name || '').toLowerCase();
-  const ltp = Number(s.ltp || s.price || 0);
-
-  // Exclude mutual funds, debentures, bonds, promoter shares
-  if (sec.includes('mutual') || sec.includes('debenture') || sec.includes('bond') || sec.includes('promoter')) return true;
-  if (n.includes('mutual fund') || n.includes('debenture') || n.includes('bond') || n.includes('promoter share')) return true;
-  if (sym.endsWith('PO') || sym.endsWith('P') || sym.includes('DEB') || sym.startsWith('NMB50') || sym.startsWith('ADBLD')) return true;
-  if (/\d+$/.test(sym) && (sym.includes('D') || sym.includes('B') || sym.includes('F'))) return true;
-  if (ltp > 0 && ltp < 50) return true;
-  if (sym.endsWith('F') && sym.length >= 4 && !['SANIMA', 'SHIVM'].includes(sym)) {
-    if (!sec.includes('microfinance') && !n.includes('microfinance') && !n.includes('laghubitta')) return true;
-  }
-
-  // Exclude loss-making companies
-  const cachedFund = getCachedStockFundamentals(sym);
-  const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (s.eps ?? 0));
-  if (eps < 0) return true;
-
-  return false;
-}
 
   // Guarantee: if candidates is still empty, promote top liquid relative strength stock from universe
   if (candidates.length === 0 && Array.isArray(stocks) && stocks.length > 0) {
@@ -838,13 +829,15 @@ function isDisqualifiedNonEquityOrLossMaking(s) {
       }
     }
 
-    if (validatedPlans.length > 0) {
+    if (validatedPlans.length > 0 && !breadthCheck.cashDefenseActive) {
       // TIER 1: Check if any candidate passes ALL criteria with actionable BUY/ACCUMULATE signal:
-      // Exclude stocks with T+2 Circuit Exhaustion Trap
-      const nonCircuitTraps = validatedPlans.filter(p => !p.riskGate?.isT2CircuitExhaustion && !p.riskGate?.isCircuitTrap);
-      const tier1 = nonCircuitTraps.filter(p => p.passesAll5 && isActionableBuySignal(p));
-      const buyPlans = nonCircuitTraps.filter(p => isActionableBuySignal(p));
-      const poolToRank = tier1.length > 0 ? tier1 : (buyPlans.length > 0 ? buyPlans : validatedPlans.filter(p => isActionableBuySignal(p)));
+      // NEVER fall back to stocks with T+2 Circuit Exhaustion Trap or Circuit Trap or Order Flow Veto
+      const cleanPlans = validatedPlans.filter(
+        p => !p.riskGate?.isT2CircuitExhaustion && !p.riskGate?.isCircuitTrap && !p.isOrderFlowVetoed
+      );
+      const tier1 = cleanPlans.filter(p => p.passesAll5 && isActionableBuySignal(p));
+      const buyPlans = cleanPlans.filter(p => isActionableBuySignal(p));
+      const poolToRank = tier1.length > 0 ? tier1 : buyPlans;
 
       if (poolToRank.length > 0) {
         // Multi-Factor Quant Ranking: Setup Score + Minervini Stage 2 Bonus + Positive EV Bonus
@@ -869,19 +862,12 @@ function isDisqualifiedNonEquityOrLossMaking(s) {
     }
   }
 
-  // If breadthCheck.cashDefenseActive is true but we found a verified stock:
-  // ALWAYS show the pick — just add a market breadth warning to the card.
-  // Capital Defense is only shown when NO stock passes the safety gates at all.
-  if (verifiedPrimePick && breadthCheck.cashDefenseActive) {
-    verifiedPrimePick.warnings = [
-      ...(verifiedPrimePick.warnings || []),
-      '⚠️ Broad Market Breadth Weak — Position size conservatively (0.5–0.75x normal)',
-      'Best available setup selected from full 350+ stock universe'
-    ];
+  if (breadthCheck.cashDefenseActive) {
+    verifiedPrimePick = null;
   }
 
-  // Cache verified winner in localStorage ONLY if it is an authentic BUY/ACCUMULATE setup
-  if (verifiedPrimePick && isActionableBuySignal(verifiedPrimePick)) {
+  // Cache verified winner in localStorage ONLY if it is an authentic BUY/ACCUMULATE setup outside Cash Defense
+  if (verifiedPrimePick && !breadthCheck.cashDefenseActive && isActionableBuySignal(verifiedPrimePick)) {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
@@ -911,7 +897,7 @@ function isDisqualifiedNonEquityOrLossMaking(s) {
     activeBreakouts: activeBreakouts.slice(0, 12),
     nextBreakouts: nextBreakouts.slice(0, 12),
     breadthCheck,
-    cashDefenseActive: !primeDailyPick && breadthCheck.cashDefenseActive, // Only true when NO pick exists
+    cashDefenseActive: Boolean(breadthCheck.cashDefenseActive),
     marketStatus
   };
 }

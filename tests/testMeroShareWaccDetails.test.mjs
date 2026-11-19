@@ -28,8 +28,8 @@ try {
   ok(normalizeScripSymbol('AKPL') === 'AKPL', 'Standard symbol normalized');
   ok(normalizeScripSymbol(' akpl ') === 'AKPL', 'Trimmed & uppercased');
   ok(normalizeScripSymbol('AKPL.N0000') === 'AKPL', 'Stripped .N0000 suffix');
-  ok(normalizeScripSymbol('NABIL_PO') === 'NABIL', 'Stripped promoter share suffix _PO');
-  ok(normalizeScripSymbol('GBIME.P') === 'GBIME', 'Stripped .P class suffix');
+  ok(normalizeScripSymbol('NABIL_PO') === 'NABIL_PO', 'Preserved promoter share suffix _PO (BUG-156)');
+  ok(normalizeScripSymbol('GBIME_PO') === 'GBIME_PO', 'Preserved promoter class suffix to prevent ordinary share overwrite (BUG-156)');
   ok(normalizeScripSymbol('') === '', 'Empty symbol handled safely');
 
   // ─── TEST 2: Mathematical Verification (Rate x Qty = Total Cost) ───────────

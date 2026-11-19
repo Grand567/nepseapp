@@ -252,21 +252,29 @@ export function evaluateDividendTrackRecord({
  */
 export function evaluateOwnershipStructure({
   listedShares = 0,
-  promoterPercentage = 0,
-  publicPercentage = 0,
+  promoterPercentage = null,
+  publicPercentage = null,
   paidUpCapital = 0
 } = {}) {
   const totalShares = Number(listedShares || 0);
-  const promPct = Number(promoterPercentage || (publicPercentage > 0 ? 100 - publicPercentage : 70));
-  const pubPct = Number(publicPercentage || (promPct > 0 ? 100 - promPct : 30));
+  const rawProm = promoterPercentage !== null && promoterPercentage !== undefined && promoterPercentage !== '' ? Number(promoterPercentage) : null;
+  const rawPub = publicPercentage !== null && publicPercentage !== undefined && publicPercentage !== '' ? Number(publicPercentage) : null;
 
-  const freeFloatShares = totalShares > 0 ? Math.round(totalShares * (pubPct / 100)) : 0;
-  const isLowFloat = freeFloatShares > 0 && freeFloatShares < 1500000; // < 1.5M shares
-  const isCorneringRisk = pubPct < 20 || isLowFloat;
+  let promPct = Number.isFinite(rawProm) && rawProm > 0 ? rawProm : null;
+  let pubPct = Number.isFinite(rawPub) && rawPub > 0 ? rawPub : null;
+  if (promPct === null && pubPct !== null && pubPct <= 100) promPct = +(100 - pubPct).toFixed(2);
+  if (pubPct === null && promPct !== null && promPct <= 100) pubPct = +(100 - promPct).toFixed(2);
+
+  const isOwnershipVerified = promPct !== null && pubPct !== null;
+  const freeFloatShares = isOwnershipVerified && totalShares > 0 ? Math.round(totalShares * (pubPct / 100)) : null;
+  const isLowFloat = freeFloatShares !== null && freeFloatShares > 0 && freeFloatShares < 1500000; // < 1.5M shares
+  const isCorneringRisk = isOwnershipVerified && (pubPct < 20 || isLowFloat);
 
   const weaknesses = [];
-  if (isCorneringRisk) {
-    weaknesses.push(`Low public float (${pubPct.toFixed(1)}% / ${freeFloatShares.toLocaleString()} shares): Susceptible to operator cornering and illiquid circuit traps.`);
+  if (!isOwnershipVerified) {
+    weaknesses.push('Ownership / public float disclosure unavailable.');
+  } else if (isCorneringRisk) {
+    weaknesses.push(`Low public float (${pubPct.toFixed(1)}% / ${(freeFloatShares || 0).toLocaleString()} shares): Susceptible to operator cornering and illiquid circuit traps.`);
   }
 
   return {
@@ -275,6 +283,7 @@ export function evaluateOwnershipStructure({
     freeFloatShares,
     isLowFloat,
     isCorneringRisk,
+    isOwnershipVerified,
     paidUpCapital: Number(paidUpCapital || 0),
     weaknesses
   };
@@ -299,8 +308,8 @@ export function evaluateFundamentalConfluence({
   latestBonus = 0,
   latestCash = 0,
   listedShares = 0,
-  promoterPercentage = 0,
-  publicPercentage = 0,
+  promoterPercentage = null,
+  publicPercentage = null,
   paidUpCapital = 0
 } = {}) {
   // If verified quarterly fundamental metrics are completely missing, return NULL (no silent defaults)
@@ -348,8 +357,7 @@ export function evaluateFundamentalConfluence({
   else if (dividends.totalLatestPayoutPct > 0) divScore = 8;
 
   // 5. Ownership & Float Safety (15 pts)
-  let ownScore = 15;
-  if (ownership.isCorneringRisk) ownScore = 5; // Penalize cornering / extreme low float
+  let ownScore = !ownership.isOwnershipVerified ? 0 : (ownership.isCorneringRisk ? 5 : 15);
 
   const rawTotal = 40 + valScore + profScore + safetyScore + divScore + ownScore;
   const compositeScore = Math.max(0, Math.min(100, Math.round(rawTotal)));

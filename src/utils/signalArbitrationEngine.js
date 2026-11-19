@@ -16,22 +16,22 @@ export function reconcileTechnicalAndBrokerSignals({
   ltp = 0
 }) {
   const techScore = Number(technical?.score || 50);
-  const trendDir = technical?.trend?.direction || 'NEUTRAL';
-  const momentumState = technical?.momentum?.state || 'neutral';
+  const trendDir = String(technical?.trend?.direction || 'NEUTRAL').toUpperCase();
+  const momentumState = String(technical?.momentum?.condition || technical?.momentum?.state || 'neutral').toUpperCase();
 
   const bcr3 = Number(broker?.bcr3BuyPct || broker?.bcr3 || 0);
   const scr3 = Number(broker?.scr3SellPct || broker?.scr3 || 0);
   const adSignal = String(broker?.adSignal || 'Neutral').toLowerCase();
   const isVetoed = Boolean(broker?.orderFlowVeto?.isVetoed);
-  const brokerPhase = String(broker?.phase || '');
+  const brokerPhase = String(broker?.phase || '').toUpperCase();
 
-  const isTechBullish = techScore >= 65 || (trendDir === 'BULLISH' && techScore >= 55);
-  const isTechBearish = techScore <= 38 || (trendDir === 'BEARISH' && techScore <= 45);
+  const isTechBullish = techScore >= 65 || (trendDir === 'BULLISH' || trendDir === 'STRONG_BULLISH') && techScore >= 55;
+  const isTechBearish = techScore <= 38 || (trendDir === 'BEARISH' || trendDir === 'STRONG_BEARISH') && techScore <= 45;
 
-  const isBrokerAccumulation = adSignal === 'accumulation' || (bcr3 >= 48 && scr3 < 35);
+  const isBrokerAccumulation = !isVetoed && (adSignal === 'accumulation' || (bcr3 >= 48 && scr3 < 35));
   const isBrokerDistribution = isVetoed || adSignal === 'distribution' || scr3 >= 48 || brokerPhase === 'BULL_TRAP' || brokerPhase === 'DISTRIBUTION_DANGER';
 
-  // ── Arbitration Matrix ──
+  // ── Arbitration Matrix (Veto & Distribution precedence ALWAYS wins over Buy/Spring signals) ──
   if (isTechBullish && isBrokerDistribution) {
     return {
       symbol,
@@ -46,8 +46,49 @@ export function reconcileTechnicalAndBrokerSignals({
       techScore,
       bcr3,
       scr3,
+      momentumCondition: momentumState,
       smartMoneyBias: 'Operator Offloading',
       reconciledScore: Math.min(45, techScore - 35)
+    };
+  }
+
+  if (isTechBearish && (isVetoed || isBrokerDistribution)) {
+    return {
+      symbol,
+      verdict: 'STRONG_CONFLUENCE_BEARISH',
+      verdictLabel: '🔴 Heavy Downside Pressure: Technical Breakdown with Active Offloading',
+      verdictLabelNp: '🔴 भारी मन्दी दबाब: प्राविधिक गिरावट र ब्रोकरहरूको सक्रिय बिक्री',
+      severity: 'BEARISH',
+      compositeBias: 'STRONG_BEARISH',
+      recommendation: 'CAPITAL_PROTECTION_EXIT',
+      actionEn: 'Both chart and order flow confirm aggressive selling. Respect stop-loss.',
+      actionNp: 'चार्ट र ब्रोकर दुवैतर्फ भारी बिक्री। पूँजी संरक्षणका लागि स्टप-लस पालना गर्नुहोस्।',
+      techScore,
+      bcr3,
+      scr3,
+      momentumCondition: momentumState,
+      smartMoneyBias: 'Heavy Distribution',
+      reconciledScore: Math.min(25, techScore)
+    };
+  }
+
+  if (isVetoed) {
+    return {
+      symbol,
+      verdict: 'BULL_TRAP_DIVERGENCE',
+      verdictLabel: '🚫 Order Flow Veto: Distribution Dominance Overrides Setup',
+      verdictLabelNp: '🚫 अर्डर फ्लो भिटो: बिक्री दबाबले खरिद संकेत खारेज गरेको छ',
+      severity: 'WARNING',
+      compositeBias: 'BEARISH_DIVERGENCE',
+      recommendation: 'DO_NOT_CHASE',
+      actionEn: 'Order flow veto active due to heavy top-broker selling. Stand aside.',
+      actionNp: 'शीर्ष ब्रोकरहरूको भारी बिक्रीका कारण अर्डर फ्लो भिटो लागू गरिएको छ।',
+      techScore,
+      bcr3,
+      scr3,
+      momentumCondition: momentumState,
+      smartMoneyBias: 'Order Flow Vetoed',
+      reconciledScore: Math.min(35, techScore)
     };
   }
 
@@ -65,6 +106,7 @@ export function reconcileTechnicalAndBrokerSignals({
       techScore,
       bcr3,
       scr3,
+      momentumCondition: momentumState,
       smartMoneyBias: 'Institutional Absorption',
       reconciledScore: Math.max(68, techScore + 32)
     };
@@ -84,27 +126,9 @@ export function reconcileTechnicalAndBrokerSignals({
       techScore,
       bcr3,
       scr3,
+      momentumCondition: momentumState,
       smartMoneyBias: 'Smart Money Buying',
       reconciledScore: Math.min(95, Math.max(techScore, 75))
-    };
-  }
-
-  if (isTechBearish && isBrokerDistribution) {
-    return {
-      symbol,
-      verdict: 'STRONG_CONFLUENCE_BEARISH',
-      verdictLabel: '🔴 Heavy Downside Pressure: Technical Breakdown with Active Offloading',
-      verdictLabelNp: '🔴 भारी मन्दी दबाब: प्राविधिक गिरावट र ब्रोकरहरूको सक्रिय बिक्री',
-      severity: 'BEARISH',
-      compositeBias: 'STRONG_BEARISH',
-      recommendation: 'CAPITAL_PROTECTION_EXIT',
-      actionEn: 'Both chart and order flow confirm aggressive selling. Respect stop-loss.',
-      actionNp: 'चार्ट र ब्रोकर दुवैतर्फ भारी बिक्री। पूँजी संरक्षणका लागि स्टप-लस पालना गर्नुहोस्।',
-      techScore,
-      bcr3,
-      scr3,
-      smartMoneyBias: 'Heavy Distribution',
-      reconciledScore: Math.min(25, techScore)
     };
   }
 
@@ -121,6 +145,7 @@ export function reconcileTechnicalAndBrokerSignals({
     techScore,
     bcr3,
     scr3,
+    momentumCondition: momentumState,
     smartMoneyBias: 'Balanced Flow',
     reconciledScore: techScore
   };

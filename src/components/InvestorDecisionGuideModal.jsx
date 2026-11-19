@@ -26,12 +26,14 @@ import {
   Zap
 } from 'lucide-react';
 
-export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab = 'index' }) {
-  const [activeTab, setActiveTab] = useState(initialTab || 'index');
+export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab = 'index', defaultTab }) {
+  const effectiveTab = defaultTab || initialTab || 'index';
+  const [activeTab, setActiveTab] = useState(effectiveTab);
 
   React.useEffect(() => {
-    if (initialTab) setActiveTab(initialTab);
-  }, [initialTab]);
+    const tab = defaultTab || initialTab;
+    if (tab) setActiveTab(tab);
+  }, [initialTab, defaultTab]);
 
   if (!isOpen) return null;
 
@@ -490,7 +492,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
                     🎯 नियम १: पहिलो टार्गेट (Target 1) मा आधा नाफा बुक गर्नुहोस्
                   </div>
                   <p style={{ margin: '6px 0 0', color: '#94A3B8', fontSize: 12 }}>
-                    सेयर Target 1 मा पुगेपछि ५०% सेयर बेचेर नाफा सुरक्षित गर्नुहोस्। बाँकी ५०% सेयरको Stop-Loss लाई बढाएर आफूले किनेको मूल्य (Entry Price) मा सार्नुहोस् — यसो गर्दा अब त्यो ट्रेडमा १ रुपैयाँ पनि घाटा हुँदैन!
+                    सेयर Target 1 मा पुगेपछि ५०% सेयर बेचेर नाफा सुरक्षित गर्नुहोस्। बाँकी ५०% सेयरको Stop-Loss लाई बढाएर सम्पूर्ण ब्रोकर कमिसन र सेबन शुल्क कट्ने लागत मूल्य (Statutory Breakeven: Entry + ~0.8%–1.8%) मा सार्नुहोस् — यसो गर्दा शुल्क कटाएर पनि त्यो ट्रेडमा १ रुपैयाँ घाटा हुँदैन!
                   </p>
                 </div>
 

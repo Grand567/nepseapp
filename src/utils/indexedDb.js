@@ -27,15 +27,21 @@ function getDB() {
       };
 
       request.onsuccess = (e) => {
-        resolve(e.target.result);
+        const db = e.target.result;
+        db.onclose = () => {
+          dbPromise = null;
+        };
+        resolve(db);
       };
 
       request.onerror = (e) => {
         console.warn('[IndexedDB] Failed to open database:', e.target.error);
+        dbPromise = null;
         resolve(null);
       };
     } catch (err) {
       console.warn('[IndexedDB] Initialization error:', err);
+      dbPromise = null;
       resolve(null);
     }
   });
@@ -53,7 +59,19 @@ export async function idbGet(key, allowExpired = false) {
     if (!db) {
       if (typeof localStorage !== 'undefined') {
         const raw = localStorage.getItem('idb_fallback_' + key);
-        return raw ? JSON.parse(raw) : null;
+        if (!raw) return null;
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object' && 'value' in parsed) {
+            if (!allowExpired && parsed.expiresAt && parsed.expiresAt < Date.now()) {
+              return null;
+            }
+            return parsed.value;
+          }
+          return parsed;
+        } catch (_) {
+          return null;
+        }
       }
       return null;
     }
@@ -100,7 +118,7 @@ export async function idbSet(key, value, ttlMs = 0) {
     if (!db) {
       if (typeof localStorage !== 'undefined') {
         try {
-          localStorage.setItem('idb_fallback_' + key, JSON.stringify(value));
+          localStorage.setItem('idb_fallback_' + key, JSON.stringify({ value, expiresAt: entry.expiresAt }));
         } catch (_) {}
       }
       return;

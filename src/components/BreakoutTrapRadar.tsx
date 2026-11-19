@@ -38,6 +38,7 @@ export function BreakoutTrapRadar({
   const [stocks, setStocks] = useState<any[]>([]);
   const [floorsheet, setFloorsheet] = useState<any[]>([]);
   const [sortBy, setSortBy] = useState<'quality' | 'trapProb' | 'pChange' | 'turnover' | 'rvol'>('quality');
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -83,7 +84,7 @@ export function BreakoutTrapRadar({
     if (!selectedStockSymbol) return;
     const sym = selectedStockSymbol.toUpperCase();
     if (!getCachedRealPriceHistory(sym)) {
-      fetchPriceHistory(sym, 60).catch(() => {});
+      fetchPriceHistory(sym, 60).then(() => setHistoryVersion(v => v + 1)).catch(() => {});
     }
   }, [selectedStockSymbol]);
 
@@ -126,7 +127,7 @@ export function BreakoutTrapRadar({
         exitSafety
       };
     });
-  }, [stocks, floorsheet]);
+  }, [stocks, floorsheet, historyVersion]);
 
   // Filtered & Sorted stocks
   const filteredStocks = useMemo(() => {
@@ -640,7 +641,7 @@ export function BreakoutTrapRadar({
                   <div className="flex justify-between items-center py-1 border-b border-slate-800/40">
                     <span className="text-slate-400">Nearest Resistance Cluster</span>
                     <span className="font-black text-red-400">
-                      Rs. {activeStock.srLevels.nearestResistance?.price || (activeStock.ltp ? +(activeStock.ltp * 1.05).toFixed(1) : 520)} ({activeStock.srLevels.nearestResistance?.strength || 60}% strength)
+                      Rs. {activeStock.srLevels.nearestResistance?.price ? activeStock.srLevels.nearestResistance.price.toFixed(1) : (activeStock.ltp ? +(activeStock.ltp * 1.05).toFixed(1) : '—')} ({activeStock.srLevels.nearestResistance?.strength || 60}% strength)
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-slate-800/40">
@@ -652,7 +653,7 @@ export function BreakoutTrapRadar({
                   <div className="flex justify-between items-center py-1 border-b border-slate-800/40">
                     <span className="text-slate-400">Nearest Support Cluster</span>
                     <span className="font-black text-emerald-400">
-                      Rs. {activeStock.srLevels.nearestSupport?.price || (activeStock.ltp ? +(activeStock.ltp * 0.95).toFixed(1) : 480)} ({activeStock.srLevels.nearestSupport?.strength || 60}% strength)
+                      Rs. {activeStock.srLevels.nearestSupport?.price ? activeStock.srLevels.nearestSupport.price.toFixed(1) : (activeStock.ltp ? +(activeStock.ltp * 0.95).toFixed(1) : '—')} ({activeStock.srLevels.nearestSupport?.strength || 60}% strength)
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-1">

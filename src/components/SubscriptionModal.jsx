@@ -27,22 +27,19 @@ import {
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
 import { PRO_PLANS } from '../utils/subscription';
-import { generateLicenseKey, cleanDeviceId, formatDeviceId } from '../utils/licenseEngine';
+import { cleanDeviceId, formatDeviceId, generateLicenseKeyOnServer } from '../utils/licenseEngine';
 import { openExternalUrl } from '../utils/externalLinks';
 
 export default function SubscriptionModal() {
   const {
     isPro,
     daysRemaining,
-    isLifetime,
     formattedExpiry,
     planDuration,
-    voucherCode,
     deviceId,
     isModalOpen,
     closeSubscriptionModal,
     lockedFeatureName,
-    activatePlan,
     redeemCode,
     cancelPlan
   } = useSubscription();
@@ -54,13 +51,13 @@ export default function SubscriptionModal() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
 
-  // In-App Developer Key Generator State (Master PIN required for security; PIN number is never exposed in UI)
+  // Server-Authenticated Admin Key Generator State (secret kept ephemeral in memory only)
   const [showDevPanel, setShowDevPanel] = useState(false);
-  const [devPinInput, setDevPinInput] = useState('');
-  const [devUnlocked, setDevUnlocked] = useState(false);
-  const [pinError, setPinError] = useState(false);
+  const [devAdminKey, setDevAdminKey] = useState('');
   const [devTargetId, setDevTargetId] = useState(deviceId || '');
   const [devPlan, setDevPlan] = useState('1m');
+  const [devError, setDevError] = useState(null);
+  const [isGeneratingKey, setIsGeneratingKey] = useState(false);
   const [generatedKey, setGeneratedKey] = useState(null);
   const [copiedGenKey, setCopiedGenKey] = useState(false);
   const [copiedWhatsAppMsg, setCopiedWhatsAppMsg] = useState(false);
@@ -71,30 +68,40 @@ export default function SubscriptionModal() {
     }
   }, [deviceId, devTargetId]);
 
+  useEffect(() => {
+    if (!isModalOpen) {
+      setDevAdminKey('');
+      setDevError(null);
+    }
+  }, [isModalOpen]);
+
   if (!isModalOpen) return null;
 
   const selectedPlan = PRO_PLANS.find(p => p.id === selectedPlanId) || PRO_PLANS[0];
 
-  const handleRedeem = (e) => {
+  const handleRedeem = async (e) => {
     e.preventDefault();
-    if (!promoInput.trim()) return;
+    if (!promoInput.trim() || isRedeeming) return;
     setIsRedeeming(true);
     setPromoMessage(null);
 
-    const result = redeemCode(promoInput);
-    setIsRedeeming(false);
-    setPromoMessage(result);
-    if (result.success) {
-      setPromoInput('');
+    try {
+      const result = await redeemCode(promoInput);
+      setPromoMessage(result);
+      if (result.success) {
+        setPromoInput('');
+      }
+    } catch (err) {
+      setPromoMessage({ success: false, message: err?.message || 'License verification failed.' });
+    } finally {
+      setIsRedeeming(false);
     }
   };
 
-  const handleDirectActivate = () => {
-    activatePlan(selectedPlan.code, 'in_app_selection');
-    setPromoMessage({
-      success: true,
-      message: `🎉 Success! Unlocked ${selectedPlan.label} Pro Access (${selectedPlan.days} days).`
-    });
+  const handleRequestPlanViaWhatsApp = () => {
+    const text = `Hi Rexsh, I would like to purchase the ${selectedPlan.label} (Rs. ${selectedPlan.priceRs}) Drabyashree Pro key for Device ID: ${deviceId}`;
+    const url = `https://wa.me/9779841576936?text=${encodeURIComponent(text)}`;
+    openExternalUrl(url);
   };
 
   const copyTextToClipboard = (text, setSuccessState) => {
@@ -140,32 +147,30 @@ export default function SubscriptionModal() {
     openExternalUrl(url);
   };
 
-  const handleUnlockDev = (e) => {
+  const handleGenerateDeveloperKey = async (e) => {
     e.preventDefault();
-    if (devPinInput.trim() === '8899' || devPinInput.trim().toUpperCase() === 'NEPSE2026') {
-      setDevUnlocked(true);
-      setPinError(false);
-    } else {
-      setPinError(true);
+    setDevError(null);
+    const clean = cleanDeviceId(devTargetId || deviceId);
+    if (clean.length !== 8) {
+      setDevError('Please enter a valid 8-character device ID like DS-8A7F-94B2.');
+      return;
     }
-  };
+    if (!devAdminKey.trim()) {
+      setDevError('Server Admin API Key is required to issue device-bound license keys.');
+      return;
+    }
 
-  const handleGenerateDeveloperKey = (e) => {
-    e.preventDefault();
+    setIsGeneratingKey(true);
     try {
-      const clean = cleanDeviceId(devTargetId || deviceId);
-      if (clean.length !== 8) {
-        alert('Please enter a valid 8-character device ID like DS-8A7F-94B2');
-        return;
-      }
       const formatted = formatDeviceId(clean);
-      const key = generateLicenseKey({
+      const res = await generateLicenseKeyOnServer({
         deviceId: formatted,
-        planDuration: devPlan
+        planDuration: devPlan,
+        adminKey: devAdminKey
       });
       const days = PRO_PLANS.find(p => p.id === devPlan)?.days || 30;
       setGeneratedKey({
-        key,
+        key: res.key,
         targetDevice: formatted,
         plan: devPlan.toUpperCase(),
         days
@@ -173,7 +178,9 @@ export default function SubscriptionModal() {
       setCopiedGenKey(false);
       setCopiedWhatsAppMsg(false);
     } catch (err) {
-      alert(err?.message || 'Failed to generate key');
+      setDevError(err?.message || 'Failed to generate server-signed license key.');
+    } finally {
+      setIsGeneratingKey(false);
     }
   };
 
@@ -328,16 +335,16 @@ export default function SubscriptionModal() {
                   background: isPro ? '#10B981' : '#64748b'
                 }} />
                 <span style={{ fontSize: 13, fontWeight: 800, color: isPro ? '#10B981' : 'var(--text-secondary)' }}>
-                  {isPro ? `Active Pro (${isLifetime ? 'Lifetime Access' : (planDuration || 'Monthly')})` : 'Free Plan (Pro Locked)'}
+                  {isPro ? `Active Pro (${planDuration || 'Monthly'})` : 'Free Plan (Pro Locked)'}
                 </span>
               </div>
               {isPro ? (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
-                  Expires: <strong style={{ color: '#fff' }}>{isLifetime ? 'Lifetime Unlimited' : formattedExpiry}</strong> · <strong style={{ color: '#10B981' }}>{isLifetime ? 'Unlimited Pro Access' : `${daysRemaining} days remaining`}</strong>
+                  Expires: <strong style={{ color: '#fff' }}>{formattedExpiry}</strong> · <strong style={{ color: '#10B981' }}>{daysRemaining} days remaining</strong>
                 </div>
               ) : (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
-                  Select a monthly pass below to activate immediate access.
+                  Select a pass below to request an activation key, then redeem it below.
                 </div>
               )}
             </div>
@@ -523,11 +530,11 @@ export default function SubscriptionModal() {
             </div>
           </div>
 
-          {/* Action CTA Button */}
+          {/* Request Key CTA Button */}
           <div style={{ marginBottom: 18 }}>
             <button
               type="button"
-              onClick={handleDirectActivate}
+              onClick={handleRequestPlanViaWhatsApp}
               style={{
                 width: '100%',
                 background: 'linear-gradient(90deg, #d97706 0%, #f59e0b 50%, #fbbf24 100%)',
@@ -547,7 +554,7 @@ export default function SubscriptionModal() {
               }}
             >
               <Zap style={{ width: 17, height: 17 }} />
-              {isPro ? `Extend Pro by ${selectedPlan.label}` : `Activate ${selectedPlan.label} Pro Access`}
+              {isPro ? `Extend Pro by ${selectedPlan.label} via Admin` : `Request ${selectedPlan.label} Pass Key (Rs. ${selectedPlan.priceRs})`}
             </button>
           </div>
 
@@ -703,141 +710,125 @@ export default function SubscriptionModal() {
                 padding: '14px',
                 animation: 'fadeIn 0.2s ease-out'
               }}>
-                {!devUnlocked ? (
-                  <form onSubmit={handleUnlockDev} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Lock style={{ width: 13, height: 13, color: '#f59e0b' }} />
-                      <span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>
-                        Developer Verification
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24' }}>
+                        Server-Verified Admin Issuance
                       </span>
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      Server HMAC-SHA256
+                    </span>
+                  </div>
+
+                  <form onSubmit={handleGenerateDeveloperKey} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
+                        Server Admin API Key (ephemeral):
+                      </label>
                       <input
                         type="password"
-                        placeholder="Enter Master Passcode"
-                        value={devPinInput}
-                        onChange={(e) => { setDevPinInput(e.target.value); setPinError(false); }}
+                        autoComplete="off"
+                        placeholder="Enter ADMIN_API_KEY"
+                        value={devAdminKey}
+                        onChange={(e) => { setDevAdminKey(e.target.value); setDevError(null); }}
                         style={{
-                          flex: 1,
+                          width: '100%',
                           background: 'rgba(255, 255, 255, 0.05)',
-                          border: pinError ? '1.5px solid #f43f5e' : '1px solid var(--border)',
+                          border: '1px solid var(--border)',
                           borderRadius: 8,
                           padding: '7px 10px',
                           fontSize: 12,
+                          fontFamily: 'var(--font-mono)',
                           color: '#fff',
                           outline: 'none'
                         }}
                       />
-                      <button
-                        type="submit"
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
+                        Customer Device License ID:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. DS-8A7F-94B2"
+                        value={devTargetId}
+                        onChange={(e) => setDevTargetId(e.target.value.toUpperCase())}
                         style={{
-                          background: '#f59e0b',
-                          color: '#000',
-                          border: 'none',
+                          width: '100%',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid var(--border)',
                           borderRadius: 8,
-                          padding: '0 14px',
+                          padding: '7px 10px',
                           fontSize: 12,
-                          fontWeight: 800,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Unlock
-                      </button>
-                    </div>
-                    {pinError && (
-                      <span style={{ fontSize: 12, color: '#f43f5e', fontWeight: 700 }}>
-                        ❌ Incorrect passcode. Access denied.
-                      </span>
-                    )}
-                  </form>
-                ) : (
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Unlock style={{ width: 13, height: 13, color: '#10B981' }} />
-                        <span style={{ fontSize: 12, fontWeight: 800, color: '#10B981' }}>
-                          Developer Portal Unlocked
-                        </span>
-                      </div>
-                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        Cryptographic SHA-256 Engine
-                      </span>
-                    </div>
-
-                    <form onSubmit={handleGenerateDeveloperKey} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
-                          Customer Device License ID:
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. DS-8A7F-94B2"
-                          value={devTargetId}
-                          onChange={(e) => setDevTargetId(e.target.value.toUpperCase())}
-                          style={{
-                            width: '100%',
-                            background: 'rgba(255, 255, 255, 0.05)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 8,
-                            padding: '7px 10px',
-                            fontSize: 12,
-                            fontFamily: 'var(--font-mono)',
-                            color: '#fff',
-                            outline: 'none'
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
-                          Select Plan Duration:
-                        </label>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
-                          {['1m', '2m', '3m', '6m', '12m'].map((pid) => (
-                            <button
-                              key={pid}
-                              type="button"
-                              onClick={() => setDevPlan(pid)}
-                              style={{
-                                background: devPlan === pid ? '#f59e0b' : 'rgba(255, 255, 255, 0.05)',
-                                color: devPlan === pid ? '#000' : '#fff',
-                                border: '1px solid var(--border)',
-                                borderRadius: 6,
-                                padding: '6px 2px',
-                                fontSize: 12,
-                                fontWeight: 800,
-                                cursor: 'pointer'
-                              }}
-                            >
-                              {pid.toUpperCase()}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <button
-                        type="submit"
-                        style={{
-                          background: 'linear-gradient(90deg, #10B981 0%, #059669 100%)',
+                          fontFamily: 'var(--font-mono)',
                           color: '#fff',
-                          border: 'none',
-                          borderRadius: 8,
-                          padding: '9px 12px',
-                          fontSize: 12,
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 6
+                          outline: 'none'
                         }}
-                      >
-                        <Zap style={{ width: 14, height: 14 }} />
-                        Generate Device-Bound Activation Key
-                      </button>
-                    </form>
+                      />
+                    </div>
 
-                    {generatedKey && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
+                        Select Plan Duration:
+                      </label>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+                        {['1m', '2m', '3m', '6m', '12m'].map((pid) => (
+                          <button
+                            key={pid}
+                            type="button"
+                            onClick={() => setDevPlan(pid)}
+                            style={{
+                              background: devPlan === pid ? '#f59e0b' : 'rgba(255, 255, 255, 0.05)',
+                              color: devPlan === pid ? '#000' : '#fff',
+                              border: '1px solid var(--border)',
+                              borderRadius: 6,
+                              padding: '6px 2px',
+                              fontSize: 12,
+                              fontWeight: 800,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {pid.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {devError && (
+                      <div style={{ fontSize: 12, color: '#f43f5e', fontWeight: 700 }}>
+                        {devError}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isGeneratingKey}
+                      style={{
+                        background: 'linear-gradient(90deg, #10B981 0%, #059669 100%)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '9px 12px',
+                        fontSize: 12,
+                        fontWeight: 800,
+                        cursor: isGeneratingKey ? 'not-allowed' : 'pointer',
+                        opacity: isGeneratingKey ? 0.6 : 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6
+                      }}
+                    >
+                      <Zap style={{ width: 14, height: 14 }} />
+                      {isGeneratingKey ? 'Issuing via Server...' : 'Generate Device-Bound Activation Key'}
+                    </button>
+                  </form>
+
+                  {generatedKey && (
                       <div style={{
                         marginTop: 12,
                         background: 'rgba(16, 185, 129, 0.1)',
@@ -911,8 +902,7 @@ export default function SubscriptionModal() {
                         </div>
                       </div>
                     )}
-                  </div>
-                )}
+                </div>
               </div>
             )}
           </div>

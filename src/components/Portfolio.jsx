@@ -9,8 +9,8 @@ import {
 import { calculateBuyDetails, calculateSellDetails, sanitizeMeroShareHoldings, guessScripBasePrice, getCustomWaccMap, setScripCustomWacc, saveCustomWaccMap, applyDiscoveredWaccMap, classifyHoldingActionSignal, stripHoldingForStorage, safeStorageSetItem, parseBrokerTradeBook } from '../utils/calculations';
 import { getProxyBase } from '../utils/liveData';
 import { syncUserDataToCloud, getCurrentAuthToken } from '../utils/firebase';
-import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
-import { pullMeroShareLivePortfolio, authenticateMeroShare, MEROSHARE_DP_LIST, pullMeroShareWaccBatch, classifyWaccSyncFailure, normalizeScripSymbol } from '../services/meroShareService';
+import { loadEncryptedUserProfiles, saveEncryptedUserProfiles } from '../utils/profileVaultStorage';
+import { pullMeroShareLivePortfolio, authenticateMeroShare, MEROSHARE_DP_LIST, pullMeroShareWaccBatch, classifyWaccSyncFailure, normalizeScripSymbol, parseMeroShareCsv } from '../services/meroShareService';
 import { Capacitor } from '@capacitor/core';
 import { DEFAULT_AI_KEY, callGlmAi, generateNepseAiContent } from '../services/aiService';
 import { syncCapitalWithPortfolio } from '../utils/dynamicCapitalEngine';
@@ -178,38 +178,31 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
   const [telegramSyncMsg, setTelegramSyncMsg] = useState(null);
   const [trackedSymbols, setTrackedSymbols] = useState(new Set());
 
-  // Default application portfolio key ensuring seamless 1-click sync without 401 Unauthorized errors
-  const DEFAULT_APP_PORTFOLIO_KEY = 'nepse-secure-portfolio-key-8899';
-
-  // Helper to attach portfolio authorization headers
+  // Helper to attach per-user or configured portfolio authorization headers
   const getPortfolioAuthHeaders = async () => {
     const headers = {};
     try {
-      let customKey = (typeof localStorage !== 'undefined' && (
-        localStorage.getItem('nepse_portfolio_key') ||
-        localStorage.getItem('nepse_admin_key') ||
-        localStorage.getItem('portfolio_api_key')
-      )) || (import.meta?.env?.VITE_PORTFOLIO_AUTH_KEY || import.meta?.env?.VITE_ADMIN_API_KEY || '');
-
-      if (!customKey && typeof getCurrentAuthToken === 'function') {
-        const fbToken = await getCurrentAuthToken();
-        if (fbToken) {
-          headers['Authorization'] = `Bearer ${fbToken}`;
+      if (typeof getCurrentAuthToken === 'function') {
+        const authToken = await getCurrentAuthToken();
+        if (authToken) {
+          headers['Authorization'] = `Bearer ${authToken}`;
           return headers;
         }
       }
 
-      if (!customKey) {
-        customKey = DEFAULT_APP_PORTFOLIO_KEY;
-      }
+      const customKey =
+        (typeof localStorage !== 'undefined' && (
+          localStorage.getItem('nepse_portfolio_key') ||
+          localStorage.getItem('portfolio_api_key')
+        )) ||
+        import.meta?.env?.VITE_PORTFOLIO_AUTH_KEY ||
+        '';
 
-      headers['x-portfolio-key'] = customKey;
-      headers['x-admin-key'] = customKey;
-      headers['Authorization'] = `Bearer ${customKey}`;
-    } catch (_) {
-      headers['x-portfolio-key'] = DEFAULT_APP_PORTFOLIO_KEY;
-      headers['Authorization'] = `Bearer ${DEFAULT_APP_PORTFOLIO_KEY}`;
-    }
+      if (customKey) {
+        headers['x-portfolio-key'] = customKey;
+        headers['Authorization'] = `Bearer ${customKey}`;
+      }
+    } catch (_) {}
     return headers;
   };
 
@@ -398,9 +391,10 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
   const txKey      = `nepse_hub_${userId}_transactions`;
   const profileKey = `nepse_hub_${userId}_profiles`;
 
-  // Load transactions and meroshare profiles from localStorage (scoped to user)
+  // Load transactions and strictly uid-scoped encrypted profiles whenever userId changes
   useEffect(() => {
-    const loadData = () => {
+    let active = true;
+    const loadData = async () => {
       const savedTxs = localStorage.getItem(txKey);
       if (savedTxs) {
         try { setTransactions(JSON.parse(savedTxs)); }
@@ -409,81 +403,24 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
         setTransactions([]);
       }
 
-      const savedProfiles = localStorage.getItem(profileKey);
-      if (savedProfiles) {
-        try {
-          const parsed = JSON.parse(savedProfiles);
-          const decrypted = (Array.isArray(parsed) ? parsed : []).map(p => decryptProfileCredentials(p, userId));
-          const sanitized = decrypted.map(p => ({
-            ...p,
-            holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid)
-          }));
-          setMeroshareProfiles(sanitized);
-        }
-        catch (e) { setMeroshareProfiles([]); }
-      } else {
-        setMeroshareProfiles([]);
+      try {
+        const decrypted = await loadEncryptedUserProfiles(userId);
+        if (!active) return;
+        const sanitized = decrypted.map(p => ({
+          ...p,
+          holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid)
+        }));
+        setMeroshareProfiles(sanitized);
+      } catch (_) {
+        if (active) setMeroshareProfiles([]);
       }
     };
 
-    // Also merge any accounts registered in Bulk Account Manager that haven't synced yet
-    const mergeBulkAccounts = () => {
-      try {
-        const bulkRaw = localStorage.getItem('nepse_hub_bulk_ipo_accounts');
-        if (!bulkRaw) return;
-        const bulkAccounts = JSON.parse(bulkRaw);
-        if (!Array.isArray(bulkAccounts) || bulkAccounts.length === 0) return;
-
-        const savedProfiles = localStorage.getItem(profileKey);
-        const existingProfiles = savedProfiles ? JSON.parse(savedProfiles) : [];
-        let changed = false;
-        const merged = [...existingProfiles];
-        bulkAccounts.forEach(acc => {
-          const existing = merged.find(p => (acc.boid && p.boid === acc.boid) || (acc.id && p.id === acc.id));
-          if (!existing) {
-            merged.push({
-              id: acc.id,
-              name: acc.name,
-              boid: acc.boid,
-              username: acc.username,
-              dpCode: acc.dpCode,
-              dpId: acc.dpId,
-              dpName: acc.dpName || 'Capital DP',
-              password: acc.password,
-              crn: acc.crn,
-              pin: String(acc.pin || ''),
-              holdings: sanitizeMeroShareHoldings(acc.holdings, userId, acc.id || acc.boid),
-              lastSyncedAt: acc.lastSyncedAt || null
-            });
-            changed = true;
-          } else if (acc.holdings?.length > 0) {
-            if (!existing.holdings || existing.holdings.length === 0 || (acc.lastSyncedAt && (!existing.lastSyncedAt || acc.lastSyncedAt >= existing.lastSyncedAt))) {
-              existing.holdings = sanitizeMeroShareHoldings(acc.holdings, userId, acc.id || acc.boid);
-              existing.lastSyncedAt = acc.lastSyncedAt || Date.now();
-              if (acc.name && acc.name !== 'Unknown') existing.name = acc.name;
-              changed = true;
-            }
-          }
-        });
-        if (changed) {
-          const encryptedMerged = merged.map(p => encryptProfileCredentials(p, userId));
-          safeStorageSetItem(profileKey, JSON.stringify(encryptedMerged));
-          setMeroshareProfiles(merged.map(p => decryptProfileCredentials(p, userId)));
-        }
-      } catch (_) {}
-    };
-
     loadData();
-    mergeBulkAccounts();
 
-    // Listen for live updates from MeroShareHub and AccountManager (same-tab storage events)
     const handleStorageChange = (e) => {
       if (e.key === profileKey) {
-        try {
-          const updated = JSON.parse(e.newValue || '[]');
-          const decrypted = (Array.isArray(updated) ? updated : []).map(p => decryptProfileCredentials(p, userId));
-          setMeroshareProfiles(decrypted);
-        } catch (_) {}
+        loadData();
       }
       if (e.key === txKey) {
         try {
@@ -493,36 +430,24 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
       }
     };
 
-    // Listen for CustomEvent from AccountManager (same-tab, reliable)
-    const handleBulkAccountsChanged = (e) => {
-      try {
-        if (e.detail && Array.isArray(e.detail.profiles)) {
-          const decrypted = e.detail.profiles.map(p => decryptProfileCredentials(p, userId));
-          setMeroshareProfiles(decrypted);
-        } else {
-          loadData();
-          mergeBulkAccounts();
-        }
-      } catch (_) {
-        loadData();
-        mergeBulkAccounts();
-      }
+    const handleBulkAccountsChanged = () => {
+      loadData();
     };
 
     const handleCloudRestored = () => {
       loadData();
-      mergeBulkAccounts();
     };
 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('bulkAccountsChanged', handleBulkAccountsChanged);
     window.addEventListener('nepse_cloud_data_restored', handleCloudRestored);
     return () => {
+      active = false;
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('bulkAccountsChanged', handleBulkAccountsChanged);
       window.removeEventListener('nepse_cloud_data_restored', handleCloudRestored);
     };
-  }, [userId]);  // Re-load whenever the logged-in user changes
+  }, [userId, txKey, profileKey]);  // Re-load whenever the logged-in user changes
 
   // Ensure default symbol is set
   useEffect(() => {
@@ -539,16 +464,11 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
     }));
 
     setMeroshareProfiles(cleanedProfiles);
-    const encryptedForStorage = cleanedProfiles.map(p => encryptProfileCredentials(p, userId));
-    safeStorageSetItem(profileKey, encryptedForStorage);
-    
-    try {
-      window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(encryptedForStorage) }));
-    } catch (_) {}
+    saveEncryptedUserProfiles(cleanedProfiles, userId).catch(() => {});
 
     // Cloud Sync (Zero Credentials to Cloud)
     try {
-      const sanitizedForCloud = cleanedProfiles.map(({ password, crn, pin, transactionPin, ...safe }) => safe);
+      const sanitizedForCloud = cleanedProfiles.map(({ password, crn, pin, transactionPin, vaultEnvelope, ...safe }) => safe);
       syncUserDataToCloud(userId, { profiles: sanitizedForCloud }, userEmail);
     } catch (_) {}
   };
@@ -630,21 +550,6 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
       });
 
       saveProfilesToStorage(updatedProfiles);
-
-      // Also update bulk accounts list so it stays in sync
-      try {
-        const bulkRaw = localStorage.getItem('nepse_hub_bulk_ipo_accounts');
-        if (bulkRaw) {
-          const bulkAccounts = JSON.parse(bulkRaw);
-          const updatedBulk = bulkAccounts.map(a => ((profile.boid && a.boid === profile.boid) || (profile.id && a.id === profile.id)) ? {
-            ...a,
-            name: (result.name && result.name !== 'Unknown') ? result.name : a.name,
-            holdings: parsedHoldings,
-            lastSyncedAt: Date.now()
-          } : a);
-          safeStorageSetItem('nepse_hub_bulk_ipo_accounts', updatedBulk);
-        }
-      } catch (_) {}
 
       setIsRetrieving(false);
       setRetrievalStep(0);
@@ -775,42 +680,20 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
     reader.onload = (event) => {
       try {
         const text = event.target.result;
-        const lines = text.split('\n');
-        if (lines.length < 2) {
-          setSyncError("Invalid CSV file structure.");
-          return;
-        }
+        const parsedHoldings = parseMeroShareCsv(text);
 
-        const parsedHoldings = [];
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-          
-          const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-          if (parts.length >= 3) {
-            const symbol = parts[1].replace(/"/g, '').trim().toUpperCase();
-            const units = parseInt(parts[2].replace(/"/g, '').trim());
-            let wacc = parseFloat(parts[3] ? parts[3].replace(/"/g, '').trim() : '100') || 100;
-            
-            if (symbol && !isNaN(units) && units > 0) {
-              parsedHoldings.push({
-                symbol,
-                name: symbol,
-                units,
-                wacc: Number(wacc.toFixed(2))
-              });
-            }
-          }
-        }
-
-        if (parsedHoldings.length === 0) {
+        if (!parsedHoldings || parsedHoldings.length === 0) {
           setSyncError("Could not extract any valid holdings from the CSV file.");
           return;
         }
 
         const updatedProfiles = meroshareProfiles.map(p => {
           if (p.id === profileId) {
-            return { ...p, holdings: parsedHoldings, lastSyncedAt: Date.now() };
+            return {
+              ...p,
+              holdings: sanitizeMeroShareHoldings(parsedHoldings, userId, p.id || p.boid),
+              lastSyncedAt: Date.now()
+            };
           }
           return p;
         });
@@ -4552,10 +4435,10 @@ Based on this data, provide a robust analysis using this exact markdown structur
             <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10, padding: '10px 12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#34d399', fontSize: 12.5, fontWeight: 700 }}>
                 <CheckCircle2 style={{ width: 14, height: 14 }} />
-                Status: {customSyncKey ? 'Custom Secret Key Configured' : 'Default Secure App Key Armed (1-Click Sync Active)'}
+                Status: {customSyncKey ? 'Custom Portfolio Key Configured' : 'Using Signed User Account Session'}
               </div>
               <div style={{ fontSize: 11, color: '#a7f3d0', marginTop: 4 }}>
-                {customSyncKey ? `Using custom key: ••••••••${customSyncKey.slice(-4)}` : `Using app key: ${DEFAULT_APP_PORTFOLIO_KEY}`}
+                {customSyncKey ? `Using custom key: ••••••••${customSyncKey.slice(-4)}` : 'Sign in to authenticate portfolio sync via your personal session token (or enter a custom server key below).'}
               </div>
             </div>
 
@@ -4565,7 +4448,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
               </label>
               <input
                 type="password"
-                placeholder={DEFAULT_APP_PORTFOLIO_KEY}
+                placeholder="Enter custom PORTFOLIO_AUTH_KEY (optional)"
                 value={customSyncKey}
                 onChange={e => setCustomSyncKey(e.target.value)}
                 style={{
@@ -4579,7 +4462,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 }}
               />
               <span style={{ fontSize: 11, color: '#64748b' }}>
-                Leave blank to automatically use the default secure built-in key.
+                Leave blank to authenticate automatically with your signed-in account token.
               </span>
             </div>
 
@@ -4599,7 +4482,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       setKeySaveMsg('✅ Custom Portfolio Key saved!');
                     } else {
                       localStorage.removeItem('nepse_portfolio_key');
-                      setKeySaveMsg('✅ Reverted to Default App Key!');
+                      setKeySaveMsg('✅ Cleared custom key (using signed account token).');
                     }
                     setTimeout(() => {
                       setKeySaveMsg(null);

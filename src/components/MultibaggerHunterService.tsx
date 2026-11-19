@@ -3,6 +3,7 @@ import { Target, Zap, Shield, Award, TrendingUp, TrendingDown, Flame, AlertTrian
 import { getAccurateFestivalSeasonality } from '../utils/quantEngine';
 import { calculateStealthAccumulationScore } from '../utils/accumulationDistributionEngine';
 import { getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
+import { isPureNepseEquity } from '../utils/nepseEquityFilter.js';
 
 interface MultibaggerHunterProps {
   stocks?: any[];
@@ -33,9 +34,10 @@ export function MultibaggerHunterService({ stocks: rawStocks = [], indices, onSe
 
   const evaluated = useMemo(() => {
     return stocks
-      .filter(s => s && s.symbol && s.ltp > 0)
+      .filter(s => s && s.symbol && s.ltp > 0 && isPureNepseEquity(s))
       .map(s => {
-        const publicFloatM = (1 - (s.promoterHolding || 51) / 100) * (s.sharesOut || 10);
+        const hasFloatData = s.promoterHolding != null && (s.sharesOut != null || s.listedShares != null);
+        const publicFloatM = hasFloatData ? (1 - Number(s.promoterHolding) / 100) * Number(s.sharesOut || (Number(s.listedShares) / 1000000)) : null;
         const bvps = s.bvps || s.bookValue || 0;
         const g = s.eps > 0 && bvps > 0 ? Math.sqrt(22.5 * s.eps * bvps) : 0;
         const mos = g > 0 ? ((g - s.ltp) / g) * 100 : null;
@@ -87,7 +89,7 @@ export function MultibaggerHunterService({ stocks: rawStocks = [], indices, onSe
           );
 
           return [
-            publicFloatM <= 15,
+            publicFloatM !== null && publicFloatM <= 15,
             (s.promoterHolding || 0) >= 52 || stealthScore >= 55,
             s.bollinger?.squeeze === true || (Math.abs(s.pChange || 0) <= 2.0 && (s.volume || 0) > 5000),
             (s.volumeZScore || 0) >= 1.5 || (s.volumeSurgeRatio || 0) >= 1.8 || s.isVolumeShocker === true,
@@ -247,9 +249,9 @@ export function MultibaggerHunterService({ stocks: rawStocks = [], indices, onSe
 
               {/* Stats */}
               <div className="text-xs text-slate-400 flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span>DPI: <strong className="text-slate-200">{s.dpi != null ? Number(s.dpi).toFixed(0) : '50'}/100</strong></span>
-                <span>Z-Score: <strong className="text-slate-200">{s.volumeZScore != null ? `${Number(s.volumeZScore).toFixed(1)}σ` : '0.0σ'}</strong></span>
-                <span>Turnover: <strong className="text-slate-200">{s.turnover ? `Rs. ${(s.turnover / 100000).toFixed(1)}L` : (s.volume && s.ltp ? `Rs. ${((s.volume * s.ltp) / 100000).toFixed(1)}L` : 'Rs. 10.0L')}</strong></span>
+                <span>DPI: <strong className="text-slate-200">{s.dpi != null ? `${Number(s.dpi).toFixed(0)}/100` : '—'}</strong></span>
+                <span>Z-Score: <strong className="text-slate-200">{s.volumeZScore != null ? `${Number(s.volumeZScore).toFixed(1)}σ` : '—'}</strong></span>
+                <span>Turnover: <strong className="text-slate-200">{s.turnover ? `Rs. ${(s.turnover / 100000).toFixed(1)}L` : (s.volume && s.ltp ? `Rs. ${((s.volume * s.ltp) / 100000).toFixed(1)}L` : '—')}</strong></span>
                 {s.isEstimated && <span className="text-amber-400 font-bold ml-1" title="Estimated Data">*</span>}
               </div>
 

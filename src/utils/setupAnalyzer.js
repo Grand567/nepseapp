@@ -73,15 +73,23 @@ import {
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { analyzePriceAction } from './priceActionEngine.js';
 import { calculateStockRvol } from './watchlistAlerts.js';
-import { getCachedRealPriceHistory } from './historyCache.js';
+import { getCachedRealPriceHistory, getCachedBrokerData } from './historyCache.js';
 import { evaluateOrderFlowVeto } from './sharedBrokerAggregationEngine.js';
 import { NEPSE_RULES, getCircuitLimits } from './nepseRules.js';
 
 function getSafeCachedBrokerData(symbol) {
-  if (!symbol || typeof window === 'undefined' || !window.localStorage) return null;
+  if (!symbol) return null;
+  const sym = String(symbol).toUpperCase().trim();
   try {
-    const sym = String(symbol).toUpperCase().trim();
-    const raw = window.localStorage.getItem(`nepse_real_broker_${sym}`) || window.localStorage.getItem(`broker_cache_${sym}`);
+    const memCached = typeof getCachedBrokerData === 'function' ? getCachedBrokerData(sym) : null;
+    if (memCached) return memCached;
+  } catch (_) {}
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const raw =
+      window.localStorage.getItem(`nepse_real_broker_${sym}_d1_latest__`) ||
+      window.localStorage.getItem(`nepse_real_broker_${sym}`) ||
+      window.localStorage.getItem(`broker_cache_${sym}`);
     return raw ? JSON.parse(raw) : null;
   } catch (_) {
     return null;
@@ -153,19 +161,30 @@ export function adjustForCorporateActionsWithConfirmation(candlesAscending, divi
     if (dropPct < 8.5 || dropPct > 52.0) continue;
 
     const date = candlesAscending[i].date;
+    const isPostApril2026 = date && date >= '2026-04-20';
+    const minUnconfirmedDrop = isPostApril2026 ? 15.2 : 8.5;
     let confirmed = false;
     let matchedEvent = null;
 
     for (const rec of dividendHistory) {
-      // Nepal FY: roughly mid-July Y1 to mid-July Y2. Approximate AD.
-      const fyMatch = String(rec.fiscalYear || '').match(/(\d{4})[-/–](\d{2,4})/);
-      if (fyMatch) {
-        const y1 = parseInt(fyMatch[1], 10) - 57;  // BS → approximate AD
-        const y2 = (parseInt(fyMatch[2], 10) < 100 ? Math.floor(parseInt(fyMatch[1], 10) / 100) * 100 + parseInt(fyMatch[2], 10) : parseInt(fyMatch[2], 10)) - 57;
-        const eventDate = new Date(date);
-        const rangeStart = new Date(`${y1}-05-01`);
-        const rangeEnd   = new Date(`${y2}-10-01`);
-        if (eventDate < rangeStart || eventDate > rangeEnd) continue;
+      const caDateStr = rec.bookCloseDate || rec.bookClosureDate || rec.exDate || rec.date || '';
+      if (caDateStr) {
+        const diffDays = Math.abs(new Date(date).getTime() - new Date(caDateStr).getTime()) / (1000 * 60 * 60 * 24);
+        if (diffDays > 7) continue;
+      } else {
+        if (dropPct < minUnconfirmedDrop) continue;
+        // Nepal FY: roughly mid-July Y1 to mid-July Y2. Approximate AD.
+        const fyMatch = String(rec.fiscalYear || '').match(/(\d{4})[-/–](\d{2,4})/);
+        if (fyMatch) {
+          const y1 = parseInt(fyMatch[1], 10) - 57;  // BS → approximate AD
+          const y2 = (parseInt(fyMatch[2], 10) < 100 ? Math.floor(parseInt(fyMatch[1], 10) / 100) * 100 + parseInt(fyMatch[2], 10) : parseInt(fyMatch[2], 10)) - 57;
+          const eventDate = new Date(date);
+          const rangeStart = new Date(`${y1}-05-01`);
+          const rangeEnd   = new Date(`${y2}-10-01`);
+          if (eventDate < rangeStart || eventDate > rangeEnd) continue;
+        } else {
+          continue;
+        }
       }
 
       const bonusPct = Number(rec.bonusShare || 0);
@@ -521,12 +540,12 @@ export function simulateForwardOutcome(candles, signalIdx, {
 
   const returnPct = +((exitPrice - entryPrice) / entryPrice * 100).toFixed(2);
 
-  // NEPSE friction: 0.36%-0.33% brokerage + 0.015% SEBON each way (~0.375%), plus 10.0% CGT on net profit (Finance Act 2083)
+  // NEPSE friction: 0.36%-0.33% brokerage + 0.015% SEBON each way (~0.375%), plus 7.5% CGT on net profit (Standard Short-Term Individual)
   const feeRate = 0.00375;
   const buyCost = entryPrice * (1 + feeRate);
   const sellGross = exitPrice * (1 - feeRate);
   const grossDiff = sellGross - buyCost;
-  const cgt = grossDiff > 0 ? grossDiff * 0.10 : 0;
+  const cgt = grossDiff > 0 ? grossDiff * 0.075 : 0;
   const netSell = sellGross - cgt;
   const netReturnPct = +(((netSell - buyCost) / buyCost) * 100).toFixed(2);
 

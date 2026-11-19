@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   BookOpen, TrendingUp, AlertTriangle, Play, RefreshCw, CheckCircle2,
   XCircle, Clock, ShieldCheck, DollarSign, Award, Target, Flame, Filter, Zap
 } from 'lucide-react';
 import { StatCard, InfoBanner, Spinner } from './ui';
+import { getProxyBase } from '../utils/proxyBase.js';
 
 interface SignalAttributionItem {
   signal: string;
@@ -79,15 +80,25 @@ export function PaperTradingJournalScreen() {
   const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
   const [closedJournal, setClosedJournal] = useState<ClosedTrade[]>([]);
   const [attribution, setAttribution] = useState<Record<string, SignalAttributionItem>>({});
+  const loadSeqRef = useRef<number>(0);
 
   const loadData = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError(null);
+    const base = getProxyBase();
     try {
-      const [stateRes, attrRes] = await Promise.all([
-        fetch('/api/paper-trading/state').then(r => r.json()).catch(() => null),
-        fetch('/api/paper-trading/attribution').then(r => r.json()).catch(() => null)
+      const [stateResp, attrResp] = await Promise.all([
+        fetch(`${base}/api/paper-trading/state`),
+        fetch(`${base}/api/paper-trading/attribution`)
       ]);
+
+      if (!stateResp.ok || !attrResp.ok) {
+        throw new Error(`Paper trading API error (${stateResp.status} / ${attrResp.status})`);
+      }
+
+      const [stateRes, attrRes] = await Promise.all([stateResp.json(), attrResp.json()]);
+      if (seq !== loadSeqRef.current) return;
 
       if (stateRes?.success && stateRes.data) {
         setCapital(stateRes.data.capital || 1000000);
@@ -100,14 +111,19 @@ export function PaperTradingJournalScreen() {
         setAttribution(attrRes.data.signals);
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to fetch paper trading state.');
+      if (seq === loadSeqRef.current) {
+        setError(err?.message || 'Failed to fetch paper trading state.');
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     loadData();
+    return () => { loadSeqRef.current++; };
   }, [loadData]);
 
   const totalPnL = closedJournal.reduce((s, t) => s + (t.realizedPnl || 0), 0);

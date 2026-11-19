@@ -25,7 +25,7 @@ const ROUTINE_STEPS: RoutineStep[] = [
     items: [
       'Check Cash Defense Mode status on the top status bar. If ACTIVE, keep 70–80% cash and DO NOT buy chart breakouts.',
       'Audit the Day Prime Pick card: Note Entry Zone (Rs. Low–High), Chase Cap (+2.5% max), Stop Loss, and Target 1.',
-      'Run Promoter Lock-in Expiry Radar: Verify no 3-year promoter shares unlock within the next 60 days.',
+      'Run Promoter Lock-in Expiry Radar: Verify no 3-year promoter shares unlock within the next 120 days.',
       'Review Sector Rotation: Ensure candidate belongs to a "Leading" or "Improving" sector quadrant.'
     ],
     actionLink: { label: 'Check Day Prime Pick', serviceId: 'daily-prime-pick' }
@@ -171,14 +171,16 @@ export function AlphaPlaybookService() {
       };
     }
 
-    const riskPerShare = +(validEntry - validStop).toFixed(2);
-    const rewardPerShare = +(validTarget - validEntry).toFixed(2);
-    const b = rewardPerShare / riskPerShare; // Payoff odds
+    // Deduct statutory round-trip frictions (brokerage 0.36%x2, SEBON 0.015%x2, DP Rs. 50, 7.5% CGT)
+    const estFriction = validEntry * 0.008 + 0.5;
+    const riskPerShare = +(validEntry - validStop + estFriction).toFixed(2);
+    const rewardPerShare = Math.max(0, +(validTarget - validEntry - estFriction).toFixed(2));
+    const b = riskPerShare > 0 ? rewardPerShare / riskPerShare : 0; // Net payoff odds
 
-    // Half-Kelly Formula: f*_half = 0.5 * (p - (1 - p) / b) with institutional base win-rate p = 0.635
+    // Half-Kelly Formula: f*_half = 0.5 * (p - (1 - p) / b) with baseline win-rate p = 0.635
     const p = 0.635;
     const q = 1 - p;
-    const fullKelly = p - q / b;
+    const fullKelly = b > 0 ? (p - q / b) : 0;
     const halfKelly = Math.max(0, 0.5 * fullKelly);
     // Cap single-slot capital allocation at min(Half-Kelly, 25% slot limit)
     const effectiveSlotFraction = Math.min(halfKelly, 0.25);
@@ -542,14 +544,14 @@ export function AlphaPlaybookService() {
                 {/* 3. Promoter Lock-in Expiry Radar */}
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>3. Promoter Lock-in Radar (60 Days)</div>
+                    <div style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>3. Promoter Lock-in Radar (120 Days)</div>
                     <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }}>Supply Shock</span>
                   </div>
                   <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>The Statistical Edge:</strong> Unlocking promoter shares doubles floating supply overnight, dropping prices 25%–50%.
                   </div>
                   <div style={{ fontSize: 12, color: '#fbbf24', marginTop: 6, background: 'rgba(245, 158, 11, 0.08)', padding: '6px 8px', borderRadius: 6 }}>
-                    <strong>Rule:</strong> Automatic blacklist. Never enter a stock within 60 days of lock-in expiry.
+                    <strong>Rule:</strong> Automatic blacklist. Never enter a stock within 120 days of lock-in expiry.
                   </div>
                   <button onClick={() => handleLaunchService('promoter-shares')} style={{ marginTop: 8, fontSize: 12, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                     Check Promoter Shares Service <ChevronRight size={12} />
@@ -609,7 +611,7 @@ export function AlphaPlaybookService() {
                   <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>Protocol:</strong> Buy inside Entry Zone below Chase Cap. When Target 1 (+4% to +6%) hits:
                     <br />• <strong>SELL 50%</strong> to lock in guaranteed profit.
-                    <br />• <strong>MOVE STOP LOSS</strong> to Entry price on remaining 50%.
+                    <br />• <strong>MOVE STOP LOSS</strong> to Statutory Breakeven (Entry + ~0.8%–1.8% fees) on remaining 50%.
                     <br />• Result: Mathematically risk-free trade!
                   </div>
                   <button onClick={() => handleLaunchService('daily-prime-pick')} style={{ marginTop: 8, fontSize: 12, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -961,7 +963,7 @@ export function AlphaPlaybookService() {
                     { scenario: 'Index falling, Market Breadth < 40%', indicator: 'Cash Defense Mode', action: '100% Cash Defense. Abort all new breakout buy orders.', color: '#f87171' },
                     { scenario: 'Stock up +5% at 11:05 AM', indicator: 'Chase Cap (+2.5% Max)', action: 'Cancel order immediately. Never chase extended gap-ups.', color: '#fbbf24' },
                     { scenario: 'Promoter lock-in unlocks in 30 days', indicator: 'Lock-in Expiry Radar', action: 'Immediate blacklist. Pass on the stock completely.', color: '#f87171' },
-                    { scenario: 'Stock reaches Target 1 (+5%)', indicator: 'Entry/Exit Analyzer', action: 'Zero-Loss Rule: Sell 50%, move Stop Loss to Entry price.', color: '#34d399' },
+                    { scenario: 'Stock reaches Target 1 (+5%)', indicator: 'Entry/Exit Analyzer', action: 'Zero-Loss Rule: Sell 50%, move Stop Loss to Statutory Breakeven (Entry + fees).', color: '#34d399' },
                     { scenario: 'Breakout occurs on RVOL < 1.0x', indicator: 'Relative Volume (RVOL)', action: 'False breakout trap. Wait for volume confirmation ≥ 1.4x.', color: '#fbbf24' },
                     { scenario: 'Top 3 brokers accumulate ≥ 35% vol', indicator: 'Floorsheet LBAS', action: 'High-conviction swing hold. Institutional backing confirmed.', color: '#34d399' }
                   ].map((row, i) => (

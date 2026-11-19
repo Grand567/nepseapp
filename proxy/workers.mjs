@@ -10,6 +10,8 @@ import {
   sendTelegramPreOpenGate,
   sendMorningStockSelectionDigest,
   run5StepSwingSelectionAndDispatch,
+  dispatchScheduledDailySelectionGuide,
+  hasSelectionGuideDispatchedForDate,
   runBroker58RadarAndDispatch,
   dispatchEodStealthAccumulationOfTheDay,
   pollIncomingTelegramCommands,
@@ -20,7 +22,7 @@ import {
 import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
 import { getOrFetchSymbolFloorsheet, getFullSessionFloorsheet, aggregateMarketFloorsheet } from './brokerVault.mjs';
 import { ingestDailyStockPrices, getDailyCompletenessStatus, db } from './db/ledgerStore.js';
-import { downloadAndArchiveDailyFloorsheet } from './utils/dailyFloorsheetCollector.mjs';
+import { downloadAndArchiveDailyFloorsheet, exportCumulativeBrokerLedger, syncBrokerAllTimeAndVaultFiles } from './utils/dailyFloorsheetCollector.mjs';
 import { runCalendarGuardedDailyTransition } from './utils/rollingLedgerEngine.mjs';
 import { compileTodayStaticAnalytics, initTodayTickStream, tickEventEmitter } from './utils/todayDataEngine.mjs';
 import { compileHistoricalSubfiles } from './utils/historicalSubfilesEngine.mjs';
@@ -430,6 +432,12 @@ export async function runPostMarketCloseAnalysis(force = false) {
     await syncDailyFloorsheetAndPrices(targetDate);
     // Download and archive into daily_floorsheets local folder
     await downloadAndArchiveDailyFloorsheet(targetDate).catch(e => console.warn('[Post-Market Worker] dailyFloorsheetCollector notice:', e.message));
+    try {
+      syncBrokerAllTimeAndVaultFiles(db);
+      exportCumulativeBrokerLedger(db);
+    } catch (syncErr) {
+      console.warn('[Post-Market Worker] Vault & alltime sync notice:', syncErr.message);
+    }
     await aggregateFloorsheetData();
 
     // Exchange-wide broker matrix aggregation & dual-write to proxy and src
@@ -489,6 +497,25 @@ export async function runPostMarketCloseAnalysis(force = false) {
         });
       } catch (_) {}
     }
+    // Daily 4-Gate Stock Selection Guide EOD Notification (Selected Pick or Explicit Hold-Cash Alert)
+    let liveIndexQuote = null;
+    try {
+      let idx = _getCache ? _getCache('market-indices') : null;
+      if (!idx?.nepse && _getMarketIndicesInternal) {
+        idx = await _getMarketIndicesInternal().catch(() => null);
+      }
+      if (idx?.nepse && Number(idx.nepse.value) > 0) {
+        liveIndexQuote = {
+          value: Number(idx.nepse.value),
+          change: Number(idx.nepse.change || 0),
+          pChange: Number(idx.nepse.pChange || 0),
+          date: idx.asOfDate || targetDate
+        };
+      }
+    } catch (_) {}
+    await dispatchScheduledDailySelectionGuide({ targetDate, liveIndexQuote }).catch(e =>
+      console.warn('[Post-Market Worker] Daily Stock Selection Guide dispatch notice:', e.message)
+    );
     // 5-Day Rolling Ledger Roll: Roll today into 4-day immutable ledger, prune oldest, & reset File A
     await runCalendarGuardedDailyTransition({ targetDate }).catch(e =>
       console.warn('[Post-Market Worker] Calendar-Guarded transition notice:', e.message)
@@ -553,15 +580,14 @@ export async function runPreMarketMorningScan(force = false) {
       } catch (_) {}
     }
     if (!nepseVal) {
-      nepseVal = 2695.60;
-      nepseChg = 31.54;
+      console.warn('[Pre-Market Worker] Live NEPSE index value unavailable; reporting status honestly.');
     }
 
     const adv = list.filter(s => Number(s.pChange || 0) > 0).length;
     const dec = list.filter(s => Number(s.pChange || 0) < 0).length;
     const total = Math.max(1, adv + dec);
-    const breadthPct = Math.round((adv / total) * 100);
-    const isCashDefense = breadthPct < 38;
+    const breadthPct = list.length > 0 ? Math.round((adv / total) * 100) : null;
+    const isCashDefense = breadthPct !== null ? breadthPct < 38 : true;
 
     const candidates = [];
     if (cachedPostMarketPrimePick && cachedPostMarketPrimePick.symbol) {
@@ -577,8 +603,8 @@ export async function runPreMarketMorningScan(force = false) {
         stopLoss: p.stopLoss,
         target1: p.target1,
         target2: p.target2,
-        score: p.setupScore || p.score || 85,
-        floatM: '<15'
+        score: p.setupScore ?? p.score ?? null,
+        floatM: p.floatM ?? p.freeFloatM ?? null
       });
     }
 
@@ -588,8 +614,8 @@ export async function runPreMarketMorningScan(force = false) {
       breadthDec: dec,
       breadthPct,
       isCashDefense,
-      nepseValue: String(nepseVal),
-      nepseChange: String(nepseChg),
+      nepseValue: nepseVal != null ? String(nepseVal) : 'Unavailable',
+      nepseChange: nepseChg != null ? String(nepseChg) : '—',
       candidates
     });
 
@@ -612,13 +638,17 @@ export async function runPreOpenGateScan(force = false) {
       return;
     }
     const sym = cachedPostMarketPrimePick.symbol;
-    const basePivot = Number(cachedPostMarketPrimePick.entryLow || cachedPostMarketPrimePick.ltp || 100);
+    const basePivot = Number(cachedPostMarketPrimePick.entryLow || cachedPostMarketPrimePick.ltp || 0);
+    if (!Number.isFinite(basePivot) || basePivot <= 0) {
+      console.log(`[Pre-Open Worker] Prime Pick ${sym} missing valid base pivot. Skipping pre-open gate.`);
+      return;
+    }
     const chaseCap = +(basePivot * 1.025).toFixed(1);
 
     let indicativeOpen = basePivot;
-    let bidVol = 25000;
-    let askVol = 18000;
-    let obir = '+0.16';
+    let bidVol = null;
+    let askVol = null;
+    let obir = 'DEPTH_UNAVAILABLE';
 
     // Query live indicative open price from hot cache if available
     if (_getCache) {
@@ -807,6 +837,8 @@ export function startWorkers() {
       if (kt.isEodWindow) {
         if (lastPostMarketSessionAnalyzed !== sessionDate) {
           runPostMarketCloseAnalysis();
+        } else if (!hasSelectionGuideDispatchedForDate(sessionDate)) {
+          dispatchScheduledDailySelectionGuide({ targetDate: sessionDate }).catch(() => {});
         }
       }
     } catch (_) {}
@@ -882,6 +914,20 @@ export function startWorkers() {
       await runNewsAndIpoCheck();
     } catch (_) {}
   }, 12000);
+
+  // Initial EOD catch-up check 25 seconds after startup (after DB Telegram config hydration)
+  if (process.env.NODE_ENV !== 'test') {
+    setTimeout(async () => {
+      try {
+        const kt = getKathmanduTradingStatus();
+        const status = getDetailedMarketStatus();
+        const sessionDate = kt.isTradingDay ? kt.dateIso : (status.lastClosedSessionDate || status.targetSessionDate || kt.dateIso);
+        if (kt.isEodWindow && lastPostMarketSessionAnalyzed !== sessionDate) {
+          await runPostMarketCloseAnalysis();
+        }
+      } catch (_) {}
+    }, 25000);
+  }
 
   console.log('Background analytical workers started (Floorsheet + Smart Alert Pipeline + Prime Pick Scanner + Telegram Bot Command Poller + News/IPO Alerts).');
 }

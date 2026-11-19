@@ -1,10 +1,11 @@
+// src/utils/subscription.js
 import {
-  validateAndRedeemLicenseKey,
   getDeviceLicenseId,
   formatDeviceId,
   cleanDeviceId,
-  parseLicenseKey
-} from './licenseEngine';
+  parseLicenseKey,
+  redeemLicenseKeyOnServer
+} from './licenseEngine.js';
 
 export { getDeviceLicenseId, formatDeviceId, cleanDeviceId, parseLicenseKey };
 
@@ -70,7 +71,6 @@ export const PRO_PLANS = [
 
 /**
  * Parse monthly string or number into day duration.
- * Examples: '1m' -> 30, '2m' -> 60, '12m' -> 365
  */
 export function parseDurationToDays(duration) {
   if (!duration) return 30;
@@ -95,68 +95,93 @@ export function parseDurationToDays(duration) {
 }
 
 /**
- * Retrieve local subscription record from localStorage.
+ * Default free subscription state — Pro features strictly locked until server-verified activation.
+ */
+export function getFreeSubscription() {
+  return {
+    isPro: false,
+    tier: 'free',
+    planDuration: null,
+    subscribedAt: null,
+    expiresAt: 0,
+    source: 'free',
+    voucherCode: null
+  };
+}
+
+/**
+ * Normalize and strictly validate subscription state against timestamp and forged legacy bypass flags.
+ */
+export function normalizeSubscription(data) {
+  if (!data || typeof data !== 'object') {
+    return getFreeSubscription();
+  }
+
+  // Reject legacy default-unlocked bypasses
+  if (
+    data.source === 'unlocked_by_default' ||
+    data.source === 'in_app_selection' ||
+    data.voucherCode === 'LIFETIME_PRO' ||
+    data.planDuration === 'unlimited'
+  ) {
+    return getFreeSubscription();
+  }
+
+  const expiresAt = Number(data.expiresAt || 0);
+  const now = Date.now();
+  const isTrustedSource = data.source === 'license_key' || data.source === 'server_verified';
+  if (!data.isPro || !isTrustedSource || !Number.isFinite(expiresAt) || expiresAt <= now) {
+    return getFreeSubscription();
+  }
+
+  return {
+    isPro: true,
+    tier: 'pro',
+    planDuration: data.planDuration || '1m',
+    subscribedAt: Number(data.subscribedAt) || now,
+    expiresAt,
+    source: data.source,
+    voucherCode: data.voucherCode || null,
+    deviceId: data.deviceId || null
+  };
+}
+
+/**
+ * Retrieve cached subscription record from localStorage (validated against forged flags/expiry).
  */
 export function getStoredSubscription() {
-  if (typeof window === 'undefined') return getFreeSubscription();
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return getFreeSubscription();
+  }
   try {
     const raw = localStorage.getItem(SUBSCRIPTION_STORAGE_KEY);
     if (!raw) return getFreeSubscription();
     const data = JSON.parse(raw);
-    return normalizeSubscription(data);
+    const norm = normalizeSubscription(data);
+    if (!norm.isPro) {
+      localStorage.removeItem(SUBSCRIPTION_STORAGE_KEY);
+    }
+    return norm;
   } catch (_) {
     return getFreeSubscription();
   }
 }
 
 /**
- * Persist subscription record to localStorage.
+ * Persist validated subscription record to localStorage.
  */
 export function saveStoredSubscription(sub) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
   try {
-    if (!sub || !sub.isPro) {
+    const norm = normalizeSubscription(sub);
+    if (!norm.isPro) {
       localStorage.removeItem(SUBSCRIPTION_STORAGE_KEY);
     } else {
-      localStorage.setItem(SUBSCRIPTION_STORAGE_KEY, JSON.stringify(sub));
+      localStorage.setItem(SUBSCRIPTION_STORAGE_KEY, JSON.stringify(norm));
     }
   } catch (err) {
     console.warn('[Subscription] Failed to persist subscription:', err);
   }
-}
-
-/**
- * Default User subscription object — Lifetime Unlocked Pro Access
- */
-export function getFreeSubscription() {
-  const now = Date.now();
-  return {
-    isPro: true,
-    tier: 'pro',
-    planDuration: 'unlimited',
-    subscribedAt: now,
-    expiresAt: now + 100 * 365 * 24 * 60 * 60 * 1000,
-    source: 'unlocked_by_default',
-    voucherCode: 'LIFETIME_PRO'
-  };
-}
-
-/**
- * Normalize and evaluate subscription state against current timestamp.
- */
-export function normalizeSubscription(data) {
-  const now = Date.now();
-  const expiresAt = Number(data?.expiresAt || (now + 100 * 365 * 24 * 60 * 60 * 1000));
-
-  return {
-    isPro: true,
-    tier: 'pro',
-    planDuration: data?.planDuration || 'unlimited',
-    subscribedAt: data?.subscribedAt || now,
-    expiresAt,
-    source: data?.source || 'unlocked_by_default',
-    voucherCode: data?.voucherCode || 'LIFETIME_PRO'
-  };
 }
 
 /**
@@ -165,26 +190,21 @@ export function normalizeSubscription(data) {
 export function computeSubscriptionMetrics(sub) {
   const norm = normalizeSubscription(sub);
   const now = Date.now();
-  const remainingMs = Math.max(0, norm.expiresAt - now);
-  const daysRemaining = Math.ceil(remainingMs / (1000 * 60 * 60 * 24));
-  const isExpired = norm.expiresAt > 0 && norm.expiresAt <= now;
-  const isLifetime = Boolean(norm.isPro && (daysRemaining > 3650 || norm.planDuration === 'unlimited' || norm.voucherCode === 'LIFETIME_PRO'));
+  const remainingMs = norm.isPro ? Math.max(0, norm.expiresAt - now) : 0;
+  const daysRemaining = norm.isPro ? Math.ceil(remainingMs / (1000 * 60 * 60 * 24)) : 0;
+  const isExpired = Boolean(norm.expiresAt > 0 && norm.expiresAt <= now);
 
-  let formattedExpiry = 'Never';
-  if (norm.expiresAt > 0) {
-    if (isLifetime) {
-      formattedExpiry = 'Lifetime Unlimited';
-    } else {
-      try {
-        const d = new Date(norm.expiresAt);
-        formattedExpiry = d.toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric'
-        });
-      } catch (_) {
-        formattedExpiry = 'Unknown';
-      }
+  let formattedExpiry = 'Not Active';
+  if (norm.isPro && norm.expiresAt > 0) {
+    try {
+      const d = new Date(norm.expiresAt);
+      formattedExpiry = d.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (_) {
+      formattedExpiry = 'Unknown';
     }
   }
 
@@ -192,99 +212,25 @@ export function computeSubscriptionMetrics(sub) {
     ...norm,
     daysRemaining,
     isExpired,
-    isLifetime,
+    isLifetime: false,
     formattedExpiry,
-    badgeLabel: norm.isPro ? `PRO (${isLifetime ? 'Lifetime' : (norm.planDuration || 'Active')})` : 'FREE'
+    badgeLabel: norm.isPro ? `PRO (${norm.planDuration || 'Active'})` : 'FREE'
   };
 }
 
 /**
- * Compute new subscription extending existing active Pro or starting from now.
+ * Server-verified activation key redemption (async).
  */
-export function createProSubscription(durationStr = '1m', source = 'manual', voucherCode = null, existingSub = null) {
-  const now = Date.now();
-  const days = parseDurationToDays(durationStr);
-  const addMs = days * 24 * 60 * 60 * 1000;
-
-  let baseTime = now;
-  // If user already has an active Pro subscription, extend from existing expiry!
-  if (existingSub && existingSub.isPro && existingSub.expiresAt > now) {
-    baseTime = existingSub.expiresAt;
-  }
-
-  const expiresAt = baseTime + addMs;
-
-  return {
-    isPro: true,
-    tier: 'pro',
-    planDuration: durationStr,
-    subscribedAt: (existingSub && existingSub.isPro) ? existingSub.subscribedAt : now,
-    expiresAt,
-    source,
-    voucherCode: voucherCode || null
-  };
-}
-
-/**
- * Verify and redeem a voucher or device-bound license key.
- * Returns { success: boolean, duration?: string, days?: number, code: string, message: string }
- */
-export function redeemVoucherKey(rawCode, currentDeviceId = null) {
+export async function redeemVoucherKey(rawCode, currentDeviceId = null) {
   if (!rawCode || typeof rawCode !== 'string') {
-    return { success: false, message: 'Please enter a valid voucher or license key.' };
+    return { success: false, message: 'Please enter a valid device-bound license key.' };
   }
-
   const code = rawCode.trim().toUpperCase();
-
-  // 1. Device-bound cryptographic license key check (e.g. DS3M-8A7F-94B2-U586-5C87)
-  if (code.startsWith('DS') && code.includes('-')) {
-    const licenseRes = validateAndRedeemLicenseKey(code, currentDeviceId);
+  if (!code.startsWith('DS') || !code.includes('-')) {
     return {
-      ...licenseRes,
-      code
+      success: false,
+      message: 'Unrecognized key format. Enter your server-issued DS... device activation key.'
     };
   }
-
-  // 2. Exact preset voucher codes
-  const CODE_MAP = {
-    'PRO1M': '1m',
-    'PRO2M': '2m',
-    'PRO3M': '3m',
-    'PRO6M': '6m',
-    'PRO12M': '12m',
-    'PRO1Y': '12m',
-    'DRABYASHREEPRO': '3m',
-    'VIPGURU': '6m',
-    'NEPSEVIP': '1m',
-    'SUPERPRO': '12m',
-    'TESTPRO': '1m'
-  };
-
-  if (CODE_MAP[code]) {
-    return {
-      success: true,
-      duration: CODE_MAP[code],
-      code,
-      message: `✅ Voucher applied successfully! ${CODE_MAP[code].toUpperCase()} Pro plan unlocked.`
-    };
-  }
-
-  // 3. Pattern match: PRO<N>M (e.g. PRO4M, PRO5M)
-  const patternMatch = code.match(/^PRO(\d+)M$/);
-  if (patternMatch) {
-    const months = parseInt(patternMatch[1], 10);
-    if (months > 0 && months <= 60) {
-      return {
-        success: true,
-        duration: `${months}m`,
-        code,
-        message: `✅ Voucher applied successfully! ${months}-Month Pro plan unlocked.`
-      };
-    }
-  }
-
-  return {
-    success: false,
-    message: 'Invalid or expired voucher code. Check your key format or contact admin.'
-  };
+  return await redeemLicenseKeyOnServer(code, currentDeviceId);
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Bell, 
   X, 
@@ -30,6 +30,37 @@ import {
 } from '../utils/pushNotificationService';
 import { triggerHaptic } from '../utils/haptics';
 
+const GENERAL_NOTIFICATION_TYPES = new Set([
+  'IPO_ALERT',
+  'NEWS_ALERT',
+  'NEPSE_MACRO',
+  'DIVIDEND_ALERT',
+  'RIGHT_SHARE_ALERT',
+  'BOOK_CLOSURE_ALERT',
+  'EARNINGS_ALERT',
+  'MERGER_ALERT',
+  'SEBON_APPROVAL_ALERT',
+  'ALLOTMENT_ALERT',
+  'MARKET_MILESTONE_ALERT',
+  'TRENDING_NEWS_ALERT'
+]);
+
+function matchesNotificationTab(item, tab, userTrackedSet) {
+  if (!item) return false;
+  if (tab === 'all') return true;
+  if (tab === 'pro') {
+    return item.category === 'pro' || item.tier === 'pro' || item.type?.includes('SMART') || item.type?.includes('PROFIT') || item.type?.includes('STOP_LOSS');
+  }
+  if (tab === 'general') {
+    return item.category === 'general' || GENERAL_NOTIFICATION_TYPES.has(item.type);
+  }
+  if (tab === 'portfolio') {
+    const sym = String(item.symbol || '').toUpperCase().trim();
+    return Boolean(sym && userTrackedSet.has(sym));
+  }
+  return true;
+}
+
 export function NotificationCenterDrawer({ 
   isOpen, 
   onClose, 
@@ -44,6 +75,9 @@ export function NotificationCenterDrawer({
   const [loading, setLoading] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [diagnosticMsg, setDiagnosticMsg] = useState(null);
+  const [adminKeyInput, setAdminKeyInput] = useState('');
+  const [showAdminKeyInput, setShowAdminKeyInput] = useState(false);
+  const diagnosticTimerRef = useRef(null);
 
   // Combine user symbols for portfolio/watchlist filtering
   const userTrackedSet = useMemo(() => {
@@ -68,10 +102,13 @@ export function NotificationCenterDrawer({
   useEffect(() => {
     if (isOpen) {
       loadNotifications();
+    } else {
+      setAdminKeyInput('');
+      setShowAdminKeyInput(false);
     }
   }, [isOpen]);
 
-  // Listen for real-time notification arrivals
+  // Listen for real-time notification arrivals & clean up diagnostic timer on unmount
   useEffect(() => {
     const handleUpdate = () => {
       setNotifications(getCachedNotifications('all'));
@@ -83,38 +120,19 @@ export function NotificationCenterDrawer({
     return () => {
       window.removeEventListener('dravyashree_notifications_updated', handleUpdate);
       window.removeEventListener('dravyashree_smart_alert_received', handleUpdate);
+      if (diagnosticTimerRef.current) {
+        clearTimeout(diagnosticTimerRef.current);
+        diagnosticTimerRef.current = null;
+      }
     };
   }, []);
 
   if (!isOpen) return null;
 
   // Filter items based on activeTab
-  const filteredNotifications = notifications.filter(item => {
-    if (activeTab === 'all') return true;
-    if (activeTab === 'pro') {
-      return item.category === 'pro' || item.tier === 'pro' || item.type?.includes('SMART') || item.type?.includes('PROFIT') || item.type?.includes('STOP_LOSS');
-    }
-    if (activeTab === 'general') {
-      return item.category === 'general' || 
-             item.type === 'IPO_ALERT' || 
-             item.type === 'NEWS_ALERT' || 
-             item.type === 'NEPSE_MACRO' ||
-             item.type === 'DIVIDEND_ALERT' ||
-             item.type === 'RIGHT_SHARE_ALERT' ||
-             item.type === 'BOOK_CLOSURE_ALERT' ||
-             item.type === 'EARNINGS_ALERT' ||
-             item.type === 'MERGER_ALERT' ||
-             item.type === 'SEBON_APPROVAL_ALERT' ||
-             item.type === 'ALLOTMENT_ALERT' ||
-             item.type === 'MARKET_MILESTONE_ALERT' ||
-             item.type === 'TRENDING_NEWS_ALERT';
-    }
-    if (activeTab === 'portfolio') {
-      const sym = String(item.symbol || '').toUpperCase().trim();
-      return sym && userTrackedSet.has(sym);
-    }
-    return true;
-  });
+  const filteredNotifications = notifications.filter(item =>
+    matchesNotificationTab(item, activeTab, userTrackedSet)
+  );
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -142,25 +160,16 @@ export function NotificationCenterDrawer({
   const handleSendTestAlert = async () => {
     setIsTesting(true);
     setDiagnosticMsg(null);
+    if (diagnosticTimerRef.current) {
+      clearTimeout(diagnosticTimerRef.current);
+      diagnosticTimerRef.current = null;
+    }
     try {
-      // Check for admin key if prompt needed
-      let adminKey = (typeof localStorage !== 'undefined' && (
-        localStorage.getItem('nepse_admin_key') || 
-        localStorage.getItem('nepse_portfolio_key')
-      )) || (import.meta?.env?.VITE_ADMIN_API_KEY || '');
-
-      if (!adminKey && typeof window !== 'undefined') {
-        const inputKey = window.prompt("Enter ADMIN_API_KEY to authorize server test broadcast (or click Cancel to test phone status bar directly):");
-        if (inputKey && inputKey.trim()) {
-          adminKey = inputKey.trim();
-          localStorage.setItem('nepse_admin_key', adminKey);
-        }
-      }
-
       const diag = await sendAdminTestNotification({
         symbol: 'NABIL',
         title: '🧪 [DIAGNOSTIC TEST] Status Bar Alert',
-        body: 'Real-time alert delivery verified across system status bar.'
+        body: 'Real-time alert delivery verified across system status bar.',
+        adminKey: adminKeyInput
       });
 
       const serverStatus = diag.server.success 
@@ -173,7 +182,10 @@ export function NotificationCenterDrawer({
 
       setDiagnosticMsg(`${serverStatus}\n${phoneStatus}`);
       await loadNotifications();
-      setTimeout(() => setDiagnosticMsg(null), 12000);
+      diagnosticTimerRef.current = setTimeout(() => {
+        diagnosticTimerRef.current = null;
+        setDiagnosticMsg(null);
+      }, 12000);
     } catch (err) {
       setDiagnosticMsg(`Error: ${err.message}`);
     } finally {
@@ -314,9 +326,9 @@ export function NotificationCenterDrawer({
         <div className="px-3 pt-3 flex items-center gap-1 border-b border-slate-800/80 bg-[#080d1a]/50">
           {[
             { id: 'all', label: 'All', count: notifications.length },
-            { id: 'pro', label: 'PRO Signals', icon: Zap, count: notifications.filter(n => n.category === 'pro' || n.tier === 'pro').length },
-            { id: 'general', label: 'IPO & News', icon: Newspaper, count: notifications.filter(n => n.category === 'general' || n.type === 'IPO_ALERT' || n.type === 'NEWS_ALERT').length },
-            { id: 'portfolio', label: 'My Stocks', count: userTrackedSet.size > 0 ? notifications.filter(n => n.symbol && userTrackedSet.has(String(n.symbol).toUpperCase())).length : 0 }
+            { id: 'pro', label: 'PRO Signals', icon: Zap, count: notifications.filter(n => matchesNotificationTab(n, 'pro', userTrackedSet)).length },
+            { id: 'general', label: 'IPO & News', icon: Newspaper, count: notifications.filter(n => matchesNotificationTab(n, 'general', userTrackedSet)).length },
+            { id: 'portfolio', label: 'My Stocks', count: userTrackedSet.size > 0 ? notifications.filter(n => matchesNotificationTab(n, 'portfolio', userTrackedSet)).length : 0 }
           ].map(tab => {
             const isActive = activeTab === tab.id;
             return (
@@ -389,7 +401,7 @@ export function NotificationCenterDrawer({
                 className="mt-2 px-3 py-1.5 rounded-lg bg-cyan-600/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-600/30 text-xs font-semibold flex items-center gap-1.5 transition-all"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                {isTesting ? 'Simulating setup...' : 'Simulate Live Setup (GHL)'}
+                {isTesting ? 'Simulating setup...' : 'Simulate Live Setup (NABIL)'}
               </button>
             </div>
           ) : (
@@ -547,19 +559,42 @@ export function NotificationCenterDrawer({
         </div>
 
         {/* ── FOOTER: SYSTEM STATUS ── */}
-        <div className="p-3 bg-slate-950 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            <span>FCM + Telegram Multi-Channel Dispatch</span>
+        <div className="p-3 bg-slate-950 border-t border-slate-800/80 text-[11px] text-slate-400 space-y-2">
+          {showAdminKeyInput && (
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={adminKeyInput}
+                onChange={(e) => setAdminKeyInput(e.target.value)}
+                placeholder="Optional ADMIN_API_KEY (session only)"
+                autoComplete="off"
+                className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span>FCM + Telegram Multi-Channel Dispatch</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAdminKeyInput(v => !v)}
+                className="text-[11px] text-slate-400 hover:text-cyan-300 underline"
+              >
+                {showAdminKeyInput ? 'Hide Key' : 'Admin Key'}
+              </button>
+              <button
+                onClick={handleSendTestAlert}
+                disabled={isTesting}
+                className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1"
+              >
+                <Sparkles className="w-3 h-3" />
+                {isTesting ? 'Testing...' : 'Send Test Notification'}
+              </button>
+            </div>
           </div>
-          <button
-            onClick={handleSendTestAlert}
-            disabled={isTesting}
-            className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1"
-          >
-            <Sparkles className="w-3 h-3" />
-            {isTesting ? 'Testing...' : 'Send Test Notification'}
-          </button>
         </div>
 
       </div>

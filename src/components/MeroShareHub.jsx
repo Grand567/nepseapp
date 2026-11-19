@@ -19,7 +19,7 @@ import {
 import { getProxyBase } from '../utils/liveData';
 import { sanitizeMeroShareHoldings, guessScripBasePrice, setScripCustomWacc, stripHoldingForStorage, applyDiscoveredWaccMap, calculateIpoAllotmentProbability, safeStorageSetItem, purgeDispensableStorageCaches } from '../utils/calculations';
 import { syncUserDataToCloud, fetchUserDataFromCloud } from '../utils/firebase';
-import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
+import { loadEncryptedUserProfiles, saveEncryptedUserProfiles } from '../utils/profileVaultStorage';
 import { Capacitor } from '@capacitor/core';
 
 const formatRs = (value) => {
@@ -267,80 +267,15 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     const profileKey = `nepse_hub_${userId}_profiles`;
     const syncKey    = `nepse_hub_${userId}_synced_ids`;
 
-    const loadAndMerge = () => {
+    let cancelled = false;
+    const loadAndMerge = async () => {
       try { purgeDispensableStorageCaches(); } catch (_) {}
-      const saved = localStorage.getItem(profileKey);
-      let parsed = [];
-      try { 
-        const raw = saved ? JSON.parse(saved) : []; 
-        parsed = (Array.isArray(raw) ? raw : []).map(p => ({
-          ...decryptProfileCredentials(p, userId),
-          holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid)
-        }));
-      } catch (_) { parsed = []; }
-
-      // 1. Scan all possible local storage keys for demat accounts
-      const candidateKeys = [
-        'nepse_hub_bulk_ipo_accounts',
-        'nepse_hub_guest_local_profiles',
-        'nepse_hub_profiles'
-      ];
-
-      // Add any key in localStorage matching nepse_hub_.*_profiles
-      try {
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && k.startsWith('nepse_hub_') && k.endsWith('_profiles') && k !== profileKey) {
-            candidateKeys.push(k);
-          }
-        }
-      } catch (_) {}
-
-      let changed = false;
-
-      candidateKeys.forEach(candKey => {
-        try {
-          const rawVal = localStorage.getItem(candKey);
-          if (!rawVal) return;
-          const candAccounts = JSON.parse(rawVal);
-          if (Array.isArray(candAccounts) && candAccounts.length > 0) {
-            candAccounts.forEach(acc => {
-              if (!acc || (!acc.boid && !acc.id && !acc.name)) return;
-              const decAcc = decryptProfileCredentials(acc, userId);
-              const existing = parsed.find(p => (decAcc.boid && p.boid === decAcc.boid) || (decAcc.id && p.id === decAcc.id));
-              if (!existing) {
-                parsed.push({
-                  id: decAcc.id || ('p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6)),
-                  name: decAcc.name || 'Demat Account',
-                  boid: decAcc.boid || '',
-                  username: decAcc.username || '',
-                  dpCode: decAcc.dpCode || '',
-                  dpId: decAcc.dpId || '',
-                  dpName: decAcc.dpName || 'Capital DP',
-                  password: decAcc.password || '',
-                  crn: decAcc.crn || '',
-                  pin: String(decAcc.pin || ''),
-                  holdings: sanitizeMeroShareHoldings(decAcc.holdings, userId, decAcc.id || decAcc.boid),
-                  lastSyncedAt: decAcc.lastSyncedAt || null
-                });
-                changed = true;
-              } else if (acc.holdings?.length > 0 && (!existing.holdings || existing.holdings.length === 0)) {
-                existing.holdings = sanitizeMeroShareHoldings(acc.holdings, userId, acc.id || acc.boid);
-                existing.lastSyncedAt = acc.lastSyncedAt;
-                changed = true;
-              }
-            });
-          }
-        } catch (_) {}
-      });
-
-      if (changed || (parsed.length > 0 && !saved)) {
-        try {
-          const encrypted = parsed.map(p => encryptProfileCredentials(p, userId));
-          safeStorageSetItem(profileKey, encrypted);
-          safeStorageSetItem('nepse_hub_bulk_ipo_accounts', encrypted);
-        } catch (_) {}
-      }
+      const decList = await loadEncryptedUserProfiles(userId);
+      if (cancelled) return;
+      const parsed = (Array.isArray(decList) ? decList : []).map(p => ({
+        ...p,
+        holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid)
+      }));
 
       setProfiles(parsed);
       const savedSyncedIds = JSON.parse(localStorage.getItem(syncKey) || '[]');
@@ -351,18 +286,18 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
         setSelectedProfileId(prev => prev || parsed[0].id);
       } else {
         setSelectedProfileId('');
-        // Fallback: If local is empty, attempt immediate cloud pull
         if (userId && !userId.startsWith('guest')) {
-          fetchUserDataFromCloud(userId).then(cloudData => {
+          fetchUserDataFromCloud(userId).then(async cloudData => {
+            if (cancelled) return;
             if (cloudData && (Array.isArray(cloudData.profiles) || Array.isArray(cloudData.bulkAccounts))) {
               const cloudAccs = cloudData.profiles || cloudData.bulkAccounts || [];
               if (cloudAccs.length > 0) {
                 const sanitized = cloudAccs.map(p => ({ ...p, holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid) }));
-                const encrypted = sanitized.map(p => encryptProfileCredentials(p, userId));
-                safeStorageSetItem(profileKey, encrypted);
-                safeStorageSetItem('nepse_hub_bulk_ipo_accounts', encrypted);
-                setProfiles(sanitized);
-                setSelectedProfileId(sanitized[0].id);
+                await saveEncryptedUserProfiles(sanitized, userId);
+                if (!cancelled) {
+                  setProfiles(sanitized);
+                  setSelectedProfileId(sanitized[0].id);
+                }
               }
             }
           }).catch(() => {});
@@ -377,6 +312,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     window.addEventListener('bulkAccountsChanged', handleBulkAccountsChanged);
     window.addEventListener('nepse_cloud_data_restored', handleBulkAccountsChanged);
     return () => {
+      cancelled = true;
       window.removeEventListener('bulkAccountsChanged', handleBulkAccountsChanged);
       window.removeEventListener('nepse_cloud_data_restored', handleBulkAccountsChanged);
     };
@@ -521,19 +457,12 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
 
 
-  // Save profiles and keep Portfolio tab in sync via storage event
+  // Save profiles strictly encrypted per-user & keep Portfolio tab in sync
   const saveProfilesToStorage = (newProfiles) => {
     setProfiles(newProfiles);
-    const encryptedForStorage = (newProfiles || []).map(p => encryptProfileCredentials(p, userId));
-    const profileKey = `nepse_hub_${userId}_profiles`;
-    safeStorageSetItem(profileKey, encryptedForStorage);
-    safeStorageSetItem('nepse_hub_bulk_ipo_accounts', encryptedForStorage);
+    saveEncryptedUserProfiles(newProfiles, userId).catch(() => {});
     try {
-      window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(encryptedForStorage) }));
-      window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: newProfiles } }));
-    } catch (_) {}
-    try {
-      const sanitizedProfiles = (newProfiles || []).map(({ password, crn, pin, transactionPin, ...safe }) => safe);
+      const sanitizedProfiles = (newProfiles || []).map(({ password, crn, pin, transactionPin, vaultEnvelope, ...safe }) => safe);
       syncUserDataToCloud(userId, { profiles: sanitizedProfiles, bulkAccounts: sanitizedProfiles }, userEmail);
     } catch (_) {}
   };
@@ -1180,21 +1109,6 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
         return p;
       });
       saveProfilesToStorage(updatedProfiles);
-
-      // Also sync to bulk accounts
-      try {
-        const bulkRaw = localStorage.getItem('nepse_hub_bulk_ipo_accounts');
-        if (bulkRaw) {
-          const bulkAccounts = JSON.parse(bulkRaw);
-          const updatedBulk = bulkAccounts.map(a => ((profile.boid && a.boid === profile.boid) || (profile.id && a.id === profile.id)) ? {
-            ...a,
-            name: (result.name && result.name !== 'Unknown') ? result.name : a.name,
-            holdings: storedHoldings,
-            lastSyncedAt: Date.now()
-          } : a);
-          safeStorageSetItem('nepse_hub_bulk_ipo_accounts', updatedBulk);
-        }
-      } catch (_) {}
 
       // Add to synced lists
       setSyncedProfileIds(prev => [...new Set([...prev, profileId])]);

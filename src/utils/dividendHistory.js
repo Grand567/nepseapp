@@ -127,8 +127,8 @@ export function fiscalYearToDateRange(fyLabel) {
   const adY1 = y1 - 57;
   const adY2 = y2 - 57;
   return {
-    start: new Date(`${adY1}-05-01`),   // generous ±2-month window
-    end:   new Date(`${adY2}-10-01`),
+    start: new Date(`${adY1}-07-15`),
+    end:   new Date(`${adY2}-07-16`),
     adY1,
     adY2,
   };

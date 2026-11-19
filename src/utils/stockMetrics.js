@@ -65,15 +65,15 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
   const closes = history.map(h => Number(h.close || h.ltp || 0)).filter(c => c > 0);
 
   const closes120 = closes.slice(0, 120);
-  const avg120d = closes120.length > 0 ? Number((closes120.reduce((a, b) => a + b, 0) / closes120.length).toFixed(1)) : (ltp ? Number((ltp * 0.95).toFixed(1)) : 0);
+  const avg120d = closes120.length > 0 ? Number((closes120.reduce((a, b) => a + b, 0) / closes120.length).toFixed(1)) : null;
 
   const closes180 = closes.slice(0, 180);
-  const avg180d = closes180.length > 0 ? Number((closes180.reduce((a, b) => a + b, 0) / closes180.length).toFixed(1)) : (ltp ? Number((ltp * 0.93).toFixed(1)) : 0);
+  const avg180d = closes180.length > 0 ? Number((closes180.reduce((a, b) => a + b, 0) / closes180.length).toFixed(1)) : null;
 
   // Adjusted factor estimate (if corporate actions exist, typically ~0.85-0.95x or exact)
   const adjFactor = s.priceAdjustmentFactor || 1.0;
-  const avg120dAdj = Number((avg120d * adjFactor).toFixed(1));
-  const avg180dAdj = Number((avg180d * adjFactor).toFixed(1));
+  const avg120dAdj = avg120d !== null ? Number((avg120d * adjFactor).toFixed(1)) : null;
+  const avg180dAdj = avg180d !== null ? Number((avg180d * adjFactor).toFixed(1)) : null;
 
   // 52-Week High & Low
   let high52w = Number(s.high52w || s.high52 || 0);
@@ -84,8 +84,8 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
     if (!high52w && closes250.length > 0) high52w = Math.max(...closes250);
     if (!low52w && closes250.length > 0) low52w = Math.min(...closes250);
   }
-  const high52wAdj = Number((high52w * adjFactor).toFixed(1));
-  const low52wAdj = Number((low52w * adjFactor).toFixed(1));
+  const high52wAdj = high52w > 0 ? Number((high52w * adjFactor).toFixed(1)) : null;
+  const low52wAdj = low52w > 0 ? Number((low52w * adjFactor).toFixed(1)) : null;
 
   // All-Time High (ATH) — Must mathematically be >= 52W High and LTP
   let ath = Number(s.allTimeHigh || s.ath || 0);
@@ -100,21 +100,26 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
         maxDate = h.date || '';
       }
     }
-    ath = maxClose || high52w || ltp;
-    athDate = maxDate || '2021-08-18';
+    ath = maxClose || high52w || ltp || 0;
+    athDate = maxDate || '';
+  } else if (!ath && high52w > 0) {
+    ath = high52w;
+    athDate = '';
   } else if (!ath) {
-    ath = Math.max(ltp * 1.6, high52w || ltp);
-    athDate = '2021-08-18';
+    ath = null;
+    athDate = '';
   }
 
   // Critical Mathematical Consistency: ATH cannot be strictly lower than 52-Week High or current LTP
-  if (high52w > ath) {
-    ath = high52w;
+  if (ath !== null) {
+    if (high52w > ath) {
+      ath = high52w;
+    }
+    if (ltp > ath) {
+      ath = ltp;
+    }
   }
-  if (ltp > ath) {
-    ath = ltp;
-  }
-  const athAdj = Number((ath * adjFactor).toFixed(1));
+  const athAdj = ath !== null ? Number((ath * adjFactor).toFixed(1)) : null;
 
   return {
     ltp,
@@ -150,7 +155,7 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
 export function formatNprMoney(val) {
   if (val == null || isNaN(val) || val === 0) return '—';
   const n = Number(val);
-  if (n >= 10000000000) return `Rs ${(n / 10000000000).toFixed(2)} Arba`;
+  if (n >= 1000000000) return `Rs ${(n / 1000000000).toFixed(2)} Arba`;
   if (n >= 10000000) return `Rs ${(n / 10000000).toFixed(2)} Cr`;
   if (n >= 100000) return `Rs ${(n / 100000).toFixed(2)} Lkh`;
   return `Rs ${n.toLocaleString('en-IN')}`;

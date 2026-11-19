@@ -2235,35 +2235,49 @@ export function detectHistoricalVolumeBreakout({
   turnover = 0,
   floorsheetTrades = [],
   priceHistory = [],
+  historicalCandles = [],
   avgVolume20D = 0
 } = {}) {
   const sym = String(symbol || '').toUpperCase().trim();
   const currentLtp = Number(ltp || 0);
   if (!sym || currentLtp <= 0) {
-    return { qualified: false, reason: 'Invalid symbol or price' };
+    return { qualified: false, symbol: sym || null, bcr3BuyPct: null, reason: 'Invalid symbol or price' };
   }
 
   // 1. Historical Reference Baseline (Need at least 10 historical sessions)
+  const rawHist = (Array.isArray(priceHistory) && priceHistory.length > 0)
+    ? priceHistory
+    : (Array.isArray(historicalCandles) ? historicalCandles : []);
   let pastCandles = [];
-  if (Array.isArray(priceHistory) && priceHistory.length >= 10) {
+  if (rawHist.length >= 10) {
     // Exclude today's latest candle if included in history
-    pastCandles = priceHistory.slice(-21, -1);
-    if (pastCandles.length < 5) pastCandles = priceHistory.slice(-15);
+    pastCandles = rawHist.slice(-21, -1);
+    if (pastCandles.length < 5) pastCandles = rawHist.slice(-15);
   }
 
   if (pastCandles.length < 5) {
-    return { qualified: false, reason: 'Insufficient historical data to verify 20D resistance and volume' };
+    return { qualified: false, symbol: sym, ltp: currentLtp, bcr3BuyPct: null, reason: 'Insufficient historical data to verify 20D resistance and volume' };
   }
 
   // 20-Day Resistance: highest high of the previous 20 sessions
   const resistance20D = Math.max(...pastCandles.map(c => Number(c.high || c.close || c.ltp || 0)).filter(p => p > 0));
   if (resistance20D <= 0) {
-    return { qualified: false, reason: 'Invalid historical resistance calculation' };
+    return { qualified: false, symbol: sym, ltp: currentLtp, bcr3BuyPct: null, reason: 'Invalid historical resistance calculation' };
   }
 
-  // 20-Day Average Daily Volume
+  // 20-Day Average Daily Volume (must come from verified history or explicit positive avgVolume20D)
   const sumPastVol = pastCandles.reduce((acc, c) => acc + Number(c.volume || c.totalTradedQuantity || 0), 0);
-  const baselineAvgVol = sumPastVol > 0 ? Math.round(sumPastVol / pastCandles.length) : Number(avgVolume20D || 50000);
+  const baselineAvgVol = sumPastVol > 0 ? Math.round(sumPastVol / pastCandles.length) : Number(avgVolume20D || 0);
+  if (!Number.isFinite(baselineAvgVol) || baselineAvgVol <= 0) {
+    return {
+      qualified: false,
+      symbol: sym,
+      ltp: currentLtp,
+      avgVolume20D: 0,
+      bcr3BuyPct: null,
+      reason: 'Missing or zero 20-day baseline average volume'
+    };
+  }
 
   // 2. Relative Volume (RVOL) Surge Calculation
   const currentVol = Number(volume || 0);
@@ -2276,8 +2290,8 @@ export function detectHistoricalVolumeBreakout({
   }
 
   const projectedDailyVol = Math.round(currentVol * timeScaleFactor);
-  const rvol = baselineAvgVol > 0 ? +(projectedDailyVol / baselineAvgVol).toFixed(2) : 1.0;
-  const currentVolMultiple = baselineAvgVol > 0 ? +(currentVol / baselineAvgVol).toFixed(2) : 0;
+  const rvol = +(projectedDailyVol / baselineAvgVol).toFixed(2);
+  const currentVolMultiple = +(currentVol / baselineAvgVol).toFixed(2);
 
   // 3. Breakout Qualification Rules:
   // Rule A: Price Breakout above 20D Resistance (within 0% to +6.5% buffer; rejects late overextended chase)
@@ -2292,8 +2306,8 @@ export function detectHistoricalVolumeBreakout({
   const isLiquid = currentVol >= 5000 && Number(turnover || 0) >= 1000000;
 
   // Rule D: Institutional Buyer Confirmation from Floorsheet (if trades available)
-  let bcr3BuyPct = 50;
-  let dominantBuyerText = 'Institutional Buyers';
+  let bcr3BuyPct = null;
+  let dominantBuyerText = 'Unverified (No Floorsheet)';
   if (Array.isArray(floorsheetTrades) && floorsheetTrades.length > 0) {
     const buyerMap = {};
     let totBuy = 0;
@@ -2322,6 +2336,9 @@ export function detectHistoricalVolumeBreakout({
   const stopLoss = +(resistance20D * 0.955).toFixed(1); // -4.5% below breakout pivot
   const target1 = +(currentLtp * 1.080).toFixed(1);     // +8.0% Momentum Target
   const target2 = +(currentLtp * 1.145).toFixed(1);     // +14.5% Circuit Ceiling
+  const riskAmt = Math.max(0.1, currentLtp - stopLoss);
+  const rewardAmt = Math.max(0, target1 - currentLtp);
+  const computedNetRRR = +(rewardAmt / riskAmt).toFixed(2);
 
   return {
     qualified,
@@ -2344,7 +2361,7 @@ export function detectHistoricalVolumeBreakout({
     stopLoss,
     target1,
     target2,
-    netRRR: 2.8,
+    netRRR: computedNetRRR,
     reason: qualified 
       ? `LTP Rs. ${currentLtp} broke 20-day high (Rs. ${resistance20D}) with ${rvol}x volume surge!` 
       : (!isAboveResistance ? `LTP Rs. ${currentLtp} below 20D resistance Rs. ${resistance20D}` : `Volume ratio ${rvol}x below 1.75x threshold`)
@@ -2565,22 +2582,30 @@ export async function scanEmaCrossoverAndSharpBase({
 
       const rvolToday = Number((currentVol / Math.max(1, avgVol20)).toFixed(2));
       const baseRvolCross = Number((crossVol / Math.max(1, crossAvgVol)).toFixed(2));
-      const rvolCross = isPocketPivotIgnition ? Math.max(baseRvolCross, rvolToday, 1.25) : baseRvolCross;
+      const rvolCross = isPocketPivotIgnition ? Math.max(baseRvolCross, rvolToday) : baseRvolCross;
 
       // 3. Enforce 5-Day Institutional Ledger, Trap Veto Gate & Loophole-Protected SMC Confluence
       const trapAudit = auditMultiSessionTrapRisk(db, sym);
       const flow = typeof getSmartMoneyAggregatedFlow === 'function' ? getSmartMoneyAggregatedFlow(sym, 5) : [];
       const flowMetrics = extract5DayBrokerFlowMetrics(flow, Number(currentEma.toFixed(1)));
       const avgBrokerPrice = Number(flowMetrics.avgBrokerPrice || currentEma);
-      const bcr3Buy = Number(flowMetrics.bcr3Buy ?? 50.0);
-      const bcr3Sell = Number(flowMetrics.bcr3Sell ?? 35.0);
+      const bcr3Buy = flowMetrics.bcr3Buy ?? null;
+      const bcr3Sell = flowMetrics.bcr3Sell ?? null;
       const leadBrokerId = trapAudit?.leadBrokerId || flowMetrics.leadBrokerId || null;
-      const leadRetentionPct = Number(trapAudit?.retentionPct ?? 0);
+      const leadRetentionPct = trapAudit?.retentionPct ?? flowMetrics.leadRetentionPct ?? null;
       const isTrap = Boolean(trapAudit?.isTrap);
 
-      // General /breakout radar strictly vetoes T+2 traps, high seller dominance & wash churn
+      // General /breakout radar strictly vetoes T+2 traps, missing ledger flow, high seller dominance & wash churn
       if (!symbol) {
-        if (isTrap || bcr3Sell > bcr3Buy || bcr3Sell > 45 || leadRetentionPct < 55) {
+        if (
+          isTrap ||
+          bcr3Buy === null ||
+          bcr3Sell === null ||
+          leadRetentionPct === null ||
+          bcr3Sell > bcr3Buy ||
+          bcr3Sell > 45 ||
+          leadRetentionPct < 55
+        ) {
           continue;
         }
       }
@@ -2678,17 +2703,17 @@ export async function scanEmaCrossoverAndSharpBase({
     // Sort by Institutional Breakout Quality Score + SMC Confluence
     results.sort((a, b) => {
       const scoreA =
-        (a.bcr3Buy || 45) +
-        ((a.bcr3Buy || 45) - (a.bcr3Sell || 35)) * 1.2 +
-        (a.leadRetentionPct || 65) * 0.4 +
+        (a.bcr3Buy ?? 0) +
+        ((a.bcr3Buy ?? 0) - (a.bcr3Sell ?? 0)) * 1.2 +
+        (a.leadRetentionPct ?? 0) * 0.4 +
         (a.rvolCross * 8) +
         (a.rvolToday * 6) +
         ((a.smcConfluenceBonus || 0) * 1.5) -
         (a.consolidationRangePct * 2);
       const scoreB =
-        (b.bcr3Buy || 45) +
-        ((b.bcr3Buy || 45) - (b.bcr3Sell || 35)) * 1.2 +
-        (b.leadRetentionPct || 65) * 0.4 +
+        (b.bcr3Buy ?? 0) +
+        ((b.bcr3Buy ?? 0) - (b.bcr3Sell ?? 0)) * 1.2 +
+        (b.leadRetentionPct ?? 0) * 0.4 +
         (b.rvolCross * 8) +
         (b.rvolToday * 6) +
         ((b.smcConfluenceBonus || 0) * 1.5) -
@@ -2750,9 +2775,10 @@ export function getSmartAlertSystemStatus() {
 /**
  * Register personal user holding to be actively monitored for Stop-Loss and Target alerts on Telegram
  */
-export function trackCustomHolding({ symbol, buyPrice, currentPrice, stopLoss, target1, target2, kitta = 100, ltp }) {
+export function trackCustomHolding({ symbol, buyPrice, currentPrice, stopLoss, target1, target2, kitta = 100, ltp, ownerId = 'admin' } = {}) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return null;
+  const resolvedOwner = String(ownerId || 'admin').trim() || 'admin';
   const buy = Number(buyPrice || ltp || 0);
   const cur = Number(currentPrice || ltp || buy || 0);
   const sl = Number(stopLoss || (buy > 0 ? (buy * 0.95).toFixed(1) : (cur > 0 ? (cur * 0.95).toFixed(1) : 0)));
@@ -2760,11 +2786,15 @@ export function trackCustomHolding({ symbol, buyPrice, currentPrice, stopLoss, t
   const t2 = Number(target2 || (buy > 0 ? (buy * 1.145).toFixed(1) : (cur > 0 ? (cur * 1.145).toFixed(1) : 0))); // +14.5% near +15% circuit ceiling
   const qty = Number(kitta || 100);
 
-  // Clear out any existing active records for this symbol to prevent duplicate or conflicting monitoring
-  alertHistory = alertHistory.filter(a => !(a.symbol === sym && (a.status === 'ACTIVE' || a.status === 'ACTIVE_T2')));
+  // Clear out existing active records ONLY for the same owner & symbol (multi-user isolation)
+  alertHistory = alertHistory.filter(a => {
+    const recOwner = String(a.ownerId || 'admin');
+    return !(a.symbol === sym && recOwner === resolvedOwner && (a.status === 'ACTIVE' || a.status === 'ACTIVE_T2'));
+  });
 
   const alertItem = {
     id: `holding_${sym}_${Date.now()}`,
+    ownerId: resolvedOwner,
     symbol: sym,
     buyPrice: buy,
     currentPrice: cur > 0 ? cur : buy,
@@ -2780,16 +2810,23 @@ export function trackCustomHolding({ symbol, buyPrice, currentPrice, stopLoss, t
 
   alertHistory.unshift(alertItem);
   saveJson(HISTORY_FILE, alertHistory);
-  console.log(`[SmartAlertEngine] 📋 Holding registered for active monitoring: ${sym} (Buy: Rs. ${buy}, LTP: Rs. ${cur}, SL: Rs. ${sl}, T1: Rs. ${t1}, T2: Rs. ${t2}, Kitta: ${qty})`);
+  console.log(`[SmartAlertEngine] 📋 Holding registered for active monitoring (${resolvedOwner}): ${sym} (Buy: Rs. ${buy}, LTP: Rs. ${cur}, SL: Rs. ${sl}, T1: Rs. ${t1}, T2: Rs. ${t2}, Kitta: ${qty})`);
   return alertItem;
 }
 
-export function untrackCustomHolding(symbol) {
+export function untrackCustomHolding(symbol, ownerId = null) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return false;
   let removed = false;
   alertHistory = alertHistory.filter(a => {
     if (a.symbol === sym && a.isUserHolding && (a.status === 'ACTIVE' || a.status === 'ACTIVE_T2')) {
+      const recOwner = String(a.ownerId || 'admin');
+      if (ownerId && ownerId !== 'admin' && recOwner !== ownerId) {
+        return true;
+      }
+      if (ownerId === 'admin' && recOwner !== 'admin' && recOwner !== 'local_dev' && a.ownerId) {
+        return true;
+      }
       removed = true;
       return false;
     }
@@ -2802,8 +2839,16 @@ export function untrackCustomHolding(symbol) {
   return removed;
 }
 
-export function getUserTrackedHoldings() {
-  return alertHistory.filter(a => a.isUserHolding && (a.status === 'ACTIVE' || a.status === 'ACTIVE_T2'));
+export function getUserTrackedHoldings(ownerId = null) {
+  return alertHistory.filter(a => {
+    if (!(a.isUserHolding && (a.status === 'ACTIVE' || a.status === 'ACTIVE_T2'))) return false;
+    if (!ownerId) return true;
+    const recOwner = String(a.ownerId || 'admin');
+    if (ownerId === 'admin') {
+      return recOwner === 'admin' || recOwner === 'local_dev' || !a.ownerId;
+    }
+    return recOwner === ownerId;
+  });
 }
 
 

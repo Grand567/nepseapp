@@ -107,7 +107,8 @@ export function WatchlistScreener({ onSelectScrip, lang = 'ne', stocks = [] }) {
     return stocks.map(stock => {
       const ltp = Number(stock.ltp || stock.close || 0);
       const chg = Number(stock.pointChange || stock.change || 0);
-      const pct = stock.pChange != null ? Number(stock.pChange) : (ltp > 0 && chg ? (chg / (ltp - chg)) * 100 : 0);
+      const rawPct = stock.pChange != null && Number.isFinite(Number(stock.pChange)) ? Number(stock.pChange) : (ltp > 0 && chg && (ltp - chg) !== 0 ? (chg / (ltp - chg)) * 100 : 0);
+      const pct = Number.isFinite(rawPct) ? rawPct : 0;
       const dayLow = stock.low != null ? Number(Number(stock.low).toFixed(2)) : (ltp > 0 ? Number(ltp.toFixed(2)) : 0);
       const dayHigh = stock.high != null ? Number(Number(stock.high).toFixed(2)) : (ltp > 0 ? Number(ltp.toFixed(2)) : 0);
       const volNum = Number(stock.volume || stock.totalTradedQuantity || 0);
@@ -142,7 +143,15 @@ export function WatchlistScreener({ onSelectScrip, lang = 'ne', stocks = [] }) {
   }, [stocks, isNe]);
 
   const filtered = watchlistData.filter(stock => {
-    const matchesSector = activeSector === 'ALL' || stock.sector.toLowerCase().includes(activeSector.toLowerCase());
+    const matchesSector = activeSector === 'ALL' || (() => {
+      const sec = (stock.sector || '').toLowerCase();
+      const act = activeSector.toLowerCase();
+      if (act === 'mfg') return sec.includes('manufactur') || sec.includes('mfg');
+      if (act === 'bank') return sec.includes('bank');
+      if (act === 'hydro') return sec.includes('hydro');
+      if (act === 'invest') return sec.includes('invest');
+      return sec.includes(act);
+    })();
     const q = query.toLowerCase().trim();
     const matchesQuery = !q ||
       stock.symbol.toLowerCase().includes(q) ||
@@ -259,14 +268,14 @@ export function WatchlistScreener({ onSelectScrip, lang = 'ne', stocks = [] }) {
                 </div>
 
                 <div className="text-right font-mono">
-                  <div className="text-base font-extrabold text-white">Rs {stock.ltp.toFixed(2)}</div>
+                  <div className="text-base font-extrabold text-white">Rs {(Number(stock.ltp) || 0).toFixed(2)}</div>
                   <div className="flex items-center justify-end gap-1 mt-0.5">
                     <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-bold border ${
                       stock.isPos
                         ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'
                         : 'bg-rose-500/15 text-rose-400 border-rose-500/25'
                     }`}>
-                      {stock.isPos ? '+' : '-'}{stock.change.toFixed(2)}%
+                      {stock.isPos ? '+' : '-'}{(Number(stock.change) || 0).toFixed(2)}%
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-400 mt-0.5">({stock.changeAmt})</div>

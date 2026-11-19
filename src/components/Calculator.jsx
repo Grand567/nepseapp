@@ -528,6 +528,7 @@ export default function Calculator() {
               >
                 <option value="short">Individual Short Term (7.5% CGT — Final Tax)</option>
                 <option value="long">Individual Long Term (5.0% CGT — Final Tax)</option>
+                <option value="institutional">Institutional / Corporate (10.0% CGT — Advance Tax)</option>
               </select>
             </div>
           </div>

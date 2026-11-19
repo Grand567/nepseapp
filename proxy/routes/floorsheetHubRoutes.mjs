@@ -6,6 +6,7 @@ import { getFullSessionFloorsheet } from '../brokerVault.mjs';
 import { isNepseTradingDay, formatNptDateIso } from '../../src/utils/nepseCalendar.js';
 import { listAvailableR2FloorsheetDates, fetchFloorsheetFromR2 } from '../utils/cloudFloorsheetVault.mjs';
 import { tickEventEmitter } from '../utils/todayDataEngine.mjs';
+import { isAllowedOrigin } from '../utils/corsConfig.mjs';
 
 let _cachedR2Dates = { timestamp: 0, dates: [] };
 async function getCachedR2Dates() {
@@ -52,14 +53,24 @@ if (typeof tickEventEmitter !== 'undefined' && tickEventEmitter?.on) {
 }
 
 router.get('/stream', (req, res) => {
+  const origin = req.headers?.origin;
+  if (origin && !isAllowedOrigin(origin, { allowNoOrigin: true })) {
+    return res.status(403).json({ success: false, error: 'CORS origin not allowed.' });
+  }
+
   const symbolFilter = String(req.query.symbol || '').toUpperCase().trim();
-  res.writeHead(200, {
+  const headers = {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
-    'X-Accel-Buffering': 'no',
-    'Access-Control-Allow-Origin': '*'
-  });
+    'X-Accel-Buffering': 'no'
+  };
+  if (origin) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers['Access-Control-Allow-Credentials'] = 'true';
+    headers['Vary'] = 'Origin';
+  }
+  res.writeHead(200, headers);
 
   const client = { res, symbolFilter };
   sseClients.add(client);

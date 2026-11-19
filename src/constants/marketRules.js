@@ -38,37 +38,32 @@ export const TRADING_SCHEDULE = Object.freeze({
 // 2. STATUTORY CIRCUIT BREAKERS & PRICE BANDS
 export const CIRCUIT_LIMITS = Object.freeze({
   individualStockDailyBandPct: 15.0, // ±15.0% maximum daily range relative to previous close
+  preOpenBandPct: 5.0, // ±5.0% pre-open session order limit
   priceTickSize: 0.10, // Minimum price movement (Rs. 0.10)
   indexCircuitBreakers: [
     {
       tier: 1,
-      thresholdPct: 4.0,
-      haltDurationMinutes: 20,
-      effectiveBefore: '13:00',
-      rule: 'If index moves ±4% before 13:00, market halted for 20 minutes'
+      thresholdPct: 5.0,
+      haltDurationMinutes: 15,
+      effectiveBefore: '12:00',
+      rule: 'If index moves ±5.0% (Level 1), market trading halted for 15 minutes'
     },
     {
       tier: 2,
-      thresholdPct: 5.0,
-      haltDurationMinutes: 40,
-      effectiveBefore: '14:00',
-      rule: 'If index moves ±5% before 14:00, market halted for 40 minutes'
-    },
-    {
-      tier: 3,
-      thresholdPct: 6.0,
+      thresholdPct: 8.0,
       haltDurationMinutes: null, // Market closed for remainder of session
       effectiveBefore: '15:00',
-      rule: 'If index moves ±6% at any time during session, market halted for remainder of the day'
+      rule: 'If index moves ±8.0% cumulatively (Level 2), market trading suspended for remainder of the day'
     }
   ],
   status: 'VERIFIED',
-  citation: 'Nepal Securities Trading Regulations (Fourth Amendment) 2082 (expanding daily individual limits from 10% to 15%) & NEPSE Index Circuit Directive'
+  citation: 'Nepal Securities Trading Operation (Fourth Amendment) Bylaws 2082 (expanding daily individual limits from 10% to 15%, pre-open to 5%, and two-tier 5%/8% index circuit halts)'
 });
 
 // 3. CLEARING & SETTLEMENT CYCLE
 export const SETTLEMENT_CYCLE = Object.freeze({
   settlementDays: 2, // T+2
+  sellableDays: 3, // T+3 (First session shares are sellable from Demat after T+2 night settlement)
   description: 'Purchased shares are cleared and credited to the buyer Demat account on T+2.',
   sellingRestrictions: 'Under CDSC bylaws, bought shares cannot be legally sold or shorted on Day T or Day T+1 until credited.',
   tPlusTwoLockoutEnforced: true,
@@ -127,9 +122,9 @@ export const STATUTORY_CHARGES = Object.freeze({
 
 // 6. CAPITAL GAINS TAX (CGT)
 export const CAPITAL_GAINS_TAX = Object.freeze({
-  individualShortTermRatePct: 7.5, // Held < 365 days
+  individualShortTermRatePct: 7.5, // Held <= 365 days
   individualShortTermDecimal: 0.075,
-  individualLongTermRatePct: 5.0, // Held >= 365 days
+  individualLongTermRatePct: 5.0, // Held > 365 days
   individualLongTermDecimal: 0.05,
   corporateResidentRatePct: 10.0,
   corporateResidentDecimal: 0.10,
@@ -316,7 +311,7 @@ export function calculateCgt(netGain, holdingDays = 10, investorType = 'individu
     rate = CAPITAL_GAINS_TAX.corporateResidentDecimal;
   } else if (investorType === 'non_resident') {
     rate = CAPITAL_GAINS_TAX.nonResidentDecimal;
-  } else if (holdingDays >= CAPITAL_GAINS_TAX.shortTermThresholdDays) {
+  } else if (holdingDays > CAPITAL_GAINS_TAX.shortTermThresholdDays) {
     rate = CAPITAL_GAINS_TAX.individualLongTermDecimal;
   }
   return +(netGain * rate).toFixed(2);
@@ -368,7 +363,8 @@ export function calculateRoundTripNetReturn({
   const grossBuyValue = bp * qty;
   const buyCommission = calculateBrokerCommission(grossBuyValue);
   const buySebonFee = calculateSebonFee(grossBuyValue);
-  const totalBuyCost = grossBuyValue + buyCommission + buySebonFee;
+  const buyDpFee = calculateDpFee();
+  const totalBuyCost = grossBuyValue + buyCommission + buySebonFee + buyDpFee;
 
   const grossSellValue = sp * qty;
   const sellCommission = calculateBrokerCommission(grossSellValue);
@@ -402,6 +398,21 @@ export function calculateRoundTripNetReturn({
     frictionCostPct
   };
 }
+
+// 8. CANONICAL EXECUTION & RISK MANAGEMENT PROTOCOLS (BUG-107)
+export const CANONICAL_RISK_LIMITS = Object.freeze({
+  defaultRiskTolerancePct: 1.5,
+  minRiskTolerancePct: 0.75,
+  maxRiskTolerancePct: 2.5,
+  hardPortfolioRiskCapPct: 2.5, // Absolute ceiling across all workstations
+  singleStockAllocationCapPct: 25.0, // Max 25% portfolio in single scrip
+  cashReserveTargetPct: 10.0, // 10% cash reserve in normal regimes
+  cashDefenseTargetPct: 70.0, // 70-80% cash when breadth < 40%
+  minTradableLotShares: 10, // 10 kitta
+  standardScaleOutT1Pct: 50.0, // 50% scale-out at Target 1
+  statutoryBreakevenHurdlePct: 1.25, // ~0.8%-1.8% friction hurdle
+  status: 'VERIFIED'
+});
 
 /**
  * Returns audit inventory of all canonical rules with verification status and citations.

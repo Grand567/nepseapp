@@ -43,6 +43,7 @@ import ShortTermProfitPlan from './ShortTermProfitPlan';
 import { DividendHistoryPanel } from './DividendHistoryPanel';
 import { RegulatoryHub } from './RegulatoryHub';
 import { TradingViewChartService } from './TradingViewChartService';
+import { isPureNepseEquity } from '../utils/nepseEquityFilter.js';
 import { FibonacciCalculatorService } from './FibonacciCalculatorService';
 import { SeasonalityAnalyticsService } from './SeasonalityAnalyticsService';
 import { PromoterSharesService } from './PromoterSharesService';
@@ -383,8 +384,8 @@ const ALL_SERVICES: ServiceDef[] = [
 
 // ── EVERY service wired. No orphan IDs. ──
 const SERVICE_COMPONENTS: Record<string, ComponentType> = {
-  'swing-trade-selector': (({ stocks, onSelectStock }: { stocks?: any[]; onSelectStock?: (s: any) => void }) => (
-    <SwingTradeSelectorView stocks={stocks || []} onSelectStock={onSelectStock} />
+  'swing-trade-selector': (({ stocks, indices, onSelectStock }: { stocks?: any[]; indices?: any; onSelectStock?: (s: any) => void }) => (
+    <SwingTradeSelectorView stocks={stocks || []} indices={indices} onSelectStock={onSelectStock} />
   )) as ComponentType,
   'master-100-profit':     Master100ProfitWorkstation as ComponentType,
   'multibagger-hunter':    MultibaggerHunterService as ComponentType,
@@ -814,7 +815,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
     <FloorsheetServiceTab {...props} onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
   ),
   'pe-ranking': () => (
-    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe > 0 && s.sector !== 'Mutual Funds'} sortFn={(a, b) => a.pe - b.pe}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe > 0 && isPureNepseEquity(s)} sortFn={(a, b) => a.pe - b.pe}
       customCols={[
         { key: 'pe', label: 'P/E', align: 'right', bold: true, format: (v) => v?.toFixed(2), colorFn: (v) => (v < 15 ? '#16a34a' : v > 30 ? '#dc2626' : '#d97706') },
         { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
@@ -826,8 +827,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'float-analytics': () => (
     <UniversalScreener sortFn={(a, b) => (Number(b.floatTurnoverPct) || 0) - (Number(a.floatTurnoverPct) || 0)}
       customCols={[
-        { key: 'promoterHolding', label: 'Promoter %', align: 'right', format: (v) => (v != null ? `${Number(v).toFixed(1)}%` : '51.0%') },
-        { key: 'publicFloat', label: 'Public Float %', align: 'right', format: (_, s) => { const prom = Number(s.promoterHolding) || 51; return `${(100 - prom).toFixed(1)}%`; } },
+        { key: 'promoterHolding', label: 'Promoter %', align: 'right', format: (v) => (v != null && Number(v) > 0 ? `${Number(v).toFixed(1)}%` : '—') },
+        { key: 'publicFloat', label: 'Public Float %', align: 'right', format: (_, s) => { const prom = s.promoterHolding != null && Number(s.promoterHolding) > 0 ? Number(s.promoterHolding) : null; return prom != null ? `${(100 - prom).toFixed(1)}%` : '—'; } },
         { key: 'floatTurnoverPct', label: 'Float Turnover Today', align: 'right', bold: true, format: (v) => (v != null ? `${Number(v).toFixed(2)}%` : '—'), colorFn: (v) => (Number(v) >= 2.0 ? '#16a34a' : '#d97706') }
       ]}
       banner={{ type: 'info', text: 'What % of free float traded today. Wired to /supplydemand.' }}
@@ -837,8 +838,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
 
   // Live data
   'live-market': () => (
-    <UniversalScreener sortFn={(a, b) => b.turnover - a.turnover}
-      banner={{ text: 'All actively trading NEPSE stocks. Wired to /today-price (live) with fallback.' }}
+    <UniversalScreener includeNonEquities={true} sortFn={(a, b) => b.turnover - a.turnover}
+      banner={{ text: 'All actively trading NEPSE securities. Wired to /today-price (live) with fallback.' }}
       insight="Sort by turnover for liquidity; filter by % change for momentum." />
   ),
   'market-summary': MarketSummaryService,
@@ -923,11 +924,11 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       hideTimeframe={true}
       filterFn={(s) => {
         const isBank = (s.sector || '').toLowerCase().includes('bank') || (s.sector || '').toLowerCase().includes('finance');
-        if (!isBank) return false;
-        const nplValid = s.npl == null || Number(s.npl) <= 3.5;
-        const carValid = s.car == null || Number(s.car) >= 11.5;
-        const cdValid = s.cdRatio == null || Number(s.cdRatio) <= 88.0;
-        const roeValid = s.roe == null || Number(s.roe) >= 10.0;
+        if (!isBank || !isPureNepseEquity(s)) return false;
+        const nplValid = s.npl != null && Number.isFinite(Number(s.npl)) && Number(s.npl) <= 3.5;
+        const carValid = s.car != null && Number.isFinite(Number(s.car)) && Number(s.car) >= 11.5;
+        const cdValid = s.cdRatio != null && Number.isFinite(Number(s.cdRatio)) && Number(s.cdRatio) <= 88.0;
+        const roeValid = s.roe != null && Number.isFinite(Number(s.roe)) && Number(s.roe) >= 10.0;
         return nplValid && carValid && cdValid && roeValid;
       }}
       sortFn={(a, b) => (b.roe || b.eps || 0) - (a.roe || a.eps || 0)}
@@ -944,15 +945,19 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
     <UniversalScreener
       hideTimeframe={true}
       filterFn={(s) => {
-        if (!s.pe || s.pe <= 0 || !s.eps || s.eps <= 10) return false;
-        const g = s.epsGrowth || (s.eps > 25 ? 18 : s.eps > 15 ? 12 : 8);
-        const peg = s.pe / g;
-        return peg <= 1.2 && s.pe <= 30;
+        const pe = Number(s.pe || 0);
+        const eps = Number(s.eps || 0);
+        const g = Number(s.epsGrowth || s.profitGrowth || 0);
+        if (pe <= 0 || eps <= 10 || g <= 0) return false;
+        const peg = pe / g;
+        return peg <= 1.2 && pe <= 30;
       }}
       sortFn={(a, b) => {
-        const gA = a.epsGrowth || (a.eps > 25 ? 18 : a.eps > 15 ? 12 : 8);
-        const gB = b.epsGrowth || (b.eps > 25 ? 18 : b.eps > 15 ? 12 : 8);
-        return (a.pe / gA) - (b.pe / gB);
+        const gA = Number(a.epsGrowth || a.profitGrowth || 0);
+        const gB = Number(b.epsGrowth || b.profitGrowth || 0);
+        const pegA = gA > 0 ? (Number(a.pe) / gA) : 99;
+        const pegB = gB > 0 ? (Number(b.pe) / gB) : 99;
+        return pegA - pegB;
       }}
       customCols={[
         { key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') },
@@ -963,12 +968,14 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
           align: 'right',
           bold: true,
           format: (_, s) => {
-            const g = s.epsGrowth || (s.eps > 25 ? 18 : s.eps > 15 ? 12 : 8);
-            return s.pe && g > 0 ? (s.pe / g).toFixed(2) : '—';
+            const pe = Number(s.pe || 0);
+            const g = Number(s.epsGrowth || s.profitGrowth || 0);
+            return pe > 0 && g > 0 ? (pe / g).toFixed(2) : '—';
           },
           colorFn: (_, s) => {
-            const g = s.epsGrowth || (s.eps > 25 ? 18 : s.eps > 15 ? 12 : 8);
-            const peg = s.pe && g > 0 ? s.pe / g : 99;
+            const pe = Number(s.pe || 0);
+            const g = Number(s.epsGrowth || s.profitGrowth || 0);
+            const peg = pe > 0 && g > 0 ? pe / g : 99;
             return peg <= 1.0 ? '#10b981' : peg <= 1.2 ? '#34d399' : '#d97706';
           }
         }
@@ -1559,6 +1566,7 @@ export default function ServicesHub({
     }
 
     const matched = NEPSE_UNIVERSE.filter((sec) => {
+      if (!isPureNepseEquity(sec)) return false;
       const sym = sec.symbol.toLowerCase();
       const name = (sec.name || '').toLowerCase();
       const secSector = (sec.sector || '').toLowerCase();

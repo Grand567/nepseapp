@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { FileText, ExternalLink, Calendar, Bell, Newspaper, ChevronRight, Filter, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
 import { fetchMarketNews, fetchCompanyQuarterlyReports } from '../utils/servicesApi';
 import { NEPALI_NAME_TO_SYMBOL, classifyCorporateArticle } from '../services/merolaganiNewsService.js';
@@ -14,27 +14,40 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
   const [loadingReports, setLoadingReports] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const newsSeqRef = useRef(0);
+  const reportsSeqRef = useRef(0);
 
   const sym = (symbol || 'STOCK').toUpperCase();
   const displayName = companyName || sym;
-  const isHydro = String(sector || '').toLowerCase().includes('hydro');
-  const isBank = String(sector || '').toLowerCase().includes('bank') || String(sector || '').toLowerCase().includes('finance');
+  const escapedSym = sym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const symBoundaryRe = useMemo(
+    () => new RegExp(`(^|[^A-Z0-9])${escapedSym}([^A-Z0-9]|$)`, 'i'),
+    [escapedSym]
+  );
 
-  const loadReports = useCallback(async (force = false) => {
+  const loadReports = useCallback(async () => {
     if (!symbol) return;
+    const seq = ++reportsSeqRef.current;
     setLoadingReports(true);
     try {
       const rep = await fetchCompanyQuarterlyReports(sym);
+      if (seq !== reportsSeqRef.current) return;
       const data = rep?.data || rep;
-      if (data && Array.isArray(data.quarters) && data.quarters.length > 0) {
+      if (data && Array.isArray(data.quarters)) {
         setRealReports(data.quarters);
+      } else {
+        setRealReports([]);
       }
-    } catch (_) {}
-    setLoadingReports(false);
+    } catch (_) {
+      if (seq === reportsSeqRef.current) setRealReports([]);
+    } finally {
+      if (seq === reportsSeqRef.current) setLoadingReports(false);
+    }
   }, [symbol, sym]);
 
   const loadNewsAndAlerts = useCallback(async (force = false) => {
     if (!symbol) return;
+    const seq = ++newsSeqRef.current;
     setLoadingNews(true);
 
     try {
@@ -57,6 +70,7 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
       })();
 
       const [articles, notifications] = await Promise.all([articlesPromise, notifPromise]);
+      if (seq !== newsSeqRef.current) return;
 
       const matched = [];
       const seen = new Set();
@@ -72,7 +86,7 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
 
         if (item.symbol && String(item.symbol).toUpperCase() === sym) {
           matches = true;
-        } else if (text.includes(sym)) {
+        } else if (symBoundaryRe.test(text)) {
           matches = true;
         } else if (companyName && text.toLowerCase().includes(companyName.toLowerCase())) {
           matches = true;
@@ -107,21 +121,26 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
       notifications.forEach(addCandidate);
       if (Array.isArray(articles)) articles.forEach(addCandidate);
 
+      if (seq !== newsSeqRef.current) return;
       setRealNews(matched);
       setLastUpdated(new Date());
     } catch (e) {
       console.warn('[StockReportsAnnouncementsCard] News fetch notice:', e);
     } finally {
-      setLoadingNews(false);
+      if (seq === newsSeqRef.current) setLoadingNews(false);
     }
-  }, [symbol, companyName, sym]);
+  }, [symbol, companyName, sym, symBoundaryRe]);
 
-  // Initial auto-update on symbol mount
+  // Reset symbol-scoped state and fetch fresh news & filings on symbol switch
   useEffect(() => {
-    let active = true;
+    setRealNews([]);
+    setRealReports([]);
     loadNewsAndAlerts(false);
     loadReports(false);
-    return () => { active = false; };
+    return () => {
+      newsSeqRef.current++;
+      reportsSeqRef.current++;
+    };
   }, [loadNewsAndAlerts, loadReports]);
 
   // Tab switch auto-update: if switching to reports and reports empty, fetch fresh; if news and news empty, fetch fresh
@@ -140,100 +159,28 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
     setIsRefreshing(false);
   };
 
-  // Financial Reports grouped by fiscal year (Dynamic reports + historical Share Hub baseline)
+  // Financial Reports grouped strictly by verified filings (no fabricated fallback years)
   const reportYears = useMemo(() => {
-    if (realReports && realReports.length > 0) {
-      const groups = {};
-      for (const q of realReports) {
-        const quarterLabel = q.quarter || q.period || 'Latest Period';
-        const fy = q.fiscalYear || (quarterLabel.includes('FY') ? quarterLabel.split(' ').slice(0, 2).join(' ') : 'Current Fiscal Period');
-        if (!groups[fy]) groups[fy] = [];
-        groups[fy].push({
-          title: `${sym} ${quarterLabel} Financial Report${q.eps != null ? ` (EPS: Rs ${q.eps})` : ''}`,
-          date: q.reportDate || q.filingDate || 'Recently Filed',
-          type: quarterLabel.includes('Q1') ? 'Q1' : (quarterLabel.includes('Q2') ? 'Q2' : (quarterLabel.includes('Q3') ? 'Q3' : (quarterLabel.includes('Q4') ? 'Q4' : 'Quarterly'))),
-          eps: q.eps,
-          netProfit: q.netProfit,
-          paidUp: q.paidUp,
-          netWorth: q.netWorth,
-          npl: q.npl,
-          source: q.source || 'NEPSE Filing'
-        });
-      }
-      return Object.entries(groups).map(([fiscalYear, reports]) => ({ fiscalYear, reports }));
+    if (!realReports || realReports.length === 0) return [];
+    const groups = {};
+    for (const q of realReports) {
+      const quarterLabel = q.quarter || q.period || 'Latest Period';
+      const fy = q.fiscalYear || (quarterLabel.includes('FY') ? quarterLabel.split(' ').slice(0, 2).join(' ') : 'Current Fiscal Period');
+      if (!groups[fy]) groups[fy] = [];
+      groups[fy].push({
+        title: `${sym} ${quarterLabel} Financial Report${q.eps != null ? ` (EPS: Rs ${q.eps})` : ''}`,
+        date: q.reportDate || q.filingDate || 'Recently Filed',
+        type: quarterLabel.includes('Q1') ? 'Q1' : (quarterLabel.includes('Q2') ? 'Q2' : (quarterLabel.includes('Q3') ? 'Q3' : (quarterLabel.includes('Q4') ? 'Q4' : 'Quarterly'))),
+        eps: q.eps,
+        netProfit: q.netProfit,
+        paidUp: q.paidUp,
+        netWorth: q.netWorth,
+        npl: q.npl,
+        source: q.source || 'NEPSE Filing'
+      });
     }
-
-    return [
-      {
-        fiscalYear: '2082/2083 (2025/2026)',
-        reports: [
-          { title: `Third Quarter Report of ${sym} For FY 2082/83. 2025/2026`, date: '2026-05-09', type: 'Q3' },
-          { title: `Second Quarter Report of ${sym} For FY 2082/83. 2025/2026`, date: '2026-02-02', type: 'Q2' },
-          { title: `First Quarter Report of ${sym} For FY 2082/83. 2025/2026`, date: '2025-11-08', type: 'Q1' }
-        ]
-      },
-      {
-        fiscalYear: '2081/2082 (2024/2025)',
-        reports: [
-          { title: `Fourth Quarter Report of ${sym} For FY 2081/82. 2024/2025`, date: '2025-08-12', type: 'Q4' },
-          { title: `Second Quarter Report of ${sym} For FY 2081/82. 2024/2025`, date: '2025-02-04', type: 'Q2' },
-          { title: `First Quarter Report of ${sym} For FY 2081/82. 2024/2025`, date: '2024-11-10', type: 'Q1' }
-        ]
-      },
-      {
-        fiscalYear: '2080/2081 (2023/2024)',
-        reports: [
-          { title: `Fourth Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2024-08-15', type: 'Q4' },
-          { title: `Third Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2024-05-05', type: 'Q3' },
-          { title: `Second Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2024-02-12', type: 'Q2' },
-          { title: `First Quarter Report of ${sym} For FY 2080/81. 2023/2024`, date: '2023-11-10', type: 'Q1' }
-        ]
-      },
-      {
-        fiscalYear: '2079/2080 (2022/2023)',
-        reports: [
-          { title: `Annual Report of ${sym} For FY 2079/80. 2022/2023`, date: '2023-09-20', type: 'Annual' },
-          { title: `Fourth Quarter Report of ${sym} For FY 2079/80. 2022/2023`, date: '2023-08-14', type: 'Q4' }
-        ]
-      }
-    ];
+    return Object.entries(groups).map(([fiscalYear, reports]) => ({ fiscalYear, reports }));
   }, [realReports, sym]);
-
-  // Fallback curated baseline company news when no external items found
-  const fallbackCompanyNews = [
-    {
-      titleNp: isHydro
-        ? `${displayName} (${sym}) को वित्तीय विवरण सार्वजनिक, विद्युत बिक्री आम्दानी र प्रमुख सूचक कस्ता छन् ?`
-        : isBank
-          ? `${displayName} (${sym}) को खुद ब्याज आम्दानी र वितरणयोग्य मुनाफामा सुधार, इपीएस कति ?`
-          : `${displayName} (${sym}) को त्रैमासिक वित्तीय विवरण सार्वजनिक, प्रमुख सूचक कस्ता छन् ?`,
-      titleEn: `${displayName} (${sym}) publishes latest quarterly financial highlights; key operating ratios & EPS trajectory analyzed.`,
-      date: '09 May 2026, Saturday',
-      source: 'NEPALI PAISA / MEROLAGANI',
-      classification: {
-        type: 'FINANCIAL',
-        badgeNp: '📊 वित्तीय विवरण',
-        badgeEn: 'Financial Report',
-        color: '#38bdf8',
-        bg: 'rgba(56, 189, 248, 0.15)',
-        border: 'rgba(56, 189, 248, 0.35)'
-      }
-    },
-    {
-      titleNp: `${sym} को साधारण सभा तथा लाभांश/पुँजी योजना सम्बन्धी विशेष अद्यावधिक विवरण`,
-      titleEn: `${displayName} corporate governance & capital adequacy update for shareholders and institutional investors.`,
-      date: '10 November 2025, Tuesday',
-      source: 'BIZMANDU',
-      classification: {
-        type: 'DIVIDEND',
-        badgeNp: '💰 लाभांश / साधारण सभा',
-        badgeEn: 'Dividend / AGM',
-        color: '#10b981',
-        bg: 'rgba(16, 185, 129, 0.15)',
-        border: 'rgba(16, 185, 129, 0.35)'
-      }
-    }
-  ];
 
   // News counts by corporate action category
   const filterCounts = useMemo(() => {
@@ -247,18 +194,16 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
     return counts;
   }, [realNews]);
 
-  // Filtered news items
+  // Filtered news items (strictly real verified articles only)
   const displayedNews = useMemo(() => {
-    if (realNews.length === 0) return fallbackCompanyNews;
+    if (realNews.length === 0) return [];
     if (newsFilter === 'all') return realNews;
     return realNews.filter(n => n.classification?.type === newsFilter);
-  }, [realNews, newsFilter, fallbackCompanyNews]);
+  }, [realNews, newsFilter]);
 
-  // Dynamic Announcements / Corporate Disclosures
+  // Dynamic Announcements / Corporate Disclosures strictly from verified feeds
   const announcements = useMemo(() => {
     const list = [];
-
-    // 1. Pull dynamic dividend/right/book-closure/financial announcements from real news
     realNews.forEach(item => {
       const type = item.classification?.type;
       if (type === 'DIVIDEND' || type === 'RIGHT_SHARE' || type === 'BOOK_CLOSURE' || type === 'FINANCIAL') {
@@ -271,37 +216,8 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
         });
       }
     });
-
-    // 2. Complement with standard official exchange disclosures
-    const staticAnnouncements = [
-      {
-        title: `${displayName} has published its provisional financial statement from the Third quarter of the fiscal year 2082/83.`,
-        date: '2026-05-09',
-        category: 'Financial Disclosure',
-        badgeColor: '#38bdf8'
-      },
-      {
-        title: `${displayName} has published its provisional financial statement from the Fourth quarter of the fiscal year 2081/82.`,
-        date: '2025-08-12',
-        category: 'Financial Disclosure',
-        badgeColor: '#38bdf8'
-      },
-      {
-        title: `${displayName} has deposited bonus/right shares directly to the demat account of its shareholders and urged dematerialization.`,
-        date: '2024-02-25',
-        category: 'Corporate Action',
-        badgeColor: '#a855f7'
-      },
-      {
-        title: `${displayName} has listed its additional securities in NEPSE for secondary market trading.`,
-        date: '2024-02-23',
-        category: 'NEPSE Listing',
-        badgeColor: '#10b981'
-      }
-    ];
-
-    return [...list, ...staticAnnouncements];
-  }, [realNews, displayName]);
+    return list;
+  }, [realNews]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -559,7 +475,20 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
             </div>
           )}
 
-          {reportYears.map((yr, idx) => (
+          {reportYears.length === 0 && !loadingReports ? (
+            <div style={{
+              background: '#111827',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 14,
+              padding: '24px 16px',
+              textAlign: 'center',
+              color: '#94a3b8',
+              fontSize: 12.5
+            }}>
+              No verified quarterly financial filings synced yet for {sym}.
+            </div>
+          ) : (
+            reportYears.map((yr, idx) => (
             <div key={idx}>
               <div style={{
                 display: 'flex',
@@ -632,14 +561,27 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
                 ))}
               </div>
             </div>
-          ))}
+          )))}
         </div>
       )}
 
       {/* Sub-tab 3: Announcements View */}
       {activeTab === 'announcements' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {announcements.map((a, idx) => (
+          {announcements.length === 0 ? (
+            <div style={{
+              background: '#111827',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 14,
+              padding: '24px 16px',
+              textAlign: 'center',
+              color: '#94a3b8',
+              fontSize: 12.5
+            }}>
+              No verified exchange disclosures or corporate announcements found for {sym}.
+            </div>
+          ) : (
+            announcements.map((a, idx) => (
             <div
               key={idx}
               style={{
@@ -699,7 +641,7 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
                 </div>
               </div>
             </div>
-          ))}
+          )))}
         </div>
       )}
     </div>

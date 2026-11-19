@@ -59,35 +59,9 @@ import { toAscendingCandles } from '../utils/setupAnalyzer';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { useNavigation } from '../context/NavigationContext';
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
+import { isMutualFundOrDebenture } from '../utils/nepseEquityFilter.js';
 
-/**
- * Checks if a NEPSE scrip is a mutual fund, debenture, bond, promoter share, or penny security.
- * Short-Term Momentum Swing Trading strictly requires active, liquid common equities.
- */
-export function isMutualFundOrDebenture(sym = '', sector = '', name = '', ltp = 100) {
-  const s = String(sym || '').toUpperCase().trim();
-  const sec = String(sector || '').toLowerCase();
-  const n = String(name || '').toLowerCase();
-
-  // Explicit sector and name checks
-  if (sec.includes('mutual') || sec.includes('debenture') || sec.includes('bond') || sec.includes('promoter')) return true;
-  if (n.includes('mutual fund') || n.includes('debenture') || n.includes('bond') || n.includes('promoter share')) return true;
-
-  // NEPSE Debenture / Promoter / Bond ticker patterns (e.g. ADBLD83, KBLD86, NMB50, ACLBSLP)
-  if (s.endsWith('PO') || (s.endsWith('P') && s !== 'NADEP') || s.includes('DEB') || s.startsWith('NMB50') || s.startsWith('ADBLD')) return true;
-  if (/\d+$/.test(s) && (s.includes('D') || s.includes('B') || s.includes('F'))) return true;
-
-  // Price floor: All NEPSE mutual funds have par 10 and trade below Rs. 25. Regular equities trade >= Rs. 60
-  if (ltp !== undefined && ltp > 0 && ltp < 50) return true;
-
-  // Mutual fund schemes ending in F (e.g. HLICF, NICSF, SAEF, CMF2, SIGS2, etc.)
-  if (s.endsWith('F') && s.length >= 4 && !['SANIMA', 'SHIVM'].includes(s)) {
-    if (sec.includes('microfinance') || n.includes('microfinance') || n.includes('laghubitta')) return false;
-    return true;
-  }
-
-  return false;
-}
+export { isMutualFundOrDebenture };
 
 /**
  * Evaluates an individual NEPSE stock against the 8 institutional Short-Term Investment Criteria.
@@ -198,7 +172,8 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   let effEma20 = ema20;
   let effEma50 = ema50;
   if ((!effEma20 || !effEma50) && Array.isArray(cachedHistory) && cachedHistory.length >= 10) {
-    const closes = cachedHistory.map(h => Number(h.close || h.price || h.ltp)).filter(v => !isNaN(v) && v > 0);
+    const ascHistory = toAscendingCandles(cachedHistory);
+    const closes = ascHistory.map(h => Number(h.close || h.price || h.ltp)).filter(v => !isNaN(v) && v > 0);
     if (closes.length >= 10) {
       if (!effEma20) {
         const emaArr = calculateEMA(closes, 20);
@@ -212,8 +187,8 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   }
 
   // ── EVALUATE 8 CRITERIA ──
-  // 1. Tradable Liquidity Floor (Excludes penny units, mutual funds, debentures)
-  const passLiquidity = !isExcluded && ltp >= 60 && (vol >= 800 || turnover >= 200000 || (stock.marketCap && stock.marketCap > 100000000) || ltp >= 150);
+  // 1. Tradable Liquidity Floor (Excludes penny units, mutual funds, debentures; no price-only bypass)
+  const passLiquidity = !isExcluded && ltp >= 60 && (vol >= 800 || turnover >= 200000 || (stock.marketCap && stock.marketCap > 100000000));
 
   // 2. Trend & Moving Average Structure (Zero tolerance: no blind pass if EMAs are uncomputed)
   const hasEma = (effEma20 > 0 || effEma50 > 0);
@@ -534,9 +509,12 @@ export default function ShortTermProfitPlan({
         low52: Number(live?.low52 ?? live?.low52w ?? 0),
         ema20: Number(live?.ema20 ?? 0),
         ema50: Number(live?.ema50 ?? live?.sma50 ?? 0),
-        rsi: Number(live?.rsi ?? resolveDynamicStockRSI({ ...u, ...(live || {}), ltp })),
-        eps: Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (live?.eps ?? 0)),
-        bookValue: Number(cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (live?.bookValue ?? live?.bvps ?? 100)),
+        rsi: (() => {
+          const dynRsi = live?.rsi ?? resolveDynamicStockRSI({ ...u, ...(live || {}), ltp });
+          return (dynRsi !== null && dynRsi !== undefined && !isNaN(Number(dynRsi))) ? Number(dynRsi) : null;
+        })(),
+        eps: cachedFund?.eps !== undefined && cachedFund?.eps !== null ? Number(cachedFund.eps) : (live?.eps != null ? Number(live.eps) : null),
+        bookValue: cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? Number(cachedFund.bookValue) : (live?.bookValue != null ? Number(live.bookValue) : (live?.bvps != null ? Number(live.bvps) : null)),
         pe: Number(cachedFund?.pe !== undefined && cachedFund?.pe !== null ? cachedFund.pe : (live?.pe ?? 0)),
         brokerAnalysis: live?.brokerAnalysis || null
       });
@@ -553,6 +531,8 @@ export default function ShortTermProfitPlan({
 
         seen.add(sym);
         const cachedFund = getCachedStockFundamentals(sym);
+        const rawEps = cachedFund?.eps ?? live?.eps;
+        const rawBv = cachedFund?.bookValue ?? live?.bookValue ?? live?.bvps;
         merged.push({
           ...(cachedFund || {}),
           ...live,
@@ -563,7 +543,8 @@ export default function ShortTermProfitPlan({
           pChange: Number(live.pChange || 0),
           volume: Number(live.volume || 0),
           turnover: Number(live.turnover || 0),
-          eps: Number(cachedFund?.eps ?? live.eps ?? 0)
+          eps: rawEps != null ? Number(rawEps) : null,
+          bookValue: rawBv != null ? Number(rawBv) : null
         });
       }
     }
@@ -710,12 +691,7 @@ export default function ShortTermProfitPlan({
     if (breakoutCandidates[0]) return breakoutCandidates[0];
     if (allEvaluatedCandidates[0]) return allEvaluatedCandidates[0];
 
-    return evaluateShortTermCriteria({
-      symbol: sym,
-      ltp: 300,
-      pChange: 0,
-      sector: 'Commercial Bank'
-    }, indices);
+    return null;
   }, [allEvaluatedCandidates, fullUniverseStocks, selectedSymbol, bestPickCandidate, nearQualifiedCandidates, breakoutCandidates, indices]);
 
   // Reset custom overrides when switching symbol
@@ -800,6 +776,7 @@ export default function ShortTermProfitPlan({
 
   // ── 10. Save Plan to Journal Handler ──
   const handleSavePlan = () => {
+    if (!activeStock) return;
     const newPlan = {
       id: `plan_${Date.now()}_${activeStock.symbol}`,
       symbol: activeStock.symbol,
@@ -1260,7 +1237,7 @@ export default function ShortTermProfitPlan({
             ) : (
               <>
                 {filteredCandidates.slice(0, displayLimit).map((item, idx) => {
-                  const isSelected = item.symbol === activeStock.symbol;
+                  const isSelected = Boolean(activeStock && item.symbol === activeStock.symbol);
                   const isTopPick = bestPickCandidate && item.symbol === bestPickCandidate.symbol;
                   const isT2Trap = item.t2Guard?.status === 'HIGH_T2_CIRCUIT_TRAP';
                   const isBreakoutSetup = Boolean(item.isBreakout || item.setupType === 'ACTIVE_BREAKOUT' || (item.high52 && item.ltp >= item.high52 * 0.95 && item.pChg >= 0.5) || item.pChg >= 2.5);
@@ -1514,6 +1491,12 @@ export default function ShortTermProfitPlan({
             width: '100%'
           }}
         >
+          {!activeStock ? (
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              No qualifying NEPSE equity data loaded yet. Refresh feed to evaluate setups.
+            </div>
+          ) : (
+          <>
           {/* Active Stock Header */}
           <div style={{
             display: 'flex',
@@ -2338,17 +2321,17 @@ export default function ShortTermProfitPlan({
             const gate1Pass = !activeStock.isExcluded && activeStock.ltp >= 60 && (activeStock.turnover >= 500000 || activeStock.vol >= 1500 || activeStock.criteriaList?.find(c => c.id === 'liquidity')?.passed);
             const gate2Pass = Boolean(activeStock.vsr >= 1.15 || activeStock.pChg >= 1.0 || activeStock.criteriaList?.find(c => c.id === 'volume')?.passed);
             const gate3Pass = Boolean(activeStock.isBrokerAccum || activeStock.score >= 65);
-            const gate4Pass = Boolean((activeStock.rrr || 2.0) >= 1.6 && (activeStock.stopLossPct || 4.5) <= 6.5);
+            const gate4Pass = Boolean(activeStock.rrr != null && Number(activeStock.rrr) >= 1.6 && (activeStock.stopLossPct || 4.5) <= 6.5);
             const gatesPassed = [gate1Pass, gate2Pass, gate3Pass, gate4Pass].filter(Boolean).length;
 
             const copySwingBlueprint = () => {
               const text = `🎯 NEPSE 7–15D SWING PLAYBOOK: ${activeStock.symbol}
 • Current LTP: Rs. ${activeStock.ltp} (${activeStock.pChg >= 0 ? '+' : ''}${activeStock.pChg}%)
 • Green Buy Zone: Rs. ${activeStock.entryMin || (entryPrice * 0.985).toFixed(1)} – Rs. ${activeStock.entryMax || (entryPrice * 1.015).toFixed(1)}
-• Target 1 (+8% to +14%): Rs. ${target1Price} (Sell 50% & Slide SL to Entry)
+• Target 1 (+8% to +14%): Rs. ${target1Price} (Sell 50% & Slide SL to Statutory Breakeven)
 • Target 2 (+18% to +25%): Rs. ${(target1Price * 1.08).toFixed(1)}
 • Hard Stop Loss: Rs. ${stopLossPrice} (Max -4.5%)
-• Risk-Reward Ratio: ${(activeStock.rrr || 2.1)}:1
+• Risk-Reward Ratio: ${activeStock.rrr != null ? `${Number(activeStock.rrr).toFixed(2)}:1` : '—'}
 • T+2 Settlement Rule: Demat credit on Day 3 unlocks legal selling power.
 • Time Stop: If sideways for 8 sessions, exit 100% to protect capital.`;
 
@@ -2516,7 +2499,7 @@ export default function ShortTermProfitPlan({
                         <span>Gate 4: Volume Profile POC Floor & Asymmetric RRR</span>
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                        Target 1: Rs. {target1Price} (+{activeStock.target1Pct || 8}%) · SL: Rs. {stopLossPrice} (-{activeStock.stopLossPct || 4}%) · RRR: {(activeStock.rrr || 2.1)}:1
+                        Target 1: Rs. {target1Price} (+{activeStock.target1Pct || 8}%) · SL: Rs. {stopLossPrice} (-{activeStock.stopLossPct || 4}%) · RRR: {activeStock.rrr != null ? `${Number(activeStock.rrr).toFixed(2)}:1` : '—'}
                       </div>
                     </div>
                     <span style={{
@@ -2611,6 +2594,8 @@ export default function ShortTermProfitPlan({
               </div>
             );
           })()}
+          </>
+          )}
         </div>
       </div>
 
@@ -2658,7 +2643,7 @@ export default function ShortTermProfitPlan({
             }}>
               <div style={{ fontWeight: 800, color: '#A5B4FC' }}>DAY 0: ORDER PLACEMENT (ENTRY)</div>
               <div style={{ color: 'var(--text-muted)', marginTop: 3 }}>
-                Buy strictly within the corridor (Rs. {activeStock.entryMin} – {activeStock.entryMax}). If price has already gained &gt; 5% on the day, cancel and do not FOMO chase.
+                Buy strictly within the corridor (Rs. {activeStock?.entryMin ?? '—'} – {activeStock?.entryMax ?? '—'}). If price has already gained &gt; 5% on the day, cancel and do not FOMO chase.
               </div>
             </div>
 

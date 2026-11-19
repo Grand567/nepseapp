@@ -165,16 +165,15 @@ export default function StockYanAnalyticsCard({
 
   // 3. Magnetic Support & Breakable Resistance
   const levels = useMemo(() => {
-    if (closes.length < 5) {
-      const p = ltp || 100;
+    if (closes.length < 5 || !ltp || ltp <= 0) {
       return {
-        magneticSupport: +(p * 0.95).toFixed(1),
-        breakableResistance: +(p * 1.05).toFixed(1),
-        distSupportPct: -5.0,
-        distResistancePct: 5.0,
-        isBreakable: true,
-        supportStrength: 'Moderate',
-        resistanceState: 'Breakout Watch'
+        magneticSupport: null,
+        breakableResistance: null,
+        distSupportPct: null,
+        distResistancePct: null,
+        isBreakable: false,
+        supportStrength: 'Insufficient history',
+        resistanceState: 'Insufficient history (min 5 bars required)'
       };
     }
 
@@ -208,8 +207,8 @@ export default function StockYanAnalyticsCard({
     const latestVol = recentVols[recentVols.length - 1] || avgVol;
     const isBreakable = latestVol >= avgVol * 1.2 || ltp >= breakableResistance * 0.985;
 
-    const distSupportPct = +(((magneticSupport - ltp) / ltp) * 100).toFixed(1);
-    const distResistancePct = +(((breakableResistance - ltp) / ltp) * 100).toFixed(1);
+    const distSupportPct = ltp > 0 ? +(((magneticSupport - ltp) / ltp) * 100).toFixed(1) : 0;
+    const distResistancePct = ltp > 0 ? +(((breakableResistance - ltp) / ltp) * 100).toFixed(1) : 0;
 
     return {
       magneticSupport,
@@ -477,20 +476,22 @@ export default function StockYanAnalyticsCard({
             <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 8, padding: 8 }}>
               <div style={{ fontSize: 11, color: '#10b981', fontWeight: 700 }}>🧲 Magnetic Support</div>
               <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {fmt(levels.magneticSupport)}
+                {levels.magneticSupport != null ? `Rs. ${fmt(levels.magneticSupport)}` : '—'}
               </div>
               <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                {levels.distSupportPct}% from LTP
+                {levels.distSupportPct != null ? `${levels.distSupportPct}% from LTP` : 'Data pending'}
               </div>
             </div>
 
             <div style={{ background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 8, padding: 8 }}>
-              <div style={{ fontSize: 11, color: '#f87171', fontWeight: 700 }}>🔓 Breakable Resistance</div>
+              <div style={{ fontSize: 11, color: '#f87171', fontWeight: 700 }}>
+                {levels.isBreakable ? '🔓 Breakable Resistance' : '🛡️ Overhead Supply Barrier'}
+              </div>
               <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {fmt(levels.breakableResistance)}
+                {levels.breakableResistance != null ? `Rs. ${fmt(levels.breakableResistance)}` : '—'}
               </div>
               <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                +{levels.distResistancePct}% from LTP
+                {levels.distResistancePct != null ? `+${levels.distResistancePct}% from LTP` : 'Data pending'}
               </div>
             </div>
           </div>

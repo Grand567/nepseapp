@@ -34,7 +34,7 @@ describe('Telegram Webhook Service', () => {
   it('validates webhook secret token correctly and timing-safely', () => {
     assert.equal(validateWebhookSecretToken('secret_123', 'secret_123'), true);
     assert.equal(validateWebhookSecretToken('secret_123', 'wrong_token'), false);
-    assert.equal(validateWebhookSecretToken(undefined, undefined), true);
+    assert.equal(validateWebhookSecretToken(undefined, undefined), false);
     assert.equal(validateWebhookSecretToken('secret_123', undefined), false);
     assert.equal(validateWebhookSecretToken('secret_123', ''), false);
   });
@@ -173,5 +173,34 @@ describe('Telegram Webhook Service', () => {
     const info = await getTelegramWebhookInfo();
     assert.equal(info.ok, true);
     assert.equal(info.result.url, 'https://nepseapp.onrender.com/api/telegram/webhook');
+  });
+
+  it('rejects incoming webhook updates without auto-binding chatId when chatId is unset', async () => {
+    const origTgChat = process.env.TELEGRAM_CHAT_ID;
+    const origChat = process.env.CHAT_ID;
+    delete process.env.TELEGRAM_CHAT_ID;
+    delete process.env.CHAT_ID;
+    try {
+      saveTelegramConfig({
+        botToken: '2202171825:AAF_TpoNTdy0tL0uRFFxLg9iAdB4C35qMNM',
+        chatId: '',
+        enabled: true,
+        isTestServer: true
+      });
+
+      const hijackRes = await handleIncomingTelegramUpdate({
+        update_id: 999123,
+        message: { chat: { id: '8888777766' }, text: '/status' }
+      }, {});
+
+      assert.equal(hijackRes.processed, false);
+      assert.equal(hijackRes.reason, 'chat_id_not_configured');
+      assert.equal(getTelegramStatus().hasChatId, false);
+    } finally {
+      if (origTgChat !== undefined) process.env.TELEGRAM_CHAT_ID = origTgChat;
+      else delete process.env.TELEGRAM_CHAT_ID;
+      if (origChat !== undefined) process.env.CHAT_ID = origChat;
+      else delete process.env.CHAT_ID;
+    }
   });
 });

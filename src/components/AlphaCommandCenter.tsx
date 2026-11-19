@@ -11,6 +11,7 @@ import {
   getStageFailureReason
 } from '../utils/masterAlphaPipeline';
 import { addToWatchlist } from '../utils/watchlist';
+import { addTradingDays, formatNptDateIso } from '../utils/nepseCalendar';
 
 interface AlphaCommandCenterProps {
   stocks?: any[];
@@ -49,12 +50,14 @@ export function AlphaCommandCenter({
   const [copiedTicket, setCopiedTicket] = useState(false);
   const [paperOrderSaved, setPaperOrderSaved] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanNonce, setScanNonce] = useState(0);
   const [scanTimestamp, setScanTimestamp] = useState<string>(() =>
     new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
   );
 
   const handleTriggerScan = () => {
     setIsScanning(true);
+    setScanNonce(prev => prev + 1);
     setTimeout(() => {
       setIsScanning(false);
       setScanTimestamp(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
@@ -70,7 +73,7 @@ export function AlphaCommandCenter({
       requiredNetRRR: 2.5,
       cgtRate
     });
-  }, [stocks, indices, userCapital, cgtRate]);
+  }, [stocks, indices, userCapital, cgtRate, scanNonce]);
 
   // Autocomplete suggestions matching search query
   const searchSuggestions = useMemo(() => {
@@ -152,7 +155,7 @@ export function AlphaCommandCenter({
         target2: ep.target2,
         target3Runner: ep.target3Runner,
         breakevenPrice: ep.statutoryBreakevenPrice,
-        t2SettlementDate: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),
+        t2SettlementDate: formatNptDateIso(addTradingDays(new Date(), 2)),
         createdAt: new Date().toISOString()
       };
       localStorage.setItem('nepse_paper_trades', JSON.stringify([newOrder, ...existingSim.slice(0, 49)]));

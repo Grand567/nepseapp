@@ -161,7 +161,7 @@ export function LiveMarketDashboard({
         ltp: Number(s.ltp || s.close || 0),
         change: `+${Number(s.percentChange || s.pChange || 0).toFixed(2)}%`,
         changeAmt: `+${Number(s.pointChange || s.change || 0).toFixed(2)}`,
-        tag: idx === 0 ? '⚡ TOP GAINER' : s.percentChange >= 9.5 ? 'Circuit' : '⚡ High Demand',
+        tag: idx === 0 ? '⚡ TOP GAINER' : Math.abs(Number(s.percentChange || s.pChange || 0)) >= 14.5 ? 'Circuit ±15%' : '⚡ High Demand',
         color: idx % 2 === 0 ? 'sky' : 'emerald'
       }));
     }
@@ -364,7 +364,7 @@ export function LiveMarketDashboard({
                 </div>
               </div>
               <div className="text-right font-mono">
-                <div className="text-sm font-extrabold text-white">Rs {stock.ltp.toFixed(2)}</div>
+                <div className="text-sm font-extrabold text-white">Rs {(Number(stock.ltp) || 0).toFixed(2)}</div>
                 <div className="text-xs font-bold text-emerald-400 mt-0.5">
                   {stock.change} ({stock.changeAmt})
                 </div>

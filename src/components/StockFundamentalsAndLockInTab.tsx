@@ -107,7 +107,7 @@ export const StockFundamentalsAndLockInTab: React.FC<
         <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
           <div className="text-slate-400">Graham Intrinsic Value</div>
           <div className="text-base font-bold text-indigo-300 mt-1">
-            Rs {metrics.grahamFairValue.toLocaleString()}
+            {metrics.grahamFairValue !== null ? `Rs ${metrics.grahamFairValue.toLocaleString()}` : "N/A (Loss-Maker)"}
           </div>
           <div className="text-[11px] text-slate-400">
             Margin:{" "}
@@ -215,7 +215,7 @@ export const StockFundamentalsAndLockInTab: React.FC<
             </div>
             {promoterLockIn.isBlackoutDanger && (
               <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold text-[10px]">
-                60D BLACKOUT
+                120D CLIFF VETO
               </span>
             )}
           </div>

@@ -28,6 +28,7 @@ import {
   resolveDynamicStockRSI,
   resolveDynamicStockCandles
 } from './quantEngine.js';
+import { isMutualFundOrDebenture as isNonEquityInstrument, isPureNepseEquity } from './nepseEquityFilter.js';
 
 import {
   calculateBrokerConcentration,
@@ -40,6 +41,16 @@ import { evaluateOrderFlowVeto } from './sharedBrokerAggregationEngine.js';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from './nepseCalendar.js';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import sebonPipelineData from '../data/sebonPipelineData.json';
+import {
+  calculateTieredBrokerCommission,
+  calculateNetTradeGain,
+  computeMasterPositionSizing
+} from './masterPositionSizing.js';
+export {
+  calculateTieredBrokerCommission,
+  calculateNetTradeGain,
+  computeMasterPositionSizing
+};
 
 export interface GateResult {
   passed: boolean;
@@ -168,82 +179,7 @@ export interface MasterAuditReport {
   };
 }
 
-/**
- * Calculates statutory tiered SEBON broker commission for a given transaction amount.
- * Statutory brackets under SEBON Bylaws:
- * - Up to Rs. 50,000: 0.36% (0.0036)
- * - Rs. 50,001 to Rs. 500,000: 0.33% (0.0033)
- * - Rs. 500,001 to Rs. 2,000,000: 0.31% (0.0031)
- * - Rs. 2,000,001 to Rs. 10,000,000: 0.27% (0.0027)
- * - Above Rs. 10,000,000: 0.24% (0.0024)
- * - Minimum commission: Rs. 10
- */
-export function calculateTieredBrokerCommission(amount: number): number {
-  const amt = Math.max(0, Number(amount) || 0);
-  if (amt <= 0) return 0;
-  let fee = 0;
-  if (amt <= 50000) fee = amt * 0.0036;
-  else if (amt <= 500000) fee = amt * 0.0033;
-  else if (amt <= 2000000) fee = amt * 0.0031;
-  else if (amt <= 10000000) fee = amt * 0.0027;
-  else fee = amt * 0.0024;
-  return Math.max(10, fee);
-}
-
-/**
- * Computes net realized profit per share after all statutory frictions:
- * - Tiered SEBON Broker Commission on buy and sell
- * - SEBON Regulatory Fee (0.015% buy, 0.015% sell)
- * - DP Fee (Rs. 25 flat)
- * - 7.5% Final Capital Gains Tax (CGT) mandated under Nepal Finance Act for individual holdings <= 365 days
- */
-export function calculateNetTradeGain(entryPrice: number, targetPrice: number, shares = 100): {
-  grossGain: number;
-  brokerFeeTotal: number;
-  sebonFeeTotal: number;
-  dpFee: number;
-  totalExpenses: number;
-  cgtTax: number;
-  netRealizedGain: number;
-  netReturnPct: number;
-  statutoryBreakevenPrice: number;
-  totalFrictionPct: number;
-} {
-  const buyValue = entryPrice * shares;
-  const sellValue = targetPrice * shares;
-  const grossGain = sellValue - buyValue;
-
-  const buyBrokerFee = calculateTieredBrokerCommission(buyValue);
-  const sellBrokerFee = calculateTieredBrokerCommission(sellValue);
-  const brokerFeeTotal = buyBrokerFee + sellBrokerFee;
-
-  const sebonFeeTotal = (buyValue + sellValue) * 0.00015;
-  const dpFee = 25.0; // Flat per sale transfer
-
-  const totalExpenses = brokerFeeTotal + sebonFeeTotal + dpFee;
-  const taxableProfit = Math.max(0, grossGain - totalExpenses);
-  const cgtTax = taxableProfit * 0.075; // 7.5% Final CGT (Individual Short-Term)
-
-  const netRealizedGain = grossGain - totalExpenses - cgtTax;
-  const netReturnPct = buyValue > 0 ? +((netRealizedGain / buyValue) * 100).toFixed(2) : 0;
-  const totalFrictionPct = buyValue > 0 ? +(((totalExpenses + cgtTax) / buyValue) * 100).toFixed(2) : 0;
-
-  // Breakeven hurdle price: price needed to cover roundtrip broker + sebon + DP
-  const statutoryBreakevenPrice = +((buyValue + totalExpenses) / shares).toFixed(1);
-
-  return {
-    grossGain: +grossGain.toFixed(2),
-    brokerFeeTotal: +brokerFeeTotal.toFixed(2),
-    sebonFeeTotal: +sebonFeeTotal.toFixed(2),
-    dpFee,
-    totalExpenses: +totalExpenses.toFixed(2),
-    cgtTax: +cgtTax.toFixed(2),
-    netRealizedGain: +netRealizedGain.toFixed(2),
-    netReturnPct,
-    statutoryBreakevenPrice,
-    totalFrictionPct
-  };
-}
+// Statutory commission, net trade gain, and position sizing calculators are imported & re-exported from ./masterPositionSizing.js above.
 
 /**
  * Determines current NEPSE intraday execution status based on local Nepal time (NPT = UTC+5:45).
@@ -357,27 +293,8 @@ export function getIntradayExecutionState(): {
  * Checks if a NEPSE scrip is a mutual fund, debenture, bond, promoter share, or penny security.
  */
 export function isMutualFundOrDebenture(sym = '', sector = '', name = '', ltp = 100): boolean {
-  const s = String(sym || '').toUpperCase().trim();
-  const sec = String(sector || '').toLowerCase();
-  const n = String(name || '').toLowerCase();
-
-  // Explicit sector and name checks
-  if (sec.includes('mutual') || sec.includes('debenture') || sec.includes('bond') || sec.includes('promoter')) return true;
-  if (n.includes('mutual fund') || n.includes('debenture') || n.includes('bond') || n.includes('promoter share')) return true;
-
-  // NEPSE Debenture / Promoter / Bond ticker patterns (e.g. ADBLD83, KBLD86, NMB50, ACLBSLP)
-  if (s.endsWith('PO') || (s.endsWith('P') && s !== 'NADEP') || s.includes('DEB') || s.startsWith('NMB50') || s.startsWith('ADBLD')) return true;
-  if (/\d+$/.test(s) && (s.includes('D') || s.includes('B') || s.includes('F'))) return true;
-
-  // Price floor: All NEPSE mutual funds have par 10 and trade below Rs. 25. Regular equities trade >= Rs. 50
+  if (isNonEquityInstrument(sym, sector, name, ltp)) return true;
   if (ltp !== undefined && ltp > 0 && ltp < 50) return true;
-
-  // Mutual fund schemes ending in F (e.g. HLICF, NICSF, SAEF, CMF2, SIGS2, etc.)
-  if (s.endsWith('F') && s.length >= 4 && !['SANIMA', 'SHIVM'].includes(s)) {
-    if (sec.includes('microfinance') || n.includes('microfinance') || n.includes('laghubitta')) return false;
-    return true;
-  }
-
   return false;
 }
 
@@ -393,6 +310,9 @@ export function evaluateMasterStock(
   const name = String(stock?.name || sym).trim();
   const sector = String(stock?.sector || stock?.sectorName || 'General').trim();
   const ltp = Number(stock?.ltp || stock?.closePrice || stock?.price || 100);
+  if (!isPureNepseEquity({ symbol: sym, sector, name, ltp }) || (ltp > 0 && ltp < 50)) {
+    return null as any;
+  }
   const pChange = Number(stock?.pChange || stock?.percentageChange || 0);
   const vol = Number(stock?.volume || stock?.totalTradedQuantity || 0);
   const turnover = Number(stock?.turnover || stock?.totalTurnover || (ltp * vol) || 0);
@@ -409,19 +329,21 @@ export function evaluateMasterStock(
     : (cachedFund?.promoterHolding !== undefined && cachedFund?.promoterHolding !== null)
       ? Number(cachedFund.promoterHolding)
       : null;
-  const promoterHoldingKnown = promoterHoldingRaw !== null;
-  const promoterHolding = promoterHoldingKnown ? promoterHoldingRaw! : 55.0; // 55% used only for display/sizing fallback when real data absent
+  const promoterHoldingKnown = promoterHoldingRaw !== null && Number.isFinite(promoterHoldingRaw);
+  const promoterHolding = promoterHoldingKnown ? promoterHoldingRaw! : 0;
 
   const universeStock = Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE.find(u => u && u.symbol === sym) : null;
-  const sharesOutM = Number(
+  const rawSharesOut = Number(
     stock?.sharesOut ||
     stock?.totalShares ||
     cachedFund?.sharesOut ||
     cachedFund?.totalShares ||
     universeStock?.sharesOut ||
-    10.0
+    0
   );
-  const publicFloatM = Number(((1 - promoterHolding / 100) * sharesOutM).toFixed(2));
+  const floatKnown = promoterHoldingKnown && rawSharesOut > 0;
+  const sharesOutM = rawSharesOut > 0 ? rawSharesOut : 0;
+  const publicFloatM = floatKnown ? Number(((1 - promoterHolding / 100) * sharesOutM).toFixed(2)) : 0;
 
   // Dual-Track Archetype: High-Growth Low-Float vs Institutional Blue-Chip Compounder
   const isBlueChipSector = sector.toLowerCase().includes('bank') ||
@@ -429,14 +351,14 @@ export function evaluateMasterStock(
                            sector.toLowerCase().includes('insurance') ||
                            sector.toLowerCase().includes('manufacturing') ||
                            sector.toLowerCase().includes('telecom');
-  const isBlueChipEligible = (eps >= 14 || bvps >= 140 || (pe > 0 && pe <= 25)) && (isBlueChipSector || publicFloatM > 15.0);
-  const track: 'MOMENTUM_RUNNER' | 'BLUE_CHIP_COMPOUNDER' = (publicFloatM > 15.0 && isBlueChipEligible)
+  const isBlueChipEligible = (eps >= 14 || bvps >= 140 || (pe > 0 && pe <= 25)) && (isBlueChipSector || (floatKnown && publicFloatM > 15.0));
+  const track: 'MOMENTUM_RUNNER' | 'BLUE_CHIP_COMPOUNDER' = (floatKnown && publicFloatM > 15.0 && isBlueChipEligible)
     ? 'BLUE_CHIP_COMPOUNDER'
     : 'MOMENTUM_RUNNER';
 
   const passesFloatGate = track === 'BLUE_CHIP_COMPOUNDER'
     ? (bvps >= 120 && eps > 0)
-    : (publicFloatM <= 15.0);
+    : (floatKnown && publicFloatM <= 15.0);
 
   // Graham Intrinsic Valuation V* = sqrt(22.5 * EPS * BVPS)
   const grahamV = (eps > 0 && bvps > 0) ? +(Math.sqrt(22.5 * eps * bvps)).toFixed(2) : 0;
@@ -661,9 +583,10 @@ export function evaluateMasterStock(
     gate1_float: {
       passed: passesFloatGate,
       label: track === 'BLUE_CHIP_COMPOUNDER' ? 'Institutional Float (Blue-Chip)' : 'Public Float <= 15M (Growth)',
-      actualValue: track === 'BLUE_CHIP_COMPOUNDER' ? `${publicFloatM}M (Institutional Blue-Chip)` : `${publicFloatM}M shares`,
+      actualValue: !floatKnown ? 'Unknown (Share structure unavailable)' : (track === 'BLUE_CHIP_COMPOUNDER' ? `${publicFloatM}M (Institutional Blue-Chip)` : `${publicFloatM}M shares`),
       threshold: track === 'BLUE_CHIP_COMPOUNDER' ? 'Solvent Balance Sheet' : '<= 15.0M shares',
-      category: 'Liquidity / Structure'
+      category: 'Liquidity / Structure',
+      isDataUnverified: !floatKnown
     },
     gate2_promoter: {
       passed: (promoterHoldingKnown ? promoterHolding >= 52.0 : false) || (stock?.stealthAccumulation || 0) >= 55 || track === 'BLUE_CHIP_COMPOUNDER',
@@ -772,10 +695,11 @@ export function evaluateMasterStock(
   const t1NetCalc = calculateNetTradeGain(ltp, target1Gross);
   const t2NetCalc = calculateNetTradeGain(ltp, target2Gross);
   const t3NetCalc = calculateNetTradeGain(ltp, target3Gross);
+  const slNetCalc = calculateNetTradeGain(ltp, stopLoss);
 
-  const riskPerShare = Math.max(0.5, ltp - stopLoss);
-  const netRewardPerShare = Math.max(0.5, t1NetCalc.netRealizedGain / 100);
-  const netRRR = +(netRewardPerShare / riskPerShare).toFixed(2);
+  const netRiskPerShare = Math.max(0.5, Math.abs(slNetCalc.netRealizedGain) / 100);
+  const netRewardPerShare = t1NetCalc.netRealizedGain / 100;
+  const netRRR = netRewardPerShare > 0 ? +(netRewardPerShare / netRiskPerShare).toFixed(2) : 0;
 
   // Empirical Walk-Forward Win Rate Calibration (Replaces static 52 + 12 estimate)
   const baseEmpiricalWinRate = Number(
@@ -895,7 +819,8 @@ export function evaluateMasterStock(
     stance = 'HOLD / DO NOT CHASE';
   }
 
-  // Disqualification reason if any
+  // Disqualification reason if any (covers ALL hard-reject conditions incl. Chase Cap)
+  const hardRejectCheck = matrixChecks.find(m => m.isHardReject);
   let disqualificationReason: string | undefined;
   if (isPromoterLockinNear) {
     disqualificationReason = `3-Year Promoter Lock-in Cliff in ${daysToLockin} days (Blacklist)`;
@@ -903,41 +828,45 @@ export function evaluateMasterStock(
     disqualificationReason = `Public Float (${publicFloatM}M shares) exceeds 15M ceiling (non-blue-chip)`;
   } else if (isDistributionTrap) {
     disqualificationReason = `Distribution Trap: Top brokers dumping shares into retail buying`;
+  } else if (ltp > chaseCap * 1.015) {
+    disqualificationReason = `Chase Cap Exceeded: LTP Rs. ${ltp} extended above Rs. ${chaseCap}`;
   } else if (setupScore < 65) {
     disqualificationReason = `Setup Score (${setupScore}/100) below institutional hurdle of 70`;
+  } else if (hardRejectCheck) {
+    disqualificationReason = hardRejectCheck.rejectReason || `Hard Reject (${hardRejectCheck.name}): ${hardRejectCheck.actual}`;
   }
 
   // Sizing with strict 1.5% portfolio risk on Rs. 100,000 reference capital (Max Risk: Rs. 1,500)
-  // Enforces dual safety gates:
-  // Gate 1: 5% ADV Liquidity Absorption Cap
-  // Gate 2: Maximum Capital Outlay Cap (never exceed available portfolio capital)
+  // Delegates to computeMasterPositionSizing so <10 kitta unaffordable/illiquid lots return allowedShares: 0.
   const refCapital = 100000;
-  const maxRiskCapital = refCapital * 0.015; // Rs. 1,500 (1.5% risk on Rs. 100K capital)
-  const unconstrainedKellyShares = Math.max(10, Math.floor(maxRiskCapital / Math.max(1, ltp - stopLoss)));
-  
-  // Liquidity absorption cap: Maximum 5% of 20-day Average Daily Volume (or session volume)
-  // Prefer genuine 20-day rolling average from history over single-session volume
   const histVols = (cachedHistory || []).slice(-20).map((c: any) => Number(c?.volume || c?.vol || 0)).filter((v: number) => v > 0);
   const adv20 = histVols.length >= 5
     ? Math.round(histVols.reduce((a: number, b: number) => a + b, 0) / histVols.length)
     : Number(stock?.adv20 || stock?.averageVolume || vol || 15000);
-  const maxLiquidityShares = Math.max(10, Math.floor(adv20 * 0.05));
-  
-  // Available capital ceiling (cannot commit more than available Rs. 100K capital)
-  const maxAffordableShares = Math.max(10, Math.floor(refCapital / Math.max(1, ltp)));
 
-  const isLiquidityCapped = unconstrainedKellyShares > maxLiquidityShares;
-  const sharesBeforeCapitalCap = isLiquidityCapped ? maxLiquidityShares : unconstrainedKellyShares;
-  const isCapitalCapped = sharesBeforeCapitalCap > maxAffordableShares;
-  const kellyShares = isCapitalCapped ? maxAffordableShares : sharesBeforeCapitalCap;
-  const capitalOutlay = kellyShares * ltp;
+  const sizing = computeMasterPositionSizing({
+    ltp,
+    stopLoss,
+    target1Gross,
+    portfolioCapital: refCapital,
+    riskTolerancePct: 1.5,
+    adv20
+  });
+  const maxLiquidityShares = sizing.maxLiquidityShares;
+  const maxAffordableShares = sizing.maxAffordableShares;
+  const isLiquidityCapped = sizing.isLiquidityCapped;
+  const isCapitalCapped = sizing.isCapitalCapped;
+  const kellyShares = sizing.allowedShares;
+  const capitalOutlay = sizing.capitalOutlay;
 
-  const capNote = isLiquidityCapped 
-    ? ` [Capped at 5% Daily Vol: ${maxLiquidityShares} units]` 
-    : isCapitalCapped 
-      ? ` [Capped at 100K Capital: ${maxAffordableShares} units]` 
-      : '';
-  const tmsOrderText = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${sym} | Type: LIMIT ORDER\nTrack: ${track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum'} (${rallyHorizonLabel})\nSetup: ${setupArchetype}\nEntry Limit: Rs. ${entryLow} (Chase Cap: Rs. ${chaseCap})\nAllocated Qty: ${kellyShares} Shares (Capital: Rs. ${capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${stopLoss} (-${stopLossPct}%)\nTarget 1: Rs. ${target1Gross} (+${t1NetCalc.netReturnPct}% Net after 10% CGT)`;
+  const capNote = sizing.isBelowMinLot
+    ? ` [Below 10-kitta NEPSE board lot / exceeds Rs. 100K budget]`
+    : isLiquidityCapped
+      ? ` [Capped at 5% Daily Vol: ${maxLiquidityShares} units]`
+      : isCapitalCapped
+        ? ` [Capped at 100K Capital: ${maxAffordableShares} units]`
+        : '';
+  const tmsOrderText = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${sym} | Type: LIMIT ORDER\nTrack: ${track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum'} (${rallyHorizonLabel})\nSetup: ${setupArchetype}\nEntry Limit: Rs. ${entryLow} (Chase Cap: Rs. ${chaseCap})\nAllocated Qty: ${kellyShares} Shares (Capital: Rs. ${capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${stopLoss} (-${stopLossPct}%)\nTarget 1: Rs. ${target1Gross} (+${t1NetCalc.netReturnPct}% Net after 7.5% CGT)`;
 
   return {
     symbol: sym,
@@ -1052,6 +981,7 @@ export function runMasterGuideAudit(
       ? { ...s, brokerAnalysis: cachedBroker, realBrokerAnalysis: cachedBroker }
       : s;
     const res = evaluateMasterStock(enrichedStock, !breadthCheck.cashDefenseActive, season?.scoreBonus || 0);
+    if (!res) continue;
     if (res.disqualificationReason) {
       disqualified.push({ symbol: res.symbol, reason: res.disqualificationReason });
     }
@@ -1074,26 +1004,34 @@ export function runMasterGuideAudit(
   });
 
   // Select Crowned Winner:
-  // If Cash Defense is active or no stock is cleared, crownedWinner is null (Capital Defense Active)
+  // If Cash Defense is active, no stock is fully cleared, or min 10-kitta lot cannot fit, crownedWinner is null
   let crownedWinner: MasterStockEvaluation | null = null;
-  if (!breadthCheck.cashDefenseActive && evaluated.length > 0 && evaluated[0].isFullyCleared) {
-    crownedWinner = evaluated[0];
-  } else if (!breadthCheck.cashDefenseActive && evaluated.length > 0 && evaluated[0].setupScore >= 70 && !evaluated[0].isDistributionTrap) {
+  if (
+    !breadthCheck.cashDefenseActive &&
+    evaluated.length > 0 &&
+    evaluated[0].isFullyCleared &&
+    evaluated[0].kellyShares >= 10 &&
+    !evaluated[0].matrixChecks.some(m => m.isHardReject)
+  ) {
     crownedWinner = evaluated[0];
   }
 
   const runnerUps = evaluated.filter(s => s.symbol !== crownedWinner?.symbol).slice(0, 15);
 
   // 20-Trade Compound Simulation: Rs. 500,000 starting capital
-  // Derive win/loss amounts from the crowned winner's actual levels, scaled to Rs. 500k account
-  const winRate = crownedWinner?.analogWinRate || 65;
-  const simWinAmount = crownedWinner
-    ? Math.max(1500, Math.round((crownedWinner.target1Gross - crownedWinner.ltp) * crownedWinner.kellyShares))
-    : 6500;
-  const simLossAmount = crownedWinner
-    ? Math.max(800, Math.round((crownedWinner.ltp - crownedWinner.stopLoss) * crownedWinner.kellyShares))
-    : 2000;
-  const sim = simulateCompoundExpectancy(500000, 20, winRate, simWinAmount * 5, simLossAmount * 5);
+  // Zero out simulation when no crownedWinner qualifies (Capital Preservation / Cash Defense)
+  const winRate = crownedWinner?.analogWinRate || 0;
+  const sim = crownedWinner
+    ? simulateCompoundExpectancy(
+        500000,
+        20,
+        winRate,
+        Math.max(1500, Math.round((crownedWinner.target1Gross - crownedWinner.ltp) * crownedWinner.kellyShares)) * 5,
+        Math.max(800, Math.round((crownedWinner.ltp - crownedWinner.stopLoss) * crownedWinner.kellyShares)) * 5
+      )
+    : { projectedFinalCapital: 500000, expectedWins: 0, expectedLosses: 0 };
+
+  const compoundEndCapital = crownedWinner ? (sim.projectedFinalCapital ?? 500000) : 500000;
 
   return {
     timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
@@ -1112,14 +1050,14 @@ export function runMasterGuideAudit(
     totalEvaluated: validStocks.length,
     compoundSimulation: {
       startingCapital: 500000,
-      endingCapital: sim.projectedFinalCapital || 1169450,
-      netProfitAmount: (sim.projectedFinalCapital || 1169450) - 500000,
-      netReturnPct: +((((sim.projectedFinalCapital || 1169450) - 500000) / 500000) * 100).toFixed(1),
-      numTrades: 20,
+      endingCapital: compoundEndCapital,
+      netProfitAmount: compoundEndCapital - 500000,
+      netReturnPct: +(((compoundEndCapital - 500000) / 500000) * 100).toFixed(1),
+      numTrades: crownedWinner ? 20 : 0,
       winRate,
-      payoffRatio: 2.5,
-      expectedWins: sim.expectedWins !== undefined ? sim.expectedWins : Math.round(20 * (winRate / 100)),
-      expectedLosses: sim.expectedLosses !== undefined ? sim.expectedLosses : (20 - Math.round(20 * (winRate / 100)))
+      payoffRatio: crownedWinner ? 2.5 : 0,
+      expectedWins: crownedWinner ? (sim.expectedWins !== undefined ? sim.expectedWins : Math.round(20 * (winRate / 100))) : 0,
+      expectedLosses: crownedWinner ? (sim.expectedLosses !== undefined ? sim.expectedLosses : (20 - Math.round(20 * (winRate / 100)))) : 0
     }
   };
 }

@@ -247,31 +247,37 @@ export function evaluateSectorFundamentalAndLockinTraps({
   lockinType = 'promoter' // 'promoter' | 'mutual_fund'
 }) {
   const traps = [];
+  const unverifiedMetrics = [];
   const sec = String(sector || '').toLowerCase();
   const f = fundamentals || {};
+  const toOptNum = (v) => (v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
 
-  // 1. Promoter & Mutual Fund Lock-In Expiry Guard (90 to 180 Days)
+  // 1. Promoter & Mutual Fund Lock-In Expiry Guard (-30 to 180 Days: imminent unlock or up to 6-month supply cliff)
   if (daysToLockInExpiry !== null && daysToLockInExpiry !== undefined && daysToLockInExpiry !== '') {
     const days = Number(daysToLockInExpiry);
-    if (Number.isFinite(days) && days >= 90 && days <= 180) {
+    if (Number.isFinite(days) && days >= -30 && days <= 180) {
       traps.push({
         code: 'VETO_LOCKIN_EXPIRY_CLIFF',
-        reason: `Lock-in Supply Cliff: ${lockinType === 'mutual_fund' ? '6-month Mutual Fund' : '3-year Promoter'} lock-in expires in ${days} days (Blackout: 90-180 days to prevent pre-unlock institutional front-running)`
+        reason: `Lock-in Supply Cliff: ${lockinType === 'mutual_fund' ? '6-month Mutual Fund' : '3-year Promoter'} lock-in expires in ${days} days (Blackout: -30 to 180 days to prevent unlock supply overhang)`
       });
     }
   }
 
   // 2. Commercial & Development Banks:
   if (sec.includes('bank')) {
-    const npl = Number(f.npl ?? f.nonPerformingLoan ?? 0);
-    const distEps = Number(f.distributableEps ?? f.distributableProfit ?? 16);
-    if (npl > 4.5) {
+    const npl = toOptNum(f.npl ?? f.nonPerformingLoan);
+    const distEps = toOptNum(f.distributableEps ?? f.distributableProfit);
+    if (npl === null) {
+      unverifiedMetrics.push('npl');
+    } else if (npl > 4.5) {
       traps.push({
         code: 'VETO_BANK_HIGH_NPL',
         reason: `Asset Quality Stress: Bank NPL is ${npl.toFixed(2)}% (Max regulatory threshold: 4.5%)`
       });
     }
-    if (distEps < 0) {
+    if (distEps === null) {
+      unverifiedMetrics.push('distributableEps');
+    } else if (distEps < 0) {
       traps.push({
         code: 'VETO_BANK_NEGATIVE_DISTRIBUTABLE',
         reason: `Capital Impairment: Bank distributable EPS is negative (Rs. ${distEps.toFixed(2)})`
@@ -281,15 +287,19 @@ export function evaluateSectorFundamentalAndLockinTraps({
 
   // 3. Microfinance (Laghubitta):
   if (sec.includes('microfinance')) {
-    const npl = Number(f.npl ?? 0);
-    const epsGrowth = Number(f.epsYoYGrowth ?? f.epsGrowth ?? 26);
-    if (npl > 5.0) {
+    const npl = toOptNum(f.npl ?? f.nonPerformingLoan);
+    const epsGrowth = toOptNum(f.epsYoYGrowth ?? f.epsGrowth);
+    if (npl === null) {
+      unverifiedMetrics.push('npl');
+    } else if (npl > 5.0) {
       traps.push({
         code: 'VETO_MICROFINANCE_ASSET_QUALITY',
         reason: `Microfinance NPL Stress: NPL is ${npl.toFixed(2)}% (> 5.0% NRB supervisory watchlist)`
       });
     }
-    if (epsGrowth <= 0) {
+    if (epsGrowth === null) {
+      unverifiedMetrics.push('epsYoYGrowth');
+    } else if (epsGrowth <= 0) {
       traps.push({
         code: 'VETO_MICROFINANCE_DECLINING_GROWTH',
         reason: `Microfinance Contraction: EPS YoY growth is ${epsGrowth.toFixed(1)}% (<= 0%)`
@@ -299,23 +309,29 @@ export function evaluateSectorFundamentalAndLockinTraps({
 
   // 4. Hydropower:
   if (sec.includes('hydro')) {
-    const codCompleted = f.codCompleted !== undefined ? Boolean(f.codCompleted) : true;
-    const costPerMW = Number(f.costPerMW ?? f.perMwCost ?? 18);
-    const bv = Number(f.bookValue ?? f.nav ?? 115);
+    const codProvided = f.codCompleted !== undefined && f.codCompleted !== null;
+    const costPerMW = toOptNum(f.costPerMW ?? f.perMwCost);
+    const bv = toOptNum(f.bookValue ?? f.bvps ?? f.nav);
 
-    if (!codCompleted) {
+    if (!codProvided) {
+      unverifiedMetrics.push('codCompleted');
+    } else if (!Boolean(f.codCompleted)) {
       traps.push({
         code: 'VETO_HYDRO_COD_INCOMPLETE',
         reason: 'Hydropower Execution Risk: COD (Commercial Operation Date) not completed or under prolonged delay'
       });
     }
-    if (costPerMW > 22.0) {
+    if (costPerMW === null) {
+      unverifiedMetrics.push('costPerMW');
+    } else if (costPerMW > 22.0) {
       traps.push({
         code: 'VETO_HYDRO_EXCESSIVE_CAPEX',
         reason: `Hydropower Capex Inflation: Cost per MW is Rs. ${costPerMW.toFixed(1)} Cr (> Rs. 22 Cr/MW ceiling)`
       });
     }
-    if (bv < 100.0) {
+    if (bv === null) {
+      unverifiedMetrics.push('bookValue');
+    } else if (bv < 100.0) {
       traps.push({
         code: 'VETO_HYDRO_SUB_PAR_BOOK_VALUE',
         reason: `Eroded Equity Base: Book Value is Rs. ${bv.toFixed(1)} (< Rs. 100 par value)`
@@ -325,16 +341,20 @@ export function evaluateSectorFundamentalAndLockinTraps({
 
   // 5. Insurance (Life & Non-Life):
   if (sec.includes('insurance')) {
-    const pe = Number(f.pe ?? f.peRatio ?? 22);
-    const invGrowth = Number(f.investmentBookGrowthQoQ ?? f.investmentGrowth ?? 5);
+    const pe = toOptNum(f.pe ?? f.peRatio);
+    const invGrowth = toOptNum(f.investmentBookGrowthQoQ ?? f.investmentGrowth);
 
-    if (pe > 45.0) {
+    if (pe === null) {
+      unverifiedMetrics.push('pe');
+    } else if (pe > 45.0) {
       traps.push({
         code: 'VETO_INSURANCE_OVERVALUATION',
         reason: `Insurance Multiples Euphoria: P/E ratio is ${pe.toFixed(1)}x (> 45.0x ceiling)`
       });
     }
-    if (invGrowth < 0) {
+    if (invGrowth === null) {
+      unverifiedMetrics.push('investmentBookGrowthQoQ');
+    } else if (invGrowth < 0) {
       traps.push({
         code: 'VETO_INSURANCE_CONTRACTING_BOOK',
         reason: `Insurance Book Contraction: Investment portfolio shrank ${invGrowth.toFixed(1)}% QoQ`
@@ -343,11 +363,18 @@ export function evaluateSectorFundamentalAndLockinTraps({
   }
 
   const passed = traps.length === 0;
+  const isFundamentalsVerified = unverifiedMetrics.length === 0;
   return {
     passed,
+    isFundamentalsVerified,
+    unverifiedMetrics,
     trapCount: traps.length,
     traps,
-    detail: passed ? 'Sector fundamentals and lock-in schedule verified' : traps.map(t => t.reason).join(' | ')
+    detail: !passed
+      ? traps.map(t => t.reason).join(' | ')
+      : isFundamentalsVerified
+        ? 'Sector fundamentals and lock-in schedule verified'
+        : `No explicit veto traps triggered; unverified metrics: ${unverifiedMetrics.join(', ')}`
   };
 }
 
@@ -461,7 +488,20 @@ export function evaluatePillar1_WyckoffVduVcp({
 }) {
   const avgVol = Number(avgVolume20D || 0);
   const vol = Number(recentVolume || 0);
-  const vduRatio = avgVol > 0 ? +(vol / avgVol).toFixed(2) : 0.50;
+  if (!Number.isFinite(avgVol) || avgVol <= 0) {
+    return {
+      pillar: 1,
+      name: 'Wyckoff Phase C / VDU & VCP',
+      passed: false,
+      vduRatio: null,
+      vduThreshold,
+      isVduMet: false,
+      isVcpMet: false,
+      rangeContractionRatio: null,
+      detail: '20D average volume unavailable — cannot verify Wyckoff VDU'
+    };
+  }
+  const vduRatio = +(vol / avgVol).toFixed(2);
 
   // Supply exhaustion: vduRatio <= threshold
   const isVduMet = vduRatio <= vduThreshold;
@@ -521,12 +561,12 @@ export function evaluatePillar2_SmartMoneyAbsorption({
   totalSellQty = 0,
   threshold5DRetention = 0.75
 }) {
-  let bcr3Buy = Number(bcr3BuyPct ?? 0);
-  let bcr3Sell = Number(bcr3SellPct ?? 0);
+  let bcr3Buy = (bcr3BuyPct !== null && bcr3BuyPct !== undefined && Number.isFinite(Number(bcr3BuyPct))) ? Number(bcr3BuyPct) : null;
+  let bcr3Sell = (bcr3SellPct !== null && bcr3SellPct !== undefined && Number.isFinite(Number(bcr3SellPct))) ? Number(bcr3SellPct) : null;
   let circularWashPct = 0;
   let buyers = Array.isArray(topBuyerBrokers) ? [...topBuyerBrokers] : [];
   let sellers = [];
-  let singleDayNetRetention = 0.80; // default assumption if already pre-filtered
+  let singleDayNetRetention = null;
   let buyTradesCount = Number(totalBuyTrades || 0);
   let sellTradesCount = Number(totalSellTrades || 0);
   let buyVolume = Number(totalBuyQty || 0);
@@ -598,29 +638,37 @@ export function evaluatePillar2_SmartMoneyAbsorption({
     sellVolume = decontamSellVol;
   }
 
-  // BCR3 Single Day Gate: BCR3_Buy >= 40% AND net retention >= 0.70
-  const isBcr3Met = bcr3Buy >= 40.0;
-  const isSingleDayRetentionMet = singleDayNetRetention >= 0.70;
-
   // 5-Day Rolling Retention Check (BCR5_5D >= 75%)
-  let rolling5DRetention = 0.82;
+  let rolling5DRetention = null;
   if (rolling5DBrokerData) {
-    const gross5D = Number(rolling5DBrokerData.grossBuy5D || rolling5DBrokerData.totalBuy5D || 100);
-    const net5D = Number(rolling5DBrokerData.netBuy5D || rolling5DBrokerData.netAccumulated5D || 80);
-    rolling5DRetention = gross5D > 0 ? +(net5D / gross5D).toFixed(2) : 0.80;
+    const rawGross5D = Number(rolling5DBrokerData.grossBuy5D ?? rolling5DBrokerData.totalBuy5D);
+    const rawNet5D = Number(rolling5DBrokerData.netBuy5D ?? rolling5DBrokerData.netAccumulated5D);
+    if (Number.isFinite(rawGross5D) && rawGross5D > 0 && Number.isFinite(rawNet5D)) {
+      rolling5DRetention = +(rawNet5D / rawGross5D).toFixed(2);
+    }
   }
-  const is5DRetentionMet = rolling5DRetention >= threshold5DRetention;
+  if (singleDayNetRetention === null && (!floorsheetTrades || floorsheetTrades.length === 0) && rolling5DRetention !== null) {
+    singleDayNetRetention = rolling5DRetention;
+  }
+
+  // BCR3 Single Day Gate: BCR3_Buy >= 40% AND net retention >= 0.70
+  const isBcr3Met = bcr3Buy !== null && bcr3Buy >= 40.0;
+  const isSingleDayRetentionMet = singleDayNetRetention !== null && singleDayNetRetention >= 0.70;
+  const is5DRetentionMet = rolling5DRetention !== null && rolling5DRetention >= threshold5DRetention;
 
   // Average Ticket Size Ratio (ATSR):
   // ATSR = (Avg Shares per Buy Tx) / (Avg Shares per Sell Tx) >= 2.2
-  let avgBuyTicket = 450;
-  let avgSellTicket = 180;
+  let avgBuyTicket = null;
+  let avgSellTicket = null;
+  let atsr = null;
   if (buyTradesCount > 0 && sellTradesCount > 0 && buyVolume > 0 && sellVolume > 0) {
     avgBuyTicket = buyVolume / buyTradesCount;
     avgSellTicket = sellVolume / sellTradesCount;
+    if (avgSellTicket > 0) {
+      atsr = +(avgBuyTicket / avgSellTicket).toFixed(2);
+    }
   }
-  const atsr = avgSellTicket > 0 ? +(avgBuyTicket / avgSellTicket).toFixed(2) : 2.5;
-  const isAtsrMet = atsr >= 2.2;
+  const isAtsrMet = atsr !== null && atsr >= 2.2;
 
   const passed = isBcr3Met && isSingleDayRetentionMet && is5DRetentionMet && isAtsrMet;
 
@@ -634,13 +682,13 @@ export function evaluatePillar2_SmartMoneyAbsorption({
     isBcr3Met,
     singleDayNetRetention,
     isSingleDayRetentionMet,
-    rolling5DRetentionPct: Math.round(rolling5DRetention * 100),
+    rolling5DRetentionPct: rolling5DRetention !== null ? Math.round(rolling5DRetention * 100) : null,
     is5DRetentionMet,
     atsr,
     isAtsrMet,
     topBuyerBrokers: buyers,
     topSellerBrokers: sellers,
-    detail: `BCR3 Buy: ${bcr3Buy}% (>=40%) | BCR3 Sell: ${bcr3Sell}% (<38%) | 1D Retention: ${Math.round(singleDayNetRetention * 100)}% (>=70%) | 5D Retention: ${Math.round(rolling5DRetention * 100)}% (>=${Math.round(threshold5DRetention * 100)}%) | ATSR: ${atsr}x (>=2.2x)`
+    detail: `BCR3 Buy: ${bcr3Buy !== null ? `${bcr3Buy}%` : 'N/A'} (>=40%) | BCR3 Sell: ${bcr3Sell !== null ? `${bcr3Sell}%` : 'N/A'} (<38%) | 1D Retention: ${singleDayNetRetention !== null ? `${Math.round(singleDayNetRetention * 100)}%` : 'N/A'} (>=70%) | 5D Retention: ${rolling5DRetention !== null ? `${Math.round(rolling5DRetention * 100)}%` : 'N/A'} (>=${Math.round(threshold5DRetention * 100)}%) | ATSR: ${atsr !== null ? `${atsr}x` : 'N/A'} (>=2.2x)`
   };
 }
 
@@ -707,30 +755,34 @@ export function evaluatePillar3_VolumePriceValidation({
  */
 export function evaluatePillar4_TrendAndSectorRS({
   ltp,
-  ema50,
-  ema50Prev,
-  sector = 'Hydro Power',
-  sectorRank10D = 2,
-  stock10DReturn = 4.5,
-  sector10DReturn = 2.8,
+  ema50 = null,
+  ema50Prev = null,
+  sector = '',
+  sectorRank10D = null,
+  stock10DReturn = null,
+  sector10DReturn = null,
   canonicalSectorList = CANONICAL_SUB_INDICES
 }) {
   const currentPrice = Number(ltp || 0);
-  const e50 = Number(ema50 || (currentPrice * 0.95));
-  const e50Prior = Number(ema50Prev || (e50 * 0.999));
+  const e50 = (ema50 !== null && ema50 !== undefined && Number.isFinite(Number(ema50)) && Number(ema50) > 0) ? Number(ema50) : null;
+  const e50Prior = (ema50Prev !== null && ema50Prev !== undefined && Number.isFinite(Number(ema50Prev)) && Number(ema50Prev) > 0) ? Number(ema50Prev) : null;
 
-  // 1. LTP > 50-day EMA and rising EMA
-  const isAboveEma50 = currentPrice > e50;
-  const isEmaRising = e50 >= e50Prior;
+  // 1. LTP > 50-day EMA and rising EMA (never synthesize ema50 from ltp)
+  const isAboveEma50 = e50 !== null && currentPrice > 0 && currentPrice > e50;
+  const isEmaRising = e50 !== null && (e50Prior === null ? true : e50 >= e50Prior);
   const isTrendMet = isAboveEma50 && isEmaRising;
 
   // 2. Mansfield Relative Strength Gate:
   // Sub-sector ranks in Top 3 of 13 NEPSE sub-indices over 10D
-  const rank = Number(sectorRank10D || 1);
-  const isSectorTop3 = rank <= 3;
+  const rank = (sectorRank10D !== null && sectorRank10D !== undefined && Number.isFinite(Number(sectorRank10D)) && Number(sectorRank10D) > 0)
+    ? Number(sectorRank10D)
+    : null;
+  const isSectorTop3 = rank !== null && rank <= 3;
 
   // Scrip outperforming sub-index
-  const isOutperformingSector = Number(stock10DReturn || 0) >= Number(sector10DReturn || 0);
+  const stockRet = (stock10DReturn !== null && stock10DReturn !== undefined && Number.isFinite(Number(stock10DReturn))) ? Number(stock10DReturn) : null;
+  const secRet = (sector10DReturn !== null && sector10DReturn !== undefined && Number.isFinite(Number(sector10DReturn))) ? Number(sector10DReturn) : null;
+  const isOutperformingSector = stockRet !== null && secRet !== null && stockRet >= secRet;
 
   const passed = isTrendMet && isSectorTop3 && isOutperformingSector;
 
@@ -744,10 +796,10 @@ export function evaluatePillar4_TrendAndSectorRS({
     sectorRank10D: rank,
     totalSectors: canonicalSectorList.length || 13,
     isSectorTop3,
-    stock10DReturn: Number(stock10DReturn || 0),
-    sector10DReturn: Number(sector10DReturn || 0),
+    stock10DReturn: stockRet,
+    sector10DReturn: secRet,
     isOutperformingSector,
-    detail: `LTP vs 50 EMA: ${isAboveEma50 ? 'Above' : 'Below'} (Rising: ${isEmaRising ? 'YES' : 'NO'}) | Sector: ${sector} (#${rank}/13 RS Rank) | Alpha vs Sector: +${(Number(stock10DReturn) - Number(sector10DReturn)).toFixed(1)}%`
+    detail: `LTP vs 50 EMA: ${e50 === null ? 'N/A' : (isAboveEma50 ? 'Above' : 'Below')} (Rising: ${isEmaRising ? 'YES' : 'NO'}) | Sector: ${sector || 'N/A'} (${rank !== null ? `#${rank}/13` : 'N/A'} RS Rank) | Alpha vs Sector: ${(stockRet !== null && secRet !== null) ? `${(stockRet - secRet >= 0 ? '+' : '')}${(stockRet - secRet).toFixed(1)}%` : 'N/A'}`
   };
 }
 

@@ -1,37 +1,39 @@
+// proxy/syncRouter.mjs
+// Authenticated Multi-Device Cloud Sync Bridge (salted scrypt hashing, HMAC bearer tokens, zero credential persistence).
+
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { pool, query } from './db.mjs';
+import {
+  hashPasswordServer,
+  verifyPasswordServer,
+  issueSyncSessionToken,
+  verifySyncSessionToken
+} from './utils/syncSessionToken.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = Router();
 
-// Constant-time timing-safe password hash verification
-function verifyPasswordHash(storedHash, providedHash) {
-  if (!storedHash || !providedHash) return false;
-  const bufA = Buffer.from(String(storedHash));
-  const bufB = Buffer.from(String(providedHash));
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
+// Strict Cache-Control for sensitive synced vault payloads
+router.use((req, res, next) => {
+  res.set('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+  res.set('Pragma', 'no-cache');
+  next();
+});
+
+function resolveVaultDir() {
+  const baseDataDir = (process.env.NEPSE_DATA_DIR && fs.existsSync(process.env.NEPSE_DATA_DIR))
+    ? process.env.NEPSE_DATA_DIR
+    : path.resolve(__dirname, 'data');
+  return path.join(baseDataDir, 'sync_vaults');
 }
 
-// Data storage directories
-const VAULT_DIR = path.resolve(__dirname, 'data', 'sync_vaults');
-const SEED_FILE = path.resolve(__dirname, 'data', 'sync_vaults_seed.json');
-
-try {
-  if (!fs.existsSync(VAULT_DIR)) {
-    fs.mkdirSync(VAULT_DIR, { recursive: true });
-  }
-} catch (e) {
-  console.warn('[SyncRouter] Could not initialize vault directory:', e.message);
-}
-
-// In-memory cache to guarantee rapid access and high throughput
+// In-memory cache keyed cleanly per storage directory
 const memoryVaults = new Map();
 
 const getSafeKey = (app = 'general', email = '') => {
@@ -40,7 +42,51 @@ const getSafeKey = (app = 'general', email = '') => {
   return `${cleanApp}___${cleanEmail}`;
 };
 
-const getFilePath = (key) => path.join(VAULT_DIR, `${key}.json`);
+const getFilePath = (key) => path.join(resolveVaultDir(), `${key}.json`);
+
+function deriveServerUid(cleanEmail) {
+  return 'usr_' + crypto.createHash('sha256').update(String(cleanEmail)).digest('hex').slice(0, 12);
+}
+
+/**
+ * Strips any plaintext/vaulted MeroShare credentials before persistence or sync responses.
+ */
+export function stripSensitiveCredentials(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const cleaned = { ...data };
+  delete cleaned.credentials;
+  delete cleaned.subscription;
+
+  const sanitizeArr = (arr) => {
+    if (!Array.isArray(arr)) return arr;
+    return arr.map((item) => {
+      if (!item || typeof item !== 'object') return item;
+      const { password, crn, pin, transactionPin, vaultEnvelope, ...safeItem } = item;
+      return {
+        ...safeItem,
+        hasLocalCredentials: Boolean(
+          safeItem.hasLocalCredentials || password || pin || transactionPin || vaultEnvelope
+        )
+      };
+    });
+  };
+
+  if (Array.isArray(cleaned.profiles)) {
+    cleaned.profiles = sanitizeArr(cleaned.profiles);
+  }
+  if (Array.isArray(cleaned.bulkAccounts)) {
+    cleaned.bulkAccounts = sanitizeArr(cleaned.bulkAccounts);
+  }
+  return cleaned;
+}
+
+function extractBearerToken(req) {
+  const authHeader = req.headers?.authorization || req.headers?.Authorization;
+  if (typeof authHeader === 'string' && /^Bearer\s+/i.test(authHeader)) {
+    return authHeader.replace(/^Bearer\s+/i, '').trim();
+  }
+  return null;
+}
 
 let isDbTableReady = false;
 const ensureSyncTable = async () => {
@@ -66,17 +112,16 @@ const ensureSyncTable = async () => {
   }
 };
 
-// Load existing vaults from disk, seed file, and PostgreSQL on startup
 const preloadVaults = async () => {
-  // 1. Load from individual disk files
+  const vaultDir = resolveVaultDir();
   try {
-    if (fs.existsSync(VAULT_DIR)) {
-      const files = fs.readdirSync(VAULT_DIR);
+    if (fs.existsSync(vaultDir)) {
+      const files = fs.readdirSync(vaultDir);
       for (const file of files) {
         if (file.endsWith('.json')) {
           try {
             const key = file.replace('.json', '');
-            const content = fs.readFileSync(path.join(VAULT_DIR, file), 'utf8');
+            const content = fs.readFileSync(path.join(vaultDir, file), 'utf8');
             memoryVaults.set(key, JSON.parse(content));
           } catch (_) {}
         }
@@ -86,24 +131,6 @@ const preloadVaults = async () => {
     console.warn('[SyncRouter] Error preloading vaults from disk:', err.message);
   }
 
-  // 2. Load from seed file (essential for containers with ephemeral disk like Render)
-  try {
-    if (fs.existsSync(SEED_FILE)) {
-      const seedContent = fs.readFileSync(SEED_FILE, 'utf8');
-      const seedObj = JSON.parse(seedContent);
-      if (seedObj && typeof seedObj === 'object') {
-        for (const [key, vault] of Object.entries(seedObj)) {
-          if (!memoryVaults.has(key)) {
-            memoryVaults.set(key, vault);
-          }
-        }
-      }
-    }
-  } catch (seedErr) {
-    console.warn('[SyncRouter] Error preloading vaults from seed:', seedErr.message);
-  }
-
-  // 3. Load from PostgreSQL if pool is available
   if (pool) {
     try {
       await ensureSyncTable();
@@ -115,44 +142,41 @@ const preloadVaults = async () => {
             email: row.email,
             name: row.name,
             passwordHash: row.password_hash,
-            data: row.data || {},
+            data: stripSensitiveCredentials(row.data || {}),
             createdAt: row.created_at,
             updatedAt: row.updated_at,
             syncVersion: row.sync_version
           });
         }
-        console.log(`[SyncRouter] Preloaded ${res.rows.length} vaults from PostgreSQL database.`);
       }
     } catch (dbErr) {
       console.warn('[SyncRouter] DB preload notice:', dbErr.message);
     }
   }
-
-  console.log(`[SyncRouter] Active in-memory cloud sync vaults: ${memoryVaults.size}`);
 };
 
 preloadVaults();
 
 const saveVault = async (key, vaultData) => {
-  memoryVaults.set(key, vaultData);
+  const sanitizedVault = {
+    ...vaultData,
+    data: stripSensitiveCredentials(vaultData.data || {})
+  };
+  memoryVaults.set(key, sanitizedVault);
 
-  // 1. Write individual JSON file to disk
+  const vaultDir = resolveVaultDir();
   try {
-    if (!fs.existsSync(VAULT_DIR)) {
-      fs.mkdirSync(VAULT_DIR, { recursive: true });
+    if (!fs.existsSync(vaultDir)) {
+      fs.mkdirSync(vaultDir, { recursive: true });
     }
-    fs.writeFileSync(getFilePath(key), JSON.stringify(vaultData, null, 2), 'utf8');
+    const target = getFilePath(key);
+    const tmp = `${target}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(sanitizedVault, null, 2), 'utf8');
+    fs.renameSync(tmp, target);
   } catch (err) {
     console.warn(`[SyncRouter] Failed to write vault ${key} to disk:`, err.message);
   }
 
-  // 2. Update committed seed file to persist across container restarts
-  try {
-    const allVaults = Object.fromEntries(memoryVaults.entries());
-    fs.writeFileSync(SEED_FILE, JSON.stringify(allVaults, null, 2), 'utf8');
-  } catch (_) {}
-
-  // 3. Upsert to PostgreSQL if pool is available
   if (pool) {
     try {
       await ensureSyncTable();
@@ -167,13 +191,13 @@ const saveVault = async (key, vaultData) => {
           sync_version = EXCLUDED.sync_version;
       `, [
         key,
-        vaultData.app || 'nepse',
-        vaultData.email,
-        vaultData.name || '',
-        vaultData.passwordHash || '',
-        JSON.stringify(vaultData.data || {}),
-        vaultData.updatedAt || new Date().toISOString(),
-        vaultData.syncVersion || 1
+        sanitizedVault.app || 'nepse',
+        sanitizedVault.email,
+        sanitizedVault.name || '',
+        sanitizedVault.passwordHash || '',
+        JSON.stringify(sanitizedVault.data || {}),
+        sanitizedVault.updatedAt || new Date().toISOString(),
+        sanitizedVault.syncVersion || 1
       ]);
     } catch (dbErr) {
       console.warn(`[SyncRouter] DB upsert failed for ${key}:`, dbErr.message);
@@ -185,7 +209,6 @@ const getVault = async (key) => {
   if (memoryVaults.has(key)) {
     return memoryVaults.get(key);
   }
-  // Try disk file
   const fp = getFilePath(key);
   if (fs.existsSync(fp)) {
     try {
@@ -194,7 +217,6 @@ const getVault = async (key) => {
       return data;
     } catch (_) {}
   }
-  // Try PostgreSQL
   if (pool) {
     try {
       await ensureSyncTable();
@@ -206,7 +228,7 @@ const getVault = async (key) => {
           email: row.email,
           name: row.name,
           passwordHash: row.password_hash,
-          data: row.data || {},
+          data: stripSensitiveCredentials(row.data || {}),
           createdAt: row.created_at,
           updatedAt: row.updated_at,
           syncVersion: row.sync_version
@@ -223,11 +245,10 @@ const getVault = async (key) => {
 
 // ─── ROUTES ───────────────────────────────────────────────────────────────────
 
-// Health & status
 router.get('/health', (req, res) => {
   res.json({
     status: 'OK',
-    service: 'Kharcha & NEPSE Multi-Device Cloud Sync Bridge',
+    service: 'Drabyashree Cloud Sync Bridge',
     activeVaults: memoryVaults.size,
     dbConnected: Boolean(pool),
     timestamp: new Date().toISOString()
@@ -239,12 +260,16 @@ router.post('/register', async (req, res) => {
   try {
     const { app = 'general', email, passwordHash, name, initialData } = req.body || {};
     const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanApp = String(app || 'general').trim().toLowerCase();
 
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return res.status(400).json({ success: false, message: 'Valid email address is required.' });
     }
+    if (!passwordHash || String(passwordHash).trim().length < 6) {
+      return res.status(400).json({ success: false, message: 'Password verifier is required to register.' });
+    }
 
-    const key = getSafeKey(app, cleanEmail);
+    const key = getSafeKey(cleanApp, cleanEmail);
     const existing = await getVault(key);
 
     if (existing) {
@@ -255,24 +280,29 @@ router.post('/register', async (req, res) => {
       });
     }
 
+    const uid = deriveServerUid(cleanEmail);
+    const now = new Date().toISOString();
     const newVault = {
-      app: String(app).toLowerCase(),
+      uid,
+      app: cleanApp,
       email: cleanEmail,
       name: (name || cleanEmail.split('@')[0]).trim(),
-      passwordHash: passwordHash || '',
-      data: initialData || {},
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      passwordHash: hashPasswordServer(String(passwordHash)),
+      data: stripSensitiveCredentials(initialData || {}),
+      createdAt: now,
+      updatedAt: now,
       syncVersion: 1
     };
 
     await saveVault(key, newVault);
+    const token = issueSyncSessionToken({ uid, email: cleanEmail, app: cleanApp });
 
-    console.log(`[SyncRouter] Registered new cloud vault for [${app}] ${cleanEmail}`);
     res.json({
       success: true,
+      token,
       message: 'Account successfully registered and synced with cloud.',
       user: {
+        uid,
         email: cleanEmail,
         name: newVault.name,
         lastSyncedAt: newVault.updatedAt
@@ -288,60 +318,76 @@ router.post('/register', async (req, res) => {
 // Login and pull remote vault
 router.post('/login', async (req, res) => {
   try {
-    const { app = 'general', email, passwordHash, autoRegisterIfMissing, initialData } = req.body || {};
+    const { app = 'general', email, passwordHash, legacyPasswordHash } = req.body || {};
     const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanApp = String(app || 'general').trim().toLowerCase();
 
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return res.status(400).json({ success: false, message: 'Valid email address is required.' });
     }
 
-    const key = getSafeKey(app, cleanEmail);
-    let vault = await getVault(key);
+    const key = getSafeKey(cleanApp, cleanEmail);
+    const vault = await getVault(key);
 
-    // If not found and autoRegister is requested:
     if (!vault) {
-      if (autoRegisterIfMissing) {
-        vault = {
-          app: String(app).toLowerCase(),
-          email: cleanEmail,
-          name: cleanEmail.split('@')[0],
-          passwordHash: passwordHash || '',
-          data: initialData || {},
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          syncVersion: 1
-        };
-        await saveVault(key, vault);
-        console.log(`[SyncRouter] Auto-registered new cloud vault on login for [${app}] ${cleanEmail}`);
-      } else {
-        return res.status(404).json({
-          success: false,
-          code: 'USER_NOT_FOUND',
-          message: 'No account found with this email. Please register first.'
-        });
-      }
+      return res.status(404).json({
+        success: false,
+        code: 'USER_NOT_FOUND',
+        message: 'No account found with this email. Please register first.'
+      });
+    }
+    if (vault.email && String(vault.email).toLowerCase() !== cleanEmail) {
+      return res.status(403).json({
+        success: false,
+        code: 'FORBIDDEN',
+        message: 'Vault identity mismatch.'
+      });
     }
 
-    // Strictly verify passwordHash if vault requires authentication
-    if (vault.passwordHash) {
-      if (!passwordHash || !verifyPasswordHash(vault.passwordHash, passwordHash)) {
-        return res.status(401).json({
-          success: false,
-          code: 'INVALID_CREDENTIALS',
-          message: 'Invalid password. Please check your credentials.'
-        });
-      }
+    if (!vault.passwordHash) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_CREDENTIALS',
+        message: 'Vault lacks valid password verifier.'
+      });
     }
+
+    let check = verifyPasswordServer(vault.passwordHash, passwordHash);
+    let upgradeSource = passwordHash;
+    if (!check.valid && legacyPasswordHash) {
+      check = verifyPasswordServer(vault.passwordHash, legacyPasswordHash);
+      upgradeSource = passwordHash || legacyPasswordHash;
+    }
+
+    if (!check.valid) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid password. Please check your credentials.'
+      });
+    }
+
+    const uid = vault.uid || deriveServerUid(cleanEmail);
+    if (check.needsUpgrade && upgradeSource) {
+      vault.uid = uid;
+      vault.passwordHash = hashPasswordServer(String(upgradeSource));
+      await saveVault(key, vault);
+    }
+
+    const token = issueSyncSessionToken({ uid, email: cleanEmail, app: cleanApp });
+    const safeData = stripSensitiveCredentials(vault.data || {});
 
     res.json({
       success: true,
+      token,
       message: 'Login successful. Cloud data synchronized.',
       user: {
+        uid,
         email: cleanEmail,
         name: vault.name,
         lastSyncedAt: vault.updatedAt
       },
-      data: vault.data,
+      data: safeData,
       updatedAt: vault.updatedAt
     });
   } catch (err) {
@@ -350,71 +396,94 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Push local data snapshot to cloud
+// Push authenticated local data snapshot to cloud
 router.post('/push', async (req, res) => {
   try {
     const { app = 'general', email, passwordHash, data, name } = req.body || {};
     const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanApp = String(app || 'general').trim().toLowerCase();
 
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return res.status(400).json({ success: false, message: 'Valid email address is required.' });
     }
 
-    const key = getSafeKey(app, cleanEmail);
+    const bearer = extractBearerToken(req);
+    const claims = bearer ? verifySyncSessionToken(bearer) : null;
+
+    if (bearer && !claims) {
+      return res.status(401).json({ success: false, code: 'INVALID_TOKEN', message: 'Invalid or expired session token.' });
+    }
+
+    if (claims && (claims.email !== cleanEmail || claims.app !== cleanApp)) {
+      return res.status(403).json({ success: false, code: 'FORBIDDEN', message: 'Token does not grant access to this vault.' });
+    }
+
+    const key = getSafeKey(cleanApp, cleanEmail);
     let vault = await getVault(key);
 
-    const now = new Date().toISOString();
-
     if (!vault) {
-      // Auto-create on first push
+      if (!claims) {
+        return res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: 'Authentication required to push cloud sync data.' });
+      }
+      const now = new Date().toISOString();
       vault = {
-        app: String(app).toLowerCase(),
+        uid: claims.uid || deriveServerUid(cleanEmail),
+        app: cleanApp,
         email: cleanEmail,
         name: (name || cleanEmail.split('@')[0]).trim(),
-        passwordHash: passwordHash || '',
-        data: (data && typeof data === 'object' && !Array.isArray(data)) ? { ...data } : (data || {}),
+        passwordHash: '',
+        data: {},
         createdAt: now,
         updatedAt: now,
-        syncVersion: 1
+        syncVersion: 0
       };
     } else {
-      // Strictly verify passwordHash if vault requires authentication
-      if (vault.passwordHash) {
-        if (!passwordHash || !verifyPasswordHash(vault.passwordHash, passwordHash)) {
+      if (vault.email && String(vault.email).toLowerCase() !== cleanEmail) {
+        return res.status(403).json({ success: false, code: 'FORBIDDEN', message: 'Vault identity mismatch.' });
+      }
+      if (!claims) {
+        const check = vault.passwordHash ? verifyPasswordServer(vault.passwordHash, passwordHash) : { valid: false };
+        if (!check.valid) {
           return res.status(401).json({
             success: false,
-            code: 'INVALID_CREDENTIALS',
-            message: 'Invalid credentials. Password required to modify this vault.'
+            code: 'UNAUTHORIZED',
+            message: 'Valid session token or credentials required to push vault.'
           });
         }
-      }
-
-      // Update data snapshot with safe intelligent merge
-      if (data !== undefined && data !== null) {
-        if (typeof data === 'object' && !Array.isArray(data) && typeof vault.data === 'object' && !Array.isArray(vault.data)) {
-          const merged = { ...vault.data };
-          for (const [k, val] of Object.entries(data)) {
-            if (Array.isArray(val)) {
-              // Safety: Never let an empty array overwrite an existing populated array!
-              if (val.length === 0 && Array.isArray(merged[k]) && merged[k].length > 0) {
-                continue;
-              }
-              merged[k] = val;
-            } else if (val !== null && typeof val === 'object') {
-              merged[k] = { ...(merged[k] || {}), ...val };
-            } else if (val !== undefined) {
-              merged[k] = val;
-            }
-          }
-          vault.data = merged;
-        } else {
-          vault.data = data;
+        if (check.needsUpgrade && passwordHash) {
+          vault.passwordHash = hashPasswordServer(String(passwordHash));
         }
       }
-      if (name) vault.name = name.trim();
-      vault.updatedAt = now;
-      vault.syncVersion = (vault.syncVersion || 0) + 1;
     }
+
+    const now = new Date().toISOString();
+    const sanitizedIncoming = stripSensitiveCredentials(data);
+
+    if (sanitizedIncoming !== undefined && sanitizedIncoming !== null) {
+      if (typeof sanitizedIncoming === 'object' && !Array.isArray(sanitizedIncoming) && typeof vault.data === 'object' && !Array.isArray(vault.data)) {
+        const merged = { ...vault.data };
+        for (const [k, val] of Object.entries(sanitizedIncoming)) {
+          if (k === 'credentials' || k === 'subscription') continue;
+          if (Array.isArray(val)) {
+            if (val.length === 0 && Array.isArray(merged[k]) && merged[k].length > 0) {
+              continue;
+            }
+            merged[k] = val;
+          } else if (val !== null && typeof val === 'object') {
+            merged[k] = { ...(merged[k] || {}), ...val };
+          } else if (val !== undefined) {
+            merged[k] = val;
+          }
+        }
+        vault.data = stripSensitiveCredentials(merged);
+      } else {
+        vault.data = sanitizedIncoming;
+      }
+    }
+
+    if (name) vault.name = String(name).trim();
+    vault.updatedAt = now;
+    vault.syncVersion = (vault.syncVersion || 0) + 1;
 
     await saveVault(key, vault);
 
@@ -430,19 +499,39 @@ router.post('/push', async (req, res) => {
   }
 });
 
-// Pull cloud data snapshot
-router.all('/pull', async (req, res) => {
+// Pull authenticated cloud data snapshot (POST only — never expose credentials/data in GET query logs)
+router.post('/pull', async (req, res) => {
   try {
-    const app = req.body?.app || req.query?.app || 'general';
-    const email = req.body?.email || req.query?.email || '';
-    const passwordHash = req.body?.passwordHash || req.query?.passwordHash || '';
+    const app = req.body?.app || 'general';
+    const email = req.body?.email || '';
+    const passwordHash = req.body?.passwordHash || '';
     const cleanEmail = String(email).trim().toLowerCase();
+    const cleanApp = String(app).trim().toLowerCase();
 
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return res.status(400).json({ success: false, message: 'Valid email address is required.' });
     }
 
-    const key = getSafeKey(app, cleanEmail);
+    const bearer = extractBearerToken(req);
+    const claims = bearer ? verifySyncSessionToken(bearer) : null;
+
+    if (bearer && !claims) {
+      return res.status(401).json({ success: false, code: 'INVALID_TOKEN', message: 'Invalid or expired session token.' });
+    }
+
+    if (claims && (claims.email !== cleanEmail || claims.app !== cleanApp)) {
+      return res.status(403).json({ success: false, code: 'FORBIDDEN', message: 'Token does not grant access to this vault.' });
+    }
+
+    if (!claims && !passwordHash) {
+      return res.status(401).json({
+        success: false,
+        code: 'UNAUTHORIZED',
+        message: 'Valid session token or credentials required to access this vault.'
+      });
+    }
+
+    const key = getSafeKey(cleanApp, cleanEmail);
     const vault = await getVault(key);
 
     if (!vault) {
@@ -452,21 +541,32 @@ router.all('/pull', async (req, res) => {
         message: 'No cloud vault found for this account.'
       });
     }
+    if (vault.email && String(vault.email).toLowerCase() !== cleanEmail) {
+      return res.status(403).json({
+        success: false,
+        code: 'FORBIDDEN',
+        message: 'Vault identity mismatch.'
+      });
+    }
 
-    // Strictly verify passwordHash if vault requires authentication
-    if (vault.passwordHash) {
-      if (!passwordHash || !verifyPasswordHash(vault.passwordHash, passwordHash)) {
+    if (!claims) {
+      const check = vault.passwordHash ? verifyPasswordServer(vault.passwordHash, passwordHash) : { valid: false };
+      if (!check.valid) {
         return res.status(401).json({
           success: false,
           code: 'INVALID_CREDENTIALS',
-          message: 'Invalid credentials. Password required to access this vault.'
+          message: 'Invalid credentials. Access denied.'
         });
+      }
+      if (check.needsUpgrade && passwordHash) {
+        vault.passwordHash = hashPasswordServer(String(passwordHash));
+        await saveVault(key, vault);
       }
     }
 
     res.json({
       success: true,
-      data: vault.data,
+      data: stripSensitiveCredentials(vault.data || {}),
       updatedAt: vault.updatedAt,
       syncVersion: vault.syncVersion || 1
     });

@@ -214,8 +214,10 @@ function parseIntradayCandles(rawTicks: any[], ltp?: number): CandleData[] {
   return result;
 }
 
+const EMPTY_CANDLES: CandleData[] = [];
+
 export function StockCandlestickChart({
-  candles = [],
+  candles = EMPTY_CANDLES,
   levels,
   symbol,
   ltp,
@@ -1100,8 +1102,23 @@ export function StockCandlestickChart({
     };
     window.addEventListener('resize', handleResize);
 
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && chartContainerRef.current) {
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 0 && chartRef.current) {
+            chartRef.current.applyOptions({ width: entry.contentRect.width });
+          }
+        }
+      });
+      resizeObserver.observe(chartContainerRef.current);
+    }
+
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;

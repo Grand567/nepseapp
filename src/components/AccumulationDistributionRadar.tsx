@@ -7,6 +7,7 @@ import {
   Download, Upload, Crown, ChevronDown, ChevronUp, Users
 } from 'lucide-react';
 import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, fetchRealBrokerAnalysis, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchMarketWideBrokerSummaryMap, fetchPrecomputedRadar, fetchPrecomputedDiagnostic, fetchAvailableTradingDates, getCachedStocks } from '../utils/liveData';
+import { isNepseTradingDay } from '../utils/nepseCalendar';
 import { BUNDLED_BROKER_DATE, bundledBrokerMap } from '../utils/historyCache.js';
 import { triggerFileDownload } from '../utils/fileExport';
 import {
@@ -648,7 +649,10 @@ export function AccumulationDistributionRadar({
   const [isRecalculatingTimeframe, setIsRecalculatingTimeframe] = useState<boolean>(false);
   const [diagnosticDays, setDiagnosticDays] = useState<number>(1);
   const [diagnosticLoading, setDiagnosticLoading] = useState<boolean>(false);
-  const [loadedTradingDays, setLoadedTradingDays] = useState<number>(32);
+  const [loadedTradingDays, setLoadedTradingDays] = useState<number>(() => {
+    if (Array.isArray(propAvailableDates) && propAvailableDates.length > 0) return propAvailableDates.length;
+    return 45;
+  });
   const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
   const [zeroSumAudit, setZeroSumAudit] = useState<{
     loading: boolean;
@@ -700,11 +704,11 @@ export function AccumulationDistributionRadar({
           const symUpper = String(st.symbol).toUpperCase().trim();
           const entry = {
             symbol: symUpper,
-            bcr3BuyPct: st.grossBuyConcentrationPct || 0,
-            bcr3SellPct: st.grossSellConcentrationPct || 0,
-            bcr5BuyPct: st.bcr5NetPct || 0,
-            bcr5NetPct: st.bcr5NetPct || 0,
-            scr3NetPct: st.scr3NetPct || 0,
+            bcr3BuyPct: Math.min(100, Math.max(0, Number(st.bcr3BuyPct ?? st.grossBuyConcentrationPct ?? 0))),
+            bcr3SellPct: Math.min(100, Math.max(0, Number(st.bcr3SellPct ?? st.grossSellConcentrationPct ?? 0))),
+            bcr5BuyPct: Math.min(100, Math.max(0, Number(st.bcr5BuyPct ?? st.grossBuyConcentrationPct ?? st.bcr5NetPct ?? 0))),
+            bcr5NetPct: Math.min(100, Math.max(0, Number(st.bcr5NetPct ?? 0))),
+            scr3NetPct: Math.min(100, Math.max(0, Number(st.scr3NetPct ?? 0))),
             grossBuyConcentrationPct: st.grossBuyConcentrationPct,
             grossSellConcentrationPct: st.grossSellConcentrationPct,
             smartMoneyNetFlowPct: st.smartMoneyNetFlowPct,
@@ -855,7 +859,15 @@ export function AccumulationDistributionRadar({
     const todayNpt = nptDateObj.toISOString().slice(0, 10);
 
     return Array.from(datesSet)
-      .filter(d => !isOngoingMarketSession || d !== todayNpt)
+      .filter(d => {
+        if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+        if (isOngoingMarketSession && d === todayNpt) return false;
+        try {
+          return isNepseTradingDay(new Date(d + 'T12:00:00+05:45'));
+        } catch {
+          return false;
+        }
+      })
       .sort((a, b) => b.localeCompare(a))
       .slice(0, 500);
   }, [stockBrokerDataMap, selectedStockSymbol, whaleArchive, floorsheet, availableSessionDates]);
@@ -899,11 +911,11 @@ export function AccumulationDistributionRadar({
                 if (sSym) {
                   const entry = st.brokerData || {
                     symbol: sSym,
-                    bcr3BuyPct: st.grossBuyConcentrationPct || 0,
-                    bcr3SellPct: st.grossSellConcentrationPct || 0,
-                    bcr5BuyPct: st.bcr5NetPct || 0,
-                    bcr5NetPct: st.bcr5NetPct || 0,
-                    scr3NetPct: st.scr3NetPct || 0,
+                    bcr3BuyPct: Math.min(100, Math.max(0, Number(st.bcr3BuyPct ?? st.grossBuyConcentrationPct ?? 0))),
+                    bcr3SellPct: Math.min(100, Math.max(0, Number(st.bcr3SellPct ?? st.grossSellConcentrationPct ?? 0))),
+                    bcr5BuyPct: Math.min(100, Math.max(0, Number(st.bcr5BuyPct ?? st.grossBuyConcentrationPct ?? st.bcr5NetPct ?? 0))),
+                    bcr5NetPct: Math.min(100, Math.max(0, Number(st.bcr5NetPct ?? 0))),
+                    scr3NetPct: Math.min(100, Math.max(0, Number(st.scr3NetPct ?? 0))),
                     grossBuyConcentrationPct: st.grossBuyConcentrationPct,
                     grossSellConcentrationPct: st.grossSellConcentrationPct,
                     smartMoneyNetFlowPct: st.smartMoneyNetFlowPct,
@@ -986,10 +998,15 @@ export function AccumulationDistributionRadar({
       }
     }
     const baseStock = (sym && liveStocksMap[sym]) ? { ...liveStocksMap[sym], ...stock } : stock;
+    const brokerPayloadDate = sym
+      ? (stockBrokerDataMap[`${sym}_${radarDays}`]?.businessDate || stockBrokerDataMap[sym]?.businessDate || stockBrokerDataMap[sym]?.date)
+      : '';
+    const resolvedSessionDate = brokerPayloadDate || radarDate || selectedArchiveDate || incomingDate || baseStock?.businessDate || baseStock?.date || '';
     const fullStock = {
       ...baseStock,
-      sessionDate: radarDate || selectedArchiveDate || incomingDate || '',
-      date: radarDate || selectedArchiveDate || incomingDate || '',
+      businessDate: resolvedSessionDate,
+      sessionDate: resolvedSessionDate,
+      date: resolvedSessionDate,
     };
     if (onSelectStock) {
       onSelectStock(fullStock);
@@ -1290,7 +1307,8 @@ export function AccumulationDistributionRadar({
         bcr3Buy: step4.bcr3Buy,
         bcr3Sell: step4.bcr3Sell,
         whaleStreak: streak || null,
-        whaleDistStreak: distStreak || null
+        whaleDistStreak: distStreak || null,
+        isBrokerVerified: Boolean(stockSummaryWithBroker?.realBrokerAnalysis || stockBrokerAnalysis || (brokerData && (brokerData.bcr3Buy > 0 || (Array.isArray(brokerData.topBuyers) && brokerData.topBuyers.length > 0))))
       };
 
       const corneringAnalysis = calculateStockCorneringScore(partialStock);
@@ -1388,7 +1406,7 @@ export function AccumulationDistributionRadar({
       } else if (selectedStage === 'DISTRIBUTION') {
         list = list.filter((s) => s.phase === 'DISTRIBUTION_DANGER' || s.wyckoff?.stage?.includes('DISTRIBUTION') || s.wyckoff?.stage?.includes('EUPHORIA'));
       } else if (selectedStage === 'TRAP' || selectedStage === 'DUMP') {
-        list = list.filter((s) => s.phase === 'BULL_TRAP' || s.phase === 'DISTRIBUTION_DANGER' || s.isTrap || s.isDumping || s.wyckoff?.stage?.includes('DUMP'));
+        list = list.filter((s) => s.phase === 'BULL_TRAP' || s.isTrap || s.isDumping || s.wyckoff?.stage?.includes('DUMP'));
       } else if (selectedStage === 'SPRING') {
         list = list.filter((s) => s.wyckoff?.stage?.includes('SPRING'));
       } else {
@@ -1548,10 +1566,14 @@ export function AccumulationDistributionRadar({
     const targetSym = (symToVerify || selectedStockSymbol || 'NABIL').toUpperCase().trim();
     setZeroSumAudit({ loading: true, symbol: targetSym, buyVol: 0, sellVol: 0, delta: 0, balanced: false, brokerCount: 0 });
     try {
-      const res = await fetchRealBrokerAnalysis(targetSym, radarDays, { date: radarDate || BUNDLED_BROKER_DATE, refresh: true });
+      const res = await fetchRealBrokerAnalysis(targetSym, radarDays, { date: radarDate || '', refresh: true });
       const brokers = Array.isArray(res?.brokers) ? res.brokers : [];
-      const sumBuy = brokers.reduce((acc: number, b: any) => acc + Number(b.buyQty || b.buyQuantity || 0), 0) || Number(res?.totalVolume || 0);
-      const sumSell = brokers.reduce((acc: number, b: any) => acc + Number(b.sellQty || b.sellQuantity || 0), 0) || Number(res?.totalVolume || 0);
+      const sumBuy = brokers.length > 0
+        ? brokers.reduce((acc: number, b: any) => acc + Number(b.buyQty || b.buyQuantity || 0), 0)
+        : Number(res?.totalBuyVolume ?? res?.totalVolume ?? 0);
+      const sumSell = brokers.length > 0
+        ? brokers.reduce((acc: number, b: any) => acc + Number(b.sellQty || b.sellQuantity || 0), 0)
+        : Number(res?.totalSellVolume ?? res?.totalVolume ?? 0);
       const delta = sumBuy - sumSell;
       setZeroSumAudit({
         loading: false,
@@ -1559,7 +1581,7 @@ export function AccumulationDistributionRadar({
         buyVol: sumBuy,
         sellVol: sumSell,
         delta,
-        balanced: sumBuy > 0 && delta === 0,
+        balanced: brokers.length > 0 && sumBuy > 0 && delta === 0,
         brokerCount: brokers.length
       });
     } catch (_) {
@@ -1597,11 +1619,17 @@ export function AccumulationDistributionRadar({
     analyzedStocks.forEach((s) => {
       const st = s.wyckoff?.stage || '';
       const ph = s.phase || '';
-      if (ph === 'STEALTH_ACCUMULATION' || st.includes('STEALTH') || s.isAccumulation) stealthCount++;
-      if (ph === 'ACTIVE_MARKUP' || st.includes('PUMP')) pumpCount++;
-      if (ph === 'DISTRIBUTION_DANGER' || st.includes('DISTRIBUTION') || st.includes('EUPHORIA')) distributionCount++;
-      if (ph === 'BULL_TRAP' || ph === 'DISTRIBUTION_DANGER' || st.includes('DUMP') || s.isTrap || s.isDumping) dumpCount++;
-      if (st.includes('SPRING')) springCount++;
+      if (ph === 'STEALTH_ACCUMULATION' || st.includes('STEALTH') || s.isAccumulation) {
+        stealthCount++;
+      } else if (ph === 'ACTIVE_MARKUP' || st.includes('PUMP')) {
+        pumpCount++;
+      } else if (ph === 'DISTRIBUTION_DANGER' || st.includes('DISTRIBUTION') || st.includes('EUPHORIA')) {
+        distributionCount++;
+      } else if (ph === 'BULL_TRAP' || st.includes('DUMP') || s.isTrap || s.isDumping) {
+        dumpCount++;
+      } else if (st.includes('SPRING')) {
+        springCount++;
+      }
       totalCMF += (s.wyckoff?.cmf || 0);
 
       const qai = s.wyckoff?.qaiScore || 0;
@@ -4068,7 +4096,7 @@ export function AccumulationDistributionRadar({
                 });
 
                 const sortedSellers = rawSellers.sort((a: BrokerDetail, b: BrokerDetail) => {
-                  if (brokerLedgerMetric === 'netFlow') return Math.abs(b.netAmount ?? b.netQty ?? 0) - Math.abs(a.netAmount ?? a.netQty ?? 0);
+                  if (brokerLedgerMetric === 'netFlow') return (a.netAmount ?? a.netQty ?? 0) - (b.netAmount ?? b.netQty ?? 0);
                   if (brokerLedgerMetric === 'turnover') return (b.amount ?? 0) - (a.amount ?? 0);
                   return (b.volume ?? 0) - (a.volume ?? 0);
                 });
@@ -4305,10 +4333,12 @@ export function AccumulationDistributionRadar({
                 <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
                   <div className="text-slate-400">Retail Offloading Footprint</div>
                   <div className="font-bold text-white mt-0.5">
-                    {activeStock.wyckoff.tradeSizeRatio <= 0.70
+                    {activeStock.wyckoff.tradeSizeRatio <= 0.70 && (activeStock.isDumping || activeStock.isSellerDominant || Number(activeStock.brokerData?.bcr3SellPct || 0) > Number(activeStock.brokerData?.bcr3BuyPct || 0))
                       ? '⚠️ High (Institutions selling to retail)'
                       : activeStock.wyckoff.tradeSizeRatio >= 1.40
                       ? '🟢 Strong Absorption (Institutions buying blocks)'
+                      : activeStock.isAccumulation || Number(activeStock.brokerData?.bcr3BuyPct || 0) >= 40
+                      ? '🟢 Absorbed Institutional Buying'
                       : '🟢 Balanced ticket size'}
                   </div>
                 </div>

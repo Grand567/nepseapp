@@ -454,7 +454,6 @@ export function formatDualModeExecutionTicket({
     `• Exact Sizing Multiplier: <b>${s.kittaPer1Lakh} Kitta</b> per Rs. 1 Lakh Capital`,
     ``,
     `• 20D Median Turnover: Rs. ${s.turnoverLakhs}L (Safe Total Order Cap: Rs. ${s.safeOrderLakhs}L)`,
-    `• 20D Median Turnover: Rs. ${s.turnoverLakhs}L (Safe Total Order Cap: Rs. ${s.safeOrderLakhs}L)`,
     s.liquidityWarning ? `⚠️ <i>${s.liquidityWarning}</i>` : `• Liquidity Check: ✅ PASSED (Zero market impact)`,
     ``,
     `📊 <b>4-PILLAR CONFLUENCE SCORE: 100/100</b>`,

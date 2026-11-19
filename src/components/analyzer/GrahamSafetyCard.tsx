@@ -135,7 +135,7 @@ export function GrahamSafetyCard({
               Insufficient Fundamental Filing Data
             </div>
             <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.5 }}>
-              Authentic quarterly filings for {sym} are currently unverified or non-positive (Reported EPS: {eps != null ? `Rs. ${eps}` : 'Missing'}, BVPS: {bookValue != null ? `Rs. ${bookValue}` : 'Missing'}). Benjamin Graham’s Intrinsic Value formulation requires verified positive operational earnings and tangible equity. Synthetic estimation from current stock price is strictly disabled to prevent artificial valuation anchors.
+              Authentic quarterly filings for {sym} are currently unverified or non-positive (Reported EPS: {eps != null ? ('Rs. ' + eps) : 'Missing'}, BVPS: {bookValue != null ? ('Rs. ' + bookValue) : 'Missing'}). Benjamin Graham’s Intrinsic Value formulation requires verified positive operational earnings and tangible equity. Synthetic estimation from current stock price is strictly disabled to prevent artificial valuation anchors.
             </div>
           </div>
         </div>
@@ -207,7 +207,7 @@ export function GrahamSafetyCard({
     {
       label: 'Tangible Asset Backing (BVPS > 0)',
       passed: bookValue > 0,
-      value: bookValue > 0 ? `Rs. ${bookValue.toFixed(1)}` : 'Deficient',
+      value: bookValue > 0 ? ('Rs. ' + bookValue.toFixed(1)) : 'Deficient',
       sub: 'Net assets protecting liquidation parity',
     },
     {
@@ -491,7 +491,7 @@ export function GrahamSafetyCard({
               marginTop: 2,
             }}
           >
-            Rs. ${bookValue.toFixed(1)}
+            Rs. {bookValue.toFixed(1)}
           </div>
           <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             {pePb > 0 ? `P/E × P/B: ${pePb.toFixed(1)} (Max 22.5)` : currentPrice > 0 && bookValue > 0 ? `P/B: ${(currentPrice / bookValue).toFixed(1)}x` : 'Multiple pending'}

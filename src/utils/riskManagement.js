@@ -78,8 +78,8 @@ export function calculatePositionSize({
   // ── Fixed % risk model ────────────────────────────────────────────────────
   const maxRiskRs = cap * riskFraction;
   const rawShares = maxRiskRs / riskPerShare;
-  // Round down to nearest 10 (NEPSE minimum lot is 10 shares)
-  const fixedShares = Math.max(MIN_LOT_SIZE, Math.floor(rawShares / MIN_LOT_SIZE) * MIN_LOT_SIZE);
+  // Round down to nearest 10 (NEPSE minimum lot is 10 shares); return 0 if < 10
+  const fixedShares = rawShares < MIN_LOT_SIZE ? 0 : Math.floor(rawShares / MIN_LOT_SIZE) * MIN_LOT_SIZE;
   const capitalRequired = fixedShares * entry;
   const actualRiskRs = fixedShares * riskPerShare;
   const actualRiskPct = (actualRiskRs / cap) * 100;
@@ -128,8 +128,9 @@ export function calculatePositionSize({
     const kellyFull = payoff > 0 ? (wR * payoff - q) / payoff : 0;
     const kellyHalf = Math.max(0, kellyFull / 2); // Half-Kelly for safety
     const kellyCapital = cap * kellyHalf;
-    const kellyShares = Math.max(MIN_LOT_SIZE,
-      Math.floor((kellyCapital / entry) / MIN_LOT_SIZE) * MIN_LOT_SIZE);
+    const kellyShares = kellyCapital < (entry * MIN_LOT_SIZE)
+      ? 0
+      : Math.floor((kellyCapital / entry) / MIN_LOT_SIZE) * MIN_LOT_SIZE;
 
     result.kelly = {
       winRate: wR,
@@ -137,6 +138,7 @@ export function calculatePositionSize({
       kellyFull: +(kellyFull * 100).toFixed(1) + '%',
       kellyHalf: +(kellyHalf * 100).toFixed(1) + '%',
       kellyShares,
+      kellyCapital: +(kellyShares * entry).toFixed(2),
       kellyCaptital: +(kellyShares * entry).toFixed(2),
       note: 'Half-Kelly is recommended over Full-Kelly to reduce variance. ' +
         'Kelly assumes IID trades — real markets have autocorrelation and regime changes.',

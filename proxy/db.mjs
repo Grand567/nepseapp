@@ -60,22 +60,58 @@ export async function ensureTelegramConfigTable() {
   try {
     await query(`
       CREATE TABLE IF NOT EXISTS telegram_bot_config (
-        id                   VARCHAR(50) PRIMARY KEY DEFAULT 'default',
-        bot_token            TEXT,
-        chat_id              VARCHAR(100),
-        enabled              BOOLEAN DEFAULT TRUE,
-        is_test_server       BOOLEAN DEFAULT FALSE,
-        use_webhook          BOOLEAN DEFAULT FALSE,
-        webhook_url          TEXT,
-        webhook_secret_token TEXT,
-        updated_at           TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        id                        VARCHAR(50) PRIMARY KEY DEFAULT 'default',
+        bot_token                 TEXT,
+        chat_id                   VARCHAR(100),
+        enabled                   BOOLEAN DEFAULT TRUE,
+        is_test_server            BOOLEAN DEFAULT FALSE,
+        use_webhook               BOOLEAN DEFAULT FALSE,
+        webhook_url               TEXT,
+        webhook_secret_token      TEXT,
+        last_selection_guide_date VARCHAR(20),
+        updated_at                TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
       ALTER TABLE telegram_bot_config ADD COLUMN IF NOT EXISTS use_webhook BOOLEAN DEFAULT FALSE;
       ALTER TABLE telegram_bot_config ADD COLUMN IF NOT EXISTS webhook_url TEXT;
       ALTER TABLE telegram_bot_config ADD COLUMN IF NOT EXISTS webhook_secret_token TEXT;
+      ALTER TABLE telegram_bot_config ADD COLUMN IF NOT EXISTS last_selection_guide_date VARCHAR(20);
     `);
   } catch (err) {
     console.warn('[db] ensureTelegramConfigTable notice:', err.message);
+  }
+}
+
+export async function getLastSelectionGuideDateFromDb() {
+  if (!pool) return null;
+  try {
+    await ensureTelegramConfigTable();
+    const res = await query(
+      'SELECT last_selection_guide_date FROM telegram_bot_config WHERE id = $1',
+      ['default']
+    );
+    return res?.rows?.[0]?.last_selection_guide_date || null;
+  } catch (err) {
+    console.warn('[db] getLastSelectionGuideDateFromDb notice:', err.message);
+    return null;
+  }
+}
+
+export async function saveLastSelectionGuideDateToDb(sessionDate) {
+  if (!pool || !sessionDate) return false;
+  try {
+    await ensureTelegramConfigTable();
+    await query(
+      `INSERT INTO telegram_bot_config (id, last_selection_guide_date, updated_at)
+       VALUES ('default', $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         last_selection_guide_date = EXCLUDED.last_selection_guide_date,
+         updated_at = NOW();`,
+      [String(sessionDate).slice(0, 20)]
+    );
+    return true;
+  } catch (err) {
+    console.warn('[db] saveLastSelectionGuideDateToDb notice:', err.message);
+    return false;
   }
 }
 

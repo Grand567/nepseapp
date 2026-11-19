@@ -24,9 +24,19 @@ import dnsPromises from 'dns/promises';
 import { fileURLToPath } from 'url';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 import { auditAntiDematDumpGuard, db } from './db/ledgerStore.js';
-import { getTelegramConfigFromDb, saveTelegramConfigToDb } from './db.mjs';
+import {
+  getTelegramConfigFromDb,
+  saveTelegramConfigToDb,
+  getLastSelectionGuideDateFromDb,
+  saveLastSelectionGuideDateToDb
+} from './db.mjs';
 import { BROKER_NAMES } from './brokerVault.mjs';
 import { scanTrackBSyndicateCandidates, formatTrackBSyndicateHtml } from './trackBSyndicateEngine.mjs';
+import {
+  fetchLiveNepseIndexHistory,
+  evaluateDailySelectionGuide,
+  formatDailySelectionGuideHtml
+} from './stockSelectionGuideEngine.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -648,14 +658,17 @@ export async function autoDetectChatId(customToken) {
  * from `getSmartMoneyAggregatedFlow(sym, 5)` output.
  */
 export function extract5DayBrokerFlowMetrics(flow = [], fallbackPrice = 0, defaults = {}) {
-  const defaultBcr3Buy = defaults.bcr3Buy ?? 50.0;
-  const defaultBcr3Sell = defaults.bcr3Sell ?? 35.0;
+  const defaultBcr3Buy = defaults.bcr3Buy ?? null;
+  const defaultBcr3Sell = defaults.bcr3Sell ?? null;
   if (!Array.isArray(flow) || flow.length === 0) {
-    const defRet = defaults.leadRetentionPct ?? 75.0;
+    const defRet = defaults.leadRetentionPct ?? null;
+    const spread = (defaultBcr3Buy !== null && defaultBcr3Sell !== null)
+      ? +(Number(defaultBcr3Buy) - Number(defaultBcr3Sell)).toFixed(1)
+      : null;
     return {
       bcr3Buy: defaultBcr3Buy,
       bcr3Sell: defaultBcr3Sell,
-      bcr3Spread: +(defaultBcr3Buy - defaultBcr3Sell).toFixed(1),
+      bcr3Spread: spread,
       avgBrokerPrice: fallbackPrice,
       leadBrokerId: defaults.leadBrokerId || null,
       leadBrokerName: defaults.leadBrokerName || null,
@@ -663,7 +676,7 @@ export function extract5DayBrokerFlowMetrics(flow = [], fallbackPrice = 0, defau
       leadSellVol: 0,
       leadNetVol: 0,
       leadRetentionPct: defRet,
-      leadChurnPct: +(Math.max(0, 100 - defRet)).toFixed(1),
+      leadChurnPct: defRet !== null ? +(Math.max(0, 100 - Number(defRet))).toFixed(1) : null,
       hasLedgerFlow: false
     };
   }
@@ -697,9 +710,11 @@ export function extract5DayBrokerFlowMetrics(flow = [], fallbackPrice = 0, defau
   const leadBuyVol = Number(leadBuyer?.buyVolume || 0);
   const leadSellVol = Number(leadBuyer?.sellVolume || 0);
   const leadNetVol = leadBuyVol - leadSellVol;
-  const leadRetentionPct = leadBuyVol > 0 ? +((leadNetVol / leadBuyVol) * 100).toFixed(1) : (defaults.leadRetentionPct ?? 75.0);
-  const leadChurnPct = leadBuyVol > 0 ? +Math.min(100, (leadSellVol / leadBuyVol) * 100).toFixed(1) : +(Math.max(0, 100 - leadRetentionPct)).toFixed(1);
-  const bcr3Spread = +(bcr3Buy - bcr3Sell).toFixed(1);
+  const leadRetentionPct = leadBuyVol > 0 ? +((leadNetVol / leadBuyVol) * 100).toFixed(1) : (defaults.leadRetentionPct ?? null);
+  const leadChurnPct = leadBuyVol > 0
+    ? +Math.min(100, (leadSellVol / leadBuyVol) * 100).toFixed(1)
+    : (leadRetentionPct !== null ? +(Math.max(0, 100 - Number(leadRetentionPct))).toFixed(1) : null);
+  const bcr3Spread = (bcr3Buy !== null && bcr3Sell !== null) ? +(Number(bcr3Buy) - Number(bcr3Sell)).toFixed(1) : null;
 
   return {
     bcr3Buy,
@@ -936,13 +951,13 @@ export function evaluateLoopholeProtectedSmcSetup(histBars, context = {}) {
   const minVol5 = prior5.length > 0 ? Math.min(...prior5.map((r) => r.volume)) : avgVol20;
   const vduRatio = minVol5 / Math.max(1, avgVol20);
 
-  const bcr3Buy = Number(context.bcr3Buy ?? 50.0);
-  const bcr3Sell = Number(context.bcr3Sell ?? 30.0);
-  const leadRetentionPct = Number(context.leadRetentionPct ?? 70);
+  const bcr3Buy = (context.bcr3Buy !== null && context.bcr3Buy !== undefined && Number.isFinite(Number(context.bcr3Buy))) ? Number(context.bcr3Buy) : null;
+  const bcr3Sell = (context.bcr3Sell !== null && context.bcr3Sell !== undefined && Number.isFinite(Number(context.bcr3Sell))) ? Number(context.bcr3Sell) : null;
+  const leadRetentionPct = (context.leadRetentionPct !== null && context.leadRetentionPct !== undefined && Number.isFinite(Number(context.leadRetentionPct))) ? Number(context.leadRetentionPct) : null;
   const isTrap = Boolean(context.isTrap);
 
   const hasRealLiquidity = curVol >= 0.40 * avgVol20 || curVol >= 4000;
-  const hasBrokerBacking = !isTrap && bcr3Buy >= bcr3Sell && bcr3Sell <= 45 && leadRetentionPct >= 55;
+  const hasBrokerBacking = !isTrap && bcr3Buy !== null && bcr3Sell !== null && leadRetentionPct !== null && bcr3Buy >= bcr3Sell && bcr3Sell <= 45 && leadRetentionPct >= 55;
 
   // Compute ATR(14) & Structural Low / Liquidity Pool Targets (Loophole 3 Guard)
   const atrSlice = validBars.slice(Math.max(1, bLen - 14), bLen + 1);
@@ -1274,11 +1289,12 @@ export function enrichPayloadWithFlowchartV2RallyMetrics(
         trapAudit?.buyVwap ||
         sma20
     );
-    const bcr3Buy = Number(rawPayload.bcr3Buy ?? flowMetrics?.bcr3Buy ?? 50);
-    const bcr3Sell = Number(rawPayload.bcr3Sell ?? flowMetrics?.bcr3Sell ?? 30);
-    const leadRetentionPct = Number(
-      rawPayload.retention10D ?? rawPayload.leadRetentionPct ?? trapAudit?.retentionPct ?? 75
-    );
+    const rawBcr3Buy = rawPayload.bcr3Buy ?? flowMetrics?.bcr3Buy;
+    const rawBcr3Sell = rawPayload.bcr3Sell ?? flowMetrics?.bcr3Sell;
+    const rawLeadRet = rawPayload.retention10D ?? rawPayload.leadRetentionPct ?? trapAudit?.retentionPct ?? flowMetrics?.leadRetentionPct;
+    const bcr3Buy = (rawBcr3Buy !== null && rawBcr3Buy !== undefined && Number.isFinite(Number(rawBcr3Buy))) ? Number(rawBcr3Buy) : null;
+    const bcr3Sell = (rawBcr3Sell !== null && rawBcr3Sell !== undefined && Number.isFinite(Number(rawBcr3Sell))) ? Number(rawBcr3Sell) : null;
+    const leadRetentionPct = (rawLeadRet !== null && rawLeadRet !== undefined && Number.isFinite(Number(rawLeadRet))) ? Number(rawLeadRet) : null;
 
     smc = evaluateLoopholeProtectedSmcSetup(histBars, {
       ltp: curLtp || curClose,
@@ -1437,18 +1453,15 @@ export async function sendTelegramSmartAlert(alertItem) {
   }
   const cleanBrokerName = String(leadBrokerName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd|Money Managers)\b/gi, '').trim() || 'Dynamic';
 
-  const bcr3Buy = Number(
-    alertItem.bcr3Buy ?? alertItem.bcr3 ?? alertItem.concentrationPct ?? alertItem.bcr3BuyPct ?? alertItem.buyRatioPct ??
-    (flowMetrics.hasLedgerFlow ? flowMetrics.bcr3Buy : 60.4)
-  );
-  const bcr3Sell = Number(
-    alertItem.bcr3Sell ?? alertItem.bcr3SellPct ??
-    (flowMetrics.hasLedgerFlow ? flowMetrics.bcr3Sell : 34.0)
-  );
-  const retention10D = Number(
-    alertItem.retention10D ?? alertItem.retentionPct ?? trapAudit?.retentionPct ?? 85
-  );
-  const cmfVal = alertItem.cmf !== undefined ? Number(alertItem.cmf) : 0.530;
+  const rawBcr3Buy = alertItem.bcr3Buy ?? alertItem.bcr3 ?? alertItem.concentrationPct ?? alertItem.bcr3BuyPct ?? alertItem.buyRatioPct ??
+    (flowMetrics.hasLedgerFlow ? flowMetrics.bcr3Buy : null);
+  const bcr3Buy = (rawBcr3Buy !== null && rawBcr3Buy !== undefined && Number.isFinite(Number(rawBcr3Buy))) ? Number(rawBcr3Buy) : null;
+  const rawBcr3Sell = alertItem.bcr3Sell ?? alertItem.bcr3SellPct ??
+    (flowMetrics.hasLedgerFlow ? flowMetrics.bcr3Sell : null);
+  const bcr3Sell = (rawBcr3Sell !== null && rawBcr3Sell !== undefined && Number.isFinite(Number(rawBcr3Sell))) ? Number(rawBcr3Sell) : null;
+  const rawRet = alertItem.retention10D ?? alertItem.retentionPct ?? trapAudit?.retentionPct ?? flowMetrics?.leadRetentionPct ?? null;
+  const retention10D = (rawRet !== null && rawRet !== undefined && Number.isFinite(Number(rawRet))) ? Number(rawRet) : null;
+  const cmfVal = (alertItem.cmf !== undefined && alertItem.cmf !== null && Number.isFinite(Number(alertItem.cmf))) ? Number(alertItem.cmf) : null;
 
   // 3. Execution Plan (Entry Low - High, Hard Stop Loss, Target 1, Target 2)
   const buyZone = alertItem.buyZone || {};
@@ -1606,17 +1619,25 @@ export function formatEarlyIgnitionAlertHtml(alert = {}) {
   const t1Pct = operatorVwap > 0 ? (((t1 - operatorVwap) / operatorVwap) * 100).toFixed(1) : '8.0';
   const t2Pct = operatorVwap > 0 ? (((t2 - operatorVwap) / operatorVwap) * 100).toFixed(1) : '14.5';
 
-  const netRRR = alert.netRRR || (parseFloat(slPct) > 0 ? (parseFloat(t1Pct) / parseFloat(slPct)).toFixed(1) : '2.8');
+  const netRRR = alert.netRRR || (parseFloat(slPct) > 0 && parseFloat(t1Pct) > 0 ? (parseFloat(t1Pct) / parseFloat(slPct)).toFixed(1) : 'N/A');
   const timingSignature = alert.timingSignature || '⚡ Afternoon Stealth Accumulation (1:15 PM – 2:55 PM NPT)';
   const stageBadge = escapeHtml(alert.stageBadge || (alert.stage === 'STAGE_2_SUPPLY_VACUUM_IGNITION' ? '⚡ Stage 2: Supply Vacuum Ignition' : '🌱 Stage 1: Stealth Seeding'));
 
   // Flowchart v2.0 Track, BCR3, Retention/Churn & Ratchet metrics
-  const bcr3Buy = Number(alert.bcr3Buy ?? alert.bcr3BuyPct ?? alert.bcr3 ?? 58.0);
-  const bcr3Sell = Number(alert.bcr3Sell ?? alert.bcr3SellPct ?? 24.0);
-  const bcr3Spread = +(bcr3Buy - bcr3Sell).toFixed(1);
-  const bcr3SpreadStr = `${bcr3Spread >= 0 ? '+' : ''}${bcr3Spread}%`;
-  const retentionPct = buyQty > 0 ? +((netQty / buyQty) * 100).toFixed(1) : Number(alert.retention10D ?? 85.0);
-  const churnPct = buyQty > 0 ? +Math.min(100, (sellQty / buyQty) * 100).toFixed(1) : +(Math.max(0, 100 - retentionPct)).toFixed(1);
+  const rawBcr3Buy = alert.bcr3Buy ?? alert.bcr3BuyPct ?? alert.bcr3;
+  const rawBcr3Sell = alert.bcr3Sell ?? alert.bcr3SellPct;
+  const bcr3Buy = (rawBcr3Buy !== null && rawBcr3Buy !== undefined && Number.isFinite(Number(rawBcr3Buy))) ? Number(rawBcr3Buy) : null;
+  const bcr3Sell = (rawBcr3Sell !== null && rawBcr3Sell !== undefined && Number.isFinite(Number(rawBcr3Sell))) ? Number(rawBcr3Sell) : null;
+  const bcr3SpreadStr = (bcr3Buy !== null && bcr3Sell !== null)
+    ? (() => { const s = +(bcr3Buy - bcr3Sell).toFixed(1); return `${s >= 0 ? '+' : ''}${s}%`; })()
+    : 'N/A';
+  const rawRet10 = alert.retention10D ?? alert.leadRetentionPct;
+  const retentionPct = buyQty > 0
+    ? +((netQty / buyQty) * 100).toFixed(1)
+    : (rawRet10 !== null && rawRet10 !== undefined && Number.isFinite(Number(rawRet10)) ? Number(rawRet10) : null);
+  const churnPct = buyQty > 0
+    ? +Math.min(100, (sellQty / buyQty) * 100).toFixed(1)
+    : (retentionPct !== null ? +(Math.max(0, 100 - retentionPct)).toFixed(1) : null);
   const resolvedTrack = alert.rallyTrack || (alert.isT2ClearedContinuation || alert.isBreakAndRetest ? 'TRACK_B_T2_CLEARED_CONTINUATION' : 'TRACK_A_COILED_2_3D_IGNITION');
   const trackDisplay = formatFlowchartTrackDisplay(resolvedTrack, alert.rallyHorizonLabel, alert.marketRegime || alert.regime || 'BULL');
   const numOpVwap = Math.max(1, Number(operatorVwap) || ltp || 100);
@@ -1637,9 +1658,9 @@ export function formatEarlyIgnitionAlertHtml(alert = {}) {
     `🕵️ <b>OPERATOR FOOTPRINT &amp; BCR3 AUDIT (BROKER #${brokerId}):</b>`,
     `• Dominant Accumulator: <b>${brokerName} (#${brokerId})</b>`,
     `• Volume Cornered: <b>${buyQty.toLocaleString()} Kitta</b> (Net: ${netQty >= 0 ? '+' : ''}${netQty.toLocaleString()} Kitta)`,
-    `• Lead Retention vs Churn: <b>${retentionPct}% Held</b> | Churn: <b>${churnPct}%</b> (${churnPct > 35 ? '⚠️ High Wash Churn' : '✅ Clean Absorption'})`,
+    `• Lead Retention vs Churn: <b>${retentionPct !== null ? `${retentionPct}%` : 'N/A'} Held</b> | Churn: <b>${churnPct !== null ? `${churnPct}%` : 'N/A'}</b> (${churnPct === null ? '⏳ Unverified' : churnPct > 35 ? '⚠️ High Wash Churn' : '✅ Clean Absorption'})`,
     `• Capital Deployed: <b>Rs. ${totalAmtCrores} Crore</b> | Share: <b>${mktShare}%</b>`,
-    `• Top-3 Concentration: <b>BCR3 Buy ${bcr3Buy.toFixed(1)}% vs BCR3 Sell ${bcr3Sell.toFixed(1)}%</b> (Net Spread: <b>${bcr3SpreadStr}</b>)`,
+    `• Top-3 Concentration: <b>BCR3 Buy ${bcr3Buy !== null ? `${bcr3Buy.toFixed(1)}%` : 'N/A'} vs BCR3 Sell ${bcr3Sell !== null ? `${bcr3Sell.toFixed(1)}%` : 'N/A'}</b> (Net Spread: <b>${bcr3SpreadStr}</b>)`,
     `• Buy vs Sell Dominance: <b>${buyRatio}% Buy Dominance</b>`,
     `• 🎯 <b>Average Broker Buy Price (Cost Basis):</b> <b>Rs. ${operatorVwap}</b> (${Number(ltp) >= Number(operatorVwap) ? '+' : ''}${(((Number(ltp) - Number(operatorVwap)) / Math.max(1, Number(operatorVwap))) * 100).toFixed(1)}% from LTP)`,
     `• 📊 <b>Multi-Timeframe VWAP:</b> 5D: <b>${v5Str}</b> | 15D: <b>${v15Str}</b> | 1M (22D): <b>${v1MStr}</b>`,
@@ -2045,17 +2066,17 @@ export async function runBreakoutScannerAndDispatch(options = {}) {
         ? `Crossed 20 EMA Today (<b>${b.rvolCross}x Vol</b>)`
         : `Crossed 20 EMA ${b.daysSinceCross}D ago (${b.crossDate}, <b>${b.rvolCross}x Vol</b>)`;
       const realVwap = Number(b.operatorVwap || b.avgBrokerPrice || b.ema20).toFixed(1);
-      const bcrBuy = Number(b.bcr3Buy ?? 45.0).toFixed(1);
-      const bcrSell = Number(b.bcr3Sell ?? 25.0).toFixed(1);
-      const leadId = b.leadBrokerId || '58';
-      const leadRet = Number(b.leadRetentionPct ?? 80).toFixed(0);
+      const bcrBuy = b.bcr3Buy != null && Number.isFinite(Number(b.bcr3Buy)) ? `${Number(b.bcr3Buy).toFixed(1)}%` : 'N/A';
+      const bcrSell = b.bcr3Sell != null && Number.isFinite(Number(b.bcr3Sell)) ? `${Number(b.bcr3Sell).toFixed(1)}%` : 'N/A';
+      const leadId = b.leadBrokerId || 'N/A';
+      const leadRet = b.leadRetentionPct != null && Number.isFinite(Number(b.leadRetentionPct)) ? `${Number(b.leadRetentionPct).toFixed(0)}%` : 'N/A';
 
       cards.push([
         `<b>${cards.length + 1}. <code>$${b.symbol}</code></b> — ${compName}`,
         `• <b>Setup:</b> ${escapeHtml(b.statusBadge)} | 🛡️ <b>Zero-Trap Gate:</b> PASSED`,
         `• <b>Price:</b> Rs. ${Number(b.ltp).toFixed(2)} (${b.distFromEmaPct >= 0 ? '+' : ''}${b.distFromEmaPct}% vs 20 EMA Rs. ${b.ema20})`,
         `• 🎯 <b>Average Broker Price (Cost Basis):</b> Rs. ${realVwap}`,
-        `• 🏛️ <b>5D Ledger:</b> BCR3 Buy <b>${bcrBuy}%</b> vs Sell <b>${bcrSell}%</b> | Broker #${leadId} (<b>${leadRet}%</b> Ret)`,
+        `• 🏛️ <b>5D Ledger:</b> BCR3 Buy <b>${bcrBuy}</b> vs Sell <b>${bcrSell}</b> | Broker #${leadId} (<b>${leadRet}</b> Ret)`,
         `• <b>Spark &amp; Base:</b> ${timingText} | Tight ${b.consolidationRangePct}% Base (${b.rvolToday}x Vol)`,
         `• 📐 <b>SMC Confluence:</b> ${escapeHtml(b.smcNarrative || 'Clean 20 EMA Base Hold')}`,
         `• 🎯 <b>Buy Zone:</b> Rs. ${b.buyZone.low}–${b.buyZone.high} | 🛑 <b>SL:</b> Rs. ${b.stopLoss} | 🏁 <b>T1/T2:</b> ${b.target1}/${b.target2}`
@@ -2072,16 +2093,16 @@ export async function runBreakoutScannerAndDispatch(options = {}) {
         const t1 = Math.round(b.ltp * 1.08 * 10) / 10;
         const t2 = Math.round(b.ltp * 1.145 * 10) / 10;
         const realVwap = Number(b.operatorVwap || b.avgBrokerPrice || b.res_20d).toFixed(1);
-        const bcrBuy = Number(b.bcr3Buy ?? 45.0).toFixed(1);
-        const bcrSell = Number(b.bcr3Sell ?? 25.0).toFixed(1);
-        const leadId = b.leadBrokerId || '58';
-        const leadRet = Number(b.leadRetentionPct ?? 80).toFixed(0);
+        const bcrBuy = b.bcr3Buy != null && Number.isFinite(Number(b.bcr3Buy)) ? `${Number(b.bcr3Buy).toFixed(1)}%` : 'N/A';
+        const bcrSell = b.bcr3Sell != null && Number.isFinite(Number(b.bcr3Sell)) ? `${Number(b.bcr3Sell).toFixed(1)}%` : 'N/A';
+        const leadId = b.leadBrokerId || 'N/A';
+        const leadRet = b.leadRetentionPct != null && Number.isFinite(Number(b.leadRetentionPct)) ? `${Number(b.leadRetentionPct).toFixed(0)}%` : 'N/A';
         cards.push([
           `<b>${cards.length + 1}. <code>$${b.symbol}</code></b> — ${compName}`,
           `• <b>Setup:</b> ⚡ Fresh 20D Resistance Breakout | 🛡️ <b>Zero-Trap Gate:</b> PASSED`,
           `• <b>Price:</b> Rs. ${Number(b.ltp).toFixed(2)} (+${b.breakout_pct}% above pivot Rs. ${Number(b.res_20d).toFixed(1)})`,
           `• 🎯 <b>Average Broker Price (Cost Basis):</b> Rs. ${realVwap}`,
-          `• 🏛️ <b>5D Ledger:</b> BCR3 Buy <b>${bcrBuy}%</b> vs Sell <b>${bcrSell}%</b> | Broker #${leadId} (<b>${leadRet}%</b> Ret)`,
+          `• 🏛️ <b>5D Ledger:</b> BCR3 Buy <b>${bcrBuy}</b> vs Sell <b>${bcrSell}</b> | Broker #${leadId} (<b>${leadRet}</b> Ret)`,
           `• 📐 <b>SMC Confluence:</b> Fresh 20D Pivot Expansion Above Demand`,
           `• <b>Volume Surge:</b> <b>${b.rvol}x</b> 20D Avg (${Number(b.total_volume).toLocaleString('en-IN')} shares)`,
           `• 🛑 <b>SL:</b> Rs. ${sl.toFixed(1)} (-4.5%) | 🏁 <b>T1/T2:</b> Rs. ${t1.toFixed(1)} / Rs. ${t2.toFixed(1)}`
@@ -2416,10 +2437,10 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
     const totalBuyVolAll = flow.reduce((acc, f) => acc + Number(f.buyVolume || 0), 0);
     const totalSellVolAll = flow.reduce((acc, f) => acc + Number(f.sellVolume || 0), 0);
 
-    const bcr3Buy = totalBuyVolAll > 0 ? +((top3GrossBuyVol / totalBuyVolAll) * 100).toFixed(1) : 50.0;
-    const bcr3Sell = totalSellVolAll > 0 ? +((top3GrossSellVol / totalSellVolAll) * 100).toFixed(1) : 35.0;
-    const bcr3SpreadVal = +(bcr3Buy - bcr3Sell).toFixed(1);
-    const bcr3SpreadStr = `${bcr3SpreadVal >= 0 ? '+' : ''}${bcr3SpreadVal.toFixed(1)}%`;
+    const bcr3Buy = totalBuyVolAll > 0 ? +((top3GrossBuyVol / totalBuyVolAll) * 100).toFixed(1) : null;
+    const bcr3Sell = totalSellVolAll > 0 ? +((top3GrossSellVol / totalSellVolAll) * 100).toFixed(1) : null;
+    const bcr3SpreadVal = (bcr3Buy !== null && bcr3Sell !== null) ? +(bcr3Buy - bcr3Sell).toFixed(1) : null;
+    const bcr3SpreadStr = bcr3SpreadVal !== null ? `${bcr3SpreadVal >= 0 ? '+' : ''}${bcr3SpreadVal.toFixed(1)}%` : 'N/A';
 
     // Combined Average Broker Buy Price
     let avgBrokerPrice = top3GrossBuyVol > 0 ? +(top3BuyAmt / top3GrossBuyVol).toFixed(1) : ltp;
@@ -2448,7 +2469,8 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
     const leadChurn5D = flow5Metrics.leadChurnPct;
     const leadRetention20D = flow20Metrics.leadRetentionPct;
     const leadChurn20D = flow20Metrics.leadChurnPct;
-    const maxChurn = Math.max(leadChurn5D, leadChurn20D);
+    const churnNums = [leadChurn5D, leadChurn20D].filter(v => v !== null && v !== undefined && Number.isFinite(Number(v))).map(Number);
+    const maxChurn = churnNums.length > 0 ? Math.max(...churnNums) : null;
 
     // Chronological ASC history for Flowchart v2.0 SMC, CLV, Upper Wick, Pocket Pivot & Dual-Track classification
     const ascBars = [...hist].reverse().map(b => ({
@@ -2491,7 +2513,7 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       bcr3Buy,
       bcr3Sell,
       leadRetentionPct: leadRetention5D,
-      isTrap: bcr3Sell > 45 && bcr3Buy < bcr3Sell
+      isTrap: bcr3Sell !== null && bcr3Buy !== null && bcr3Sell > 45 && bcr3Buy < bcr3Sell
     });
     let marketRegime = options?.marketRegime || options?.regime || 'BULL';
     try {
@@ -2530,14 +2552,14 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
 
     // Decision Gates & Appropriateness Verdict
     const isNetInstitutionalPositive = (top3NetBuyVol > top3NetSellVol) && (leadNetVol > 0);
-    const isSevereDumping = (top3NetSellVol > top3NetBuyVol * 1.15) || (leadSellerNet > top3NetBuyVol * 0.6) || (bcr3Sell > 45 && bcr3Buy < bcr3Sell);
-    const isHeavyChurn = maxChurn > 50 || top3RetPct < 40;
+    const isSevereDumping = (top3NetSellVol > top3NetBuyVol * 1.15) || (leadSellerNet > top3NetBuyVol * 0.6) || (bcr3Sell !== null && bcr3Buy !== null && bcr3Sell > 45 && bcr3Buy < bcr3Sell);
+    const isHeavyChurn = (maxChurn !== null && maxChurn > 50) || top3RetPct < 40;
     const isDistributionCandle = wickPct > 45 && clvPct < 35;
     const isPriceNearBasis = distFromBroker >= -4.5 && distFromBroker <= 3.8;
     const isExtended = distFromBroker > 4.5 || pChange > 6.0;
     const isTrendSafe = ltp >= (ema20 * 0.96);
     const isFlowchartTrackApproved = trackInfo.rallyTrack === 'TRACK_A_BREAKOUT' || trackInfo.rallyTrack === 'TRACK_B_RETEST';
-    const isTrueCornering = isNetInstitutionalPositive && leadRetention5D >= 65 && bcr3Buy >= 30 && bcr3SpreadVal >= 8.0 && !isHeavyChurn;
+    const isTrueCornering = isNetInstitutionalPositive && leadRetention5D !== null && leadRetention5D >= 65 && bcr3Buy !== null && bcr3Buy >= 30 && bcr3SpreadVal !== null && bcr3SpreadVal >= 8.0 && !isHeavyChurn;
 
     // Tactical Execution Calculations
     const anchorBase = Math.min(ltp, avgBrokerPrice, pocPrice);
@@ -2586,7 +2608,7 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       tmsActionGuide = `Place GTC Limit Buy inside zone (Rs. ${buyZoneLow} – Rs. ${buyZoneHigh}). <i>Do NOT chase pre-open &gt; +1.8%!</i>`;
     } else if (isNetInstitutionalPositive && isPriceNearBasis && isTrendSafe) {
       verdictBadge = '🟡 <b>ACCUMULATION ON RADAR / SUB-THRESHOLD (WAIT FOR TRACK A/B TRIGGER)</b>';
-      verdictReason = `Lead buyer Broker #${leadBrokerId} (${cleanLeadName}) is net absorbing (+${leadNetVol.toLocaleString()} Kitta, ${flow5Metrics.leadRetentionPct}% retained), but scrip remains in a standard base below confirmation trigger. Hold existing core position with discipline, but <b>wait for a volume expansion trigger before deploying fresh capital</b>.`;
+      verdictReason = `Lead buyer Broker #${leadBrokerId} (${cleanLeadName}) is net absorbing (+${leadNetVol.toLocaleString()} Kitta, ${leadRetention5D ?? 'N/A'}% retained), but scrip remains in a standard base below confirmation trigger. Hold existing core position with discipline, but <b>wait for a volume expansion trigger before deploying fresh capital</b>.`;
       tmsActionGuide = `<i>Existing holders HOLD with stop-loss at Rs. ${structuralStop}. For fresh entries, wait for volume expansion trigger above Rs. ${Math.max(high, maxClose20).toFixed(1)}.</i>`;
     } else {
       verdictBadge = '⚪ <b>NEUTRAL / BALANCED RETAIL TURNOVER (WAIT FOR CATALYST)</b>';
@@ -2638,8 +2660,8 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
       `• 📊 <b>Multi-Timeframe VWAP (Cost Basis):</b> 5D: <b>${v5Str}</b> | 15D: <b>${v15Str}</b> | 1M: <b>${v1MStr}</b>`,
       `• <b>Top Accumulating Desks (Last 5 Sessions):</b>`,
       ...buyerLines,
-      `• <b>Buyer Dominance (BCR3 Buy):</b> <b>${bcr3Buy}%</b> vs BCR3 Sell <b>${bcr3Sell}%</b> (Net Spread: <b>${bcr3SpreadStr}</b>)`,
-      `• <b>Multi-Window Wash-Churn Audit:</b> <b>5D Retention ${leadRetention5D}%</b> (Churn ${leadChurn5D}%) | <b>20D Retention ${leadRetention20D}%</b> (Churn ${leadChurn20D}%) — <i>${maxChurn > 35 ? '⚠️ High Two-Way Wash Churn Detected' : '✅ Clean Institutional Absorption'}</i>`,
+      `• <b>Buyer Dominance (BCR3 Buy):</b> <b>${bcr3Buy != null ? `${bcr3Buy}%` : 'N/A'}</b> vs BCR3 Sell <b>${bcr3Sell != null ? `${bcr3Sell}%` : 'N/A'}</b> (Net Spread: <b>${bcr3SpreadStr}</b>)`,
+      `• <b>Multi-Window Wash-Churn Audit:</b> <b>5D Retention ${leadRetention5D ?? 'N/A'}%</b> (Churn ${leadChurn5D ?? 'N/A'}%) | <b>20D Retention ${leadRetention20D ?? 'N/A'}%</b> (Churn ${leadChurn20D ?? 'N/A'}%) — <i>${maxChurn === null ? '⏳ Churn Unverified' : maxChurn > 35 ? '⚠️ High Two-Way Wash Churn Detected' : '✅ Clean Institutional Absorption'}</i>`,
       `• <b>Top Selling / Distribution Desks:</b>`,
       ...sellerLines,
       ``,
@@ -2755,12 +2777,20 @@ export function formatEodStealthOfTheDayHtml(winner, runnerUps = [], targetDate 
   const t1 = winner.t1 || (vwap * 1.080).toFixed(1);
   const t2 = winner.t2 || (vwap * 1.145).toFixed(1);
   const horizon = escapeHtml(winner.ignitionHorizon || '1–3 Days (Supply Vacuum Stage 2 Complete)');
-  const eodBcr3Buy = Number(winner.bcr3BuyPct ?? winner.bcr3Buy ?? winner.bcr3 ?? 68.0).toFixed(1);
-  const eodBcr3Sell = Number(winner.bcr3SellPct ?? winner.bcr3Sell ?? 26.0).toFixed(1);
-  const eodBcr3SpreadVal = +(Number(eodBcr3Buy) - Number(eodBcr3Sell)).toFixed(1);
-  const eodBcr3SpreadStr = `${eodBcr3SpreadVal >= 0 ? '+' : ''}${eodBcr3SpreadVal.toFixed(1)}%`;
-  const eodRetPct = Number(winner.leadRetentionPct ?? winner.netRetentionPct ?? (Number.isFinite(Number(multiRatio)) ? Number(multiRatio) : 85)).toFixed(0);
-  const eodChurnPct = Number(winner.washChurnPct ?? winner.churnPct ?? Math.max(0, 100 - Number(eodRetPct))).toFixed(0);
+  const rawEodBuy = winner.bcr3BuyPct ?? winner.bcr3Buy ?? winner.bcr3;
+  const rawEodSell = winner.bcr3SellPct ?? winner.bcr3Sell;
+  const eodBcr3BuyNum = (rawEodBuy !== null && rawEodBuy !== undefined && Number.isFinite(Number(rawEodBuy))) ? Number(rawEodBuy) : null;
+  const eodBcr3SellNum = (rawEodSell !== null && rawEodSell !== undefined && Number.isFinite(Number(rawEodSell))) ? Number(rawEodSell) : null;
+  const eodBcr3Buy = eodBcr3BuyNum !== null ? `${eodBcr3BuyNum.toFixed(1)}%` : 'N/A';
+  const eodBcr3Sell = eodBcr3SellNum !== null ? `${eodBcr3SellNum.toFixed(1)}%` : 'N/A';
+  const eodBcr3SpreadStr = (eodBcr3BuyNum !== null && eodBcr3SellNum !== null)
+    ? (() => { const s = +(eodBcr3BuyNum - eodBcr3SellNum).toFixed(1); return `${s >= 0 ? '+' : ''}${s.toFixed(1)}%`; })()
+    : 'N/A';
+  const rawEodRet = winner.leadRetentionPct ?? winner.netRetentionPct ?? (Number.isFinite(Number(multiRatio)) && Number(multiRatio) > 0 ? Number(multiRatio) : null);
+  const eodRetNum = (rawEodRet !== null && rawEodRet !== undefined && Number.isFinite(Number(rawEodRet))) ? Number(rawEodRet) : null;
+  const rawEodChurn = winner.washChurnPct ?? winner.churnPct ?? (eodRetNum !== null ? Math.max(0, 100 - eodRetNum) : null);
+  const eodRetPct = eodRetNum !== null ? `${eodRetNum.toFixed(0)}%` : 'N/A';
+  const eodChurnPct = (rawEodChurn !== null && rawEodChurn !== undefined && Number.isFinite(Number(rawEodChurn))) ? `${Number(rawEodChurn).toFixed(0)}%` : 'N/A';
   const eodTrack = formatFlowchartTrackDisplay(
     winner.rallyTrack || 'TRACK_A_COILED_2_3D_IGNITION',
     winner.rallyHorizonLabel || horizon,
@@ -2789,8 +2819,8 @@ export function formatEodStealthOfTheDayHtml(winner, runnerUps = [], targetDate 
     `• 📊 <b>Multi-Timeframe VWAP:</b> 5D: <b>${v5Str}</b> | 15D: <b>${v15Str}</b> | 1M (22D): <b>${v1MStr}</b>`,
     `• Multi-Day Footprint: <b>+${multiNet} Net Kitta</b> (${multiBuy} Bought over ${multiDays} sessions)`,
     `• Institutional Outlay: <b>Rs. ${multiCr} Crores absorbed</b>`,
-    `• <b>BCR3 Buy ${eodBcr3Buy}%</b> vs BCR3 Sell <b>${eodBcr3Sell}%</b> (Net Spread: <b>${eodBcr3SpreadStr}</b>)`,
-    `• <b>Lead Retention:</b> <b>${eodRetPct}%</b> | <b>Churn: ${eodChurnPct}%</b>`,
+    `• <b>BCR3 Buy ${eodBcr3Buy}</b> vs BCR3 Sell <b>${eodBcr3Sell}</b> (Net Spread: <b>${eodBcr3SpreadStr}</b>)`,
+    `• <b>Lead Retention:</b> <b>${eodRetPct}</b> | <b>Churn: ${eodChurnPct}</b>`,
     `• Accumulation Dominance: <b>${multiRatio}% Buy Ratio</b> (Zero Dumping)`,
     `• Float Cornered: <b>${multiShare}% of Total Market Volume</b>`,
     `• Today's Action: +${netKitta} Net Kitta (${ratio}% Buy Dominance)`,
@@ -3180,15 +3210,15 @@ export async function sendTelegramPlaybookPickAlert(pick, options = {}) {
       t1Pct: Number(pick.t1Pct || 8.0),
       target2: Number(pick.target2 || (pick.ltp * 1.150)),
       t2Pct: Number(pick.t2Pct || 15.0),
-      bcr3Buy: Number(pick.bcr3Buy || 45.0),
-      bcr3Sell: Number(pick.bcr3Sell || 20.0),
+      bcr3Buy: pick.bcr3Buy ?? flowMetrics?.bcr3Buy ?? null,
+      bcr3Sell: pick.bcr3Sell ?? flowMetrics?.bcr3Sell ?? null,
       leadBrokerId,
       leadBrokerName,
-      retention10D: Number(pick.retention10D || pick.leadRetentionPct || 87),
-      vdu: Number(pick.vdu || pick.vduRatio || 0.52),
-      cmf: Number(pick.cmf !== undefined ? pick.cmf : 0.14),
-      bbw: Number(pick.bbw || pick.bbwPct || 8.4),
-      corneringScore: Number(pick.convictionScore || pick.corneringScore || 92),
+      retention10D: pick.retention10D ?? pick.leadRetentionPct ?? trapAudit?.retentionPct ?? flowMetrics?.leadRetentionPct ?? null,
+      vdu: pick.vdu ?? pick.vduRatio ?? null,
+      cmf: pick.cmf ?? null,
+      bbw: pick.bbw ?? pick.bbwPct ?? null,
+      corneringScore: pick.convictionScore ?? pick.corneringScore ?? null,
       confidenceLabel: pick.confidenceLabel || '🟢 Confirmed Stealth (v2.0)',
       rallyTrack: pick.rallyTrack,
       rallyHorizonLabel: pick.rallyHorizonLabel,
@@ -3444,7 +3474,202 @@ export function auditMultiSessionTrapRisk(db, symbol, leadBrokerId = null) {
       reason: `Verified 5-day accumulation (+${totalNet.toLocaleString()} kitta, ${Math.round(retentionPct)}% retention, ${consecutiveDays} consecutive buy sessions)`,
     };
   } catch (err) {
-    return { isTrap: false, verdict: 'AUDIT_FALLBACK', reason: err.message };
+    return { isTrap: true, verdict: 'AUDIT_ERROR_FAIL_CLOSED', reason: err.message };
+  }
+}
+
+const DAILY_SELECTION_STATE_FILE = path.join(DATA_DIR, 'daily_selection_guide_state.json');
+let inFlightScheduledGuideDate = null;
+
+function readDailySelectionState() {
+  try {
+    if (fs.existsSync(DAILY_SELECTION_STATE_FILE)) {
+      return JSON.parse(fs.readFileSync(DAILY_SELECTION_STATE_FILE, 'utf8'));
+    }
+  } catch (_) {}
+  return { lastDispatchedDate: null, history: {} };
+}
+
+export function hasSelectionGuideDispatchedForDate(sessionDate) {
+  if (!sessionDate) return false;
+  const target = String(sessionDate).slice(0, 10);
+  const state = readDailySelectionState();
+  return state.lastDispatchedDate === target || Boolean(state.history?.[target]);
+}
+
+function markSelectionGuideDispatchedForDate(sessionDate, summary = {}) {
+  const target = String(sessionDate).slice(0, 10);
+  const state = readDailySelectionState();
+  state.lastDispatchedDate = target;
+  state.updatedAt = new Date().toISOString();
+  state.history = state.history || {};
+  state.history[target] = {
+    dispatchedAt: state.updatedAt,
+    qualifiedCount: Number(summary.qualifiedCount || 0),
+    watchlistCount: Number(summary.watchlistCount || 0),
+    regime: summary.regime || 'UNKNOWN'
+  };
+  // Retain trailing 30 entries to bound file growth
+  const keys = Object.keys(state.history).sort();
+  while (keys.length > 30) {
+    const oldest = keys.shift();
+    delete state.history[oldest];
+  }
+  try {
+    fs.writeFileSync(DAILY_SELECTION_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('[StockSelectionGuide] Failed saving daily selection state file:', err.message);
+  }
+  saveLastSelectionGuideDateToDb(target).catch(() => {});
+}
+
+/**
+ * Runs the 4-Gate Stock Selection Guide evaluation and dispatches the mobile Telegram
+ * notification (either Selected Stock(s) or explicit "No Stock Selected — Hold Cash").
+ */
+export async function runDailyStockSelectionGuideAndDispatch({
+  chatId = null,
+  targetDate = null,
+  dryRun = false,
+  liveIndexQuote = null,
+  liveIndexHistory = null,
+  forceScanOnBear = false
+} = {}) {
+  if (!targetDate) {
+    await ensureTodaySessionIngested();
+  }
+  const status = getDetailedMarketStatus();
+  const fallbackDate = status?.lastClosedSessionDate || status?.targetSessionDate || new Date().toISOString().slice(0, 10);
+
+  try {
+    const { db: ledgerDb, rebuildHotCache } = await import('./db/ledgerStore.js');
+    rebuildHotCache();
+
+    const fetchedLiveHistory = Array.isArray(liveIndexHistory)
+      ? liveIndexHistory
+      : await fetchLiveNepseIndexHistory().catch(() => []);
+
+    const guideRes = evaluateDailySelectionGuide({
+      db: ledgerDb,
+      targetDate,
+      liveIndexHistory: fetchedLiveHistory,
+      liveIndexQuote,
+      forceScanOnBear
+    });
+
+    const html = formatDailySelectionGuideHtml(guideRes);
+    let telegramResult = null;
+    if (!dryRun) {
+      telegramResult = await sendTelegramMessage(html, { chatId });
+    }
+
+    return {
+      ...guideRes,
+      success: dryRun ? Boolean(guideRes?.success) : Boolean(telegramResult?.success),
+      html,
+      telegramResult
+    };
+  } catch (err) {
+    console.error('[StockSelectionGuide] Fatal error:', err?.message || err);
+    const errorMsg = [
+      `📊 <b>DRAVYASHREE 4-GATE STOCK SELECTION GUIDE</b>`,
+      `📅 <b>Session: ${escapeHtml(targetDate || fallbackDate)}</b>`,
+      `──────────────────────────`,
+      `⚠️ Error running stock selection scan: ${escapeHtml(String(err?.message || 'Unknown error'))}`,
+      `Please try again after market data is ingested.`
+    ].join('\n');
+    const telegramResult = dryRun ? null : await sendTelegramMessage(errorMsg, { chatId });
+    return {
+      success: false,
+      error: err?.message || 'Unknown error',
+      sessionDate: targetDate || fallbackDate,
+      html: errorMsg,
+      telegramResult
+    };
+  }
+}
+
+/**
+ * Scheduled daily EOD dispatcher with persistent per-session deduplication across restarts.
+ * Always sends either selected stock(s) OR an explicit "No Stock Selected" alert once per session.
+ */
+export async function dispatchScheduledDailySelectionGuide({
+  targetDate = null,
+  liveIndexQuote = null,
+  liveIndexHistory = null
+} = {}) {
+  const status = getDetailedMarketStatus();
+  const effectiveDate = String(
+    targetDate || status?.lastClosedSessionDate || status?.targetSessionDate || new Date().toISOString().slice(0, 10)
+  ).slice(0, 10);
+
+  const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
+  const telegramStatus = getTelegramStatus();
+  if (!telegramStatus.isConfigured && !isTestEnv) {
+    return { skipped: true, reason: 'telegram_not_configured', sessionDate: effectiveDate };
+  }
+
+  if (inFlightScheduledGuideDate === effectiveDate) {
+    return { skipped: true, reason: 'in_flight', sessionDate: effectiveDate };
+  }
+  if (hasSelectionGuideDispatchedForDate(effectiveDate)) {
+    return { skipped: true, reason: 'already_dispatched', sessionDate: effectiveDate };
+  }
+
+  const dbLastDate = await getLastSelectionGuideDateFromDb().catch(() => null);
+  if (dbLastDate === effectiveDate) {
+    markSelectionGuideDispatchedForDate(effectiveDate, { regime: 'DB_SYNCED' });
+    return { skipped: true, reason: 'already_dispatched_db', sessionDate: effectiveDate };
+  }
+
+  inFlightScheduledGuideDate = effectiveDate;
+  try {
+    // Ensure ledger & price rows actually exist for effectiveDate before marking session dispatched
+    try {
+      const { db: ledgerDb } = await import('./db/ledgerStore.js');
+      const hasPrices = Boolean(
+        ledgerDb.prepare('SELECT 1 FROM daily_stock_summary WHERE trade_date = ? LIMIT 1').get(effectiveDate)
+      );
+      const hasBroker = Boolean(
+        ledgerDb.prepare('SELECT 1 FROM daily_broker_ledger WHERE trade_date = ? LIMIT 1').get(effectiveDate)
+      );
+      if (!hasPrices || !hasBroker) {
+        return { skipped: true, reason: 'awaiting_eod_data_ingestion', sessionDate: effectiveDate };
+      }
+    } catch (_) {}
+
+    const res = await runDailyStockSelectionGuideAndDispatch({
+      targetDate: effectiveDate,
+      liveIndexQuote,
+      liveIndexHistory,
+      dryRun: false
+    });
+
+    if (res?.telegramResult?.success) {
+      markSelectionGuideDispatchedForDate(res.sessionDate || effectiveDate, {
+        qualifiedCount: res.qualifiedCount,
+        watchlistCount: res.watchlistCount,
+        regime: res.gate1?.regime
+      });
+      return {
+        skipped: false,
+        dispatched: true,
+        sessionDate: res.sessionDate || effectiveDate,
+        qualifiedCount: res.qualifiedCount || 0,
+        watchlistCount: res.watchlistCount || 0,
+        regime: res.gate1?.regime || 'UNKNOWN',
+        telegramResult: res.telegramResult
+      };
+    }
+
+    return {
+      skipped: false,
+      dispatched: false,
+      sessionDate: effectiveDate,
+      reason: res?.telegramResult?.reason || res?.telegramResult?.error || res?.error || 'dispatch_failed'
+    };
+  } finally {
+    inFlightScheduledGuideDate = null;
   }
 }
 
@@ -3591,8 +3816,10 @@ export async function select5StepSwingPicks(opts = {}) {
       if (scripSector === 'Commercial Banks' && (trapAudit.total5DayNet || 0) < 100000) continue;
 
       // 3) Filter 3: Lead Broker Retention Ratio >= 55% (True Institutional Hoarding vs. Wash Churn)
-      const leadRetentionPct = trapAudit.retentionPct || 65;
-      if (leadRetentionPct < 55) continue; // Hard Veto: Reject wash churn!
+      const leadRetentionPct = (trapAudit?.retentionPct !== null && trapAudit?.retentionPct !== undefined && Number.isFinite(Number(trapAudit.retentionPct)))
+        ? Number(trapAudit.retentionPct)
+        : null;
+      if (leadRetentionPct === null || leadRetentionPct < 55) continue; // Hard Veto: Reject missing/churn!
 
       // 4) Filter 4 & Technical Safety Gates:
       // Allow institutional absorption if 5-day net >= 100,000 kitta has overpowered the selling broker
@@ -3605,27 +3832,27 @@ export async function select5StepSwingPicks(opts = {}) {
       try {
         const flow = typeof getSmartMoneyAggregatedFlow === 'function' ? getSmartMoneyAggregatedFlow(sym, 5) : [];
         flowMetrics = extract5DayBrokerFlowMetrics(flow, brokerVwap, {
-          bcr3Buy: bcr5Net > 0 ? Math.min(85, Math.max(40, Number((bcr5Net * 1.4).toFixed(1)))) : 45.0,
-          bcr3Sell: scr3Net > 0 ? Number(scr3Net.toFixed(1)) : 20.0,
+          bcr3Buy: bcr5Net > 0 ? Math.min(85, Math.max(40, Number((bcr5Net * 1.4).toFixed(1)))) : null,
+          bcr3Sell: scr3Net > 0 ? Number(scr3Net.toFixed(1)) : null,
           leadBrokerId: trapAudit.leadBrokerId || sig.lead_broker_id
         });
       } catch (_) {}
       const avgBrokerPrice = Number(flowMetrics.avgBrokerPrice || brokerVwap || ltp);
-      const realBcr3Buy = Number(flowMetrics.bcr3Buy ?? 45.0);
-      const realBcr3Sell = Number(flowMetrics.bcr3Sell ?? 20.0);
+      const realBcr3Buy = (flowMetrics.bcr3Buy !== null && flowMetrics.bcr3Buy !== undefined && Number.isFinite(Number(flowMetrics.bcr3Buy))) ? Number(flowMetrics.bcr3Buy) : null;
+      const realBcr3Sell = (flowMetrics.bcr3Sell !== null && flowMetrics.bcr3Sell !== undefined && Number.isFinite(Number(flowMetrics.bcr3Sell))) ? Number(flowMetrics.bcr3Sell) : null;
 
-      // Enforce Seller Dominance Ceiling & Buyer Dominance from real 5-day ledger metrics
-      if (realBcr3Sell > 45.0 || realBcr3Buy < realBcr3Sell) continue;
+      // Enforce verified 5-day ledger dominance & Seller Dominance Ceiling
+      if (realBcr3Buy === null || realBcr3Sell === null || realBcr3Sell > 45.0 || realBcr3Buy < realBcr3Sell) continue;
 
       const resolvedLeadBrokerId = trapAudit.leadBrokerId || flowMetrics.leadBrokerId || sig.lead_broker_id;
       const resolvedLeadBrokerName = BROKER_NAMES[String(resolvedLeadBrokerId)] || flowMetrics.leadBrokerName || `Broker #${resolvedLeadBrokerId}`;
       const realVwapDiffPct = avgBrokerPrice > 0 ? Number((((ltp - avgBrokerPrice) / avgBrokerPrice) * 100).toFixed(2)) : vwapDiffPct;
 
       // Coiled Ignition Breakout, Pocket Pivot & Loophole-Protected SMC Confluence (Last 55 Sessions)
-      let base10Pct = 6.5;
-      let vduRatio = 0.55;
-      let rvolToday = 1.0;
-      let dayChgPct = 0.0;
+      let base10Pct = null;
+      let vduRatio = null;
+      let rvolToday = null;
+      let dayChgPct = null;
       let isPocketPivot = false;
       let is20dBreakout = false;
       let isSpringReclaim = false;
@@ -3681,6 +3908,10 @@ export async function select5StepSwingPicks(opts = {}) {
           is20dBreakout = curClose >= maxClose15 * 0.995 && dayChgPct >= 0.2 && rvolToday >= 1.15;
           isSpringReclaim = minLow5 < sma20 * 0.985 && curClose > sma20 && dayChgPct >= 0.4;
           isCoilIgnitionBreakout =
+            base10Pct !== null &&
+            vduRatio !== null &&
+            rvolToday !== null &&
+            dayChgPct !== null &&
             (base10Pct <= 8.5 || isSpringReclaim) &&
             (vduRatio <= 0.68 || is20dBreakout || isPocketPivot) &&
             dayChgPct >= 0.2 &&
@@ -4142,7 +4373,7 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
   const name = escapeHtml(winner.name || winner.companyName || rawSym);
   const ltp = Number(winner.ltp || winner.closePrice || winner.c || 0);
   const sector = escapeHtml(winner.sector || 'Equities');
-  const score = winner.corneringScore || winner.totalScore || winner.score || 95;
+  const score = winner.corneringScore ?? winner.totalScore ?? winner.score ?? null;
   const confidenceLabel = escapeHtml(winner.confidenceLabel || '🟢 Confirmed Stealth (v2.0)');
   const rallyHorizonLabel = escapeHtml(
     winner.rallyHorizonLabel ||
@@ -4158,8 +4389,8 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
     winner.marketRegime || winner.regime || 'BULL'
   );
   const freeFloatCorneredPct = Number.isFinite(Number(winner.freeFloatCorneredPct)) ? Number(winner.freeFloatCorneredPct) : 0;
-  const clvPct = Number(winner.clv !== undefined ? winner.clv * 100 : 65).toFixed(0);
-  const wickPct = Number(winner.upperWickRatio !== undefined ? winner.upperWickRatio * 100 : 12).toFixed(0);
+  const clvPct = (winner.clv !== undefined && winner.clv !== null && Number.isFinite(Number(winner.clv))) ? `${(Number(winner.clv) * 100).toFixed(0)}%` : 'N/A';
+  const wickPct = (winner.upperWickRatio !== undefined && winner.upperWickRatio !== null && Number.isFinite(Number(winner.upperWickRatio))) ? `${(Number(winner.upperWickRatio) * 100).toFixed(0)}%` : 'N/A';
   const triggerSummary = winner.isT2ClearedContinuation
     ? 'T+2 Demat Settlement Survived + Pullback Dry-Up'
     : winner.isIdnr4
@@ -4200,25 +4431,40 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
   const pocPrice = Number(winner.pocPrice || numAvgBroker).toFixed(1);
   const distFromBroker = numAvgBroker > 0 ? (((basePrice - numAvgBroker) / numAvgBroker) * 100).toFixed(1) : '0.0';
   const distSign = Number(distFromBroker) >= 0 ? '+' : '';
-  const bcr3Buy = Number(winner.bcr3Buy ?? winner.bcr3BuyPct ?? 45.0).toFixed(1);
-  const bcr3Sell = Number(winner.bcr3Sell ?? winner.bcr3SellPct ?? 20.0).toFixed(1);
-  const bcr3SpreadVal = +(Number(bcr3Buy) - Number(bcr3Sell)).toFixed(1);
-  const bcr3SpreadStr = `${bcr3SpreadVal >= 0 ? '+' : ''}${bcr3SpreadVal.toFixed(1)}%`;
-  const netRet = Number(winner.retention10D ?? winner.retentionPct ?? winner.leadRetentionPct ?? 85).toFixed(0);
-  const washChurnPct = Number(winner.washChurnPct ?? winner.churnPct ?? Math.max(0, 100 - Number(netRet))).toFixed(0);
-  const isHighChurn = Number(washChurnPct) > 35;
-  const gate0Text = isHighChurn
-    ? `PASSED (No Operator Dump | ⚠️ Churn Elevated: ${washChurnPct}%)`
-    : `100% PASSED (No Operator Dump / Clean Retention: ${netRet}%)`;
-  const leadBrokerId = winner.leadBrokerId || winner.leadBroker || '58';
-  const rawLeadName = BROKER_NAMES[String(leadBrokerId)] || winner.leadBrokerName || `Broker #${leadBrokerId}`;
+  const rawBcr3Buy = winner.bcr3Buy ?? winner.bcr3BuyPct;
+  const rawBcr3Sell = winner.bcr3Sell ?? winner.bcr3SellPct;
+  const bcr3BuyNum = (rawBcr3Buy !== null && rawBcr3Buy !== undefined && Number.isFinite(Number(rawBcr3Buy))) ? Number(rawBcr3Buy) : null;
+  const bcr3SellNum = (rawBcr3Sell !== null && rawBcr3Sell !== undefined && Number.isFinite(Number(rawBcr3Sell))) ? Number(rawBcr3Sell) : null;
+  const bcr3Buy = bcr3BuyNum !== null ? `${bcr3BuyNum.toFixed(1)}%` : 'N/A';
+  const bcr3Sell = bcr3SellNum !== null ? `${bcr3SellNum.toFixed(1)}%` : 'N/A';
+  const bcr3SpreadStr = (bcr3BuyNum !== null && bcr3SellNum !== null)
+    ? (() => { const s = +(bcr3BuyNum - bcr3SellNum).toFixed(1); return `${s >= 0 ? '+' : ''}${s.toFixed(1)}%`; })()
+    : 'N/A';
+  const rawNetRet = winner.retention10D ?? winner.retentionPct ?? winner.leadRetentionPct;
+  const netRetNum = (rawNetRet !== null && rawNetRet !== undefined && Number.isFinite(Number(rawNetRet))) ? Number(rawNetRet) : null;
+  const rawChurn = winner.washChurnPct ?? winner.churnPct ?? (netRetNum !== null ? Math.max(0, 100 - netRetNum) : null);
+  const washChurnNum = (rawChurn !== null && rawChurn !== undefined && Number.isFinite(Number(rawChurn))) ? Number(rawChurn) : null;
+  const netRet = netRetNum !== null ? `${netRetNum.toFixed(0)}%` : 'N/A';
+  const washChurnPct = washChurnNum !== null ? `${washChurnNum.toFixed(0)}%` : 'N/A';
+  const isHighChurn = washChurnNum !== null && washChurnNum > 35;
+  const gate0Text = washChurnNum === null
+    ? 'PENDING VERIFICATION (Unverified Churn Telemetry)'
+    : isHighChurn
+      ? `PASSED (No Operator Dump | ⚠️ Churn Elevated: ${washChurnPct})`
+      : `100% PASSED (No Operator Dump / Clean Retention: ${netRet})`;
+  const leadBrokerId = winner.leadBrokerId || winner.leadBroker || 'N/A';
+  const rawLeadName = winner.leadBrokerId || winner.leadBroker
+    ? (BROKER_NAMES[String(leadBrokerId)] || winner.leadBrokerName || `Broker #${leadBrokerId}`)
+    : (winner.leadBrokerName || 'Unverified');
   const cleanLeadBroker = escapeHtml(String(rawLeadName).replace(/\s+(Securities|Investment|Broking|Stock|House|Limited|Ltd)\b/gi, '').trim());
-  const vdu = Number(winner.vdu || winner.vduRatio || 0.48).toFixed(2);
-  const vduNum = Number(vdu);
-  const vduLabel = vduNum <= 0.60 ? '&lt;= 0.60x Exhaustion Clean ✅' : '&gt; 0.60x Moderate Volume ⚠️';
-  const cmfVal = Number(winner.cmf !== undefined ? winner.cmf : 0.12);
-  const cmfStr = (cmfVal >= 0 ? '+' : '') + cmfVal.toFixed(2);
-  const bbw = Number(winner.bbw || winner.bbwPct || 11.2).toFixed(1);
+  const rawVdu = winner.vdu ?? winner.vduRatio;
+  const vduNum = (rawVdu !== null && rawVdu !== undefined && Number.isFinite(Number(rawVdu))) ? Number(rawVdu) : null;
+  const vdu = vduNum !== null ? `${vduNum.toFixed(2)}x` : 'N/A';
+  const vduLabel = vduNum === null ? '⏳ VDU Unverified' : (vduNum <= 0.60 ? '&lt;= 0.60x Exhaustion Clean ✅' : '&gt; 0.60x Moderate Volume ⚠️');
+  const cmfVal = (winner.cmf !== undefined && winner.cmf !== null && Number.isFinite(Number(winner.cmf))) ? Number(winner.cmf) : null;
+  const cmfStr = cmfVal !== null ? ((cmfVal >= 0 ? '+' : '') + cmfVal.toFixed(2)) : 'N/A';
+  const rawBbw = winner.bbw ?? winner.bbwPct;
+  const bbw = (rawBbw !== null && rawBbw !== undefined && Number.isFinite(Number(rawBbw))) ? `${Number(rawBbw).toFixed(1)}%` : 'N/A';
 
   // 1% Risk Sizing & Asymmetrical R:R
   const riskPerShare = Math.max(1, Math.abs(Number(winner.entryHigh || basePrice) - Number(sl)));
@@ -4233,13 +4479,13 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `<b>Scrip:</b> <code>${sym}</code> (${name})`,
     `<b>Sector:</b> ${sector} | <b>LTP:</b> Rs. ${ltp.toFixed(1)}`,
-    `<b>Setup Status:</b> <b>${confidenceLabel}</b> (Score: ${score}/100)`,
+    `<b>Setup Status:</b> <b>${confidenceLabel}</b>${score !== null ? ` (Score: ${score}/100)` : ''}`,
     `<b>Rally Track:</b> <b>${rallyHorizonLabel}</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🛡️ <b>LAYER 0 &amp; 1: ZERO-TRAP &amp; SQUEEZE VALIDATION</b>`,
     `• Gate 0 Trap Immunity: <b>${gate0Text}</b>`,
-    `• Volatility Contraction: BBW <b>${bbw}%</b> (&lt;= 14.0%) | Narrow Range Bar`,
-    `• Seller Dominance Ceiling: BCR3 Sell <b>${bcr3Sell}%</b> (&lt; 45% Safe Ceiling)`,
+    `• Volatility Contraction: BBW <b>${bbw}</b> (&lt;= 14.0%) | Narrow Range Bar`,
+    `• Seller Dominance Ceiling: BCR3 Sell <b>${bcr3Sell}</b> (&lt; 45% Safe Ceiling)`,
     ``,
     `🏛️ <b>LAYER 2 &amp; 3: INSTITUTIONAL CORNERING &amp; EXHAUSTION</b>`,
     `• Lead Accumulator: <b>Broker #${leadBrokerId} (${cleanLeadBroker})</b>`,
@@ -4248,17 +4494,17 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
     `• <b>Volume Profile POC:</b> <b>Rs. ${pocPrice}</b>`,
     `• SMC Structure &amp; Retest: <b>${escapeHtml(winner.smcNarrative || 'Orderly Floor Base Holding Above 20 EMA')}</b>`,
     `• Fair Value Gap (FVG): <b>${escapeHtml(winner.fvgNarrative || 'Balanced Auction Near Broker VWAP')}</b>`,
-    `• Top 3 Buyer Concentration (BCR3): <b>${bcr3Buy}%</b> vs BCR3 Sell <b>${bcr3Sell}%</b> (Net Spread: <b>${bcr3SpreadStr}</b>)`,
-    `• Clean Delivery Retention: <b>${netRet}%</b> | <b>Wash-Churn Rate:</b> <b>${washChurnPct}%</b> (${Number(washChurnPct) <= 35 ? '&lt;= 35% Clean ✅' : '&gt; 35% Elevated Churn ⚠️'})`,
-    `• Wyckoff Volume Dry-Up (VDU): <b>${vdu}x</b> (${vduLabel})`,
-    `• Chaikin Money Flow (CMF): <b>${cmfStr}</b> (Positive Institutional Inflow)`,
+    `• Top 3 Buyer Concentration (BCR3): <b>${bcr3Buy}</b> vs BCR3 Sell <b>${bcr3Sell}</b> (Net Spread: <b>${bcr3SpreadStr}</b>)`,
+    `• Clean Delivery Retention: <b>${netRet}</b> | <b>Wash-Churn Rate:</b> <b>${washChurnPct}</b> (${washChurnNum === null ? '⏳ Unverified' : washChurnNum <= 35 ? '&lt;= 35% Clean ✅' : '&gt; 35% Elevated Churn ⚠️'})`,
+    `• Wyckoff Volume Dry-Up (VDU): <b>${vdu}</b> (${vduLabel})`,
+    `• Chaikin Money Flow (CMF): <b>${cmfStr}</b> (Institutional Flow)`,
     ``,
     `🚀 <b>LAYER 4: DUAL-TRACK RALLY &amp; IGNITION HORIZON (v2.0)</b>`,
     `• 🧭 <b>Rally Track:</b> <b>${rallyHorizonLabel}</b>`,
     `• 📋 <b>Allocation Guide:</b> <b>${escapeHtml(upgradedTrackDisplay.tierBadge)}</b> — <i>${escapeHtml(upgradedTrackDisplay.allocationGuide)}</i>`,
     `• ⚡ <b>Ignition / Survival Trigger:</b> <b>${escapeHtml(triggerSummary)}</b>`,
     `• 🧲 <b>5D Free-Float Cornered:</b> <b>${freeFloatCorneredPct.toFixed(2)}%</b> of Sector Public Float ${freeFloatCorneredPct >= 1.0 ? '🔥 (Float Squeeze Active — Supply Drying Up)' : '✅ (Institutional Accumulation)'}`,
-    `• 🕯️ <b>Close Location Value (CLV):</b> <b>${clvPct}%</b> (Upper-Wick Ratio: <b>${wickPct}%</b> &lt;= 45% Safe)`,
+    `• 🕯️ <b>Close Location Value (CLV):</b> <b>${clvPct}</b> (Upper-Wick Ratio: <b>${wickPct}</b> &lt;= 45% Safe)`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🎯 <b>LAYER 5: DYNAMIC RATCHET EXECUTION TICKET</b>`,
     `• 🟢 <b>Limit Buy Zone:</b> <code>Rs. ${entryLow} – Rs. ${entryHigh}</code>`,
@@ -4323,9 +4569,11 @@ export function validateAlertInvariants(winner = {}, html = '') {
   }
 
   // 4. Semantic Contradiction Invariants
-  const netRet = Number(winner.retention10D ?? winner.retentionPct ?? winner.leadRetentionPct ?? 85);
-  const washChurn = Number(winner.washChurnPct ?? winner.churnPct ?? (100 - netRet));
-  if (washChurn > 35 && html.includes('No Dump / No Churn')) {
+  const rawInvNetRet = winner.retention10D ?? winner.retentionPct ?? winner.leadRetentionPct;
+  const netRet = (rawInvNetRet !== null && rawInvNetRet !== undefined && Number.isFinite(Number(rawInvNetRet))) ? Number(rawInvNetRet) : null;
+  const rawInvChurn = winner.washChurnPct ?? winner.churnPct ?? (netRet !== null ? 100 - netRet : null);
+  const washChurn = (rawInvChurn !== null && rawInvChurn !== undefined && Number.isFinite(Number(rawInvChurn))) ? Number(rawInvChurn) : null;
+  if (washChurn !== null && washChurn > 35 && html.includes('No Dump / No Churn')) {
     errors.push(`Semantic Contradiction: Wash-Churn is ${washChurn}% (>35%) but Gate 0 claims "No Dump / No Churn"`);
   }
 
@@ -4404,7 +4652,9 @@ export function formatInstantExecutionTicketHtml(d = {}) {
   const t2 = Number(d.target2 || (numLimit * 1.155)).toFixed(1);
   const t2Pct = Number(d.t2Pct || (((Number(t2) - numLimit) / numLimit) * 100)).toFixed(1);
   
-  const netRRR = Number(d.netRRR || 3.2).toFixed(1);
+  const netRRR = (d.netRRR !== null && d.netRRR !== undefined && Number.isFinite(Number(d.netRRR)))
+    ? `${Number(d.netRRR).toFixed(1)}:1 RRR`
+    : (Number(slPct) > 0 && Number(t1Pct) > 0 ? `${(Number(t1Pct) / Number(slPct)).toFixed(1)}:1 RRR` : 'N/A');
   
   // Position Sizing per 1% Risk: Risk = 1,000 on 1 Lakh, 5,000 on 5 Lakh, 10,000 on 10 Lakh
   const riskPerShare = Math.max(1, numLimit - Number(sl));
@@ -4416,13 +4666,26 @@ export function formatInstantExecutionTicketHtml(d = {}) {
   const deploy5L = (qty5L * numLimit).toLocaleString();
   const deploy10L = (qty10L * numLimit).toLocaleString();
   
-  const bcr3 = d.bcr3BuyPct || d.bcr3 || 75;
-  const bcr3SellPct = Number(d.bcr3SellPct ?? d.bcr3Sell ?? 24).toFixed(1);
-  const bcr3BuyVal = Number(bcr3).toFixed(1);
-  const instantSpreadVal = +(Number(bcr3BuyVal) - Number(bcr3SellPct)).toFixed(1);
-  const instantSpreadStr = `${instantSpreadVal >= 0 ? '+' : ''}${instantSpreadVal.toFixed(1)}%`;
-  const instantRetPct = Number(d.leadRetentionPct ?? d.netRetentionPct ?? 82).toFixed(0);
-  const instantChurnPct = Number(d.washChurnPct ?? d.churnPct ?? Math.max(0, 100 - Number(instantRetPct))).toFixed(0);
+  const rawInstBcr3 = d.bcr3BuyPct ?? d.bcr3Buy ?? d.bcr3;
+  const rawInstSell = d.bcr3SellPct ?? d.bcr3Sell;
+  const instBcr3Num = (rawInstBcr3 !== null && rawInstBcr3 !== undefined && Number.isFinite(Number(rawInstBcr3))) ? Number(rawInstBcr3) : null;
+  const instSellNum = (rawInstSell !== null && rawInstSell !== undefined && Number.isFinite(Number(rawInstSell))) ? Number(rawInstSell) : null;
+  const bcr3BuyVal = instBcr3Num !== null ? `${instBcr3Num.toFixed(1)}%` : 'N/A';
+  const bcr3SellPct = instSellNum !== null ? `${instSellNum.toFixed(1)}%` : 'N/A';
+  const instantSpreadVal = (instBcr3Num !== null && instSellNum !== null) ? +(instBcr3Num - instSellNum).toFixed(1) : null;
+  const instantSpreadStr = instantSpreadVal !== null ? `${instantSpreadVal >= 0 ? '+' : ''}${instantSpreadVal.toFixed(1)}%` : 'N/A';
+  const rawInstRet = d.leadRetentionPct ?? d.netRetentionPct;
+  const instRetNum = (rawInstRet !== null && rawInstRet !== undefined && Number.isFinite(Number(rawInstRet))) ? Number(rawInstRet) : null;
+  const rawInstChurn = d.washChurnPct ?? d.churnPct ?? (instRetNum !== null ? Math.max(0, 100 - instRetNum) : null);
+  const instChurnNum = (rawInstChurn !== null && rawInstChurn !== undefined && Number.isFinite(Number(rawInstChurn))) ? Number(rawInstChurn) : null;
+  const instantRetPct = instRetNum !== null ? `${instRetNum.toFixed(0)}%` : 'N/A';
+  const instantChurnPct = instChurnNum !== null ? `${instChurnNum.toFixed(0)}%` : 'N/A';
+  const soldKittaRaw = d.pastAccumulatorSoldKitta ?? d.antiDematDump?.soldToday ?? null;
+  const pastDumpText = soldKittaRaw === null || soldKittaRaw === undefined
+    ? 'Unverified (No Demat Audit)'
+    : Number(soldKittaRaw) > 0
+      ? `⚠️ ${Number(soldKittaRaw).toLocaleString()} Kitta Sold`
+      : '0 Kitta (Verified Clean)';
   const instantTrack = formatFlowchartTrackDisplay(
     d.rallyTrack || 'TRACK_B_T2_CLEARED_CONTINUATION',
     d.rallyHorizonLabel,
@@ -4467,15 +4730,15 @@ export function formatInstantExecutionTicketHtml(d = {}) {
     `   1. At Entry: Place initial Stop-Loss order at <b>Rs. ${sl}</b>.`,
     `   2. When Price touches <b>Rs. ${instantRatchetTrigger}</b> (+5.5%): Open TMS ➔ Cancel old SL ➔ Move Stop-Loss to <b>Rs. ${instantRatchetLock}</b>.`,
     `   <i>(Locks in net profit after all SEBON, DP &amp; 7.5% CGT fees. Never let a +5.5% runner turn into a loss!)</i>`,
-    `⚖️ <b>Net Expectancy:</b> ${netRRR}:1 RRR <i>(Post-CGT &amp; Broker Fees)</i>`,
+    `⚖️ <b>Net Expectancy:</b> ${netRRR} <i>(Post-CGT &amp; Broker Fees)</i>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🛡️ <b>ZERO-TRAP VERIFICATION:</b>`,
-    `• Past Accumulator Selling: <b>0 Kitta (Clean / No Dump)</b>`,
+    `• Past Accumulator Selling: <b>${pastDumpText}</b>`,
     `• Opening Noise Gate: <b>PASSED (Post-11:15 AM)</b>`,
     `• Intraday VWAP: Rs. ${vwap.toFixed(1)} <i>(Defended at Base)</i>`,
-    `• Dominant Institutional Flow: ${leadBroker} (<b>BCR3 Buy ${bcr3BuyVal}%</b> vs BCR3 Sell <b>${bcr3SellPct}%</b> | Net Spread: <b>${instantSpreadStr}</b> ${instantSpreadVal >= 5.0 ? '✅ Confirmed Smart Money' : ''})`,
+    `• Dominant Institutional Flow: ${leadBroker} (<b>BCR3 Buy ${bcr3BuyVal}</b> vs BCR3 Sell <b>${bcr3SellPct}</b> | Net Spread: <b>${instantSpreadStr}</b> ${instantSpreadVal !== null && instantSpreadVal >= 5.0 ? '✅ Confirmed Smart Money' : ''})`,
     ...(freeFloatCorneredPct > 0 ? [`• 🧲 <b>Free-Float Cornered %:</b> <b>${freeFloatCorneredPct.toFixed(2)}%</b> of tradable float locked by Lead Broker in 5 sessions 🔥 <i>(${freeFloatCorneredPct >= 1.0 ? 'Float Squeeze Alert' : 'Steady Accumulation'})</i>`] : []),
-    `• Lead Delivery Integrity: <b>${instantRetPct}% Retention</b> | <b>Wash-Churn: ${instantChurnPct}%</b> (${Number(instantChurnPct) <= 35 ? '&lt;= 35% Clean ✅' : '&gt; 35% Elevated Churn ⚠️'})`,
+    `• Lead Delivery Integrity: <b>${instantRetPct} Retention</b> | <b>Wash-Churn: ${instantChurnPct}</b> (${instChurnNum === null ? '⏳ Unverified' : instChurnNum <= 35 ? '&lt;= 35% Clean ✅' : '&gt; 35% Elevated Churn ⚠️'})`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `💼 <b>10-SEC TMS SIZING (1% Risk Cap):</b>`,
     `• <b>Rs. 1 Lakh:</b> Buy <code>${qty1L}</code> Kitta (Rs. ${deploy1L})`,
@@ -4519,10 +4782,10 @@ export async function sendTelegramPreMarketScan({
   sessionDate,
   breadthAdv = 0,
   breadthDec = 0,
-  breadthPct = 50,
+  breadthPct = null,
   isCashDefense = false,
-  nepseValue = '2,695.60',
-  nepseChange = '+31.54',
+  nepseValue = 'Unavailable',
+  nepseChange = '—',
   candidates = []
 } = {}) {
   const dateStr = sessionDate || new Date().toISOString().slice(0, 10);
@@ -4533,24 +4796,29 @@ export async function sendTelegramPreMarketScan({
 
   const candidateLines = candidates.length > 0
     ? candidates.map((c, idx) => {
+        const sc = c.score ?? c.setupScore ?? null;
+        const flt = c.floatM ?? c.freeFloatM ?? null;
         return [
           `<b>${idx + 1}. <code>${c.symbol}</code></b> (${c.sector || 'Equities'})`,
           `• LTP: Rs. ${c.ltp} | Base Pivot: Rs. ${c.basePrice || c.ltp}`,
           `• 🎯 Pullback Buy Zone: Rs. ${c.entryLow} – Rs. ${c.entryHigh}`,
           `• ⚠️ Chase Cap (+2.5% max): Rs. ${c.chaseCap}`,
-          `• 🛡️ Stop-Loss Floor: Rs. ${c.stopLoss} (-${c.slPct || '4.8'}%)`,
-          `• 🚀 Target 1: Rs. ${c.target1} (+${c.t1Pct || '9.6'}%) | T2: Rs. ${c.target2}`,
-          `• Score: <b>${c.score || c.setupScore || 85}/100</b> | Float: ${c.floatM || '&lt;15'}M shares`
+          `• 🛡️ Stop-Loss Floor: Rs. ${c.stopLoss}${c.slPct != null ? ` (-${c.slPct}%)` : ''}`,
+          `• 🚀 Target 1: Rs. ${c.target1}${c.t1Pct != null ? ` (+${c.t1Pct}%)` : ''} | T2: Rs. ${c.target2}`,
+          `• Score: <b>${sc !== null ? `${sc}/100` : 'N/A'}</b> | Float: ${flt !== null ? `${flt}M shares` : 'N/A'}`
         ].join('\n');
       }).join('\n\n')
     : '<i>No candidates met all 8 institutional gates today. Preserving 100% cash!</i>';
+
+  const chgNum = Number(nepseChange);
+  const chgFormatted = Number.isFinite(chgNum) ? `${chgNum >= 0 ? '+' : ''}${nepseChange}` : nepseChange;
 
   const msg = [
     `🌅 <b>DRAVYASHREE PRE-MARKET SCAN (PHASE 1)</b>`,
     `<b>Date:</b> ${dateStr} | <b>Time:</b> 10:15 AM NPT`,
     `──────────────────────────`,
-    `📊 <b>NEPSE Composite:</b> ${nepseValue} (${Number(nepseChange || 0) >= 0 ? '+' : ''}${nepseChange})`,
-    `📈 <b>Market Breadth:</b> ${breadthAdv} Adv / ${breadthDec} Dec (${breadthPct}% Bullish)`,
+    `📊 <b>NEPSE Composite:</b> ${nepseValue} (${chgFormatted})`,
+    `📈 <b>Market Breadth:</b> ${breadthAdv} Adv / ${breadthDec} Dec (${breadthPct !== null ? `${breadthPct}%` : 'N/A'} Bullish)`,
     `${breadthEmoji} <b>Directive:</b> ${breadthStatus}`,
     `──────────────────────────`,
     `👑 <b>QUALIFIED 8-GATE CANDIDATES:</b>`,
@@ -4586,6 +4854,10 @@ export async function sendTelegramPreOpenGate({
     ? `❌ <b>VERDICT: ABORT / DO NOT CHASE</b>\nPrice gapped +${gapPct}% (exceeds +2.5% Chase Cap of Rs. ${chaseCap}). Chasing exposes your trade to the T+2 settlement dump trap!`
     : `🟢 <b>VERDICT: CLEAR TO PLACE LIMIT ORDER</b>\nIndicative open is within the +2.5% safe band with positive buyer depth (OBIR = ${obir}).`;
 
+  const depthText = (bidVolume !== null && bidVolume !== undefined && askVolume !== null && askVolume !== undefined)
+    ? `${Number(bidVolume).toLocaleString()} Bids vs ${Number(askVolume).toLocaleString()} Asks`
+    : 'Depth unavailable (no L2 snapshot)';
+
   const msg = [
     header,
     `<b>Session:</b> Pre-Open Final Check (10:50 AM NPT)`,
@@ -4595,7 +4867,7 @@ export async function sendTelegramPreOpenGate({
     `• Indicative Open: Rs. ${indicativeOpen} (${Number(gapPct) >= 0 ? '+' : ''}${gapPct}%)`,
     `• ⚠️ Chase Cap Ceiling: Rs. ${chaseCap} (+2.5% max)`,
     `• 📊 Order Book Imbalance (OBIR): <b>${obir}</b>`,
-    `• Depth: ${Number(bidVolume).toLocaleString()} Bids vs ${Number(askVolume).toLocaleString()} Asks`,
+    `• Depth: ${depthText}`,
     `──────────────────────────`,
     verdictText,
     `──────────────────────────`,
@@ -4843,6 +5115,7 @@ async function handleTelegramCommand(text, {
       `I monitor NEPSE institutional accumulation and send high-conviction max-profit setups directly to your lockscreen!`,
       ``,
       `<b>⚡ Quick Commands to Send:</b>`,
+      `• <code>/guide</code> or <code>/selection</code> — 4-Gate Daily Stock Selection Guide (Selected Pick or Cash Defense)`,
       `• <code>/swing</code> or <code>/top5</code> — #1 Prime Stock Pick &amp; Top 5 Ranked Backup Slate`,
       `• <code>/trackb</code> — Special Track B Syndicate Setup (&lt; Rs. 450, Float &le; 1.5 Cr, Ret &gt; 75%)`,
       `• <code>/analyze SHIVM</code> — Complete 7-Section Deep Stock Audit &amp; Profitability Verdict`,
@@ -4865,9 +5138,11 @@ async function handleTelegramCommand(text, {
       `──────────────────────────`,
       `I monitor NEPSE institutional accumulation and send high-conviction max-profit setups directly to your lockscreen!`,
       ``,
-      `👑 <b>Automated #1 Prime Pick &amp; Ranked Slate:</b>`,
+      `👑 <b>Automated Daily Selection &amp; #1 Prime Pick:</b>`,
+      `• <code>/guide</code> or <code>/selection</code>: Daily 4-Gate Stock Selection Guide (Regime + Score/10 + 5 Ignition Triggers + Cash Defense on 0-Match Days)`,
       `• <code>/swing</code> or <code>/top5</code>: #1 Prime Stock Pick &amp; Top 5 Ranked Backup Slate (5-Day Trap-Vetoed Flowchart v2.0)`,
       `• <code>/trackb</code>: Special Track B Syndicate Setup (&lt; Rs. 450, Float &le; 1.5 Cr, Net Retention &gt; 75%, Dual Ignition, &plusmn;1.5% POC Shelf, 2–3D Surge)`,
+      `• <code>/playbook</code>: Educational "Great Alert" Accumulation Matrix`,
       ``,
       `🔍 <b>Complete 7-Section Deep Stock Audit:</b>`,
       `• <code>/analyze SYMBOL</code>: Comprehensive audit on whether a stock is appropriate to invest for profit (Top 3 Buyers vs Sellers, Cost Basis, Volume Profile POC, 20 EMA, Buy Zone, SL &amp; Targets)`,
@@ -5001,8 +5276,20 @@ async function handleTelegramCommand(text, {
     return res.telegramResult;
   }
 
-  // 2.6 PLAYBOOK / GUIDE MATRIX
-  if (lower === '/playbook' || lower === '/guide' || lower === 'playbook' || lower === 'guide') {
+  // 2.6 DAILY 4-GATE STOCK SELECTION GUIDE (/guide, /selection, /select, /dailyguide)
+  if (
+    lower === '/guide' || lower === 'guide' ||
+    lower === '/selection' || lower === 'selection' ||
+    lower === '/select' || lower === 'select' ||
+    lower === '/dailyguide' || lower === 'dailyguide' ||
+    lower === '/daily_guide' || lower === 'daily_guide'
+  ) {
+    const guideRes = await runDailyStockSelectionGuideAndDispatch({ chatId });
+    return guideRes.telegramResult || guideRes;
+  }
+
+  // 2.6.1 PLAYBOOK EDUCATIONAL MATRIX (/playbook)
+  if (lower === '/playbook' || lower === 'playbook') {
     return await sendTelegramInvestorPlaybook({ chatId });
   }
 
@@ -5391,6 +5678,7 @@ async function handleTelegramCommand(text, {
     `❓ <b>Unrecognized Request:</b> <code>${escapeHtml(raw)}</code>`,
     `──────────────────────────`,
     `Here are popular commands you can send right now:`,
+    `• <code>/guide</code> or <code>/selection</code> — Daily 4-Gate Stock Selection Guide (Pick or Cash Defense)`,
     `• <code>/swing</code> or <code>/top5</code> — #1 Prime Stock Pick &amp; Top 5 Ranked Backup Slate`,
     `• <code>/analyze SHIVM</code> — Complete 7-Section Deep Stock Audit`,
     `• <code>/track SHIVM 510 484 100</code> — Track a stock for exit alerts`,
@@ -5416,8 +5704,7 @@ const MAX_PROCESSED_UPDATE_IDS = 1000;
  * using timing-safe comparison to prevent side-channel timing attacks.
  */
 export function validateWebhookSecretToken(expected, provided) {
-  if (!expected) return true; // Optional if not configured
-  if (!provided) return false;
+  if (!expected || !provided) return false;
   try {
     const expBuf = crypto.createHash('sha256').update(String(expected).trim()).digest();
     const provBuf = crypto.createHash('sha256').update(String(provided).trim()).digest();
@@ -5481,11 +5768,10 @@ export async function handleIncomingTelegramUpdate(update, {
   }
 
   const cfg = loadConfig();
-  // Auto-bind chatId if not set, so bot broadcasts reach this user
+  // Fail closed when owner chatId is not explicitly configured — never auto-bind from unverified updates
   if (!cfg.chatId) {
-    console.log(`[TelegramNotifier] Auto-bound Telegram Chat ID: ${chatId}`);
-    saveTelegramConfig({ ...cfg, chatId });
-    cfg.chatId = chatId;
+    console.warn(`[TelegramNotifier] Ignored incoming update for chat ${chatId}: owner chatId not configured.`);
+    return { processed: false, reason: 'chat_id_not_configured', chatId };
   }
 
   // Authorization guard: strictly restrict to the authorized owner chatId.

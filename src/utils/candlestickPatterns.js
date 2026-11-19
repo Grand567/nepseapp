@@ -706,6 +706,55 @@ export function detectCandlestickPatternsFromHistory(history = [], fallbackStock
   return detections.reverse();
 }
 
+function calculateRsiFromCloses(closes, period = 14) {
+  if (!Array.isArray(closes) || closes.length < period + 1) return null;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff >= 0) gains += diff;
+    else losses -= diff;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  }
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return Number((100 - (100 / (1 + rs))).toFixed(1));
+}
+
+function calculateMacdHistFromCloses(closes) {
+  if (!Array.isArray(closes) || closes.length < 26) return null;
+  const calcEma = (arr, p) => {
+    const k = 2 / (p + 1);
+    let ema = arr.slice(0, p).reduce((a, b) => a + b, 0) / p;
+    for (let i = p; i < arr.length; i++) {
+      ema = arr[i] * k + ema * (1 - k);
+    }
+    return ema;
+  };
+  const ema12 = calcEma(closes, 12);
+  const ema26 = calcEma(closes, 26);
+  const macdLine = ema12 - ema26;
+  return Number((macdLine * 0.35).toFixed(2));
+}
+
+function calculateRvolFromHistory(history, stock) {
+  if (!Array.isArray(history) || history.length < 5) return null;
+  const vols = history.map(h => Number(h.volume || h.totalTradedQuantity || 0)).filter(v => v > 0);
+  if (vols.length < 5) return null;
+  const recent20 = vols.slice(-20);
+  const avg = recent20.reduce((a, b) => a + b, 0) / recent20.length;
+  if (avg <= 0) return null;
+  const currVol = Number(stock?.volume || stock?.totalTradedQuantity || (history.length > 0 ? history[history.length - 1].volume : 0));
+  return Number((currVol / avg).toFixed(2));
+}
+
 /**
  * Share Hub Technical Rating Speedometer Engine
  * Computes Moving Averages (6) + Oscillators (6) = 12 Indicators
@@ -753,8 +802,10 @@ export function calculateTechnicalSpeedometer(stock = {}, history = [], explicit
   const oscItems = [];
 
   // 1. RSI (14)
-  if (stock.rsi != null && !isNaN(Number(stock.rsi))) {
-    const rsiVal = Number(stock.rsi);
+  const rsiVal = (stock.rsi != null && !isNaN(Number(stock.rsi)))
+    ? Number(stock.rsi)
+    : (closes.length >= 15 ? calculateRsiFromCloses(closes, 14) : null);
+  if (rsiVal != null) {
     const rsiClamped = Math.min(95, Math.max(10, +rsiVal.toFixed(1)));
     const isHealthyUptrend = pChange >= 0 || (stock.ema50 && ltp >= stock.ema50) || (stock.ema20 && ltp >= stock.ema20);
     const rsiAction = rsiClamped >= 52 && rsiClamped <= 72 ? 'Buy'
@@ -769,8 +820,10 @@ export function calculateTechnicalSpeedometer(stock = {}, history = [], explicit
   }
 
   // 2. MACD (12, 26, 9)
-  if (stock.macd?.histogram != null && !isNaN(Number(stock.macd.histogram))) {
-    const macdHist = Number(stock.macd.histogram);
+  const macdHist = (stock.macd?.histogram != null && !isNaN(Number(stock.macd.histogram)))
+    ? Number(stock.macd.histogram)
+    : (closes.length >= 26 ? calculateMacdHistFromCloses(closes) : null);
+  if (macdHist != null) {
     const macdAction = macdHist > 0.05 ? 'Buy' : macdHist < -0.05 ? 'Sell' : 'Neutral';
     oscItems.push({ label: 'MACD (12, 26, 9)', value: `${macdHist >= 0 ? '+' : ''}${macdHist.toFixed(2)}`, action: macdAction });
   } else {
@@ -794,8 +847,10 @@ export function calculateTechnicalSpeedometer(stock = {}, history = [], explicit
   }
 
   // 4. Volume RVOL (20D)
-  if (stock.rvol != null || stock.volumeSurgeRatio != null) {
-    const rvol = Number(stock.rvol || stock.volumeSurgeRatio);
+  const rvol = (stock.rvol != null || stock.volumeSurgeRatio != null)
+    ? Number(stock.rvol || stock.volumeSurgeRatio)
+    : calculateRvolFromHistory(history, stock);
+  if (rvol != null && !isNaN(rvol)) {
     const rvolAction = (rvol >= 1.25 && pChange >= 0) ? 'Buy' : (rvol >= 1.25 && pChange < -1) ? 'Sell' : 'Neutral';
     oscItems.push({ label: 'Volume RVOL (20D)', value: `${rvol.toFixed(2)}x`, action: rvolAction });
   } else {
@@ -873,6 +928,8 @@ export function calculateTechnicalSpeedometer(stock = {}, history = [], explicit
     summary: totalSummary,
     maSummary,
     oscSummary,
+    maItems,
+    oscItems,
     orderFlowVeto: veto,
     isVetoed: Boolean(veto?.isVetoed),
     vetoReason: veto?.reason || null

@@ -9,6 +9,7 @@
 
 import { getCachedRealPriceHistory, getCachedBrokerData } from './historyCache.js';
 import { aggregateBrokerMicrostructure, evaluateOrderFlowVeto } from './sharedBrokerAggregationEngine.js';
+import { isPureNepseEquity } from './nepseEquityFilter.js';
 
 export interface Candle {
   date?: string;
@@ -1697,17 +1698,21 @@ export function calculateStockCorneringScore(stock: any): {
     priceScore += 10; // Narrow range bar bonus (+12.4 pts backtest lift)
   }
 
+  const isSampleValid = stock?.brokerData?.status !== 'insufficient_sample' && !stock?.isThinSample && !stock?.isUnderactive;
+
   // Criteria 2: BCR3 Buy >= 40% with Net Retention >= 70% (+16.1 pts lift - strongest single factor)
   let concScore = 0;
   let brokerConcentration = false;
-  if (bcr3Buy >= 40.0 && netRetention >= 0.70) {
-    concScore = 35;
-    brokerConcentration = true;
-  } else if (bcr3Buy >= 36.0 && netRetention >= 0.60) {
-    concScore = 25;
-    if (bcr3Buy >= 38.0) brokerConcentration = true;
-  } else if (bcr3Buy >= 32.0) {
-    concScore = 15;
+  if (isSampleValid) {
+    if (bcr3Buy >= 40.0 && netRetention >= 0.70) {
+      concScore = 35;
+      brokerConcentration = true;
+    } else if (bcr3Buy >= 36.0 && netRetention >= 0.60) {
+      concScore = 25;
+      if (bcr3Buy >= 38.0) brokerConcentration = true;
+    } else if (bcr3Buy >= 32.0) {
+      concScore = 15;
+    }
   }
 
   // Criteria 3: CMF >= +0.05 OR Leading OBV Divergence (+13.2 pts lift)
@@ -1787,19 +1792,7 @@ export function calculateStockCorneringScore(stock: any): {
 }
 
 function isDisqualifiedNonEquityOrBond(s: any): boolean {
-  const sym = String(s?.symbol || s?.scrip || '').toUpperCase().trim();
-  const sec = String(s?.sector || s?.sectorName || '').toLowerCase();
-  const n = String(s?.name || s?.companyName || '').toLowerCase();
-
-  // Exclude mutual funds, debentures, bonds, promoter shares
-  if (sec.includes('mutual') || sec.includes('debenture') || sec.includes('bond') || sec.includes('promoter')) return true;
-  if (n.includes('mutual fund') || n.includes('debenture') || n.includes('bond') || n.includes('promoter share') || n.includes('rinpatra') || n.includes('urja rinpatra')) return true;
-  if (sym.endsWith('PO') || sym.endsWith('P') || sym.includes('DEB') || sym.startsWith('NMB50') || sym.startsWith('ADBLD')) return true;
-  // Any ticker ending in 2 to 4 digits (e.g. NICAD2091, KBLD86, NBLD85)
-  if (/\d{2,4}$/.test(sym)) return true;
-  if (sym.length > 5 && (sym.includes('D') || sym.includes('B')) && /\d/.test(sym)) return true;
-  if (sym.endsWith('MF') || sym.endsWith('BS') || sym.endsWith('SF') || sym.endsWith('EF') || sym.endsWith('GF') || sym.endsWith('FF')) return true;
-  return false;
+  return !isPureNepseEquity(s);
 }
 
 /**
@@ -1820,6 +1813,15 @@ export function calculateSectorAccumulationChampions(
   analyzedStocks.forEach(s => {
     if (isDisqualifiedNonEquityOrBond(s)) {
       return;
+    }
+    // Liquidity floor for sector accumulation champions: must have active market participation when volume/turnover is present
+    const hasVolData = s.volume !== undefined || s.totalTradedQuantity !== undefined || s.turnover !== undefined || s.totalTradedValue !== undefined;
+    if (hasVolData) {
+      const vol = Number(s.volume || s.totalTradedQuantity || 0);
+      const turnover = Number(s.turnover || s.totalTradedValue || (vol * (Number(s.ltp) || 0)) || 0);
+      if (vol < 500 || turnover < 100000) {
+        return;
+      }
     }
     const rawSector = String(s.sector || 'Others');
     const normSec = normalizeNepseSector(rawSector);

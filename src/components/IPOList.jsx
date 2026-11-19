@@ -10,20 +10,7 @@ import * as servicesApi from '../utils/servicesApi';
 import { checkSingleBoidAllotment, fetchUserApplicationReports } from '../services/meroShareService';
 import { calculateIpoAllotmentProbability } from '../utils/calculations';
 import { formatNptDateIso } from '../utils/nepseCalendar';
-import { decryptProfileCredentials } from '../utils/credentialCrypto';
-
-// Same key as AccountManager
-const BULK_ACCOUNTS_KEY = 'nepse_hub_bulk_ipo_accounts';
-
-function loadLocalAccounts() {
-  try {
-    const raw = localStorage.getItem(BULK_ACCOUNTS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.map(acc => decryptProfileCredentials(acc)) : [];
-  } catch {
-    return [];
-  }
-}
+import { loadEncryptedUserProfiles, resolveActiveUserId } from '../utils/profileVaultStorage';
 
 // Safe fetch that handles non-JSON responses gracefully
 function parseSafeJsonBody(data) {
@@ -64,14 +51,15 @@ async function safeFetch(url, options = {}) {
 async function fetchIposDirectly(account) {
   if (!account) return [];
 
-  const MEROSHARE_BASE = 'https://backend.cdsc.com.np/api/meroShare';
+  const MEROSHARE_BASE = 'https://webbackend.cdsc.com.np/api/meroShare';
 
-  // 1. Resolve DP code to clientId (using offline BOID prefix strategy first)
+  // 1. Resolve DP code to clientId (using official 8-digit BOID prefix strategy first)
   let clientId = 101;
   const boidStr = String(account.boid || '').trim();
   if (boidStr.length === 16) {
-    const extractedIdStr = boidStr.substring(3, 6);
-    const resolvedId = parseInt(extractedIdStr, 10);
+    const dpPrefix = boidStr.substring(0, 8);
+    const shortPrefix = boidStr.substring(3, 8);
+    const resolvedId = parseInt(shortPrefix, 10);
     if (!isNaN(resolvedId) && resolvedId >= 100 && resolvedId <= 300) {
       clientId = resolvedId;
     }
@@ -148,7 +136,8 @@ async function fetchIposDirectly(account) {
   }));
 }
 
-export default function IPOList({ initialTab = 'apply' }) {
+export default function IPOList({ initialTab = 'apply', userId = null }) {
+  const activeUserId = resolveActiveUserId(userId);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [accounts, setAccounts] = useState([]);
   const [ipos, setIpos] = useState([]);
@@ -181,7 +170,7 @@ export default function IPOList({ initialTab = 'apply' }) {
 
   useEffect(() => {
     fetchAccounts();
-  }, []);
+  }, [activeUserId]);
 
   useEffect(() => {
     if (activeTab === 'apply') {
@@ -191,22 +180,25 @@ export default function IPOList({ initialTab = 'apply' }) {
     } else if (activeTab === 'my-applications') {
       fetchApplicationHistory();
     }
-  }, [activeTab]);
+  }, [activeTab, activeUserId]);
 
-  const fetchAccounts = () => {
+  const fetchAccounts = async () => {
     setIsLoadingAccounts(true);
     setError('');
-    const local = loadLocalAccounts();
-    setAccounts(local);
-    setSelectedAccounts(local.map(a => a.id));
-    setIsLoadingAccounts(false);
+    try {
+      const local = await loadEncryptedUserProfiles(activeUserId);
+      setAccounts(local);
+      setSelectedAccounts(local.map(a => a.id));
+    } finally {
+      setIsLoadingAccounts(false);
+    }
   };
 
   const fetchActiveIpos = async () => {
     setIsLoadingIpos(true);
     setError('');
 
-    const local = loadLocalAccounts();
+    const local = await loadEncryptedUserProfiles(activeUserId);
 
     if (local.length === 0) {
       setError('Please add at least one MeroShare account first to view and apply for active IPOs.');
@@ -228,8 +220,8 @@ export default function IPOList({ initialTab = 'apply' }) {
         let clientId = 101;
         const boidStr = String(local[0].boid || '').trim();
         if (boidStr.length === 16) {
-          const resolved = parseInt(boidStr.substring(3, 6), 10);
-          if (!isNaN(resolved) && resolved >= 100 && resolved <= 300) {
+          const resolved = parseInt(boidStr.substring(3, 8), 10);
+          if (!isNaN(resolved) && resolved >= 100 && resolved <= 400) {
             clientId = resolved;
           }
         }
@@ -361,9 +353,8 @@ export default function IPOList({ initialTab = 'apply' }) {
       // Final fallback to verified companies to ensure the user never gets an invalid json crash
       if (!raw || raw.length === 0) {
         raw = [
-          { id: '501', companyShareId: 501, name: 'Beni Hydropower Project Limited (Result Published)', scrip: 'BENI', type: 'IPO', nmbclId: 41, isTodayResult: true },
           { id: '500', companyShareId: 500, name: 'Mount Everest Power Development Limited', scrip: 'MEPDL', type: 'IPO' },
-          { id: '499', companyShareId: 499, name: 'Sarvottam Paints Indutries Limited', scrip: 'SAPIL', type: 'IPO' },
+          { id: '499', companyShareId: 499, name: 'Sarvottam Paints Industries Limited', scrip: 'SAPIL', type: 'IPO' },
           { id: '498', companyShareId: 498, name: 'Everest Colour Ltd', scrip: 'ECL', type: 'IPO' },
           { id: '497', companyShareId: 497, name: 'Sanigad Hydro Limited', scrip: 'SGHL', type: 'IPO' },
           { id: '494', companyShareId: 494, name: 'Kalanga Hydro Limited', scrip: 'KAHL', type: 'IPO' },
@@ -445,7 +436,7 @@ export default function IPOList({ initialTab = 'apply' }) {
   const fetchApplicationHistory = async (targetAccountId) => {
     setIsLoadingHistory(true);
     setError('');
-    const local = loadLocalAccounts();
+    const local = await loadEncryptedUserProfiles(activeUserId);
     const accId = targetAccountId || selectedHistoryAccount || (local.length > 0 ? local[0].id : null);
     if (accId) setSelectedHistoryAccount(String(accId));
     const targetAcc = local.find(a => String(a.id) === String(accId)) || local[0];
@@ -538,7 +529,7 @@ export default function IPOList({ initialTab = 'apply' }) {
           let clientId = 101;
           const boidStr = String(acc.boid || '').trim();
           if (boidStr.length === 16) {
-            const resolved = parseInt(boidStr.substring(3, 6), 10);
+            const resolved = parseInt(boidStr.substring(3, 8), 10);
             if (!isNaN(resolved) && resolved >= 100 && resolved <= 400) {
               clientId = resolved;
             }
@@ -616,11 +607,12 @@ export default function IPOList({ initialTab = 'apply' }) {
         if (i > 0) await sleep(3000);
 
         try {
-          // Resolve clientId from DP list (using offline BOID prefix strategy first)
+          // Resolve clientId from DP list (using offline 8-digit BOID prefix strategy first)
           let clientId = 101;
           const boidStr = String(acc.boid || '').trim();
           if (boidStr.length === 16) {
-            const resolved = parseInt(boidStr.substring(3, 6), 10);
+            const shortPrefix = boidStr.substring(3, 8);
+            const resolved = parseInt(shortPrefix, 10);
             if (!isNaN(resolved) && resolved >= 100 && resolved <= 300) {
               clientId = resolved;
             }

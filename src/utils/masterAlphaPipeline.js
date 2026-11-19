@@ -4,6 +4,7 @@ import { calculateDynamicPositionSizing, getUserConfiguredCapital } from './dyna
 import { getDetailedMarketStatus } from './nepseCalendar';
 import { getCachedRealPriceHistory, getCachedRealBrokerAnalysis } from './liveData';
 import { adjustForCorporateActionsWithConfirmation } from './setupAnalyzer';
+import { isPureNepseEquity } from './nepseEquityFilter.js';
 
 const EPSILON = 1e-8;
 
@@ -301,8 +302,17 @@ export function calculateExactStatutoryTrade(entryPrice, targetPrice, kitta, cgt
   const netRealizedGain = netSellBeforeTax - totalBuyCost - cgtAmount;
   const netReturnPct = totalBuyCost > 0 ? +((netRealizedGain / totalBuyCost) * 100).toFixed(2) : 0;
 
-  // Statutory Zero-Loss Breakeven Price (covers both buy & sell friction + Rs. 25 DP each side)
-  const statutoryBreakevenPrice = +((totalBuyCost + 25 + 10) / (qty * (1 - getCommRate(grossBuy) - 0.00015))).toFixed(1);
+  // Statutory Zero-Loss Breakeven Price (iterative solve accounting for tiered commission, min Rs 10, SEBON & DP)
+  let estExit = +(waccPerShare * 1.0045).toFixed(2);
+  for (let i = 0; i < 4; i++) {
+    const grossExit = qty * estExit;
+    const sComm = Math.max(10, grossExit * getCommRate(grossExit));
+    const sSebon = grossExit * 0.00015;
+    const sDp = 25;
+    const requiredGross = totalBuyCost + sComm + sSebon + sDp;
+    estExit = requiredGross / qty;
+  }
+  const statutoryBreakevenPrice = +Math.ceil(estExit * 10) / 10;
 
   return {
     totalBuyCost: Math.round(totalBuyCost),
@@ -322,6 +332,7 @@ export function computeSectorRelativeStrengthRanks(stocks = []) {
 
   for (const s of stocks) {
     if (!s || !s.symbol) continue;
+    if (!isPureNepseEquity(s)) continue;
     const sec = s.sector || s.sectorName || 'Others';
     if (sec === 'Others' || sec === 'Mutual Fund' || sec === 'Promoter Share') continue;
 
@@ -423,6 +434,7 @@ export function runUnifiedFiveStepAlphaDesk({
     if (!rawStock || !rawStock.symbol) continue;
     const symbol = String(rawStock.symbol).toUpperCase().trim();
     const ltp = Number(rawStock.ltp || rawStock.closePrice || 0);
+    if (!isPureNepseEquity(rawStock)) continue;
     if (ltp <= 40) continue;
 
     const sector = rawStock.sector || rawStock.sectorName || 'Others';
@@ -513,8 +525,8 @@ export function runUnifiedFiveStepAlphaDesk({
     const tranche2Kitta = Math.max(0, strict10LotKitta - tranche1Kitta);
 
     // 3-Tier Profit Maximization Scale-Out Ladder (40% T1 / 30% T2 / 30% Multibagger Runner)
-    const scaleOutT1Kitta = strict10LotKitta >= 30 ? Math.max(10, Math.floor((strict10LotKitta * 0.4) / 10) * 10) : Math.max(10, Math.floor((strict10LotKitta * 0.5) / 10) * 10);
-    const scaleOutT2Kitta = strict10LotKitta >= 30 ? Math.max(10, Math.floor((strict10LotKitta * 0.3) / 10) * 10) : Math.max(0, strict10LotKitta - scaleOutT1Kitta);
+    const scaleOutT1Kitta = strict10LotKitta >= 30 ? Math.max(10, Math.round((strict10LotKitta * 0.4) / 10) * 10) : Math.max(10, Math.floor((strict10LotKitta * 0.5) / 10) * 10);
+    const scaleOutT2Kitta = strict10LotKitta >= 30 ? Math.max(10, Math.round((strict10LotKitta * 0.3) / 10) * 10) : Math.max(0, strict10LotKitta - scaleOutT1Kitta);
     const runnerT3Kitta = Math.max(0, strict10LotKitta - scaleOutT1Kitta - scaleOutT2Kitta);
 
     const netTradeT1 = calculateExactStatutoryTrade(ltp, target1, strict10LotKitta, cgtRate);
@@ -527,9 +539,10 @@ export function runUnifiedFiveStepAlphaDesk({
     const blendedRunnerGain = runnerT3Kitta > 0 ? calculateExactStatutoryTrade(ltp, target3Runner, runnerT3Kitta, cgtRate).netRealizedGain : 0;
     const maximizedLadderNetProfit = Math.round(blendedTier1Gain + blendedTier2Gain + blendedRunnerGain);
 
-    const riskPerShare = Math.max(1, ltp - stopLoss);
-    const totalRiskRupees = Math.round(strict10LotKitta * riskPerShare);
-    const netRRR1 = totalRiskRupees > 0 ? +(netTradeT1.netRealizedGain / totalRiskRupees).toFixed(2) : Number(masterEval.netRRR || 2.5);
+    const slTrade = calculateExactStatutoryTrade(ltp, stopLoss, strict10LotKitta, cgtRate);
+    const totalNetRiskRupees = Math.max(1, Math.abs(slTrade.netRealizedGain));
+    const totalRiskRupees = totalNetRiskRupees;
+    const netRRR1 = +(netTradeT1.netRealizedGain / totalNetRiskRupees).toFixed(2);
 
     const step4SizingPassed = Boolean(
       strict10LotKitta >= 10 &&

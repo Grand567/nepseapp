@@ -45,12 +45,25 @@ export function evaluateMarketRegimeGate(marketContext = {}) {
   let passed = true;
 
   // 1. NEPSE Index must be above 20 and 50 EMA
-  const aboveEma20 = nepseEma20 > 0 ? nepseIndex >= nepseEma20 : true;
-  const aboveEma50 = nepseEma50 > 0 ? nepseIndex >= nepseEma50 : nepseIndex >= 2100;
+  const aboveEma20 = nepseEma20 > 0 ? nepseIndex >= nepseEma20 : false;
+  const aboveEma50 = nepseEma50 > 0 ? nepseIndex >= nepseEma50 : false;
+
+  if (!aboveEma20) {
+    passed = false;
+    reasons.push(
+      nepseEma20 > 0
+        ? `NEPSE Index (${nepseIndex.toFixed(1)}) is below 20 EMA (${nepseEma20.toFixed(1)})`
+        : 'NEPSE 20 EMA unavailable for regime confirmation'
+    );
+  }
 
   if (!aboveEma50) {
     passed = false;
-    reasons.push(`NEPSE Index (${nepseIndex.toFixed(1)}) is below 50 EMA (${nepseEma50.toFixed(1)})`);
+    reasons.push(
+      nepseEma50 > 0
+        ? `NEPSE Index (${nepseIndex.toFixed(1)}) is below 50 EMA (${nepseEma50.toFixed(1)})`
+        : `NEPSE Index (${nepseIndex.toFixed(1)}) below/missing 50 EMA threshold`
+    );
   }
 
   // 2. Not in a sharp drop (> -2.0% in single session)
@@ -98,18 +111,58 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
   const turnover = Number(stock.turnover || stock.totalTradedValue || 0);
   const transactions = Number(stock.transactions || stock.totalTrades || stock.txn || 0);
 
-  // Technical indicators
-  const ema20 = Number(stock.ema20 || stock.sma20 || (ltp > 0 ? ltp * 0.97 : 0));
-  const ema50 = Number(stock.ema50 || stock.sma50 || (ltp > 0 ? ltp * 0.94 : 0));
-  const rvol = Number(stock.rvol || stock.volumeSurgeRatio || (stock.volumeZScore ? (1 + (stock.volumeZScore || 0) * 0.4) : 1.25));
-  const threeDayRunPct = Number(stock.threeDayRunPct || stock.pChange || 0);
-  const isBreakout = Boolean(stock.isBreakout || stock.breakout10d || stock.high52wDist > -3 || pChange >= 2.0);
+  const historyBars = Array.isArray(stock.candles)
+    ? stock.candles
+    : (Array.isArray(stock.history) ? stock.history : []);
 
-  // Fundamentals & Corporate Actions
-  const bookValue = stock.bookValue != null ? Number(stock.bookValue) : (stock.netWorth ? Number(stock.netWorth) : 120);
-  const eps = stock.eps != null ? Number(stock.eps) : (stock.pe && stock.ltp ? (stock.ltp / stock.pe) : 12);
-  const promoterLockinDays = stock.promoterLockinDays != null ? Number(stock.promoterLockinDays) : 180;
-  const isBookClosureSoon = Boolean(stock.isBookClosureSoon || stock.bookClosureDays <= 7);
+  const calcEmaFromBars = (bars, period) => {
+    const closes = (bars || []).map(b => Number(b?.close_price ?? b?.close ?? b?.ltp ?? 0)).filter(v => v > 0);
+    if (closes.length < period) return null;
+    const k = 2 / (period + 1);
+    let ema = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    for (let i = period; i < closes.length; i++) {
+      ema = closes[i] * k + ema * (1 - k);
+    }
+    return Number(ema.toFixed(2));
+  };
+
+  // Technical indicators (never fabricate passing EMAs or 1.25x RVOL when absent)
+  const rawEma20 = stock.ema20 ?? stock.sma20;
+  const rawEma50 = stock.ema50 ?? stock.sma50;
+  const ema20 = rawEma20 != null && Number(rawEma20) > 0
+    ? Number(rawEma20)
+    : calcEmaFromBars(historyBars, 20);
+  const ema50 = rawEma50 != null && Number(rawEma50) > 0
+    ? Number(rawEma50)
+    : calcEmaFromBars(historyBars, 50);
+
+  let rvol = null;
+  if (stock.rvol != null && Number(stock.rvol) > 0) {
+    rvol = Number(stock.rvol);
+  } else if (stock.volumeSurgeRatio != null && Number(stock.volumeSurgeRatio) > 0) {
+    rvol = Number(stock.volumeSurgeRatio);
+  } else if (stock.volumeZScore != null && Number.isFinite(Number(stock.volumeZScore))) {
+    rvol = Math.max(0.1, Number((1 + Number(stock.volumeZScore) * 0.4).toFixed(2)));
+  } else if (historyBars.length >= 10 && volume > 0) {
+    const vols = historyBars.slice(-20).map(b => Number(b?.total_volume ?? b?.volume ?? b?.vol ?? 0)).filter(v => v > 0);
+    if (vols.length >= 5) {
+      const avgVol = vols.reduce((a, b) => a + b, 0) / vols.length;
+      if (avgVol > 0) rvol = Number((volume / avgVol).toFixed(2));
+    }
+  }
+
+  const threeDayRunPct = Number(stock.threeDayRunPct ?? stock.pChange ?? 0);
+  const isBreakout = Boolean(stock.isBreakout || stock.breakout10d || (stock.high52wDist != null && stock.high52wDist > -3) || pChange >= 2.0);
+
+  // Fundamentals & Corporate Actions (never fabricate passing 120 BVPS, 12 EPS, or 180 lock-in days)
+  const rawBv = stock.bookValue ?? stock.bvps ?? stock.netWorth;
+  const bookValue = rawBv != null && Number.isFinite(Number(rawBv)) ? Number(rawBv) : null;
+  const rawEps = stock.eps ?? stock.epsTtm ?? (stock.pe && Number(stock.pe) > 0 && ltp > 0 ? (ltp / Number(stock.pe)) : null);
+  const eps = rawEps != null && Number.isFinite(Number(rawEps)) ? Number(rawEps) : null;
+  const promoterLockinDays = stock.promoterLockinDays != null && Number.isFinite(Number(stock.promoterLockinDays))
+    ? Number(stock.promoterLockinDays)
+    : null;
+  const isBookClosureSoon = Boolean(stock.isBookClosureSoon || (stock.bookClosureDays != null && stock.bookClosureDays <= 7));
 
   // Broker accumulation
   const bcr3BuyPct = Number(stock.bcr3BuyPct || stock.bcr3 || 0);
@@ -117,10 +170,12 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
   const hasBrokerAccumulation = bcr3BuyPct >= 25 || netBrokerQty > 0 || stock.topAccumulator != null;
 
   // Gate 1: Multi-Timeframe Alignment
-  const gate1Passed = ltp > ema20 && ema20 >= (ema50 * 0.98);
-  const gate1Reason = gate1Passed
-    ? `Price (Rs. ${ltp}) above EMA20 (${ema20.toFixed(1)}) and EMA50 (${ema50.toFixed(1)})`
-    : `Trend misaligned: Price Rs. ${ltp} below EMA20/50`;
+  const gate1Passed = ltp > 0 && ema20 != null && ema50 != null && ltp > ema20 && ema20 >= (ema50 * 0.98);
+  const gate1Reason = ema20 == null || ema50 == null
+    ? 'Missing verified EMA20/EMA50 data'
+    : gate1Passed
+      ? `Price (Rs. ${ltp}) above EMA20 (${ema20.toFixed(1)}) and EMA50 (${ema50.toFixed(1)})`
+      : `Trend misaligned: Price Rs. ${ltp} below EMA20/50`;
 
   // Gate 2: Market Regime Gate
   const gate2Passed = marketRegimeResult.passed;
@@ -133,18 +188,16 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
   const minTurnover = 5000000; // Rs. 50 Lakhs minimum
   const minTxns = 50;
 
-  const liquidityPassed = (turnover >= minTurnover || volume >= 5000) && (transactions >= minTxns || transactions === 0);
+  const liquidityPassed = (turnover >= minTurnover || volume >= 5000) && transactions >= minTxns;
   const circuitPassed = !isUpperCircuitLocked && !isLowerCircuitLocked;
   const gate3Passed = liquidityPassed && circuitPassed;
   let gate3Reason = 'Adequate liquidity and continuous two-sided order matching';
   if (isUpperCircuitLocked) gate3Reason = 'REJECTED: Locked at +15% Upper Circuit (Unfillable gap risk)';
   else if (isLowerCircuitLocked) gate3Reason = 'REJECTED: Locked at -15% Lower Circuit (Exit illiquidity)';
+  else if (transactions < minTxns) gate3Reason = `Thin participation: ${transactions} trades < ${minTxns} minimum trades`;
   else if (!liquidityPassed) gate3Reason = `Thin liquidity: Turnover Rs. ${(turnover/100000).toFixed(1)}L < Rs. 50L threshold`;
 
   // Gate 4: Momentum Breakout / Track A (NR7/Pocket Pivot) / Track B (T+2 Continuation)
-  const historyBars = Array.isArray(stock.candles)
-    ? stock.candles
-    : (Array.isArray(stock.history) ? stock.history : []);
   let derivedNr7 = false;
   let derivedPocketPivot = false;
   let derivedT2Continuation = false;
@@ -185,7 +238,7 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
         }
       }
       const curChg = prevBar.close > 0 ? ((curBar.close - prevBar.close) / prevBar.close) * 100 : pChange;
-      derivedPocketPivot = curChg >= 0.2 && curBar.close >= ema20 * 0.99 && curBar.volume > maxDownVol10 && maxDownVol10 > 0;
+      derivedPocketPivot = curChg >= 0.2 && ema20 != null && curBar.close >= ema20 * 0.99 && curBar.volume > maxDownVol10 && maxDownVol10 > 0;
 
       if (norm.length >= 10) {
         const prior20 = norm.slice(Math.max(0, bLen - 20), bLen);
@@ -202,7 +255,7 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
             igBar.volume >= avgVol20 * 1.25 &&
             minPostLow >= igBar.low * 0.992 &&
             curBar.close >= igBar.open * 0.992 &&
-            curBar.close >= ema20 * 0.99 &&
+            (ema20 == null || curBar.close >= ema20 * 0.99) &&
             hasDryup
           ) {
             derivedT2Continuation = true;
@@ -221,8 +274,8 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
   const isUpperWickRejected = upperWickRatio > 0.45 && pChange > 1.0;
 
   const isNotClimaxExtended = threeDayRunPct < 14.0; // Avoid chasing >14% run
-  const isCoiledPreIgnition = (isPocketPivot || isNr7) && ltp >= ema20 * 0.99 && hasBrokerAccumulation;
-  const isTrackB = (isT2ClearedContinuation || (isBreakout && rvol >= 1.25)) && !isUpperWickRejected;
+  const isCoiledPreIgnition = (isPocketPivot || isNr7) && (ema20 == null || ltp >= ema20 * 0.99) && hasBrokerAccumulation;
+  const isTrackB = (isT2ClearedContinuation || (isBreakout && rvol != null && rvol >= 1.25)) && !isUpperWickRejected;
   const rallyTrack = isTrackB
     ? 'TRACK_B_T2_CLEARED_CONTINUATION'
     : (isCoiledPreIgnition && !isUpperWickRejected)
@@ -235,7 +288,7 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
       : 'Institutional Base Accumulation';
 
   const gate4Passed = !isUpperWickRejected && isNotClimaxExtended && (
-    (isBreakout && rvol >= 1.25) ||
+    (isBreakout && rvol != null && rvol >= 1.25) ||
     isT2ClearedContinuation ||
     isCoiledPreIgnition
   );
@@ -245,19 +298,24 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
   else if (isT2ClearedContinuation) gate4Reason = 'Track B: T+2 settlement survival & continuation hold above ignition base';
   else if (isCoiledPreIgnition) gate4Reason = `Track A: Coiled ${isNr7 ? 'NR7' : 'Pocket Pivot'} pre-ignition with broker accumulation`;
   else if (!isBreakout) gate4Reason = 'No 10-20 day range breakout, T+2 continuation, or NR7/Pocket Pivot ignition detected';
+  else if (rvol == null) gate4Reason = 'Missing verified RVOL data for breakout confirmation';
   else if (rvol < 1.25) gate4Reason = `Insufficient volume surge (${rvol.toFixed(1)}x < 1.25x)`;
 
   // Gate 5: Quality & Event Risk Gate
-  const positiveNetWorth = bookValue > 0;
-  const viableEarnings = eps > 0;
-  const safePromoterUnlock = promoterLockinDays > 25;
+  const hasFundamentals = bookValue !== null && eps !== null;
+  const positiveNetWorth = bookValue !== null && bookValue > 0;
+  const viableEarnings = eps !== null && eps > 0;
+  const safePromoterUnlock = promoterLockinDays == null || promoterLockinDays >= 120 || promoterLockinDays < -30;
   const safeEventWindow = !isBookClosureSoon;
 
-  const gate5Passed = positiveNetWorth && viableEarnings && safePromoterUnlock && safeEventWindow;
+  const gate5Passed = hasFundamentals && positiveNetWorth && viableEarnings && safePromoterUnlock && safeEventWindow;
   let gate5Reason = 'Sound balance sheet, positive net worth, no imminent cliff';
-  if (!positiveNetWorth) gate5Reason = `REJECTED: Negative Net Worth / Book Value (Rs. ${bookValue})`;
+  if (!hasFundamentals) gate5Reason = 'REJECTED: Missing verified Book Value / EPS fundamentals';
+  else if (!positiveNetWorth) gate5Reason = `REJECTED: Negative Net Worth / Book Value (Rs. ${bookValue})`;
   else if (!viableEarnings) gate5Reason = `REJECTED: Negative or collapsing EPS (Rs. ${eps})`;
-  else if (!safePromoterUnlock) gate5Reason = `REJECTED: Imminent promoter unlock cliff in ${promoterLockinDays} days`;
+  else if (!safePromoterUnlock) gate5Reason = promoterLockinDays < 0
+    ? `REJECTED: Recent promoter unlock supply overhang (${Math.abs(promoterLockinDays)}d ago)`
+    : `REJECTED: Imminent promoter unlock cliff in ${promoterLockinDays} days`;
   else if (!safeEventWindow) gate5Reason = 'REJECTED: Imminent book closure event window';
 
   // Gate 6: Smart-Money / Broker Confirmation
@@ -266,49 +324,54 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
     ? `Confirmed: BCR3 ${bcr3BuyPct}% / Net absorption positive`
     : 'No confirmed institutional broker accumulation detected';
 
-  // Gate 7: Risk-Engineered Trade Plan (Net R:R >= 2:1 After Costs)
+  // Gate 7: Risk-Engineered Trade Plan (Net R:R >= 2:1 After Costs on dynamic recommendedQuantity)
   const stopLossPct = Number(stock.stopLossPct || 4.2); // Technical stop 4.2% below entry
   const stopPrice = Number((ltp * (1 - stopLossPct / 100)).toFixed(1));
   const target1Price = Number((ltp * (1 + 7.5 / 100)).toFixed(1)); // +1.5R (+7.5%)
   const target2Price = Number((ltp * (1 + 13.5 / 100)).toFixed(1)); // +2.5R - 3R (+13.5%)
 
-  // Calculate Net Return after full round-trip friction (5-tier brokerage, SEBON, DP, CGT)
+  // Position Sizing computed FIRST (respecting 1% risk budget and 10-kitta NEPSE board lot affordability)
+  const maxRiskCapital = accountCapital * (riskPerTradePct / 100);
+  const perShareRiskNpr = Math.max(ltp - stopPrice, 1);
+  const maxRiskShares = Math.floor(maxRiskCapital / perShareRiskNpr);
+  const maxAffordableShares = ltp > 0 ? Math.floor(accountCapital / ltp) : 0;
+  const rawRecommendedQty = Math.min(maxRiskShares, maxAffordableShares);
+  const recommendedQuantity = rawRecommendedQty >= 10 ? rawRecommendedQty : 0;
+  const totalAllocatedCapital = recommendedQuantity * ltp;
+
+  const evalQty = recommendedQuantity >= 10 ? recommendedQuantity : 10;
   const netTarget1 = calculateRoundTripNetReturn({
     buyPrice: ltp,
     sellPrice: target1Price,
-    quantity: 100,
+    quantity: evalQty,
     holdingDays: 7,
     investorType
   });
   const netTarget2 = calculateRoundTripNetReturn({
     buyPrice: ltp,
     sellPrice: target2Price,
-    quantity: 100,
+    quantity: evalQty,
     holdingDays: 7,
     investorType
   });
   const netStopLoss = calculateRoundTripNetReturn({
     buyPrice: ltp,
     sellPrice: stopPrice,
-    quantity: 100,
+    quantity: evalQty,
     holdingDays: 7,
     investorType
   });
 
   const netPotentialGainPct = netTarget2.netReturnPct;
   const netPotentialLossPct = Math.abs(netStopLoss.netReturnPct);
-  const netRewardRiskRatio = netPotentialLossPct > 0 ? (netPotentialGainPct / netPotentialLossPct) : 0;
+  const netRewardRiskRatio = recommendedQuantity >= 10 && netPotentialLossPct > 0 ? (netPotentialGainPct / netPotentialLossPct) : 0;
 
-  const gate7Passed = netRewardRiskRatio >= 2.0 && ltp > 50;
-  const gate7Reason = gate7Passed
-    ? `Net R:R ${netRewardRiskRatio.toFixed(2)}:1 after fees (Target 2 +${netPotentialGainPct.toFixed(1)}% vs Stop -${netPotentialLossPct.toFixed(1)}%)`
-    : `Unfavorable Net R:R ${netRewardRiskRatio.toFixed(2)}:1 after statutory frictions (< 2:1 requirement)`;
-
-  // Position Sizing (Fixed Account Risk: 1% risk)
-  const maxRiskCapital = accountCapital * (riskPerTradePct / 100);
-  const perShareRiskNpr = Math.max(ltp - stopPrice, 1);
-  const recommendedQuantity = Math.max(10, Math.floor(maxRiskCapital / perShareRiskNpr));
-  const totalAllocatedCapital = recommendedQuantity * ltp;
+  const gate7Passed = recommendedQuantity >= 10 && netRewardRiskRatio >= 2.0 && ltp > 50;
+  const gate7Reason = recommendedQuantity < 10
+    ? `Position size < 10 kitta minimum board lot under Rs. ${(accountCapital / 1000).toFixed(0)}K capital / ${riskPerTradePct}% risk cap`
+    : gate7Passed
+      ? `Net R:R ${netRewardRiskRatio.toFixed(2)}:1 after fees (${recommendedQuantity} sh, Target 2 +${netPotentialGainPct.toFixed(1)}% vs Stop -${netPotentialLossPct.toFixed(1)}%)`
+      : `Unfavorable Net R:R ${netRewardRiskRatio.toFixed(2)}:1 after statutory frictions on ${recommendedQuantity} sh (< 2:1 requirement)`;
 
   // Gate Checklist
   const gates = [

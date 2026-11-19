@@ -482,8 +482,62 @@ export function analyzeBreakout(candles, srLevels, rvol = 1.0, atr = null) {
   const currentHigh = Number(currentBar.high);
   const currentLow = Number(currentBar.low);
 
-  const nearestResistance = srLevels.resistance && srLevels.resistance[0];
-  const nearestSupport = srLevels.support && srLevels.support[0];
+  const nearestResistance = (() => {
+    const customRes = Array.isArray(srLevels?.resistance) ? srLevels.resistance : [];
+    const priorCandles = candles.slice(0, -1);
+    const priorSr = priorCandles.length >= 10 ? analyzeSupportResistance(priorCandles) : null;
+    const priorRes = Array.isArray(priorSr?.resistance) ? priorSr.resistance : [];
+    const combinedRes = [...customRes, ...priorRes]
+      .filter((lvl) => Number(lvl?.price) > 0)
+      .sort((a, b) => Number(a.price) - Number(b.price));
+
+    // Prefer a resistance level that was >= prevPrice (genuine overhead ceiling before current bar)
+    const overheadBeforeBar = combinedRes.find((lvl) => prevPrice <= Number(lvl.price) * 1.002);
+    if (overheadBeforeBar) return overheadBeforeBar;
+    if (combinedRes[0]) return combinedRes[0];
+
+    // Fallback when < 10 prior candles: use prior swing high
+    if (priorCandles.length > 0) {
+      const priorHigh = Math.max(...priorCandles.map((c) => Number(c.high || c.close || 0)));
+      if (priorHigh > 0) return { price: priorHigh, strength: 70, sources: ['prior_high'] };
+    }
+    return null;
+  })();
+
+  const priorSrForBreak = candles.length >= 11 ? analyzeSupportResistance(candles.slice(0, -1)) : null;
+
+  const nearestSupport = (() => {
+    const customSup = Array.isArray(srLevels?.support) ? srLevels.support : [];
+    const priorSup = Array.isArray(priorSrForBreak?.support) ? priorSrForBreak.support : [];
+    const combinedSup = [...customSup, ...priorSup]
+      .filter((lvl) => Number(lvl?.price) > 0)
+      .sort((a, b) => Number(b.price) - Number(a.price));
+
+    const floorBeforeBar = combinedSup.find((lvl) => prevPrice >= Number(lvl.price) * 0.998);
+    if (floorBeforeBar) return floorBeforeBar;
+    if (combinedSup[0]) return combinedSup[0];
+
+    const priorCandles = candles.slice(0, -1);
+    if (priorCandles.length > 0) {
+      const priorLow = Math.min(...priorCandles.map((c) => Number(c.low || c.close || 0)).filter((v) => v > 0));
+      if (Number.isFinite(priorLow) && priorLow > 0) return { price: priorLow, strength: 70, sources: ['prior_low'] };
+    }
+    return null;
+  })();
+
+  // Retest candidate: former resistance / swing high that is now below or equal to prevPrice & currentPrice
+  const retestLevel = (() => {
+    const resCandidates = [
+      ...(Array.isArray(srLevels?.resistance) ? srLevels.resistance : []),
+      ...(Array.isArray(priorSrForBreak?.resistance) ? priorSrForBreak.resistance : []),
+      ...([...(Array.isArray(srLevels?.support) ? srLevels.support : []), ...(Array.isArray(priorSrForBreak?.support) ? priorSrForBreak.support : [])]
+        .filter((lvl) => Array.isArray(lvl?.sources) && lvl.sources.some((src) => String(src).includes('high') || String(src).includes('r1') || String(src).includes('r2'))))
+    ];
+    return resCandidates.find((lvl) => {
+      const p = Number(lvl?.price || 0);
+      return p > 0 && Math.abs(currentLow - p) / p <= 0.015 && currentPrice >= p && prevPrice >= p;
+    }) || null;
+  })();
 
   const candleRange = Math.max(0.1, currentHigh - currentLow);
   const upperWick = currentHigh - Math.max(currentPrice, currentOpen);
@@ -561,24 +615,19 @@ export function analyzeBreakout(candles, srLevels, rvol = 1.0, atr = null) {
   }
 
   // 2. Breakout Retest (tested broken resistance from above and held)
-  if (
-    nearestResistance &&
-    Math.abs(currentLow - nearestResistance.price) / nearestResistance.price <= 0.015 &&
-    currentPrice >= nearestResistance.price &&
-    prevPrice >= nearestResistance.price
-  ) {
+  if (retestLevel) {
     return {
       detected: true,
       type: 'breakout_retest',
       direction: 'bullish',
-      level: nearestResistance.price,
+      level: retestLevel.price,
       breakoutPrice: currentPrice,
       volumeConfirmed: isVolumeModerate,
       volumeTier,
       retestConfirmed: true,
       bullTrapRisk: false,
       strength: 88,
-      description: `Breakout Retest Confirmed: Price pulled back to former resistance at Rs. ${nearestResistance.price} and found supportive buyers.`,
+      description: `Breakout Retest Confirmed: Price pulled back to former resistance at Rs. ${retestLevel.price} and found supportive buyers.`,
     };
   }
 

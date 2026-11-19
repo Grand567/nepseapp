@@ -1,5 +1,5 @@
 // src/context/SubscriptionContext.jsx
-// Global React context providing real-time Pro state, monthly timeframe management, and modal controls.
+// Global React context providing server-verified Pro state, monthly timeframe management, and modal controls.
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -7,95 +7,83 @@ import {
   saveStoredSubscription,
   normalizeSubscription,
   computeSubscriptionMetrics,
-  createProSubscription,
   redeemVoucherKey,
   getFreeSubscription,
   getDeviceLicenseId,
-  SUBSCRIPTION_STORAGE_KEY,
   PRO_PLANS
 } from '../utils/subscription';
-import { syncUserDataToCloud, getLocalSession } from '../utils/firebase';
+import {
+  fetchServerLicenseStatus,
+  revokeServerLicenseStatusOnServer
+} from '../utils/licenseEngine';
 
 const SubscriptionContext = createContext(null);
 
 export function SubscriptionProvider({ children }) {
+  const [deviceId] = useState(() => getDeviceLicenseId());
   const [subState, setSubState] = useState(() => getStoredSubscription());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalInitialPlan, setModalInitialPlan] = useState('1m');
   const [lockedFeatureName, setLockedFeatureName] = useState(null);
 
-  // Periodically re-evaluate expiration (every 60 seconds)
+  // Hydrate authoritative subscription state from server on mount & check expiry every 60s
   useEffect(() => {
-    // Ensure lifetime Pro subscription is immediately persisted on first launch across PC and Mobile platforms
-    try {
-      if (typeof window !== 'undefined' && !localStorage.getItem(SUBSCRIPTION_STORAGE_KEY)) {
-        saveStoredSubscription(subState);
-      }
-    } catch (_) {}
+    let active = true;
+
+    fetchServerLicenseStatus(deviceId).then((serverSub) => {
+      if (!active || !serverSub || typeof serverSub !== 'object') return;
+      const norm = normalizeSubscription(serverSub);
+      saveStoredSubscription(norm);
+      setSubState(norm);
+    }).catch(() => {});
 
     const timer = setInterval(() => {
-      setSubState(prev => normalizeSubscription(prev));
+      setSubState(prev => {
+        const next = normalizeSubscription(prev);
+        if (next.isPro !== prev.isPro) {
+          saveStoredSubscription(next);
+        }
+        return next;
+      });
     }, 60000);
-    return () => clearInterval(timer);
-  }, [subState]);
 
-  // Compute live metrics
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [deviceId]);
+
   const metrics = useMemo(() => computeSubscriptionMetrics(subState), [subState]);
 
-  // Activate / Extend a Pro plan (1m, 2m, 3m, 6m, 12m)
-  const activatePlan = useCallback((durationStr = '1m', source = 'manual', voucherCode = null) => {
-    const updated = createProSubscription(durationStr, source, voucherCode, subState);
-    saveStoredSubscription(updated);
-    setSubState(updated);
-
-    // Sync with cloud user vault if logged in
-    try {
-      const user = getLocalSession();
-      if (user && (user.uid || user.id)) {
-        syncUserDataToCloud(user.uid || user.id, { subscription: updated }).catch(() => {});
-      }
-    } catch (_) {}
-
-    return updated;
-  }, [subState]);
-
-  // Cancel / Reset plan to free
-  const cancelPlan = useCallback(() => {
+  // Cancel / Reset local subscription state to free tier
+  const cancelPlan = useCallback(async () => {
+    await revokeServerLicenseStatusOnServer(deviceId).catch(() => {});
     const free = getFreeSubscription();
     saveStoredSubscription(free);
     setSubState(free);
+  }, [deviceId]);
 
-    try {
-      const user = getLocalSession();
-      if (user && (user.uid || user.id)) {
-        syncUserDataToCloud(user.uid || user.id, { subscription: free }).catch(() => {});
-      }
-    } catch (_) {}
-  }, []);
-
-  const [deviceId] = useState(() => getDeviceLicenseId());
-
-  // Redeem voucher code or device-bound license key
-  const redeemCode = useCallback((code) => {
-    const result = redeemVoucherKey(code, deviceId);
-    if (result.success && result.duration) {
-      activatePlan(result.duration, 'license_key', result.code);
+  // Redeem server-verified device-bound license key
+  const redeemCode = useCallback(async (code) => {
+    const result = await redeemVoucherKey(code, deviceId);
+    if (result.success && result.subscription) {
+      const verified = normalizeSubscription(result.subscription);
+      saveStoredSubscription(verified);
+      setSubState(verified);
     }
     return result;
-  }, [activatePlan, deviceId]);
+  }, [deviceId]);
 
-  // Synchronize cloud subscription when user logs in or syncs
-  const syncFromCloud = useCallback((cloudSub) => {
-    if (!cloudSub || typeof cloudSub !== 'object') return;
-    const normalized = normalizeSubscription(cloudSub);
-    // If cloud has newer or active pro subscription, adopt it
-    if (normalized.isPro || (!subState.isPro && normalized.expiresAt > Date.now())) {
-      saveStoredSubscription(normalized);
-      setSubState(normalized);
-    }
-  }, [subState]);
+  // Refresh authoritative Pro entitlement from license server instead of trusting cloud sync blobs
+  const syncFromCloud = useCallback((_cloudSub) => {
+    fetchServerLicenseStatus(deviceId).then((serverSub) => {
+      if (!serverSub || typeof serverSub !== 'object') return;
+      const verified = normalizeSubscription(serverSub);
+      saveStoredSubscription(verified);
+      setSubState(verified);
+    }).catch(() => {});
+  }, [deviceId]);
 
-  // Open modal with feature context
   const openSubscriptionModal = useCallback((plan = '1m', featureName = null) => {
     setModalInitialPlan(plan || '1m');
     setLockedFeatureName(featureName || null);
@@ -112,11 +100,11 @@ export function SubscriptionProvider({ children }) {
     rawSubscription: subState,
     deviceId,
     plans: PRO_PLANS,
+    modalInitialPlan,
     isModalOpen,
     lockedFeatureName,
     openSubscriptionModal,
     closeSubscriptionModal,
-    activatePlan,
     cancelPlan,
     redeemCode,
     syncFromCloud
@@ -124,11 +112,11 @@ export function SubscriptionProvider({ children }) {
     metrics,
     subState,
     deviceId,
+    modalInitialPlan,
     isModalOpen,
     lockedFeatureName,
     openSubscriptionModal,
     closeSubscriptionModal,
-    activatePlan,
     cancelPlan,
     redeemCode,
     syncFromCloud

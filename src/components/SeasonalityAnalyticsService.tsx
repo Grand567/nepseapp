@@ -85,7 +85,7 @@ export function SeasonalityAnalyticsService() {
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <StatCard label="Historical Best Month" value={calendarMode === 'BS' ? bestMonth.bsMonth : bestMonth.adMonth} subtitle={`+${bestMonth.avgReturn}% Avg Return (80% Win)`} color="#10b981" />
         <StatCard label="Historical Worst Month" value={calendarMode === 'BS' ? worstMonth.bsMonth : worstMonth.adMonth} subtitle={`${worstMonth.avgReturn}% Avg Return (Fiscal Year-End)`} color="#f43f5e" />
-        <StatCard label="Bullish Months" value="8 / 12 Months" subtitle="Positive Expectancy" color="#10b981" />
+        <StatCard label="Bullish Months" value={`${seasonalityData.filter(m => (Number(m.avgReturn) || 0) >= 0).length} / ${seasonalityData.length || 12} Months`} subtitle="Positive Expectancy" color="#10b981" />
         <StatCard label="Avg Seasonal Win Rate" value={`${overallWinRate}%`} big color="#06b6d4" />
       </div>
 

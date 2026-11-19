@@ -219,7 +219,7 @@ export function calculateNepseNetTrade({
   const grossBuy = +(kitta * bPx).toFixed(2);
   const { commission: buyComm } = calculateBrokerageCommission(grossBuy);
   const buySebon = +(grossBuy * SEBON_FEE_RATE).toFixed(2);
-  const buyDp = 0; // Per CDSC bylaws, DP fee is charged strictly on the SELL leg upon debiting shares
+  const buyDp = CDSC_DP_CHARGE_NPR; // Flat statutory Rs. 25 DP fee on buy settlement
   const totalBuyCost = +(grossBuy + buyComm + buySebon + buyDp).toFixed(2);
 
   const grossSell = +(kitta * sPx).toFixed(2);
@@ -230,7 +230,7 @@ export function calculateNepseNetTrade({
 
   // CGT is strictly levied on Net Capital Gain AFTER deducting buy & sell commissions, SEBON fees, and DP charges
   const netCapitalGain = Math.max(0, netSellBeforeTax - totalBuyCost);
-  const cgtRate = isCorporate ? 0.10 : (Number(holdingDays) >= 365 ? 0.05 : 0.075);
+  const cgtRate = isCorporate ? 0.10 : (Number(holdingDays) > 365 ? 0.05 : 0.075);
   const cgtTax = +(netCapitalGain * cgtRate).toFixed(2);
 
   const netReceivable = +(netSellBeforeTax - cgtTax).toFixed(2);
@@ -616,10 +616,11 @@ export function calculateWacc(buyTransactions, corporateActions = []) {
     });
   }
 
+  const finalQty = Math.round(totalQty);
   return {
-    totalQuantity: Math.round(totalQty),
+    totalQuantity: finalQty,
     totalCost: +totalCost.toFixed(2),
-    wacc: totalQty > 0 ? +(totalCost / totalQty).toFixed(2) : 0
+    wacc: finalQty > 0 ? +(totalCost / finalQty).toFixed(2) : 0
   };
 }
 

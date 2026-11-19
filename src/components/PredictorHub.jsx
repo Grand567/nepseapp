@@ -65,106 +65,17 @@ const UNIVERSE_MAP = new Map(NEPSE_UNIVERSE.map(u => [String(u.symbol).toUpperCa
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 
-// Verified active corporate catalysts in NEPSE (Dividends, Right shares in pipeline, Bonus & AGMs)
-const CATALYST_MAP = new Map([
-  ['NABIL', '10% Cash Dividend & AGM Approved'],
-  ['SCB', '26.25% Cash Dividend Record'],
-  ['EBL', '15.53% Dividend / High Payout'],
-  ['HHL', '100% (1:1) Right Share Proposal in SEBON Pipeline'],
-  ['AKJCL', '100% Right Share Offering Approved'],
-  ['AHPC', '1:1 Right Share Issuance in Pipeline'],
-  ['BARUN', '100% Right Share in SEBON Pipeline'],
-  ['UPPER', 'Capital Restructuring & RoR Expansion'],
-  ['CBBL', '15% Bonus Share / AGM Approval'],
-  ['DDBL', '10% Bonus Share Distribution'],
-  ['NICL', '11.5% Bonus Share / Non-Life Reserve Growth'],
-  ['SHIVM', '15% Dividend & Quarterly Sales Growth'],
-  ['NTC', 'Regular High Cash Dividend Distribution'],
-  ['CIT', '14% Bonus Share / Capital Reserve'],
-  ['HDL', 'High Cash Dividend Distribution'],
-  ['ALICL', 'Life Insurance Capital Expansion'],
-  ['NLIC', 'Life Insurance Capital Enhancement Plan'],
-  ['GBIME', 'Bonus & Reserve Accumulation'],
-  ['NICA', 'Capital Adequacy Restructuring Play'],
-  ['JFL', 'Right Share Proposal Pending Review'],
-  ['NFS', 'Right Share Proposal Pending Review'],
-  ['CFCL', 'Bonus Share & AGM Resolution'],
-  ['BFC', 'Capital Restructuring & Right Share Plan'],
-  ['PROFL', 'Right Share Offering Plan'],
-  ['GHL', 'Capital Expansion & Hydro Rights'],
-  ['NGPL', '1:1 Right Share Issuance Completed'],
-  ['API', 'Right Share & Solar/Hydro Project Expansion'],
-  ['MKJC', 'Hydro Capital Expansion'],
-  ['BPCL', 'Blue-Chip Monsoon Dividend Payer'],
-  ['CHCL', 'Monsoon Hydro Dividend Distribution'],
-  ['HRL', 'Reinsurance Capital Expansion'],
-  ['NRIC', 'National Reinsurance Capital Growth']
-]);
-
 export const DEFAULT_MACRO_DATA = {
-  isOfflineFallback: true,
-  lastUpdated: '2026-11-08 15:00 NPT (Reference Baseline)',
-  m2_growth_pct: 12.8,
-  interest_rate_pct: 5.0,
-  cpi_inflation_pct: 4.4,
-  remittance_growth_pct: 16.5,
-  npr_usd_rate: '134.20'
+  isUnavailable: true,
+  lastUpdated: null,
+  m2_growth_pct: null,
+  interest_rate_pct: null,
+  cpi_inflation_pct: null,
+  remittance_growth_pct: null,
+  npr_usd_rate: null
 };
 
-export const DEFAULT_SENTIMENT_NEWS = [
-  {
-    id: 'nrb-monetary-policy-accommodative',
-    isOfflineFallback: true,
-    lastUpdated: '2026-11-08 (Sample Baseline)',
-    headline: 'NRB Maintains Accommodative Policy Stance; Interbank Rates Hold Below 5.0%',
-    source: 'Bizshala',
-    category: 'Monetary Policy',
-    published_at: 'Offline Sample Data (2026-11-08)',
-    sentiment_score: 0.65,
-    summary: 'Nepal Rastra Bank maintains lower policy corridor limits and ample banking liquidity, supporting credit flow to secondary markets.',
-    related_symbols: ['NABIL', 'NICA', 'GBIME'],
-    url: 'https://bizshala.com'
-  },
-  {
-    id: 'remittance-inflow-record-high',
-    isOfflineFallback: true,
-    lastUpdated: '2026-11-08 (Sample Baseline)',
-    headline: 'Remittance Inflows Cross Record Highs, Bolstering Gross Foreign Exchange Reserves',
-    source: 'Sharesansar',
-    category: 'Macroeconomics',
-    published_at: 'Offline Sample Data (2026-11-08)',
-    sentiment_score: 0.72,
-    summary: 'Sustained remittance inflows provide robust current account surplus and liquidity injection across the domestic financial system.',
-    related_symbols: ['CIT', 'HRL'],
-    url: 'https://sharesansar.com'
-  },
-  {
-    id: 'sebon-expands-margin-lending',
-    isOfflineFallback: true,
-    lastUpdated: '2026-11-08 (Sample Baseline)',
-    headline: 'SEBON and NRB Review Working Capital Guidelines to Ease Market Liquidity',
-    source: 'Merolagani',
-    category: 'Regulations',
-    published_at: 'Offline Sample Data (2026-11-08)',
-    sentiment_score: 0.45,
-    summary: 'Financial regulators evaluate adjustments to retail margin lending and risk-weighted assets to improve secondary market depth.',
-    related_symbols: ['SHIVM', 'HDL'],
-    url: 'https://merolagani.com'
-  },
-  {
-    id: 'commercial-banks-base-rate-drop',
-    isOfflineFallback: true,
-    lastUpdated: '2026-11-08 (Sample Baseline)',
-    headline: 'Commercial Banks Reduce Base Lending Rates to Multi-Year Lows',
-    source: 'Aarthik Abhiyan',
-    category: 'Banking',
-    published_at: 'Offline Sample Data (2026-11-08)',
-    sentiment_score: 0.58,
-    summary: 'Declining deposit interest rates lead to cheaper margin financing rates, encouraging equity allocation among institutional participants.',
-    related_symbols: ['KBL', 'JBBL'],
-    url: 'https://abhiyan.com.np'
-  }
-];
+export const DEFAULT_SENTIMENT_NEWS = [];
 
 export default function PredictorHub({
   stocks = [],
@@ -326,7 +237,7 @@ export default function PredictorHub({
     const flowMult = Number((activePreset.weights.brokerFloorsheet / 0.35).toFixed(2));
     const fundMult = Number((activePreset.weights.fundamental / 0.20).toFixed(2));
 
-    const computed = stocks.slice(0, 250).map(s => {
+    const computed = stocks.map(s => {
       const sym = String(s.symbol || '').toUpperCase().trim();
       const uInfo = UNIVERSE_MAP.get(sym);
       const pCh = Number(s.pChange || 0);
@@ -499,28 +410,24 @@ export default function PredictorHub({
       else reasoning = `${trendWarning}Neutral consolidation pattern waiting for volume catalyst.`;
 
       // Authentic sharesOut from NEPSE Universe (in millions)
-      const sharesOutM = Number(uInfo?.sharesOut || s.sharesOut || (Number(s.listedShares) > 0 ? s.listedShares / 1e6 : 0) || 5);
-      const isLowFloat = sharesOutM > 0 && sharesOutM <= 5; // Under 50 lakh shares = low float
+      const rawSharesOut = Number(uInfo?.sharesOut || s.sharesOut || (Number(s.listedShares) > 0 ? s.listedShares / 1e6 : 0) || 0);
+      const sharesOutM = rawSharesOut > 0 ? rawSharesOut : null;
+      const isLowFloat = sharesOutM !== null && sharesOutM > 0 && sharesOutM <= 5; // Under 50 lakh shares = low float
 
-      // Catalysts: corporate actions, declared dividends/bonus/rights, or active pipeline
-      const catInfo = CATALYST_MAP.get(sym);
+      // Catalysts: live/verified corporate actions, dividends, bonus or rights only
       const hasCatalyst = Boolean(
         s.corporate_action_flag ||
-        catInfo ||
         Number(s.dividendYield || 0) > 0 ||
         Number(s.bonusShare || s.bonus || 0) > 0 ||
         Number(s.cashDiv || s.dividend || 0) > 0 ||
-        Number(s.rightShare || 0) > 0 ||
-        (uInfo?.sharesOut && uInfo.sharesOut <= 3.5)
+        Number(s.rightShare || 0) > 0
       );
 
-      const catalystLabel = catInfo || (
+      const catalystLabel =
         Number(s.bonusShare || s.bonus || 0) > 0 ? `${s.bonusShare || s.bonus}% Bonus Share Declared` :
         Number(s.dividendYield || 0) > 0 ? `${s.dividendYield}% Dividend Yield` :
         Number(s.rightShare || 0) > 0 ? `${s.rightShare}% Right Share Issue` :
-        (uInfo?.sharesOut && uInfo.sharesOut <= 3.5) ? 'Micro-Float Restructuring Play' :
-        'Corporate Action / AGM Disclosure'
-      );
+        'Corporate Action / AGM Disclosure';
 
       return {
         symbol: s.symbol,
@@ -603,17 +510,22 @@ export default function PredictorHub({
         const dynVolPct = Math.max(0.009, Math.abs(nepseChange / 100) * 0.8 + 0.007);
         const atr = Number((nepseIdx * dynVolPct).toFixed(1));
 
-        // ── STRICT 15% DAILY CIRCUIT CLAMPING ──────────────────────────────────
-        const prevIndexClose = Number(indices?.nepse?.prevClose || (nepseIdx - nepseChange) || nepseIdx);
-        const { floor: circuitFloor, ceiling: circuitCeiling } = getCircuitLimits(prevIndexClose, 15.0);
+        // ── STRICT NEPSE INDEX CIRCUIT CLAMPING (5.0% / 8.0%) ──────────────────────────────────
+        const prevIndexClose = Number(
+          indices?.nepse?.prevClose ||
+          (indices?.nepse?.pointChange ? nepseIdx - Number(indices.nepse.pointChange) : null) ||
+          (indices?.nepse?.pChange ? +(nepseIdx / (1 + Number(indices.nepse.pChange) / 100)).toFixed(2) : null) ||
+          nepseIdx
+        );
+        const { floor: circuitFloor, ceiling: circuitCeiling } = getCircuitLimits(prevIndexClose, 8.0);
 
         const rawT1 = dir === 'up' ? +(nepseIdx + atr * 1.4).toFixed(1) : +(nepseIdx - atr * 1.4).toFixed(1);
         const rawT2 = dir === 'up' ? +(nepseIdx + atr * 2.8).toFixed(1) : +(nepseIdx - atr * 2.8).toFixed(1);
         const rawStop = dir === 'up' ? +(nepseIdx - atr * 1.1).toFixed(1) : +(nepseIdx + atr * 1.1).toFixed(1);
 
-        const target1 = clampToDailyCircuitBand(rawT1, prevIndexClose, 15.0);
-        const target2 = clampToDailyCircuitBand(rawT2, prevIndexClose, 15.0);
-        const stopFloor = clampToDailyCircuitBand(rawStop, prevIndexClose, 15.0);
+        const target1 = clampToDailyCircuitBand(rawT1, prevIndexClose, 8.0);
+        const target2 = clampToDailyCircuitBand(rawT2, prevIndexClose, 8.0);
+        const stopFloor = clampToDailyCircuitBand(rawStop, prevIndexClose, 8.0);
         const rewardDist = Math.abs(target1 - nepseIdx);
         const riskDist = Math.max(0.01, Math.abs(nepseIdx - stopFloor));
         const rrr = +(rewardDist / riskDist).toFixed(2);
@@ -623,11 +535,11 @@ export default function PredictorHub({
         const zScore90 = 1.645;
         const margin90 = +(zScore90 * baselineVolPct * 1.0).toFixed(2);
         
-        // Strict circuit-bounded return distribution
+        // Strict circuit-bounded return distribution (Index 8.0% halt threshold)
         const returnInterval = clampReturnIntervalToCircuit(
           expectedMeanPct - margin90,
           expectedMeanPct + margin90,
-          15.0
+          8.0
         );
 
         const expectedReturnRange = {
@@ -638,7 +550,7 @@ export default function PredictorHub({
           confidenceLevel: 90,
           uncertaintyMultiplier: 1.0,
           isEventWidened: returnInterval.isCapped,
-          circuitLimitPct: 15.0
+          circuitLimitPct: 8.0
         };
 
         const floatDiv = {
@@ -686,7 +598,7 @@ export default function PredictorHub({
           market_regime: dir === 'up' ? 'Bullish Expansion' : dir === 'down' ? 'Bearish Retracement' : 'Consolidation Range',
           expected_return_range: expectedReturnRange,
           float_divergence: floatDiv,
-          circuit_limits: { floor: circuitFloor, ceiling: circuitCeiling, circuitPct: 15.0 },
+          circuit_limits: { floor: circuitFloor, ceiling: circuitCeiling, circuitPct: 8.0 },
           targets: {
             target1,
             target2,
@@ -723,8 +635,8 @@ export default function PredictorHub({
           },
           model_version: 'quant-v2.2-institutional',
           explanation: dir === 'up'
-            ? `NEPSE (${nepseIdx.toFixed(1)} pts) displays bullish bias driven by favorable sector breadth (${advances} advances vs ${declines} declines). Tactical upside target set at ${target1} pts (extension ${target2} pts, bounded by 15% daily ceiling ${circuitCeiling} pts) with trailing stop floor at ${stopFloor} pts (RRR ${rrr}:1).`
-            : `NEPSE (${nepseIdx.toFixed(1)} pts) indicates consolidation near benchmark levels. Support floor: ${stopFloor} pts, Resistance ceiling: ${target1} pts.`
+            ? `NEPSE (${nepseIdx.toFixed(1)} pts) displays bullish bias driven by favorable sector breadth (${advances} advances vs ${declines} declines). Tactical upside target set at ${target1} pts (extension ${target2} pts, bounded by daily index circuit ${circuitCeiling} pts) with trailing stop floor at ${Math.min(target1, stopFloor)} pts (RRR ${rrr}:1).`
+            : `NEPSE (${nepseIdx.toFixed(1)} pts) indicates consolidation near benchmark levels. Support floor: ${Math.min(target1, stopFloor)} pts, Resistance ceiling: ${Math.max(target1, stopFloor)} pts.`
         });
 
         // Load authentic verified prediction history if recorded; otherwise return explicit insufficient_history
@@ -762,24 +674,19 @@ export default function PredictorHub({
           const enriched = json.data.map(item => {
             const sym = String(item.symbol || '').toUpperCase().trim();
             const uInfo = UNIVERSE_MAP.get(sym);
-            const catInfo = CATALYST_MAP.get(sym);
-            const sharesOutM = Number(uInfo?.sharesOut || item.sharesOut || 5);
+            const sharesOutM = Number(uInfo?.sharesOut || item.sharesOut || 0);
             const isLowFloat = sharesOutM > 0 && sharesOutM <= 5;
             const hasCatalyst = Boolean(
               item.corporate_action_flag ||
-              catInfo ||
               Number(item.dividendYield || 0) > 0 ||
               Number(item.bonusShare || 0) > 0 ||
-              Number(item.rightShare || 0) > 0 ||
-              (uInfo?.sharesOut && uInfo.sharesOut <= 3.5)
+              Number(item.rightShare || 0) > 0
             );
-            const catalystLabel = catInfo || (
+            const catalystLabel =
               Number(item.bonusShare || 0) > 0 ? `${item.bonusShare}% Bonus Share Declared` :
               Number(item.dividendYield || 0) > 0 ? `${item.dividendYield}% Dividend Yield` :
               Number(item.rightShare || 0) > 0 ? `${item.rightShare}% Right Share Issue` :
-              (uInfo?.sharesOut && uInfo.sharesOut <= 3.5) ? 'Micro-Float Restructuring Play' :
-              'Corporate Action / AGM Disclosure'
-            );
+              'Corporate Action / AGM Disclosure';
             return {
               ...item,
               companyName: item.companyName || uInfo?.name || item.symbol,
@@ -906,17 +813,14 @@ export default function PredictorHub({
         return Boolean(
           s.corporate_action_flag ||
           s.catalystLabel ||
-          CATALYST_MAP.has(sym) ||
           Number(s.dividendYield || 0) > 0 ||
           Number(s.bonusShare || 0) > 0 ||
           Number(s.rightShare || 0) > 0 ||
           (uInfo?.sharesOut && uInfo.sharesOut <= 3.5)
         );
       }).sort((a, b) => {
-        const symA = String(a.symbol || '').toUpperCase().trim();
-        const symB = String(b.symbol || '').toUpperCase().trim();
-        const scoreA = (CATALYST_MAP.has(symA) ? 50 : 0) + (a.corporate_action_flag ? 25 : 0) + Number(a.composite_score || 0);
-        const scoreB = (CATALYST_MAP.has(symB) ? 50 : 0) + (b.corporate_action_flag ? 25 : 0) + Number(b.composite_score || 0);
+        const scoreA = (a.corporate_action_flag ? 25 : 0) + (a.catalystLabel ? 15 : 0) + Number(a.composite_score || 0);
+        const scoreB = (b.corporate_action_flag ? 25 : 0) + (b.catalystLabel ? 15 : 0) + Number(b.composite_score || 0);
         return scoreB - scoreA;
       });
       return candidates.length >= 5 ? candidates : [...searchFiltered].filter(s => Number(s.composite_score) >= 45).slice(0, 35);
@@ -1022,12 +926,13 @@ export default function PredictorHub({
       }
     } catch (_) {}
 
+    if (masterPipeline.cashDefenseActive) return null;
     const rawPick = masterPipeline.primeDailyPick;
     if (rawPick && isActionableBuySignal(rawPick)) {
       return rawPick;
     }
     return null;
-  }, [hydratedPrimePick, masterPipeline.primeDailyPick, externalPlanVersion]);
+  }, [hydratedPrimePick, masterPipeline.primeDailyPick, masterPipeline.cashDefenseActive, externalPlanVersion]);
   const cashDefenseActive = masterPipeline.cashDefenseActive || false;
 
   // ── AUTO-ANALYSIS: Run full Entry/Exit Analyzer engine on Prime Pick top stock ──
@@ -2650,10 +2555,19 @@ export default function PredictorHub({
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 12 }}>{hubPreOpenGate.badge.slice(0, 2)}</span>
-                          <span style={{ fontSize: 12, fontWeight: 800, color: hubPreOpenGate.color }}>
-                            {hubPreOpenGate.badge.slice(2)}
-                          </span>
+                          {(() => {
+                            const badgeChars = Array.from(String(hubPreOpenGate.badge || '⚡ Pre-Open'));
+                            const emojiPrefix = badgeChars[0] || '⚡';
+                            const labelRest = badgeChars.slice(1).join('').trim();
+                            return (
+                              <>
+                                <span style={{ fontSize: 12 }}>{emojiPrefix}</span>
+                                <span style={{ fontSize: 12, fontWeight: 800, color: hubPreOpenGate.color }}>
+                                  {labelRest}
+                                </span>
+                              </>
+                            );
+                          })()}
                         </div>
                         {hubPreOpenGate.hasLiveOrders && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8' }}>
@@ -3257,13 +3171,51 @@ export default function PredictorHub({
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-                  {[
-                    { label: 'M2 Money Supply Growth', value: `${macroData.m2_growth_pct}%`, status: 'Strong Bullish Catalyst', color: '#10b981' },
-                    { label: 'NRB Policy Interest Rate', value: `${macroData.interest_rate_pct}%`, status: 'Accommodative', color: '#3b82f6' },
-                    { label: 'CPI Annual Inflation', value: `${macroData.cpi_inflation_pct}%`, status: 'Controlled within Target', color: '#10b981' },
-                    { label: 'Remittance Growth YoY', value: `+${macroData.remittance_growth_pct}%`, status: 'Surge Inflow', color: '#10b981' },
-                    { label: 'NPR / USD Exchange Rate', value: `Rs. ${macroData.npr_usd_rate}`, status: 'Stable Forex Reserves', color: '#f59e0b' },
-                  ].map((m, idx) => (
+                  {(() => {
+                    const fmtPct = (v, signed = false) => {
+                      const n = Number(v);
+                      if (v === null || v === undefined || !Number.isFinite(n)) return null;
+                      return `${signed && n > 0 ? '+' : ''}${n}%`;
+                    };
+                    const m2 = fmtPct(macroData?.m2_growth_pct);
+                    const rate = fmtPct(macroData?.interest_rate_pct);
+                    const cpi = fmtPct(macroData?.cpi_inflation_pct);
+                    const remit = fmtPct(macroData?.remittance_growth_pct, true);
+                    const fxNum = Number(macroData?.npr_usd_rate);
+                    const fx = macroData?.npr_usd_rate != null && Number.isFinite(fxNum) && fxNum > 0 ? `Rs. ${fxNum}` : null;
+                    return [
+                      {
+                        label: 'M2 Money Supply Growth',
+                        value: m2 ?? 'Unavailable',
+                        status: m2 == null ? 'No Verified NRB Data' : (Number(macroData.m2_growth_pct) >= 12 ? 'Expansionary Liquidity' : 'Moderate Liquidity'),
+                        color: m2 == null ? '#64748b' : (Number(macroData.m2_growth_pct) >= 12 ? '#10b981' : '#3b82f6'),
+                      },
+                      {
+                        label: 'NRB Policy Interest Rate',
+                        value: rate ?? 'Unavailable',
+                        status: rate == null ? 'No Verified NRB Data' : (Number(macroData.interest_rate_pct) <= 5.5 ? 'Accommodative' : 'Tight / Restrictive'),
+                        color: rate == null ? '#64748b' : (Number(macroData.interest_rate_pct) <= 5.5 ? '#3b82f6' : '#f59e0b'),
+                      },
+                      {
+                        label: 'CPI Annual Inflation',
+                        value: cpi ?? 'Unavailable',
+                        status: cpi == null ? 'No Verified NRB Data' : (Number(macroData.cpi_inflation_pct) <= 5.5 ? 'Within Target Band' : 'Elevated Inflation'),
+                        color: cpi == null ? '#64748b' : (Number(macroData.cpi_inflation_pct) <= 5.5 ? '#10b981' : '#ef4444'),
+                      },
+                      {
+                        label: 'Remittance Growth YoY',
+                        value: remit ?? 'Unavailable',
+                        status: remit == null ? 'No Verified NRB Data' : (Number(macroData.remittance_growth_pct) >= 10 ? 'Strong Inflow' : Number(macroData.remittance_growth_pct) >= 0 ? 'Positive Growth' : 'Contraction'),
+                        color: remit == null ? '#64748b' : (Number(macroData.remittance_growth_pct) >= 0 ? '#10b981' : '#ef4444'),
+                      },
+                      {
+                        label: 'NPR / USD Exchange Rate',
+                        value: fx ?? 'Unavailable',
+                        status: fx == null ? 'No Verified NRB Data' : 'NRB Official Rate',
+                        color: fx == null ? '#64748b' : '#f59e0b',
+                      },
+                    ];
+                  })().map((m, idx) => (
                     <div key={idx} style={{
                       padding: '12px 14px',
                       borderRadius: 12,
@@ -3586,6 +3538,7 @@ export default function PredictorHub({
       <InvestorDecisionGuideModal
         isOpen={showGuideModal}
         onClose={() => setShowGuideModal(false)}
+        initialTab={guideTab}
         defaultTab={guideTab}
       />
     </div>

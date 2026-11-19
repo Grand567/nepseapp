@@ -86,20 +86,27 @@ export default function ProGate({
     );
   }
 
-  // Full Screen / Panel Pro Gate with Blurred Preview
+  // Full Screen / Panel Pro Gate (strictly omits locked children from DOM)
   return (
     <div style={{ position: 'relative', width: '100%', overflow: 'hidden', borderRadius: 16 }}>
-      {/* Blurred background preview of the feature */}
+      {/* Static decorative locked wireframe skeleton — locked children are NEVER mounted */}
       {showPreview && (
-        <div style={{
-          filter: 'blur(7px)',
-          opacity: 0.25,
-          pointerEvents: 'none',
-          userSelect: 'none',
-          maxHeight: 480,
-          overflow: 'hidden'
-        }}>
-          {children}
+        <div
+          aria-hidden="true"
+          style={{
+            padding: 20,
+            background: 'rgba(15, 23, 42, 0.45)',
+            border: '1px solid rgba(255, 255, 255, 0.05)',
+            minHeight: 320,
+            display: 'grid',
+            gap: 12,
+            pointerEvents: 'none',
+            userSelect: 'none'
+          }}
+        >
+          <div style={{ height: 22, width: '40%', borderRadius: 6, background: 'rgba(255,255,255,0.06)' }} />
+          <div style={{ height: 96, width: '100%', borderRadius: 10, background: 'rgba(255,255,255,0.04)' }} />
+          <div style={{ height: 140, width: '100%', borderRadius: 10, background: 'rgba(255,255,255,0.04)' }} />
         </div>
       )}
 

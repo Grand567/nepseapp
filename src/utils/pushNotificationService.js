@@ -1212,7 +1212,7 @@ export async function triggerTestAlert(symbol = 'GHL', ltp = 269.50) {
  * Differentiates whether the failure is server-side (Render API/auth/dispatch)
  * or client-side (Android status bar/permission/OEM battery kill).
  */
-export async function sendAdminTestNotification({ title, body, symbol, category } = {}) {
+export async function sendAdminTestNotification({ title, body, symbol, category, adminKey = '' } = {}) {
   const result = {
     server: { success: false, error: null, alertId: null, status: null },
     phoneNative: { success: false, error: null, method: null }
@@ -1221,16 +1221,13 @@ export async function sendAdminTestNotification({ title, body, symbol, category 
   // 1. Trigger Server Dispatch
   try {
     const apiBase = getApiBase();
-    const adminKey = (typeof localStorage !== 'undefined' && (
-      localStorage.getItem('nepse_admin_key') ||
-      localStorage.getItem('nepse_portfolio_key')
-    )) || (import.meta?.env?.VITE_ADMIN_API_KEY || '');
+    const resolvedAdminKey = (adminKey && String(adminKey).trim()) || (import.meta?.env?.VITE_ADMIN_API_KEY || '');
 
     const res = await fetch(`${apiBase}/api/notifications/test-dispatch`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(adminKey ? { 'x-admin-key': adminKey, 'Authorization': `Bearer ${adminKey}` } : {})
+        ...(resolvedAdminKey ? { 'x-admin-key': resolvedAdminKey, 'Authorization': `Bearer ${resolvedAdminKey}` } : {})
       },
       body: JSON.stringify({
         title: title || '🧪 [DIAGNOSTIC TEST] Dravyashree Alert',

@@ -752,25 +752,28 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
       const staticData = typeof getTodayStaticAnalyticsDirect === 'function' ? await getTodayStaticAnalyticsDirect(sym) : null;
       const f = scripRecord?.fundamentals || staticData?.long_term_static?.audited_quarterly_fundamentals;
       if (f && (f.eps !== undefined || f.book_value !== undefined || f.book_value_per_share !== undefined || f.paid_up_capital !== undefined)) {
-        const ltp = scripRecord?.ltp || Number(staticData?.card_1_quote?.ltp || 100);
+        const toNullPos = (v) => { const n = Number(v); return (v != null && v !== '' && Number.isFinite(n) && n > 0) ? n : null; };
+        const toNullFin = (v) => { const n = Number(v); return (v != null && v !== '' && Number.isFinite(n)) ? n : null; };
+        const ltp = scripRecord?.ltp || Number(staticData?.card_1_quote?.ltp || 0);
         const epsVal = f.eps !== undefined && f.eps !== 0 ? f.eps : (f.eps_ttm ?? null);
         const bvVal = f.book_value !== undefined && f.book_value !== 0 ? f.book_value : (f.book_value_per_share ?? null);
-        const totalShares = f.shares_outstanding || f.total_listed_shares || Math.round((Number(f.paid_up_capital) || 1000000000) / 100);
+        const paidUpCap = toNullPos(f.paid_up_capital);
+        const totalShares = toNullPos(f.shares_outstanding) ?? toNullPos(f.total_listed_shares) ?? (paidUpCap ? Math.round(paidUpCap / 100) : null);
         const fastDetail = {
           symbol: sym,
           companyName: scripRecord?.company_name || sym,
           sector: scripRecord?.sector || f.sector || '',
           eps: epsVal,
           bookValue: bvVal,
-          pe: (epsVal && epsVal > 0 && ltp > 0) ? Number((ltp / epsVal).toFixed(2)) : (f.pe ?? f.pe_ratio ?? 0),
-          pbv: (bvVal && bvVal > 0 && ltp > 0) ? Number((ltp / bvVal).toFixed(2)) : (f.pbv ?? 0),
+          pe: (epsVal && epsVal > 0 && ltp > 0) ? Number((ltp / epsVal).toFixed(2)) : (f.pe ?? f.pe_ratio ?? null),
+          pbv: (bvVal && bvVal > 0 && ltp > 0) ? Number((ltp / bvVal).toFixed(2)) : (f.pbv ?? null),
           sharesOutstanding: totalShares,
-          marketCap: f.market_cap || Math.round(ltp * totalShares),
-          paidUpCapital: Number(f.paid_up_capital) || 0,
-          publicFloatKitta: Number(f.public_float_kitta) || 0,
-          promoterSharePct: Number(f.promoter_share_pct) || 0,
-          publicSharePct: Number(f.public_share_pct) || 0,
-          roe: Number(f.roe || f.roe_pct) || 0,
+          marketCap: f.market_cap || (ltp > 0 && totalShares ? Math.round(ltp * totalShares) : null),
+          paidUpCapital: paidUpCap,
+          publicFloatKitta: toNullPos(f.public_float_kitta),
+          promoterSharePct: toNullPos(f.promoter_share_pct),
+          publicSharePct: toNullPos(f.public_share_pct),
+          roe: toNullFin(f.roe ?? f.roe_pct),
           isReal: true,
           isOfflinePrecomputed: true
         };
@@ -2865,22 +2868,33 @@ export async function fetchAvailableTradingDates() {
   if (_cachedTradingDatesList.length >= 5 && (now - _cachedTradingDatesTs < 5 * 60 * 1000)) {
     return _cachedTradingDatesList;
   }
-  const todayIso = formatNptDateIso(new Date());
-  const sanitizeDates = (arr) => {
+  const nowObj = new Date();
+  const todayIso = formatNptDateIso(nowObj);
+  const nptMinutesOfDay = (nowObj.getUTCHours() * 60 + nowObj.getUTCMinutes() + 345) % 1440;
+  // Pre-market guard (BUG-027): do not advertise todayIso as a completed/active session date before 10:30 AM NPT unless backend explicitly verifies trades for todayIso
+  const isTodaySessionStarted = isNepseTradingDay(nowObj) && nptMinutesOfDay >= (10 * 60 + 30);
+
+  const sanitizeDates = (arr, verifiedSet = null) => {
     if (!Array.isArray(arr)) return [];
     return Array.from(new Set(arr))
       .filter(d => {
         if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
         if (d > todayIso) return false;
+        if (d === todayIso && !isTodaySessionStarted && !(verifiedSet && verifiedSet.has(todayIso))) return false;
         return isNepseTradingDay(new Date(d + 'T12:00:00+05:45'));
       })
       .sort((a, b) => b.localeCompare(a));
   };
 
   // Authoritative NEPSE calendar sequence + verified recent exchange sessions
-  const calendarDates = generateTradingDaysSequence(60).map(d => formatNptDateIso(d));
+  const calendarDates = generateTradingDaysSequence(60).map(d => formatNptDateIso(d)).filter(d => d < todayIso || isTodaySessionStarted);
   const baseTradingDays = [
-    todayIso,
+    ...(isTodaySessionStarted ? [todayIso] : []),
+    '2026-11-18',
+    '2026-11-17',
+    '2026-11-13',
+    '2026-11-06',
+    '2026-11-05',
     '2026-11-04',
     '2026-11-03',
     '2026-11-02',
@@ -2915,7 +2929,8 @@ export async function fetchAvailableTradingDates() {
     const arr = res?.archives || (Array.isArray(res) ? res : []);
     if (Array.isArray(arr) && arr.length > 0) {
       const dates = arr.map(a => a.date || a).filter(Boolean);
-      const valid = sanitizeDates([...dates, ...baseTradingDays]);
+      const verifiedSet = new Set(dates);
+      const valid = sanitizeDates([...dates, ...baseTradingDays], verifiedSet);
       if (valid.length > 0) {
         _cachedTradingDatesList = valid;
         _cachedTradingDatesTs = now;
@@ -3786,28 +3801,13 @@ export async function fetchMarketDepth(symbol, date) {
     }
   } catch (_) {}
 
-  // Fallback: Construct off-market closing depth snapshot using cached or verified stock metrics
+  // Fallback: Do NOT synthesize fake stepped geometric bids/asks off-market (BUG-007)
   try {
     const cachedStocks = typeof getCachedStocks === 'function' ? getCachedStocks() : [];
     const stock = cachedStocks.find(s => String(s.symbol || '').toUpperCase() === sym) || (Array.isArray(MEM_STOCKS) ? MEM_STOCKS.find(s => String(s.symbol || '').toUpperCase() === sym) : null);
-    const ltp = Number(stock?.ltp || stock?.close || stock?.lastTradedPrice || 500);
+    const ltp = Number(stock?.ltp || stock?.close || stock?.lastTradedPrice || 0);
     const prevClose = Number(stock?.prevClose || stock?.previousClose || ltp);
-    const vol = Number(stock?.volume || stock?.totalTradedQuantity || 10000);
-    const tick = ltp > 1000 ? 1.0 : ltp > 500 ? 0.5 : 0.1;
-
-    const bids = [1, 2, 3, 4, 5].map(i => {
-      const q = Math.max(10, Math.round(vol * 0.035 * (1 - (i - 1) * 0.12)));
-      return { price: Number((ltp - (i - 1) * tick).toFixed(1)), qty: q, quantity: q, orders: Math.max(1, Math.round(q / 200)) };
-    });
-    const asks = [1, 2, 3, 4, 5].map(i => {
-      const q = Math.max(10, Math.round(vol * 0.03 * (1 - (i - 1) * 0.12)));
-      return { price: Number((ltp + i * tick).toFixed(1)), qty: q, quantity: q, orders: Math.max(1, Math.round(q / 200)) };
-    });
-    const totalBidQty = bids.reduce((s, b) => s + b.qty, 0);
-    const totalAskQty = asks.reduce((s, a) => s + a.qty, 0);
-    const spread = Number((asks[0].price - bids[0].price).toFixed(2));
-    const spreadPct = bids[0].price > 0 ? Number(((spread / bids[0].price) * 100).toFixed(2)) : 0;
-    const obir = (totalBidQty + totalAskQty) > 0 ? Number(((totalBidQty - totalAskQty) / (totalBidQty + totalAskQty)).toFixed(4)) : 0;
+    const vol = Number(stock?.volume || stock?.totalTradedQuantity || 0);
 
     return {
       symbol: sym,
@@ -3817,17 +3817,19 @@ export async function fetchMarketDepth(symbol, date) {
       lowPrice: stock?.low || stock?.lowPrice || ltp,
       previousClose: prevClose,
       volume: vol,
-      bids,
-      asks,
-      totalBidQty,
-      totalAskQty,
-      obir,
-      spread,
-      spreadPct,
+      bids: [],
+      asks: [],
+      totalBidQty: 0,
+      totalAskQty: 0,
+      obir: 0,
+      spread: 0,
+      spreadPct: 0,
       isOffMarket: true,
-      sessionLabel: 'Closing Session Snapshot (3:00 PM NPT)',
-      demandStatus: obir > 0.08 ? 'Demand Heavy' : obir < -0.08 ? 'Supply Heavy' : 'Balanced Flow',
-      source: 'client_closing_snapshot'
+      isSynthetic: false,
+      isUnavailable: true,
+      sessionLabel: 'Order Book Unavailable Outside Live Trading Hours',
+      demandStatus: 'No Active Live Orders (Market Closed)',
+      source: 'unavailable_off_market'
     };
   } catch (_) {
     return {
@@ -3837,8 +3839,12 @@ export async function fetchMarketDepth(symbol, date) {
       totalBidQty: 0,
       totalAskQty: 0,
       obir: 0,
-      demandStatus: 'No Active Live Orders (Market Closed Today)',
-      source: 'empty'
+      isOffMarket: true,
+      isSynthetic: false,
+      isUnavailable: true,
+      sessionLabel: 'Order Book Unavailable Outside Live Trading Hours',
+      demandStatus: 'No Active Live Orders (Market Closed)',
+      source: 'unavailable_off_market'
     };
   }
 }

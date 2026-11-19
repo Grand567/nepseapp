@@ -142,7 +142,7 @@ ok(decryptedVault.pin === vaultPayload.pin, 'Decrypted AES vault PIN matches');
 // Test async profile wrapper
 const asyncEncProfile = await encryptProfileCredentialsAsync(profile, passphrase, 'user_nepse_1');
 ok(Boolean(asyncEncProfile.vaultEnvelope), 'Profile contains WebCrypto vaultEnvelope');
-ok(asyncEncProfile.password.startsWith('enc_v1:'), 'Maintains backward-compatible enc_v1 field');
+ok(!('password' in asyncEncProfile) || !String(asyncEncProfile.password || '').startsWith('enc_v1:'), 'Zero enc_v1 XOR shadow leakage when vaultEnvelope is present');
 
 const asyncDecProfile = await decryptProfileCredentialsAsync(asyncEncProfile, passphrase, 'user_nepse_1');
 ok(asyncDecProfile.password === profile.password, 'Decrypted profile via AES vault has correct password');

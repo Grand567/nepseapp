@@ -79,6 +79,7 @@ export interface VolumeProfileNode {
   sellKitta: number;
   pctOfTotalVolume: number;
   isPoc: boolean;
+  isUnclassifiedVolume?: boolean;
 }
 
 export interface UnifiedStockTabTelemetry {
@@ -269,17 +270,17 @@ export function buildVolumeProfileFromFloorsheet(
 ): { pocPrice: number | null; nodes: VolumeProfileNode[] } {
   if (!contracts || contracts.length === 0) {
     if (fallbackCandles && Array.isArray(fallbackCandles) && fallbackCandles.length > 0) {
-      const recent = fallbackCandles.slice(0, 10);
+      const recent = fallbackCandles.slice(-10);
       const bucketMap = new Map<number, { totalKitta: number; buyKitta: number; sellKitta: number }>();
       let grandTotalKitta = 0;
       for (const c of recent) {
         const p = Math.round(Number(c.close || c.high || 0));
         if (p <= 0) continue;
-        const vol = Math.round(Number(c.volume || 1000));
+        const vol = Math.round(Number(c.volume || 0));
+        if (vol <= 0) continue;
         const cur = bucketMap.get(p) || { totalKitta: 0, buyKitta: 0, sellKitta: 0 };
         cur.totalKitta += vol;
-        cur.buyKitta += Math.round(vol * 0.52);
-        cur.sellKitta += Math.round(vol * 0.48);
+        // Without tick-level floorsheet contracts, aggressor side cannot be fabricated via 52/48 split
         bucketMap.set(p, cur);
         grandTotalKitta += vol;
       }
@@ -295,8 +296,9 @@ export function buildVolumeProfileFromFloorsheet(
         .map(([priceBucket, stats]) => ({
           priceBucket,
           totalKitta: stats.totalKitta,
-          buyKitta: stats.buyKitta,
-          sellKitta: stats.sellKitta,
+          buyKitta: 0,
+          sellKitta: 0,
+          isUnclassifiedVolume: true,
           pctOfTotalVolume:
             grandTotalKitta > 0
               ? Number(((stats.totalKitta / grandTotalKitta) * 100).toFixed(1))
@@ -425,62 +427,13 @@ export function resolveMarketDepthWithFloorsheetFallback(params: {
     };
   }
 
-  const refPrice = params.verifiedPrice ?? 0;
-  if (refPrice > 0 && params.contracts.length > 0) {
-    const levelMap = new Map<number, { kitta: number; orders: number }>();
-    for (const c of params.contracts) {
-      if (c.rate <= 0 || c.kitta <= 0) continue;
-      const lvl = Number(c.rate.toFixed(1));
-      const existing = levelMap.get(lvl) || { kitta: 0, orders: 0 };
-      existing.kitta += c.kitta;
-      existing.orders += 1;
-      levelMap.set(lvl, existing);
-    }
-
-    const allLevels = Array.from(levelMap.entries()).map(([price, v]) => ({
-      price,
-      kitta: v.kitta,
-      orders: v.orders,
-      isSyntheticVap: true,
-    }));
-
-    const vapBids = allLevels
-      .filter((l) => l.price <= refPrice)
-      .sort((a, b) => b.price - a.price)
-      .slice(0, 5);
-
-    const vapAsks = allLevels
-      .filter((l) => l.price > refPrice)
-      .sort((a, b) => a.price - b.price)
-      .slice(0, 5);
-
-    const totalBidKitta = vapBids.reduce((s, b) => s + b.kitta, 0);
-    const totalAskKitta = vapAsks.reduce((s, a) => s + a.kitta, 0);
-    const total = totalBidKitta + totalAskKitta;
-    const { obir, obirSignal } = classifyObir(totalBidKitta, totalAskKitta);
-
-    return {
-      source: "FLOORSHEET_VAP_DEPTH",
-      asOfLabel:
-        "Floorsheet Volume-at-Price (VAP) Liquidity Walls (L2 Feed Closed)",
-      totalBidKitta,
-      totalAskKitta,
-      bidRatioPct:
-        total > 0 ? Number(((totalBidKitta / total) * 100).toFixed(1)) : 50,
-      obir,
-      obirSignal,
-      bids: vapBids,
-      asks: vapAsks,
-    };
-  }
-
   return {
     source: "UNAVAILABLE",
-    asOfLabel: "No Live L2 or Floorsheet Depth Available",
+    asOfLabel: "Live L2 Order Book Unavailable",
     totalBidKitta: 0,
     totalAskKitta: 0,
-    bidRatioPct: 50,
-    obir: 1.0,
+    bidRatioPct: 0,
+    obir: 0,
     obirSignal: "BALANCED",
     bids: [],
     asks: [],

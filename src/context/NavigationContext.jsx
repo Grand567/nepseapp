@@ -160,6 +160,11 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
     }
   }, [selectedStock, tabHistory, activeTab]);
 
+  const goBackRef = useRef(goBack);
+  useEffect(() => {
+    goBackRef.current = goBack;
+  }, [goBack]);
+
   // Hook into Capacitor Native Android Hardware Back Button & Swipe Gestures
   useEffect(() => {
     let listenerHandle = null;
@@ -167,7 +172,7 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
     const setupCapacitor = async () => {
       try {
         listenerHandle = await CapacitorApp.addListener('backButton', () => {
-          goBack();
+          if (goBackRef.current) goBackRef.current();
         });
       } catch (_) {
         // Web / non-Capacitor environment
@@ -178,7 +183,7 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
 
     // Hook into Web browser / PWA popstate (Android swipe gestures in WebView)
     const handlePopState = () => {
-      goBack();
+      if (goBackRef.current) goBackRef.current();
     };
     window.addEventListener('popstate', handlePopState);
 
@@ -188,7 +193,7 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
       }
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [goBack]);
+  }, []);
 
   return (
     <NavigationContext.Provider

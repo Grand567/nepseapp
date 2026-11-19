@@ -10,7 +10,7 @@ import {
   aggregateSystemHealth
 } from '../../src/utils/systemMonitoring.js';
 import { getRecentCompletenessLogs, getLedgerStatusInfo, getStoredDates } from '../db/ledgerStore.js';
-import { getDetailedMarketStatus, getLastValidTradingDay } from '../../src/utils/nepseCalendar.js';
+import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso } from '../../src/utils/nepseCalendar.js';
 
 export const scraperTracker = new ScraperHealthTracker(60);
 
@@ -46,7 +46,7 @@ export function getSystemMonitoringSnapshot() {
   // Expected trading day verification
   const calendarStatus = getDetailedMarketStatus();
   const lastTradingDayObj = getLastValidTradingDay(new Date(), false);
-  const expectedDate = lastTradingDayObj ? lastTradingDayObj.toISOString().split('T')[0] : null;
+  const expectedDate = lastTradingDayObj ? formatNptDateIso(lastTradingDayObj) : null;
 
   const completeness = evaluateCompletenessHealth({
     completenessRecord: latestLog,

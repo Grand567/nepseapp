@@ -7,7 +7,7 @@ import {
 } from '../utils/candlestickPatterns';
 import { formatNptDateIso } from '../utils/nepseCalendar';
 
-export default function StockTechnicalGaugeCard({ stock: rawStock = {}, history: rawHistory = [] }) {
+export default function StockTechnicalGaugeCard({ stock: rawStock = {}, history: rawHistory = [], brokerData = null }) {
   const stock = rawStock && typeof rawStock === 'object' ? rawStock : {};
   const history = Array.isArray(rawHistory) ? rawHistory : [];
   const [gaugeMode, setGaugeMode] = useState('summary'); // 'summary' | 'ma' | 'osc'
@@ -15,8 +15,8 @@ export default function StockTechnicalGaugeCard({ stock: rawStock = {}, history:
   const [showAllPatterns, setShowAllPatterns] = useState(false);
 
   const speedometer = useMemo(() => {
-    return calculateTechnicalSpeedometer(stock, history);
-  }, [stock, history]);
+    return calculateTechnicalSpeedometer(stock, history, brokerData);
+  }, [stock, history, brokerData]);
 
   const patternTimeline = useMemo(() => {
     const fromHist = detectCandlestickPatternsFromHistory(history, stock);
