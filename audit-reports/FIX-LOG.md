@@ -12,7 +12,7 @@
 - [x] **Stage 2: 13 Stock Tabs** (`tests/audit/stock-tabs.spec.ts`)
 - [x] **Stage 3: 125+ Services Hub** (`tests/audit/services-125.spec.ts`)
 - [x] **Stage 4: Market, IPO & Portfolio** (`tests/audit/market-ipo-portfolio.spec.ts`)
-- [ ] **Stage 5: Predictor & Guru AI** (`tests/audit/predictor-guru.spec.ts`)
+- [x] **Stage 5: Predictor & Guru AI** (`tests/audit/predictor-guru.spec.ts`)
 
 ---
 
