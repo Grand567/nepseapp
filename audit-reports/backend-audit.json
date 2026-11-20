@@ -1,5 +1,5 @@
 {
-  "auditTimestamp": "2026-11-20T13:42:16.901Z",
+  "auditTimestamp": "2026-11-20T15:39:43.346Z",
   "auditTarget": "Drabyashree NEPSE Local Backend + SQLite Ledger",
   "dbPath": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\drabyashree_ledger.db",
   "apiBase": "http://127.0.0.1:5000",
@@ -187,7 +187,7 @@
       "module": "Stock Tabs: Overview & Valuation",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 4,
+      "responseTimeMs": 22,
       "dataCountOrKeys": 2,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -197,7 +197,7 @@
       "module": "Stock Tabs: Overview (MeroShare)",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 13,
+      "responseTimeMs": 75,
       "dataCountOrKeys": 2,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -207,8 +207,8 @@
       "module": "Stock Tabs: Overview Profile",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 12,
-      "dataCountOrKeys": 3,
+      "responseTimeMs": 48,
+      "dataCountOrKeys": 2,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
     },
@@ -217,7 +217,7 @@
       "module": "Stock Tabs: Price History",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 7,
+      "responseTimeMs": 37,
       "dataCountOrKeys": 4,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -227,7 +227,7 @@
       "module": "Stock Tabs: Broker Flow",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 79,
+      "responseTimeMs": 72,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -237,7 +237,7 @@
       "module": "Stock Tabs: Broker Heatmap",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 231,
+      "responseTimeMs": 493,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -247,7 +247,7 @@
       "module": "Stock Tabs: Floorsheet",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 202,
+      "responseTimeMs": 150,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -257,7 +257,7 @@
       "module": "Stock Tabs: Market Depth",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 17,
+      "responseTimeMs": 6,
       "dataCountOrKeys": 2,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -267,7 +267,7 @@
       "module": "Stock Tabs: Dividends & Rights",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 14,
+      "responseTimeMs": 19,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -277,7 +277,7 @@
       "module": "Stock Tabs: Telemetry & Signals",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 1901,
+      "responseTimeMs": 15,
       "dataCountOrKeys": 23,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -287,7 +287,7 @@
       "module": "Stock Tabs: Technicals & Diagnostics",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 165,
+      "responseTimeMs": 113,
       "dataCountOrKeys": 7,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -297,7 +297,7 @@
       "module": "Stock Tabs: Compare Peers",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 15,
+      "responseTimeMs": 36,
       "dataCountOrKeys": 2,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -307,7 +307,7 @@
       "module": "Stock Tabs: Hydropower (CHCL)",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 11,
+      "responseTimeMs": 27,
       "dataCountOrKeys": 4,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -317,7 +317,7 @@
       "module": "Stock Tabs: Hydropower Broker Flow",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 71,
+      "responseTimeMs": 54,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -327,7 +327,7 @@
       "module": "Stock Tabs: Microfinance (CBBL)",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 11,
+      "responseTimeMs": 33,
       "dataCountOrKeys": 4,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -337,7 +337,7 @@
       "module": "Stock Tabs: Microfinance Broker Flow",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 48,
+      "responseTimeMs": 61,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -357,7 +357,7 @@
       "module": "Services: Live Today Prices",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 12,
+      "responseTimeMs": 11,
       "dataCountOrKeys": 5,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -367,7 +367,7 @@
       "module": "Services: Market Indices",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 11,
+      "responseTimeMs": 13,
       "dataCountOrKeys": 2,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -377,7 +377,7 @@
       "module": "Services: Securities Directory",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 18,
+      "responseTimeMs": 19,
       "dataCountOrKeys": 5,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -387,7 +387,7 @@
       "module": "Services: Sector Heatmap",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 23,
+      "responseTimeMs": 20,
       "dataCountOrKeys": 2,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -397,7 +397,7 @@
       "module": "Services: Smart Money Sector A/D",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 15,
+      "responseTimeMs": 7073,
       "dataCountOrKeys": 2,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -407,7 +407,7 @@
       "module": "Services: Brokers Directory",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 5,
+      "responseTimeMs": 9,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -417,7 +417,7 @@
       "module": "Services: Market Broker Summary",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 27,
+      "responseTimeMs": 47,
       "dataCountOrKeys": 4,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -427,7 +427,7 @@
       "module": "Services: Broker 58 Desk Analysis",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 964,
+      "responseTimeMs": 747,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -437,7 +437,7 @@
       "module": "Services: Broker 58 Holdings",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 14,
+      "responseTimeMs": 9,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -447,7 +447,7 @@
       "module": "Services: Floorsheet Daily Archive",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 18,
+      "responseTimeMs": 17,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -457,7 +457,7 @@
       "module": "Services: Floorsheet Cloud Status",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 236,
+      "responseTimeMs": 284,
       "dataCountOrKeys": 8,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -467,7 +467,7 @@
       "module": "Services: Floorsheet Archives List",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 5,
+      "responseTimeMs": 6,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -477,7 +477,7 @@
       "module": "Services: Live Today Session",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 5,
+      "responseTimeMs": 8,
       "dataCountOrKeys": 6,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -487,8 +487,8 @@
       "module": "Services: IPO Pipeline",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 19,
-      "dataCountOrKeys": 4,
+      "responseTimeMs": 14,
+      "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
     },
@@ -507,7 +507,7 @@
       "module": "Services: IPO Result Companies",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 14,
+      "responseTimeMs": 36,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -517,7 +517,7 @@
       "module": "Services: Merolagani News Feed",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 32,
+      "responseTimeMs": 37,
       "dataCountOrKeys": 2,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -527,7 +527,7 @@
       "module": "Services: Trading Holidays Calendar",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 16,
+      "responseTimeMs": 17,
       "dataCountOrKeys": 6,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -538,7 +538,7 @@
       "httpStatus": 200,
       "passed": true,
       "responseTimeMs": 15,
-      "dataCountOrKeys": 10,
+      "dataCountOrKeys": 9,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
     },
@@ -547,7 +547,7 @@
       "module": "Services: Today Calendar Status",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 17,
+      "responseTimeMs": 20,
       "dataCountOrKeys": 6,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -557,7 +557,7 @@
       "module": "Services: Broker Tracker Radar",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 5508,
+      "responseTimeMs": 4129,
       "dataCountOrKeys": 10,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -567,7 +567,7 @@
       "module": "Services: Early Ignition Radar",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 11,
+      "responseTimeMs": 14,
       "dataCountOrKeys": 10,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -577,7 +577,7 @@
       "module": "Services: Signal Track Record",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 328,
+      "responseTimeMs": 191,
       "dataCountOrKeys": 11,
       "numericalParityMatches": true,
       "parityDiscrepancies": []
@@ -587,7 +587,7 @@
       "module": "Market: Full Index Values",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 13,
+      "responseTimeMs": 12,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true
     },
@@ -605,7 +605,7 @@
       "module": "Market: Top 10 Gainers",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 11,
+      "responseTimeMs": 12,
       "dataCountOrKeys": 4,
       "numericalParityMatches": true
     },
@@ -614,7 +614,7 @@
       "module": "Market: Top 10 Losers",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 15,
+      "responseTimeMs": 18,
       "dataCountOrKeys": 4,
       "numericalParityMatches": true
     },
@@ -632,7 +632,7 @@
       "module": "Market: Top 10 Turnover",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 14,
+      "responseTimeMs": 17,
       "dataCountOrKeys": 4,
       "numericalParityMatches": true
     },
@@ -641,7 +641,7 @@
       "module": "Market: Top 10 Transactions",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 16,
+      "responseTimeMs": 15,
       "dataCountOrKeys": 4,
       "numericalParityMatches": true
     },
@@ -650,7 +650,7 @@
       "module": "IPO & Portfolio: MeroShare Current IPOs",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 14,
+      "responseTimeMs": 11,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true
     },
@@ -659,7 +659,7 @@
       "module": "IPO & Portfolio: Applicable Issues",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 2,
+      "responseTimeMs": 13,
       "dataCountOrKeys": 4,
       "numericalParityMatches": true
     },
@@ -668,7 +668,7 @@
       "module": "IPO & Portfolio: Current Issues",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 11,
+      "responseTimeMs": 15,
       "dataCountOrKeys": 4,
       "numericalParityMatches": true
     },
@@ -677,7 +677,7 @@
       "module": "IPO & Portfolio: DP Brokers List",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 15,
+      "responseTimeMs": 27,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true
     },
@@ -686,7 +686,7 @@
       "module": "IPO & Portfolio: Tracked Holdings",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 18,
+      "responseTimeMs": 25,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true
     },
@@ -695,7 +695,7 @@
       "module": "IPO & Portfolio: Portfolio Shield",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 2574,
+      "responseTimeMs": 1967,
       "dataCountOrKeys": 5,
       "numericalParityMatches": true
     },
@@ -713,7 +713,7 @@
       "module": "Predictor: Scored Stocks Ranking",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 56,
+      "responseTimeMs": 35,
       "dataCountOrKeys": 4,
       "numericalParityMatches": true
     },
@@ -722,7 +722,7 @@
       "module": "Predictor: News Sentiment Score",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 12,
+      "responseTimeMs": 15,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true
     },
@@ -749,7 +749,7 @@
       "module": "Predictor: Single Stock Predictor (NABIL)",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 16,
+      "responseTimeMs": 3,
       "dataCountOrKeys": 3,
       "numericalParityMatches": true
     },
@@ -758,7 +758,7 @@
       "module": "Guru AI: Institutional Quantitative Assessment (NABIL)",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 20,
+      "responseTimeMs": 9,
       "dataCountOrKeys": 11,
       "numericalParityMatches": true
     },
@@ -767,7 +767,7 @@
       "module": "Guru AI: Institutional Quantitative Assessment (CHCL)",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 8,
+      "responseTimeMs": 6,
       "dataCountOrKeys": 11,
       "numericalParityMatches": true
     },
@@ -776,7 +776,7 @@
       "module": "Guru AI: Institutional Quantitative Assessment (CBBL)",
       "httpStatus": 200,
       "passed": true,
-      "responseTimeMs": 20,
+      "responseTimeMs": 15,
       "dataCountOrKeys": 11,
       "numericalParityMatches": true
     }

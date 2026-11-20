@@ -51,7 +51,7 @@ interface EndpointParityResult {
   errorMessage?: string;
 }
 
-async function fetchJson(endpoint: string, timeoutMs = 10000): Promise<{ status: number; data: any; timeMs: number }> {
+async function fetchJson(endpoint: string, timeoutMs = 15000): Promise<{ status: number; data: any; timeMs: number }> {
   const url = `${API_BASE}${endpoint}`;
   const t0 = Date.now();
   const controller = new AbortController();

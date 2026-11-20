@@ -32,6 +32,9 @@ function getTableColumns(database, tableName) {
   }
 }
 
+const telemetryCache = new Map();
+const TELEMETRY_CACHE_TTL = 45000; // 45s
+
 export function handleStockTelemetry(req, res) {
   try {
     const rawSymbol = req.params.symbol || req.query.symbol;
@@ -43,6 +46,13 @@ export function handleStockTelemetry(req, res) {
         symbol: 'UNSELECTED',
         error: 'Invalid or placeholder NEPSE symbol requested.',
       });
+    }
+
+    const cacheKey = `${validSymbol}_${req.query.date || ''}_${req.query.days || ''}`;
+    const cached = telemetryCache.get(cacheKey);
+    if (cached && (Date.now() - cached.ts < TELEMETRY_CACHE_TTL)) {
+      res.setHeader('Cache-Control', 'public, max-age=45');
+      return res.status(200).json(cached.payload);
     }
 
     // 1. Fetch Latest Signal Ledger Row
@@ -759,7 +769,8 @@ export function handleStockTelemetry(req, res) {
       fundamentalTelemetry,
     };
 
-    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    telemetryCache.set(cacheKey, { ts: Date.now(), payload: responsePayload });
+    res.setHeader('Cache-Control', 'public, max-age=45');
     return res.status(200).json(responsePayload);
   } catch (err) {
     return res.status(500).json({

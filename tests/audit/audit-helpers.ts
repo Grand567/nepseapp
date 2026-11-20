@@ -199,15 +199,18 @@ export async function assertRuntimeHealth(
   }
 
   // 3. Check for Empty or Zero-Dimension Charts (only for visible charts whose container is not display:none)
-  const chartIssues = await page.evaluate(() => {
+  let chartIssues = await page.evaluate(() => {
+    const modal = document.querySelector('div[style*="z-index: 99999"], div[style*="zIndex: 99999"]');
     function isAncestorVisible(el: Element): boolean {
-      let curr: Element | null = el.parentElement;
+      if (!el || !el.isConnected) return false;
+      if (modal && !modal.contains(el)) return false;
+      let curr: Element | null = el;
       while (curr && curr !== document.body) {
         const style = window.getComputedStyle(curr);
         if (style.display === 'none' || style.visibility === 'hidden') return false;
         curr = curr.parentElement;
       }
-      return true;
+      return curr === document.body;
     }
 
     const canvases = Array.from(document.querySelectorAll('canvas'));
@@ -232,6 +235,45 @@ export async function assertRuntimeHealth(
   });
 
   if (chartIssues.length > 0) {
+    // Allow layout and ResizeObserver up to 1200ms to settle for newly-mounted charts
+    await page.waitForTimeout(1200);
+    chartIssues = await page.evaluate(() => {
+      const modal = document.querySelector('div[style*="z-index: 99999"], div[style*="zIndex: 99999"]');
+      function isAncestorVisible(el: Element): boolean {
+        if (!el || !el.isConnected) return false;
+        if (modal && !modal.contains(el)) return false;
+        let curr: Element | null = el;
+        while (curr && curr !== document.body) {
+          const style = window.getComputedStyle(curr);
+          if (style.display === 'none' || style.visibility === 'hidden') return false;
+          curr = curr.parentElement;
+        }
+        return curr === document.body;
+      }
+
+      const canvases = Array.from(document.querySelectorAll('canvas'));
+      const svgs = Array.from(document.querySelectorAll('svg.recharts-surface, .tv-lightweight-charts svg'));
+      const issues: string[] = [];
+
+      for (const c of canvases) {
+        if (!isAncestorVisible(c)) continue;
+        const rect = c.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+          issues.push(`Visible Canvas has zero dimensions (${rect.width}x${rect.height})`);
+        }
+      }
+      for (const s of svgs) {
+        if (!isAncestorVisible(s)) continue;
+        const rect = s.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+          issues.push(`Visible Chart SVG has zero dimensions (${rect.width}x${rect.height})`);
+        }
+      }
+      return issues;
+    });
+  }
+
+  if (chartIssues.length > 0) {
     healthy = false;
     const screenshotPath = `audit-reports/screenshots/chart_dim_${slug}.png`;
     await page.screenshot({ path: screenshotPath }).catch(() => {});
@@ -247,13 +289,14 @@ export async function assertRuntimeHealth(
   // 4. Check for Stuck Loading Spinners (> 10s) in visible containers
   const isSpinnerStuck = await page.evaluate(() => {
     function isAncestorVisible(el: Element): boolean {
-      let curr: Element | null = el.parentElement;
+      if (!el || !el.isConnected) return false;
+      let curr: Element | null = el;
       while (curr && curr !== document.body) {
         const style = window.getComputedStyle(curr);
         if (style.display === 'none' || style.visibility === 'hidden') return false;
         curr = curr.parentElement;
       }
-      return true;
+      return curr === document.body;
     }
 
     const spinners = Array.from(document.querySelectorAll('.animate-spin, .spinner, .skeleton-loading, [aria-busy="true"]'));
@@ -265,13 +308,14 @@ export async function assertRuntimeHealth(
     await page.waitForTimeout(6000);
     const stillStuck = await page.evaluate(() => {
       function isAncestorVisible(el: Element): boolean {
-        let curr: Element | null = el.parentElement;
+        if (!el || !el.isConnected) return false;
+        let curr: Element | null = el;
         while (curr && curr !== document.body) {
           const style = window.getComputedStyle(curr);
           if (style.display === 'none' || style.visibility === 'hidden') return false;
           curr = curr.parentElement;
         }
-        return true;
+        return curr === document.body;
       }
 
       const spinners = Array.from(document.querySelectorAll('.animate-spin, .spinner, .skeleton-loading, [aria-busy="true"]'));
