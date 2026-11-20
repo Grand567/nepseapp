@@ -14483,15 +14483,22 @@ app.get('/api/company/:symbol/industry-comparison', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', async () => {
-    try {
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 NEPSE Proxy Server running on http://0.0.0.0:${PORT}`);
+    console.log(`   🔸 Live trading:    /api/market-summary`);
+    console.log(`   🔸 Today's prices:  /api/today-prices`);
+    console.log(`   🔸 Health check:    /health`);
+    console.log(`   🔸 Ping heartbeat:  /api/ping`);
+
+    setImmediate(async () => {
+      try {
         warmupStage = 'Initializing SQLite database & schema';
         await initDB();
         await hydrateTelegramConfigFromDb().catch(() => {});
         try {
           warmupStage = 'Restoring floorsheet vault & rebuilding hot cache';
           seedFromDiskVault();
-          rebuildHotCache();
+          await rebuildHotCache();
 
           // Fix 5: Startup Catch-Up Engine - Check for and fill any missed trading sessions if server was asleep (run in background)
           setTimeout(() => {
@@ -14600,14 +14607,10 @@ app.listen(PORT, '0.0.0.0', async () => {
         });
         startWorkers();
         startEodReconciliationScheduler();
-    } catch (e) {
+      } catch (e) {
         console.error("Failed to start DB/Workers", e.message);
-    }
-    console.log(`🚀 NEPSE Proxy Server running on http://localhost:${PORT}`);
-    console.log(`   🔸 Live trading:    /api/market-summary`);
-    console.log(`   🔸 Today's prices:  /api/today-prices`);
-    console.log(`   🔸 Price History:   /api/price-history/:symbol`);
-    console.log(`   🔸 UDF History:     /api/udf/history`);
+      }
+    });
 
     // Single Source of Truth Keep-Alive Heartbeat for Render Container
     // Strictly aligned to single source of truth: Monday to Friday, 10:45 AM - 3:15 PM NPT (getKathmanduTradingStatus).
@@ -14762,8 +14765,8 @@ app.listen(PORT, '0.0.0.0', async () => {
         // Check if daily_stock_summary has 1-year history (< 200 sessions)
         if (db) {
           const summaryRow = db.prepare('SELECT COUNT(DISTINCT trade_date) as cnt FROM daily_stock_summary').get();
-          if (!summaryRow || summaryRow.cnt < 200) {
-            console.log('[startup-warmup] daily_stock_summary lacks 1-year history. Hydrating 1-year market history...');
+          if (!summaryRow || summaryRow.cnt < 30) {
+            console.log('[startup-warmup] daily_stock_summary lacks sufficient sessions. Hydrating market history...');
             try {
               let unzipped = null;
               const localArchive = path.join(__dirname, 'data', 'nepse-1year-market-history.json.gz');

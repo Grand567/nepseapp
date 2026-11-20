@@ -1336,7 +1336,7 @@ export function getLedgerStatusInfo() {
  * Rebuilds the in-memory 1D, 5D, 15D, and 30D precomputed snapshots.
  * Computes all 4 horizons for all ~250 NEPSE stocks in ~40ms total and stores them in RAM.
  */
-export function rebuildHotCache() {
+export async function rebuildHotCache() {
   const startTime = Date.now();
   const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
   const todayNpt = nowNpt.toISOString().split('T')[0];
@@ -1414,7 +1414,8 @@ export function rebuildHotCache() {
     .prepare(`SELECT trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt FROM daily_broker_ledger WHERE trade_date >= ?`)
     .all(oldestDate);
   const brokersBySymDate = new Map();
-  for (const b of allBrokers) {
+  for (let idx = 0; idx < allBrokers.length; idx++) {
+    const b = allBrokers[idx];
     const key = `${b.symbol}_${b.trade_date}`;
     let arr = brokersBySymDate.get(key);
     if (!arr) {
@@ -1423,13 +1424,14 @@ export function rebuildHotCache() {
     }
     arr.push({
       brokerId: b.broker_id,
-      broker: b.broker_id,
       buyVol: b.buy_vol,
       sellVol: b.sell_vol,
       buyAmt: b.buy_amt,
       sellAmt: b.sell_amt,
     });
   }
+  // Free the raw 340k row array immediately to relieve memory
+  allBrokers.length = 0;
 
   const timeframes = [1, 3, 5, 15, 30];
   const nextRadar = { 1: [], 3: [], 5: [], 15: [], 30: [] };
@@ -1437,6 +1439,10 @@ export function rebuildHotCache() {
   const earlyIgnitionList = [];
 
   for (let i = 0; i < symbols.length; i++) {
+    if (i > 0 && i % 30 === 0) {
+      // Yield to Node event loop so incoming HTTP health checks & pings respond instantly
+      await new Promise((r) => setImmediate(r));
+    }
     const symbol = symbols[i];
     const summs = summariesBySymbol.get(symbol) || [];
     if (summs.length === 0) continue;
