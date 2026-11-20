@@ -607,21 +607,23 @@ export function warmupDataGuard(req, res, next) {
 
 app.use(['/api/ledger', '/api/floorsheet'], warmupDataGuard);
 
+app.get(['/', '/healthz'], (req, res) => {
+  res.status(200).json({
+    status: 'ONLINE',
+    service: 'Drabyashree NEPSE Hub Proxy',
+    version: '2.1.0',
+    timestamp: new Date().toISOString()
+  });
+});
+
 app.get('/api/ping', (req, res) => {
-  if (isWarmingUp) {
-    const elapsedSec = Math.floor((Date.now() - warmupStartTime) / 1000);
-    const retryAfter = Math.max(1, ESTIMATED_WARMUP_SEC - elapsedSec);
-    res.setHeader('Retry-After', String(retryAfter));
-    return res.status(503).json({
-      status: 'WARMING_UP',
-      warmingUp: true,
-      stage: warmupStage,
-      retryAfterSec: retryAfter,
-      message: `Proxy is warming up (${warmupStage}), retry in ${retryAfter} seconds.`,
-      uptimeSec: Math.floor(process.uptime())
-    });
-  }
-  res.json({ ok: true, version: '2.1.0', warmingUp: false, routes: ['intraday-graph', 'index-history', 'price-history'] });
+  res.status(200).json({
+    ok: true,
+    version: '2.1.0',
+    warmingUp: isWarmingUp,
+    stage: warmupStage,
+    uptimeSec: Math.floor(process.uptime())
+  });
 });
 
 app.get(['/health', '/api/health'], (req, res) => {
@@ -14490,7 +14492,8 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`   🔸 Health check:    /health`);
     console.log(`   🔸 Ping heartbeat:  /api/ping`);
 
-    setImmediate(async () => {
+    // Yield initial 4 seconds completely to Node event loop so Render port detector & health probes pass immediately
+    setTimeout(async () => {
       try {
         warmupStage = 'Initializing SQLite database & schema';
         await initDB();
@@ -14605,12 +14608,14 @@ app.listen(PORT, '0.0.0.0', () => {
             return list;
           }
         });
-        startWorkers();
-        startEodReconciliationScheduler();
+        setTimeout(() => {
+          startWorkers();
+          startEodReconciliationScheduler();
+        }, 15000);
       } catch (e) {
         console.error("Failed to start DB/Workers", e.message);
       }
-    });
+    }, 4000);
 
     // Single Source of Truth Keep-Alive Heartbeat for Render Container
     // Strictly aligned to single source of truth: Monday to Friday, 10:45 AM - 3:15 PM NPT (getKathmanduTradingStatus).
@@ -14663,8 +14668,8 @@ app.listen(PORT, '0.0.0.0', () => {
       } catch (_) {}
     };
 
-    // Warm immediately after startup (give 3s for server to bind)
-    setTimeout(warmMarketCache, 3000);
+    // Warm after initial boot stabilizes (give 20s for server port discovery to finalize)
+    setTimeout(warmMarketCache, 20000);
 
     // Then keep cache warm every 25 seconds (shorter than any cache TTL)
     setInterval(warmMarketCache, 25 * 1000);
@@ -14735,8 +14740,8 @@ app.listen(PORT, '0.0.0.0', () => {
 
     // Check every 60 seconds
     setInterval(runPostMarketFloorsheetCollector, 60 * 1000);
-    // Also run a check on startup in case server started after 3:00 PM
-    setTimeout(runPostMarketFloorsheetCollector, 10000);
+    // Also run a check on startup in case server started after 3:00 PM (staggered to 30s)
+    setTimeout(runPostMarketFloorsheetCollector, 30000);
 
     // Auto-warmup on server start: ensures SQLite and broker summary caches have the latest cloud session immediately
     const autoWarmupCloudLedger = async () => {
@@ -14813,5 +14818,5 @@ app.listen(PORT, '0.0.0.0', () => {
         console.warn('[startup-warmup] Warmup notice:', wErr.message);
       }
     };
-    setTimeout(autoWarmupCloudLedger, 3000);
+    setTimeout(autoWarmupCloudLedger, 25000);
 });
