@@ -73,6 +73,7 @@ interface OpenPosition {
 export function PaperTradingJournalScreen() {
   const [activeTab, setActiveTab] = useState<'journal' | 'attribution' | 'picks' | 'positions'>('journal');
   const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const [capital, setCapital] = useState<number>(1000000);
@@ -82,15 +83,16 @@ export function PaperTradingJournalScreen() {
   const [attribution, setAttribution] = useState<Record<string, SignalAttributionItem>>({});
   const loadSeqRef = useRef<number>(0);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isManualRefresh = false) => {
     const seq = ++loadSeqRef.current;
-    setLoading(true);
+    if (isManualRefresh) setRefreshing(true);
+    else setLoading(true);
     setError(null);
     const base = getProxyBase();
     try {
       const [stateResp, attrResp] = await Promise.all([
-        fetch(`${base}/api/paper-trading/state`),
-        fetch(`${base}/api/paper-trading/attribution`)
+        fetch(`${base}/api/paper-trading/state`, { signal: AbortSignal.timeout(4000) }),
+        fetch(`${base}/api/paper-trading/attribution`, { signal: AbortSignal.timeout(4000) })
       ]);
 
       if (!stateResp.ok || !attrResp.ok) {
@@ -117,12 +119,13 @@ export function PaperTradingJournalScreen() {
     } finally {
       if (seq === loadSeqRef.current) {
         setLoading(false);
+        setRefreshing(false);
       }
     }
   }, []);
 
   useEffect(() => {
-    loadData();
+    loadData(false);
     return () => { loadSeqRef.current++; };
   }, [loadData]);
 
@@ -151,11 +154,11 @@ export function PaperTradingJournalScreen() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={loadData}
-              disabled={loading}
+              onClick={() => loadData(true)}
+              disabled={loading || refreshing}
               className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
             >
-              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
               <span>Refresh State</span>
             </button>
           </div>

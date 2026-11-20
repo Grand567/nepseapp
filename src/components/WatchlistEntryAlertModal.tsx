@@ -36,17 +36,22 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
   const [newSymbol, setNewSymbol] = useState<string>('');
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
   // Load configs & history
-  const reloadData = useCallback(async () => {
-    setLoading(true);
+  const reloadData = useCallback(async (isManualRefresh = false) => {
+    if (isManualRefresh) setRefreshing(true);
+    else setLoading(true);
     try {
       const cfg = getAllWatchlistAlertConfigs();
       setConfigs(cfg || {});
       setAlertHistory(getAlertHistory() || []);
 
-      // Fetch live market prices
-      const res = await loadNepseData();
+      // Fetch live market prices with 4s timeout race
+      const timeout = new Promise<{ stocks: any[] }>((resolve) => {
+        setTimeout(() => resolve({ stocks: [] }), 4000);
+      });
+      const res = await Promise.race([loadNepseData(), timeout]);
       const list = res?.stocks || [];
       const quoteMap: Record<string, number> = {};
       list.forEach((s: any) => {
@@ -56,11 +61,12 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
     } catch (_) {
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    reloadData();
+    reloadData(false);
   }, [reloadData]);
 
   // Add a new stock with auto-derived entry, stop, and target levels
@@ -176,11 +182,11 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
               <span>{audioEnabled ? 'Sound ON' : 'Muted'}</span>
             </button>
             <button
-              onClick={reloadData}
-              disabled={loading}
+              onClick={() => reloadData(true)}
+              disabled={loading || refreshing}
               className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
             >
-              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
               <span>Refresh</span>
             </button>
           </div>

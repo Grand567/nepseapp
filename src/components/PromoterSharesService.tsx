@@ -29,9 +29,16 @@ export function PromoterSharesService() {
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'critical' | 'locked' | 'expiring' | 'high_float'>('all');
 
   useEffect(() => {
-    Promise.all([
-      fetchPromoterShares().catch(() => null),
-      loadNepseData().catch(() => ({ stocks: [] }))
+    const timeoutFallback = new Promise<[any, { stocks: any[] }]>((resolve) => {
+      setTimeout(() => resolve([null, { stocks: [] }]), 5000);
+    });
+
+    Promise.race([
+      Promise.all([
+        fetchPromoterShares().catch(() => null),
+        loadNepseData().catch(() => ({ stocks: [] }))
+      ]),
+      timeoutFallback
     ]).then(([apiLockin, { stocks: liveStocks }]) => {
       const lockinMap = new Map<string, any>();
       const lockinList = Array.isArray(apiLockin) ? apiLockin : (Array.isArray(apiLockin?.data) ? apiLockin.data : []);

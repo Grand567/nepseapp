@@ -7734,7 +7734,7 @@ app.get('/api/mutual-funds', async (req, res) => {
   try {
     const resp = await axios.get('https://www.sharesansar.com/mutual-fund', {
       headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      timeout: 12000
+      timeout: 3000
     });
     const $ = cheerio.load(resp.data);
     $('table tbody tr').each((i, row) => {
@@ -7788,7 +7788,7 @@ app.get('/api/mutual-funds', async (req, res) => {
     let liveStocks = getCache('today-prices') || [];
     if (!liveStocks || liveStocks.length === 0) {
       try {
-        const msRes = await axios.get('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary', { timeout: 6000 });
+        const msRes = await axios.get('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary', { timeout: 2000 });
         if (msRes.data?.stock?.detail) {
           liveStocks = msRes.data.stock.detail.map(d => ({ symbol: d.s, ltp: Number(d.lp) || 0, pChange: 0 }));
         }

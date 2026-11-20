@@ -2173,12 +2173,11 @@ export async function loadNepseData(date = '') {
   const reqDate = String(date || '').trim();
   const isBrokerCacheEmpty = realBrokerAnalysisCache.size === 0 && (!brokerDataCache || brokerDataCache.size === 0) && (!marketWideBrokerSummaryMapCache.data || Object.keys(marketWideBrokerSummaryMapCache.data).length === 0);
   if (isBrokerCacheEmpty) {
-    try {
-      const map = await fetchMarketWideBrokerSummaryMap(1, { date: reqDate });
+    fetchMarketWideBrokerSummaryMap(1, { date: reqDate }).then((map) => {
       if (map && MEM_STOCKS && Array.isArray(MEM_STOCKS)) {
         mergeBrokerDataOntoStocks(MEM_STOCKS);
       }
-    } catch (_) {}
+    }).catch(() => {});
   }
 
   let result;

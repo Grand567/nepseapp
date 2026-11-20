@@ -35,6 +35,7 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
   // Bullion state
   const [bullionData, setBullionData] = useState<any>(null);
   const [bullionLoading, setBullionLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Circulars state
   const [nrbCirculars, setNrbCirculars] = useState<any[]>([]);
@@ -43,11 +44,14 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
   const [circularsLoading, setCircularsLoading] = useState(false);
   const [circularSearch, setCircularSearch] = useState('');
 
+  const timeoutRace = <T,>(p: Promise<T>, ms = 5000): Promise<T> =>
+    Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
+
   // Fetch Forex Rates
   const fetchForex = async () => {
     setForexLoading(true);
     try {
-      const res: any = await fetchForexRates();
+      const res: any = await timeoutRace(fetchForexRates());
       if (res) {
         const rawRates = Array.isArray(res) ? res : (res?.rates || res?.data?.rates || res?.data || []);
         const normalized = rawRates.map((item: any) => ({
@@ -73,7 +77,7 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
   const fetchMacro = async () => {
     setMacroLoading(true);
     try {
-      const res: any = await fetchMacroIndicators();
+      const res: any = await timeoutRace(fetchMacroIndicators());
       if (res && (res.monetaryPolicy || res.indicators || res.data || res.inflationRate != null)) {
         setMacroData(res.data || res);
       }
@@ -88,7 +92,7 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
   const fetchBullion = async () => {
     setBullionLoading(true);
     try {
-      const res: any = await fetchBullionRates();
+      const res: any = await timeoutRace(fetchBullionRates());
       if (res && (res.fineGold24k || res.fineGold || res.data || res.silver)) {
         setBullionData(res.data || res);
       }
@@ -104,8 +108,8 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
     setCircularsLoading(true);
     try {
       const [nrbRes, sebonRes] = await Promise.allSettled([
-        fetchNrbCirculars(),
-        fetchSebonCirculars(),
+        timeoutRace(fetchNrbCirculars()),
+        timeoutRace(fetchSebonCirculars()),
       ]);
       if (nrbRes.status === 'fulfilled' && nrbRes.value) {
         const val = nrbRes.value;
@@ -181,15 +185,19 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
             </p>
           </div>
           <button
-            onClick={() => {
-              fetchForex();
-              fetchMacro();
-              fetchBullion();
-              fetchCirculars();
+            onClick={async () => {
+              setRefreshing(true);
+              await Promise.allSettled([
+                fetchForex(),
+                fetchMacro(),
+                fetchBullion(),
+                fetchCirculars()
+              ]);
+              setRefreshing(false);
             }}
             className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700 active:scale-95 transition-all"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${forexLoading || macroLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             Sync Telemetry
           </button>
         </div>

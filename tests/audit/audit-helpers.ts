@@ -176,8 +176,8 @@ export async function assertRuntimeHealth(
       const val = node.nodeValue?.trim() || '';
       // Ignore if inside a code block, json view, or benign disclaimer
       if (val.length > 0 && val.length < 100 && regex.test(val)) {
-        // Exclude legitimate corporate legal name of SEBON Member #70: "Infinity Securities"
-        if (val.includes('Infinity Securities')) continue;
+        // Exclude legitimate corporate legal names: SEBON Member #70 ("Infinity Securities") and listed company ("Infinity Laghubitta")
+        if (val.includes('Infinity Securities') || val.includes('Infinity Laghubitta')) continue;
         issues.push({ text: val, selector: parent.className || parent.tagName });
       }
     }

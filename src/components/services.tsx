@@ -309,27 +309,22 @@ export function UniversalScreener({
 
   const loadData = async (activeTf = timeframe, isCancelled?: () => boolean) => {
     try {
-      const { stocks: rawStocks, source: src } = await loadNepseData();
+      const { stocks: rawStocks, source: src } = await Promise.race([
+        loadNepseData(),
+        new Promise<any>((resolve) => setTimeout(() => resolve({ stocks: getCachedStocks() || [], source: 'cached-fallback' }), 5000))
+      ]);
       const stocks = includeNonEquities ? (rawStocks || []) : (rawStocks || []).filter((s) => isPureNepseEquity(s));
       if (rawStocks?.length) setRawTotal(stocks.length);
 
-      // Pre-warm authentic price history for top active securities in batches of 8 to avoid socket starvation
+      // Pre-warm authentic price history for active securities non-blockingly to avoid socket starvation
       if (!hideTimeframe && activeTf !== '1D' && stocks?.length) {
-        const topToWarm = stocks.slice(0, 60);
-        const BATCH_SIZE = 8;
-        for (let i = 0; i < topToWarm.length; i += BATCH_SIZE) {
-          if (isCancelled && isCancelled()) break;
-          const batch = topToWarm.slice(i, i + BATCH_SIZE);
-          await Promise.allSettled(
-            batch.map(s => {
-              const sym = s.symbol;
-              if (sym && !getCachedRealPriceHistory(sym)) {
-                return fetchPriceHistory(sym, 365);
-              }
-              return Promise.resolve(null);
-            })
-          );
-        }
+        const topToWarm = stocks.slice(0, 10);
+        Promise.allSettled(
+          topToWarm.map(s => {
+            const sym = s.symbol;
+            return (sym && !getCachedRealPriceHistory(sym)) ? fetchPriceHistory(sym, 365) : Promise.resolve(null);
+          })
+        ).catch(() => {});
       }
 
       // Compute multi-timeframe horizon return and metrics for each stock
@@ -1045,15 +1040,15 @@ export function TopPerformersService({
         : await loadNepseData(activeDate);
       const stocks = (rawStocks || []).filter((s) => isPureNepseEquity(s));
 
-      // Pre-warm authentic price history for top active securities when multi-timeframe horizon is active
+      // Pre-warm authentic price history for top active securities non-blockingly when multi-timeframe horizon is active
       if (activeTf !== '1D' && stocks?.length) {
-        const topPool = stocks.slice(0, 60);
-        await Promise.allSettled(
+        const topPool = stocks.slice(0, 10);
+        Promise.allSettled(
           topPool.map(s => {
             const sym = s.symbol;
             return sym && !getCachedRealPriceHistory(sym) ? fetchPriceHistory(sym, 365) : Promise.resolve(null);
           })
-        );
+        ).catch(() => {});
       }
 
       const mapped = (stocks || []).map(s => {
@@ -1400,7 +1395,8 @@ export function NewsService() {
 
   const loadData = async (force = false) => {
     try {
-      const liveNews = await fetchMarketNews(force);
+      const timeoutFallback = new Promise<any>((resolve) => setTimeout(() => resolve([]), 4500));
+      const liveNews = await Promise.race([fetchMarketNews(force), timeoutFallback]);
       if (liveNews && Array.isArray(liveNews) && liveNews.length > 0) {
         setData(liveNews);
         setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
@@ -2233,8 +2229,7 @@ export function SectorHeatmapService({ selectedDate: propSelectedDate, date: pro
             });
         });
         if (warmSyms.length > 0) {
-          await Promise.allSettled(warmSyms.slice(0, 28).map(sym => fetchPriceHistory(sym, 365)));
-          if (seq !== heatmapSeqRef.current) return;
+          Promise.allSettled(warmSyms.slice(0, 10).map(sym => fetchPriceHistory(sym, 365))).catch(() => {});
         }
       }
 
@@ -4558,7 +4553,10 @@ export function BrokersDirectoryService() {
       { id: 60, name: 'Nagarik Stock Dealer Ltd.', location: 'Kathmandu', contact: '—', tmsUrl: 'https://tms60.nepalstock.com.np/' },
     ];
     try {
-      const res = await fetchBrokersDirectory();
+      const res = await Promise.race([
+        fetchBrokersDirectory(),
+        new Promise<any>((resolve) => setTimeout(() => resolve(fallbackBrokers), 4000))
+      ]);
       let list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
       if (!list.length) {
         list = fallbackBrokers;
@@ -4935,7 +4933,10 @@ export function MutualFundsService() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await fetchMutualFunds();
+      const res = await Promise.race([
+        fetchMutualFunds(),
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+      ]);
       const list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
       setFunds(list);
     } catch (_) {}
@@ -5532,7 +5533,10 @@ export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { i
     if (!sym) return;
     setLoading(true);
     try {
-      const res = await fetchMarketDepth(sym);
+      const res = await Promise.race([
+        fetchMarketDepth(sym),
+        new Promise<any>((resolve) => setTimeout(() => resolve({ bids: [], asks: [] }), 4000))
+      ]);
       const data = res?.data || res || {};
       setDepthData(data);
     } catch (_) {}
@@ -5595,21 +5599,23 @@ export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { i
     if (!symbol) return;
     const days = horizonDaysMap[brokerAccumPeriod] || brokerDays || 5;
     setBrokerAccumLoading(true);
-    fetchBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true })
-      .then((res: any) => {
-        const data = res?.data || res;
-        if (data && (data.brokers?.length > 0 || data.topBuyers?.length > 0 || data.dailyFlow?.length > 0)) {
-          setBrokerAccumData(data);
-        } else {
-          return fetchRealBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true }).then(rData => {
-            if (rData) setBrokerAccumData(rData);
-          });
-        }
-      })
-      .catch(() => {
-        fetchRealBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true }).then(rData => {
-          if (rData) setBrokerAccumData(rData);
-        }).catch(() => {});
+    const timeout = new Promise<any>((resolve) => setTimeout(() => resolve(null), 4000));
+    Promise.race([
+      fetchBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true })
+        .then((res: any) => {
+          const data = res?.data || res;
+          if (data && (data.brokers?.length > 0 || data.topBuyers?.length > 0 || data.dailyFlow?.length > 0)) {
+            return data;
+          }
+          return fetchRealBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true });
+        })
+        .catch(() => {
+          return fetchRealBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true }).catch(() => null);
+        }),
+      timeout
+    ])
+      .then((data) => {
+        if (data) setBrokerAccumData(data);
       })
       .finally(() => setBrokerAccumLoading(false));
   }, [symbol, brokerAccumPeriod, selectedBrokerDate]);

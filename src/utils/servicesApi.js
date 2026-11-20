@@ -455,15 +455,15 @@ export const fetchMarketNews = async (forceRefresh = false) => {
   }
   const qs = forceRefresh ? '?refresh=true' : '';
 
-  // 1. Try unified NEPSE news (All 9 Portals: ShareSansar, MeroLagani, Nepali Paisa, Clickmandu, etc.) with 15s timeout
-  let news = await _proxyFetch('/api/news/nepse' + qs, { timeout: 15000 }, 180000, forceRefresh).catch(() => null);
+  // 1. Try unified NEPSE news (All 9 Portals: ShareSansar, MeroLagani, Nepali Paisa, Clickmandu, etc.) with 5s timeout
+  let news = await _proxyFetch('/api/news/nepse' + qs, { timeout: 5000 }, 180000, forceRefresh).catch(() => null);
   if (Array.isArray(news) && news.length >= 10) {
     const deduped = deduplicateNews(news);
     return sortNews(deduped, 'latest');
   }
 
-  // 2. Fallback to Merolagani multi-category proxy endpoint with 12s timeout
-  let meroProxyNews = await _proxyFetch('/api/news/merolagani' + qs, { timeout: 12000 }, 180000, forceRefresh).catch(() => null);
+  // 2. Fallback to Merolagani multi-category proxy endpoint with 4s timeout
+  let meroProxyNews = await _proxyFetch('/api/news/merolagani' + qs, { timeout: 4000 }, 180000, forceRefresh).catch(() => null);
   if (Array.isArray(meroProxyNews) && meroProxyNews.length > 0) {
     if (Array.isArray(news) && news.length > 0) {
       const merged = deduplicateNews([...news, ...meroProxyNews]);
