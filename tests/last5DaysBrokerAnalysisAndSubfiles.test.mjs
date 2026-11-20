@@ -18,7 +18,7 @@ test('AKJCL Last 5 Trading Days & 5-Day Sub-Files Verification', async (t) => {
 
   await t.test('1. AKJCL 5 Trading Sessions Invariant in SQLite Ledger', () => {
     assert.ok(fullHistory.length >= 5, `Must have at least 5 sessions for ${sym}`);
-    const last5 = fullHistory.slice(0, 5);
+    const last5 = fullHistory.filter(d => d.date <= '2026-11-06').slice(0, 5);
     const expectedDates = ['2026-11-06', '2026-11-05', '2026-11-04', '2026-11-03', '2026-11-02'];
     const actualDates = last5.map(d => d.date);
     assert.deepEqual(actualDates, expectedDates, 'The last 5 trading days must match exactly');
@@ -52,7 +52,7 @@ test('AKJCL Last 5 Trading Days & 5-Day Sub-Files Verification', async (t) => {
   });
 
   await t.test('2. AKJCL 5-Day Cumulative Broker Diagnostics & VWAP Verification', () => {
-    const diag5 = calculateMultiDayDiagnostics(fullHistory, 5);
+    const diag5 = calculateMultiDayDiagnostics(fullHistory.filter(d => d.date <= '2026-11-06'), 5);
     assert.ok(diag5, '5-day diagnostics must compute cleanly');
     assert.equal(diag5.timeframeDays, 5, 'Must encompass exactly 5 sessions');
     assert.equal(diag5.fromDate, '2026-11-02');

@@ -1,88 +1,88 @@
 {
   "file_type": "HISTORICAL_SUBFILES_INDEX",
   "version": "1.0",
-  "compiled_at": "2026-11-18T09:32:20.173Z",
+  "compiled_at": "2026-11-20T03:16:31.136Z",
   "total_subfiles": 5,
   "calendar_regime": "Monday–Friday Trading Week (Saturday & Sunday Closed)",
   "available_sessions": [
+    "2026-11-19",
     "2026-11-18",
     "2026-11-17",
     "2026-11-13",
-    "2026-11-06",
-    "2026-11-05"
+    "2026-11-06"
   ],
   "subfiles": [
     {
       "day_offset": 1,
-      "session_date": "2026-11-18",
-      "bs_date": "2083-08-02",
-      "day_of_week": "Wednesday",
+      "session_date": "2026-11-19",
+      "bs_date": "2083-08-03",
+      "day_of_week": "Thursday",
       "total_scrips": 347,
-      "file_raw_kb": 1325.1,
-      "file_gz_kb": 169.1,
+      "file_raw_kb": 1320.3,
+      "file_gz_kb": 169.3,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_1.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_1.json.gz"
     },
     {
       "day_offset": 2,
-      "session_date": "2026-11-17",
-      "bs_date": "2083-08-01",
-      "day_of_week": "Tuesday",
-      "total_scrips": 353,
-      "file_raw_kb": 1351.6,
-      "file_gz_kb": 172.5,
+      "session_date": "2026-11-18",
+      "bs_date": "2083-08-02",
+      "day_of_week": "Wednesday",
+      "total_scrips": 347,
+      "file_raw_kb": 1321.6,
+      "file_gz_kb": 169.8,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_2.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_2.json.gz"
     },
     {
       "day_offset": 3,
-      "session_date": "2026-11-13",
-      "bs_date": "2083-07-27",
-      "day_of_week": "Friday",
-      "total_scrips": 335,
-      "file_raw_kb": 1280.9,
-      "file_gz_kb": 162.8,
+      "session_date": "2026-11-17",
+      "bs_date": "2083-08-01",
+      "day_of_week": "Tuesday",
+      "total_scrips": 353,
+      "file_raw_kb": 1348.4,
+      "file_gz_kb": 173.3,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_3.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_3.json.gz"
     },
     {
       "day_offset": 4,
-      "session_date": "2026-11-06",
-      "bs_date": "2083-07-20",
+      "session_date": "2026-11-13",
+      "bs_date": "2083-07-27",
       "day_of_week": "Friday",
-      "total_scrips": 336,
-      "file_raw_kb": 1283.2,
-      "file_gz_kb": 163.8,
+      "total_scrips": 335,
+      "file_raw_kb": 1277.6,
+      "file_gz_kb": 163.1,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_4.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_4.json.gz"
     },
     {
       "day_offset": 5,
-      "session_date": "2026-11-05",
-      "bs_date": "2083-07-19",
-      "day_of_week": "Thursday",
-      "total_scrips": 349,
-      "file_raw_kb": 1332.6,
-      "file_gz_kb": 169.1,
+      "session_date": "2026-11-06",
+      "bs_date": "2083-07-20",
+      "day_of_week": "Friday",
+      "total_scrips": 336,
+      "file_raw_kb": 1279.9,
+      "file_gz_kb": 164.2,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_5.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_5.json.gz"
     }
   ],
   "days_quick_map": {
-    "1D": "2026-11-18",
-    "2D": "2026-11-17",
-    "3D": "2026-11-13",
-    "4D": "2026-11-06",
-    "5D": "2026-11-05",
+    "1D": "2026-11-19",
+    "2D": "2026-11-18",
+    "3D": "2026-11-17",
+    "4D": "2026-11-13",
+    "5D": "2026-11-06",
     "5D_cumulative_context": {
-      "start_date": "2026-11-05",
-      "end_date": "2026-11-18",
+      "start_date": "2026-11-06",
+      "end_date": "2026-11-19",
       "sessions": [
+        "2026-11-19",
         "2026-11-18",
         "2026-11-17",
         "2026-11-13",
-        "2026-11-06",
-        "2026-11-05"
+        "2026-11-06"
       ]
     }
   }

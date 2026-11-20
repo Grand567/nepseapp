@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import Database from 'better-sqlite3';
+import { isPureNepseEquity } from '../src/utils/nepseEquityFilter.js';
 
 console.log('═══════════════════════════════════════════════════════════════════════');
 console.log(' AUTOMATED GROUND-TRUTH & IN-APP DATA PARITY AUDIT');
@@ -57,7 +58,7 @@ test('2. Numerical Parity: Broker 58 Top 10 Net Buy (DB vs Client Matrix)', () =
   // Pure-Equity Filter: in NEPSE, promoter shares (ending with P like HIDCLP) and mutual funds
   // are separated from standard equity screeners to prevent distorted cornering alerts.
   // Microfinance scrips ending in BS (e.g. NMFBS) are Class D banking equities, not mutual funds.
-  const isPureEquity = (sym) => !sym.endsWith('P') && !(sym.includes('MF') && !sym.endsWith('BS')) && !sym.includes('PF') && sym.length <= 6;
+  const isPureEquity = (sym) => isPureNepseEquity(sym);
 
   // DB Ground Truth for Net Volume (Kitta) - Filtered to Standard Equity
   const dbTopQty = db.prepare(`

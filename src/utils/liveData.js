@@ -2890,6 +2890,7 @@ export async function fetchAvailableTradingDates() {
   const calendarDates = generateTradingDaysSequence(60).map(d => formatNptDateIso(d)).filter(d => d < todayIso || isTodaySessionStarted);
   const baseTradingDays = [
     ...(isTodaySessionStarted ? [todayIso] : []),
+    '2026-11-19',
     '2026-11-18',
     '2026-11-17',
     '2026-11-13',
@@ -2915,7 +2916,8 @@ export async function fetchAvailableTradingDates() {
     const res = await fetchFromBackend('/api/trading-dates', 5000);
     const list = res?.dates || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
     if (Array.isArray(list) && list.length > 0) {
-      const valid = sanitizeDates([...list, ...baseTradingDays]);
+      const verifiedSet = new Set(list);
+      const valid = sanitizeDates([...list, ...baseTradingDays], verifiedSet);
       if (valid.length > 0) {
         _cachedTradingDatesList = valid;
         _cachedTradingDatesTs = now;

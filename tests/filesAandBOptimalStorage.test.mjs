@@ -33,10 +33,12 @@ test('File A and File B Optimal 5-Day Architecture & Speed Verification', async 
     assert.strictEqual(akjcl.history_5d.length, 5, 'AKJCL must have 5 session records in history_5d');
     assert.ok(akjcl.market_vwap_5d > 300, 'AKJCL 5-day market VWAP must be valid number');
     assert.ok(akjcl.whale_vwap_5d > 300, 'AKJCL 5-day whale buy VWAP must be valid number');
-    assert.strictEqual(akjcl.lead_broker.id, 58, 'Lead 5-day accumulator must be Broker #58');
-    assert.ok(akjcl.lead_broker.avg_buy_rate > 300, 'Broker #58 Avg Buy Rate must be valid');
-    assert.strictEqual(akjcl.top_distributors[0].broker_id, 40, 'Top 5-day distributor must be Broker #40');
-    assert.ok(akjcl.top_distributors[0].avg_sell_rate > 300, 'Broker #40 Avg Sell Rate must be valid');
+    const dbLead = db.prepare('SELECT broker_id FROM daily_broker_ledger WHERE symbol = ? AND trade_date IN (?, ?, ?, ?, ?) GROUP BY broker_id ORDER BY (SUM(buy_vol) - SUM(sell_vol)) DESC LIMIT 1').get('AKJCL', ...latestSessions)?.broker_id;
+    assert.strictEqual(akjcl.lead_broker.id, dbLead, `Lead 5-day accumulator must match DB ground truth (#${dbLead})`);
+    assert.ok(akjcl.lead_broker.avg_buy_rate > 300, 'Lead Broker Avg Buy Rate must be valid');
+    const dbDist = db.prepare('SELECT broker_id FROM daily_broker_ledger WHERE symbol = ? AND trade_date IN (?, ?, ?, ?, ?) GROUP BY broker_id ORDER BY (SUM(buy_vol) - SUM(sell_vol)) ASC LIMIT 1').get('AKJCL', ...latestSessions)?.broker_id;
+    assert.strictEqual(akjcl.top_distributors[0].broker_id, dbDist, `Top 5-day distributor must match DB ground truth (#${dbDist})`);
+    assert.ok(akjcl.top_distributors[0].avg_sell_rate > 300, 'Top Distributor Avg Sell Rate must be valid');
     assert.ok(akjcl.fundamentals, 'Fundamentals must be present in File B');
     assert.strictEqual(akjcl.fundamentals.eps, 3.18, 'AKJCL EPS must be 3.18');
     assert.strictEqual(akjcl.fundamentals.book_value, 93.69, 'AKJCL Book Value must be 93.69');

@@ -120,27 +120,33 @@ export async function initLocalLedger(): Promise<Historical4DayLedger | null> {
       console.log(`[LocalLedger] ⚡ Instant boot from IndexedDB (${_hotHistoricalLedger.total_scrips} scrips, sessions: ${_hotHistoricalLedger.trading_sessions.join(', ')})`);
     }
 
-    // 2. Local bundled asset check (0ms offline APK access without network call)
-    if (!_hotHistoricalLedger) {
-      for (const candidate of [
-        './data/historical_5days_ledger.json',
-        '/data/historical_5days_ledger.json',
-        './data/historical_4days_ledger.json',
-        '/data/historical_4days_ledger.json'
-      ]) {
-        try {
-          const res = await fetch(candidate);
-          if (res.ok) {
-            const bundled = await res.json();
-            if (bundled && bundled.stocks) {
+    // 2. Local bundled asset check (if no cache OR if bundled asset has a newer trading session / compilation)
+    for (const candidate of [
+      './data/historical_5days_ledger.json',
+      '/data/historical_5days_ledger.json',
+      './data/historical_4days_ledger.json',
+      '/data/historical_4days_ledger.json'
+    ]) {
+      try {
+        const res = await fetch(candidate);
+        if (res.ok) {
+          const bundled = await res.json();
+          if (bundled && bundled.stocks) {
+            const bundledLatest = bundled.trading_sessions?.[0] || '';
+            const cachedLatest = _hotHistoricalLedger?.trading_sessions?.[0] || '';
+            const isBundledNewer = !_hotHistoricalLedger ||
+              (bundledLatest > cachedLatest) ||
+              (bundledLatest === cachedLatest && (bundled.compiled_at || '') > (_hotHistoricalLedger?.compiled_at || ''));
+
+            if (isBundledNewer) {
               _hotHistoricalLedger = bundled as Historical4DayLedger;
-              console.log(`[LocalLedger] 📦 Instant boot from Bundled 5-Day Ledger (${_hotHistoricalLedger.total_scrips} scrips, sessions: ${_hotHistoricalLedger.trading_sessions.join(', ')})`);
+              console.log(`[LocalLedger] 📦 Booting from Bundled 5-Day Ledger (${_hotHistoricalLedger.total_scrips} scrips, sessions: ${_hotHistoricalLedger.trading_sessions.join(', ')})`);
               idbSet(STORAGE_KEY_4D, bundled, 7 * 24 * 60 * 60 * 1000).catch(() => {});
-              break;
             }
+            break;
           }
-        } catch (_) {}
-      }
+        }
+      } catch (_) {}
     }
 
     // 3. Refresh / validate from server in background
@@ -184,9 +190,14 @@ export async function syncLedgerFromServer(): Promise<Historical4DayLedger | nul
     }
 
     if (data && data.stocks) {
-      const isNewer = !_hotHistoricalLedger || 
-        (data.compiled_at && _hotHistoricalLedger.compiled_at && data.compiled_at > _hotHistoricalLedger.compiled_at) ||
-        (data.trading_sessions?.[0] !== _hotHistoricalLedger.trading_sessions?.[0]);
+      const serverLatest = data.trading_sessions?.[0] || '';
+      const localLatest = _hotHistoricalLedger?.trading_sessions?.[0] || '';
+      const serverCompiled = data.compiled_at || '';
+      const localCompiled = _hotHistoricalLedger?.compiled_at || '';
+
+      const isNewer = !_hotHistoricalLedger ||
+        serverLatest > localLatest ||
+        (serverLatest === localLatest && serverCompiled > localCompiled);
 
       if (isNewer) {
         _hotHistoricalLedger = data;
@@ -482,7 +493,8 @@ export function useTodayLiveTickStream(symbol?: string | null) {
       return;
     }
 
-    const sseUrl = `/api/today/ticks/stream?symbol=${cleanSym}`;
+    const base = getProxyBase();
+    const sseUrl = `${base}/api/today/ticks/stream?symbol=${cleanSym}`;
     const eventSource = new EventSource(sseUrl);
 
     eventSource.onopen = () => {
@@ -695,11 +707,11 @@ export async function getHistoricalSubfileDirect(dateOrOffset: string | number):
     }
     if (!subfileNum) {
       const dateMap: Record<string, number> = {
-        '2026-11-13': 1,
-        '2026-11-06': 2,
-        '2026-11-05': 3,
-        '2026-11-04': 4,
-        '2026-11-03': 5
+        '2026-11-19': 1,
+        '2026-11-18': 2,
+        '2026-11-17': 3,
+        '2026-11-13': 4,
+        '2026-11-06': 5
       };
       if (dateMap[dateOrOffset]) subfileNum = dateMap[dateOrOffset];
     }
@@ -860,7 +872,7 @@ export async function getHistoricalSubfileBrokerAnalysis(
   const numDays = parseInt(String(rawDays || 1), 10) || 1;
   const targetDate = typeof options === 'object' && options !== null && options.date ? String(options.date).trim() : null;
 
-  if (targetDate || numDays === 1) {
+  if (numDays === 1) {
     const sf = await getHistoricalSubfileDirect(targetDate || 1);
     if (!sf || !sf.scrips?.[sym]) return null;
     const scrip = sf.scrips[sym];
@@ -983,9 +995,23 @@ export async function getHistoricalSubfileBrokerAnalysis(
     };
   }
 
-  // Multi-Day (5D) Synthesis across all 5 subfiles
+  // Multi-Day Synthesis across subfiles (up to requested numDays)
+  let startOffset = 1;
+  if (targetDate) {
+    const dateMap: Record<string, number> = {
+      '2026-11-19': 1,
+      '2026-11-18': 2,
+      '2026-11-17': 3,
+      '2026-11-13': 4,
+      '2026-11-06': 5
+    };
+    if (dateMap[targetDate]) {
+      startOffset = dateMap[targetDate];
+    }
+  }
+  const daysToLoad = Math.min(Math.max(1, numDays), 5 - startOffset + 1);
   const subfiles: HistoricalDaySubfile[] = [];
-  for (let d = 1; d <= 5; d++) {
+  for (let d = startOffset; d < startOffset + daysToLoad; d++) {
     const sf = await getHistoricalSubfileDirect(d);
     if (sf) subfiles.push(sf);
   }
@@ -1529,6 +1555,9 @@ export async function prewarmHistoricalSubfiles(): Promise<void> {
                     _subfileMemoryCache.set(day, json);
                     if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
                     idbSet(idbKey, json).catch(() => {});
+                    if (json.session_date) {
+                      idbSet(`drabyashree_subfile_${json.session_date}`, json).catch(() => {});
+                    }
                     loaded = true;
                     break;
                   }
@@ -1544,6 +1573,9 @@ export async function prewarmHistoricalSubfiles(): Promise<void> {
                     _subfileMemoryCache.set(day, json);
                     if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
                     idbSet(idbKey, json).catch(() => {});
+                    if (json.session_date) {
+                      idbSet(`drabyashree_subfile_${json.session_date}`, json).catch(() => {});
+                    }
                   }
                 }
               } catch (_) {}

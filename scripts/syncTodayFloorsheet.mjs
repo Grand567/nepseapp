@@ -9,6 +9,9 @@ import { downloadAndArchiveDailyFloorsheet } from '../proxy/utils/dailyFloorshee
 import { getFullSessionFloorsheet, aggregateMarketFloorsheet } from '../proxy/brokerVault.mjs';
 import { compileHistoricalSubfiles } from '../proxy/utils/historicalSubfilesEngine.mjs';
 import { compileTodayStaticAnalytics } from '../proxy/utils/todayDataEngine.mjs';
+import { build5DayHistoricalLedger } from '../proxy/utils/rollingLedgerEngine.mjs';
+import { exportCumulativeBrokerLedger, syncBrokerAllTimeAndVaultFiles } from '../proxy/utils/dailyFloorsheetCollector.mjs';
+import { db } from '../proxy/db/ledgerStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,12 +64,34 @@ async function syncToday() {
     }
   }
 
-  // 5. Recompile 4 Historical Sub-Files
+  let hasErrors = false;
+
+  // 4b. Recompute Cumulative Broker Ledger & Synchronize All-Time Archives
+  try {
+    syncBrokerAllTimeAndVaultFiles(db);
+    exportCumulativeBrokerLedger(db);
+    console.log(`[SyncEngine] ✅ Recomputed cumulative broker ledger & updated all-time archives.`);
+  } catch (err) {
+    console.error('[SyncEngine] Cumulative ledger export error:', err.message);
+    hasErrors = true;
+  }
+
+  // 4c. Recompile 5-Day Historical Ledger (File B)
+  try {
+    build5DayHistoricalLedger(db, 5);
+    console.log(`[SyncEngine] ✅ Recompiled 5-Day Historical Ledger (File B).`);
+  } catch (err) {
+    console.error('[SyncEngine] 5-Day ledger compile error:', err.message);
+    hasErrors = true;
+  }
+
+  // 5. Recompile 5 Historical Sub-Files
   try {
     const manifest = compileHistoricalSubfiles();
-    console.log(`[SyncEngine] ✅ Recompiled 4 historical subfiles. Available:`, manifest?.available_sessions);
+    console.log(`[SyncEngine] ✅ Recompiled 5 historical subfiles. Available:`, manifest?.available_sessions);
   } catch (err) {
-    console.warn('[SyncEngine] Subfiles compile warning:', err.message);
+    console.error('[SyncEngine] Subfiles compile error:', err.message);
+    hasErrors = true;
   }
 
   // 6. Recompile Today Static Analytics
@@ -74,7 +99,13 @@ async function syncToday() {
     compileTodayStaticAnalytics();
     console.log(`[SyncEngine] ✅ Recompiled today_static_analytics.json sub-file`);
   } catch (err) {
-    console.warn('[SyncEngine] Static analytics compile warning:', err.message);
+    console.error('[SyncEngine] Static analytics compile error:', err.message);
+    hasErrors = true;
+  }
+
+  if (hasErrors) {
+    console.error(`\n❌ [SyncEngine] Sync completed with one or more compilation failures.`);
+    process.exit(1);
   }
 
   console.log(`\n🎉 [SyncEngine] Successfully synced session ${targetDate}! All components and endpoints ready.\n`);

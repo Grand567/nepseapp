@@ -36,6 +36,7 @@ proxy/data/*_seed.json
 meroshare_accounts.json
 proxy/meroshare_accounts.json
 proxy/data/broker_vault/
+proxy/data/broker_alltime/
 proxy/data/push_tokens.json
 proxy/data/telegram_config.json
 proxy/data/telegram_offset.json
