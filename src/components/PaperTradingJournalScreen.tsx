@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   BookOpen, TrendingUp, AlertTriangle, Play, RefreshCw, CheckCircle2,
-  XCircle, Clock, ShieldCheck, DollarSign, Award, Target, Flame, Filter, Zap
+  XCircle, Clock, ShieldCheck, DollarSign, Award, Target, Flame, Filter, Zap, Bot, Anchor
 } from 'lucide-react';
 import { StatCard, InfoBanner, Spinner } from './ui';
 import { getProxyBase } from '../utils/proxyBase.js';
@@ -63,11 +63,14 @@ interface OpenPosition {
   entryPrice: number;
   costBasisNpr: number;
   stopLoss: number;
+  currentStopLoss?: number;
+  initialStopLoss?: number;
   target1: number;
   target2: number;
   triggers: string[];
   holdSessions: number;
   t1Banked?: boolean;
+  ratchetStage?: string;
 }
 
 export function PaperTradingJournalScreen() {
@@ -81,6 +84,18 @@ export function PaperTradingJournalScreen() {
   const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
   const [closedJournal, setClosedJournal] = useState<ClosedTrade[]>([]);
   const [attribution, setAttribution] = useState<Record<string, SignalAttributionItem>>({});
+  const [botConfig, setBotConfig] = useState<{
+    enabled: boolean;
+    riskPerTradePct: number;
+    maxConcurrentPositions: number;
+    trailingRatchetPolicy: string;
+  }>({
+    enabled: true,
+    riskPerTradePct: 1.5,
+    maxConcurrentPositions: 5,
+    trailingRatchetPolicy: 'DYNAMIC_RATCHET'
+  });
+  const [steppingBot, setSteppingBot] = useState<boolean>(false);
   const loadSeqRef = useRef<number>(0);
 
   const loadData = useCallback(async (isManualRefresh = false) => {
@@ -90,9 +105,10 @@ export function PaperTradingJournalScreen() {
     setError(null);
     const base = getProxyBase();
     try {
-      const [stateResp, attrResp] = await Promise.all([
+      const [stateResp, attrResp, botResp] = await Promise.all([
         fetch(`${base}/api/paper-trading/state`, { signal: AbortSignal.timeout(4000) }),
-        fetch(`${base}/api/paper-trading/attribution`, { signal: AbortSignal.timeout(4000) })
+        fetch(`${base}/api/paper-trading/attribution`, { signal: AbortSignal.timeout(4000) }),
+        fetch(`${base}/api/paper-trading/bot-config`, { signal: AbortSignal.timeout(4000) }).catch(() => null)
       ]);
 
       if (!stateResp.ok || !attrResp.ok) {
@@ -112,6 +128,13 @@ export function PaperTradingJournalScreen() {
       if (attrRes?.success && attrRes.data?.signals) {
         setAttribution(attrRes.data.signals);
       }
+
+      if (botResp && botResp.ok) {
+        const botData = await botResp.json();
+        if (botData?.success && botData.data) {
+          setBotConfig(prev => ({ ...prev, ...botData.data }));
+        }
+      }
     } catch (err: any) {
       if (seq === loadSeqRef.current) {
         setError(err?.message || 'Failed to fetch paper trading state.');
@@ -123,6 +146,35 @@ export function PaperTradingJournalScreen() {
       }
     }
   }, []);
+
+  const handleToggleBot = async (enable: boolean) => {
+    const updated = { ...botConfig, enabled: enable };
+    setBotConfig(updated);
+    try {
+      const base = getProxyBase();
+      await fetch(`${base}/api/paper-trading/bot-config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+    } catch (_) {}
+  };
+
+  const handleRunBotStep = async () => {
+    setSteppingBot(true);
+    try {
+      const base = getProxyBase();
+      await fetch(`${base}/api/paper-trading/auto-step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      await loadData(true);
+    } catch (_) {
+    } finally {
+      setSteppingBot(false);
+    }
+  };
 
   useEffect(() => {
     loadData(false);
@@ -215,6 +267,102 @@ export function PaperTradingJournalScreen() {
           <div className="text-xs text-red-300">{error}</div>
         </InfoBanner>
       )}
+
+      {/* Auto-Bot Workstation & Ratchet Control Panel */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
+            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
+              botConfig.enabled
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                : 'border-slate-700 bg-slate-800 text-slate-400'
+            }`}>
+              <Bot size={22} className={botConfig.enabled ? 'animate-pulse' : ''} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-white">Autonomous Paper-Execution Bot</h2>
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  botConfig.enabled
+                    ? 'border border-emerald-500/30 bg-emerald-500/15 text-emerald-400'
+                    : 'border border-slate-700 bg-slate-800 text-slate-400'
+                }`}>
+                  {botConfig.enabled ? '● Autonomous Active' : '○ Disabled'}
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Auto-executes high-conviction Minervini Stage 2 & Smart-Money signals into the journal with 4-stage trailing stop-loss ratchets.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={() => handleToggleBot(!botConfig.enabled)}
+              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors ${
+                botConfig.enabled
+                  ? 'border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+                  : 'border border-emerald-500/30 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
+              }`}
+            >
+              <Zap size={14} />
+              <span>{botConfig.enabled ? 'Pause Auto-Bot' : 'Activate Auto-Bot'}</span>
+            </button>
+
+            <button
+              onClick={handleRunBotStep}
+              disabled={steppingBot}
+              className="flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/15 px-3.5 py-2 text-xs font-semibold text-sky-400 transition-colors hover:bg-sky-500/25 disabled:opacity-50"
+            >
+              <Play size={13} className={steppingBot ? 'animate-spin' : ''} />
+              <span>{steppingBot ? 'Processing Ratchets...' : 'Step Engine Now'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 4-Stage Trailing Ratchet Strip */}
+        <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+            <div className="flex items-center gap-2 text-slate-300">
+              <ShieldCheck size={14} className="text-red-400" />
+              <span className="text-xs font-semibold text-slate-200">Stage 0: Initial Floor</span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Fixed stop-loss (-4% to -6%) at technical pivot point to strictly limit capital drawdown.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+            <div className="flex items-center gap-2 text-slate-300">
+              <Anchor size={14} className="text-cyan-400" />
+              <span className="text-xs font-semibold text-slate-200">Stage 1: Breakeven Armor</span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              At +1.0R gain, ratchet stop-loss to entry price + 0.6% friction buffer. Zero-loss guaranteed.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+            <div className="flex items-center gap-2 text-slate-300">
+              <DollarSign size={14} className="text-amber-400" />
+              <span className="text-xs font-semibold text-slate-200">Stage 2: Bank 50% & Lock +1R</span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              At Target 1 (+1.5R–2.0R), liquidate 50% shares to bank cash; elevate runner stop-loss to +1.0R floor.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+            <div className="flex items-center gap-2 text-slate-300">
+              <Target size={14} className="text-emerald-400" />
+              <span className="text-xs font-semibold text-slate-200">Stage 3: Full Runner Exit</span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              At Target 2 (+2.5R–3.0R), liquidate remaining runner position for maximized compound yield.
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Primary KPI Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -395,7 +543,7 @@ export function PaperTradingJournalScreen() {
         <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/60 shadow-sm">
           <div className="border-b border-slate-800 p-4">
             <h3 className="text-sm font-bold text-white">Open Simulated Positions</h3>
-            <p className="text-xs text-slate-400">Active paper trades held under NEPSE T+2 Demat settlement rules</p>
+            <p className="text-xs text-slate-400">Active paper trades held under NEPSE T+2 Demat settlement rules & 4-stage trailing ratchets</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -406,9 +554,10 @@ export function PaperTradingJournalScreen() {
                   <th className="p-3">Entry Date</th>
                   <th className="p-3">Shares</th>
                   <th className="p-3">Entry Price</th>
-                  <th className="p-3">Stop-Loss</th>
+                  <th className="p-3">Trailing Stop-Loss</th>
                   <th className="p-3">Target 1</th>
                   <th className="p-3">Target 2</th>
+                  <th className="p-3">Ratchet Stage</th>
                   <th className="p-3">Hold Days</th>
                   <th className="p-3">T+2 Demat Status</th>
                 </tr>
@@ -416,35 +565,73 @@ export function PaperTradingJournalScreen() {
               <tbody className="divide-y divide-slate-800/60 text-slate-200">
                 {openPositions.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="p-6 text-center text-slate-500">
+                    <td colSpan={11} className="p-6 text-center text-slate-500">
                       No active open positions currently held.
                     </td>
                   </tr>
                 ) : (
-                  openPositions.map((pos, idx) => (
-                    <tr key={idx} className="hover:bg-slate-800/30">
-                      <td className="p-3 font-bold text-white">{pos.symbol}</td>
-                      <td className="p-3 text-slate-400">{pos.sector}</td>
-                      <td className="p-3 font-mono">{pos.entryDate}</td>
-                      <td className="p-3 font-mono">{pos.shares}</td>
-                      <td className="p-3 font-mono">Rs. {pos.entryPrice}</td>
-                      <td className="p-3 font-mono text-red-400">Rs. {pos.stopLoss}</td>
-                      <td className="p-3 font-mono text-emerald-400">Rs. {pos.target1}</td>
-                      <td className="p-3 font-mono text-emerald-300">Rs. {pos.target2}</td>
-                      <td className="p-3 font-mono">{pos.holdSessions}d</td>
-                      <td className="p-3">
-                        {pos.holdSessions >= 2 ? (
-                          <span className="inline-flex items-center gap-1 rounded bg-emerald-950/60 px-2 py-0.5 text-[10px] text-emerald-400 border border-emerald-800">
-                            <CheckCircle2 size={10} /> Cleared Demat
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded bg-amber-950/60 px-2 py-0.5 text-[10px] text-amber-400 border border-amber-800">
-                            <Clock size={10} /> T+{pos.holdSessions} Lock
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+                  openPositions.map((pos, idx) => {
+                    const effectiveStop = pos.currentStopLoss ?? pos.stopLoss;
+                    const stage = pos.ratchetStage || (pos.t1Banked ? 'PROFIT_LOCKED' : 'INITIAL_RISK');
+                    return (
+                      <tr key={idx} className="hover:bg-slate-800/30">
+                        <td className="p-3 font-bold text-white">{pos.symbol}</td>
+                        <td className="p-3 text-slate-400">{pos.sector}</td>
+                        <td className="p-3 font-mono">{pos.entryDate}</td>
+                        <td className="p-3 font-mono">
+                          {pos.shares}
+                          {pos.t1Banked && (
+                            <span className="ml-1 text-[10px] text-amber-400 font-semibold">(50% Banked)</span>
+                          )}
+                        </td>
+                        <td className="p-3 font-mono">Rs. {pos.entryPrice}</td>
+                        <td className="p-3 font-mono font-semibold text-amber-300">
+                          Rs. {effectiveStop}
+                          {pos.initialStopLoss && pos.initialStopLoss !== effectiveStop && (
+                            <span className="block text-[10px] font-normal text-slate-500 line-through">
+                              Init: Rs. {pos.initialStopLoss}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 font-mono text-emerald-400">Rs. {pos.target1}</td>
+                        <td className="p-3 font-mono text-emerald-300">Rs. {pos.target2}</td>
+                        <td className="p-3">
+                          {stage === 'BREAKEVEN_LOCKED' && (
+                            <span className="inline-flex items-center gap-1 rounded bg-cyan-950/60 px-2 py-0.5 text-[10px] font-semibold text-cyan-400 border border-cyan-800">
+                              <Anchor size={10} /> Breakeven Armor
+                            </span>
+                          )}
+                          {stage === 'PROFIT_LOCKED' && (
+                            <span className="inline-flex items-center gap-1 rounded bg-amber-950/60 px-2 py-0.5 text-[10px] font-semibold text-amber-400 border border-amber-800">
+                              <DollarSign size={10} /> Profit Locked (+1R)
+                            </span>
+                          )}
+                          {stage === 'RUNNER_COMPLETED' && (
+                            <span className="inline-flex items-center gap-1 rounded bg-purple-950/60 px-2 py-0.5 text-[10px] font-semibold text-purple-400 border border-purple-800">
+                              <Target size={10} /> Runner Exited
+                            </span>
+                          )}
+                          {(stage === 'INITIAL_RISK' || !stage) && (
+                            <span className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-300 border border-slate-700">
+                              <ShieldCheck size={10} className="text-red-400" /> Initial Risk
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 font-mono">{pos.holdSessions}d</td>
+                        <td className="p-3">
+                          {pos.holdSessions >= 2 ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-950/60 px-2 py-0.5 text-[10px] text-emerald-400 border border-emerald-800">
+                              <CheckCircle2 size={10} /> Cleared Demat
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded bg-amber-950/60 px-2 py-0.5 text-[10px] text-amber-400 border border-amber-800">
+                              <Clock size={10} /> T+{pos.holdSessions} Lock
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

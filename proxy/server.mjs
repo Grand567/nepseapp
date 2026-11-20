@@ -13995,6 +13995,38 @@ app.get('/api/paper-trading/attribution', async (req, res) => {
   }
 });
 
+app.get('/api/paper-trading/bot-config', async (req, res) => {
+  try {
+    const { getAutoBotConfig } = await import('../src/utils/signals/paperTradingTracker.js');
+    res.json({ success: true, data: getAutoBotConfig() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/paper-trading/bot-config', async (req, res) => {
+  try {
+    const { saveAutoBotConfig, getAutoBotConfig } = await import('../src/utils/signals/paperTradingTracker.js');
+    const updated = saveAutoBotConfig({ ...getAutoBotConfig(), ...(req.body || {}) });
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/paper-trading/auto-step', async (req, res) => {
+  try {
+    const { evaluateAutoBotSignals, processDailyPaperOutcomes, getPaperTrackerState } = await import('../src/utils/signals/paperTradingTracker.js');
+    const signals = req.body?.signals || [];
+    const quotes = req.body?.quotes || {};
+    const stepResult = evaluateAutoBotSignals({ signals, marketQuotes: quotes, date: req.body?.date });
+    processDailyPaperOutcomes(quotes, req.body?.date);
+    res.json({ success: true, data: { ...stepResult, currentState: getPaperTrackerState() } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/paper-trading/run-daily-selection', async (req, res) => {
   try {
     const { runDailyPaperRun } = await import('../scripts/runDailyPaperRun.mjs');

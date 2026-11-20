@@ -13,6 +13,7 @@
 import { STATUTORY_FEES } from './backtestEngine.js';
 import { calculateBrokerCommission, calculateSebonFee, DP_CHARGE } from '../calculations.js';
 import { calculateLiquiditySlippage } from '../nepseWalkForwardBacktest.mjs';
+import { evaluateTrailingRatchet, calculateRatchetLevels } from './trailingRatchetEngine.ts';
 
 const STORAGE_KEY = 'drabyashree_paper_trading_tracker_v1';
 const INITIAL_PAPER_CAPITAL = 1000000; // Rs. 10 Lakhs virtual equity
@@ -130,6 +131,7 @@ export function recordPaperPick({
 
     if (state.capital >= totalOutflow && !state.openPositions.some(p => p.symbol === symbol)) {
       state.capital -= totalOutflow;
+      const rLevels = calculateRatchetLevels(entryPrice, plan.stopLoss);
       state.openPositions.push({
         id: `POS-${symbol}-${date}`,
         symbol,
@@ -138,10 +140,13 @@ export function recordPaperPick({
         shares,
         entryPrice,
         costBasisNpr: totalOutflow,
+        initialStopLoss: plan.stopLoss,
+        currentStopLoss: plan.stopLoss,
         stopLoss: plan.stopLoss,
-        target1: plan.target1,
-        target2: plan.target2,
+        target1: rLevels.target1,
+        target2: rLevels.target2,
         t1Banked: false,
+        ratchetStage: 'INITIAL_RISK',
         triggers,
         holdSessions: 0
       });
@@ -174,123 +179,99 @@ export function processDailyPaperOutcomes(marketQuotes = {}, currentDate = new D
 
     pos.holdSessions = (pos.holdSessions || 0) + 1;
 
-    // ⚠️ Mandatory NEPSE T+2 Demat Settlement Lock:
-    // Shares cannot be sold on Day 0 or Day 1. Sellable only at holdSessions >= 2.
-    const isSettledInDemat = pos.holdSessions >= 2;
+    // ── Multi-Stage Trailing Stop-Loss Ratchet Evaluation ──
+    const evalRes = evaluateTrailingRatchet({
+      position: {
+        ...pos,
+        currentStopLoss: pos.currentStopLoss || pos.stopLoss,
+        initialStopLoss: pos.initialStopLoss || pos.stopLoss,
+        ratchetStage: pos.ratchetStage || 'INITIAL_RISK',
+      },
+      currentHigh: high,
+      currentLow: low,
+      currentClose: close,
+      holdSessions: pos.holdSessions
+    });
+
+    pos.currentStopLoss = evalRes.newStopLoss;
+    pos.stopLoss = evalRes.newStopLoss;
+    pos.ratchetStage = evalRes.ratchetStage;
+
     let isFullyClosed = false;
 
-    if (isSettledInDemat) {
-      // 1. Target 2 Hit (Full Profit Exit)
-      if (high >= pos.target2) {
-        const orderVal = pos.shares * pos.target2;
-        const slip = calculateLiquiditySlippage(orderVal, turnover);
-        const exitPrice = Number((pos.target2 * (1 - slip)).toFixed(2));
-        const proceeds = pos.shares * exitPrice;
+    // 1. Partial Target 1 Profit Scale-Out (50%) + Ratchet to +1.0R
+    if (evalRes.takePartialProfit && !pos.t1Banked && evalRes.partialSharesToSell > 0) {
+      const sharesToSell = Math.floor(evalRes.partialSharesToSell / 10) * 10 || evalRes.partialSharesToSell;
+      const proceeds = sharesToSell * pos.target1;
+      const comm = calculateBrokerCommission(proceeds);
+      const sebon = calculateSebonFee(proceeds);
+      const netProceeds = proceeds - comm - sebon - STATUTORY_FEES.dpCharge;
 
-        const comm = calculateBrokerCommission(proceeds);
-        const sebon = calculateSebonFee(proceeds);
-        const netProceeds = proceeds - comm - sebon - STATUTORY_FEES.dpCharge;
+      const cost = sharesToSell * pos.entryPrice;
+      const grossGain = netProceeds - cost;
+      const cgt = grossGain > 0 ? Number((grossGain * STATUTORY_FEES.cgtShortTermRate).toFixed(2)) : 0;
+      const realizedPnl = Number((grossGain - cgt).toFixed(2));
 
-        const cost = pos.shares * pos.entryPrice;
-        const grossGain = netProceeds - cost;
-        const cgt = grossGain > 0 ? Number((grossGain * STATUTORY_FEES.cgtShortTermRate).toFixed(2)) : 0;
-        const realizedPnl = Number((grossGain - cgt).toFixed(2));
+      state.capital += (netProceeds - cgt);
+      state.closedJournal.unshift({
+        id: `TRD-T1-${pos.symbol}-${currentDate}`,
+        symbol: pos.symbol,
+        sector: pos.sector,
+        entryDate: pos.entryDate,
+        exitDate: currentDate,
+        shares: sharesToSell,
+        entryPrice: pos.entryPrice,
+        exitPrice: pos.target1,
+        realizedPnl,
+        returnPct: Number(((realizedPnl / cost) * 100).toFixed(2)),
+        outcome: 'TARGET_1_PARTIAL',
+        exitReason: '✨ Target 1 Banked (50% Scaled Out, Stop Ratcheted to +1R)',
+        holdSessions: pos.holdSessions,
+        triggers: pos.triggers,
+        commission: comm,
+        cgt
+      });
 
-        state.capital += (netProceeds - cgt);
-        state.closedJournal.unshift({
-          id: `TRD-${pos.symbol}-${currentDate}`,
-          symbol: pos.symbol,
-          sector: pos.sector,
-          entryDate: pos.entryDate,
-          exitDate: currentDate,
-          shares: pos.shares,
-          entryPrice: pos.entryPrice,
-          exitPrice,
-          realizedPnl,
-          returnPct: Number(((realizedPnl / cost) * 100).toFixed(2)),
-          outcome: 'TARGET_2_HIT',
-          exitReason: '🎯 Target 2 Reached (+2.5R Full Profit)',
-          holdSessions: pos.holdSessions,
-          triggers: pos.triggers,
-          commission: comm,
-          cgt
-        });
-        isFullyClosed = true;
-      }
-      // 2. Stop Loss Hit
-      else if (low <= pos.stopLoss) {
-        const exitPrice = Math.min(pos.stopLoss, close);
-        const proceeds = pos.shares * exitPrice;
+      pos.shares -= sharesToSell;
+      pos.t1Banked = true;
+    }
 
-        const comm = calculateBrokerCommission(proceeds);
-        const sebon = calculateSebonFee(proceeds);
-        const netProceeds = proceeds - comm - sebon - STATUTORY_FEES.dpCharge;
+    // 2. Full Position Close (Target 2 or Stop-Loss Hit)
+    if (evalRes.isClosed) {
+      const exitPrice = evalRes.exitPrice || close;
+      const proceeds = pos.shares * exitPrice;
 
-        const cost = pos.shares * pos.entryPrice;
-        const grossGain = netProceeds - cost;
-        const cgt = grossGain > 0 ? Number((grossGain * STATUTORY_FEES.cgtShortTermRate).toFixed(2)) : 0;
-        const realizedPnl = Number((grossGain - cgt).toFixed(2));
+      const comm = calculateBrokerCommission(proceeds);
+      const sebon = calculateSebonFee(proceeds);
+      const netProceeds = proceeds - comm - sebon - STATUTORY_FEES.dpCharge;
 
-        state.capital += (netProceeds - cgt);
-        state.closedJournal.unshift({
-          id: `TRD-${pos.symbol}-${currentDate}`,
-          symbol: pos.symbol,
-          sector: pos.sector,
-          entryDate: pos.entryDate,
-          exitDate: currentDate,
-          shares: pos.shares,
-          entryPrice: pos.entryPrice,
-          exitPrice,
-          realizedPnl,
-          returnPct: Number(((realizedPnl / cost) * 100).toFixed(2)),
-          outcome: 'STOP_LOSS_HIT',
-          exitReason: '🛑 Stop-Loss Triggered (Risk Cap)',
-          holdSessions: pos.holdSessions,
-          triggers: pos.triggers,
-          commission: comm,
-          cgt
-        });
-        isFullyClosed = true;
-      }
-      // 3. Target 1 Partial Scale-Out (50%)
-      else if (high >= pos.target1 && !pos.t1Banked) {
-        const sharesToSell = Math.floor(pos.shares / 2 / 10) * 10;
-        if (sharesToSell > 0) {
-          const proceeds = sharesToSell * pos.target1;
-          const comm = calculateBrokerCommission(proceeds);
-          const sebon = calculateSebonFee(proceeds);
-          const netProceeds = proceeds - comm - sebon - STATUTORY_FEES.dpCharge;
+      const cost = pos.shares * pos.entryPrice;
+      const grossGain = netProceeds - cost;
+      const cgt = grossGain > 0 ? Number((grossGain * STATUTORY_FEES.cgtShortTermRate).toFixed(2)) : 0;
+      const realizedPnl = Number((grossGain - cgt).toFixed(2));
 
-          const cost = sharesToSell * pos.entryPrice;
-          const grossGain = netProceeds - cost;
-          const cgt = grossGain > 0 ? Number((grossGain * STATUTORY_FEES.cgtShortTermRate).toFixed(2)) : 0;
-          const realizedPnl = Number((grossGain - cgt).toFixed(2));
-
-          state.capital += (netProceeds - cgt);
-          state.closedJournal.unshift({
-            id: `TRD-T1-${pos.symbol}-${currentDate}`,
-            symbol: pos.symbol,
-            sector: pos.sector,
-            entryDate: pos.entryDate,
-            exitDate: currentDate,
-            shares: sharesToSell,
-            entryPrice: pos.entryPrice,
-            exitPrice: pos.target1,
-            realizedPnl,
-            returnPct: Number(((realizedPnl / cost) * 100).toFixed(2)),
-            outcome: 'TARGET_1_PARTIAL',
-            exitReason: '✨ Target 1 Banked (50% Scaled Out)',
-            holdSessions: pos.holdSessions,
-            triggers: pos.triggers,
-            commission: comm,
-            cgt
-          });
-
-          pos.shares -= sharesToSell;
-          pos.stopLoss = Number((pos.entryPrice * 1.0075).toFixed(1)); // Trailing breakeven
-          pos.t1Banked = true;
-        }
-      }
+      state.capital += (netProceeds - cgt);
+      state.closedJournal.unshift({
+        id: `TRD-${pos.symbol}-${currentDate}`,
+        symbol: pos.symbol,
+        sector: pos.sector,
+        entryDate: pos.entryDate,
+        exitDate: currentDate,
+        shares: pos.shares,
+        entryPrice: pos.entryPrice,
+        exitPrice,
+        realizedPnl,
+        returnPct: Number(((realizedPnl / cost) * 100).toFixed(2)),
+        outcome: evalRes.exitReason || 'STOP_LOSS_HIT',
+        exitReason: evalRes.exitReason === 'TARGET_2_HIT'
+          ? '🎯 Target 2 Reached (+2.5R Runner Profit)'
+          : `🛑 Trailing Stop Triggered (${evalRes.ratchetStage})`,
+        holdSessions: pos.holdSessions,
+        triggers: pos.triggers,
+        commission: comm,
+        cgt
+      });
+      isFullyClosed = true;
     }
 
     if (!isFullyClosed) {
@@ -387,3 +368,131 @@ export function calculateSignalAttribution(closedTrades = null) {
     signals: results
   };
 }
+
+/**
+ * 4. Auto-Bot Execution Configuration & Signal Ingestion
+ */
+const AUTOBOT_CONFIG_KEY = 'drabyashree_autobot_config_v1';
+
+const DEFAULT_AUTOBOT_CONFIG = {
+  enabled: true,
+  riskPerTradePct: 1.5,
+  maxConcurrentPositions: 5,
+  trailingRatchetPolicy: 'DYNAMIC_RATCHET',
+  minCompositeScore: 75,
+  minConfidence: 70
+};
+
+let memBotConfig = { ...DEFAULT_AUTOBOT_CONFIG };
+
+export function getAutoBotConfig() {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const raw = localStorage.getItem(AUTOBOT_CONFIG_KEY);
+      if (raw) return { ...DEFAULT_AUTOBOT_CONFIG, ...JSON.parse(raw) };
+    } catch (_) {}
+  }
+  return { ...memBotConfig };
+}
+
+export function saveAutoBotConfig(cfg) {
+  memBotConfig = { ...memBotConfig, ...cfg };
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      localStorage.setItem(AUTOBOT_CONFIG_KEY, JSON.stringify(memBotConfig));
+    } catch (_) {}
+  }
+  return { ...memBotConfig };
+}
+
+export function evaluateAutoBotSignals({ signals = [], marketQuotes = {}, date = new Date().toISOString().slice(0, 10) }) {
+  const config = getAutoBotConfig();
+  if (!config.enabled) {
+    return { executedCount: 0, executedPicks: [], reason: 'Auto-bot mode is currently paused by user.' };
+  }
+
+  const state = getPaperTrackerState();
+  if (state.openPositions.length >= config.maxConcurrentPositions) {
+    return { executedCount: 0, reason: `Max concurrent positions limit (${config.maxConcurrentPositions}) reached.` };
+  }
+
+  let executedCount = 0;
+  const executedPicks = [];
+
+  for (const sig of signals) {
+    if (state.openPositions.length >= config.maxConcurrentPositions) break;
+
+    const sym = String(sig.symbol || '').toUpperCase().trim();
+    if (!sym || state.openPositions.some(p => p.symbol === sym)) continue;
+
+    const score = Number(sig.compositeScore || sig.score || 0);
+    const conf = Number(sig.confidence || 0);
+    const action = String(sig.action || 'BUY').toUpperCase();
+
+    if (action !== 'BUY' || score < config.minCompositeScore || conf < config.minConfidence) {
+      continue;
+    }
+
+    const quote = marketQuotes[sym] || {};
+    const ltp = Number(quote.ltp || sig.entryPrice || sig.ltp || (Array.isArray(sig.entryZone) ? sig.entryZone[0] : 0));
+    const prevClose = Number(quote.prevClose || quote.previousClose || ltp);
+
+    // Guard: Upper circuit freeze check (+9.90% for 10% limit or +14.95% for 15% limit)
+    const quotePctChange = Number(quote.pctChange ?? quote.pointChangePct ?? 0);
+    const calculatedPct = prevClose > 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
+    const pChangePct = quotePctChange || calculatedPct;
+    if (pChangePct >= 9.90) continue;
+    if (ltp <= 0) continue;
+
+    // Position sizing: Fixed fractional risk (e.g. 1.5% max capital risk)
+    const riskCapital = state.capital * (config.riskPerTradePct / 100);
+    const stopLoss = sig.stopLoss || Number((ltp * 0.95).toFixed(1));
+    const riskPerShare = Math.max(1, ltp - stopLoss);
+    let targetShares = Math.floor(riskCapital / riskPerShare);
+    targetShares = Math.floor(targetShares / 10) * 10; // Round to NEPSE regular board lot (10 kitta)
+
+    // Capital budget ceiling: Max 20% of total capital in a single position
+    const maxKittaByCapital = Math.floor((state.capital * 0.20) / ltp / 10) * 10;
+    const finalShares = Math.max(10, Math.min(targetShares, maxKittaByCapital));
+
+    const grossVal = finalShares * ltp;
+    const comm = calculateBrokerCommission(grossVal);
+    const sebon = calculateSebonFee(grossVal);
+    const totalOutflow = grossVal + comm + sebon;
+
+    if (state.capital >= totalOutflow) {
+      const pickRecord = recordPaperPick({
+        date,
+        stock: { symbol: sym, ltp, sector: sig.sector },
+        scoringResult: {
+          symbol: sym,
+          action: 'BUY',
+          compositeScore: score,
+          confidence: conf,
+          scoreBreakdown: sig.scoreBreakdown,
+          executionPlan: {
+            entryLtp: ltp,
+            stopLoss,
+            target1: sig.target1,
+            target2: sig.target2,
+            positionSizing: {
+              sharesKitta: finalShares,
+              capitalRequiredNpr: totalOutflow
+            }
+          }
+        },
+        autoExecuteBuy: true
+      });
+      executedCount++;
+      executedPicks.push(pickRecord);
+    }
+  }
+
+  return {
+    executedCount,
+    executedPicks,
+    openPositionsCount: state.openPositions.length,
+    remainingCapital: state.capital
+  };
+}
+
