@@ -14496,6 +14496,11 @@ app.listen(PORT, '0.0.0.0', async () => {
           // Fix 5: Startup Catch-Up Engine - Check for and fill any missed trading sessions if server was asleep (run in background)
           setTimeout(() => {
             try {
+              const memUsage = process.memoryUsage();
+              if (memUsage.rss > 300 * 1024 * 1024 && (process.env.NODE_ENV === 'production' || process.env.RENDER)) {
+                console.log(`[StartupCatchUp] Server RSS is ${Math.round(memUsage.rss / 1024 / 1024)}MB. Preserving free tier memory ceiling; skipping startup catch-up.`);
+                return;
+              }
               const lastSettled = latestTradingSession(new Date(), true);
               const storedDates = getStoredDates(5);
               if (lastSettled && !storedDates.includes(lastSettled)) {
@@ -14505,7 +14510,7 @@ app.listen(PORT, '0.0.0.0', async () => {
             } catch (catchUpErr) {
               console.warn('[StartupCatchUp] Catch-up notice:', catchUpErr.message);
             }
-          }, 8000);
+          }, 15000);
           // Warm up popular brokers asynchronously in background to avoid blocking event loop
           setTimeout(() => {
             const popularBrokers = ['58', '77', '45', '34', '17', '28', '49', '57', '38', '14', '22', '42'];

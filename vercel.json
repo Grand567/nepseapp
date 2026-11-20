@@ -5,15 +5,15 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://drabyashree-nepse-hub.onrender.com/api/:path*"
+      "destination": "https://drabyashree-nepse-cdn.shreeksuwal.workers.dev/api/:path*"
     },
     {
       "source": "/cdsc-ipo/:path*",
-      "destination": "https://drabyashree-nepse-hub.onrender.com/cdsc-ipo/:path*"
+      "destination": "https://drabyashree-nepse-cdn.shreeksuwal.workers.dev/cdsc-ipo/:path*"
     },
     {
       "source": "/health",
-      "destination": "https://drabyashree-nepse-hub.onrender.com/health"
+      "destination": "https://drabyashree-nepse-cdn.shreeksuwal.workers.dev/health"
     },
     {
       "source": "/(.*)",

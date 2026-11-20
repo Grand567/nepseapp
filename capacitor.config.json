@@ -22,6 +22,8 @@
   "server": {
     "cleartext": false,
     "allowNavigation": [
+      "drabyashree-nepse-cdn.shreeksuwal.workers.dev",
+      "*.workers.dev",
       "drabyashree-nepse-hub6936.vercel.app",
       "*.vercel.app",
       "drabyashree-nepse-hub.onrender.com",

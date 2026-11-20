@@ -1,5 +1,43 @@
 [
   {
+    "id": "holding_GHL_1795137716431",
+    "ownerId": "admin",
+    "symbol": "GHL",
+    "buyPrice": 270,
+    "currentPrice": 270,
+    "ltp": 270,
+    "triggeredAt": "2026-11-20T01:21:56.431Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-11-20T01:21:56.434Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1795137709584",
+    "ownerId": "admin",
+    "symbol": "SHIVM",
+    "buyPrice": 512,
+    "currentPrice": 512,
+    "ltp": 512,
+    "triggeredAt": "2026-11-20T01:21:49.584Z",
+    "stopLoss": 516.9,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-11-20T01:21:49.606Z",
+    "runnerKitta": 50,
+    "target2Hit": true,
+    "closedAt": "2026-11-20T01:21:54.561Z",
+    "exitPrice": 645
+  },
+  {
     "id": "holding_GHL_1795106907056",
     "ownerId": "admin",
     "symbol": "GHL",
@@ -3706,29 +3744,5 @@
     "source": "MeroLagani Announcements",
     "action": "OPEN_NEWS",
     "triggeredAt": "2026-11-11T01:30:46.016Z"
-  },
-  {
-    "id": "news_7btls",
-    "type": "BOOK_CLOSURE_ALERT",
-    "category": "general",
-    "title": "📅 BHL Book Closure / AGM Notice",
-    "body": "Balephi Hydropower Limited has notified that its 15th AGM is scheduled for Mangsir 16, 2083 and has published its annual financial statement for the fiscal year 2082/83",
-    "symbol": "BHL",
-    "url": "https://merolagani.com/AnnouncementDetail.aspx?id=68248",
-    "source": "MeroLagani Announcements",
-    "action": "OPEN_NEWS",
-    "triggeredAt": "2026-11-11T01:30:46.014Z"
-  },
-  {
-    "id": "news_31uiig",
-    "type": "BOOK_CLOSURE_ALERT",
-    "category": "general",
-    "title": "📅 API Book Closure / AGM Notice",
-    "body": "Api Power Company Limited has notified that its 23rd AGM is scheduled for Mangsir 18, 2083",
-    "symbol": "API",
-    "url": "https://merolagani.com/AnnouncementDetail.aspx?id=68249",
-    "source": "MeroLagani Announcements",
-    "action": "OPEN_NEWS",
-    "triggeredAt": "2026-11-11T01:30:46.012Z"
   }
 ]

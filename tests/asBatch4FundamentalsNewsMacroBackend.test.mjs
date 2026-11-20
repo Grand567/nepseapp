@@ -265,7 +265,8 @@ try {
     assert.equal(newsMod.resolveSymbolFromText('NABIL declares dividend for FY 2082/83'), 'NABIL', 'Valid listed ticker NABIL must resolve');
 
     // Simulate active emergency market halt and verify empty/offline fetch does NOT clear it
-    newsMod.setDynamicMarketHalt({ isHalted: true, isEmergencyHalt: true, reason: 'Emergency Exchange Halt', headline: 'आज नेप्से बन्द', date: '2026-11-19', detectedAt: Date.now() });
+    const todayIso = newsMod.getIsoDateInNPT ? newsMod.getIsoDateInNPT() : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+    newsMod.setDynamicMarketHalt({ isHalted: true, isEmergencyHalt: true, reason: 'Emergency Exchange Halt', headline: 'आज नेप्से बन्द', date: todayIso, detectedAt: Date.now() });
     const origFetch = globalThis.fetch;
     globalThis.fetch = async () => { throw new Error('Network offline'); };
     try {

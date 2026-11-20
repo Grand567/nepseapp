@@ -26,7 +26,7 @@ export function getProxyBase() {
       const stored = localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base');
       if (stored && stored.startsWith('http')) return stored.replace(/\/$/, '');
     }
-    return 'https://drabyashree-nepse-hub.onrender.com';
+    return 'https://drabyashree-nepse-cdn.shreeksuwal.workers.dev';
   }
 
   // 1. Electron environment (protocol file: or Electron in userAgent)
@@ -35,7 +35,7 @@ export function getProxyBase() {
                        (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Electron')) ||
                        typeof window.electron !== 'undefined';
     if (isElectron) {
-      if (_localProxyState === 'dead') return 'https://drabyashree-nepse-hub.onrender.com';
+      if (_localProxyState === 'dead') return 'https://drabyashree-nepse-cdn.shreeksuwal.workers.dev';
       return 'http://localhost:5000';
     }
 
@@ -47,7 +47,7 @@ export function getProxyBase() {
 
     // 3. Local LAN access (e.g. 192.168.x.x, 10.x.x.x)
     if (/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(h)) {
-      if (_localProxyState === 'dead') return 'https://drabyashree-nepse-hub.onrender.com';
+      if (_localProxyState === 'dead') return 'https://drabyashree-nepse-cdn.shreeksuwal.workers.dev';
       return '';
     }
   }
@@ -71,6 +71,6 @@ export function getProxyBase() {
     }
   } catch (_) {}
 
-  // 6. Default production proxy on Render (reliable public backend with live NOTS data)
-  return 'https://drabyashree-nepse-hub.onrender.com';
+  // 6. Default production proxy on Cloudflare Edge CDN (intelligent edge caching & cold-start shield)
+  return 'https://drabyashree-nepse-cdn.shreeksuwal.workers.dev';
 }

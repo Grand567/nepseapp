@@ -2884,6 +2884,98 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
     return cachedMem.data;
   }
 
+  // ── 0. SQLite Accelerated SSOT Engine (Zero RAM Spikes, Sub-50ms) ──
+  if (db) {
+    try {
+      const dateRows = targetDate 
+        ? db.prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT ?').all(targetDate, numDays)
+        : db.prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT ?').all(numDays);
+      
+      if (dateRows && dateRows.length > 0) {
+        const dates = dateRows.map(r => r.trade_date);
+        const oldest = dates[dates.length - 1];
+        const newest = dates[0];
+        
+        const sql = `
+          SELECT symbol, broker_id,
+                 SUM(buy_vol) as buyQty, SUM(sell_vol) as sellQty,
+                 SUM(buy_amt) as buyAmt, SUM(sell_amt) as sellAmt,
+                 (SUM(buy_vol) - SUM(sell_vol)) as netQty,
+                 (SUM(buy_amt) - SUM(sell_amt)) as netAmt
+          FROM daily_broker_ledger
+          WHERE trade_date >= ? AND trade_date <= ?
+          GROUP BY symbol, broker_id
+        `;
+        const rows = db.prepare(sql).all(oldest, newest);
+        if (rows && rows.length > 0) {
+          const marketBrokerMap = {};
+          for (const r of rows) {
+            const sym = String(r.symbol || '').toUpperCase().trim();
+            if (!marketBrokerMap[sym]) {
+              marketBrokerMap[sym] = {
+                symbol: sym,
+                businessDate: newest,
+                tradingDays: dates.length,
+                totalVolume: 0,
+                totalTurnover: 0,
+                allBuyers: [],
+                allSellers: []
+              };
+            }
+            const bId = String(r.broker_id);
+            const bName = getBrokerName(bId);
+            if (r.buyQty > 0) {
+              marketBrokerMap[sym].allBuyers.push({
+                broker: bId,
+                brokerName: bName,
+                buyQty: r.buyQty,
+                buyAmt: r.buyAmt,
+                netQty: r.netQty,
+                netAmt: r.netAmt
+              });
+              marketBrokerMap[sym].totalVolume += r.buyQty;
+              marketBrokerMap[sym].totalTurnover += r.buyAmt;
+            }
+            if (r.sellQty > 0) {
+              marketBrokerMap[sym].allSellers.push({
+                broker: bId,
+                brokerName: bName,
+                sellQty: r.sellQty,
+                sellAmt: r.sellAmt,
+                netQty: r.netQty,
+                netAmt: r.netAmt
+              });
+            }
+          }
+
+          for (const sym in marketBrokerMap) {
+            const item = marketBrokerMap[sym];
+            const totVol = item.totalVolume || 1;
+            item.topBuyers = [...item.allBuyers].sort((a,b) => b.buyQty - a.buyQty).slice(0, 5).map(b => ({
+              ...b,
+              pct: +((b.buyQty / totVol) * 100).toFixed(2)
+            }));
+            item.topSellers = [...item.allSellers].sort((a,b) => b.sellQty - a.sellQty).slice(0, 5).map(s => ({
+              ...s,
+              pct: +((s.sellQty / totVol) * 100).toFixed(2)
+            }));
+            item.topNetBuyers = [...item.allBuyers].filter(b => b.netQty > 0).sort((a,b) => b.netQty - a.netQty).slice(0, 5);
+            item.topNetSellers = [...item.allSellers].filter(s => s.netQty < 0).sort((a,b) => a.netQty - b.netQty).slice(0, 5);
+            item.topAccumulator = item.topNetBuyers[0] || null;
+            item.topDistributor = item.topNetSellers[0] || null;
+            item.concentrationPct = item.topBuyers[0]?.pct || 0;
+            item.bcr3BuyPct = +(item.topBuyers.slice(0, 3).reduce((sum, b) => sum + (b.pct || 0), 0)).toFixed(2);
+          }
+
+          memoryCache.set(cacheKey, { timestamp: now, data: marketBrokerMap });
+          return marketBrokerMap;
+        }
+      }
+    } catch (dbErr) {
+      console.warn('[brokerVault] SQLite market broker map notice:', dbErr.message);
+    }
+  }
+
   try {
     const fullTrades = await getFullSessionFloorsheet(targetDate);
     const symbolGroups = {};

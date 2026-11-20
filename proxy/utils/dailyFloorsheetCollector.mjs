@@ -822,7 +822,7 @@ export async function downloadAndArchiveDailyFloorsheet(dateStr = '', options = 
   }
 
   // 1. Write clean uncompressed JSON file
-  const jsonContent = JSON.stringify(trades, null, 2);
+  const jsonContent = JSON.stringify(trades);
   fs.writeFileSync(jsonFilePath, jsonContent, 'utf8');
 
   // 2. Write compressed .gz file for efficient long-term archiving
