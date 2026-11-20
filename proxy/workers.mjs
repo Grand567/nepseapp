@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { query } from './db.mjs';
-import { isNepseTradingDay, getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
+import { isNepseTradingDay, getDetailedMarketStatus, latestTradingSession } from '../src/utils/nepseCalendar.js';
 import { getKathmanduTradingStatus } from './utils/kathmanduTime.mjs';
 import { 
   sendTelegramPrimePickAlert, 
@@ -687,8 +687,9 @@ export async function runPreOpenGateScan(force = false) {
 
 // Quantitative Morning Trading Digest Scan (10:45 AM NPT)
 export async function runMorningStockSelectionDigestWorker(target = false) {
-  const marketStatus = getDetailedMarketStatus();
-  const targetDate = typeof target === 'string' && target.length >= 10 ? target : marketStatus.targetSessionDate;
+  const targetDate = typeof target === 'string' && target.length >= 10
+    ? target
+    : latestTradingSession(undefined, true);
   const force = target === true || (typeof target === 'string' && target.length >= 10);
   if (!force && lastMorningDigestDispatchedDate === targetDate) {
     return { success: false, reason: `Morning digest already dispatched for ${targetDate}` };
@@ -760,8 +761,9 @@ export function startWorkers() {
       if (isTradingDay) {
         // Phase 1: 10:15 AM - 10:30 AM Pre-Market Scan suppressed in Option 1 (Full analysis is delivered at 3:45 PM EOD)
         // Phase 2: 10:45 AM - 10:55 AM Pre-Open Preparation
-        if (nptMins >= 645 && nptMins < 655 && lastMorningDigestDispatchedDate !== status.targetSessionDate) {
-          lastMorningDigestDispatchedDate = status.targetSessionDate;
+        const latestClosedSession = latestTradingSession(undefined, true);
+        if (nptMins >= 645 && nptMins < 655 && lastMorningDigestDispatchedDate !== latestClosedSession) {
+          lastMorningDigestDispatchedDate = latestClosedSession;
           // Pre-compile Today's Static Analytics & initialize Tick Stream for market open
           try {
             console.log(`[PremarketWorker] 🚀 Pre-compiling static analytics sub-file for ${status.targetSessionDate}...`);
@@ -770,6 +772,10 @@ export function startWorkers() {
           } catch (e) {
             console.warn('[PremarketWorker] Static sub-file compilation notice:', e.message);
           }
+          // Quantitative Morning Trading Digest Scan (10:45 AM NPT)
+          runMorningStockSelectionDigestWorker(latestClosedSession).catch(err => {
+            console.warn('[PremarketWorker] Morning digest dispatch notice:', err.message);
+          });
           // Option 1: Full Flowchart v2.0 ticket was dispatched at 3:45 PM EOD for overnight study.
           // Fallback to morning full ticket dispatch ONLY if server was restarted and no post-market pick is cached.
           if (!cachedPostMarketPrimePick) {
