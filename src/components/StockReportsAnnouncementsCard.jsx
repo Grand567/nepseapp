@@ -30,7 +30,8 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
     const seq = ++reportsSeqRef.current;
     setLoadingReports(true);
     try {
-      const rep = await fetchCompanyQuarterlyReports(sym);
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000));
+      const rep = await Promise.race([fetchCompanyQuarterlyReports(sym), timeoutPromise]);
       if (seq !== reportsSeqRef.current) return;
       const data = rep?.data || rep;
       if (data && Array.isArray(data.quarters)) {
@@ -51,8 +52,9 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
     setLoadingNews(true);
 
     try {
-      // 1. Fetch portal news
-      const articlesPromise = fetchMarketNews(force).catch(() => []);
+      // 1. Fetch portal news with 8-second guard
+      const newsTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000));
+      const articlesPromise = Promise.race([fetchMarketNews(force), newsTimeout]).catch(() => []);
 
       // 2. Fetch live broadcast notifications
       const notifPromise = (async () => {
@@ -298,8 +300,8 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
           }}
           title="Auto-update news and quarterly reports"
         >
-          <RefreshCw className={(loadingNews || loadingReports || isRefreshing) ? 'animate-spin' : ''} style={{ width: 13, height: 13 }} />
-          <span>{(loadingNews || loadingReports || isRefreshing) ? 'Updating...' : 'Update Latest'}</span>
+          <RefreshCw className={isRefreshing ? 'animate-spin' : ''} style={{ width: 13, height: 13 }} />
+          <span>{isRefreshing ? 'Updating...' : 'Update Latest'}</span>
         </button>
       </div>
 

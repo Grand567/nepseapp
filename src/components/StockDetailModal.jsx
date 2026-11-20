@@ -3028,7 +3028,11 @@ export default function StockDetailModal({
 
       const cmfStr = hasCmf
         ? `${cmfValue >= 0 ? '+' : ''}${cmfValue.toFixed(2)} (${cmfValue >= 0.05 ? 'Bullish Accumulation' : cmfValue <= -0.05 ? 'Distribution Pressure' : 'Neutral Flow'})`
-        : (realBrokerAnalysis.adRatio > 0 ? `+${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% (Broker Net Inflow)` : `${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% (Broker Outflow)`);
+        : (Number.isFinite(realBrokerAnalysis?.adRatio)
+            ? (realBrokerAnalysis.adRatio > 0 
+                ? `+${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% (Broker Net Inflow)` 
+                : `${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% (Broker Outflow)`)
+            : '0.0% (Neutral Flow)');
 
       // Structural Wyckoff Phase detection
       const ltpVal = Number(d?.ltp || 0);
@@ -5028,7 +5032,7 @@ export default function StockDetailModal({
                 <LoadingShimmerBar active={Boolean(brokerAnalysisLoading || (overviewBrokerTapeMode === '5D_SWING' && broker5DLoading))} />
                 {(brokerAnalysisLoading || (overviewBrokerTapeMode === '5D_SWING' && broker5DLoading)) && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#38bdf8', fontWeight: 700, marginBottom: 8, marginTop: 4 }}>
-                    <RefreshCw className="animate-spin" style={{ width: 12, height: 12 }} />
+                    <RefreshCw style={{ width: 12, height: 12 }} />
                     <span>Loading broker holding and distribution...</span>
                   </div>
                 )}
@@ -6201,7 +6205,7 @@ export default function StockDetailModal({
                       boxShadow: '0 4px 18px rgba(0, 0, 0, 0.3)'
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#38bdf8', fontSize: 13.5, fontWeight: 800 }}>
-                        <RefreshCw className="animate-spin" style={{ width: 16, height: 16 }} />
+                        <RefreshCw style={{ width: 16, height: 16 }} />
                         <span>Loading 5-Day institutional swing broker telemetry...</span>
                       </div>
                       <LoadingShimmerBar active={true} />

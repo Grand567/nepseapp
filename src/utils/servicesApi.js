@@ -438,32 +438,7 @@ export const fetchMarketWideBrokerSummary = (days = 1, options = {}) => {
 export const fetchBrokerAuditVerify = (symbol) => _proxyFetch('/api/audit/broker-verify/' + encodeURIComponent(symbol), { timeout: 45000 }, 60000);
 export const fetchStockDetail = (symbol) => _proxyFetch('/api/stock-detail/' + symbol, {}, 7200000);
 export const fetchMarketDepth = (symbol) => _proxyFetch('/api/nepse/market-depth/' + symbol, {}, 15000);
-export const fetchDividendHistory = async (symbol) => {
-  const path = '/api/dividend-history/' + encodeURIComponent(symbol);
-  const url = PROXY + path;
-  try {
-    const isNative = Capacitor.isNativePlatform();
-    if (isNative) {
-      const res = await CapacitorHttp.request({
-        url,
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        connectTimeout: 25000,
-        readTimeout: 25000,
-      });
-      if (res.status >= 200 && res.status < 300) {
-        return typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-      }
-      return null;
-    }
-    const resp = await fetch(url, { signal: AbortSignal.timeout(25000) });
-    if (!resp.ok) return null;
-    return await resp.json();
-  } catch (err) {
-    console.warn('[servicesApi] fetchDividendHistory failed:', err.message);
-    return null;
-  }
-};
+export const fetchDividendHistory = (symbol) => _proxyFetch('/api/dividend-history/' + encodeURIComponent(symbol), { timeout: 8000 }, 3600000);
 export const fetchStockComparison = (s1, s2) => _proxyFetch('/api/compare/' + s1 + '/' + s2, {}, 300000);
 
 export const fetchMutualFunds = () => _proxyFetch('/api/mutual-funds', {}, 3600000);

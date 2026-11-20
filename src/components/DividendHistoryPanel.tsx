@@ -73,7 +73,8 @@ export function DividendHistoryPanel({
     setResult(null);
     setError('');
     try {
-      const res = await fetchRealDividendHistory(sym);
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Dividend fetch timeout')), 5000));
+      const res = await Promise.race([fetchRealDividendHistory(sym), timeoutPromise]) as any;
       setResult(res);
       if (!res.real && res.error) setError(res.error);
     } catch (e: any) {
