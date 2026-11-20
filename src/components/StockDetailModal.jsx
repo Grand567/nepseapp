@@ -3646,6 +3646,7 @@ export default function StockDetailModal({
           <SessionFreshnessBadge
             compact={true}
             sessionDate={modalSessionDate || marketStatus?.lastClosedSessionDate}
+            lastUpdatedMs={d?.lastUpdatedMs || (d?.lastUpdated ? new Date(d.lastUpdated).getTime() : (d?.asOf ? new Date(d.asOf).getTime() : null))}
           />
         </div>
 

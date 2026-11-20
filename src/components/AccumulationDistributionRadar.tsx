@@ -147,7 +147,7 @@ const StockTableRow = React.memo(function StockTableRow({
       className="hover:bg-slate-800/40 cursor-pointer group"
       onClick={() => onPress(stock)}
     >
-      <td className="py-2.5 px-3 sticky left-0 z-10 bg-slate-900 group-hover:bg-slate-800 border-r-2 border-slate-700/80">
+      <td className="py-2.5 px-3 sticky left-0 z-10 bg-slate-900 group-hover:bg-slate-800 border-r-2 border-slate-700/80 min-w-[130px] max-w-[140px] shadow-[4px_0_10px_rgba(0,0,0,0.5)]">
         <div className="font-extrabold text-white group-hover:text-emerald-400">
           {stock.symbol}
         </div>
@@ -2921,11 +2921,11 @@ export function AccumulationDistributionRadar({
                 <table className="w-full text-left text-xs border-collapse min-w-[780px]">
                   <thead>
                     <tr className="bg-slate-950/90 text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-800">
-                      <th className="py-2.5 px-3 sticky left-0 z-20 bg-slate-950 border-r-2 border-slate-700/80">Symbol / Company</th>
-                      <th className="py-2.5 px-3 text-right">LTP (Rs.)</th>
-                      <th className="py-2.5 px-3 text-right">Change</th>
-                      <th className="py-2.5 px-3">Wyckoff Stage</th>
-                      <th className="py-2.5 px-3">Step 4 Smart Money Flow</th>
+                      <th className="py-2.5 px-3 sticky left-0 z-20 bg-slate-950 border-r-2 border-slate-700/80 min-w-[130px] max-w-[140px] shadow-[4px_0_10px_rgba(0,0,0,0.5)]">Symbol / Company</th>
+                      <th className="py-2.5 px-3 text-right whitespace-nowrap">LTP (Rs.)</th>
+                      <th className="py-2.5 px-3 text-right whitespace-nowrap">Change</th>
+                      <th className="py-2.5 px-3 whitespace-nowrap">Wyckoff Stage</th>
+                      <th className="py-2.5 px-3 min-w-[170px] whitespace-nowrap">Step 4 Smart Money Flow</th>
                       <th className="py-2.5 px-3 text-right">CMF (20)</th>
                       <th className="py-2.5 px-3 text-right">BCR3 / BCR5 Buy %</th>
                       <th className="py-2.5 px-3 text-right">Ticket Ratio</th>
