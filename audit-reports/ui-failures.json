@@ -1,0 +1,290 @@
+[
+  {
+    "timestamp": "2026-11-20T12:06:02.964Z",
+    "module": "Service_valuation",
+    "tabPath": "fundamentals-pro",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_valuation_fundamentals-pro.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:06:09.698Z",
+    "module": "Service_valuation",
+    "tabPath": "fundamental-scanner",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_valuation_fundamental-scanner.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:06:38.093Z",
+    "module": "Service_valuation",
+    "tabPath": "mutual-funds-unlock",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_valuation_mutual-funds-unlock.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:19:17.579Z",
+    "module": "Service_valuation",
+    "tabPath": "promoter-shares",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_valuation_promoter-shares.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:19:24.428Z",
+    "module": "Service_valuation",
+    "tabPath": "mutual-funds-unlock",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_valuation_mutual-funds-unlock.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:25:10.065Z",
+    "module": "Service_flagship",
+    "tabPath": "paper-trading-journal",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_flagship_paper-trading-journal.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:25:24.916Z",
+    "module": "Service_flagship",
+    "tabPath": "watchlist-entry-alerts",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_flagship_watchlist-entry-alerts.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:27:41.513Z",
+    "module": "Service_valuation",
+    "tabPath": "dividend-leaders",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_valuation_dividend-leaders.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:29:45.585Z",
+    "module": "Service_market",
+    "tabPath": "market-depth",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_market_market-depth.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:30:09.538Z",
+    "module": "Service_market",
+    "tabPath": "brokers",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_market_brokers.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:30:16.727Z",
+    "module": "ServicesHub",
+    "tabPath": "market/news",
+    "failureType": "PAGE_ERROR",
+    "details": "Service news failed to render .services-detail-header within 7s: page.waitForSelector: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.services-detail-header') to be visible\u001b[22m\n\u001b[2m    - locator resolved to visible <div class=\"services-detail-header\">…</div>\u001b[22m\n"
+  },
+  {
+    "timestamp": "2026-11-20T12:35:53.921Z",
+    "module": "Service_market",
+    "tabPath": "market-depth",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_market_market-depth.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:36:21.570Z",
+    "module": "Service_market",
+    "tabPath": "news",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_market_news.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:46:29.767Z",
+    "module": "Service_valuation",
+    "tabPath": "dividend-leaders",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_valuation_dividend-leaders.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:46:43.153Z",
+    "module": "Service_valuation",
+    "tabPath": "fundamental-scanner",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_valuation_fundamental-scanner.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:46:49.815Z",
+    "module": "Service_valuation",
+    "tabPath": "pe-ranking",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_valuation_pe-ranking.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:47:39.206Z",
+    "module": "Service_regulatory",
+    "tabPath": "regulatory-hub",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_regulatory_regulatory-hub.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:47:46.647Z",
+    "module": "Service_regulatory",
+    "tabPath": "nrb-safety-shield",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_regulatory_nrb-safety-shield.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:47:53.315Z",
+    "module": "Service_regulatory",
+    "tabPath": "nrb-forex",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_regulatory_nrb-forex.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:48:00.045Z",
+    "module": "Service_regulatory",
+    "tabPath": "bullion-rates",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_regulatory_bullion-rates.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:48:28.405Z",
+    "module": "Service_market",
+    "tabPath": "live-market",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_market_live-market.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:48:35.504Z",
+    "module": "Service_market",
+    "tabPath": "market-summary",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_market_market-summary.png"
+  },
+  {
+    "timestamp": "2026-11-20T12:48:54.663Z",
+    "module": "Service_market",
+    "tabPath": "52w-high",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_market_52w-high.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:01:41.617Z",
+    "module": "Service_regulatory",
+    "tabPath": "bullion-rates",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_regulatory_bullion-rates.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:01:48.778Z",
+    "module": "Service_regulatory",
+    "tabPath": "regulatory-circulars",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_regulatory_regulatory-circulars.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:01:56.012Z",
+    "module": "Service_regulatory",
+    "tabPath": "nrb-indicators",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_regulatory_nrb-indicators.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:02:38.933Z",
+    "module": "Service_market",
+    "tabPath": "live-market",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_market_live-market.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:02:46.130Z",
+    "module": "Service_market",
+    "tabPath": "market-summary",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_market_market-summary.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:02:53.053Z",
+    "module": "Service_market",
+    "tabPath": "sector-heatmap",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_market_sector-heatmap.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:03:01.713Z",
+    "module": "Service_market",
+    "tabPath": "market-depth",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_market_market-depth.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:06:04.941Z",
+    "module": "Service_trading",
+    "tabPath": "consolidating-stocks",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_trading_consolidating-stocks.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:12:29.161Z",
+    "module": "Service_valuation",
+    "tabPath": "promoter-shares",
+    "failureType": "CORRUPT_TEXT",
+    "uiRenderedValue": "\"Infinity Laghubitta Bittiya Sanstha Limited\" in <text-[10px] text-slate-400 font-sans truncate max-w-[170px]>; \"Infinity Laghubitta Bittiya Sanstha Limited Promoter Share\" in <text-[10px] text-slate-400 font-sans truncate max-w-[170px]>",
+    "details": "Rendered corrupt token (NaN/undefined/Infinity/Invalid Date) in UI",
+    "screenshotPath": "audit-reports/screenshots/corrupt_text_Service_valuation_promoter-shares.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:48:46.789Z",
+    "module": "StockTabs_NABIL",
+    "tabPath": "Floorsheet",
+    "failureType": "ZERO_DIM_CHART",
+    "details": "Visible Canvas has zero dimensions (0x212) | Visible Canvas has zero dimensions (0x212) | Visible Canvas has zero dimensions (0x28)",
+    "screenshotPath": "audit-reports/screenshots/chart_dim_StockTabs_NABIL_Floorsheet.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:57:26.642Z",
+    "module": "StockTabs_NABIL",
+    "tabPath": "Overview",
+    "failureType": "ZERO_DIM_CHART",
+    "details": "Visible Canvas has zero dimensions (0x212) | Visible Canvas has zero dimensions (0x212) | Visible Canvas has zero dimensions (0x28) | Visible Canvas has zero dimensions (0x232) | Visible Canvas has zero dimensions (0x232) | Visible Canvas has zero dimensions (0x28)",
+    "screenshotPath": "audit-reports/screenshots/chart_dim_StockTabs_NABIL_Overview.png"
+  },
+  {
+    "timestamp": "2026-11-20T13:57:32.734Z",
+    "module": "StockTabs_NABIL",
+    "tabPath": "Technicals",
+    "failureType": "ZERO_DIM_CHART",
+    "details": "Visible Canvas has zero dimensions (0x212) | Visible Canvas has zero dimensions (0x212) | Visible Canvas has zero dimensions (0x28)",
+    "screenshotPath": "audit-reports/screenshots/chart_dim_StockTabs_NABIL_Technicals.png"
+  },
+  {
+    "timestamp": "2026-11-20T15:42:44.234Z",
+    "module": "Service_valuation",
+    "tabPath": "float-analytics",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Service_valuation_float-analytics.png"
+  }
+]

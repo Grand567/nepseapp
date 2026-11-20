@@ -73,3 +73,11 @@ proxy/data/*.db
 proxy/proxy/
 agent-audit.jsonl
 
+# Test & Playwright execution artifacts
+test-results/
+playwright-report/
+audit-reports/playwright-report/
+audit-reports/screenshots/
+proxy/data/daily_selection_guide_state.json
+
+
