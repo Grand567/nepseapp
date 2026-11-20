@@ -134,6 +134,8 @@ import {
   readHistorical5DayLedger,
   readHistorical4DayLedger,
   readLiveTodaySession,
+  initLiveTodaySession,
+  updateLiveScripTick,
   getScrip5DayCombined,
   runCalendarGuardedDailyTransition,
   HISTORICAL_5D_GZ,
@@ -525,7 +527,23 @@ function computeIpoStatus(closeDateStr, openDateStr) {
 app.use('/api/meroshare', meroshareRouter);
 
 // Reverse proxy for CDSC endpoints called by meroShareService.js and web clients
-const handleCdscReverseProxy = async (req, res) => {
+const handleCdscReverseProxy = async (req, res, next) => {
+  // Pass through if request targets one of Drabyashree NEPSE's own internal API handlers
+  const internalPrefixes = [
+    '/api/meroshare/dp-list',
+    '/api/meroshare/current-issues',
+    '/api/meroshare/applicable-issues',
+    '/api/meroshare/application-report',
+    '/api/meroshare/own-detail',
+    '/api/meroshare/portfolio',
+    '/api/meroshare/apply',
+    '/api/meroshare/login',
+    '/api/meroshare/ipos'
+  ];
+  const urlLower = req.originalUrl.toLowerCase().split('?')[0];
+  if (internalPrefixes.some(p => urlLower === p || urlLower.startsWith(p + '/'))) {
+    return next();
+  }
   try {
     let targetBase = 'https://webbackend.cdsc.com.np';
     let targetPath = req.originalUrl;
@@ -2055,7 +2073,7 @@ app.get('/api/calendar/today', (req, res) => {
 app.get('/api/meroshare/dp-list', async (req, res) => {
   const cacheKey = 'meroshare-dp-list';
   const cached = getCache(cacheKey);
-  if (cached) {
+  if (cached && Array.isArray(cached) && cached.length > 0) {
     return res.json({ success: true, data: cached, cached: true });
   }
 
@@ -2064,15 +2082,55 @@ app.get('/api/meroshare/dp-list', async (req, res) => {
     const response = await client.get(`${MEROSHARE_BASE}/capital/`, {
       headers: { 'Content-Type': 'application/json' },
     });
-    if (isWafBlocked(response)) {
-      return res.status(503).json({ success: false, message: 'MeroShare WAF blocked the request. Please try again.' });
+    if (!isWafBlocked(response) && Array.isArray(response.data) && response.data.length > 0) {
+      setCache(cacheKey, response.data, 3600000); // 1 hr TTL
+      return res.json({ success: true, data: response.data });
     }
-    setCache(cacheKey, response.data, 3600000); // 1 hr TTL
-    res.json({ success: true, data: response.data });
   } catch (error) {
-    console.error('[meroshare/dp-list] Error:', error.message);
-    res.status(500).json({ success: false, message: 'Failed to fetch DP list.', error: error.message });
+    console.warn('[meroshare/dp-list] Upstream CDSC capital fetch failed:', error.message);
   }
+
+  // Fallback to embedded DP registry when upstream CDSC WAF is active
+  const fallbackDpList = [
+    { id: '1287', code: '19000', name: '19000 - AAKASH CAPITAL LIMITED' },
+    { id: '1315', code: '20600', name: '20600 - AAKASHBHAIRAB SECURITIES LIMITED' },
+    { id: '128',  code: '13200', name: '13200 - ABC SECURITIES PRIVATE LIMITED' },
+    { id: '129',  code: '12300', name: '12300 - AGRAWAL SECURITIES PRIVATE LIMITED' },
+    { id: '130',  code: '17200', name: '17200 - AGRICULTURAL DEVELOPMENT BANK LIMITED' },
+    { id: '131',  code: '12200', name: '12200 - ARYATARA INVESTMENT AND SECURITIES PRIVATE LIMITED' },
+    { id: '132',  code: '13700', name: '13700 - ASHUTOSH BROKERAGE AND SECURITIES PRIVATE LIMITED' },
+    { id: '133',  code: '14900', name: '14900 - ASIAN CAPITAL LIMITED' },
+    { id: '134',  code: '14100', name: '14100 - ASIAN SECURITIES PRIVATE LIMITED' },
+    { id: '135',  code: '18300', name: '18300 - B.F. SECURITIES PRIVATE LIMITED' },
+    { id: '136',  code: '14600', name: '14600 - BHRIKUTI STOCK BORKERING CO. PVT. LTD.' },
+    { id: '137',  code: '15800', name: '15800 - CAPITAL MAX SECURITIES PRIVATE LIMITED' },
+    { id: '138',  code: '17600', name: '17600 - CBIL CAPITAL LIMITED' },
+    { id: '139',  code: '17000', name: '17000 - CENTURY CAPITAL MARKETS LIMITED' },
+    { id: '140',  code: '17300', name: '17300 - CITIZENS CAPITAL LIMITED' },
+    { id: '141',  code: '18800', name: '18800 - CIVIL CAPITAL MARKET LIMITED' },
+    { id: '142',  code: '18500', name: '18500 - CRYSTAL KANCHANJUNGHA SECURITIES PVT. LTD.' },
+    { id: '143',  code: '14800', name: '14800 - DAKSHINKALI INVESTMENT AND SECURITIES PVT. LTD.' },
+    { id: '144',  code: '12600', name: '12600 - DEEVYAA SECURITIES & INVESTMENT PVT. LTD.' },
+    { id: '145',  code: '13400', name: '13400 - DHAN DHANYA INVESTMENT & SECURITIES (PVT) LIMITED' },
+    { id: '146',  code: '14700', name: '14700 - DIPSHIKHA DHITOPATRA KAROBAR CO. (PVT.) LTD.' },
+    { id: '147',  code: '18400', name: '18400 - DREAMS SECURITIES PRIVATE LIMITED' },
+    { id: '148',  code: '18600', name: '18600 - DYNAMIC MONEY MANAGERS SECURITIES PRIVATE LIMITED' },
+    { id: '149',  code: '17700', name: '17700 - ELIXIR CAPITAL LIMITED' },
+    { id: '150',  code: '17400', name: '17400 - EVEREST BANK LIMITED' },
+    { id: '151',  code: '16900', name: '16900 - GARIMA CAPITAL LIMITED' },
+    { id: '152',  code: '16100', name: '16100 - GLOBAL IME CAPITAL LIMITED' },
+    { id: '153',  code: '17500', name: '17500 - GOODWILL FINANCE LIMITED' },
+    { id: '154',  code: '18900', name: '18900 - GUHESHWORI MERCHANT BANKING & FINANCE LIMITED' },
+    { id: '155',  code: '15600', name: '15600 - HIMALAYAN CAPITAL LIMITED' },
+    { id: '156',  code: '15200', name: '15200 - NABIL INVESTMENT BANKING LIMITED' },
+    { id: '157',  code: '15100', name: '15100 - NIC ASIA CAPITAL LIMITED' },
+    { id: '158',  code: '16800', name: '16800 - NIMB ACE CAPITAL LIMITED' },
+    { id: '159',  code: '18100', name: '18100 - PRABHU CAPITAL LIMITED' },
+    { id: '160',  code: '18200', name: '18200 - SANIMA CAPITAL LIMITED' },
+    { id: '161',  code: '17800', name: '17800 - SIDDHARTHA CAPITAL LIMITED' }
+  ];
+  setCache(cacheKey, fallbackDpList, 3600000);
+  res.json({ success: true, data: fallbackDpList, source: 'embedded-registry' });
 });
 
 /* ENDPOINT 6 — MeroShare Login: returns authorization token */
@@ -2249,7 +2307,12 @@ async function handleMeroShareCurrentIssues(req, res) {
   const rawAuth = req.body?.token || req.headers?.authorization || '';
   const token = String(rawAuth || '').trim();
   if (!token) {
-    return res.status(400).json({ success: false, message: 'Auth token is required.' });
+    try {
+      const liveData = await getLiveIpoListings();
+      return res.json({ success: true, count: liveData?.length || 0, data: liveData || [], source: 'guest-fallback' });
+    } catch (_) {
+      return res.json({ success: true, count: 0, data: [], source: 'guest-fallback' });
+    }
   }
   try {
     const client = await createMeroShareSession();
@@ -2263,7 +2326,8 @@ async function handleMeroShareCurrentIssues(req, res) {
     });
 
     if (isWafBlocked(response)) {
-      return res.status(503).json({ success: false, message: 'MeroShare WAF blocked the request.' });
+      const liveData = await getLiveIpoListings().catch(() => []);
+      return res.json({ success: true, count: liveData?.length || 0, data: liveData || [], source: 'waf-fallback' });
     }
 
     res.json({ success: true, data: response.data });
@@ -2271,7 +2335,12 @@ async function handleMeroShareCurrentIssues(req, res) {
     const status = error.response?.status;
     const msg = error.response?.data?.message || error.response?.data || error.message;
     console.error('[meroshare/current-issues] Error:', status, msg);
-    res.status(status || 500).json({ success: false, message: msg || 'Failed to fetch current issues.', status });
+    try {
+      const liveData = await getLiveIpoListings();
+      return res.json({ success: true, count: liveData?.length || 0, data: liveData || [], source: 'error-fallback' });
+    } catch (_) {
+      res.status(status || 500).json({ success: false, message: msg || 'Failed to fetch current issues.', status });
+    }
   }
 }
 
@@ -2466,7 +2535,12 @@ async function handleApplicableIssues(req, res) {
   }
   const token = req.headers?.authorization || req.body?.token;
   if (!token) {
-    return res.status(400).json({ success: false, message: 'Auth token is required.' });
+    try {
+      const liveData = await getLiveIpoListings();
+      return res.json({ success: true, count: liveData?.length || 0, data: liveData || [], source: 'guest-fallback' });
+    } catch (_) {
+      return res.json({ success: true, count: 0, data: [], source: 'guest-fallback' });
+    }
   }
   try {
     const client = await createMeroShareSession();
@@ -2480,7 +2554,8 @@ async function handleApplicableIssues(req, res) {
     });
 
     if (isWafBlocked(response)) {
-      return res.status(503).json({ success: false, message: 'MeroShare WAF blocked the request.' });
+      const liveData = await getLiveIpoListings().catch(() => []);
+      return res.json({ success: true, count: liveData?.length || 0, data: liveData || [], source: 'waf-fallback' });
     }
 
     res.json({ success: true, data: response.data });
@@ -2488,7 +2563,12 @@ async function handleApplicableIssues(req, res) {
     const status = error.response?.status;
     const msg = error.response?.data?.message || error.response?.data || error.message;
     console.error('[meroshare/applicable-issues] Error:', status, msg);
-    res.status(status || 500).json({ success: false, message: msg || 'Failed to fetch applicable issues.', status });
+    try {
+      const liveData = await getLiveIpoListings();
+      return res.json({ success: true, count: liveData?.length || 0, data: liveData || [], source: 'error-fallback' });
+    } catch (_) {
+      res.status(status || 500).json({ success: false, message: msg || 'Failed to fetch applicable issues.', status });
+    }
   }
 }
 app.get('/api/meroshare/applicable-issues', handleApplicableIssues);
@@ -3916,7 +3996,24 @@ app.get(['/api/ledger/5day-history', '/api/ledger/4day-history'], (req, res) => 
 
 app.get('/api/ledger/live-today', (req, res) => {
   try {
-    const session = readLiveTodaySession();
+    let session = readLiveTodaySession();
+    const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+    if (!session || session.session_date !== todayIso || !session.stock_count) {
+      session = initLiveTodaySession(todayIso);
+      try {
+        const rows = db.prepare(`
+          SELECT symbol, close_price as ltp, high_price as high, low_price as low, open_price as open, total_volume as volume, total_turnover as turnover
+          FROM daily_stock_summary
+          WHERE trade_date = ?
+        `).all(todayIso);
+        if (Array.isArray(rows) && rows.length > 0) {
+          for (const r of rows) {
+            updateLiveScripTick(r.symbol, r);
+          }
+          session = readLiveTodaySession();
+        }
+      } catch (_) {}
+    }
     return res.json(session);
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

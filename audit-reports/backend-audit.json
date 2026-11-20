@@ -1,0 +1,784 @@
+{
+  "auditTimestamp": "2026-11-20T11:35:10.255Z",
+  "auditTarget": "Drabyashree NEPSE Local Backend + SQLite Ledger",
+  "dbPath": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\drabyashree_ledger.db",
+  "apiBase": "http://127.0.0.1:5000",
+  "marketState": {
+    "isOpen": false,
+    "sessionDate": "2026-11-23",
+    "sessionLabel": "Post-Market Analysis Session"
+  },
+  "summary": {
+    "totalEndpointsAudited": 62,
+    "passedEndpoints": 62,
+    "failedEndpoints": 0,
+    "historicalIntegrityPassed": true,
+    "staleOrEmptyFeedsIdentified": 1
+  },
+  "freshnessAudit": [
+    {
+      "tableOrFeed": "daily_stock_summary",
+      "type": "SQLITE_TABLE",
+      "latestDateOrTime": "2026-11-20",
+      "rowCountOrEntities": 67994,
+      "isStaleOrEmpty": false,
+      "status": "PASS",
+      "details": "Latest record: 2026-11-20 (67994 rows)"
+    },
+    {
+      "tableOrFeed": "daily_broker_ledger",
+      "type": "SQLITE_TABLE",
+      "latestDateOrTime": "2026-11-20",
+      "rowCountOrEntities": 533728,
+      "isStaleOrEmpty": false,
+      "status": "PASS",
+      "details": "Latest record: 2026-11-20 (533728 rows)"
+    },
+    {
+      "tableOrFeed": "algorithmic_signal_ledger",
+      "type": "SQLITE_TABLE",
+      "latestDateOrTime": "2026-11-19",
+      "rowCountOrEntities": 123,
+      "isStaleOrEmpty": false,
+      "status": "PASS",
+      "details": "Latest record: 2026-11-19 (123 rows)"
+    },
+    {
+      "tableOrFeed": "floorsheet_contracts",
+      "type": "SQLITE_TABLE",
+      "latestDateOrTime": "2026-11-20T14:56:06.567052",
+      "rowCountOrEntities": 1342544,
+      "isStaleOrEmpty": false,
+      "status": "PASS",
+      "details": "Latest record: 2026-11-20T14:56:06.567052 (1342544 rows)"
+    },
+    {
+      "tableOrFeed": "market_depth_cache",
+      "type": "SQLITE_TABLE",
+      "latestDateOrTime": "2026-11-20T08:34:02.223Z",
+      "rowCountOrEntities": 1,
+      "isStaleOrEmpty": false,
+      "status": "PASS",
+      "details": "Latest record: 2026-11-20T08:34:02.223Z (1 rows)"
+    },
+    {
+      "tableOrFeed": "scrip_fundamentals",
+      "type": "SQLITE_TABLE",
+      "latestDateOrTime": "2026-11-01 11:45:23",
+      "rowCountOrEntities": 390,
+      "isStaleOrEmpty": false,
+      "status": "PASS",
+      "details": "Latest record: 2026-11-01 11:45:23 (390 rows)"
+    },
+    {
+      "tableOrFeed": "daily_ingestion_log",
+      "type": "SQLITE_TABLE",
+      "latestDateOrTime": "2026-11-20T09:16:50.857Z",
+      "rowCountOrEntities": 15,
+      "isStaleOrEmpty": false,
+      "status": "PASS",
+      "details": "Latest record: 2026-11-20T09:16:50.857Z (15 rows)"
+    },
+    {
+      "tableOrFeed": "official_exchange_benchmarks",
+      "type": "SQLITE_TABLE",
+      "latestDateOrTime": "2026-11-20",
+      "rowCountOrEntities": 41,
+      "isStaleOrEmpty": false,
+      "status": "PASS",
+      "details": "Latest record: 2026-11-20 (41 rows)"
+    },
+    {
+      "tableOrFeed": "Express /api/ledger/live-today",
+      "type": "EXPRESS_FEED",
+      "latestDateOrTime": "2026-11-20",
+      "rowCountOrEntities": 295,
+      "isStaleOrEmpty": true,
+      "status": "WARN",
+      "details": "Session date: 2026-11-20, Stock count: 295, Last updated: 2026-11-20T11:34:42.504Z"
+    },
+    {
+      "tableOrFeed": "Express /api/today-prices",
+      "type": "EXPRESS_FEED",
+      "latestDateOrTime": "2026-11-23",
+      "rowCountOrEntities": 352,
+      "isStaleOrEmpty": false,
+      "status": "PASS",
+      "details": "Active live securities in feed: 352"
+    }
+  ],
+  "historicalIntegrityAudit": [
+    {
+      "table": "daily_stock_summary",
+      "check": "Unique (symbol, trade_date) Primary Key Constraint",
+      "passed": true,
+      "violationsCount": 0,
+      "sampleViolations": [],
+      "description": "Ensure no stock has multiple daily bars for the same calendar trade date"
+    },
+    {
+      "table": "daily_stock_summary",
+      "check": "OHLCV Numeric Validity & High/Low Bounds",
+      "passed": true,
+      "violationsCount": 0,
+      "sampleViolations": [],
+      "description": "Verify close > 0, high >= low, volume >= 0, turnover >= 0"
+    },
+    {
+      "table": "daily_stock_summary",
+      "check": "Trading Calendar Continuity (No Unaccounted Date Gaps)",
+      "passed": true,
+      "violationsCount": 3,
+      "sampleViolations": [
+        {
+          "prev": "2026-03-03",
+          "next": "2026-03-09",
+          "dayGap": 6
+        },
+        {
+          "prev": "2026-10-16",
+          "next": "2026-10-25",
+          "dayGap": 9
+        },
+        {
+          "prev": "2026-11-06",
+          "next": "2026-11-13",
+          "dayGap": 7
+        }
+      ],
+      "description": "Analyzed 244 distinct trading sessions. Identified 3 extended breaks (e.g. festivals)."
+    },
+    {
+      "table": "daily_broker_ledger",
+      "check": "Unique (trade_date, symbol, broker_id) Key Constraint",
+      "passed": true,
+      "violationsCount": 0,
+      "sampleViolations": [],
+      "description": "Each broker-symbol pair must have at most 1 ledger row per trading date"
+    },
+    {
+      "table": "daily_broker_ledger",
+      "check": "Non-Negative Broker Buy/Sell Quantities & Amounts",
+      "passed": true,
+      "violationsCount": 0,
+      "sampleViolations": [],
+      "description": "Broker buy/sell volumes and amounts must be strictly non-negative"
+    },
+    {
+      "table": "floorsheet_contracts",
+      "check": "Floorsheet Contract Price, Kitta & Amount Positivity",
+      "passed": true,
+      "violationsCount": 0,
+      "sampleViolations": [],
+      "description": "Floorsheet trades must have rate > 0, kitta > 0, amount > 0"
+    },
+    {
+      "table": "floorsheet_contracts -> daily_stock_summary",
+      "check": "Exact Rollup Parity between Trade Contracts & Stock Volume (2026-11-19)",
+      "passed": true,
+      "violationsCount": 0,
+      "sampleViolations": [],
+      "description": "Compared contract volume sums vs official stock volume for 2026-11-19"
+    }
+  ],
+  "distributionParityAudit": [
+    {
+      "endpoint": "/api/stock-detail/NABIL",
+      "module": "Stock Tabs: Overview & Valuation",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 375,
+      "dataCountOrKeys": 2,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/mero/stock-details/NABIL",
+      "module": "Stock Tabs: Overview (MeroShare)",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 280,
+      "dataCountOrKeys": 2,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/company/NABIL",
+      "module": "Stock Tabs: Overview Profile",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 243,
+      "dataCountOrKeys": 2,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/price-history/NABIL?length=10",
+      "module": "Stock Tabs: Price History",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 81,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/broker-analysis/NABIL?days=5",
+      "module": "Stock Tabs: Broker Flow",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 82,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/smart-money/broker-heatmap?symbol=NABIL",
+      "module": "Stock Tabs: Broker Heatmap",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 745,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/floorsheet/NABIL?limit=50",
+      "module": "Stock Tabs: Floorsheet",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 149,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/nepse/market-depth/NABIL",
+      "module": "Stock Tabs: Market Depth",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 20,
+      "dataCountOrKeys": 2,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/dividend-history/NABIL",
+      "module": "Stock Tabs: Dividends & Rights",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 5576,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/stocks/NABIL/telemetry",
+      "module": "Stock Tabs: Telemetry & Signals",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 1017,
+      "dataCountOrKeys": 23,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/diagnostics/NABIL",
+      "module": "Stock Tabs: Technicals & Diagnostics",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 65,
+      "dataCountOrKeys": 7,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/compare/NABIL/GBIME",
+      "module": "Stock Tabs: Compare Peers",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 225,
+      "dataCountOrKeys": 2,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/price-history/CHCL?length=10",
+      "module": "Stock Tabs: Hydropower (CHCL)",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 53,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/broker-analysis/CHCL?days=5",
+      "module": "Stock Tabs: Hydropower Broker Flow",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 75,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/price-history/CBBL?length=10",
+      "module": "Stock Tabs: Microfinance (CBBL)",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 80,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/broker-analysis/CBBL?days=5",
+      "module": "Stock Tabs: Microfinance Broker Flow",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 49,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/market-summary",
+      "module": "Services: Market Summary",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 112,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/today-prices",
+      "module": "Services: Live Today Prices",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 22,
+      "dataCountOrKeys": 5,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/market-indices",
+      "module": "Services: Market Indices",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 45,
+      "dataCountOrKeys": 2,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/securities/all",
+      "module": "Services: Securities Directory",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 69,
+      "dataCountOrKeys": 5,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/sector-heatmap",
+      "module": "Services: Sector Heatmap",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 52,
+      "dataCountOrKeys": 2,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/smart-money/sector-ad",
+      "module": "Services: Smart Money Sector A/D",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 10,
+      "dataCountOrKeys": 2,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/brokers/directory",
+      "module": "Services: Brokers Directory",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 4,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/market/broker-summary?date=2026-11-19",
+      "module": "Services: Market Broker Summary",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 61,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/smart-money/broker-desk/58",
+      "module": "Services: Broker 58 Desk Analysis",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 651,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/smart-money/broker-holdings/58",
+      "module": "Services: Broker 58 Holdings",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 30,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/floorsheet/daily-archive",
+      "module": "Services: Floorsheet Daily Archive",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 15,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/floorsheet/cloud/status",
+      "module": "Services: Floorsheet Cloud Status",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 941,
+      "dataCountOrKeys": 8,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/floorsheet/archives",
+      "module": "Services: Floorsheet Archives List",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 18,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/ledger/live-today",
+      "module": "Services: Live Today Session",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 13,
+      "dataCountOrKeys": 6,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/ipo/pipeline",
+      "module": "Services: IPO Pipeline",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 14,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/ipo/live-listings",
+      "module": "Services: IPO Live Listings",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 560,
+      "dataCountOrKeys": 6,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/ipo-result/companies",
+      "module": "Services: IPO Result Companies",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 616,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/news/merolagani",
+      "module": "Services: Merolagani News Feed",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 409,
+      "dataCountOrKeys": 2,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/holidays",
+      "module": "Services: Trading Holidays Calendar",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 27,
+      "dataCountOrKeys": 6,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/calendar/month",
+      "module": "Services: Bikram Sambat Monthly Calendar",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 403,
+      "dataCountOrKeys": 9,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/calendar/today",
+      "module": "Services: Today Calendar Status",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 11,
+      "dataCountOrKeys": 6,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/radar/broker-tracker",
+      "module": "Services: Broker Tracker Radar",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 3430,
+      "dataCountOrKeys": 10,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/radar/early-ignition",
+      "module": "Services: Early Ignition Radar",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 23,
+      "dataCountOrKeys": 10,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/signals/track-record",
+      "module": "Services: Signal Track Record",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 188,
+      "dataCountOrKeys": 11,
+      "numericalParityMatches": true,
+      "parityDiscrepancies": []
+    },
+    {
+      "endpoint": "/api/nepse/full-index",
+      "module": "Market: Full Index Values",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 63,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/nepse/intraday-graph",
+      "module": "Market: Intraday Index Graph",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 106,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/market/top-gainers",
+      "module": "Market: Top 10 Gainers",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 39,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/market/top-losers",
+      "module": "Market: Top 10 Losers",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 41,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/market/top-volume",
+      "module": "Market: Top 10 Volume",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 30,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/market/top-turnover",
+      "module": "Market: Top 10 Turnover",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 48,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/market/top-transactions",
+      "module": "Market: Top 10 Transactions",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 189,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/meroshare/ipos",
+      "module": "IPO & Portfolio: MeroShare Current IPOs",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 6,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/meroshare/applicable-issues",
+      "module": "IPO & Portfolio: Applicable Issues",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 15,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/meroshare/current-issues",
+      "module": "IPO & Portfolio: Current Issues",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 16,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/meroshare/dp-list",
+      "module": "IPO & Portfolio: DP Brokers List",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 66,
+      "dataCountOrKeys": 2,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/portfolio/tracked-holdings",
+      "module": "IPO & Portfolio: Tracked Holdings",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 12,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/portfolio-shield",
+      "module": "IPO & Portfolio: Portfolio Shield",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 1777,
+      "dataCountOrKeys": 5,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/predict/nepse",
+      "module": "Predictor: NEPSE Direction Prediction",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 373,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/predict/stocks",
+      "module": "Predictor: Scored Stocks Ranking",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 37,
+      "dataCountOrKeys": 4,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/predict/sentiment",
+      "module": "Predictor: News Sentiment Score",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 19,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/predict/macro",
+      "module": "Predictor: Macroeconomic Indicators",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 15,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/predict/events",
+      "module": "Predictor: Political & Policy Events",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 3,
+      "dataCountOrKeys": 2,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/predictor/NABIL",
+      "module": "Predictor: Single Stock Predictor (NABIL)",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 17,
+      "dataCountOrKeys": 3,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/ai-guru/assess?symbol=NABIL",
+      "module": "Guru AI: Institutional Quantitative Assessment (NABIL)",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 19,
+      "dataCountOrKeys": 10,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/ai-guru/assess?symbol=CHCL",
+      "module": "Guru AI: Institutional Quantitative Assessment (CHCL)",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 11,
+      "dataCountOrKeys": 10,
+      "numericalParityMatches": true
+    },
+    {
+      "endpoint": "/api/ai-guru/assess?symbol=CBBL",
+      "module": "Guru AI: Institutional Quantitative Assessment (CBBL)",
+      "httpStatus": 200,
+      "passed": true,
+      "responseTimeMs": 15,
+      "dataCountOrKeys": 10,
+      "numericalParityMatches": true
+    }
+  ]
+}

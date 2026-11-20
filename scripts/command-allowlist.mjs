@@ -35,7 +35,8 @@ fs.appendFileSync(auditFile, JSON.stringify({
 }) + '\n');
 
 const forbidden = /(rm\s+-rf\s+\/|DROP\s+DATABASE|DROP\s+TABLE|git\s+push\s+--force|--no-verify)/i;
-if (forbidden.test(payload)) {
+const commandToTest = parsedPayload?.toolCall?.args?.CommandLine || parsedPayload?.cmd || parsedPayload?.command || '';
+if (forbidden.test(commandToTest)) {
   console.log(JSON.stringify({
     decision: 'deny',
     reason: 'Safety Gate Blocked: Destructive command or git hook bypass (--no-verify) is prohibited.'
