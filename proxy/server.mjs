@@ -3191,6 +3191,35 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
       setCache(cacheKey, detail, 2 * 60 * 60 * 1000);
       return detail;
     }
+    // Fallback to SQLite scrip_fundamentals and daily_stock_summary before throwing
+    try {
+      const fund = db.prepare('SELECT * FROM scrip_fundamentals WHERE symbol = ?').get(symbol);
+      if (fund) {
+        if (!detail.eps) detail.eps = fund.eps_ttm || 0;
+        if (!detail.bookValue) detail.bookValue = fund.book_value_per_share || 0;
+        if (!detail.roe) detail.roe = fund.roe_pct || 0;
+        if (!detail.npl) detail.npl = fund.npl_pct;
+        if (!detail.sector) detail.sector = fund.sector || '';
+        if (!detail.paidUpCapital) detail.paidUpCapital = fund.paid_up_capital || 0;
+        if (!detail.promoterPercentage) detail.promoterPercentage = fund.promoter_share_pct;
+        if (!detail.publicPercentage) detail.publicPercentage = fund.public_share_pct;
+      }
+      const st = db.prepare('SELECT * FROM daily_stock_summary WHERE symbol = ? ORDER BY trade_date DESC LIMIT 1').get(symbol);
+      if (st) {
+        if (!detail.marketPrice) detail.marketPrice = st.close_price;
+        if (!detail.closePrice) detail.closePrice = st.close_price;
+        if (!detail.openPrice) detail.openPrice = st.open_price;
+        if (!detail.highPrice) detail.highPrice = st.high_price;
+        if (!detail.lowPrice) detail.lowPrice = st.low_price;
+        if (!detail.prevClose) detail.prevClose = st.prev_close;
+      }
+      if (detail.marketPrice > 0) {
+        if (detail.pe === 0 && detail.eps > 0) detail.pe = Number((detail.marketPrice / detail.eps).toFixed(2));
+        if (detail.pbv === 0 && detail.bookValue > 0) detail.pbv = Number((detail.marketPrice / detail.bookValue).toFixed(2));
+        setCache(cacheKey, detail, 2 * 60 * 60 * 1000);
+        return detail;
+      }
+    } catch (_) {}
     throw error;
   }
 }
@@ -3520,6 +3549,27 @@ app.get('/api/mero/stock-details/:symbol', async (req, res) => {
     });
     res.json({ success: true, data: details });
   } catch (err) {
+    try {
+      const sym = (req.params.symbol || '').toUpperCase().trim();
+      const fund = db.prepare('SELECT * FROM scrip_fundamentals WHERE symbol = ?').get(sym);
+      const st = db.prepare('SELECT * FROM daily_stock_summary WHERE symbol = ? ORDER BY trade_date DESC LIMIT 1').get(sym);
+      if (fund || st) {
+        const details = {
+          sector: fund?.sector || '',
+          sharesOutstanding: fund?.public_float_kitta || 0,
+          marketCap: st ? (st.close_price * (fund?.public_float_kitta || 0)) : 0,
+          eps: fund?.eps_ttm || 0,
+          pe: (st && fund?.eps_ttm) ? +(st.close_price / fund.eps_ttm).toFixed(2) : 0,
+          bookValue: fund?.book_value_per_share || 0,
+          pbv: (st && fund?.book_value_per_share) ? +(st.close_price / fund.book_value_per_share).toFixed(2) : 0,
+          divYield: 0,
+          high52w: st?.high_price || 0,
+          low52w: st?.low_price || 0,
+          avg120: st?.close_price || 0
+        };
+        return res.json({ success: true, data: details });
+      }
+    } catch (_) {}
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -5688,9 +5738,9 @@ export async function getDividendHistoryInternal(rawSymbol) {
     }
 
     // ── 1. ShareSansar corporate actions (primary for detailed bonus, cash & rights) ──
-    try {
+    if (fyMap.size === 0) try {
       const ssJar = new CookieJar();
-      const ssClient = wrapper(axios.create({ jar: ssJar, headers: HEADERS, timeout: 8000 }));
+      const ssClient = wrapper(axios.create({ jar: ssJar, headers: HEADERS, timeout: 2500 }));
       const ssPage = await ssClient.get(`https://www.sharesansar.com/company/${symbol}`);
       const $ss = cheerio.load(ssPage.data);
       const token = $ss('meta[name=_token]').attr('content');
@@ -5775,9 +5825,9 @@ export async function getDividendHistoryInternal(rawSymbol) {
     }
 
     // ── 2. Merolagani scraping (panel-targeted for clean cash, bonus, and rights) ──
-    try {
+    if (fyMap.size === 0) try {
       const mlHtml = await axios.get(`https://merolagani.com/CompanyDetail.aspx?symbol=${symbol}`, {
-        headers: HEADERS, timeout: 8000
+        headers: HEADERS, timeout: 2500
       }).then(r => r.data).catch(() => null);
 
       if (mlHtml) {
@@ -8030,6 +8080,10 @@ app.get(['/api/stocks/:symbol/telemetry', '/api/stocks/:symbol/telemetry/'], asy
   const symbol = sanitizeSymbol(req.params.symbol);
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol is required' });
 
+  const cacheKey = `stock-telemetry-${symbol}`;
+  const cached = getCache(cacheKey);
+  if (cached) return res.json(cached);
+
   try {
     const [ledgerData, volumeProfile, contracts, depth] = await Promise.all([
       (async () => {
@@ -8046,7 +8100,7 @@ app.get(['/api/stocks/:symbol/telemetry', '/api/stocks/:symbol/telemetry/'], asy
       })(),
     ]);
 
-    return res.json({
+    const payload = {
       success: true,
       symbol,
       ledger: ledgerData,
@@ -8054,7 +8108,9 @@ app.get(['/api/stocks/:symbol/telemetry', '/api/stocks/:symbol/telemetry/'], asy
       floorsheetTape: contracts,
       marketDepth: depth,
       asOf: new Date().toISOString(),
-    });
+    };
+    setCache(cacheKey, payload, 60000);
+    return res.json(payload);
   } catch (err) {
     return res.status(500).json({ success: false, symbol, error: err.message });
   }

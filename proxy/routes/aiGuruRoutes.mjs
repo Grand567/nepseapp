@@ -356,7 +356,7 @@ export async function generateAiGuruNarrative(assessment) {
             contents: [{ role: 'user', parts: [{ text: assessment.aiPromptContext }] }],
             generationConfig: { temperature: 0.2, maxOutputTokens: 700 },
           }),
-          signal: AbortSignal.timeout(12000),
+          signal: AbortSignal.timeout(3500),
         }
       );
 
@@ -392,7 +392,7 @@ export async function generateAiGuruNarrative(assessment) {
             { role: 'user', content: assessment.aiPromptContext },
           ],
         }),
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(3500),
       });
 
       if (res.ok) {
@@ -620,6 +620,7 @@ router.all('/assess', async (req, res) => {
     const { markdown, engine } = await generateAiGuruNarrative(assessment);
 
     return res.json({
+      success: true,
       ...assessment,
       analysisMarkdown: markdown,
       engine,

@@ -117,7 +117,7 @@ export async function getLiveIpoListings(forceRefresh = false) {
         'X-Requested-With': 'XMLHttpRequest',
         'Referer': 'https://www.nepalipaisa.com/ipo'
       },
-      timeout: 5000
+      timeout: 2500
     });
     const dataList = npRes.data?.result?.data;
     if (Array.isArray(dataList) && dataList.length > 0) {
@@ -183,7 +183,7 @@ export async function getLiveIpoListings(forceRefresh = false) {
     try {
       const resp = await axios.get('https://www.sharesansar.com/ipo', {
         headers: HEADERS,
-        timeout: 6000
+        timeout: 2500
       });
       const $ = cheerio.load(resp.data);
       $('table tbody tr').each((i, row) => {
@@ -231,7 +231,7 @@ export async function getLiveIpoListings(forceRefresh = false) {
     try {
       const resp = await axios.get('https://merolagani.com/IPO.aspx', {
         headers: HEADERS,
-        timeout: 5000
+        timeout: 2500
       });
       const $ = cheerio.load(resp.data);
       $('table tbody tr, .ipo-list tr').each((i, row) => {
