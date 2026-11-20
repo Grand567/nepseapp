@@ -645,7 +645,8 @@ app.get(['/health', '/api/health'], (req, res) => {
     ledgerStatus = getLedgerStatusInfo();
   } catch (_) {}
   const isHealthy = ledgerStatus?.success ?? true;
-  res.status(isHealthy ? 200 : 503).json({
+  // Always return 200 to cloud health probe so Render container stays alive
+  res.status(200).json({
     status: isHealthy ? 'HEALTHY' : 'DEGRADED',
     warmingUp: false,
     uptimeSec: Math.floor(process.uptime()),

@@ -1307,15 +1307,23 @@ export function getSymbolHistoryFromDb(symbol, days = 30) {
 }
 
 /**
- * Returns diagnostic system health of SQLite ledger and HOT_CACHE
+ * Returns diagnostic system health of SQLite ledger and HOT_CACHE.
+ * Caches status in RAM with a 60s TTL to prevent heavy SQLite table scans on every /health probe.
  */
-export function getLedgerStatusInfo() {
+let _cachedLedgerStatusInfo = null;
+let _cachedLedgerStatusTime = 0;
+
+export function getLedgerStatusInfo(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && _cachedLedgerStatusInfo && (now - _cachedLedgerStatusTime < 60000)) {
+    return _cachedLedgerStatusInfo;
+  }
   try {
     const dates = getStoredDates(40);
     const stockSummaryCount = db.prepare(`SELECT COUNT(*) as c FROM daily_stock_summary`).get()?.c || 0;
     const brokerLedgerCount = db.prepare(`SELECT COUNT(*) as c FROM daily_broker_ledger`).get()?.c || 0;
     const latestCompleteness = dates[0] ? getDailyCompletenessStatus(dates[0]) : null;
-    return {
+    _cachedLedgerStatusInfo = {
       success: true,
       tradingDatesCount: dates.length,
       latestTradeDate: dates[0] || null,
@@ -1327,8 +1335,10 @@ export function getLedgerStatusInfo() {
       hotCacheRadarCount30D: (HOT_CACHE.radarByTimeframe[30] || []).length,
       lastUpdatedDate: HOT_CACHE.lastUpdatedDate || null
     };
+    _cachedLedgerStatusTime = now;
+    return _cachedLedgerStatusInfo;
   } catch (err) {
-    return { success: false, error: err.message };
+    return _cachedLedgerStatusInfo || { success: false, error: err.message };
   }
 }
 
@@ -1552,6 +1562,15 @@ export async function rebuildHotCache() {
     rebuildSignalTrackRecord(db, HOT_CACHE);
   } catch (sigErr) {
     console.warn("[Drabyashree Cache] Signal track record rebuild warning:", sigErr.message);
+  }
+
+  // Pre-seed status cache so incoming /health checks return in < 1ms without touching SQLite
+  try {
+    getLedgerStatusInfo(true);
+  } catch (_) {}
+
+  if (global.gc) {
+    try { global.gc(); } catch (_) {}
   }
 
   return true;

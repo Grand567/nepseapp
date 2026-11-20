@@ -6,7 +6,7 @@
   "main": "server.mjs",
   "scripts": {
     "postinstall": "node scripts/patchNepsemanTls.cjs",
-    "start": "node --max-old-space-size=440 server.mjs",
+    "start": "node --max-old-space-size=380 --expose-gc server.mjs",
     "keepalive": "node keepalive.mjs"
   },
   "dependencies": {

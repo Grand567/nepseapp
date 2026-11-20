@@ -403,15 +403,20 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
     return null;
   }
 
-  // Fast-Path: If algorithmic_signal_ledger already has computed signals AND covers the latest trading session
-  // in daily_stock_summary (and force is not set), load the precomputed signals directly from SQLite in ~3ms.
-  // If new trading sessions have been ingested (latestSummaryDate > latestSignalEvalDate), automatically
-  // force a walk-forward rebuild so new signals and forward T+2 exits roll forward automatically!
+  // Fast-Path: If algorithmic_signal_ledger already has computed signals, load them directly from SQLite in ~3ms.
+  // In low-memory environments (Render Free Tier 512MB RAM), never attempt a 500k-row walk-forward scan on boot.
   const existingMeta = db.prepare("SELECT COUNT(*) as c, MAX(signal_date) as maxSigDate, MAX(COALESCE(exit_date, signal_date)) as maxEvalDate FROM algorithmic_signal_ledger").get();
   const existingCount = existingMeta?.c || 0;
   const latestSummaryDate = dates[dates.length - 1] || '';
   const isUpToDateWithLedger = existingMeta?.maxEvalDate >= latestSummaryDate || existingMeta?.maxSigDate >= latestSummaryDate;
-  if (existingCount > 0 && isUpToDateWithLedger && !options.force) {
+  if (existingCount > 0 && (isUpToDateWithLedger || process.env.RENDER || process.env.NODE_ENV === 'production') && !options.force) {
+    const signals = db.prepare("SELECT * FROM algorithmic_signal_ledger").all();
+    return finalizeSignalTrackRecord(db, HOT_CACHE, signals, dates, t0);
+  }
+
+  // Cloud & Free Tier RSS Guard: Never pull 500k+ broker rows at once on Render Free Tier
+  if ((process.env.RENDER || process.env.NODE_ENV === 'production') && !options.force) {
+    console.warn(`[SignalTracker] Production/Render 512MB memory guard: Preserving RSS ceiling; using existing ${existingCount} signals without full walk-forward recalculation.`);
     const signals = db.prepare("SELECT * FROM algorithmic_signal_ledger").all();
     return finalizeSignalTrackRecord(db, HOT_CACHE, signals, dates, t0);
   }
