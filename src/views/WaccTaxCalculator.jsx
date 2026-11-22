@@ -7,6 +7,7 @@ import {
   DP_CHARGE
 } from '../utils/calculations.js';
 import { formatNptDateIso } from '../utils/nepseCalendar.js';
+import { bsToAd } from '../utils/bikramSambat.js';
 
 export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
   const isNe = lang === 'ne';
@@ -503,7 +504,20 @@ export function calculateFifoWaccAndSegregatedCgt(lots = [], sellOrder = null) {
     lot.remainingQty -= matchedQty;
     qtyToMatch -= matchedQty;
 
-    const buyDateObj = new Date(lot.date);
+    const parseLotDateToAd = (dateStr) => {
+      if (!dateStr) return new Date();
+      const parts = String(dateStr).split(/[-/]/).map(p => parseInt(p, 10));
+      if (parts.length === 3) {
+        const [y, m, d] = parts;
+        if (y >= 2000 && y <= 2095) {
+          const ad = bsToAd(y, m, d);
+          if (ad instanceof Date && !isNaN(ad.getTime())) return ad;
+        }
+      }
+      return new Date(dateStr);
+    };
+
+    const buyDateObj = parseLotDateToAd(lot.date);
     const holdingDays = Math.max(1, Math.floor((sellDateObj - buyDateObj) / (1000 * 60 * 60 * 24)));
     const isLongTerm = holdingDays > 365;
 

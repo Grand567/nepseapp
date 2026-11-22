@@ -131,8 +131,8 @@ export function calculateNepseCorporateActionAdjustment({
 function parseCorporateAction(action) {
   if (!action) return null;
 
-  // Determine the ex-date: prefer 'exDate', fallback to 'bookCloseDate' or 'date'
-  const rawDate = action.exDate || action.bookCloseDate || action.date;
+  // Determine the ex-date: prefer 'exDate', fallback to 'bookCloseDate', 'bookClosure', 'bookclose_date' or 'date'
+  const rawDate = action.exDate || action.bookCloseDate || action.bookClosure || action.bookclose_date || action.date;
   if (!rawDate) return null;
   const date = String(rawDate).slice(0, 10); // YYYY-MM-DD
 

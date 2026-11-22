@@ -139,12 +139,17 @@ export function evaluateTrailingRatchet({
 
   // ── Step 2: Check Target 1 (Partial 50% Profit & Ratchet to +1.0R) ──
   if (!position.t1Banked && high >= position.target1) {
-    takePartial = true;
-    partialQty = Math.floor(position.shares / 2);
-    // Elevate stop-loss to at least +1.0R floor to protect gains on the remainder
-    currentStop = Math.max(currentStop, levels.profitLockedFloor);
-    stage = 'PROFIT_LOCKED';
-    notes.push(`Target 1 reached (+1.5R at Rs. ${position.target1}). Banked 50% shares (${partialQty} kitta). Runner stop-loss elevated to Rs. ${currentStop} (+1R floor).`);
+    if (isSettledInDemat) {
+      takePartial = true;
+      partialQty = Math.floor(position.shares / 2);
+      // Elevate stop-loss to at least +1.0R floor to protect gains on the remainder
+      currentStop = Math.max(currentStop, levels.profitLockedFloor);
+      stage = 'PROFIT_LOCKED';
+      notes.push(`Target 1 reached (+1.5R at Rs. ${position.target1}). Banked 50% shares (${partialQty} kitta). Runner stop-loss elevated to Rs. ${currentStop} (+1R floor).`);
+    } else {
+      blockedSettlement = true;
+      notes.push(`Target 1 reached at Rs. ${position.target1}, but partial scale-out sale blocked by NEPSE T+2 Demat Settlement Lock.`);
+    }
   }
 
   // ── Step 3: Check Breakeven Armor Trigger (+1.0R Gain) ──

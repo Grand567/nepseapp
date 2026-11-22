@@ -989,8 +989,11 @@ export function parseMeroShareCsv(csvContent) {
   const currentUnitsIdx  = headers.findIndex(h => h.includes('current balance') || h.includes('total balance') || h.includes('balance') || h.includes('kitta') || h.includes('qty') || h.includes('quantity'));
   const freeUnitsIdx     = headers.findIndex(h => h.includes('free balance'));
   const freezeUnitsIdx   = headers.findIndex(h => h.includes('freeze') || h.includes('frozen'));
-  const prevCloseIdx     = headers.findIndex(h => h.includes('previous closing') || h.includes('demat value'));
-  const valPrevCloseIdx  = headers.findIndex(h => h.includes('value as of previous') || h.includes('previous closing price value'));
+  const dematValueIdx    = headers.findIndex(h => h.includes('demat value'));
+  const prevCloseIdx     = headers.findIndex(h => (h.includes('previous closing') || h.includes('prev close') || h.includes('prev. close')) && !h.includes('value'));
+  const valPrevCloseIdx  = headers.findIndex(h => h.includes('value as of previous') || h.includes('previous closing price value')) !== -1
+    ? headers.findIndex(h => h.includes('value as of previous') || h.includes('previous closing price value'))
+    : dematValueIdx;
   const ltpIdx           = headers.findIndex(h => h.includes('last transaction price') || h.includes('ltp') || h.includes('current price') || h.includes('market price'));
   const valLtpIdx        = headers.findIndex(h => h.includes('value as of last') || h.includes('ltp value') || h.includes('total amount'));
   const waccIdx          = headers.findIndex(h => h.includes('wacc') || h.includes('purchase rate') || h.includes('cost price') || h.includes('avg rate'));

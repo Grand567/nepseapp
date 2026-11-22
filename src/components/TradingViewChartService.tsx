@@ -32,6 +32,10 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
 
   const loadChartData = async (sym: string) => {
     setLoading(true);
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 3500);
+
     try {
       const cleanSym = (sym === 'NEPSE Index' || sym === 'nepse' || !sym) ? 'NEPSE' : sym.replace(/ Index$/i, '').trim().toUpperCase();
       const { stocks } = await loadNepseData();
@@ -48,7 +52,10 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
 
       let rawHistory: any[] = [];
       try {
-        const histRes = await fetchPriceHistory(cleanSym, 500);
+        const histRes = await Promise.race([
+          fetchPriceHistory(cleanSym, 500),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+        ]);
         if (Array.isArray(histRes)) {
           rawHistory = histRes;
         } else if (Array.isArray(histRes?.data)) {
@@ -98,6 +105,7 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
     } catch (err) {
       console.warn('[TradingViewChartService] General error:', err);
     } finally {
+      clearTimeout(safetyTimer);
       setLoading(false);
     }
   };

@@ -392,6 +392,11 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
     .filter((b) => b.netVol < 0)
     .sort((a, b) => a.netVol - b.netVol); // Most negative first
 
+  // Net Inflow & Outflow Amts for early phase guards
+  const top5NetInflowAmt = Number(topNetBuyers.slice(0, 5).reduce((sum, b) => sum + Math.max(0, b.netAmt), 0).toFixed(2));
+  const top5NetOutflowAmt = Number(topNetSellers.slice(0, 5).reduce((sum, b) => sum + Math.abs(b.netAmt), 0).toFixed(2));
+  const smartMoneyNetInflowAmt = Number((top5NetInflowAmt - top5NetOutflowAmt).toFixed(2));
+
   // 3. Calculate Core Quality Gate Metrics
   const topGrossBuyers = [...brokersArray].sort((a, b) => b.buyVol - a.buyVol);
   const topGrossSellers = [...brokersArray].sort((a, b) => b.sellVol - a.sellVol);
@@ -401,6 +406,7 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
   const top3NetBuyVol = topNetBuyers.slice(0, 3).reduce((sum, b) => sum + b.netVol, 0);
   const top5NetBuyVol = topNetBuyers.slice(0, 5).reduce((sum, b) => sum + b.netVol, 0);
   const top3NetSellVol = topNetSellers.slice(0, 3).reduce((sum, b) => sum + Math.abs(b.netVol), 0);
+  const top5NetSellVol = topNetSellers.slice(0, 5).reduce((sum, b) => sum + Math.abs(b.netVol), 0);
 
   const totalCrossVol = brokersArray.reduce((sum, b) => sum + Number(b.crossVol || 0), 0);
   const nonCrossMarketVol = Math.max(1, totalVolume - totalCrossVol);
@@ -408,14 +414,17 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
   const top3GrossBuyVol = topGrossBuyers.slice(0, 3).reduce((sum, b) => sum + Math.max(0, b.buyVol - Number(b.crossVol || 0)), 0);
   const top5GrossBuyVol = topGrossBuyers.slice(0, 5).reduce((sum, b) => sum + Math.max(0, b.buyVol - Number(b.crossVol || 0)), 0);
   const top3GrossSellVol = topGrossSellers.slice(0, 3).reduce((sum, s) => sum + Math.max(0, s.sellVol - Number(s.crossVol || 0)), 0);
+  const top5GrossSellVol = topGrossSellers.slice(0, 5).reduce((sum, s) => sum + Math.max(0, s.sellVol - Number(s.crossVol || 0)), 0);
 
   const bcr3NetPct = Number(((top3NetBuyVol / nonCrossMarketVol) * 100).toFixed(1));
   const bcr5NetPct = Number(((top5NetBuyVol / nonCrossMarketVol) * 100).toFixed(1));
   const scr3NetPct = Number(((top3NetSellVol / nonCrossMarketVol) * 100).toFixed(1));
+  const scr5NetPct = Number(((top5NetSellVol / nonCrossMarketVol) * 100).toFixed(1));
 
   const bcr3BuyPct = Number(Math.min(100, (top3GrossBuyVol / nonCrossMarketVol) * 100).toFixed(1));
   const bcr5BuyPct = Number(Math.min(100, (top5GrossBuyVol / nonCrossMarketVol) * 100).toFixed(1));
   const scr3SellPct = Number(Math.min(100, (top3GrossSellVol / nonCrossMarketVol) * 100).toFixed(1));
+  const scr5SellPct = Number(Math.min(100, (top5GrossSellVol / nonCrossMarketVol) * 100).toFixed(1));
 
   const grossBuyConcentrationPct = bcr5BuyPct;
   const grossSellConcentrationPct = scr3SellPct;
@@ -457,29 +466,37 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
   } else if (scr3NetPct >= 20.0 && priceChangePct > 2.5 && scr3NetPct > bcr5NetPct) {
     phase = "BULL_TRAP";
     phaseLabel = "Bull Trap (Retail Buying Top)";
-  } else if (scr3NetPct >= 18.0 && scr3NetPct > bcr5NetPct && smartMoneyNetFlowPct < -5.0) {
+  } else if ((scr3NetPct >= 18.0 && (scr3NetPct > bcr5NetPct || scr3SellPct > bcr5BuyPct || top5NetOutflowAmt > top5NetInflowAmt)) || smartMoneyNetFlowPct < -5.0) {
     phase = "DISTRIBUTION_DANGER";
     phaseLabel = "Distribution Danger";
-  } else if (bcr5NetPct >= 18.0 && (bcr5NetPct > scr3NetPct || smartMoneyNetFlowPct >= 10.0) && Math.abs(priceChangePct) <= 4.5) {
+  } else if (bcr5NetPct >= 18.0 && bcr5NetPct > scr5NetPct && bcr3NetPct >= scr3NetPct && scr3SellPct < 25.0 && top5NetInflowAmt >= top5NetOutflowAmt && Math.abs(priceChangePct) <= 4.5) {
     phase = "STEALTH_ACCUMULATION";
     phaseLabel = "Stealth Accumulation";
-  } else if (bcr5NetPct >= 15.0 && bcr5NetPct > scr3NetPct && priceChangePct > 4.5 && latestClose >= bigBrokerVWAP) {
+  } else if (bcr5NetPct >= 15.0 && bcr5NetPct > scr5NetPct && priceChangePct > 4.5 && latestClose >= bigBrokerVWAP && top5NetInflowAmt >= top5NetOutflowAmt) {
     phase = "ACTIVE_MARKUP";
     phaseLabel = "Active Markup";
-  } else if (smartMoneyNetFlowPct >= 8.0) {
+  } else if (smartMoneyNetFlowPct >= 8.0 && top5NetInflowAmt >= top5NetOutflowAmt) {
     phase = "STEALTH_ACCUMULATION";
     phaseLabel = "Stealth Accumulation";
-  } else if (smartMoneyNetFlowPct <= -8.0 && scr3NetPct > bcr5NetPct) {
+  } else if (smartMoneyNetFlowPct <= -5.0 || (scr3SellPct > bcr3BuyPct && top5NetOutflowAmt > top5NetInflowAmt)) {
     phase = "DISTRIBUTION_DANGER";
     phaseLabel = "Distribution Danger";
   }
 
-  const isInstitutionalDumping = (phase === "DISTRIBUTION_DANGER" || phase === "BULL_TRAP" || (scr3NetPct >= 20.0 && scr3NetPct > bcr5NetPct) || (scr3SellPct >= 38.0 && scr3SellPct > bcr5BuyPct)) && smartMoneyNetFlowPct <= 0;
+  const isInstitutionalDumping = (
+    phase === "DISTRIBUTION_DANGER" ||
+    phase === "BULL_TRAP" ||
+    (scr3NetPct >= 20.0 && scr3NetPct > bcr5NetPct) ||
+    (scr3SellPct >= 30.0 && scr3SellPct > bcr3BuyPct) ||
+    (top5NetOutflowAmt > top5NetInflowAmt && scr3SellPct > bcr3BuyPct)
+  );
   const adSignal = (phase === "INSUFFICIENT_ACTIVITY")
     ? "INSUFFICIENT ACTIVITY"
-    : ((phase === "STEALTH_ACCUMULATION" || phase === "ACTIVE_MARKUP" || smartMoneyNetFlowPct >= 5.0)
-      ? "Accumulation"
-      : ((isInstitutionalDumping || smartMoneyNetFlowPct <= -5.0) ? "Distribution" : "Neutral"));
+    : ((isInstitutionalDumping || smartMoneyNetFlowPct <= -3.0 || (scr3SellPct > bcr3BuyPct && top5NetOutflowAmt > top5NetInflowAmt))
+      ? "Distribution"
+      : ((phase === "STEALTH_ACCUMULATION" || phase === "ACTIVE_MARKUP" || (smartMoneyNetFlowPct >= 5.0 && top5NetInflowAmt > top5NetOutflowAmt))
+        ? "Accumulation"
+        : "Neutral"));
   const adRatio = Number((smartMoneyNetFlowPct / 100).toFixed(4));
   const adStrength = `${Math.min(99.9, Math.abs(smartMoneyNetFlowPct)).toFixed(1)}%`;
 
@@ -514,9 +531,6 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
   }
 
   // Stock-Level Net Flow Summary & Syndicate Co-Accumulation
-  const top5NetInflowAmt = Number(topNetBuyers.slice(0, 5).reduce((sum, b) => sum + Math.max(0, b.netAmt), 0).toFixed(2));
-  const top5NetOutflowAmt = Number(topNetSellers.slice(0, 5).reduce((sum, b) => sum + Math.abs(b.netAmt), 0).toFixed(2));
-  const smartMoneyNetInflowAmt = Number((top5NetInflowAmt - top5NetOutflowAmt).toFixed(2));
   const leadAccumulator = topNetBuyers[0] || null;
   const leadDistributor = topNetSellers[0] || null;
 

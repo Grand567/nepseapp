@@ -231,7 +231,9 @@ export const adjustForCorporateActions = adjustForCorporateActionsWithConfirmati
  */
 function circuitAwareTarget(entryPrice, rawTarget, holdingDays, circuitPct = NEPSE_DAILY_CIRCUIT_PCT) {
   if (rawTarget <= entryPrice || holdingDays <= 0) return { price: rawTarget, capped: false };
-  const maxReachable = entryPrice * Math.pow(1 + circuitPct / 100, holdingDays);
+  // Realistic multi-day upper circuit cap: maximum 3 consecutive limit-up sessions for targets
+  const effectiveConsecutiveCircuits = Math.min(3, Math.max(1, holdingDays));
+  const maxReachable = entryPrice * Math.pow(1 + circuitPct / 100, effectiveConsecutiveCircuits);
   if (rawTarget > maxReachable) {
     return { price: +maxReachable.toFixed(2), capped: true, originalPrice: rawTarget };
   }

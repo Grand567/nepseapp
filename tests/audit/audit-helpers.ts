@@ -337,3 +337,119 @@ export async function assertRuntimeHealth(
 
   return healthy;
 }
+
+/**
+ * Deep Cross-Card Semantic Invariant Assertions:
+ * Catches cross-card inconsistencies, multi-year all-time leakage under 1D headings,
+ * and false empty record states.
+ */
+export async function assertSemanticCardInvariants(
+  page: Page,
+  state: PageAuditState,
+  moduleName: string,
+  tabPath: string,
+  symbol: string
+): Promise<boolean> {
+  const db = getDbConnection();
+  let passed = true;
+
+  try {
+    const latestDbSummary = db.prepare(`
+      SELECT trade_date, open_price, high_price, low_price, close_price, total_volume, total_turnover
+      FROM daily_stock_summary
+      WHERE symbol = ?
+      ORDER BY trade_date DESC
+      LIMIT 1
+    `).get(symbol) as any;
+
+    const modalData = await page.evaluate(() => {
+      const modal = document.querySelector('div[style*="z-index: 99999"], div[style*="zIndex: 99999"]');
+      if (!modal) return null;
+      const text = (modal as HTMLElement).innerText || '';
+
+      const topBuyerMatch = text.match(/Today's Top Buyer\s*\n\s*#?(\d+)\s*\(([\d,]+)\s*sh\)/i);
+      const topBuyerBroker = topBuyerMatch ? topBuyerMatch[1] : null;
+      const topBuyerQty = topBuyerMatch ? Number(topBuyerMatch[2].replace(/,/g, '')) : null;
+
+      const volMatch = text.match(/Total Shares Traded \/ Held\s*\n\s*([\d,]+)\s*sh/i);
+      const renderedVolume = volMatch ? Number(volMatch[1].replace(/,/g, '')) : null;
+
+      const noRecordsFound = text.includes('No floor-sheet broker records found');
+      const isDummyBalanced = text.includes('Accumulation Pressure: 50%') && text.includes('Distribution: 50%') && text.includes('Balanced Two-Way Rotation');
+
+      const lowMatch = text.match(/Today's Low\s*[\s\S]*?Rs\.\s*([\d,.]+)/i);
+      const highMatch = text.match(/Today's High\s*[\s\S]*?Rs\.\s*([\d,.]+)/i);
+      const todayLow = lowMatch ? Number(lowMatch[1].replace(/,/g, '')) : null;
+      const todayHigh = highMatch ? Number(highMatch[1].replace(/,/g, '')) : null;
+
+      return {
+        topBuyerBroker,
+        topBuyerQty,
+        renderedVolume,
+        noRecordsFound,
+        isDummyBalanced,
+        todayLow,
+        todayHigh,
+        fullTextSnippet: text.slice(0, 1000)
+      };
+    });
+
+    if (modalData && latestDbSummary) {
+      const slug = `${moduleName}_${tabPath}_${symbol}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
+
+      // Invariant 1: Today's Top Buyer quantity must NOT exceed total daily volume
+      if (modalData.topBuyerQty != null && latestDbSummary.total_volume > 0) {
+        if (modalData.topBuyerQty > latestDbSummary.total_volume * 1.05) {
+          passed = false;
+          const screenshotPath = `audit-reports/screenshots/inv_topbuyer_${slug}.png`;
+          await page.screenshot({ path: screenshotPath }).catch(() => {});
+          recordFailure({
+            module: moduleName,
+            tabPath,
+            failureType: 'DATA_MISMATCH',
+            uiRenderedValue: `Top Buyer Qty: ${modalData.topBuyerQty.toLocaleString()} sh`,
+            sqliteGroundTruth: `Total Day Volume: ${latestDbSummary.total_volume.toLocaleString()} sh`,
+            details: `Invariant Violation: Today's Top Buyer quantity (${modalData.topBuyerQty}) exceeds total daily trading volume (${latestDbSummary.total_volume})! UI leaked all-time cumulative holding.`,
+            screenshotPath
+          });
+        }
+      }
+
+      // Invariant 2: If stock traded, must NOT claim "No floor-sheet broker records found"
+      if (modalData.noRecordsFound && latestDbSummary.total_volume > 0) {
+        passed = false;
+        const screenshotPath = `audit-reports/screenshots/inv_norecords_${slug}.png`;
+        await page.screenshot({ path: screenshotPath }).catch(() => {});
+        recordFailure({
+          module: moduleName,
+          tabPath,
+          failureType: 'DATA_MISMATCH',
+          uiRenderedValue: 'No floor-sheet broker records found in 1D window',
+          sqliteGroundTruth: `${latestDbSummary.total_volume} shares traded on ${latestDbSummary.trade_date}`,
+          details: `Invariant Violation: Stock traded ${latestDbSummary.total_volume} shares on ${latestDbSummary.trade_date}, but UI claims no floorsheet broker records exist.`,
+          screenshotPath
+        });
+      }
+
+      // Invariant 3: High >= Low
+      if (modalData.todayHigh != null && modalData.todayLow != null) {
+        if (modalData.todayHigh < modalData.todayLow) {
+          passed = false;
+          recordFailure({
+            module: moduleName,
+            tabPath,
+            failureType: 'DATA_MISMATCH',
+            uiRenderedValue: `High: ${modalData.todayHigh}, Low: ${modalData.todayLow}`,
+            details: 'Invariant Violation: Today High is strictly less than Today Low.'
+          });
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Semantic Invariant Audit] Error auditing ${symbol}:`, err.message);
+  } finally {
+    db.close();
+  }
+
+  return passed;
+}

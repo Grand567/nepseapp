@@ -763,19 +763,25 @@ export function RiskRewardCalculator({ stocks: rawStocks = [], initialSymbol = '
   );
 }
 
-// Helper to parse ratios like "1:2", "1/2", "0.5", "50%"
+// Helper to parse ratios like "1:2", "1/2", "10:3", "0.5", "50%"
 function parseRatio(str: string): number {
   if (!str) return 1;
   const clean = str.trim();
   if (clean.includes(':')) {
     const parts = clean.split(':').map((p) => parseFloat(p.trim()));
-    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[1] !== 0) {
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[1] !== 0 && parts[0] !== 0) {
+      if (parts[0] > parts[1] && parts[0] >= 5) {
+        return parts[1] / parts[0];
+      }
       return parts[0] / parts[1];
     }
   }
   if (clean.includes('/')) {
     const parts = clean.split('/').map((p) => parseFloat(p.trim()));
-    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[1] !== 0) {
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[1] !== 0 && parts[0] !== 0) {
+      if (parts[0] > parts[1] && parts[0] >= 5) {
+        return parts[1] / parts[0];
+      }
       return parts[0] / parts[1];
     }
   }

@@ -269,7 +269,18 @@ export const fetchNepseIntradayGraph = async (symbol, forceRefresh = false) => {
     } catch (_) {}
   }
 
-  // If Tier 1 and Tier 2 both fail, return null so the UI honestly indicates
+  // Tier 3: Static bundled intraday fallback for NEPSE Index
+  if (sym === 'NEPSE') {
+    try {
+      const staticRes = await fetch('/data/nepse_intraday_latest.json', { signal: AbortSignal.timeout(4000) });
+      if (staticRes.ok) {
+        const j = await staticRes.json();
+        if (Array.isArray(j) && j.length > 1) return j;
+      }
+    } catch (_) {}
+  }
+
+  // If all tiers fail, return null so the UI honestly indicates
   // that authentic live intraday data is offline rather than generating synthetic ticks.
   return null;
 };

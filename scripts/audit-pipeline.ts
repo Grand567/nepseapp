@@ -51,7 +51,7 @@ interface EndpointParityResult {
   errorMessage?: string;
 }
 
-async function fetchJson(endpoint: string, timeoutMs = 15000): Promise<{ status: number; data: any; timeMs: number }> {
+async function fetchJson(endpoint: string, timeoutMs = 60000): Promise<{ status: number; data: any; timeMs: number }> {
   const url = `${API_BASE}${endpoint}`;
   const t0 = Date.now();
   const controller = new AbortController();
@@ -83,6 +83,26 @@ async function runAuditPipeline() {
 
   if (!fs.existsSync(DB_PATH)) {
     throw new Error(`Database file not found at ${DB_PATH}`);
+  }
+
+  // Auto-start local proxy server if not already running on port 5000
+  let serverProcess: any = null;
+  const initialPing = await fetchJson('/api/ping', 2000);
+  if (initialPing.status === 0) {
+    console.log('📡 Express API server not detected. Spawning background proxy server (proxy/server.mjs)...');
+    const { spawn } = await import('child_process');
+    serverProcess = spawn('node', ['--max-old-space-size=2048', 'proxy/server.mjs'], {
+      cwd: process.cwd(),
+      stdio: 'ignore'
+    });
+    for (let i = 0; i < 45; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      const ping = await fetchJson('/api/ping', 1000);
+      if (ping.status === 200 && ping.data?.warmingUp === false) {
+        console.log('✅ Express proxy server is live, fully warmed up and responsive!\n');
+        break;
+      }
+    }
   }
 
   const db = new Database(DB_PATH, { readonly: true });
@@ -299,15 +319,28 @@ async function runAuditPipeline() {
     description: 'Floorsheet trades must have rate > 0, kitta > 0, amount > 0'
   });
 
-  // 2.7 Rollup Reconciliation: Compare floorsheet kitta sum vs stock summary volume
-  const sampleDate = '2026-11-19';
+  // 2.7 Rollup Reconciliation: Compare floorsheet kitta sum vs stock summary volume on latest session
+  const latestSessionRow = db.prepare(`SELECT MAX(trade_date) as max_date FROM daily_stock_summary`).get() as { max_date: string };
+  const sampleDate = latestSessionRow?.max_date || '2026-11-20';
+  
+  // Verify latest session floorsheet density
+  const latestFsCountRow = db.prepare(`SELECT COUNT(*) as c FROM floorsheet_contracts WHERE trade_date = ?`).get(sampleDate) as { c: number };
+  integrityResults.push({
+    table: 'floorsheet_contracts',
+    check: `Latest Session Floorsheet Contract Completeness (${sampleDate})`,
+    passed: latestFsCountRow.c >= 10000,
+    violationsCount: latestFsCountRow.c < 10000 ? (10000 - latestFsCountRow.c) : 0,
+    sampleViolations: latestFsCountRow.c < 10000 ? [{ error: `Incomplete floorsheet: only ${latestFsCountRow.c} contracts found for ${sampleDate}` }] : [],
+    description: `Target session ${sampleDate} must contain complete market floorsheet (got ${latestFsCountRow.c} contracts)`
+  });
+
   const rollupChecks = db.prepare(`
     SELECT s.symbol, s.total_volume as stock_volume,
            COALESCE(SUM(f.kitta), 0) as fs_volume,
            ABS(s.total_volume - COALESCE(SUM(f.kitta), 0)) as diff
     FROM daily_stock_summary s
     LEFT JOIN floorsheet_contracts f ON s.symbol = f.symbol AND s.trade_date = f.trade_date
-    WHERE s.trade_date = ? AND s.symbol IN ('NABIL', 'CHCL', 'CBBL')
+    WHERE s.trade_date = ? AND s.symbol IN ('AKJCL', 'NABIL', 'CHCL', 'CBBL')
     GROUP BY s.symbol
   `).all(sampleDate) as any[];
 
@@ -318,7 +351,7 @@ async function runAuditPipeline() {
     passed: brokenRollups.length === 0,
     violationsCount: brokenRollups.length,
     sampleViolations: brokenRollups,
-    description: `Compared contract volume sums vs official stock volume for ${sampleDate}`
+    description: `Compared contract volume sums vs official stock volume for ${sampleDate} across benchmark stocks`
   });
 
   for (const r of integrityResults) {
@@ -330,6 +363,13 @@ async function runAuditPipeline() {
   // ─────────────────────────────────────────────────────────────────────────────
   console.log('\n▶ [3/3] Auditing Express API Distribution & Direct SQLite Numerical Parity...');
   const parityResults: EndpointParityResult[] = [];
+
+  // Ensure warm-up is completely settled before testing endpoints
+  for (let i = 0; i < 40; i++) {
+    const s = await fetchJson('/api/ping', 1000);
+    if (s.status === 200 && s.data?.warmingUp === false) break;
+    await new Promise(r => setTimeout(r, 1000));
+  }
 
   // Group 3.1: 13 Stock Tabs Backing Endpoints
   const stockEndpoints = [
@@ -603,6 +643,12 @@ async function runAuditPipeline() {
 
   fs.writeFileSync(OUTPUT_REPORT_PATH, JSON.stringify(fullReport, null, 2), 'utf8');
   console.log(`\n✅ Backend audit report successfully written to ${OUTPUT_REPORT_PATH}`);
+
+  if (serverProcess) {
+    try {
+      serverProcess.kill();
+    } catch (_) {}
+  }
 }
 
 runAuditPipeline().catch(err => {

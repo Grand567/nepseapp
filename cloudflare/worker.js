@@ -144,6 +144,10 @@ export default {
     originHeaders.set('Host', new URL(TARGET_ORIGIN).hostname);
     originHeaders.set('X-Forwarded-Host', url.hostname);
     originHeaders.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
+    const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || '';
+    if (clientIp) {
+      originHeaders.set('X-Forwarded-For', clientIp);
+    }
 
     let originResponse;
     try {

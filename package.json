@@ -16,9 +16,10 @@
     "audit:static": "node scripts/sentinelStaticAudit.cjs",
     "audit:ui": "node scripts/liveUiAudit.cjs",
     "audit:app": "node scripts/fullAppAudit.mjs",
+    "audit:semantic": "node scripts/auditSemanticInvariants.mjs",
     "audit:prod": "node scripts/fullAppAudit.mjs --prod",
     "audit:hubs": "node tests/audit5RootHubsVerification.test.mjs",
-    "audit:all": "npm run audit:static && node tests/audit5RootHubsVerification.test.mjs && node tests/audit13TabsVerification.test.mjs && node tests/auditCrossModuleConsistency.test.mjs && node --test tests/filesAandBOptimalStorage.test.mjs",
+    "audit:all": "npm run audit:static && node tests/audit5RootHubsVerification.test.mjs && node tests/audit13TabsVerification.test.mjs && node tests/auditCrossModuleConsistency.test.mjs && npm run audit:semantic && node --test tests/filesAandBOptimalStorage.test.mjs",
     "audit:export": "node scripts/exportForGemini4Argon.mjs",
     "export:argon": "node scripts/exportForGemini4Argon.mjs",
     "audit:ai-guru": "node scripts/exportAiGuruForArgon.mjs",
@@ -31,7 +32,8 @@
     "mobile:sync": "npm run build && npx cap sync android",
     "mobile:build-debug": "npm run mobile:sync && cd android && .\\gradlew.bat assembleDebug && node -e \"const fs=require('fs');fs.copyFileSync('./app/build/outputs/apk/debug/Drabyashree-NEPSE-debug.apk','../Drabyashree-NEPSE-debug.apk');fs.copyFileSync('./app/build/outputs/apk/debug/Drabyashree-NEPSE-debug.apk','../Drabyashree-NEPSE.apk');\"",
     "mobile:build-release": "npm run mobile:sync && cd android && .\\gradlew.bat assembleRelease && node -e \"const fs=require('fs');fs.copyFileSync('./app/build/outputs/apk/release/Drabyashree-NEPSE-release.apk','../Drabyashree-NEPSE-release.apk');fs.copyFileSync('./app/build/outputs/apk/release/Drabyashree-NEPSE-release.apk','../Drabyashree-NEPSE.apk');\"",
-    "build:apk": "npm run mobile:build-release"
+    "build:apk": "npm run mobile:build-release",
+    "license:gen": "node scripts/generate-license.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",

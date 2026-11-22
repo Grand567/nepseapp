@@ -249,7 +249,13 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
 
         {/* 2. Excursion (MFE / MAE) */}
         {(() => {
-          const hasTelemetry = Boolean(m.mfePct !== 0 || m.maePct !== 0 || m.nepseAlphaPct !== 0 || m.avgTicketKitta > 0);
+          const safeNum = (v: any, fallback = 0) => (v != null && Number.isFinite(Number(v)) ? Number(v) : fallback);
+          const mfe = safeNum(m?.mfePct);
+          const mae = safeNum(m?.maePct);
+          const alpha = safeNum(m?.nepseAlphaPct);
+          const anomaly = safeNum(m?.brokerAnomalyScore);
+          const avgTicket = safeNum(m?.avgTicketKitta);
+          const hasTelemetry = Boolean(m?.mfePct != null && (mfe !== 0 || mae !== 0 || alpha !== 0 || avgTicket > 0));
           return (
             <>
               <div style={{
@@ -262,16 +268,16 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
                 <div style={{ fontSize: 13, fontWeight: 800, marginTop: 3 }}>
                   {hasTelemetry ? (
                     <>
-                      <span style={{ color: '#34d399' }}>+{m.mfePct.toFixed(2)}%</span>
+                      <span style={{ color: '#34d399' }}>+{mfe.toFixed(2)}%</span>
                       <span style={{ color: '#64748b', margin: '0 4px' }}>/</span>
-                      <span style={{ color: '#fb7185' }}>{m.maePct.toFixed(2)}%</span>
+                      <span style={{ color: '#fb7185' }}>{mae.toFixed(2)}%</span>
                     </>
                   ) : (
                     <span style={{ color: '#64748b' }}>— <span style={{ fontSize: 10, fontWeight: 500 }}>(Awaiting Sync)</span></span>
                   )}
                 </div>
                 <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                  NEPSE Alpha: {hasTelemetry ? `${m.nepseAlphaPct >= 0 ? '+' : ''}${m.nepseAlphaPct.toFixed(2)}%` : '—'}
+                  NEPSE Alpha: {hasTelemetry ? `${alpha >= 0 ? '+' : ''}${alpha.toFixed(2)}%` : '—'}
                 </div>
               </div>
 
@@ -284,10 +290,10 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
               }}>
                 <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700 }}>Broker Anomaly Score</div>
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#818cf8', marginTop: 3 }}>
-                  {hasTelemetry ? `${m.brokerAnomalyScore.toFixed(2)}x Baseline` : '— (Neutral)'}
+                  {hasTelemetry ? `${anomaly.toFixed(2)}x Baseline` : '— (Neutral)'}
                 </div>
                 <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                  Avg Ticket: {hasTelemetry && m.avgTicketKitta > 0 ? `${Math.round(m.avgTicketKitta)} kitta` : '—'}
+                  Avg Ticket: {hasTelemetry && avgTicket > 0 ? `${Math.round(avgTicket)} kitta` : '—'}
                 </div>
               </div>
             </>
@@ -303,10 +309,10 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
         }}>
           <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700 }}>5D Smart Money Regime</div>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#fcd34d', marginTop: 3 }}>
-            {m.smartMoney5D.dominantRegime.replace(/_/g, ' ')}
+            {(m?.smartMoney5D?.dominantRegime || 'BALANCED_LIQUIDITY').replace(/_/g, ' ')}
           </div>
           <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-            Round-Trip Hurdle: {m.roundTripFeePct}%
+            Round-Trip Hurdle: {m?.roundTripFeePct ?? 0.8}%
           </div>
         </div>
       </div>

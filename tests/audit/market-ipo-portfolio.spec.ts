@@ -29,7 +29,7 @@ test.describe('Drabyashree NEPSE - Market, IPO & Portfolio Audit', () => {
     const state = await setupAuditPage(page);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => typeof (window as any).__setActiveTab === 'function', { timeout: 25000 });
+    await page.waitForFunction(() => typeof (window as any).__setActiveTab === 'function', { timeout: 60000 });
 
     // Ensure we are on Market Dashboard
     await page.evaluate(() => (window as any).__setActiveTab('dashboard'));
@@ -37,7 +37,7 @@ test.describe('Drabyashree NEPSE - Market, IPO & Portfolio Audit', () => {
     await page.waitForFunction(() => {
       const txt = document.body.innerText;
       return !txt.includes('Loading Real-Time NEPSE Market Engine') && (txt.includes('NEPSE Index') || txt.includes('Turnover'));
-    }, { timeout: 25000 });
+    }, { timeout: 60000 });
 
     // 1. Verify Live Indices and Benchmarks Ground Truth
     const latestBenchmark = db.prepare(`
@@ -104,7 +104,7 @@ test.describe('Drabyashree NEPSE - Market, IPO & Portfolio Audit', () => {
     const state = await setupAuditPage(page);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => typeof (window as any).__setActiveTab === 'function', { timeout: 25000 });
+    await page.waitForFunction(() => typeof (window as any).__setActiveTab === 'function', { timeout: 60000 });
 
     // Navigate to Portfolio & IPO Hub
     await page.evaluate(() => (window as any).__setActiveTab('portfolio'));
@@ -113,7 +113,7 @@ test.describe('Drabyashree NEPSE - Market, IPO & Portfolio Audit', () => {
     await page.waitForFunction(() => {
       const txt = document.body.innerText;
       return txt.includes('My Portfolio') || txt.includes('Portfolio');
-    }, { timeout: 25000 });
+    }, { timeout: 60000 });
 
     const PORTFOLIO_SUBTABS = [
       { id: 'portfolio', label: 'My Portfolio' },

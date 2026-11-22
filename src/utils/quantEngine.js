@@ -1274,9 +1274,10 @@ export function classifyActionZone(stock, macroContext = {}) {
   const entryVal = ltp;
   const targetVal = parseFloat(profitTarget1.replace(/[^\d.]/g, '')) || (ltp * 1.08);
   const stopVal = parseFloat(stopLoss.replace(/[^\d.]/g, '')) || (ltp * 0.94);
-  const risk = Math.max(1, entryVal - stopVal);
-  const reward = Math.max(1, targetVal - entryVal);
-  const rrr = Number((reward / risk).toFixed(2));
+  const rawRisk = entryVal - stopVal;
+  const rawReward = targetVal - entryVal;
+  const isValidSetup = rawRisk > 0 && rawReward > 0;
+  const rrr = isValidSetup ? Number((rawReward / rawRisk).toFixed(2)) : 0;
 
   return {
     zone,
@@ -1935,11 +1936,12 @@ export function calculateMultiHorizonTargets(ltp = 100, high52w = 0, low52w = 0,
   const stopPct = Number((((price - stopLoss) / price) * 100).toFixed(2));
 
   // Risk-to-Reward Ratio (Target 1 Reward / Risk)
-  const risk = Math.max(1, price - stopLoss);
-  const reward1 = Math.max(1, target1 - price);
-  const reward2 = Math.max(1, target2 - price);
-  const rrr1 = Number((reward1 / risk).toFixed(2));
-  const rrr2 = Number((reward2 / risk).toFixed(2));
+  const rawRisk = price - stopLoss;
+  const rawReward1 = target1 - price;
+  const rawReward2 = target2 - price;
+  const isValidTradeSetup = rawRisk > 0 && rawReward1 > 0;
+  const rrr1 = isValidTradeSetup ? Number((rawReward1 / rawRisk).toFixed(2)) : 0;
+  const rrr2 = rawRisk > 0 && rawReward2 > 0 ? Number((rawReward2 / rawRisk).toFixed(2)) : 0;
 
   // Institutional Cost-Anchored Entry Zone
   let instCostBasis = null;

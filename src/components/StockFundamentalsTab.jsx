@@ -87,7 +87,12 @@ export default function StockFundamentalsTab({ stock = {}, fundamentals = {}, pe
         fiscalYear: q.fiscalYear || label,
         period: q.period || label,
         eps: q.eps != null && Number.isFinite(Number(q.eps)) ? Number(q.eps) : null,
-        profitCr: q.netProfit != null && Number.isFinite(Number(q.netProfit)) ? Number(q.netProfit) : null,
+        profitCr: (() => {
+          const raw = q.profitCr ?? q.netProfitCr ?? q.netProfit;
+          if (raw == null || !Number.isFinite(Number(raw))) return null;
+          const n = Number(raw);
+          return Math.abs(n) >= 1e7 ? +(n / 1e7).toFixed(2) : +n.toFixed(2);
+        })(),
         netWorth: q.netWorth != null && Number.isFinite(Number(q.netWorth)) ? Number(q.netWorth) : null,
         paidUp: q.paidUp != null && Number.isFinite(Number(q.paidUp)) ? Number(q.paidUp) : null,
         roe: q.roe != null && Number.isFinite(Number(q.roe)) ? Number(q.roe) : null,
@@ -109,7 +114,12 @@ export default function StockFundamentalsTab({ stock = {}, fundamentals = {}, pe
   const basePb = baseBv !== null && baseBv > 0 && ltp > 0 ? +(ltp / baseBv).toFixed(2) : toNullNum(safeFund.pbv ?? safeFund.pb ?? safeStock.pb);
   const baseRoe = toNullNum(latestQ?.roe ?? safeFund.roe ?? safeStock.roe) ?? (baseEps !== null && baseBv !== null && baseBv > 0 ? +((baseEps / baseBv) * 100).toFixed(2) : null);
   const baseNpl = toNullNum(latestQ?.npl ?? safeFund.npl ?? safeStock.npl);
-  const baseProfitCr = toNullNum(latestQ?.profitCr ?? safeFund.netProfitCr);
+  const normalizeToCr = (val) => {
+    if (val == null || !Number.isFinite(Number(val))) return null;
+    const n = Number(val);
+    return Math.abs(n) >= 1e7 ? +(n / 1e7).toFixed(2) : +n.toFixed(2);
+  };
+  const baseProfitCr = toNullNum(latestQ?.profitCr ?? normalizeToCr(safeFund.netProfitCr ?? safeFund.netProfit));
   const basePaidUp = toNullNum(latestQ?.paidUp ?? safeFund.paidUpCapital ?? safeStock.paidUpCapital);
 
   // Sync selectedQuarter / compareQuarter cleanly whenever verified quarters load or switch

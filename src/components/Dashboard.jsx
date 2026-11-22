@@ -618,10 +618,11 @@ export const isHighImpactNepseHeadline = (title = '') => {
 ═══════════════════════════════════════════════════════════════════════════ */
 const isCircuitStock = (s, direction = 'any') => {
   const chg = Number(s?.pChange) || 0;
-  // Upper circuit strictly evaluated against ±15% threshold (typically 14.0% to 15.0%)
-  const isPos = chg >= 14.0 || (Boolean(s?.isCircuitHit) && chg >= 14.0);
-  // Lower circuit strictly evaluated against ±15% threshold
-  const isNeg = chg <= -14.0 || (Boolean(s?.isCircuitHit) && chg <= -14.0);
+  const dateStr = s?.date || s?.businessDate || '';
+  const isPreRegime = Boolean(dateStr && dateStr < '2026-04-20');
+  const threshold = isPreRegime ? 9.5 : 14.0;
+  const isPos = chg >= threshold || (Boolean(s?.isCircuitHit) && chg > 0);
+  const isNeg = chg <= -threshold || (Boolean(s?.isCircuitHit) && chg < 0);
   if (direction === 'pos') return isPos;
   if (direction === 'neg') return isNeg;
   return isPos || isNeg;
@@ -2732,8 +2733,9 @@ function Dashboard({
         const timeStr = String(pt.time || pt.date || '');
         return /\d{1,2}:\d{2}/.test(timeStr);
       });
-      if (hasIntradayTicks) return heroHistory;
-      return heroHistory.slice(-1);
+      if (hasIntradayTicks && heroHistory.length > 1) return heroHistory;
+      // Guard against flat horizontal 1-point chart when intraday ticks are unavailable (e.g. weekend/offline)
+      return heroHistory.length >= 5 ? heroHistory.slice(-5) : heroHistory;
     }
     const tfCounts = {
       '1W': 5,

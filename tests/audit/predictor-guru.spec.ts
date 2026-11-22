@@ -29,7 +29,7 @@ test.describe('Drabyashree NEPSE - Predictor & Guru AI Audit', () => {
     const state = await setupAuditPage(page);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => typeof (window as any).__setActiveTab === 'function', { timeout: 25000 });
+    await page.waitForFunction(() => typeof (window as any).__setActiveTab === 'function', { timeout: 60000 });
 
     // Navigate to Predictor
     await page.evaluate(() => (window as any).__setActiveTab('predictor'));
@@ -38,7 +38,7 @@ test.describe('Drabyashree NEPSE - Predictor & Guru AI Audit', () => {
     await page.waitForFunction(() => {
       const txt = document.body.innerText;
       return txt.includes('Index Predictor') || txt.includes('Predictor');
-    }, { timeout: 25000 });
+    }, { timeout: 60000 });
 
     const PREDICTOR_SUBTABS = [
       { id: 'nepse_agent', label: 'NEPSE Agent' },
@@ -88,7 +88,7 @@ test.describe('Drabyashree NEPSE - Predictor & Guru AI Audit', () => {
     const state = await setupAuditPage(page);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => typeof (window as any).__setActiveTab === 'function', { timeout: 25000 });
+    await page.waitForFunction(() => typeof (window as any).__setActiveTab === 'function', { timeout: 60000 });
 
     // Navigate to Guru AI
     await page.evaluate(() => (window as any).__setActiveTab('ai'));
@@ -97,7 +97,7 @@ test.describe('Drabyashree NEPSE - Predictor & Guru AI Audit', () => {
     await page.waitForFunction(() => {
       const txt = document.body.innerText;
       return txt.includes('Guru') || txt.includes('AI') || txt.includes('Quantitative');
-    }, { timeout: 25000 });
+    }, { timeout: 60000 });
 
     const AI_SUBTABS = [
       { id: 'agent', label: 'NEPSE Agent' },

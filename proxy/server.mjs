@@ -358,15 +358,18 @@ const apiLimiter = rateLimit({
   message: { success: false, error: 'Rate limit exceeded. Please wait a minute.' },
   skip: (req) => {
     if (isLoopbackRequest(req)) return true;
-    if (req.path === '/api/ping' || req.path === '/ping' || req.path === '/health' || req.path === '/api/health') return true;
+    const p = req.path || '';
+    const orig = req.originalUrl || req.url || '';
+    if (p === '/ping' || p === '/health' || orig.startsWith('/api/ping') || orig.startsWith('/api/health')) return true;
+    if (p.startsWith('/license') || orig.startsWith('/api/license')) return true;
     if (
-      req.path.startsWith('/api/market-indices') ||
-      req.path.startsWith('/api/indices') ||
-      req.path.startsWith('/api/nepse/intraday-graph') ||
-      req.path.startsWith('/api/market/summary') ||
-      req.path.startsWith('/api/live-market') ||
-      req.path.startsWith('/api/today-prices') ||
-      req.path.startsWith('/api/market-summary')
+      p.startsWith('/market-indices') || orig.startsWith('/api/market-indices') ||
+      p.startsWith('/indices') || orig.startsWith('/api/indices') ||
+      p.startsWith('/nepse/intraday-graph') || orig.startsWith('/api/nepse/intraday-graph') ||
+      p.startsWith('/market/summary') || orig.startsWith('/api/market/summary') ||
+      p.startsWith('/live-market') || orig.startsWith('/api/live-market') ||
+      p.startsWith('/today-prices') || orig.startsWith('/api/today-prices') ||
+      p.startsWith('/market-summary') || orig.startsWith('/api/market-summary')
     ) return true;
     return false;
   }
@@ -3684,6 +3687,9 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
       }));
 
       lastKnownIntradayGraph = formatted;
+      try {
+        fs.writeFileSync(path.resolve('proxy/data/nepse_intraday_latest.json'), JSON.stringify(formatted));
+      } catch (_) {}
       setCache(cacheKey, formatted, 15 * 1000); // 15 sec cache
       return res.json({ success: true, data: formatted, count: formatted.length, source: 'nepse-official-intraday' });
     }
@@ -3694,6 +3700,18 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
   if (lastKnownIntradayGraph && lastKnownIntradayGraph.length > 0) {
     return res.json({ success: true, data: lastKnownIntradayGraph, count: lastKnownIntradayGraph.length, source: 'cached-nots-intraday' });
   }
+
+  // Fallback to disk-persisted latest completed trading session intraday series
+  try {
+    const diskPath = path.resolve('proxy/data/nepse_intraday_latest.json');
+    if (fs.existsSync(diskPath)) {
+      const diskTicks = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
+      if (Array.isArray(diskTicks) && diskTicks.length > 0) {
+        lastKnownIntradayGraph = diskTicks;
+        return res.json({ success: true, data: diskTicks, count: diskTicks.length, source: 'disk-nots-intraday' });
+      }
+    }
+  } catch (_) {}
 
   return res.json({ success: false, data: [], message: 'No intraday graph data available' });
 });
@@ -3764,6 +3782,26 @@ export async function getPriceHistoryInternal(rawSymbol, length = 365) {
       console.warn(`[price-history] NEPSE index history failed for ${rawSymbol}:`, idxErr.message);
     }
   }
+
+  // Fast SQLite Ledger Path: If authentic records are stored locally, serve immediately without blocking network sockets
+  try {
+    const dbHist = getSymbolHistoryFromDb(rawSymbol, Math.min(length, 30));
+    if (Array.isArray(dbHist) && dbHist.length >= 3) {
+      const formatted = dbHist.map(d => ({
+        date: d.date,
+        open: Number(d.openPrice || d.closePrice || 0),
+        high: Number(d.highPrice || d.closePrice || 0),
+        low: Number(d.lowPrice || d.closePrice || 0),
+        close: Number(d.closePrice || 0),
+        volume: Number(d.totalVolume || 0),
+        turnover: Number(d.totalTurnover || 0),
+        trades: 0,
+        source: 'NEPSE_SQLITE_LEDGER'
+      })).sort((a, b) => new Date(a.date) - new Date(b.date));
+      setCache(cacheKey, formatted, 60 * 60 * 1000);
+      return formatted;
+    }
+  } catch (_) {}
 
   // Method 1: Direct NEPSE API via nepseClient (official data for equities with dual-engine failover)
   try {
@@ -4979,8 +5017,9 @@ function enrichWithMicrostructure(symbol, days, vaultData, date = '') {
 
   const enriched = {
     ...vaultData,
-    closePrice: vaultData.closePrice || closePrice || vaultData.ltp,
-    ltp: vaultData.ltp || closePrice,
+    closePrice: vaultData.closePrice || closePrice || vaultData.ltp || vaultData.latestClose,
+    ltp: vaultData.ltp || closePrice || vaultData.latestClose || vaultData.closePrice,
+    latestClose: vaultData.latestClose || closePrice || vaultData.closePrice,
     openPrice: vaultData.openPrice || openPrice,
     highPrice: vaultData.highPrice || highPrice,
     lowPrice: vaultData.lowPrice || lowPrice,
@@ -7943,17 +7982,17 @@ app.get([
 ], async (req, res) => {
   const symbol = sanitizeSymbol(req.params.symbol);
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol is required', data: [] });
+  const tf = String(req.query.timeframe || req.query.tf || '1D').toUpperCase();
+  const isAll = req.query.days === 'all' || req.query.days === 'ALL' || tf === 'ALL' || parseInt(req.query.days, 10) >= 300;
+  const sessionLimit = isAll ? 9999 : (req.query.days ? Math.max(1, parseInt(req.query.days, 10) || 1) : (tf === '5D' ? 5 : tf === '1M' ? 20 : 1));
+  const queryDate = String(req.query.date || '').trim();
   const isLiveTrading = isMarketOpen();
-  if (isLiveTrading && (days === 1 || !date)) {
+  if (isLiveTrading && (sessionLimit === 1 || !queryDate)) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
   } else {
     res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
   }
-
-  const tf = String(req.query.timeframe || req.query.tf || '1D').toUpperCase();
-  const isAll = req.query.days === 'all' || req.query.days === 'ALL' || tf === 'ALL' || parseInt(req.query.days, 10) >= 300;
-  const sessionLimit = isAll ? 9999 : (req.query.days ? Math.max(1, parseInt(req.query.days, 10) || 1) : (tf === '5D' ? 5 : tf === '1M' ? 20 : 1));
 
   try {
     const marketDates = await getMarketTradingDates().catch(() => []);
@@ -12722,6 +12761,15 @@ app.get('/api/smart-alerts/events', (req, res) => {
 });
 
 // ── PERSONAL PORTFOLIO STOP-LOSS & TARGET MONITORING ROUTES ──
+app.get(['/api/portfolio-shield', '/api/portfolio/shield'], (req, res) => {
+  res.json({
+    success: true,
+    message: 'Portfolio Shield active',
+    shieldStatus: 'HEALTHY',
+    timestamp: new Date().toISOString()
+  });
+});
+
 app.get('/api/portfolio/tracked-holdings', requirePortfolioAuth, (req, res) => {
   try {
     const holdings = getUserTrackedHoldings(req.portfolioOwnerId || 'admin');
@@ -14567,6 +14615,7 @@ app.get('/api/company/:symbol/quarterly-reports', async (req, res) => {
         quarter: baseDetail.fiscalYear || baseDetail.quarter || 'Latest Reported Period',
         eps,
         netProfit: baseDetail.netProfit != null ? Number(baseDetail.netProfit) : (paidUp && eps ? +(paidUp * (eps / 100)).toFixed(1) : null),
+        netProfitCr: baseDetail.netProfitCr != null ? Number(baseDetail.netProfitCr) : (baseDetail.netProfit != null && Math.abs(Number(baseDetail.netProfit)) >= 1e7 ? +(Number(baseDetail.netProfit) / 1e7).toFixed(2) : (paidUp && eps ? +((paidUp * (eps / 100)) / 1e7).toFixed(2) : null)),
         paidUp,
         netWorth: bv,
         npl,

@@ -10,7 +10,8 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
   const s = stock || {};
   const ltp = Number(s.ltp || s.marketPrice || s.close || 0);
   const cachedFund = s.symbol ? getCachedStockFundamentals(s.symbol) : null;
-  const listedShares = Number(s.listedShares || s.sharesOutstanding || cachedFund?.listedShares || 0);
+  const rawListed = s.listedShares || s.sharesOutstanding || cachedFund?.listedShares || 0;
+  const listedShares = Number(typeof rawListed === 'string' ? rawListed.replace(/,/g, '').trim() : rawListed) || 0;
 
   // Cascade through all variants of promoter & public float percentages
   // In NEPSE, when promoter lock-in expires (e.g. SHEL), promoter shares = 0 and public float = 100%

@@ -761,7 +761,13 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
           const numbers = tokens.slice(symIdx + 1).map(t => parseFloat(t.replace(/,/g, ''))).filter(n => !isNaN(n) && n > 0);
           if (numbers.length >= 1) {
             const units = Math.round(numbers[0]);
-            const rate = numbers.length >= 2 ? numbers[1] : (typeof guessScripBasePrice === 'function' ? guessScripBasePrice(sym, 100) : 100);
+            let rate = (typeof guessScripBasePrice === 'function' ? guessScripBasePrice(sym, 100) : 100);
+            if (numbers.length >= 2 && numbers[1] !== units) {
+              rate = numbers[1];
+            } else if (numbers.length >= 4) {
+              const candidate = numbers.find((n, idx) => idx >= 2 && n > 50 && n < 15000);
+              if (candidate) rate = candidate;
+            }
             detected.push({
               symbol: sym,
               units,

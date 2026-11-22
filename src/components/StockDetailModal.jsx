@@ -1628,7 +1628,7 @@ export default function StockDetailModal({
     };
   }, [resolvedStock]);
 
-  // Fix 2: Reset broker state immediately on symbol change to prevent cross-stock contamination
+  // Fix 2: Reset broker and symbol-scoped states immediately on symbol change to prevent cross-stock contamination
   useEffect(() => {
     const sym = resolvedStock?.symbol;
     if (!sym) return;
@@ -1636,6 +1636,12 @@ export default function StockDetailModal({
     setBroker1DData(null);
     setBroker5DData(null);
     setBrokerAnalysisLoading(true);
+    setRealFloorsheet(null);
+    setFloorsheetLoading(true);
+    setRealMarketDepth(null);
+    setMarketDepthLoading(false);
+    setAiResult('');
+    setLedgerTelemetry(null);
   }, [resolvedStock?.symbol]);
 
   // Preload verified available trading sessions on mount
@@ -1858,10 +1864,15 @@ export default function StockDetailModal({
     const rawPb = (liveDetail?.pbv > 0 ? Number(liveDetail.pbv) : (liveDetail?.pb > 0 ? Number(liveDetail.pb) : (s.pb > 0 ? Number(s.pb) : (s.pbv > 0 ? Number(s.pbv) : (bookValue !== undefined && bookValue > 0 && ltp > 0 ? +(ltp / bookValue).toFixed(2) : undefined)))));
     const pb = (rawPb != null && !isNaN(rawPb) && rawPb > 0) ? rawPb : undefined;
 
-    const listedShares = Number(liveDetail?.listedShares || liveDetail?.sharesOutstanding || s.listedShares || 0);
-    const paidUpCapital = Number(liveDetail?.paidUpCapital || s.paidUpCapital || 0);
+    const parseNumClean = (v) => {
+      if (v == null) return 0;
+      const num = typeof v === 'string' ? Number(v.replace(/,/g, '').trim()) : Number(v);
+      return Number.isFinite(num) ? num : 0;
+    };
+    const listedShares = parseNumClean(liveDetail?.listedShares || liveDetail?.sharesOutstanding || s.listedShares);
+    const paidUpCapital = parseNumClean(liveDetail?.paidUpCapital || s.paidUpCapital);
     const computedMarketCap = (listedShares > 0 && ltp > 0) ? listedShares * ltp : 0;
-    const marketCap = computedMarketCap > 0 ? computedMarketCap : Number(liveDetail?.marketCap || s.marketCap || 0);
+    const marketCap = computedMarketCap > 0 ? computedMarketCap : parseNumClean(liveDetail?.marketCap || s.marketCap);
 
     // Cascade through all variants of promoter & public float percentages
     // When promoter lock-in has expired (or promoter = 0), public float is 100% of listed shares
@@ -2138,6 +2149,30 @@ export default function StockDetailModal({
 
     // Reset all symbol-scoped states immediately to prevent cross-stock state leakage
     setLiveQuote(null);
+    const initCachedHist = getCachedRealPriceHistory(d.symbol);
+    if (Array.isArray(initCachedHist) && initCachedHist.length > 0) {
+      setRealPriceHistory(initCachedHist);
+      setHistory(initCachedHist.map(item => ({
+        date: item.date,
+        time: item.date,
+        open: Number(item.open) || Number(item.close),
+        high: Number(item.high) || Number(item.close),
+        low: Number(item.low) || Number(item.close),
+        close: Number(item.close),
+        volume: Number(item.volume) || 0
+      })));
+      setRealHistoryLoading(false);
+    } else {
+      setRealPriceHistory(null);
+      setHistory([]);
+      setRealHistoryLoading(true);
+    }
+    setRealFloorsheet(null);
+    setFloorsheetLoading(true);
+    setRealMarketDepth(null);
+    setMarketDepthLoading(false);
+    setAiResult('');
+    setLedgerTelemetry(null);
     setBroker1DData(getCachedRealBrokerAnalysis(d.symbol, 1) || null);
     setBroker5DData(getCachedRealBrokerAnalysis(d.symbol, 5) || null);
     setCompareSymbol('');
@@ -2146,7 +2181,6 @@ export default function StockDetailModal({
     setPeerPriceHistory([]);
     setCompareError('');
     setCompareLoading(false);
-    setRealMarketDepth(null);
     floorsheetSeqRef.current++;
     brokerSeqRef.current++;
     depthSeqRef.current++;
@@ -2661,11 +2695,11 @@ export default function StockDetailModal({
     return () => { active = false; };
   }, [activeTab, brokerAccumPeriod, d?.symbol]);
 
-  // Trigger real data fetch when switching to Market Depth, Floorsheet, or Broker Analysis tabs
+  // Trigger real data fetch on modal mount (overview) or when switching to Market Depth, Floorsheet, or Broker Analysis tabs
   useEffect(() => {
     let isCancelled = false;
-    if ((activeTab === 'market_depth' || activeTab === 'depth_broker') && d?.symbol) {
-      if (!realMarketDepth && !marketDepthLoading) {
+    if ((activeTab === 'overview' || activeTab === 'market_depth' || activeTab === 'depth_broker') && d?.symbol) {
+      if ((activeTab === 'market_depth' || activeTab === 'depth_broker') && !realMarketDepth && !marketDepthLoading) {
         setMarketDepthLoading(true);
         fetchMarketDepth(d.symbol)
           .then(data => { if (!isCancelled && data) setRealMarketDepth(data); })
@@ -3028,11 +3062,17 @@ export default function StockDetailModal({
 
       const cmfStr = hasCmf
         ? `${cmfValue >= 0 ? '+' : ''}${cmfValue.toFixed(2)} (${cmfValue >= 0.05 ? 'Bullish Accumulation' : cmfValue <= -0.05 ? 'Distribution Pressure' : 'Neutral Flow'})`
-        : (Number.isFinite(realBrokerAnalysis?.adRatio)
-            ? (realBrokerAnalysis.adRatio > 0 
-                ? `+${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% (Broker Net Inflow)` 
-                : `${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% (Broker Outflow)`)
-            : '0.0% (Neutral Flow)');
+        : (Number.isFinite(realBrokerAnalysis?.smartMoneyNetFlowPct)
+            ? (realBrokerAnalysis.smartMoneyNetFlowPct >= 0 
+                ? `+${realBrokerAnalysis.smartMoneyNetFlowPct.toFixed(1)}% (Broker Net Inflow)` 
+                : `${realBrokerAnalysis.smartMoneyNetFlowPct.toFixed(1)}% (Broker Outflow)`)
+            : (Number.isFinite(realBrokerAnalysis?.adRatio)
+                ? (realBrokerAnalysis.adRatio >= 1.05
+                    ? `+${((realBrokerAnalysis.adRatio - 1) * 100).toFixed(1)}% (Broker Net Inflow)`
+                    : realBrokerAnalysis.adRatio <= 0.95
+                        ? `-${((1 - realBrokerAnalysis.adRatio) * 100).toFixed(1)}% (Broker Outflow)`
+                        : '0.0% (Neutral Flow)')
+                : '0.0% (Neutral Flow)'));
 
       // Structural Wyckoff Phase detection
       const ltpVal = Number(d?.ltp || 0);
@@ -3596,9 +3636,16 @@ export default function StockDetailModal({
   const isBull = (d.pChange || 0) >= 0;
 
   // Strict Guard: Live intraday 1D broker analytics available globally across all modal tabs (respects selected date)
-  const pure1DBa = (brokerDate && realBrokerAnalysis && (realBrokerAnalysis.businessDate === brokerDate || realBrokerAnalysis.date === brokerDate))
+  const isStrict1DBa = (ba) => {
+    if (!ba || typeof ba !== 'object') return false;
+    if (ba.timeframe === 'ALL' || ba.timeframe === 'all' || ba.isAllTime) return false;
+    if (Number(ba.tradingDays || 0) > 1 || Number(ba.timeframeDays || 0) > 1) return false;
+    if (ba.days && ba.days !== 1 && ba.days !== '1') return false;
+    return true;
+  };
+  const pure1DBa = (brokerDate && realBrokerAnalysis && (realBrokerAnalysis.businessDate === brokerDate || realBrokerAnalysis.date === brokerDate) && isStrict1DBa(realBrokerAnalysis))
     ? realBrokerAnalysis
-    : (broker1DData || ((realBrokerAnalysis && (realBrokerAnalysis.tradingDays === 1 || !realBrokerAnalysis.tradingDays)) ? realBrokerAnalysis : null) || getCachedRealBrokerAnalysis(d?.symbol, 1));
+    : (isStrict1DBa(broker1DData) ? broker1DData : (isStrict1DBa(realBrokerAnalysis) ? realBrokerAnalysis : (getCachedRealBrokerAnalysis(d?.symbol, 1) || null)));
 
   const modalContent = (
     <div
@@ -5052,6 +5099,7 @@ export default function StockDetailModal({
                             const bId = top1D.brokerId || top1D.broker || top1D.id;
                             return `#${bId} (${qty.toLocaleString()} sh)`;
                           }
+                          return '—';
                         } else if (overviewBrokerTapeMode === '5D_SWING') {
                           const b5Accs = broker5DData?.topAccumulators || broker5DData?.topNetBuyers || [];
                           const top5D = broker5DData?.leadAccumulator || b5Accs[0];
@@ -5060,6 +5108,7 @@ export default function StockDetailModal({
                             const bId = top5D.brokerId || top5D.broker || top5D.id;
                             return `#${bId} (+${qty.toLocaleString()} sh)`;
                           }
+                          return '—';
                         }
                         const topHolderAllTime = allTimeBrokerAnalysis?.topHoldingBroker || (allTimeBrokerAnalysis?.topHoldings || [])[0];
                         if (topHolderAllTime) {
@@ -5420,8 +5469,8 @@ export default function StockDetailModal({
                 macdObj = calculateMACD(closes, 12, 26, 9);
               }
               const macdHist = macdObj?.histogram != null ? Number(Number(macdObj.histogram).toFixed(2)) : null;
-              const macdLine = macdObj?.macdLine != null ? Number(Number(macdObj.macdLine).toFixed(2)) : null;
-              const signalLine = macdObj?.signalLine != null ? Number(Number(macdObj.signalLine).toFixed(2)) : null;
+              const macdLine = (macdObj?.macdLine ?? macdObj?.line ?? macdObj?.macd) != null ? Number(Number(macdObj.macdLine ?? macdObj.line ?? macdObj.macd).toFixed(2)) : null;
+              const signalLine = (macdObj?.signalLine ?? macdObj?.signal) != null ? Number(Number(macdObj.signalLine ?? macdObj.signal).toFixed(2)) : null;
               const isMacdBull = macdHist != null ? macdHist >= 0 : null;
               const ema20Val = t?.trend?.ema20 ?? d?.ema20;
               let ema20 = Number(ema20Val || 0);
@@ -6749,8 +6798,8 @@ export default function StockDetailModal({
 
               const flowTot = totalBuyVol + totalSellVol;
               const flowBuyPct = flowTot > 0 ? Math.round((totalBuyVol / flowTot) * 100) : 50;
-              const isFlowAccum = ba?.adSignal === 'Accumulation' || flowBuyPct >= 55;
-              const isFlowDist = ba?.adSignal === 'Distribution' || flowBuyPct <= 45;
+              const isFlowDist = ba?.adSignal === 'Distribution' || pure1DBa?.adSignal === 'Distribution' || ba?.isInstitutionalDumping || pure1DBa?.isInstitutionalDumping || bcr3Sell > bcr3Buy || flowBuyPct <= 45;
+              const isFlowAccum = !isFlowDist && (ba?.adSignal === 'Accumulation' || pure1DBa?.adSignal === 'Accumulation' || flowBuyPct >= 55);
 
               let realityCheck = null;
               if (bookTot > 0 && flowTot > 0) {
@@ -8098,6 +8147,7 @@ export default function StockDetailModal({
             </div>
             <div style={{ minHeight: 320 }}>
               <StockInformationHubModal
+                key={`hub-${d.symbol}`}
                 symbol={d.symbol}
                 initialTab="VOLUME_PROFILE"
                 selectedScrip={d}
@@ -8124,6 +8174,7 @@ export default function StockDetailModal({
               <div style={{ marginBottom: 16 }}>
                 <CardLocalErrorBoundary>
                   <StockBrokerAnalysisTab
+                    key={`broker-${d.symbol}-${brokerDays}-${brokerDate || 'all'}`}
                     brokerData={realBrokerAnalysis}
                     allTimeHoldingData={allTimeBrokerAnalysis}
                     floorsheetData={realFloorsheet}
@@ -9124,22 +9175,22 @@ export default function StockDetailModal({
                 )}
               </div>
             )}
-            <StockRightShareCard stock={d} rightShareData={liveDetail?.rightShare} />
-            <DividendHistoryPanel symbol={d.symbol} hideSearch={true} />
+            <StockRightShareCard key={`right-${d.symbol}`} stock={d} rightShareData={liveDetail?.rightShare} />
+            <DividendHistoryPanel key={`div-${d.symbol}`} symbol={d.symbol} hideSearch={true} />
           </div>
         )}
 
         {/* ════ TAB 8: SEASONALITY PATTERNS (Share Hub Reference) ════ */}
         {activeTab === 'seasonality' && (
           <div style={{ padding: '0 4px' }}>
-            <StockSeasonalityCard symbol={d.symbol} sector={d.sector} />
+            <StockSeasonalityCard key={`season-${d.symbol}`} symbol={d.symbol} sector={d.sector} />
           </div>
         )}
 
         {/* ════ TAB 9: FINANCIAL REPORTS & REGULATORY ANNOUNCEMENTS ════ */}
         {activeTab === 'reports' && (
           <div style={{ padding: '0 4px' }}>
-            <StockReportsAnnouncementsCard symbol={d.symbol} companyName={d.name} sector={d.sector} />
+            <StockReportsAnnouncementsCard key={`reports-${d.symbol}`} symbol={d.symbol} companyName={d.name} sector={d.sector} />
           </div>
         )}
 

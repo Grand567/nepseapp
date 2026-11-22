@@ -1065,7 +1065,18 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     const depth = telemetry.marketDepth;
     const totalBids = depth.totalBidKitta || 0;
     const totalAsks = depth.totalAskKitta || 0;
-    const obir = depth.obir || (totalAsks > 0 ? Number((totalBids / totalAsks).toFixed(2)) : 1.0);
+    let obirRatio = 1.0;
+    if (totalAsks > 0 && totalBids > 0) {
+      obirRatio = Number((totalBids / totalAsks).toFixed(2));
+    } else if (depth.obir != null && Number.isFinite(Number(depth.obir))) {
+      const rawObir = Number(depth.obir);
+      if (rawObir >= -1.0 && rawObir <= 1.0 && rawObir !== 1.0) {
+        obirRatio = Number(Math.max(0.1, (1 + rawObir) / Math.max(0.01, 1 - rawObir)).toFixed(2));
+      } else {
+        obirRatio = rawObir;
+      }
+    }
+    const obir = obirRatio;
     const bidRatio = depth.bidRatioPct || (totalBids + totalAsks > 0 ? Math.round((totalBids / (totalBids + totalAsks)) * 100) : 50);
     const askRatio = 100 - bidRatio;
 
@@ -2235,9 +2246,9 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
               {/* Camarilla Breakout Band */}
               {activePivots?.camarilla && (
                 <div className="grid grid-cols-4 gap-2 text-center text-[11px] pt-1 border-t border-slate-800/80">
-                  <div className="p-1.5 rounded bg-rose-950/20 border border-rose-500/20">
+                  <div className="p-1.5 rounded bg-emerald-950/20 border border-emerald-500/20">
                     <span className="text-slate-400 block text-[10px]">Camarilla H4 (Breakout Buy)</span>
-                    <span className="font-bold text-rose-300">Rs {activePivots.camarilla.h4}</span>
+                    <span className="font-bold text-emerald-300">Rs {activePivots.camarilla.h4}</span>
                   </div>
                   <div className="p-1.5 rounded bg-slate-950 border border-slate-800">
                     <span className="text-slate-400 block text-[10px]">Camarilla H3 (Range High)</span>
@@ -2247,9 +2258,9 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                     <span className="text-slate-400 block text-[10px]">Camarilla L3 (Range Low)</span>
                     <span className="font-bold text-slate-300">Rs {activePivots.camarilla.l3}</span>
                   </div>
-                  <div className="p-1.5 rounded bg-emerald-950/20 border border-emerald-500/20">
+                  <div className="p-1.5 rounded bg-rose-950/20 border border-rose-500/20">
                     <span className="text-slate-400 block text-[10px]">Camarilla L4 (Breakdown Sell)</span>
-                    <span className="font-bold text-emerald-300">Rs {activePivots.camarilla.l4}</span>
+                    <span className="font-bold text-rose-300">Rs {activePivots.camarilla.l4}</span>
                   </div>
                 </div>
               )}

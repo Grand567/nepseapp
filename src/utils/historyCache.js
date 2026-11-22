@@ -479,16 +479,28 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
   const toKey = options?.toDate ? String(options.toDate).trim() : '';
   const key = `nepse_real_broker_${rawSym}_d${numDays}_${dateKey}_${fromKey}_${toKey}`;
 
-  if (!isAll && brokerDataCache.has(rawSym) && numDays === 1 && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey) {
-    return brokerDataCache.get(rawSym);
+  const is1DRequested = !isAll && numDays === 1;
+  const isValid1DObj = (obj) => {
+    if (!obj || typeof obj !== 'object') return false;
+    if (obj.timeframe === 'ALL' || obj.timeframe === 'all' || obj.isAllTime) return false;
+    if (Number(obj.tradingDays || 0) > 1 || Number(obj.timeframeDays || 0) > 1) return false;
+    if (obj.days && obj.days !== 1 && obj.days !== '1') return false;
+    return true;
+  };
+
+  if (is1DRequested && brokerDataCache.has(rawSym) && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey) {
+    const candidate = brokerDataCache.get(rawSym);
+    if (isValid1DObj(candidate)) return candidate;
   }
 
   if (memBrokerCache.has(key)) {
-    return memBrokerCache.get(key);
+    const candidate = memBrokerCache.get(key);
+    if (!is1DRequested || isValid1DObj(candidate)) return candidate;
   }
 
-  if (!isAll && memBrokerCache.has(rawSym) && numDays === 1 && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey) {
-    return memBrokerCache.get(rawSym);
+  if (is1DRequested && memBrokerCache.has(rawSym) && (!options?.date || options.date === BUNDLED_BROKER_DATE) && !fromKey && !toKey) {
+    const candidate = memBrokerCache.get(rawSym);
+    if (isValid1DObj(candidate)) return candidate;
   }
 
   try {
@@ -499,6 +511,10 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
         if (parsed && (parsed.topBuyers?.length > 0 || parsed.buyers?.length > 0 || parsed.allHoldings?.length > 0 || parsed.topHoldings?.length > 0 || parsed.adRatio !== undefined)) {
           // Guard: Never return a cached 1D result when multi-day or all-time horizon is requested
           if ((isAll || numDays > 1) && !options?.date && !options?.fromDate && Number(parsed.tradingDays || 1) <= 1 && parsed.timeframe !== 'ALL') {
+            return null;
+          }
+          // Guard: Never return a multi-day or all-time result when 1D horizon is requested
+          if (is1DRequested && !isValid1DObj(parsed)) {
             return null;
           }
           // Guard: Never return stale cache from past sessions when today's session is active
@@ -578,18 +594,14 @@ export function getCachedBrokerData(symbol) {
     }
   }
 
-  // Enrich with multi-session cumulative ledger data
+  // Enrich authentic 1D data with multi-session cumulative ledger metadata if present
+  // GUARD: NEVER substitute all-time cumulative ledger as 1D broker data when res is null!
+  // Doing so causes multi-year cumulative holdings (e.g. 2.8M shares) to leak into 1D daily cards.
   const cum = getCumulativeBrokerData(key);
   if (res && cum) {
     res.cumulative = cum;
     if (res.institutionalCostBasis == null) res.institutionalCostBasis = cum.institutionalCostBasis;
     if (res.cumTopAccumulators == null) res.cumTopAccumulators = cum.topAccumulators;
-  } else if (!res && cum) {
-    res = {
-      symbol: key,
-      isCumulativeBaseline: true,
-      ...cum
-    };
   }
 
   return res;

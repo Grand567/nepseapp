@@ -301,7 +301,10 @@ export function UniversalScreener({
 }) {
   const [data, setData] = useState<any[]>([]);
   const [source, setSource] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    const cached = getCachedStocks();
+    return !(cached && cached.length > 20);
+  });
   const [timeframe, setTimeframe] = useState('1D');
   const [refreshing, setRefreshing] = useState(false);
   const [rawTotal, setRawTotal] = useState(() => (Array.isArray(NEPSE_UNIVERSE) && NEPSE_UNIVERSE.length) || 247);
@@ -309,10 +312,17 @@ export function UniversalScreener({
 
   const loadData = async (activeTf = timeframe, isCancelled?: () => boolean) => {
     try {
-      const { stocks: rawStocks, source: src } = await Promise.race([
-        loadNepseData(),
-        new Promise<any>((resolve) => setTimeout(() => resolve({ stocks: getCachedStocks() || [], source: 'cached-fallback' }), 5000))
-      ]);
+      const cached = getCachedStocks();
+      let rawStocks = cached && cached.length > 20 ? cached : null;
+      let src = 'cached-instant';
+      if (!rawStocks) {
+        const res = await Promise.race([
+          loadNepseData(),
+          new Promise<any>((resolve) => setTimeout(() => resolve({ stocks: getCachedStocks() || [], source: 'cached-fallback' }), 1500))
+        ]);
+        rawStocks = res?.stocks;
+        src = res?.source;
+      }
       const stocks = includeNonEquities ? (rawStocks || []) : (rawStocks || []).filter((s) => isPureNepseEquity(s));
       if (rawStocks?.length) setRawTotal(stocks.length);
 
@@ -903,27 +913,65 @@ export function StockMomentumAnalyzer({ stocks = [], initialSymbol = 'NABIL' }: 
 // ── Market summary ──
 export function MarketSummaryService({ selectedDate, date }: { selectedDate?: string; date?: string } = {}) {
   const activeDate = selectedDate || date || '';
-  const [data, setData] = useState<any>(null);
-  const [indices, setIndices] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>(() => {
+    const cachedIdx = getCachedIndices();
+    if (cachedIdx?.nepse) {
+      return {
+        nepseIndex: cachedIdx.nepse.value || 2624.36,
+        change: cachedIdx.nepse.change || 0,
+        changePercent: cachedIdx.nepse.pChange || 0,
+        totalTurnover: cachedIdx.nepse.turnover || 0,
+        totalTradedShares: 0,
+        totalTransactions: 0,
+        marketStatus: 'CLOSED',
+        advances: null,
+        declines: null,
+        unchanged: null,
+      };
+    }
+    return null;
+  });
+  const [indices, setIndices] = useState<any[]>(() => {
+    const cachedIdx = getCachedIndices();
+    if (cachedIdx?.nepse) {
+      return [
+        { name: 'NEPSE Index', value: cachedIdx.nepse.value, change: cachedIdx.nepse.change, changePercent: cachedIdx.nepse.pChange },
+        { name: 'Sensitive Index', value: cachedIdx.sensitive?.value, change: cachedIdx.sensitive?.change, changePercent: cachedIdx.sensitive?.pChange },
+        { name: 'Float Index', value: cachedIdx.float?.value, change: cachedIdx.float?.change, changePercent: cachedIdx.float?.pChange },
+        ...(cachedIdx.subIndices || []).map((s: any) => ({ name: s.index || s.name, value: s.value, change: s.change, changePercent: s.pChange }))
+      ];
+    }
+    return [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    const cachedIdx = getCachedIndices();
+    return !cachedIdx?.nepse;
+  });
   const [timeframe, setTimeframe] = useState('1D');
   const [refreshing, setRefreshing] = useState(false);
   const [nepseHistory, setNepseHistory] = useState<any[]>([]);
 
   const loadData = async () => {
     try {
-      const [m, idx, hist] = await Promise.all([
+      const [m, idx] = await Promise.all([
         fetchMarketSummary(activeDate),
         fetchIndices(activeDate),
-        fetchPriceHistory('NEPSE', 365).catch(() => null)
       ]);
       setData(m?.data);
       setIndices(idx?.data || []);
-      if (Array.isArray(hist) && hist.length > 0) {
-        setNepseHistory(hist);
-      }
-    } catch (_) {}
-    setLoading(false);
+      setLoading(false);
+
+      // Background non-blocking load for multi-session historical timeframes
+      fetchPriceHistory('NEPSE', 365)
+        .then(hist => {
+          if (Array.isArray(hist) && hist.length > 0) {
+            setNepseHistory(hist);
+          }
+        })
+        .catch(() => {});
+    } catch (_) {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -2196,17 +2244,47 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
 // ── Sector Heatmap & Rotation (Wired to /api/sector-heatmap) ──
 export function SectorHeatmapService({ selectedDate: propSelectedDate, date: propDate }: { selectedDate?: string; date?: string } = {}) {
   const activeDate = propSelectedDate || propDate || '';
-  const [sectors, setSectors] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [sectors, setSectors] = useState<any[]>(() => {
+    const cached = getCachedStocks();
+    if (cached && cached.length > 20) {
+      const stocks = cached.filter((s: any) => isPureNepseEquity(s));
+      const map: Record<string, any> = {};
+      stocks.forEach((s: any) => {
+        const sec = s.sector || 'Others';
+        if (!map[sec]) {
+          map[sec] = { sector: sec, stockCount: 0, verifiedCount: 0, pendingCount: 0, totalChange: 0, volume: 0, turnover: 0, advancers: 0, decliners: 0, unchanged: 0 };
+        }
+        map[sec].stockCount++;
+        const p = Number(s.pChange || s.percentageChange || 0);
+        map[sec].verifiedCount++;
+        map[sec].totalChange += p;
+        map[sec].volume += Number(s.volume || 0);
+        map[sec].turnover += Number(s.turnover || 0);
+        if (p > 0) map[sec].advancers++;
+        else if (p < 0) map[sec].decliners++;
+        else map[sec].unchanged++;
+      });
+      return Object.values(map).map((s: any) => ({
+        ...s,
+        pChange: s.verifiedCount > 0 ? +(s.totalChange / s.verifiedCount).toFixed(2) : null
+      })).sort((a: any, b: any) => (b.pChange ?? -999) - (a.pChange ?? -999));
+    }
+    return [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    const cached = getCachedStocks();
+    return !(cached && cached.length > 20);
+  });
   const [timeframe, setTimeframe] = useState('1D');
   const [refreshing, setRefreshing] = useState(false);
   const heatmapSeqRef = useRef(0);
 
   const loadData = async (activeTf = timeframe) => {
     const seq = ++heatmapSeqRef.current;
-    setLoading(true);
+    if (!sectors.length) setLoading(true);
     try {
-      const { stocks: rawStocks } = await loadNepseData(activeDate);
+      const cached = getCachedStocks();
+      const rawStocks = (cached && cached.length > 20) ? cached : (await loadNepseData(activeDate))?.stocks;
       if (seq !== heatmapSeqRef.current) return;
       const stocks = (rawStocks || []).filter((s: any) => isPureNepseEquity(s));
 
@@ -4169,7 +4247,7 @@ export function BrokerAnalysisService({
           concentrationPct: Number(d.concentrationPct ?? d.bcr3BuyPct ?? 0) || 0,
           smartMoneyPhase: d.smartMoneyPhase || deriveSmartMoneyPhase(d.adSignal || '', Number(d.adStrength || 0), Number(d.adRatio || 0), Number(d.stealthAccumulation || 50))
         };
-        setCachedRealBrokerAnalysis(sym, d);
+        setCachedRealBrokerAnalysis(sym, d, days, { date: activeDate });
         setBrokerData(formatted);
         setLoading(false);
         return;

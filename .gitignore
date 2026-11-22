@@ -82,3 +82,8 @@ audit-reports/screenshots/
 proxy/data/daily_selection_guide_state.json
 
 
+# Secrets & temporary audit bundles
+proxy/data/.license_secret
+proxy/data/pro_licenses.json
+audit-bundles/
+debug.log

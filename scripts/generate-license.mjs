@@ -3,12 +3,12 @@
 // Developer CLI tool to issue single-use, device-bound Pro license keys for customers.
 
 import {
-  generateLicenseKey,
+  generateServerLicenseKey as generateLicenseKey,
   cleanDeviceId,
   formatDeviceId,
   mapPlanToDays,
   parseLicenseKey
-} from '../src/utils/licenseEngine.js';
+} from '../proxy/utils/licenseServerEngine.mjs';
 
 function parseArgs() {
   const args = process.argv.slice(2);

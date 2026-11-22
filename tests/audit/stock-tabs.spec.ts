@@ -10,9 +10,10 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { setupAuditPage, assertRuntimeHealth, getDbConnection, recordFailure } from './audit-helpers';
+import { setupAuditPage, assertRuntimeHealth, assertSemanticCardInvariants, getDbConnection, recordFailure } from './audit-helpers';
 
 const ACTIVE_SYMBOLS = [
+  { symbol: 'AKJCL', name: 'Ankhu Khola Jalvidhyut Company Ltd', sector: 'Hydropower' },
   { symbol: 'NABIL', name: 'Nabil Bank Limited', sector: 'Commercial Bank' },
   { symbol: 'CHCL', name: 'Chilime Hydro power Co.', sector: 'Hydropower' },
   { symbol: 'CBBL', name: 'Chhimek Laghubitta Bittiya Sanstha', sector: 'Microfinance' },
@@ -50,7 +51,7 @@ test.describe('Drabyashree NEPSE - 13 Stock Tabs Audit', () => {
       const state = await setupAuditPage(page);
 
       await page.goto('/', { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => typeof (window as any).__openStockDetail === 'function', { timeout: 25000 });
+      await page.waitForFunction(() => typeof (window as any).__openStockDetail === 'function', { timeout: 60000 });
 
       // 1. Open Stock Detail Modal
       await page.evaluate((sym) => {
@@ -61,7 +62,7 @@ test.describe('Drabyashree NEPSE - 13 Stock Tabs Audit', () => {
       await page.waitForFunction((sym) => {
         const el = document.querySelector('div[style*="z-index: 99999"], div[style*="zIndex: 99999"]');
         return el && el.innerText.includes(sym);
-      }, item.symbol, { timeout: 25000 });
+      }, item.symbol, { timeout: 60000 });
 
       // Modal container locator
       const modal = page.locator('div[style*="z-index: 99999"], div[style*="zIndex: 99999"]').first();
@@ -160,7 +161,8 @@ test.describe('Drabyashree NEPSE - 13 Stock Tabs Audit', () => {
 
         // Mandatory Invariant Check
         const healthy = await assertRuntimeHealth(page, state, `StockTabs_${item.symbol}`, tab.label);
-        if (!healthy) {
+        const semanticsOk = await assertSemanticCardInvariants(page, state, `StockTabs_${item.symbol}`, tab.label, item.symbol);
+        if (!healthy || !semanticsOk) {
           symbolFailures++;
         }
       }

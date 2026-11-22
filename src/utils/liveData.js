@@ -676,6 +676,14 @@ export const realBrokerAnalysisCache = new Map();
  * Secondary: checks historyCache's brokerDataCache and memBrokerCache.
  * Miss-path: falls back to disk/localStorage.
  */
+const isValid1DObj = (obj) => {
+  if (!obj || typeof obj !== 'object') return false;
+  if (obj.timeframe === 'ALL' || obj.timeframe === 'all' || obj.isAllTime || obj.isCumulativeBaseline) return false;
+  if (Number(obj.tradingDays || 0) > 1 || Number(obj.timeframeDays || 0) > 1) return false;
+  if (obj.days && obj.days !== 1 && obj.days !== '1') return false;
+  return true;
+};
+
 export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
   const normSym = String(sym || '').toUpperCase().trim();
   if (!normSym) return null;
@@ -683,10 +691,12 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
   const numDays = isAllTime ? 'all' : Math.max(1, parseInt(days || 1, 10) || 1);
   if (numDays === 1 && !options?.date && !options?.fromDate && !options?.toDate) {
     if (realBrokerAnalysisCache.has(normSym)) {
-      return realBrokerAnalysisCache.get(normSym);
+      const candidate = realBrokerAnalysisCache.get(normSym);
+      if (isValid1DObj(candidate)) return candidate;
+      realBrokerAnalysisCache.delete(normSym);
     }
     const fromHistory = getCachedBrokerData(normSym);
-    if (fromHistory) {
+    if (fromHistory && isValid1DObj(fromHistory)) {
       realBrokerAnalysisCache.set(normSym, fromHistory);
       return fromHistory;
     }
@@ -700,7 +710,11 @@ export function setCachedRealBrokerAnalysis(sym, data, days = 1, options = {}) {
   const isAllTime = days === 'all' || days === 'ALL' || days === 'all-time' || options?.timeframe === 'all' || Number(days) >= 300;
   const numDays = isAllTime ? 'all' : Math.max(1, parseInt(days || 1, 10) || 1);
   if (numDays === 1 && !options?.date && !options?.fromDate && !options?.toDate) {
-    realBrokerAnalysisCache.set(normSym, data);
+    if (isValid1DObj(data)) {
+      realBrokerAnalysisCache.set(normSym, data);
+    } else {
+      realBrokerAnalysisCache.delete(normSym);
+    }
   }
   setCachedRealBrokerAnalysisHistory(sym, data, numDays, options);
 }

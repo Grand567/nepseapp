@@ -90,22 +90,22 @@ export function LiveMarketDashboard({
     {
       icon: "💧",
       name: isNe ? 'जलविद्युत (Hydro)' : 'Hydropower',
-      gain: hydroSub ? `${hydroSub.pChange >= 0 ? '+' : ''}${hydroSub.pChange.toFixed(2)}%` : '+2.40%'
+      gain: Number.isFinite(hydroSub?.pChange) ? `${hydroSub.pChange >= 0 ? '+' : ''}${hydroSub.pChange.toFixed(2)}%` : '+2.40%'
     },
     {
       icon: "🏨",
       name: isNe ? 'होटल तथा पर्यटन' : 'Hotels & Tourism',
-      gain: hotelSub ? `${hotelSub.pChange >= 0 ? '+' : ''}${hotelSub.pChange.toFixed(2)}%` : '+3.14%'
+      gain: Number.isFinite(hotelSub?.pChange) ? `${hotelSub.pChange >= 0 ? '+' : ''}${hotelSub.pChange.toFixed(2)}%` : '+3.14%'
     },
     {
       icon: "🏭",
       name: isNe ? 'उत्पादन (Mfg)' : 'Manufacturing',
-      gain: mfgSub ? `${mfgSub.pChange >= 0 ? '+' : ''}${mfgSub.pChange.toFixed(2)}%` : '+1.95%'
+      gain: Number.isFinite(mfgSub?.pChange) ? `${mfgSub.pChange >= 0 ? '+' : ''}${mfgSub.pChange.toFixed(2)}%` : '+1.95%'
     },
     {
       icon: "🏛️",
       name: isNe ? 'वाणिज्य बैंक' : 'Commercial Bank',
-      gain: bankSub ? `${bankSub.pChange >= 0 ? '+' : ''}${bankSub.pChange.toFixed(2)}%` : '+0.82%'
+      gain: Number.isFinite(bankSub?.pChange) ? `${bankSub.pChange >= 0 ? '+' : ''}${bankSub.pChange.toFixed(2)}%` : '+0.82%'
     },
   ];
 

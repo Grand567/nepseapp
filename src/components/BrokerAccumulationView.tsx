@@ -39,15 +39,12 @@ export function BrokerAccumulationView({ initialSymbol = 'SHIVM' }: { initialSym
     setError(null);
     try {
       const [bData, fsData] = await Promise.all([
-        fetchRealBrokerAnalysis(sym, 1, { date: dt, refresh: true }),
+        fetchRealBrokerAnalysis(sym, 1, { date: dt }),
         fetchRealFloorsheet(sym, dt, 1, 500).catch(() => null)
       ]);
       setBrokerData(bData);
       const rows = Array.isArray(fsData) ? fsData : (Array.isArray(fsData?.rows) ? fsData.rows : []);
       setFloorsheetContracts(rows);
-      if (bData?.businessDate && !dt) {
-        setSelectedDate(bData.businessDate);
-      }
     } catch (err: any) {
       setError(err.message || `Failed to load broker analysis for ${sym}`);
     } finally {
@@ -87,10 +84,11 @@ export function BrokerAccumulationView({ initialSymbol = 'SHIVM' }: { initialSym
 
   const sessionClosePrice = useMemo(() => {
     const raw = Number(
+      brokerData?.latestClose ||
       brokerData?.closePrice ||
       brokerData?.ltp ||
       brokerData?.price ||
-      (floorsheetContracts.length > 0 ? (floorsheetContracts[0]?.rate || floorsheetContracts[0]?.contractRate || 0) : 0)
+      (floorsheetContracts.length > 0 ? (floorsheetContracts[floorsheetContracts.length - 1]?.rate || floorsheetContracts[floorsheetContracts.length - 1]?.contractRate || floorsheetContracts[0]?.rate || floorsheetContracts[0]?.contractRate || 0) : 0)
     );
     return isFinite(raw) && raw > 0 ? raw : 0;
   }, [brokerData, floorsheetContracts]);

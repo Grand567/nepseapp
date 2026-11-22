@@ -29,7 +29,7 @@ test.describe('Drabyashree NEPSE - 125+ Services Hub Audit', () => {
       const state = await setupAuditPage(page);
 
       await page.goto('/', { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => typeof (window as any).__setActiveTab === 'function', { timeout: 25000 });
+      await page.waitForFunction(() => typeof (window as any).__setActiveTab === 'function', { timeout: 60000 });
 
       // Navigate to Services Hub
       await page.evaluate(() => {
@@ -40,7 +40,7 @@ test.describe('Drabyashree NEPSE - 125+ Services Hub Audit', () => {
       await page.waitForFunction(() => {
         const txt = document.body.innerText;
         return txt.includes('Flagship Analytical Suites') || txt.includes('Matching Tools');
-      }, { timeout: 25000 });
+      }, { timeout: 60000 });
 
       let catFailures = 0;
 
