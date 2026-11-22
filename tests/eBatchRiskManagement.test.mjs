@@ -110,7 +110,7 @@ assert(np.cgt > 0, `CGT applied: ${np.cgt}`);
 assert(np.isProfit === true, 'Trade is profitable');
 assert(np.roi > 0, `Positive ROI: ${np.roi}%`);
 assert(np.breakEvenPrice > 400, `Break-even > buy price: ${np.breakEvenPrice}`);
-assert(np.cgtLabel.includes('7.5'), 'Short-term CGT label: 7.5%');
+assert(np.cgtLabel.includes('5.0%') || np.cgtLabel.includes('5%'), `Short-term CGT label: ${np.cgtLabel}`);
 assert(typeof np.disclaimer === 'string', 'Has disclaimer');
 
 // Long-term (holding > 365 days)
@@ -120,7 +120,7 @@ const npLong = calculateNetProfit({
   investorType: 'individual'
 });
 assert(npLong.holdingDays > 365, `Long-term holding: ${npLong.holdingDays} days`);
-assert(npLong.cgtLabel.includes('5%'), `Long-term CGT 5%: ${npLong.cgtLabel}`);
+assert(npLong.cgtLabel.includes('3.75%'), `Long-term CGT 3.75%: ${npLong.cgtLabel}`);
 assert(npLong.cgt < np.cgt, 'Long-term CGT < short-term CGT');
 
 // Institutional
@@ -158,8 +158,8 @@ assert(rrNull.label === 'N/A', 'Null R:R label = N/A');
 // ── Constants validation ───────────────────────────────────────────────────
 console.log('\n[Constants] Regulatory Values');
 assert(NEPSE_CIRCUIT_PCT === 15.0, `Circuit = 15%: ${NEPSE_CIRCUIT_PCT}`);
-assert(CGT_SHORT_TERM === 0.075, `Short-term CGT = 7.5%: ${CGT_SHORT_TERM}`);
-assert(CGT_LONG_TERM === 0.050, `Long-term CGT = 5.0%: ${CGT_LONG_TERM}`);
+assert(CGT_SHORT_TERM === 0.050, `Short-term CGT = 5.0%: ${CGT_SHORT_TERM}`);
+assert(CGT_LONG_TERM === 0.0375, `Long-term CGT = 3.75%: ${CGT_LONG_TERM}`);
 
 console.log(`\nE-BATCH TESTS: ${pass} PASSED, ${fail} FAILED`);
 if (fail > 0) process.exit(1);

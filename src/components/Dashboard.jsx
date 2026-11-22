@@ -4905,10 +4905,10 @@ function Dashboard({
 
             const t1NetPct = primeDailyPick.levels?.target1?.netReturnPct != null
               ? primeDailyPick.levels.target1.netReturnPct
-              : (t1Pct && Number(t1Pct) > 0.73 ? +((Number(t1Pct) - 0.73) * 0.925).toFixed(1) : t1Pct);
+              : (t1Pct && Number(t1Pct) > 0.73 ? +((Number(t1Pct) - 0.73) * 0.95).toFixed(1) : t1Pct);
             const t2NetPct = primeDailyPick.levels?.target2?.netReturnPct != null
               ? primeDailyPick.levels.target2.netReturnPct
-              : (t2Pct && Number(t2Pct) > 0.73 ? +((Number(t2Pct) - 0.73) * 0.925).toFixed(1) : t2Pct);
+              : (t2Pct && Number(t2Pct) > 0.73 ? +((Number(t2Pct) - 0.73) * 0.95).toFixed(1) : t2Pct);
 
             return (
               <div style={{
@@ -4948,7 +4948,7 @@ function Dashboard({
                   </div>
                   {t1NetPct != null && (
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#34d399', marginTop: 1 }}>
-                      Net: +{t1NetPct}% <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
+                      Net: +{t1NetPct}% <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>(-5.0% CGT+fees)</span>
                     </div>
                   )}
                 </div>
@@ -4960,7 +4960,7 @@ function Dashboard({
                   </div>
                   {t2NetPct != null && (
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#c084fc', marginTop: 1 }}>
-                      Net: +{t2NetPct}% <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
+                      Net: +{t2NetPct}% <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>(-5.0% CGT+fees)</span>
                     </div>
                   )}
                 </div>

@@ -39,6 +39,7 @@ import {
 import { getCachedStockFundamentals, getCachedRealPriceHistory, getCachedRealBrokerAnalysis } from './historyCache.js';
 import { evaluateOrderFlowVeto } from './sharedBrokerAggregationEngine.js';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from './nepseCalendar.js';
+import { bsToAd } from './bikramSambat.js';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import sebonPipelineData from '../data/sebonPipelineData.json';
 import {
@@ -80,6 +81,7 @@ export interface MasterStockEvaluation {
   pChange: number;
   volume: number;
   turnover: number;
+  turnoverLakhs: number;
   sharesOutM: number;
   publicFloatM: number;
   promoterHolding: number;
@@ -309,7 +311,10 @@ export function evaluateMasterStock(
   const sym = String(stock?.symbol || stock?.scrip || '').toUpperCase().trim();
   const name = String(stock?.name || sym).trim();
   const sector = String(stock?.sector || stock?.sectorName || 'General').trim();
-  const ltp = Number(stock?.ltp || stock?.closePrice || stock?.price || 100);
+  const ltp = Number(stock?.ltp || stock?.closePrice || stock?.price || 0);
+  if (!Number.isFinite(ltp) || ltp <= 0) {
+    return null as any;
+  }
   if (!isPureNepseEquity({ symbol: sym, sector, name, ltp }) || (ltp > 0 && ltp < 50)) {
     return null as any;
   }
@@ -320,7 +325,7 @@ export function evaluateMasterStock(
   // Fundamentals & share structure
   const cachedFund = stock?.cachedFund || getCachedStockFundamentals(sym);
   const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (stock?.eps || 0));
-  const bvps = Number(cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (stock?.bookValue || stock?.bvps || 100));
+  const bvps = Number(cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (stock?.bookValue || stock?.bvps || 0));
   const pe = eps > 0 ? +(ltp / eps).toFixed(2) : (Number(stock?.pe) || 0);
   const pb = bvps > 0 ? +(ltp / bvps).toFixed(2) : (Number(stock?.pb) || 1.0);
 
@@ -391,7 +396,7 @@ export function evaluateMasterStock(
   const rawBcr3 = rawGrossBcr3 ?? rawNetBcr3 ?? null;
 
   const isBrokerVerified = rawBcr3 !== null && rawBcr3 !== undefined && Number(rawBcr3) > 0;
-  const bcr3 = isBrokerVerified ? Number(rawGrossBcr3 ?? (Number(rawNetBcr3) * 2.2).toFixed(1)) : 0.0;
+  const bcr3 = isBrokerVerified ? Math.min(100, Number(rawGrossBcr3 ?? rawNetBcr3 ?? 0)) : 0.0;
   const bcr3Net = rawNetBcr3 !== null && rawNetBcr3 !== undefined ? Number(rawNetBcr3) : Number((bcr3 * 0.45).toFixed(1));
   const bcr5 = Number(cachedBroker?.bcr5BuyPct ?? cachedBroker?.bcr5NetPct ?? brokerConc?.bcr5BuyPct ?? (isBrokerVerified ? bcr3 * 1.35 : 0.0));
   const scr3 = Number(cachedBroker?.scr3SellPct ?? cachedBroker?.scr3NetPct ?? 0);
@@ -452,13 +457,14 @@ export function evaluateMasterStock(
       // Parse Nepali fiscal year from source string e.g. "SEBON Official Gazette 2083/05/02"
       const bsMatch = String(sebonMatch.source).match(/(\d{4})\/(\d{2})\/(\d{2})/);
       if (bsMatch) {
-        // Approximate BS→AD conversion: BS year - 56.7 years ≈ AD year
         const bsYear = parseInt(bsMatch[1]);
-        const adYear = bsYear - 57;
-        const filingDate = new Date(`${adYear}-${bsMatch[2]}-${bsMatch[3]}`).getTime();
-        if (!isNaN(filingDate)) {
-          const unlockDate = filingDate + (3 * 365.25 * 24 * 60 * 60 * 1000);
-          daysToLockin = Math.ceil((unlockDate - Date.now()) / (1000 * 60 * 60 * 24));
+        if (bsYear >= 2050 && bsYear <= 2099) {
+          const filingDateStr = bsToAd(`${bsYear}-${bsMatch[2]}-${bsMatch[3]}`);
+          const filingDate = new Date(filingDateStr).getTime();
+          if (!isNaN(filingDate)) {
+            const unlockDate = filingDate + (3 * 365.25 * 24 * 60 * 60 * 1000);
+            daysToLockin = Math.ceil((unlockDate - Date.now()) / (1000 * 60 * 60 * 24));
+          }
         }
       }
     } else if (stock?.ipoAllotmentDate) {
@@ -468,7 +474,7 @@ export function evaluateMasterStock(
       daysToLockin = Math.ceil((unlockDate - Date.now()) / (1000 * 60 * 60 * 24));
     }
   }
-  const isPromoterLockinNear = daysToLockin !== null && daysToLockin >= 0 && daysToLockin <= 60;
+  const isPromoterLockinNear = daysToLockin !== null && daysToLockin >= 0 && daysToLockin < 120;
 
   // Support Base & Bounce-Back Reversal Analytics
   const rsiVal = Number(stock?.rsi || stock?.rsi14 || 50);
@@ -562,8 +568,10 @@ export function evaluateMasterStock(
     stock?.netBrokerQty ??
     (isBrokerVerified && bcr3Net > 0 && vol > 0 ? (bcr3Net / 100) * vol : 0)
   );
-  const publicFloatShares = Math.max(1, publicFloatM * 1_000_000);
-  const freeFloatCorneredPct = Number(((Math.max(0, rawNetQty5D) / publicFloatShares) * 100).toFixed(2));
+  const publicFloatShares = floatKnown && publicFloatM > 0 ? publicFloatM * 1_000_000 : null;
+  const freeFloatCorneredPct = (floatKnown && publicFloatShares && publicFloatShares > 0)
+    ? Number(((Math.max(0, rawNetQty5D) / publicFloatShares) * 100).toFixed(2))
+    : 0;
 
   const hasFlowBacking = !isDistributionTrap && (isBrokerVerified ? (bcr3 >= 40.0 || bcr3Net >= 16.0) : (cmfFallbackPasses || (stock?.stealthAccumulation || 0) >= 65));
   let rallyTrack: 'TRACK_A_COILED_2_3D_IGNITION' | 'TRACK_B_T2_CLEARED_CONTINUATION' | 'STANDARD_ACCUMULATION' = 'STANDARD_ACCUMULATION';
@@ -866,7 +874,7 @@ export function evaluateMasterStock(
       : isCapitalCapped
         ? ` [Capped at 100K Capital: ${maxAffordableShares} units]`
         : '';
-  const tmsOrderText = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${sym} | Type: LIMIT ORDER\nTrack: ${track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum'} (${rallyHorizonLabel})\nSetup: ${setupArchetype}\nEntry Limit: Rs. ${entryLow} (Chase Cap: Rs. ${chaseCap})\nAllocated Qty: ${kellyShares} Shares (Capital: Rs. ${capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${stopLoss} (-${stopLossPct}%)\nTarget 1: Rs. ${target1Gross} (+${t1NetCalc.netReturnPct}% Net after 7.5% CGT)`;
+  const tmsOrderText = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${sym} | Type: LIMIT ORDER\nTrack: ${track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum'} (${rallyHorizonLabel})\nSetup: ${setupArchetype}\nEntry Limit: Rs. ${entryLow} (Chase Cap: Rs. ${chaseCap})\nAllocated Qty: ${kellyShares} Shares (Capital: Rs. ${capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${stopLoss} (-${stopLossPct}%)\nTarget 1: Rs. ${target1Gross} (+${t1NetCalc.netReturnPct}% Net after 5.0% CGT)`;
 
   return {
     symbol: sym,
@@ -876,6 +884,7 @@ export function evaluateMasterStock(
     pChange,
     volume: vol,
     turnover,
+    turnoverLakhs: Number((turnover / 100000).toFixed(2)),
     sharesOutM,
     publicFloatM,
     promoterHolding,
@@ -1021,13 +1030,15 @@ export function runMasterGuideAudit(
   // 20-Trade Compound Simulation: Rs. 500,000 starting capital
   // Zero out simulation when no crownedWinner qualifies (Capital Preservation / Cash Defense)
   const winRate = crownedWinner?.analogWinRate || 0;
+  const netRewardRupees = crownedWinner ? Math.max(0, Math.round((crownedWinner.target1Net - crownedWinner.ltp) * crownedWinner.kellyShares)) : 0;
+  const netRiskRupees = crownedWinner ? Math.max(0, Math.round((crownedWinner.ltp - crownedWinner.stopLoss) * crownedWinner.kellyShares)) : 0;
   const sim = crownedWinner
     ? simulateCompoundExpectancy(
         500000,
         20,
         winRate,
-        Math.max(1500, Math.round((crownedWinner.target1Gross - crownedWinner.ltp) * crownedWinner.kellyShares)) * 5,
-        Math.max(800, Math.round((crownedWinner.ltp - crownedWinner.stopLoss) * crownedWinner.kellyShares)) * 5
+        netRewardRupees > 0 ? netRewardRupees : 2500,
+        netRiskRupees > 0 ? netRiskRupees : 1000
       )
     : { projectedFinalCapital: 500000, expectedWins: 0, expectedLosses: 0 };
 

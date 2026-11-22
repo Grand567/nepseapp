@@ -35,15 +35,15 @@ test('BUG-033: calculateNepseNetTrade includes Buy DP Rs. 25 and respects >365 l
     holdingDays: 365, // exactly 365 days is Short Term (<= 365)
   });
   assert.equal(trade.buyDp, 25, 'Buy DP should be Rs. 25 per statutory transaction rules');
-  assert.equal(trade.cgtRatePct, 7.5, 'Holding exactly 365 days is Short Term (7.5% CGT)');
+  assert.equal(trade.cgtRatePct, 5.0, 'Holding exactly 365 days is Short Term (5.0% CGT)');
 
   const tradeLong = calculateNepseNetTrade({
     quantity: 100,
     buyPrice: 500,
     sellPrice: 550,
-    holdingDays: 366, // > 365 is Long Term (5% CGT)
+    holdingDays: 366, // > 365 is Long Term (3.75% CGT)
   });
-  assert.equal(tradeLong.cgtRatePct, 5.0, 'Holding > 365 days is Long Term (5.0% CGT)');
+  assert.equal(tradeLong.cgtRatePct, 3.75, 'Holding > 365 days is Long Term (3.75% CGT)');
 
   // calculateWacc rounding consistency
   const waccRes = calculateWacc([

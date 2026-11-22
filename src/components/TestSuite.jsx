@@ -53,24 +53,24 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
       passed = false;
     }
 
-    // Test 2: Seller Calculations (SEBON Individual 7.5% Short-Term vs 5.0% Long-Term CGT)
+    // Test 2: Seller Calculations (Statutory Individual 5.0% Short-Term vs 3.75% Long-Term CGT)
     await new Promise(r => setTimeout(r, 300));
-    addLog('info', '🧪 Test 2: Seller Calculations (Short-term 7.5% & Long-term 5.0% CGT)');
+    addLog('info', '🧪 Test 2: Seller Calculations (Short-term 5.0% & Long-term 3.75% CGT)');
     try {
       const sellShort = calculateSellDetails(100, 200, 150, 'short');
-      const expectedShortCGT = 367.50; // 7.5% of 4900 net profit
-      const expectedShortReceivable = 19532.50;
+      const expectedShortCGT = 245.00; // 5.0% of 4900 net profit
+      const expectedShortReceivable = 19655.00;
 
       const sellLong = calculateSellDetails(100, 200, 150, 'long');
-      const expectedLongCGT = 245.0; // 5.0% of 4900 net profit
-      const expectedLongReceivable = 19655.0;
+      const expectedLongCGT = 183.75; // 3.75% of 4900 net profit
+      const expectedLongReceivable = 19716.25;
 
       const tolerance = 0.01;
       const passShort = Math.abs(sellShort.cgt - expectedShortCGT) < tolerance && Math.abs(sellShort.netReceivable - expectedShortReceivable) < tolerance;
       const passLong = Math.abs(sellLong.cgt - expectedLongCGT) < tolerance && Math.abs(sellLong.netReceivable - expectedLongReceivable) < tolerance;
 
       if (passShort && passLong) {
-        addLog('success', '✅ Test 2 Passed: Individual Short-term (7.5%) and Long-term (5.0%) CGT conform to SEBON regulations.');
+        addLog('success', '✅ Test 2 Passed: Individual Short-term (5.0%) and Long-term (3.75%) CGT conform to statutory regulations.');
       } else {
         throw new Error(`Short CGT: ${sellShort.cgt} (exp ${expectedShortCGT}), Long CGT: ${sellLong.cgt} (exp ${expectedLongCGT})`);
       }

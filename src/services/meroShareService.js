@@ -1314,7 +1314,12 @@ export async function checkSingleBoidAllotment(companyShareId, boid, account = n
         const targetScrip = companyObj?.scrip || '';
 
         const cleanTarget = cleanTokenStr(targetName);
-        const targetWords = cleanTarget.split(/\s+/).filter(w => w.length >= 3);
+        const COMPANY_STOPWORDS = new Set([
+          'limited', 'ltd', 'company', 'corp', 'corporation', 'hydro', 'hydropower', 'power',
+          'bank', 'banking', 'finance', 'financial', 'microfinance', 'development', 'securities',
+          'insurance', 'life', 'general', 'investment', 'fund', 'mutual', 'nepal', 'sanstha', 'bittiya'
+        ]);
+        const targetWords = cleanTarget.split(/\s+/).filter(w => w.length >= 3 && !COMPANY_STOPWORDS.has(w.toLowerCase()));
 
         const match = reports.find(r => {
           const cs = r.companyShare || {};
@@ -1328,10 +1333,10 @@ export async function checkSingleBoidAllotment(companyShareId, boid, account = n
 
           if (cleanTarget && cleanReportName) {
             if (cleanTarget.includes(cleanReportName) || cleanReportName.includes(cleanTarget)) return true;
-            const rWords = cleanReportName.split(/\s+/).filter(w => w.length >= 3);
+            const rWords = cleanReportName.split(/\s+/).filter(w => w.length >= 3 && !COMPANY_STOPWORDS.has(w.toLowerCase()));
             if (targetWords.length > 0 && rWords.length > 0) {
-              const common = targetWords.filter(tw => rWords.some(rw => rw.includes(tw) || tw.includes(rw)));
-              if (common.length >= 1) return true;
+              const common = targetWords.filter(tw => rWords.some(rw => rw === tw || rw.includes(tw) || tw.includes(rw)));
+              if (common.length >= 2 || (targetWords.length === 1 && common.length >= 1)) return true;
             }
           }
           return false;
@@ -1750,9 +1755,8 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10,
 
         if (match && match.companyShareId) {
           targetCompanyShareId = Number(match.companyShareId);
-        } else if (list.length === 1 && list[0].companyShareId) {
-          // If only 1 applicable issue is open, automatically use it!
-          targetCompanyShareId = Number(list[0].companyShareId);
+        } else {
+          throw new Error(`The requested issue "${targetCompany?.companyName || targetCompany?.scrip || 'selected issue'}" is not currently open for application in MeroShare.`);
         }
       }
     } catch (err) {

@@ -5,8 +5,8 @@
 
 const NON_EQUITY_SECTOR_RE = /(mutual|debenture|bond|promoter|preference)/i;
 const NON_EQUITY_NAME_RE = /(mutual\s*fund|debenture|promoter|promotor|rinpatra|urja\s*rinpatra|perpetual|non[- ]?cumulative|preference\s*share|yojana|scheme|investment\s*fund|growth\s*fund|equity\s*fund|balanced\s*fund|saving\s*fund|closed[- ]?end|open[- ]?end|\bbond\b)/i;
-const KNOWN_NON_EQUITY_SYMBOLS_RE = /^(NIBLPF|NIBSF|NIBLSTF|CMBF|NICGF|NICBF|NICFC|SFMF|SEF|SAEF|SLCF|SBCF|HLICF|KEF|LUK|RMF|RBBMF|PSF|GIMES|MMF|KSY|RSY|CSY|NSY|GSY|SSY|KSLY|SAGF|PRSF|LVF|HLBSF|SIGS)$/i;
-const PROTECTED_ORDINARY_EQUITIES = new Set(['CITY', 'HATHY', 'NMBMF', 'SWMF', 'SANIMA', 'SHIVM', 'NADEP']);
+const KNOWN_NON_EQUITY_SYMBOLS_RE = /^(NIBLPF|NIBSF|NIBLSTF|CMBF|NICGF|NICBF|NICFC|SFMF|SEF|SAEF|SLCF|SBCF|HLICF|KEF|LUK|RMF|RBBMF|PSF|GIMES|MMF|KSY|RSY|CSY|NSY|GSY|SSY|KSLY|SAGF|PRSF|LVF|HLBSF|SIGS|KDBY|MBLEF|NIBLGF|SCBD|SHINED|SIPD)$/i;
+const PROTECTED_ORDINARY_EQUITIES = new Set(['CITY', 'HATHY', 'NMBMF', 'SWMF', 'SANIMA', 'SHIVM', 'NADEP', 'NFD']);
 
 /**
  * Checks if a NEPSE security is a non-equity instrument (mutual fund, debenture, bond, promoter/preference share).
@@ -40,6 +40,7 @@ export function isMutualFundOrDebenture(sym = '', sector = '', name = '', ltp = 
 
   // 3. Known mutual fund / promoter / preference suffixes and slash-series tickers
   if (s.includes('/') || /(PO|PR|PNP)$/.test(s) || s.includes('DEB')) return true;
+  if (s.endsWith('D') && s !== 'NFD' && s.length >= 4) return true;
   if (s.endsWith('P') && !PROTECTED_ORDINARY_EQUITIES.has(s)) return true;
   if (KNOWN_NON_EQUITY_SYMBOLS_RE.test(s)) return true;
 

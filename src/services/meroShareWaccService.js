@@ -6,6 +6,15 @@
  * and cost-basis hierarchy for CDSC MeroShare "View your WACC details" records.
  */
 
+export function parseCleanNum(val, fallback = 0) {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'number') return Number.isFinite(val) ? val : fallback;
+  const cleaned = String(val).replace(/,/g, '').trim();
+  if (cleaned === '') return fallback;
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : fallback;
+}
+
 /**
  * Normalizes scrip symbols across variations (casing, trailing symbols, whitespace, share classes).
  * Examples: ' akpl ' -> 'AKPL', 'NABIL.N0000' -> 'NABIL', 'GBIME_PO' -> 'GBIME'
@@ -24,9 +33,20 @@ export function normalizeScripSymbol(rawSymbol) {
  * Flags discrepancies exceeding tolerance (default Rs. 0.05 / 5 paisa).
  */
 export function verifyWaccMath({ rate, quantity, totalCost, tolerance = 0.05 }) {
-  const numRate = Number(rate || 0);
-  const numQty = Number(quantity || 0);
-  const numTotal = Number(totalCost || 0);
+  const numRate = parseCleanNum(rate, NaN);
+  const numQty = parseCleanNum(quantity, NaN);
+  const numTotal = parseCleanNum(totalCost, NaN);
+
+  if (!Number.isFinite(numRate) || !Number.isFinite(numQty) || !Number.isFinite(numTotal)) {
+    return {
+      isValid: false,
+      expectedTotal: 0,
+      actualTotal: Number.isFinite(numTotal) ? numTotal : 0,
+      difference: Infinity,
+      isMismatch: true,
+      mismatchNote: 'Invalid numeric data: WACC rate, quantity, or total cost contains non-numeric values.'
+    };
+  }
 
   const expectedTotal = Number((numRate * numQty).toFixed(3));
   const difference = Number(Math.abs(numTotal - expectedTotal).toFixed(3));
@@ -136,9 +156,9 @@ export function parseMeroShareWaccDetailsResponse(rawResponse) {
     const normalizedSymbol = normalizeScripSymbol(rawScrip);
     if (!normalizedSymbol) continue;
 
-    const waccRate = Number(item.averageBuyRate ?? item.waccRate ?? item.wacc ?? item.rate ?? item.userPrice ?? item.purchasePrice ?? 0);
-    const waccCalculatedQuantity = Number(item.totalQuantity ?? item.waccCalculatedQuantity ?? item.calculatedQuantity ?? item.quantity ?? item.kitta ?? item.units ?? 0);
-    const totalCostOfCapital = Number(item.totalCost ?? item.totalCostOfCapital ?? item.totalAmount ?? item.totalPrice ?? (waccRate * waccCalculatedQuantity));
+    const waccRate = parseCleanNum(item.averageBuyRate ?? item.waccRate ?? item.wacc ?? item.rate ?? item.userPrice ?? item.purchasePrice, 0);
+    const waccCalculatedQuantity = parseCleanNum(item.totalQuantity ?? item.waccCalculatedQuantity ?? item.calculatedQuantity ?? item.quantity ?? item.kitta ?? item.units, 0);
+    const totalCostOfCapital = parseCleanNum(item.totalCost ?? item.totalCostOfCapital ?? item.totalAmount ?? item.totalPrice, Number((waccRate * waccCalculatedQuantity).toFixed(2)));
     const lastModifiedDate = String(item.lastModifiedDate || item.lastModificationDate || item.modifiedDate || item.updateDate || item.date || item.createdDate || '').trim();
 
     const mathCheck = verifyWaccMath({
@@ -206,8 +226,17 @@ export function matchWaccRecordsToHoldings(waccRecords = [], holdings = []) {
       };
     }
 
-    const waccQty = Number(waccRecord.waccCalculatedQuantity || 0);
-    const rate = Number(waccRecord.waccRate || 0);
+    const waccQty = parseCleanNum(waccRecord.waccCalculatedQuantity, 0);
+    const rate = parseCleanNum(waccRecord.waccRate, 0);
+
+    if (!Number.isFinite(rate) || rate <= 0) {
+      return {
+        ...holding,
+        symbol: sym || rawSym,
+        waccSource: holding.waccSource || 'NOT_AVAILABLE'
+      };
+    }
+
     const isQtyMismatch = heldQty !== waccQty;
     let quantityNote = null;
     let coveredQty = heldQty;
@@ -221,6 +250,8 @@ export function matchWaccRecordsToHoldings(waccRecords = [], holdings = []) {
       quantityNote = `ℹ️ WACC calculated for ${waccQty} shares, but Demat currently holds ${heldQty} shares.`;
     }
 
+    const coveredInvestment = Number((coveredQty * rate).toFixed(2));
+
     return {
       ...holding,
       symbol: sym || rawSym,
@@ -228,6 +259,7 @@ export function matchWaccRecordsToHoldings(waccRecords = [], holdings = []) {
       waccRate: rate,
       waccCalculatedQuantity: waccQty,
       heldQuantity: heldQty,
+      coveredInvestment,
       totalCostOfCapital: waccRecord.totalCostOfCapital,
       lastModifiedDate: waccRecord.lastModifiedDate,
       waccSource: 'CDSC_WACC',

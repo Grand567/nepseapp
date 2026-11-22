@@ -62,6 +62,17 @@ export function detectCycleStartDate(chronologicalSeries, direction = "ACCUMULAT
   }
 
   const totalActive = oldestFirst.length;
+  // Calculate trailing contiguous streak from the most recent session backward
+  let contiguousStreak = 0;
+  for (let i = oldestFirst.length - 1; i >= 0; i--) {
+    const vol = Number(oldestFirst[i].netVol ?? oldestFirst[i].netQty ?? 0);
+    if (isAccum ? vol > 0 : vol < 0) {
+      contiguousStreak++;
+    } else {
+      break;
+    }
+  }
+
   if (isAccum) {
     // Find first net-buy date on or after the cumulative trough
     const startIdx = oldestFirst.findIndex((d) => {
@@ -69,7 +80,7 @@ export function detectCycleStartDate(chronologicalSeries, direction = "ACCUMULAT
       return String(d.date || '') >= inflectionDateAccum && vol > 0;
     });
     const startDate = startIdx >= 0 ? oldestFirst[startIdx].date : oldestFirst[0].date;
-    const streakDays = startIdx >= 0 ? oldestFirst.length - startIdx : accumDays;
+    const streakDays = contiguousStreak > 0 ? contiguousStreak : (startIdx >= 0 ? oldestFirst.length - startIdx : accumDays);
     const consistencyPct = totalActive > 0 ? Number(((accumDays / totalActive) * 100).toFixed(0)) : 0;
     return { startDate, streakDays, activeDaysCount: accumDays, totalActive, consistencyPct };
   } else {
@@ -79,7 +90,7 @@ export function detectCycleStartDate(chronologicalSeries, direction = "ACCUMULAT
       return String(d.date || '') >= inflectionDateDump && vol < 0;
     });
     const startDate = startIdx >= 0 ? oldestFirst[startIdx].date : oldestFirst[0].date;
-    const streakDays = startIdx >= 0 ? oldestFirst.length - startIdx : dumpDays;
+    const streakDays = contiguousStreak > 0 ? contiguousStreak : (startIdx >= 0 ? oldestFirst.length - startIdx : dumpDays);
     const consistencyPct = totalActive > 0 ? Number(((dumpDays / totalActive) * 100).toFixed(0)) : 0;
     return { startDate, streakDays, activeDaysCount: dumpDays, totalActive, consistencyPct };
   }
@@ -102,10 +113,10 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
   const latestClose = Number(agg.latestClose || 0);
   const marketVWAP = Number(agg.marketVWAP || 0);
 
-  // Robust Anchor: if bigBrokerVWAP is absent/zero, anchor to latestClose or marketVWAP so bounds are NEVER 0
+  // Robust Anchor: if bigBrokerVWAP is absent/zero, anchor to latestClose or marketVWAP so bounds are genuine
   const anchorPrice = rawBigBrokerVWAP > 0
     ? rawBigBrokerVWAP
-    : (latestClose > 0 ? latestClose : (marketVWAP > 0 ? marketVWAP : 100));
+    : (latestClose > 0 ? latestClose : (marketVWAP > 0 ? marketVWAP : 0));
 
   const bigBrokerVWAP = rawBigBrokerVWAP > 0 ? rawBigBrokerVWAP : anchorPrice;
   const buyZoneMin = Number((anchorPrice * 0.985).toFixed(1));
@@ -142,10 +153,10 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
       const bVol = Math.max(0, Number(b.buyVol || b.buyQty || b.shares || 0));
       const sVol = Math.max(0, Number(b.sellVol || b.sellQty || 0));
       const bAmt = bVol > 0
-        ? Number(b.buyAmt ?? b.buyAmount ?? (sVol === 0 && b.amount ? b.amount : 0) ?? (bVol * Number(b.avgBuyPrice || b.rate || 0)))
+        ? Number(b.buyAmt ?? b.buyAmount ?? (sVol === 0 && b.amount ? b.amount : null) ?? (bVol * Number(b.avgBuyPrice || b.rate || 0)))
         : 0;
       const sAmt = sVol > 0
-        ? Number(b.sellAmt ?? b.sellAmount ?? (bVol === 0 && b.amount ? b.amount : 0) ?? (sVol * Number(b.avgSellPrice || b.rate || 0)))
+        ? Number(b.sellAmt ?? b.sellAmount ?? (bVol === 0 && b.amount ? b.amount : null) ?? (sVol * Number(b.avgSellPrice || b.rate || 0)))
         : 0;
       return {
         brokerId: bId,
@@ -503,7 +514,9 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
         for (const b of day0.brokers) {
           const bId = String(b.brokerId || b.broker || '');
           if (topBuyerIds.has(bId)) {
-            t2DumpedOnDay0Qty += Number(b.sellVol || 0);
+            const sell = Number(b.sellVol || b.sellQty || 0);
+            const buy = Number(b.buyVol || b.buyQty || 0);
+            t2DumpedOnDay0Qty += Math.max(0, sell - buy);
           }
         }
       }
@@ -516,7 +529,7 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
   }
 
   // 5. Anti-Wash / Cross-Trade Veto & Stage Classification
-  const avgGrossRetention = Number(diag3d.retentionPct || 80);
+  const avgGrossRetention = diag3d.retentionPct != null ? Number(diag3d.retentionPct) : 80;
   const isWashTrap = (avgGrossRetention < 35 && rvol3d >= 1.2) || scr3NetPct >= 20 || diag3d.phase === 'BULL_TRAP';
 
   // Single-day or 3-day spike under the ±15% circuit limit

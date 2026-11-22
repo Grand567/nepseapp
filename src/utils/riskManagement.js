@@ -23,9 +23,10 @@ import { NEPSE_RULES, NEPSE_CIRCUIT_PCT } from './nepseRules.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 export { NEPSE_CIRCUIT_PCT, NEPSE_RULES };
-export const CGT_SHORT_TERM   = 0.075;    // 7.5% — individual, holding ≤ 365 days
-export const CGT_LONG_TERM    = 0.050;    // 5.0% — individual, holding > 365 days
+export const CGT_SHORT_TERM   = 0.050;    // 5.0% — individual, holding ≤ 365 days
+export const CGT_LONG_TERM    = 0.0375;   // 3.75% — individual, holding > 365 days
 export const CGT_INSTITUTIONAL = 0.100;   // 10.0% — corporate / institutional
+export const CGT_NON_RESIDENT = 0.250;    // 25.0% — non-resident
 
 // Minimum lot size: 10 shares (standard NEPSE minimum order)
 export const MIN_LOT_SIZE = 10;
@@ -323,15 +324,18 @@ export function calculateNetProfit({
 
   let cgtRate;
   let cgtLabel;
-  if (investorType === 'institutional') {
+  if (investorType === 'non_resident') {
+    cgtRate  = CGT_NON_RESIDENT;
+    cgtLabel = 'Non-resident (25%)';
+  } else if (investorType === 'institutional') {
     cgtRate  = CGT_INSTITUTIONAL;
     cgtLabel = 'Institutional (10%)';
   } else if (isLongTerm) {
     cgtRate  = CGT_LONG_TERM;
-    cgtLabel = `Long-term >${resolvedHoldingDays ?? 365} days (5%)`;
+    cgtLabel = `Long-term >${resolvedHoldingDays ?? 365} days (3.75%)`;
   } else {
     cgtRate  = CGT_SHORT_TERM;
-    cgtLabel = `Short-term ≤365 days (7.5%)`;
+    cgtLabel = `Short-term ≤365 days (5%)`;
   }
 
   // ── CGT calculation ───────────────────────────────────────────────────────

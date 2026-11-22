@@ -278,7 +278,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
                   <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
                     <li><strong>T+1 VWAP खरिद दायरा:</strong> अघिल्लो दिनको सिफारिसलाई भोलिपल्टको औसत मूल्य (Day T+1 VWAP) र 5D POC दायराभित्र मात्र किन्नुहोस्। +१४.९% सर्किट पासोमा कहिल्यै नदौडिनुहोस्।</li>
                     <li><strong>हाफ-केली कित्ता साइजिङ:</strong> कुल पोर्टफोलियोको <strong>बढीमा १.०% मात्र जोखिम (1% Portfolio Risk Ceiling)</strong> लिनुहोस्। StopLoss &ge; Entry भएमा कित्ता ० हुन्छ।</li>
-                    <li><strong>T+2 राचेट शिल्ड (Ratchet Shield):</strong> T+2 राफसाफपछि नाफा +१.२R पुग्नासाथ स्टप-लस बढाएर Entry &times; १.०१२ मा सार्नुहोस् जसले गर्दा ब्रोकर कमिसन र ७.५% पुँजीगत लाभकर कटाएर पनि नाफा पूर्ण सुरक्षित हुन्छ।</li>
+                    <li><strong>T+2 राचेट शिल्ड (Ratchet Shield):</strong> T+2 राफसाफपछि नाफा +१.२R पुग्नासाथ स्टप-लस बढाएर Entry &times; १.०१२ मा सार्नुहोस् जसले गर्दा ब्रोकर कमिसन र ५.०% पुँजीगत लाभकर कटाएर पनि नाफा पूर्ण सुरक्षित हुन्छ।</li>
                     <li><strong>५०% नाफा बुक:</strong> पहिलो टार्गेट (+२.०R, दैनिक &plusmn;१५% सर्किट सीमा) मा ५०% सेयर बेच्नुहोस् र बाँकी ५०% सेयर २०-EMA को रेखामा पछ्याउँदै नाफा बढ्न दिनुहोस्।</li>
                   </ul>
                 </div>

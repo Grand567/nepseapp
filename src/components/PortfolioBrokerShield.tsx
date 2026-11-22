@@ -120,6 +120,8 @@ export default function PortfolioBrokerShield({
   const [capitalRotations, setCapitalRotations] = useState<any[]>([]);
   const [lastEvaluatedTime, setLastEvaluatedTime] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
+  const evalSeqRef = useRef<number>(0);
+  const tapeSeqRef = useRef<number>(0);
 
   // Daily Tape Detail Modal
   const [tapeModalStock, setTapeModalStock] = useState<ShieldEvaluatedStock | null>(null);
@@ -145,6 +147,7 @@ export default function PortfolioBrokerShield({
 
   // Evaluate Portfolio Shield from Backend API
   const evaluateShield = async (isManual = false) => {
+    const seq = ++evalSeqRef.current;
     if (shieldItems.length === 0) {
       setEvaluatedStocks([]);
       setSummary(null);
@@ -158,62 +161,34 @@ export default function PortfolioBrokerShield({
 
     try {
       const res = await fetchPortfolioShield(shieldItems, days);
+      if (evalSeqRef.current !== seq) return;
       if (res?.success) {
         setEvaluatedStocks(res.items || []);
         setSummary(res.portfolioSummary || null);
         setCapitalRotations(res.capitalRotations || []);
         setLastEvaluatedTime(new Date().toLocaleTimeString());
       } else {
+        setEvaluatedStocks([]);
+        setSummary(null);
         setErrorMsg('Microstructure shield evaluation pending sync. Retrying...');
       }
     } catch (err: any) {
+      if (evalSeqRef.current !== seq) return;
       console.warn('[PortfolioBrokerShield] Evaluation failed:', err);
+      setEvaluatedStocks([]);
+      setSummary(null);
       setErrorMsg('Failed to connect to broker shield backend.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (evalSeqRef.current === seq) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
   useEffect(() => {
-    let active = true;
-    const run = async () => {
-      if (shieldItems.length === 0) {
-        if (active) {
-          setEvaluatedStocks([]);
-          setSummary(null);
-          setLoading(false);
-        }
-        return;
-      }
-      setLoading(true);
-      setErrorMsg('');
-      try {
-        const res = await fetchPortfolioShield(shieldItems, days);
-        if (!active) return;
-        if (res?.success) {
-          setEvaluatedStocks(res.items || []);
-          setSummary(res.portfolioSummary || null);
-          setCapitalRotations(res.capitalRotations || []);
-          setLastEvaluatedTime(new Date().toLocaleTimeString());
-        } else {
-          setErrorMsg('Microstructure shield evaluation pending sync. Retrying...');
-        }
-      } catch (err: any) {
-        if (!active) return;
-        console.warn('[PortfolioBrokerShield] Evaluation failed:', err);
-        setErrorMsg('Failed to connect to broker shield backend.');
-      } finally {
-        if (active) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    };
-    run();
-    return () => {
-      active = false;
-    };
+    evaluateShield(false);
+    return () => { evalSeqRef.current++; };
   }, [shieldItems, days]);
 
   // Add Item to Shield
@@ -261,16 +236,24 @@ export default function PortfolioBrokerShield({
 
   // Open Tape / Diagnostic Modal
   const handleOpenTape = async (stock: ShieldEvaluatedStock) => {
+    const seq = ++tapeSeqRef.current;
     setTapeModalStock(stock);
+    setTapeData(null);
     setTapeLoading(true);
     try {
       const diag = await fetchPrecomputedDiagnostic(stock.symbol, days);
+      if (tapeSeqRef.current !== seq) return;
       setTapeData(diag);
     } catch (_) {
-      setTapeData(null);
+      if (tapeSeqRef.current === seq) setTapeData(null);
     } finally {
-      setTapeLoading(false);
+      if (tapeSeqRef.current === seq) setTapeLoading(false);
     }
+  };
+
+  const fmtPrice = (v: any, decimals = 1) => {
+    const n = Number(v);
+    return v !== null && v !== undefined && Number.isFinite(n) && n > 0 ? `Rs. ${n.toFixed(decimals)}` : '—';
   };
 
   // Format NPR Currency
@@ -630,6 +613,13 @@ export default function PortfolioBrokerShield({
       )}
 
       {/* ── INTERACTIVE SHIELD MATRIX TABLE (7 COLUMNS) ── */}
+      {errorMsg && (
+        <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -741,10 +731,10 @@ export default function PortfolioBrokerShield({
                       {/* Col 3: Price vs Cost Basis */}
                       <td className="py-3 px-3 text-right">
                         <div className="font-black text-white text-sm">
-                          Rs. {stock.ltp.toLocaleString()}
+                          {Number.isFinite(Number(stock.ltp)) && Number(stock.ltp) > 0 ? `Rs. ${Number(stock.ltp).toLocaleString()}` : '—'}
                         </div>
                         <div className="text-[10.5px] text-slate-400 mt-0.5 font-mono">
-                          Operator VWAP: <span className="font-bold text-slate-200">Rs. {stock.bigBrokerVWAP.toFixed(1)}</span>
+                          Operator VWAP: <span className="font-bold text-slate-200">{fmtPrice(stock.bigBrokerVWAP, 1)}</span>
                         </div>
                         {stock.buyZoneMin > 0 && (
                           <div className="text-[9.5px] text-emerald-400 font-mono mt-0.5">
@@ -932,7 +922,7 @@ export default function PortfolioBrokerShield({
                     <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
                       <span className="text-[10px] text-slate-400 uppercase font-bold">Operator Cost Basis</span>
                       <div className="text-base font-black text-indigo-400 mt-0.5">
-                        Rs. {tapeModalStock.bigBrokerVWAP.toFixed(1)}
+                        {fmtPrice(tapeModalStock.bigBrokerVWAP, 1)}
                       </div>
                     </div>
                     <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
@@ -967,9 +957,9 @@ export default function PortfolioBrokerShield({
                           <div className="text-emerald-300 font-mono text-[11px] mt-0.5">
                             Net Retained: +{tapeModalStock.leadAccumulator.netInflowCr} Cr ({tapeModalStock.leadAccumulator.remainingQty?.toLocaleString()} shs)
                           </div>
-                          {tapeModalStock.leadAccumulator.avgBuyPrice > 0 && (
+                          {Number.isFinite(Number(tapeModalStock.leadAccumulator.avgBuyPrice)) && Number(tapeModalStock.leadAccumulator.avgBuyPrice) > 0 && (
                             <div className="text-slate-400 text-[10px] mt-0.5">
-                              Avg Buy Price: Rs. {tapeModalStock.leadAccumulator.avgBuyPrice.toFixed(1)}
+                              Avg Buy Price: {fmtPrice(tapeModalStock.leadAccumulator.avgBuyPrice, 1)}
                             </div>
                           )}
                         </div>
@@ -990,9 +980,9 @@ export default function PortfolioBrokerShield({
                           <div className="text-rose-300 font-mono text-[11px] mt-0.5">
                             Net Outflow: {tapeModalStock.leadDistributor.netOutflowCr} Cr ({tapeModalStock.leadDistributor.remainingQty?.toLocaleString()} shs)
                           </div>
-                          {tapeModalStock.leadDistributor.avgSellPrice > 0 && (
+                          {Number.isFinite(Number(tapeModalStock.leadDistributor.avgSellPrice)) && Number(tapeModalStock.leadDistributor.avgSellPrice) > 0 && (
                             <div className="text-slate-400 text-[10px] mt-0.5">
-                              Avg Sell Price: Rs. {tapeModalStock.leadDistributor.avgSellPrice.toFixed(1)}
+                              Avg Sell Price: {fmtPrice(tapeModalStock.leadDistributor.avgSellPrice, 1)}
                             </div>
                           )}
                         </div>
@@ -1001,6 +991,32 @@ export default function PortfolioBrokerShield({
                       )}
                     </div>
                   </div>
+
+                  {/* Live Fetched Diagnostic Tape Telemetry */}
+                  {tapeData && (
+                    <div className="p-3.5 bg-slate-950/80 border border-indigo-500/20 rounded-xl space-y-2 text-xs">
+                      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-indigo-300">
+                        <span>Verified {days}D Floorsheet Diagnostic Telemetry</span>
+                        <span className="font-mono text-slate-400">
+                          Vol: {Number(tapeData.totalVolume || 0).toLocaleString()} sh
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 font-mono text-[11px]">
+                        <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                          <span className="text-slate-400 block text-[10px]">BCR3 Buy</span>
+                          <strong className="text-emerald-400">{Number(tapeData.bcr3BuyPct ?? tapeData.grossBuyConcentrationPct ?? 0).toFixed(1)}%</strong>
+                        </div>
+                        <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                          <span className="text-slate-400 block text-[10px]">SCR3 Sell</span>
+                          <strong className="text-rose-400">{Number(tapeData.bcr3SellPct ?? tapeData.grossSellConcentrationPct ?? 0).toFixed(1)}%</strong>
+                        </div>
+                        <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                          <span className="text-slate-400 block text-[10px]">Turnover</span>
+                          <strong className="text-slate-200">{formatNpr(Number(tapeData.totalTurnover || 0))}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>

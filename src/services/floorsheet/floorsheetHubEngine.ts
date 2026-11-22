@@ -110,11 +110,18 @@ export interface UnifiedStockTabTelemetry {
   smartMoney5D: ReturnType<typeof normalize5DBrokerPayloadForAi>;
 }
 
+const PURE_EQUITY_WHITELIST = new Set(["NMBMF", "SWMF", "NICL", "CBBL", "SKBBL", "FMDBL", "GBLBS"]);
+const KNOWN_MUTUAL_FUNDS = new Set([
+  "NIBLPF", "NIBSF", "CMBF", "NICGF", "NICBF", "NMB50", "NMBHF", "SFMF", "SEF", "SAEF", "SLCF", "KEF", "LUK", "RMF", "RBBMF", "PSF", "GIMES", "C30MF", "MMF", "H8020", "KSY", "NSY", "SSY", "SAGF", "PRSF", "LVF",
+  "NIBLGF", "SFEF", "NICFC"
+]);
+
 // src/services/floorsheet/floorsheetHubEngine.ts (Add Pure-Equity Guard)
 export function isPureEquitySymbol(rawSymbol?: string | null, sector?: string | null): boolean {
   const sym = String(rawSymbol || "").toUpperCase().trim();
   const sec = String(sector || "").toUpperCase().trim();
   if (!sym || /\d/.test(sym)) return false; // Excludes Debentures with maturity/coupon digits
+  if (PURE_EQUITY_WHITELIST.has(sym)) return true;
   if (
     sec.includes("MUTUAL") ||
     sec.includes("DEBENTURE") ||
@@ -123,14 +130,14 @@ export function isPureEquitySymbol(rawSymbol?: string | null, sector?: string | 
   ) {
     return false;
   }
-  if (
-    /^(NIBLPF|NIBSF|CMBF|NICGF|NICBF|NMB50|NMBHF|SFMF|SEF|SAEF|SLCF|KEF|LUK|RMF|RBBMF|PSF|GIMES|C30MF|MMF|H8020|KSY|NSY|SSY|SAGF|PRSF|LVF)$/i.test(
-      sym
-    )
-  ) {
+  if (KNOWN_MUTUAL_FUNDS.has(sym)) {
     return false;
   }
-  if (sym.length >= 5 && (sym.endsWith("PF") || sym.endsWith("SF") || sym.endsWith("MF") || sym.endsWith("PO"))) {
+  // Exclude promoter shares (*P, *PO, *_P, *.P, *PR)
+  if (sym.endsWith("_P") || sym.endsWith(".P") || sym.endsWith("PO") || sym.endsWith("PR") || (sym.endsWith("P") && sym.length >= 4 && !sym.endsWith("CORP"))) {
+    return false;
+  }
+  if (sym.length >= 5 && (sym.endsWith("PF") || sym.endsWith("SF") || sym.endsWith("MF"))) {
     return false;
   }
   return true;
@@ -171,7 +178,9 @@ export function enrichFloorsheetContracts(
 
   for (let idx = 0; idx < chronological.length; idx++) {
     const row = chronological[idx];
-    const contractNo = String(row.contractNo ?? row.contract_no ?? `FS-${idx + 1}`).trim();
+    const contractNo = String(
+      row.contractNo ?? row.contract_no ?? row.contractId ?? row.contract_id ?? row.id ?? `FS-${idx + 1}`
+    ).trim();
     if (seenContracts.has(contractNo)) continue;
     seenContracts.add(contractNo);
 
@@ -183,7 +192,7 @@ export function enrichFloorsheetContracts(
       row.tradeDate ??
         row.trade_date ??
         row.businessDate ??
-        new Date().toISOString().slice(0, 10)
+        new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kathmandu" })
     ).slice(0, 10);
     const tradeTime = String(row.tradeTime ?? row.trade_time ?? "");
     const buyerBroker = Math.round(
@@ -207,6 +216,7 @@ export function enrichFloorsheetContracts(
     if (kitta <= 0) continue;
 
     const rate = safeNum(row.rate ?? row.price ?? row.contractRate, 0);
+    if (rate <= 0) continue;
     const rawAmount = safeNum(row.amount ?? row.contractAmount, 0);
     const expectedAmount = kitta > 0 && rate > 0 ? Number((kitta * rate).toFixed(2)) : 0;
     const amount =
@@ -270,7 +280,12 @@ export function buildVolumeProfileFromFloorsheet(
 ): { pocPrice: number | null; nodes: VolumeProfileNode[] } {
   if (!contracts || contracts.length === 0) {
     if (fallbackCandles && Array.isArray(fallbackCandles) && fallbackCandles.length > 0) {
-      const recent = fallbackCandles.slice(-10);
+      const sortedCandles = [...fallbackCandles].sort((a, b) => {
+        const tA = new Date(a.date || 0).getTime();
+        const tB = new Date(b.date || 0).getTime();
+        return tA - tB;
+      });
+      const recent = sortedCandles.slice(-10);
       const bucketMap = new Map<number, { totalKitta: number; buyKitta: number; sellKitta: number }>();
       let grandTotalKitta = 0;
       for (const c of recent) {
@@ -433,7 +448,7 @@ export function resolveMarketDepthWithFloorsheetFallback(params: {
     totalBidKitta: 0,
     totalAskKitta: 0,
     bidRatioPct: 0,
-    obir: 0,
+    obir: 1.0,
     obirSignal: "BALANCED",
     bids: [],
     asks: [],
@@ -537,18 +552,19 @@ export function buildUnifiedStockTabTelemetry(params: {
   });
 
   const rawP = params.broker5DRawPayload as Record<string, unknown> | null | undefined;
+  const getArrayLen = (arr: unknown): number => (Array.isArray(arr) ? arr.length : 0);
   const hasBrokerPayload =
     Boolean(
       rawP &&
       typeof rawP === "object" &&
-      (Array.isArray(rawP) ||
-        Array.isArray(rawP["5D"]) ||
-        Array.isArray(rawP["5d"]) ||
-        Array.isArray(rawP["30D"]) ||
-        Array.isArray(rawP.brokers) ||
-        Array.isArray(rawP.topHoldings) ||
-        Array.isArray(rawP.topAccumulators) ||
-        Array.isArray(rawP.data))
+      (getArrayLen(rawP) > 0 ||
+        getArrayLen(rawP["5D"]) > 0 ||
+        getArrayLen(rawP["5d"]) > 0 ||
+        getArrayLen(rawP["30D"]) > 0 ||
+        getArrayLen(rawP.brokers) > 0 ||
+        getArrayLen(rawP.topHoldings) > 0 ||
+        getArrayLen(rawP.topAccumulators) > 0 ||
+        getArrayLen(rawP.data) > 0)
     );
 
   const effectiveBrokerPayload = hasBrokerPayload

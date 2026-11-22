@@ -160,7 +160,9 @@ export function evaluateTrailingRatchet({
   }
 
   // ── Step 4: Check Stop-Loss Trigger ──
-  if (low <= currentStop) {
+  // Note: If Target 1 partial profit was banked on this bar, the runner's elevated stop-loss protects subsequent price action,
+  // not retroactively triggered by the bar's low that preceded the breakout to Target 1.
+  if (!takePartial && low <= currentStop) {
     if (isSettledInDemat) {
       closed = true;
       exitPx = Math.min(currentStop, close);

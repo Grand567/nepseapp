@@ -60,21 +60,21 @@ export interface EvaluatedFundamentalTelemetry {
   fiscalQuarter: string;
   verifiedPrice: number | null;
   metrics: {
-    epsTtm: number;
-    distributableEps: number;
-    bookValuePerShare: number;
+    epsTtm: number | null;
+    distributableEps: number | null;
+    bookValuePerShare: number | null;
     peRatio: number | null;
     pbvRatio: number | null;
-    roePct: number;
+    roePct: number | null;
     grahamFairValue: number | null;
     valuationMarginPct: number | null;
     nplPct: number | null;
     carPct: number | null;
     hydroCapexPerMwCr: number | null;
     hydroCodDelayed: boolean;
-    promoterSharePct: number;
-    publicSharePct: number;
-    paidUpCapitalCr: number;
+    promoterSharePct: number | null;
+    publicSharePct: number | null;
+    paidUpCapitalCr: number | null;
   };
   promoterLockIn: {
     unlockDate: string | null;
@@ -106,56 +106,62 @@ export function evaluateNepseFundamentalsAndLockIn(params: {
   const sector = String(raw.sector || raw.sectorName || "Others");
   const fiscalQuarter = String(raw.fiscalQuarter ?? raw.fiscal_quarter ?? raw.quarter ?? "Q4 2082/83");
 
-  const epsTtm = safeNum(raw.epsTtm ?? raw.eps_ttm ?? raw.eps, 0);
-  const distributableEps = safeNum(
-    raw.distributableEps ?? raw.distributable_eps,
-    epsTtm * 0.75
-  );
-  const bookValuePerShare = Math.max(
-    1,
-    safeNum(raw.bookValuePerShare ?? raw.book_value_per_share ?? raw.bookValue ?? raw.bvps, 100)
-  );
-  const roePct = safeNum(
-    raw.roePct ?? raw.roe_pct,
-    bookValuePerShare > 0 ? Number(((epsTtm / bookValuePerShare) * 100).toFixed(2)) : 0
-  );
+  const rawEpsVal = raw.epsTtm ?? raw.eps_ttm ?? raw.eps;
+  const hasEps = rawEpsVal !== undefined && rawEpsVal !== null && rawEpsVal !== "" && Number.isFinite(Number(rawEpsVal));
+  const epsTtm = hasEps ? Number(rawEpsVal) : null;
+
+  const rawBvpsVal = raw.bookValuePerShare ?? raw.book_value_per_share ?? raw.bookValue ?? raw.bvps;
+  const hasBvps = rawBvpsVal !== undefined && rawBvpsVal !== null && rawBvpsVal !== "" && Number.isFinite(Number(rawBvpsVal));
+  const bookValuePerShare = hasBvps ? Number(rawBvpsVal) : null;
+
+  const distributableEps = epsTtm !== null ? safeNum(raw.distributableEps ?? raw.distributable_eps, epsTtm * 0.75) : null;
+  const roePct = (epsTtm !== null && bookValuePerShare !== null && bookValuePerShare > 0)
+    ? safeNum(raw.roePct ?? raw.roe_pct, Number(((epsTtm / bookValuePerShare) * 100).toFixed(2)))
+    : null;
 
   const rawNpl = raw.nplPct ?? raw.npl_pct;
-  const nplPct = rawNpl !== undefined && rawNpl !== null ? safeNum(rawNpl, 0) : null;
+  const nplPct = rawNpl !== undefined && rawNpl !== null && rawNpl !== "" && Number.isFinite(Number(rawNpl)) ? Number(rawNpl) : null;
 
   const rawCar = raw.carPct ?? raw.car_pct;
-  const carPct = rawCar !== undefined && rawCar !== null ? safeNum(rawCar, 11.5) : null;
+  const carPct = rawCar !== undefined && rawCar !== null && rawCar !== "" && Number.isFinite(Number(rawCar)) ? Number(rawCar) : null;
 
   const rawCapex = raw.hydroCapexPerMwCr ?? raw.hydro_capex_per_mw_cr;
-  const hydroCapexPerMwCr =
-    rawCapex !== undefined && rawCapex !== null ? safeNum(rawCapex, 16.5) : null;
+  const hydroCapexPerMwCr = rawCapex !== undefined && rawCapex !== null && rawCapex !== "" && Number.isFinite(Number(rawCapex)) ? Number(rawCapex) : null;
   const hydroCodDelayed = Boolean(raw.hydroCodDelayed ?? raw.hydro_cod_delayed ?? false);
 
-  const promoterSharePct = safeNum(raw.promoterSharePct ?? raw.promoter_share_pct ?? raw.promoterPercentage ?? raw.promoterPct, 51);
-  const publicSharePct = safeNum(
-    raw.publicSharePct ?? raw.public_share_pct ?? raw.publicPercentage ?? raw.publicPct,
-    100 - promoterSharePct
-  );
-  const paidUpCapital = safeNum(raw.paidUpCapital ?? raw.paid_up_capital, 5_000_000_000);
-  const paidUpCapitalCr = Number((paidUpCapital / 10_000_000).toFixed(2));
+  const rawPromoter = raw.promoterSharePct ?? raw.promoter_share_pct ?? raw.promoterPercentage ?? raw.promoterPct;
+  const promoterSharePct = rawPromoter !== undefined && rawPromoter !== null && rawPromoter !== "" && Number.isFinite(Number(rawPromoter))
+    ? Number(rawPromoter)
+    : null;
+
+  const rawPublic = raw.publicSharePct ?? raw.public_share_pct ?? raw.publicPercentage ?? raw.publicPct;
+  const publicSharePct = rawPublic !== undefined && rawPublic !== null && rawPublic !== "" && Number.isFinite(Number(rawPublic))
+    ? Number(rawPublic)
+    : (promoterSharePct !== null ? 100 - promoterSharePct : null);
+
+  const rawPaidUp = raw.paidUpCapital ?? raw.paid_up_capital;
+  const paidUpCapital = rawPaidUp !== undefined && rawPaidUp !== null && rawPaidUp !== "" && Number.isFinite(Number(rawPaidUp))
+    ? Number(rawPaidUp)
+    : null;
+  const paidUpCapitalCr = paidUpCapital !== null ? Number((paidUpCapital / 10_000_000).toFixed(2)) : null;
 
   const price =
     params.verifiedPrice && params.verifiedPrice > 0 ? params.verifiedPrice : null;
 
   const peRatio =
-    price !== null && epsTtm !== 0 ? Number((price / epsTtm).toFixed(2)) : null;
+    price !== null && epsTtm !== null && epsTtm !== 0 ? Number((price / epsTtm).toFixed(2)) : null;
   const pbvRatio =
-    price !== null && bookValuePerShare > 0
+    price !== null && bookValuePerShare !== null && bookValuePerShare > 0
       ? Number((price / bookValuePerShare).toFixed(2))
       : null;
 
   const grahamFairValue =
-    epsTtm > 0 && bookValuePerShare > 0
+    epsTtm !== null && bookValuePerShare !== null && epsTtm > 0 && bookValuePerShare > 0
       ? Number(Math.sqrt(22.5 * epsTtm * bookValuePerShare).toFixed(2))
       : null;
 
   const valuationMarginPct =
-    price !== null && grahamFairValue > 0
+    price !== null && grahamFairValue !== null && grahamFairValue > 0
       ? Number((((grahamFairValue - price) / price) * 100).toFixed(1))
       : null;
 
@@ -191,23 +197,27 @@ export function evaluateNepseFundamentalsAndLockIn(params: {
 
   const regulatoryGates: EvaluatedFundamentalTelemetry["regulatoryGates"] = [];
 
-  // Gate 1: NRB NPL (>= 5.0%) & CAR (< 11.0%) Prudential Directive Check
-  if (nplPct !== null && nplPct >= 5.0) {
-    regulatoryGates.push({
-      code: "NRB_REGULATORY_FAIL",
-      severity: "CRITICAL_VETO",
-      title: `NRB Prudential Veto: NPL ${nplPct.toFixed(2)}% (>= 5.0% Ceiling)`,
-      detail:
-        "Non-Performing Loans breach NRB's 5.0% statutory ceiling, triggering dividend distribution restrictions and loan-loss provisioning.",
-    });
-  } else if (carPct !== null && carPct < 11.0) {
-    regulatoryGates.push({
-      code: "NRB_REGULATORY_FAIL",
-      severity: "CRITICAL_VETO",
-      title: `Capital Adequacy Veto: CAR ${carPct.toFixed(2)}% (< 11.0% Floor)`,
-      detail:
-        "Capital Adequacy Ratio is below NRB's 11.0% minimum capital buffer requirement, blocking bonus and cash dividends.",
-    });
+  // Gate 1: NRB NPL (>= 5.0%) & CAR (< 11.0%) Prudential Directive Check (Scoped strictly to BFI sectors)
+  const isBfiSector = /bank|finance|microfinance/i.test(sector);
+  if (isBfiSector) {
+    if (nplPct !== null && nplPct >= 5.0) {
+      regulatoryGates.push({
+        code: "NRB_REGULATORY_FAIL",
+        severity: "CRITICAL_VETO",
+        title: `NRB Prudential Veto: NPL ${nplPct.toFixed(2)}% (>= 5.0% Ceiling)`,
+        detail:
+          "Non-Performing Loans breach NRB's 5.0% statutory ceiling, triggering dividend distribution restrictions and loan-loss provisioning.",
+      });
+    }
+    if (carPct !== null && carPct < 11.0) {
+      regulatoryGates.push({
+        code: "NRB_REGULATORY_FAIL",
+        severity: "CRITICAL_VETO",
+        title: `Capital Adequacy Veto: CAR ${carPct.toFixed(2)}% (< 11.0% Floor)`,
+        detail:
+          "Capital Adequacy Ratio is below NRB's 11.0% minimum capital buffer requirement, blocking bonus and cash dividends.",
+      });
+    }
   }
 
   // Gate 2: Hydropower Capex (> Rs. 20 Cr/MW) & Delayed COD Veto
@@ -228,14 +238,32 @@ export function evaluateNepseFundamentalsAndLockIn(params: {
     });
   }
 
-  // Gate 3: Negative Earnings / Impaired Net Worth Check
-  if (epsTtm <= 0 || bookValuePerShare < 100) {
+  // Gate 3: Negative Earnings / Impaired Net Worth Check (Only when fundamentals are provided)
+  if (epsTtm !== null && bookValuePerShare !== null) {
+    if (epsTtm <= 0 || bookValuePerShare < 100) {
+      regulatoryGates.push({
+        code: "NEGATIVE_EARNINGS_AVOID",
+        severity: "CRITICAL_VETO",
+        title: `Negative Earnings / Impaired Net Worth (EPS Rs ${epsTtm})`,
+        detail:
+          "Company has negative TTM EPS or Net Worth below par (Rs 100). Institutional accumulation signals are overridden.",
+      });
+    }
+  } else if (epsTtm !== null && epsTtm <= 0) {
     regulatoryGates.push({
       code: "NEGATIVE_EARNINGS_AVOID",
       severity: "CRITICAL_VETO",
-      title: `Negative Earnings / Impaired Net Worth (EPS Rs ${epsTtm})`,
+      title: `Negative Earnings (EPS Rs ${epsTtm})`,
       detail:
-        "Company has negative TTM EPS or Net Worth below par (Rs 100). Institutional accumulation signals are overridden.",
+        "Company has negative TTM EPS. Institutional accumulation signals are overridden.",
+    });
+  } else if (bookValuePerShare !== null && bookValuePerShare < 100) {
+    regulatoryGates.push({
+      code: "NEGATIVE_EARNINGS_AVOID",
+      severity: "CRITICAL_VETO",
+      title: `Impaired Net Worth (BVPS Rs ${bookValuePerShare} < Rs 100)`,
+      detail:
+        "Net Worth is below par value (Rs 100). Institutional accumulation signals are overridden.",
     });
   }
 

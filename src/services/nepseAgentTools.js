@@ -74,13 +74,20 @@ export async function fetchAgentScripDossier(symbol) {
   const fundamentals = fundRes.status === 'fulfilled' && fundRes.value ? fundRes.value : {};
   const broker = brokerRes.status === 'fulfilled' && brokerRes.value ? brokerRes.value : null;
 
+  // Ensure candles are sorted chronologically ascending by date/time (SQLite DESC arrays inverted technicals)
+  const sortedCandles = [...rawCandles].sort((a, b) => {
+    const da = new Date(a.date || a.t || a.trade_date || 0).getTime();
+    const db = new Date(b.date || b.t || b.trade_date || 0).getTime();
+    return da - db;
+  });
+
   // Derive authentic current price (no invented default)
   const ltpRaw = Number(
     liveQuote?.ltp ??
     liveQuote?.closePrice ??
     liveQuote?.lastTradedPrice ??
     liveQuote?.data?.ltp ??
-    rawCandles[rawCandles.length - 1]?.close ??
+    sortedCandles[sortedCandles.length - 1]?.close ??
     NaN
   );
   if (!isFinite(ltpRaw) || ltpRaw <= 0) {
@@ -91,7 +98,7 @@ export async function fetchAgentScripDossier(symbol) {
   const prevClose = Number(
     liveQuote?.prevClose ??
     liveQuote?.previousClose ??
-    (rawCandles.length > 1 ? rawCandles[rawCandles.length - 2]?.close : ltp) ??
+    (sortedCandles.length > 1 ? sortedCandles[sortedCandles.length - 2]?.close : ltp) ??
     ltp
   );
 
@@ -104,7 +111,7 @@ export async function fetchAgentScripDossier(symbol) {
   const volRaw = Number(
     liveQuote?.totalTradedQuantity ??
     liveQuote?.volume ??
-    rawCandles[rawCandles.length - 1]?.volume ??
+    sortedCandles[sortedCandles.length - 1]?.volume ??
     NaN
   );
   const volume = isFinite(volRaw) ? volRaw : null;
@@ -113,9 +120,9 @@ export async function fetchAgentScripDossier(symbol) {
   const circuitFloor = +(prevClose * 0.85).toFixed(1);
   const circuitCeiling = +(prevClose * 1.15).toFixed(1);
 
-  // Prepare candles
-  const candles = rawCandles.map(c => ({
-    date: c.date || c.t || '',
+  // Prepare candles in strictly ascending chronological order
+  const candles = sortedCandles.map(c => ({
+    date: c.date || c.t || c.trade_date || '',
     open: Number(c.open ?? c.o ?? c.close ?? c.c ?? ltp),
     high: Number(c.high ?? c.h ?? c.close ?? c.c ?? ltp),
     low: Number(c.low ?? c.l ?? c.close ?? c.c ?? ltp),
@@ -147,14 +154,15 @@ export async function fetchAgentScripDossier(symbol) {
   const topSellers = Array.isArray(broker?.topSellers) ? broker.topSellers : (Array.isArray(broker?.sellers) ? broker.sellers : []);
   const totalVol = Number(broker?.totalVolume || broker?.totalQty || 0);
   const sumQty = (arr, n, keys) => arr.slice(0, n).reduce((acc, b) => acc + Number(keys.map(k => b[k]).find(v => v != null) || 0), 0);
-  const top3BuyVol = sumQty(topBuyers, 3, ['buyQty', 'volume', 'shares']);
-  const top5BuyVol = sumQty(topBuyers, 5, ['buyQty', 'volume', 'shares']);
-  const top3SellVol = sumQty(topSellers, 3, ['sellQty', 'volume', 'shares']);
+  const top3BuyVol = sumQty(topBuyers, 3, ['buyQty', 'buyVol', 'buyKitta', 'volume', 'shares', 'kitta', 'qty']);
+  const top5BuyVol = sumQty(topBuyers, 5, ['buyQty', 'buyVol', 'buyKitta', 'volume', 'shares', 'kitta', 'qty']);
+  const top3SellVol = sumQty(topSellers, 3, ['sellQty', 'sellVol', 'sellKitta', 'volume', 'shares', 'kitta', 'qty']);
   const pctOf = (v) => (totalVol > 0 && v > 0) ? +((v / totalVol) * 100).toFixed(1) : null;
-  const bcr3Buy = broker?.bcr3BuyPct != null ? Number(broker.bcr3BuyPct) : pctOf(top3BuyVol);
+  const bcr3Buy = broker?.bcr3BuyPct != null ? Number(broker.bcr3BuyPct) : (broker?.bcr3NetPct != null ? Number(broker.bcr3NetPct) : pctOf(top3BuyVol));
   const bcr5Buy = broker?.bcr5BuyPct != null ? Number(broker.bcr5BuyPct)
-    : (broker?.crb5 != null ? +((Number(broker.crb5) <= 1 ? Number(broker.crb5) * 100 : Number(broker.crb5))).toFixed(1) : pctOf(top5BuyVol));
-  const bcr3Sell = broker?.bcr3SellPct != null ? Number(broker.bcr3SellPct) : pctOf(top3SellVol);
+    : (broker?.bcr5NetPct != null ? Number(broker.bcr5NetPct)
+    : (broker?.crb5 != null ? +((Number(broker.crb5) <= 1 ? Number(broker.crb5) * 100 : Number(broker.crb5))).toFixed(1) : pctOf(top5BuyVol)));
+  const bcr3Sell = broker?.bcr3SellPct != null ? Number(broker.bcr3SellPct) : (broker?.scr3NetPct != null ? Number(broker.scr3NetPct) : pctOf(top3SellVol));
   const smartMoneyBias = bcr3Buy == null
     ? 'Broker data unavailable'
     : (bcr3Buy >= 40 ? 'Institutional Cornering' : ((bcr3Sell ?? 0) >= 45 ? 'Operator Offloading' : 'Neutral Flow'));
@@ -321,13 +329,14 @@ export async function runAgentAnalysis({
         query,
         model,
         apiKey: clientKey || undefined
-      })
+      }),
+      signal: AbortSignal.timeout(15000)
     });
 
     if (res.ok) {
       const json = await res.json();
       if (json && json.success) {
-        const payloadData = json.analysis || json.data || {};
+        const payloadData = json.analysis || json.data?.analysis || json.data || {};
         return {
           ...payloadData,
           dossier: json.dossier || dossier,
@@ -388,6 +397,14 @@ Return valid JSON with keys:
       });
       if (proxyRes.ok) {
         const pData = await proxyRes.json();
+        const guruAnalysis = pData?.data?.analysis || pData?.analysis;
+        if (guruAnalysis && typeof guruAnalysis === 'object') {
+          return {
+            ...guruAnalysis,
+            dossier,
+            meta: { modelUsed: pData.provider || 'proxy-gemini', isDirectClientGemini: false, timestamp: new Date().toISOString() }
+          };
+        }
         const rawText = pData?.text || pData?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (rawText) {
           let parsed = null;
@@ -425,7 +442,8 @@ Return valid JSON with keys:
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
               generationConfig: { temperature: 0.2, maxOutputTokens: 2000, responseMimeType: 'application/json' }
-            })
+            }),
+            signal: AbortSignal.timeout(15000)
           });
           if (directRes.ok) {
             const data = await directRes.json();

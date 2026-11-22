@@ -53,6 +53,18 @@ import ProGate from './ProGate';
 
 const PROXY = getProxyBase();
 
+const parseStrictNum = (val) => {
+  if (val === null || val === undefined || val === '') return NaN;
+  const n = Number(val);
+  return Number.isFinite(n) ? n : NaN;
+};
+
+const isHardVetoOrDowngrade = (rec) => {
+  if (!rec || typeof rec !== 'string') return false;
+  const upper = rec.toUpperCase();
+  return upper.includes('VETO') || upper.includes('REDUCE') || upper.includes('AVOID') || upper.includes('EXIT') || upper.includes('CRITICAL');
+};
+
 // ── QUANTITATIVE REPORT SYNTHESIZER ──────────────────────────────
 function synthesizeGuruQuantReport({
   symbol, price, technical, financials, candles, adi, wyckoff, graham, atr, targets, zone, rrr, volumeZ, marketData,
@@ -60,27 +72,45 @@ function synthesizeGuruQuantReport({
 }) {
   const rawLtp = Number(price.closePrice || price.lastTradedPrice || price.ltp || 0);
   const ltp = Number.isFinite(rawLtp) && rawLtp > 0 ? rawLtp : 0;
+
+  if (!ltp || ltp <= 0 || !Array.isArray(candles) || candles.length === 0) {
+    return {
+      symbol,
+      recommendation: 'DATA UNAVAILABLE',
+      confidence: null,
+      score: null,
+      pillarScores: null,
+      target1: null,
+      target2: null,
+      stopLoss: null,
+      riskRewardRatio: null,
+      verdict: `Live quote or price history unavailable for ${symbol}. Analysis suspended to prevent erroneous trade sizing.`,
+      isVetoed: true,
+      dataUnavailable: true
+    };
+  }
+
   const pChg = Number(price.percentageChange || price.pChange || 0);
   const vol = Number(price.totalTradedQuantity || price.volume || 0);
-  const finData = financials?.data || {};
-  const rawEps = finData.eps ?? price.eps ?? null;
+  const finData = financials?.data || financials || {};
+  const rawEps = finData.eps ?? finData.eps_ttm ?? price.eps ?? price.eps_ttm ?? null;
   const hasEps = rawEps !== null && rawEps !== undefined && rawEps !== '' && Number.isFinite(Number(rawEps));
   const eps = hasEps ? Number(rawEps) : 0;
-  const rawBvps = finData.bvps ?? finData.bookValuePerShare ?? finData.bookValue ?? price.bvps ?? null;
+  const rawBvps = finData.bvps ?? finData.bookValuePerShare ?? finData.book_value_per_share ?? finData.bookValue ?? price.bvps ?? price.book_value_per_share ?? null;
   const hasBvps = rawBvps !== null && rawBvps !== undefined && rawBvps !== '' && Number.isFinite(Number(rawBvps));
   const bvps = hasBvps ? Number(rawBvps) : 0;
-  const pe = Number(finData.pe ?? price.pe ?? (eps > 0 && ltp > 0 ? ltp / eps : 0));
+  const pe = Number(finData.pe ?? finData.pe_ratio ?? price.pe ?? (eps > 0 && ltp > 0 ? ltp / eps : 0));
   const rsi = Number(technical?.indicators?.rsi || resolveDynamicStockRSI({ ...price, symbol, ltp, pChange: pChg, candles }));
   const sector = String(price.sector || finData.sector || '').toLowerCase();
 
   // ── Statutory & Regulatory Hard Veto Checks ──────────────────────────────
-  const nplPct = Number(finData.npl ?? finData.nplPct ?? price.npl ?? NaN);
-  const carPct = Number(finData.car ?? finData.carPct ?? price.car ?? NaN);
-  const costPerMW = Number(finData.costPerMW ?? finData.capexPerMw ?? price.costPerMW ?? NaN);
-  const codCompleted = finData.codCompleted ?? price.codCompleted ?? true;
+  const nplPct = parseStrictNum(finData.npl ?? finData.nplPct ?? finData.npl_pct ?? price.npl ?? price.npl_pct);
+  const carPct = parseStrictNum(finData.car ?? finData.carPct ?? finData.car_pct ?? price.car ?? price.car_pct);
+  const costPerMW = parseStrictNum(finData.costPerMW ?? finData.capexPerMw ?? finData.hydro_capex_per_mw_cr ?? price.costPerMW);
+  const codCompleted = finData.codCompleted ?? finData.cod_completed ?? price.codCompleted ?? true;
 
-  let daysToLockIn = Number(finData.daysToLockInExpiry ?? price.daysToLockInExpiry ?? NaN);
-  const lockInDateStr = finData.promoterUnlockDate || finData.lockInExpiryDate || price.promoterUnlockDate || price.lockInExpiryDate;
+  let daysToLockIn = parseStrictNum(finData.daysToLockInExpiry ?? finData.days_to_lockin ?? price.daysToLockInExpiry ?? price.days_to_lockin);
+  const lockInDateStr = finData.promoterUnlockDate || finData.promoter_unlock_date || finData.lockInExpiryDate || price.promoterUnlockDate || price.promoter_unlock_date || price.lockInExpiryDate;
   if (Number.isNaN(daysToLockIn) && lockInDateStr) {
     const diffMs = new Date(lockInDateStr).getTime() - Date.now();
     daysToLockIn = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
@@ -459,11 +489,12 @@ export function synthesizeGuruMarketOutlook(marketData, topGainers = [], topLose
 function buildStockPrompt(symbol, stockData, technical, financials, marketData, quantMetrics) {
   const price = stockData?.data || {};
   const fin = financials?.data || {};
+  const asOfDate = quantMetrics?.report?.asOfDate || price.businessDate || price.date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
 
   return `You are GURU AI, an expert quantitative NEPSE (Nepal Stock Exchange) investment analyst.
 
 STOCK: ${symbol}
-DATE: ${new Date().toLocaleDateString('en-NP')}
+DATE: ${asOfDate}
 
 === QUANTITATIVE & SMART MONEY ANALYSIS ===
 LTP: NPR ${price.closePrice || price.lastTradedPrice || 'N/A'} (Today: ${price.percentageChange || 0}%)
@@ -1108,7 +1139,7 @@ const GuruResponse = ({ data, type, onDeployPaperTrade }) => {
       )}
 
       {/* 6. 365-Day Backtest Performance & Model Transparency */}
-      {parsed.backtestResult && (
+      {parsed.symbol && (
         <BacktestTransparencyCard backtest={parsed.backtestResult} triggers={parsed.signalTriggers} />
       )}
 
@@ -1806,32 +1837,63 @@ export default function AiAnalyst({
         brokerAnalysis: brokerData
       });
 
+      // If data is unavailable or quote is invalid, skip predictions and LLM overrides
+      if (synthesizedReport.dataUnavailable || ltp <= 0) {
+        setAnalysis(synthesizedReport);
+        setMessages(prev => prev.map(m =>
+          m.id === loadingId ? {
+            role: 'assistant',
+            guruData: synthesizedReport,
+            analysisType: 'stock',
+            symbol: sym,
+            isLoading: false,
+            timestamp: new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' })
+          } : m
+        ));
+        setLoading(false);
+        return;
+      }
+
       // 4. Hit POST /api/ai/predict with live quantitative payload
       let finalData = synthesizedReport;
       try {
+        const topBrokersArr = (brokerData?.topNetBuyers?.length ? brokerData.topNetBuyers.map(b => Number(b.brokerId || b.broker || 0)).filter(n => n > 0) : []);
+        const rawEma20 = Number(technical?.indicators?.ema20 || technical?.data?.ema20 || price.ema20 || 0);
+        const rawEma50 = Number(technical?.indicators?.ema50 || technical?.data?.ema50 || price.ema50 || 0);
+        const rawEma200 = Number(technical?.indicators?.ema200 || technical?.data?.ema200 || price.ema200 || 0);
+        const macdObj = technical?.indicators?.macd && typeof technical.indicators.macd === 'object'
+          ? {
+              line: Number(technical.indicators.macd.line || technical.indicators.macd.macd || 0),
+              signal: Number(technical.indicators.macd.signal || 0),
+              histogram: Number(technical.indicators.macd.histogram || 0)
+            }
+          : { line: 0, signal: 0, histogram: 0 };
+
         const predictPayload = {
           symbol: sym,
           ltp,
           fundamentals: {
-            pe: Number(graham.pe) || 0,
-            pbv: Number(graham.pb) || 0,
+            pe: Number(graham?.pe || (eps > 0 && ltp > 0 ? +(ltp / eps).toFixed(2) : 0)),
+            pbv: Number(graham?.pb || (bvps > 0 && ltp > 0 ? +(ltp / bvps).toFixed(2) : 0)),
             eps,
+            roe: Number((eps > 0 && bvps > 0 ? +((eps / bvps) * 100).toFixed(2) : (price.roe || 0))),
+            dividendYield: Number(price.dividendYield || 0),
             bookValue: bvps,
-            dividendYield: price.dividendYield || 0,
           },
           technicals: {
             rsi14: dynRsi,
-            volumeZScore: volumeZ.zScore || 1.1,
-            atr,
+            macd: macdObj,
+            ema20: rawEma20,
+            ema50: rawEma50,
+            ema200: rawEma200,
+            volumeZScore: Number(volumeZ.zScore || 1.1),
+            bbwPct: Number(technical?.indicators?.bbwPct || 0),
           },
           smartMoney: {
-            dominantBrokers: brokerData.topNetBuyers?.length ? brokerData.topNetBuyers.map(b => b.brokerId || b.broker) : [],
-            wyckoffPhase: wyckoff.phase,
-            stealthAccumulationIndex: adi.currentADI || Math.round(50 + Math.max(-25, Math.min(25, pChg * 3.5))),
-            turnover: price.totalTurnover || (volume * ltp),
-            adRatio: brokerData.adRatio ?? 0,
-            adSignal: brokerData.adSignal ?? 'Neutral',
-            adStrength: brokerData.adStrength ?? 0
+            brokerDominanceRatio: Number(brokerData?.brokerDominanceRatio ?? brokerData?.dominanceRatio ?? 0),
+            stealthAccumulationIndex: Math.round(50 + Math.max(-45, Math.min(45, (Number(adi?.adRatio || brokerData?.adRatio || 1) - 1) * 35))),
+            turnover: Number(price.totalTurnover || (volume * ltp)),
+            topBrokers: topBrokersArr,
           },
           apiKey: (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || glmKey || ''
         };
@@ -1843,33 +1905,39 @@ export default function AiAnalyst({
           signal: AbortSignal.timeout(20000)
         });
 
-        const clampToCircuit = (val, fallbackVal) => {
-          const num = Number(val);
-          if (!Number.isFinite(num) || num <= 0) return fallbackVal;
-          const floor15 = Number((ltp * 0.85).toFixed(2));
-          const ceil15 = Number((ltp * 1.15).toFixed(2));
-          return Math.max(floor15, Math.min(ceil15, num));
-        };
-
         if (predictRes.ok) {
           const pred = await predictRes.json();
           if (pred && (pred.verdict || pred.confidenceScore)) {
-            const safeStop = clampToCircuit(pred.riskReward?.stopLoss, targets.stopLoss.price);
-            const verifiedStop = safeStop < ltp ? safeStop : targets.stopLoss.price;
-            const safeT1 = clampToCircuit(pred.riskReward?.target1, targets.target1.price);
-            const verifiedT1 = safeT1 > ltp ? safeT1 : targets.target1.price;
-            const safeT2 = Math.max(verifiedT1, clampToCircuit(pred.riskReward?.target2, targets.target2.price));
+            const rawT1 = Number(pred.riskReward?.profitTarget || pred.riskReward?.target1);
+            const verifiedT1 = Number.isFinite(rawT1) && rawT1 > ltp && rawT1 <= ltp * 1.50
+              ? rawT1
+              : targets.target1.price;
+            const rawT2 = Number(pred.riskReward?.target2);
+            const safeT2 = Number.isFinite(rawT2) && rawT2 >= verifiedT1 && rawT2 <= ltp * 2.0
+              ? rawT2
+              : Math.max(verifiedT1, targets.target2.price);
+            const rawStop = Number(pred.riskReward?.stopLoss);
+            const verifiedStop = Number.isFinite(rawStop) && rawStop > 0 && rawStop < ltp && rawStop >= ltp * 0.70
+              ? rawStop
+              : targets.stopLoss.price;
+            const recomputedRrr = verifiedStop < ltp && verifiedT1 > ltp
+              ? +((verifiedT1 - ltp) / (ltp - verifiedStop)).toFixed(2)
+              : (pred.riskReward?.rrr || rrr.rrr);
 
             finalData = {
               ...synthesizedReport,
-              verdict: synthesizedReport.recommendation.startsWith('VETO')
+              verdict: isHardVetoOrDowngrade(synthesizedReport.recommendation)
                 ? synthesizedReport.recommendation
                 : (pred.verdict || synthesizedReport.recommendation),
-              recommendation: synthesizedReport.recommendation.startsWith('VETO')
+              recommendation: isHardVetoOrDowngrade(synthesizedReport.recommendation)
                 ? synthesizedReport.recommendation
                 : (pred.verdict || synthesizedReport.recommendation),
-              confidenceScore: pred.confidenceScore ?? synthesizedReport.confidence,
-              confidence: pred.confidenceScore ?? synthesizedReport.confidence,
+              confidenceScore: isHardVetoOrDowngrade(synthesizedReport.recommendation)
+                ? synthesizedReport.confidence
+                : (pred.confidenceScore ?? synthesizedReport.confidence),
+              confidence: isHardVetoOrDowngrade(synthesizedReport.recommendation)
+                ? synthesizedReport.confidence
+                : (pred.confidenceScore ?? synthesizedReport.confidence),
               scores: pred.scores || synthesizedReport.scores,
               targetPrice: {
                 oneMonth: verifiedT1,
@@ -1878,7 +1946,7 @@ export default function AiAnalyst({
               },
               stopLoss: verifiedStop,
               entryZone: pred.riskReward?.entryTarget ? `Rs. ${pred.riskReward.entryTarget}` : targets.entryZone.label,
-              riskRewardRatio: pred.riskReward?.rrr || rrr.rrr,
+              riskRewardRatio: recomputedRrr,
               analysis: pred.summaryReasoning || synthesizedReport.analysis,
               smartMoneyAccumulation: pred.smartMoneyAccumulation || synthesizedReport.accumulationDistribution,
               circuitMetrics,
@@ -1903,7 +1971,7 @@ export default function AiAnalyst({
               finalData = {
                 ...synthesizedReport,
                 ...aiData,
-                recommendation: synthesizedReport.recommendation.startsWith('VETO')
+                recommendation: isHardVetoOrDowngrade(synthesizedReport.recommendation)
                   ? synthesizedReport.recommendation
                   : (aiData.recommendation || synthesizedReport.recommendation),
                 targetPrice: synthesizedReport.targetPrice,
@@ -2017,21 +2085,27 @@ export default function AiAnalyst({
     const loadingId = Date.now();
     setMessages(prev => [...prev, {
       role: 'assistant', isLoading: true, id: loadingId,
-      timestamp: new Date().toLocaleTimeString()
+      timestamp: new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' })
     }]);
 
     let gainers = [];
     let losers = [];
+    let currentMarket = marketData;
     try {
-      const [gainersRes, losersRes] = await Promise.all([
+      const [gainersRes, losersRes, freshMkt] = await Promise.all([
         fetch(`${PROXY}/api/market/top-gainers`).then(r => r.json()).catch(() => ({ data: [] })),
-        fetch(`${PROXY}/api/market/top-losers`).then(r => r.json()).catch(() => ({ data: [] }))
+        fetch(`${PROXY}/api/market/top-losers`).then(r => r.json()).catch(() => ({ data: [] })),
+        fetchMarketSummary().catch(() => null)
       ]);
       gainers = gainersRes?.data || [];
       losers = losersRes?.data || [];
+      if (freshMkt) {
+        setMarketData(freshMkt);
+        currentMarket = freshMkt;
+      }
 
       const prompt = buildMarketPrompt(
-        marketData,
+        currentMarket,
         null,
         gainers,
         losers
@@ -2110,8 +2184,11 @@ Format as plain text (not JSON) for this conversational response.`;
 
       const result = await callGuruAI(contextPrompt, 'chat');
 
-      const responseText = typeof result === 'string' ? result :
-        result?.data?.analysis || result?.data || result?.text || JSON.stringify(result);
+      const responseText = typeof result === 'string'
+        ? result
+        : typeof result?.data === 'string'
+        ? result.data
+        : result?.data?.analysis || result?.text || (typeof result?.data === 'object' ? JSON.stringify(result.data, null, 2) : JSON.stringify(result));
 
       if (autoClearChat) {
         setMessages([
@@ -2667,8 +2744,8 @@ Format as plain text (not JSON) for this conversational response.`;
         </div>
       )}
 
-      {/* Chat / Stock Messages Stream (when not on sandbox tab) */}
-      {activeTab !== 'sandbox' && (
+      {/* Chat / Stock Messages Stream (when not on sandbox tab or agent tab) */}
+      {activeTab !== 'sandbox' && activeTab !== 'agent' && (
         <ProGate
           featureName="GURU AI Quantitative Workstation"
           description="Unlock institutional Wyckoff accumulation tracking, Benjamin Graham intrinsic valuation, multi-horizon price targets, and intelligent NEPSE AI dialogues with a Pro monthly pass."

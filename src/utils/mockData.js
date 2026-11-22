@@ -174,6 +174,17 @@ export function calculateIndices(stocks = []) {
 
 export function runStockScanners(stocks = [], filterKey) {
   if (!stocks || stocks.length === 0) return [];
+  const normBcr3 = (val) => {
+    if (val == null) return 0;
+    const n = Number(val);
+    return n <= 1.0 ? n * 100 : n;
+  };
+  const normCapMillions = (s) => {
+    const raw = Number(s.marketCap || 0);
+    if (raw > 10000000) return raw / 1000000;
+    return raw;
+  };
+
   switch (filterKey) {
     // ── Trader's Zone & Subscription Features ──
     case 'breakout':
@@ -201,18 +212,16 @@ export function runStockScanners(stocks = [], filterKey) {
     case 'circuit_pos': {
       const topCircuits = stocks.filter(s => (s.pChange || 0) >= 13.5).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
       if (topCircuits.length > 0) return topCircuits.slice(0, 25);
-      const nearCircuits = stocks.filter(s => (s.pChange || 0) >= 7.0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
-      if (nearCircuits.length > 0) return nearCircuits.slice(0, 25);
-      return stocks.filter(s => (s.pChange || 0) > 0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0)).slice(0, 25);
+      const nearCircuits = stocks.filter(s => (s.pChange || 0) >= 9.5).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
+      return nearCircuits.slice(0, 25);
     }
 
     case 'circuit_down':
     case 'circuit_neg': {
       const lowCircuits = stocks.filter(s => (s.pChange || 0) <= -13.5).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
       if (lowCircuits.length > 0) return lowCircuits.slice(0, 25);
-      const nearDown = stocks.filter(s => (s.pChange || 0) <= -7.0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
-      if (nearDown.length > 0) return nearDown.slice(0, 25);
-      return stocks.filter(s => (s.pChange || 0) < 0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0)).slice(0, 25);
+      const nearDown = stocks.filter(s => (s.pChange || 0) <= -9.5).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
+      return nearDown.slice(0, 25);
     }
 
     case 'circuits':
@@ -220,9 +229,8 @@ export function runStockScanners(stocks = [], filterKey) {
     case 'circuit_radar': {
       const hits = stocks.filter(s => Math.abs(s.pChange || 0) >= 13.5).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
       if (hits.length > 0) return hits.slice(0, 25);
-      const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 8.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
-      if (nearHits.length > 0) return nearHits.slice(0, 25);
-      return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 25);
+      const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 9.5).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+      return nearHits.slice(0, 25);
     }
 
     case 'candlestick_patterns':
@@ -279,7 +287,7 @@ export function runStockScanners(stocks = [], filterKey) {
 
     // ── Drabyashree Smart Money & Predictive Engine Screeners ──
     case 'stealth_accumulation':
-      return stocks.filter(s => s.isStealthAccumulation || (s.bcr3 && s.bcr3 >= 0.35)).sort((a, b) => (b.sai || 0) - (a.sai || 0)).slice(0, 25);
+      return stocks.filter(s => s.isStealthAccumulation || normBcr3(s.bcr3) >= 35).sort((a, b) => (b.sai || 0) - (a.sai || 0)).slice(0, 25);
 
     case 'matching_buy_sell':
       return stocks.filter(s => s.volume >= 25000 && (s.floatTurnoverPct >= 1.2 || s.volumeSurgeRatio >= 1.5)).slice(0, 20);
@@ -306,13 +314,13 @@ export function runStockScanners(stocks = [], filterKey) {
 
 
     case 'large_cap':
-      return stocks.filter(s => (s.marketCap || 0) >= 15000).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
+      return stocks.filter(s => normCapMillions(s) >= 15000).sort((a,b) => (normCapMillions(b)) - (normCapMillions(a))).slice(0, 20);
     
     case 'mid_cap':
-      return stocks.filter(s => (s.marketCap || 0) >= 4000 && (s.marketCap || 0) < 15000).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
+      return stocks.filter(s => normCapMillions(s) >= 4000 && normCapMillions(s) < 15000).sort((a,b) => (normCapMillions(b)) - (normCapMillions(a))).slice(0, 20);
 
     case 'small_cap':
-      return stocks.filter(s => (s.marketCap || 0) < 4000).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
+      return stocks.filter(s => normCapMillions(s) < 4000 && normCapMillions(s) > 0).sort((a,b) => (normCapMillions(b)) - (normCapMillions(a))).slice(0, 20);
 
     case 'price_vs_volume':
       return stocks.filter(s => s.pChange >= 1.5 && (s.volumeSurgeRatio >= 1.2 || s.floatTurnoverPct >= 1.0)).slice(0, 20);
@@ -384,17 +392,17 @@ export function runStockScanners(stocks = [], filterKey) {
 
     // ── Smart Money Categories ──
     case 'aggressive_accumulators':
-      return stocks.filter(s => (s.bcr3 && s.bcr3 >= 0.35) || (s.pChange >= 2.0 && (s.volumeSurgeRatio >= 1.5 || s.turnover > 15000000))).sort((a, b) => (b.bcr3 || 0) - (a.bcr3 || 0)).slice(0, 25);
+      return stocks.filter(s => normBcr3(s.bcr3) >= 35 || (s.pChange >= 2.0 && (s.volumeSurgeRatio >= 1.5 || s.turnover > 15000000))).sort((a, b) => normBcr3(b.bcr3) - normBcr3(a.bcr3)).slice(0, 25);
     case 'distribution_leaders':
       return stocks.filter(s => s.pChange <= -1.8 && (s.turnover || 0) > 12000000).sort((a, b) => a.pChange - b.pChange).slice(0, 25);
     case 'broker_dominance':
-      return stocks.filter(s => (s.bcr3 && s.bcr3 >= 0.30) || (s.volume || 0) > 35000).sort((a, b) => (b.bcr3 || 0) - (a.bcr3 || 0)).slice(0, 25);
+      return stocks.filter(s => normBcr3(s.bcr3) >= 30 || (s.volume || 0) > 35000).sort((a, b) => normBcr3(b.bcr3) - normBcr3(a.bcr3)).slice(0, 25);
     case 'aggressive_holdings':
-      return stocks.filter(s => s.pChange > 0 && s.pe > 0 && s.pe < 28 && (s.bcr3 || 0) >= 0.25).slice(0, 25);
+      return stocks.filter(s => s.pChange > 0 && s.pe > 0 && s.pe < 28 && normBcr3(s.bcr3) >= 25).slice(0, 25);
     case 'matching_trades':
       return stocks.filter(s => (s.volume || 0) > 30000 && (s.floatTurnoverPct >= 1.0 || s.volumeSurgeRatio >= 1.3)).slice(0, 25);
     case 'slow_accumulation':
-      return stocks.filter(s => s.isStealthAccumulation || (s.pChange >= 0.1 && s.pChange <= 1.8 && (s.bcr3 || 0) >= 0.30)).sort((a, b) => (b.sai || 0) - (a.sai || 0)).slice(0, 25);
+      return stocks.filter(s => s.isStealthAccumulation || (s.pChange >= 0.1 && s.pChange <= 1.8 && normBcr3(s.bcr3) >= 30)).sort((a, b) => (b.sai || 0) - (a.sai || 0)).slice(0, 25);
 
 
     // ── Fast Circuits & Signals ──
@@ -436,10 +444,11 @@ export const NEPSE_BROKERS = [
   { no: 14, name: "Nepal Stock House Pvt. Ltd." },
   { no: 33, name: "Dakshinkali Investment & Securities" },
   { no: 19, name: "Nepal Investment & Securities Pvt." },
-  { no: 64, name: "Sani Securities Company Ltd." },
+  { no: 42, name: "Sani Securities Company Ltd." },
+  { no: 64, name: "Sun Securities Pvt. Ltd." },
   { no: 4,  name: "Opal Securities Investment Pvt." },
   { no: 32, name: "Premier Securities Company Ltd." },
-  { no: 47, name: "Nivana Capital Market Pvt. Ltd." },
+  { no: 47, name: "Neev Securities Pvt. Ltd." },
   { no: 10, name: "Pragyan Securities Pvt. Ltd." },
   { no: 22, name: "Siprabi Securities Pvt. Ltd." }
 ];
@@ -451,7 +460,7 @@ export const LOCK_IN_DATA = [
     name: "Hathway Investment Nepal Ltd.",
     category: "Promoter & Local",
     unlockDate: "2026-09-15",
-    daysLeft: 20,
+    daysLeft: Math.max(0, Math.ceil((new Date("2026-09-15").getTime() - Date.now()) / (1000 * 60 * 60 * 24))),
     units: 14625000,
     pctOfTotal: "62.5%",
     currentPrice: 1045,
@@ -464,7 +473,7 @@ export const LOCK_IN_DATA = [
     name: "Sonapur Minerals and Oil Ltd.",
     category: "Promoter & Mutual Fund",
     unlockDate: "2026-10-02",
-    daysLeft: 37,
+    daysLeft: Math.max(0, Math.ceil((new Date("2026-10-02").getTime() - Date.now()) / (1000 * 60 * 60 * 24))),
     units: 12300000,
     pctOfTotal: "40.0%",
     currentPrice: 480,
@@ -477,7 +486,7 @@ export const LOCK_IN_DATA = [
     name: "Sarbottam Cement Limited",
     category: "Book Building Local & Mutual Fund",
     unlockDate: "2026-11-12",
-    daysLeft: 78,
+    daysLeft: Math.max(0, Math.ceil((new Date("2026-11-12").getTime() - Date.now()) / (1000 * 60 * 60 * 24))),
     units: 9600000,
     pctOfTotal: "35.2%",
     currentPrice: 790,
@@ -490,7 +499,7 @@ export const LOCK_IN_DATA = [
     name: "Mai Khola Hydropower Limited",
     category: "Local Residents",
     unlockDate: "2026-12-05",
-    daysLeft: 101,
+    daysLeft: Math.max(0, Math.ceil((new Date("2026-12-05").getTime() - Date.now()) / (1000 * 60 * 60 * 24))),
     units: 3921570,
     pctOfTotal: "30.0%",
     currentPrice: 320,
@@ -503,7 +512,7 @@ export const LOCK_IN_DATA = [
     name: "Citizen Investment Trust",
     category: "Right Shares Lock-in",
     unlockDate: "2027-01-18",
-    daysLeft: 145,
+    daysLeft: Math.max(0, Math.ceil((new Date("2027-01-18").getTime() - Date.now()) / (1000 * 60 * 60 * 24))),
     units: 5400000,
     pctOfTotal: "12.0%",
     currentPrice: 1850,
@@ -516,7 +525,7 @@ export const LOCK_IN_DATA = [
     name: "Upper Tamakoshi Hydropower",
     category: "Rights & Employee Quota",
     unlockDate: "2027-03-20",
-    daysLeft: 206,
+    daysLeft: Math.max(0, Math.ceil((new Date("2027-03-20").getTime() - Date.now()) / (1000 * 60 * 60 * 24))),
     units: 24500000,
     pctOfTotal: "22.5%",
     currentPrice: 190,

@@ -712,11 +712,21 @@ export default function ShortTermProfitPlan({
     ? Number(customTarget1)
     : Number(activeStock?.target1 || (entryPrice * 1.08).toFixed(1));
 
-  // Risk & Position Sizing Math
-  const riskPerShare = Math.max(0.5, +(entryPrice - stopLossPrice).toFixed(1));
-  const riskAmount = (Number(totalCapital) * (Number(riskPercent) / 100)); // e.g. 100,000 * 2% = Rs. 2,000
-  const rawQty = Math.floor(riskAmount / riskPerShare);
-  const calculatedQuantity = Math.max(10, Math.floor(rawQty / 10) * 10);
+  // Risk & Position Sizing Math (Stop-Inversion Guard + Round-Trip Friction + Capital Ceiling)
+  const isStopValid = Number.isFinite(entryPrice) && entryPrice > 0 && Number.isFinite(stopLossPrice) && stopLossPrice > 0 && stopLossPrice < entryPrice;
+  const riskAmount = Math.max(0, Number(totalCapital) * (Number(riskPercent) / 100));
+  const estSlabRate = totalCapital <= 50000 ? 0.0036 : totalCapital <= 500000 ? 0.0033 : totalCapital <= 2000000 ? 0.0031 : 0.0027;
+  const effectiveRiskPerShare = isStopValid
+    ? (entryPrice - stopLossPrice) + ((entryPrice + stopLossPrice) * (estSlabRate + 0.00015))
+    : 0;
+  const maxQtyByRisk = isStopValid && effectiveRiskPerShare > 0
+    ? Math.floor(Math.max(0, riskAmount - 50) / effectiveRiskPerShare)
+    : 0;
+  const maxQtyByCapital = isStopValid
+    ? Math.floor(Math.max(0, Number(totalCapital) - 25) / (entryPrice * (1 + estSlabRate + 0.00015)))
+    : 0;
+  const boundedQty = Math.min(maxQtyByRisk, maxQtyByCapital);
+  const calculatedQuantity = boundedQty >= 10 ? Math.floor(boundedQty / 10) * 10 : 0;
   const quantity = customQuantity !== null ? Number(customQuantity) : calculatedQuantity;
 
   // Real NEPSE Transaction Calculations
@@ -739,7 +749,7 @@ export default function ShortTermProfitPlan({
     ? ((netTakeHomeProfit / buyCalculations.totalAmount) * 100)
     : 0;
 
-  const netRiskLoss = Math.abs(stopLossSellCalculations.netProfitLoss);
+  const netRiskLoss = quantity > 0 ? Math.max(0, -Number(stopLossSellCalculations.netProfitLoss || 0)) : 0;
   const netRiskPct = buyCalculations.totalAmount > 0
     ? ((netRiskLoss / buyCalculations.totalAmount) * 100)
     : 0;
@@ -765,9 +775,10 @@ export default function ShortTermProfitPlan({
 
   // Apply Half-Kelly Sizing Handler
   const handleApplyHalfKelly = () => {
-    if (kellyData.halfKellyPct > 0) {
+    if (kellyData.halfKellyPct > 0 && entryPrice > 0) {
       const kellyCapital = totalCapital * (kellyData.halfKellyPct / 100);
-      const kellyShares = Math.max(10, Math.floor(kellyCapital / entryPrice));
+      const rawKellyShares = Math.floor(Math.max(0, kellyCapital - 25) / (entryPrice * 1.004));
+      const kellyShares = rawKellyShares >= 10 ? Math.floor(rawKellyShares / 10) * 10 : 0;
       setCustomQuantity(kellyShares);
       setPlanSaveToast(`Applied Half-Kelly Sizing: ${kellyData.halfKellyPct}% Capital (${kellyShares} shares)`);
       setTimeout(() => setPlanSaveToast(null), 3500);
@@ -2000,7 +2011,7 @@ export default function ShortTermProfitPlan({
                     <span>Rs. 50.00</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                    <span>Short-Term CGT (7.5% - 10.0% Final Tax):</span>
+                    <span>Short-Term CGT (5.0% &le;365d / 3.75% &gt;365d):</span>
                     <span>Rs. {(Number(target1SellCalculations?.cgt) || 0).toFixed(2)}</span>
                   </div>
                   <div style={{
@@ -2742,7 +2753,7 @@ export default function ShortTermProfitPlan({
               {activePlans.map(plan => {
                 const liveStock = stocks.find(s => String(s.symbol || '').toUpperCase() === plan.symbol);
                 const currentPrice = Number(liveStock?.ltp || liveStock?.closePrice || plan.entryPrice);
-                const currentDiffPct = ((currentPrice - plan.entryPrice) / plan.entryPrice) * 100;
+                const currentDiffPct = Number(plan.entryPrice) > 0 ? ((currentPrice - Number(plan.entryPrice)) / Number(plan.entryPrice)) * 100 : 0;
                 const isTargetHit = currentPrice >= plan.target1Price;
                 const isStopHit = currentPrice <= plan.stopLossPrice;
 

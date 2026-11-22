@@ -91,9 +91,10 @@ export interface AiQuantitativeAssessmentResult {
     dayChangePct: number;
     atr14: number;
     atrPct: number;
-    roundTripFeePct: number; // NEPSE broker + SEBON + DP + 7.5% CGT impact
+    roundTripFeePct: number; // NEPSE broker + SEBON + DP + 5.0% CGT impact
     ratchetTriggerPrice: number; // Entry + 1.2R target
     ratchetStopPrice: number; // Entry + 1.2% post-fee shield
+    ratchetTriggered?: boolean;
     t2UnlockStatus: string;
     mfePct: number;
     maePct: number;
@@ -282,10 +283,10 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
     const ticketMultiplier = avgTicketKitta >= 300 ? 1.35 : avgTicketKitta < 45 ? 0.65 : 1.0;
 
     const computedAnomaly = (scripBuyShare / baselineShare) * ticketMultiplier;
-    const rawAnomaly = safeNum(
-      item.anomalyScore ?? item.broker_anomaly_score,
-      computedAnomaly
-    );
+    const rawAnomalyVal = item.anomalyScore ?? item.broker_anomaly_score;
+    const rawAnomaly = (rawAnomalyVal !== null && rawAnomalyVal !== undefined && Number(rawAnomalyVal) > 0)
+      ? Number(rawAnomalyVal)
+      : computedAnomaly;
 
     const buyAmt = safeNum(item.buyAmount ?? item.buy_amount ?? item.buyAmt, 0);
     const sellAmt = safeNum(item.sellAmount ?? item.sell_amount ?? item.sellAmt, 0);
@@ -343,10 +344,12 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
   const totalDistSellQty = distributors.reduce((s, b) => s + (b.sellKitta || 0), 0);
   const avgSellingPrice = totalDistSellQty > 0 ? Number((totalDistSellAmt / totalDistSellQty).toFixed(2)) : null;
 
-  const totalVolume = totalBuyKitta + totalSellKitta;
+  const top5BuyNet = topAccumulators.reduce((sum, b) => sum + Math.max(0, b.netKitta), 0);
+  const top3SellNet = topDistributors.slice(0, 3).reduce((sum, b) => sum + Math.abs(Math.min(0, b.netKitta)), 0);
+  const dirDenom = top5BuyNet + top3SellNet;
   const netAccumulationRatio =
-    totalVolume > 0
-      ? Number(((totalBuyKitta / totalVolume) * 100).toFixed(1))
+    dirDenom > 0
+      ? Number(((top5BuyNet / dirDenom) * 100).toFixed(1))
       : 50;
 
   const topAcc = topAccumulators[0];
@@ -489,8 +492,12 @@ export async function runAiQuantitativeAssessment(params: {
   const mfePct = safeNum(effectiveLedger?.mfe_pct, 0);
   const maePct = safeNum(effectiveLedger?.mae_pct, 0);
   const nepseAlphaPct = safeNum(effectiveLedger?.nepse_alpha_pct, 0);
-  const brokerAnomalyScore = safeNum(effectiveLedger?.broker_anomaly_score, 1.0);
-  const avgTicketKitta = safeNum(effectiveLedger?.avg_ticket_kitta, 0);
+  const brokerAnomalyScore = (effectiveLedger?.broker_anomaly_score !== null && effectiveLedger?.broker_anomaly_score !== undefined && effectiveLedger.broker_anomaly_score > 0)
+    ? Number(effectiveLedger.broker_anomaly_score)
+    : 1.0;
+  const avgTicketKitta = (effectiveLedger?.avg_ticket_kitta !== null && effectiveLedger?.avg_ticket_kitta !== undefined && effectiveLedger.avg_ticket_kitta > 0)
+    ? Number(effectiveLedger.avg_ticket_kitta)
+    : 0;
   const unlockDate = effectiveLedger?.settlement_unlock_date || "Unlocked / No Active Lock";
 
   const defaultSmartMoney: BrokerSmartMoney5DSummary = {
@@ -581,8 +588,9 @@ Provide a concise, institutional-grade NEPSE quantitative assessment for ${resol
       mfePct,
       maePct,
       nepseAlphaPct,
-      brokerAnomalyScore,
-      avgTicketKitta,
+      brokerAnomalyScore: brokerAnomalyScore > 1.0 ? brokerAnomalyScore : (smartMoney5D.topAccumulators[0]?.anomalyScore || brokerAnomalyScore),
+      avgTicketKitta: avgTicketKitta > 0 ? avgTicketKitta : (smartMoney5D.topAccumulators[0]?.avgTicketKitta || avgTicketKitta),
+      ratchetTriggered: Boolean(effectiveLedger?.ratchet_triggered || (ratchetTriggerPrice > 0 && price >= ratchetTriggerPrice)),
       smartMoney5D,
     },
     aiPromptContext,

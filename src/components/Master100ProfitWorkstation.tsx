@@ -467,7 +467,7 @@ export function Master100ProfitWorkstation({
           : '';
     const trackNote = inspectedStock.track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum';
     const setupNote = inspectedStock.setupArchetype === 'SUPPORT_BOUNCE' ? '🔄 Support Bounce' : inspectedStock.setupArchetype;
-    const text = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${inspectedStock.symbol} | Type: LIMIT ORDER\nTrack: ${trackNote} | Setup: ${setupNote}\nEntry Limit: Rs. ${inspectedStock.entryLow} (Chase Cap: Rs. ${inspectedStock.chaseCap})\nAllocated Qty: ${sizing.allowedShares} Shares (Capital: Rs. ${sizing.capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${inspectedStock.stopLoss} (-${inspectedStock.stopLossPct}%)\nTarget 1: Rs. ${inspectedStock.target1Gross} (+${inspectedStock.target1NetPct}% Net after 7.5% CGT)`;
+    const text = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${inspectedStock.symbol} | Type: LIMIT ORDER\nTrack: ${trackNote} | Setup: ${setupNote}\nEntry Limit: Rs. ${inspectedStock.entryLow} (Chase Cap: Rs. ${inspectedStock.chaseCap})\nAllocated Qty: ${sizing.allowedShares} Shares (Capital: Rs. ${sizing.capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${inspectedStock.stopLoss} (-${inspectedStock.stopLossPct}%)\nTarget 1: Rs. ${inspectedStock.target1Gross} (+${inspectedStock.target1NetPct}% Net after 5.0% CGT)`;
 
     navigator.clipboard.writeText(text).then(() => {
       setCopySuccess(true);
@@ -564,7 +564,7 @@ export function Master100ProfitWorkstation({
                 </span>
               </div>
               <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#94a3b8' }}>
-                Automated 8-Gate Screener &bull; 6-Point Matrix &bull; Half-Kelly Compounding (&plusmn;15% Circuits | 7.5% Short-Term CGT)
+                Automated 8-Gate Screener &bull; 6-Point Matrix &bull; Half-Kelly Compounding (&plusmn;15% Circuits | 5.0% Short-Term CGT)
               </p>
             </div>
           </div>
@@ -992,7 +992,7 @@ export function Master100ProfitWorkstation({
                   <div>
                     <div style={{ fontSize: 12, color: '#94a3b8' }}>NET RISK : REWARD</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: '#fbbf24' }}>
-                      {inspectedStock.netRRR} : 1 <span style={{ fontSize: 12, color: '#94a3b8' }}>net 7.5% CGT</span>
+                      {inspectedStock.netRRR} : 1 <span style={{ fontSize: 12, color: '#94a3b8' }}>net 5.0% CGT</span>
                     </div>
                   </div>
                   <div>
@@ -1058,7 +1058,7 @@ export function Master100ProfitWorkstation({
                       Rs. {inspectedStock.target1Gross}
                     </div>
                     <div style={{ fontSize: 12, color: '#34d399', marginTop: 2 }}>
-                      +{inspectedStock.target1NetPct}% Net (after 7.5% CGT)
+                      +{inspectedStock.target1NetPct}% Net (after 5.0% CGT)
                     </div>
                   </div>
 
@@ -1125,7 +1125,7 @@ export function Master100ProfitWorkstation({
                       </h3>
                     </div>
                     <div style={{ fontSize: 12, color: '#94a3b8' }}>
-                      Tiered Broker Fees + SEBON 0.015% + 7.5% CGT Included
+                      Tiered Broker Fees + SEBON 0.015% + 5.0% CGT Included
                     </div>
                   </div>
 
@@ -1689,7 +1689,7 @@ export function Master100ProfitWorkstation({
             }}>
               {(() => {
                 const startCap = Number(auditReport.compoundSimulation.startingCapital || 100000);
-                const endCap = Number(auditReport.compoundSimulation.endingCapital || (auditReport.crownedWinner ? startCap * 2.19 : startCap));
+                const endCap = Number(auditReport.compoundSimulation.endingCapital || startCap);
                 const totalGrowth = endCap / Math.max(1, startCap);
                 const fmtStep = (stepIdx: number) => {
                   const factor = Math.pow(totalGrowth, stepIdx / 5);
@@ -1740,7 +1740,7 @@ export function Master100ProfitWorkstation({
             {auditReport.crownedWinner ? (
               <>
                 E = ({(auditReport.compoundSimulation.winRate / 100).toFixed(2)} &times; Rs.&nbsp;
-                {Math.round((auditReport.crownedWinner.target1Gross - auditReport.crownedWinner.ltp) * auditReport.crownedWinner.kellyShares).toLocaleString()}) &minus;{' '}
+                {Math.round((auditReport.crownedWinner.ltp * (auditReport.crownedWinner.target1NetPct / 100)) * auditReport.crownedWinner.kellyShares).toLocaleString()}) &minus;{' '}
                 ({((100 - auditReport.compoundSimulation.winRate) / 100).toFixed(2)} &times; Rs.&nbsp;
                 {Math.round((auditReport.crownedWinner.ltp - auditReport.crownedWinner.stopLoss) * auditReport.crownedWinner.kellyShares).toLocaleString()}) = <b>derived from {auditReport.crownedWinner.symbol} trade levels</b>.
               </>
@@ -1749,7 +1749,7 @@ export function Master100ProfitWorkstation({
             )}
             <br />
             Deploying Half-Kelly (&asymp; 25% of capital per position) across 20 sequential trades produces approximately{' '}
-            <b>Rs. {auditReport.compoundSimulation.netProfitAmount.toLocaleString()} net profit on Rs. 1,00,000 capital (+{auditReport.compoundSimulation.netReturnPct}%)</b> in 6 to 10 months.<br />
+            <b>Rs. {auditReport.compoundSimulation.netProfitAmount.toLocaleString()} net profit on Rs. {Number(auditReport.compoundSimulation.startingCapital || 100000).toLocaleString('en-IN')} capital (+{auditReport.compoundSimulation.netReturnPct}%)</b> in 6 to 10 months.<br />
             <span style={{ color: '#f59e0b', fontSize: 12 }}>
               ⚠️ Win rate is a composite scoring estimate, not a verified historical backtest. Use EntryExitAnalyzer for symbol-specific backtested rates before committing capital.
             </span>

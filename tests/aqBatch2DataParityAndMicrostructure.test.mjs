@@ -341,9 +341,9 @@ await test('[BUG-138] marketRules.js, RegulatoryHub.tsx, and proxy/server.mjs en
   assert.strictEqual(BROKER_COMMISSION_SLABS[0].ratePct, 0.36);
   assert.strictEqual(BROKER_COMMISSION_SLABS[4].ratePct, 0.24);
 
-  // Holding 365 days is short-term (7.5%), > 365 days (366) is long-term (5.0%)
-  assert.strictEqual(calculateCgt(1000, 365, 'individual'), 75.0, '365 days must be taxed at 7.5% short-term CGT');
-  assert.strictEqual(calculateCgt(1000, 366, 'individual'), 50.0, '366 days (>365) must be taxed at 5.0% long-term CGT');
+  // Holding 365 days is short-term (5.0%), > 365 days (366) is long-term (3.75%)
+  assert.strictEqual(calculateCgt(1000, 365, 'individual'), 50.0, '365 days must be taxed at 5.0% short-term CGT');
+  assert.strictEqual(calculateCgt(1000, 366, 'individual'), 37.5, '366 days (>365) must be taxed at 3.75% long-term CGT');
 
   // Round-trip net return includes Rs. 25 DP charge on both buy and sell legs (Rs. 50 total DP)
   const rt = calculateRoundTripNetReturn({ buyPrice: 500, sellPrice: 500, quantity: 100, holdingDays: 10 });

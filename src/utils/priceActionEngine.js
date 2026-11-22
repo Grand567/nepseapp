@@ -13,6 +13,13 @@
 
 import { calculatePivotPoints, calculateFibonacci } from './indicators.js';
 
+function sortCandlesAscending(candles) {
+  if (!Array.isArray(candles)) return [];
+  return [...candles]
+    .filter((c) => c && (Number(c.close) > 0 || Number(c.ltp) > 0))
+    .sort((a, b) => new Date(a.date || a.t || 0).getTime() - new Date(b.date || b.t || 0).getTime());
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // 1. SWING EXTRACTOR & MARKET STRUCTURE
 // ─────────────────────────────────────────────────────────────────────
@@ -68,8 +75,9 @@ export function identifySwings(candles, window = 2) {
  * @param {Array<{high: number, low: number, close: number, open: number, date?: string}>} candles
  * @returns {Object} Market structure evaluation
  */
-export function analyzeMarketStructure(candles) {
-  if (!Array.isArray(candles) || candles.length < 15) {
+export function analyzeMarketStructure(rawCandles) {
+  const candles = sortCandlesAscending(rawCandles);
+  if (candles.length < 15) {
     return {
       structure: 'insufficient_history',
       direction: 'neutral',
@@ -175,8 +183,9 @@ export function analyzeMarketStructure(candles) {
  * @param {Array<{open: number, high: number, low: number, close: number}>} candles
  * @returns {Object|null} Detected pattern or null
  */
-export function analyzeCandlestickPattern(candles) {
-  if (!Array.isArray(candles) || candles.length < 2) return null;
+export function analyzeCandlestickPattern(rawCandles) {
+  const candles = sortCandlesAscending(rawCandles);
+  if (candles.length < 2) return null;
 
   const n = candles.length;
   const curr = candles[n - 1];
@@ -324,13 +333,17 @@ export function analyzeCandlestickPattern(candles) {
  * @param {Array<{open: number, high: number, low: number, close: number}>} candles
  * @returns {{support: Array, resistance: Array}}
  */
-export function analyzeSupportResistance(candles) {
-  if (!Array.isArray(candles) || candles.length < 10) {
+export function analyzeSupportResistance(rawCandles) {
+  const candles = sortCandlesAscending(rawCandles);
+  if (candles.length < 10) {
     return { support: [], resistance: [] };
   }
 
   const n = candles.length;
   const currentPrice = Number(candles[n - 1].close);
+  if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
+    return { support: [], resistance: [] };
+  }
   const latestBar = candles[n - 1];
 
   const rawCandidates = [];
@@ -344,27 +357,27 @@ export function analyzeSupportResistance(candles) {
     rawCandidates.push({ price: sl.price, source: 'swing_low', recency: n - sl.index });
   });
 
-  // 2. 52-Week High and Low
-  const closes = candles.map((c) => Number(c.close));
-  const lookback52w = closes.slice(-252);
-  const high52w = Math.max(...lookback52w);
-  const low52w = Math.min(...lookback52w);
+  // 2. 52-Week High and Low (using true high/low prices)
+  const lookback52w = candles.slice(-252);
+  const high52w = Math.max(...lookback52w.map((c) => Number(c.high || c.close)));
+  const low52w = Math.min(...lookback52w.map((c) => Number(c.low || c.close)));
   rawCandidates.push({ price: high52w, source: '52w_high', recency: 0 });
   rawCandidates.push({ price: low52w, source: '52w_low', recency: 0 });
 
   // 3. 20-Day Range Extremes
   const lookback20 = candles.slice(-20);
-  const high20d = Math.max(...lookback20.map((c) => Number(c.high)));
-  const low20d = Math.min(...lookback20.map((c) => Number(c.low)));
+  const high20d = Math.max(...lookback20.map((c) => Number(c.high || c.close)));
+  const low20d = Math.min(...lookback20.map((c) => Number(c.low || c.close)));
   rawCandidates.push({ price: high20d, source: '20d_high', recency: 0 });
   rawCandidates.push({ price: low20d, source: '20d_low', recency: 0 });
 
-  // 4. Classic Pivot Points
+  // 4. Classic Pivot Points (calculated from previous completed session)
   try {
+    const prevBar = candles[n - 2] || latestBar;
     const pivots = calculatePivotPoints(
-      latestBar.high || currentPrice,
-      latestBar.low || currentPrice,
-      currentPrice
+      prevBar.high || prevBar.close || currentPrice,
+      prevBar.low || prevBar.close || currentPrice,
+      prevBar.close || currentPrice
     );
     if (pivots.P) rawCandidates.push({ price: pivots.P, source: 'pivot_point', recency: 0 });
     if (pivots.R1) rawCandidates.push({ price: pivots.R1, source: 'pivot_r1', recency: 0 });
@@ -457,8 +470,9 @@ export function analyzeSupportResistance(candles) {
  * @param {number} [rvol=1.0] Relative volume
  * @returns {Object} Breakout evaluation
  */
-export function analyzeBreakout(candles, srLevels, rvol = 1.0, atr = null) {
-  if (!Array.isArray(candles) || candles.length < 5) {
+export function analyzeBreakout(rawCandles, srLevels, rvol = 1.0, atr = null) {
+  const candles = sortCandlesAscending(rawCandles);
+  if (candles.length < 5) {
     return {
       detected: false,
       type: 'none',
@@ -719,8 +733,9 @@ export function analyzeBreakout(candles, srLevels, rvol = 1.0, atr = null) {
  * @param {number} [atr=null]
  * @returns {Object} Complete Price Action Report
  */
-export function analyzePriceAction(candles, rvol = 1.0, atr = null) {
-  if (!Array.isArray(candles) || candles.length < 10) {
+export function analyzePriceAction(rawCandles, rvol = 1.0, atr = null) {
+  const candles = sortCandlesAscending(rawCandles);
+  if (candles.length < 10) {
     return {
       supported: false,
       reason: 'Need at least 10 candles for price action analysis.',

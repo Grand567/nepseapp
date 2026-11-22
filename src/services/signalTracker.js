@@ -67,13 +67,13 @@ const saveSignals = (signals) => {
 };
 
 /**
- * Calculates statutory NEPSE tiered brokerage commission (0.36% down to 0.24%), SEBON fee (0.015%), DP fee (Rs 25), and 7.5% short-term / 5.0% long-term CGT.
+ * Calculates statutory NEPSE tiered brokerage commission (0.36% down to 0.24%), SEBON fee (0.015%), DP fee (Rs 25), and 5.0% short-term / 3.75% long-term CGT.
  */
 export const calculateNetReturn = (entryPrice, exitPrice, holdingDays = 1, tradeAmount = 50000) => {
   const entry = Number(entryPrice || 0);
   const exit = Number(exitPrice || 0);
   if (entry <= 0 || exit <= 0) {
-    return { grossReturnPct: 0, netReturnPct: 0, totalFeesPct: 0, cgtPct: 0, cgtRatePct: 7.5 };
+    return { grossReturnPct: 0, netReturnPct: 0, totalFeesPct: 0, cgtPct: 0, cgtRatePct: 5.0 };
   }
 
   // Tiered brokerage per SEBON schedule (0.36% down to 0.24%)
@@ -96,9 +96,9 @@ export const calculateNetReturn = (entryPrice, exitPrice, holdingDays = 1, trade
   const grossReturnPct = +(((exit - entry) / entry) * 100).toFixed(2);
   const rawPnl = grossProceeds - totalCost;
 
-  // Individual Capital Gains Tax: 7.5% for holdings <= 365 days, 5.0% for > 365 days
+  // Individual Capital Gains Tax: 5.0% for holdings <= 365 days, 3.75% for > 365 days
   const isLongTerm = Number(holdingDays) > 365;
-  const cgtRate = isLongTerm ? 0.050 : 0.075;
+  const cgtRate = isLongTerm ? 0.0375 : 0.050;
   const cgtAmount = rawPnl > 0 ? rawPnl * cgtRate : 0;
 
   const netPnl = rawPnl - cgtAmount;
@@ -230,11 +230,13 @@ export const closeSignalManually = (signalId, exitPrice = null) => {
   const sig = signals[idx];
   if (sig.status !== 'open') return sig;
 
-  const resolvedExit = exitPrice != null ? Number(exitPrice) : (sig.highestSeen || sig.entryPrice);
+  const resolvedExit = exitPrice != null ? Number(exitPrice) : Number(sig.highestSeen || sig.entryPrice || 0);
+  const entryPrice = Number(sig.entryPrice || resolvedExit);
+  if (entryPrice <= 0 || resolvedExit <= 0) return sig;
+
   const entryDate = new Date(sig.signalDate);
   const exitDateObj = new Date();
   const holdingDays = Math.max(1, Math.floor((exitDateObj - entryDate) / (1000 * 60 * 60 * 24)));
-  const entryPrice = sig.entryPrice || resolvedExit;
   const returnPct = +(((resolvedExit - entryPrice) / entryPrice) * 100).toFixed(2);
   const { netReturnPct, totalFeesPct, cgtPct } = calculateNetReturn(entryPrice, resolvedExit, holdingDays);
 
@@ -243,7 +245,7 @@ export const closeSignalManually = (signalId, exitPrice = null) => {
 
   sig.status = 'manual_close';
   sig.outcome = {
-    exitDate: exitDateObj.toISOString().split('T')[0],
+    exitDate: formatNptDateIso(exitDateObj),
     exitPrice: resolvedExit,
     hitTarget: sig.targetPrice ? resolvedExit >= sig.targetPrice : false,
     hitStop: sig.stopLoss ? resolvedExit <= sig.stopLoss : false,
@@ -278,14 +280,15 @@ export const updateSignalOutcome = (signalId, currentPrice, highSince, lowSince)
   const effectiveHigh = highSince != null ? Number(highSince) : Number(currentPrice || 0);
   const effectiveLow = lowSince != null ? Number(lowSince) : Number(currentPrice || 0);
 
-  if (signal.targetPrice && effectiveHigh >= signal.targetPrice) {
-    newStatus = 'hit_target';
-    exitPrice = signal.targetPrice;
-    hitTarget = true;
-  } else if (signal.stopLoss && effectiveLow <= signal.stopLoss) {
+  // Stop loss evaluated strictly before target on intraday ranges
+  if (signal.stopLoss && effectiveLow <= signal.stopLoss) {
     newStatus = 'hit_stop';
     exitPrice = signal.stopLoss;
     hitStop = true;
+  } else if (signal.targetPrice && effectiveHigh >= signal.targetPrice) {
+    newStatus = 'hit_target';
+    exitPrice = signal.targetPrice;
+    hitTarget = true;
   }
 
   if (newStatus !== 'open') {
@@ -294,7 +297,7 @@ export const updateSignalOutcome = (signalId, currentPrice, highSince, lowSince)
     const holdingDays = Math.max(1, Math.floor((exitDateObj - entryDate) / (1000 * 60 * 60 * 24)));
     const holdSessions = countNepseTradingSessionsBetween(signal.signalDate, formatNptDateIso(exitDateObj));
     // Invariant: Under NEPSE T+2 settlement, shares cannot be exited prior to Demat delivery (holdSessions >= 2)
-    if (holdSessions < 2 && holdingDays < 2) return signal;
+    if (holdSessions < 2) return signal;
     const entryPrice = signal.entryPrice || currentPrice;
     const returnPct = +(((exitPrice - entryPrice) / entryPrice) * 100).toFixed(2);
     const { netReturnPct, totalFeesPct, cgtPct } = calculateNetReturn(entryPrice, exitPrice, holdingDays);
@@ -304,7 +307,7 @@ export const updateSignalOutcome = (signalId, currentPrice, highSince, lowSince)
 
     signal.status = newStatus;
     signal.outcome = {
-      exitDate: exitDateObj.toISOString().split('T')[0],
+      exitDate: formatNptDateIso(exitDateObj),
       exitPrice,
       hitTarget,
       hitStop,
@@ -359,6 +362,10 @@ export const getSignalStats = (filters = {}) => {
     bySource[src].total += 1;
   });
 
+  let netWinCount = 0;
+  let totalNetWinsPct = 0;
+  let totalNetLossesPct = 0;
+
   closedSignals.forEach(s => {
     const returnPct = s.outcome.returnPct;
     const netReturnPct = s.outcome.netReturnPct != null ? s.outcome.netReturnPct : returnPct;
@@ -369,6 +376,13 @@ export const getSignalStats = (filters = {}) => {
     } else {
       lossCount++;
       totalLossesPct += Math.abs(returnPct);
+    }
+
+    if (netReturnPct > 0) {
+      netWinCount++;
+      totalNetWinsPct += netReturnPct;
+    } else {
+      totalNetLossesPct += Math.abs(netReturnPct);
     }
 
     totalReturnPct += returnPct;
@@ -390,12 +404,12 @@ export const getSignalStats = (filters = {}) => {
   });
 
   const winRate = closedCount > 0 ? (winCount / closedCount) * 100 : 0;
+  const netWinRate = closedCount > 0 ? (netWinCount / closedCount) * 100 : 0;
   const avgReturnPct = closedCount > 0 ? (totalReturnPct / closedCount) : 0;
   const avgNetReturnPct = closedCount > 0 ? (totalNetReturnPct / closedCount) : 0;
   const avgHoldingDays = closedCount > 0 ? (totalHoldingDays / closedCount) : 0;
-  const profitFactor = totalLossesPct > 0
-    ? +(totalWinsPct / totalLossesPct).toFixed(2)
-    : (totalWinsPct > 0 ? 9.99 : 1.0);
+  const profitFactor = totalLossesPct > 0 ? +(totalWinsPct / totalLossesPct).toFixed(2) : (totalWinsPct > 0 ? 999 : 0);
+  const netProfitFactor = totalNetLossesPct > 0 ? +(totalNetWinsPct / totalNetLossesPct).toFixed(2) : (totalNetWinsPct > 0 ? 999 : 0);
 
   const avgWinPct = winCount > 0 ? +(totalWinsPct / winCount).toFixed(2) : 0;
   const avgLossPct = lossCount > 0 ? +(totalLossesPct / lossCount).toFixed(2) : 0;
@@ -442,19 +456,25 @@ export const expireOldSignals = (maxAgeDays = 60) => {
       const signalDate = new Date(s.signalDate);
       const ageDays = (now - signalDate) / (1000 * 60 * 60 * 24);
       if (ageDays > maxAgeDays) {
+        const exitPrice = Number(s.lastPrice || s.lowestSeen || s.currentPrice || s.entryPrice || 0);
+        const holdingDays = Math.max(1, Math.round(ageDays));
+        const entryPrice = Number(s.entryPrice || exitPrice);
+        const returnPct = entryPrice > 0 ? +(((exitPrice - entryPrice) / entryPrice) * 100).toFixed(2) : 0;
+        const { netReturnPct, totalFeesPct, cgtPct } = calculateNetReturn(entryPrice, exitPrice, holdingDays);
+
         s.status = 'expired';
         s.outcome = {
-          exitDate: now.toISOString().split('T')[0],
-          exitPrice: s.entryPrice,
+          exitDate: formatNptDateIso(now),
+          exitPrice,
           hitTarget: false,
           hitStop: false,
-          returnPct: 0,
-          netReturnPct: 0,
-          totalFeesPct: 0,
-          cgtPct: 0,
-          holdingDays: Math.round(ageDays),
-          maxDrawdownPct: 0,
-          maxUpsidePct: 0
+          returnPct,
+          netReturnPct,
+          totalFeesPct,
+          cgtPct,
+          holdingDays,
+          maxDrawdownPct: s.lowestSeen && entryPrice > 0 ? +(((s.lowestSeen - entryPrice) / entryPrice) * 100).toFixed(2) : Math.min(0, returnPct),
+          maxUpsidePct: s.highestSeen && entryPrice > 0 ? +(((s.highestSeen - entryPrice) / entryPrice) * 100).toFixed(2) : Math.max(0, returnPct)
         };
         changed = true;
       }
@@ -609,19 +629,21 @@ export const evaluateOpenSignals = (marketStocks, options = {}) => {
     let hitTarget = false;
     let hitStop = false;
 
-    if (sig.targetPrice && highSince >= sig.targetPrice) {
-      newStatus = 'hit_target';
-      exitPrice = sig.targetPrice;
-      hitTarget = true;
-    } else if (sig.stopLoss && lowSince <= sig.stopLoss) {
+    // Stop loss evaluated strictly before target on intraday ranges
+    if (sig.stopLoss && lowSince <= sig.stopLoss) {
       newStatus = 'hit_stop';
       exitPrice = sig.stopLoss;
       hitStop = true;
+    } else if (sig.targetPrice && highSince >= sig.targetPrice) {
+      newStatus = 'hit_target';
+      exitPrice = sig.targetPrice;
+      hitTarget = true;
     } else if (ageDays > 60) {
       newStatus = 'expired';
       exitPrice = currentPrice;
     }
 
+    // NEPSE T+2 Demat settlement lock (when enforceSettlementLock is active)
     if (newStatus !== 'open' && newStatus !== 'expired' && options.enforceSettlementLock) {
       const holdSessions = countNepseTradingSessionsBetween(sig.signalDate, todayStr);
       if (holdSessions < 2) {

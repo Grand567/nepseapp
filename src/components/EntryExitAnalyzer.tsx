@@ -175,6 +175,11 @@ export function EntryExitAnalyzer({
                 if (reqSeq === loadSeqRef.current && f) setFundamentals(f);
               }).catch(() => {});
             }
+            fetchDividendHistory(sym).then((divRes) => {
+              if (reqSeq === loadSeqRef.current && divRes?.dividends && Array.isArray(divRes.dividends)) {
+                setDividendData(divRes.dividends);
+              }
+            }).catch(() => {});
             const normalizedPlan = {
               ...cached.plan,
               setupScore: cached.plan.setupScore ?? cached.plan.score ?? cached.plan.guruScore ?? 65
@@ -318,7 +323,7 @@ export function EntryExitAnalyzer({
               guruScore: scoreVal,
               passesAll5,
               rvol: result.technical?.volume?.rvol || stock?.rvol || 1.25,
-              winRate: result.analogResult?.stats?.winRate ?? result.probabilities?.winRate ?? +(45 + Math.min(25, Math.max(-10, (scoreVal - 50) * 0.5))).toFixed(1),
+              winRate: result.analogResult?.stats?.winRate ?? result.probabilities?.winRate ?? null,
               analogCount: result.analogResult?.stats?.sampleSize ?? (result.analogResult?.analogs?.length || 0),
               confidenceLevel: result.confidence?.level || 'MEDIUM',
               levels: result.levels,
@@ -535,7 +540,7 @@ export function EntryExitAnalyzer({
       <InfoBanner type="info">
         <strong>Entry / Exit Analyzer Workstation:</strong> Quantitative decision engine combining
         Benjamin Graham’s Margin of Safety, moving-average structures, momentum velocity, volume confirmation,
-        S/R clustering, and 500-session historical analog backtesting (net of SEBON brokerage & 7.5% Short-Term / 5% Long-Term Retail CGT).
+        S/R clustering, and 500-session historical analog backtesting (net of SEBON brokerage &amp; 5.0% Short-Term (≤365d) / 3.75% Long-Term (&gt;365d) Retail CGT).
       </InfoBanner>
 
       {/* ── Market Halt / Session Locking Notice ── */}

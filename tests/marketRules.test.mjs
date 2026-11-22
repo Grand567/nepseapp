@@ -105,9 +105,10 @@ assert(calculateDpFee() === 25.0, 'CDSC DP fee is strictly Rs. 25.00 flat');
 
 // [TEST 6] Capital Gains Tax (CGT)
 console.log('\n[TEST 6] Capital Gains Tax (CGT)');
-assert(calculateCgt(10000, 30, 'individual') === 750.0, 'Individual short-term CGT (<365d) is 7.5% (Rs. 750 on Rs. 10k profit)');
-assert(calculateCgt(10000, 400, 'individual') === 500.0, 'Individual long-term CGT (>=365d) is 5.0% (Rs. 500 on Rs. 10k profit)');
+assert(calculateCgt(10000, 30, 'individual') === 500.0, 'Individual short-term CGT (<=365d) is 5.0% (Rs. 500 on Rs. 10k profit)');
+assert(calculateCgt(10000, 400, 'individual') === 375.0, 'Individual long-term CGT (>365d) is 3.75% (Rs. 375 on Rs. 10k profit)');
 assert(calculateCgt(10000, 30, 'corporate') === 1000.0, 'Corporate CGT is 10.0% (Rs. 1000 on Rs. 10k profit)');
+assert(calculateCgt(10000, 30, 'non_resident') === 2500.0, 'Non-resident CGT is 25.0% (Rs. 2500 on Rs. 10k profit)');
 assert(calculateCgt(-5000, 30, 'individual') === 0, 'Negative profit incurs zero CGT');
 
 // [TEST 7] Comprehensive Round-Trip Net Profit & Cost Drag

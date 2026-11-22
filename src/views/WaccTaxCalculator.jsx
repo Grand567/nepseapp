@@ -25,7 +25,8 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
 
   const baseKitta = lot1Kitta + lot2Kitta;
   const bonusKitta = waccLots.bonusLot ? Math.floor((baseKitta * Math.max(0, Number(bonusPct) || 0)) / 100) : 0;
-  const bonusCost = 0; // Economic cost of bonus shares is Rs. 0 (dilutes WACC proportionally)
+  // Mandatory Nepal CDSC/IRD rule: Bonus shares carry Rs. 100 face-value cost basis in statutory WACC
+  const bonusCost = bonusKitta * 100.00;
 
   const rightKitta = waccLots.rightLot ? Math.floor((baseKitta * Math.max(0, Number(rightPct) || 0)) / 100) : 0;
   const rightCost = rightKitta * 100.00; // Right shares subscribed at Rs. 100 par value
@@ -44,7 +45,8 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
   const netSellProceedsBeforeTax = Math.max(0, grossTurnover - brokerComm - sebonFee - dpFee);
   const capitalGain = Math.max(0, netSellProceedsBeforeTax - totalCost);
 
-  const cgtRates = { long: 0.05, short: 0.075, corp: 0.10 };
+  // Nepal CGT rates effective 22 Sept 2026 (31 Bhadra 2083): ST <=365d = 5.0%, LT >365d = 3.75%, Corp = 10.0%
+  const cgtRates = { long: 0.0375, short: 0.05, corp: 0.10 };
   const cgtTax = +(capitalGain * cgtRates[taxRegime]).toFixed(2);
 
   const netPayout = Math.max(0, +(netSellProceedsBeforeTax - cgtTax).toFixed(2));
@@ -126,7 +128,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
               </div>
             </div>
             <span className="text-[10px] font-bold font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
-              ≥365d (5% CGT)
+              &gt;365d (3.75% CGT)
             </span>
           </div>
 
@@ -154,7 +156,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
               </div>
             </div>
             <span className="text-[10px] font-bold font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">
-              &lt;365d (7.5% CGT)
+              &le;365d (5.0% CGT)
             </span>
           </div>
 
@@ -177,7 +179,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
               <div>
                 <div className="font-semibold text-white">Bonus Share Dilution ({bonusPct}% Bonus)</div>
                 <div className="text-[10px] text-slate-400 font-mono">
-                  +{bonusKitta} Kitta @ NPR 0.00 Economic Outlay
+                  +{bonusKitta} Kitta @ NPR 100.00 Par Value (CDSC Statutory WACC)
                 </div>
               </div>
             </div>
@@ -277,8 +279,8 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
             }`}
           >
             <div className="text-xs font-bold">{isNe ? 'दीर्घकालीन (Long)' : 'Long Term'}</div>
-            <div className="text-base font-extrabold text-white font-mono mt-1">5.0%</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">≥365 {isNe ? 'दिन' : 'days'}</div>
+            <div className="text-base font-extrabold text-white font-mono mt-1">3.75%</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">&gt;365 {isNe ? 'दिन' : 'days'}</div>
           </button>
           <button
             onClick={() => setTaxRegime('short')}
@@ -289,8 +291,8 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
             }`}
           >
             <div className="text-xs font-bold">{isNe ? 'अल्पकालीन (Short)' : 'Short Term'}</div>
-            <div className="text-base font-extrabold text-white font-mono mt-1">7.5%</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">&lt;365 {isNe ? 'दिन' : 'days'}</div>
+            <div className="text-base font-extrabold text-white font-mono mt-1">5.0%</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">&le;365 {isNe ? 'दिन' : 'days'}</div>
           </button>
           <button
             onClick={() => setTaxRegime('corp')}
@@ -347,7 +349,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
             <span className="text-rose-400">- रु {dpFee.toFixed(2)}</span>
           </div>
           <div className="flex justify-between">
-            <span>• {isNe ? `लाभकर (Capital Gain Tax ${cgtRates[taxRegime] * 100}%):` : `CGT (${cgtRates[taxRegime] * 100}% on Net Gain):`}</span>
+            <span>• {isNe ? `लाभकर (Capital Gain Tax ${(cgtRates[taxRegime] * 100).toFixed(2)}%):` : `CGT (${(cgtRates[taxRegime] * 100).toFixed(2)}% on Net Gain):`}</span>
             <span className="text-rose-400 font-bold">- रु {cgtTax.toFixed(2)}</span>
           </div>
         </div>
@@ -411,10 +413,27 @@ export function calculateFifoWaccAndSegregatedCgt(lots = [], sellOrder = null) {
     };
   }
 
-  // Sort lots chronologically (oldest first for strict FIFO)
+  // Convert BS dates (years 2050-2099 only!) to AD while leaving AD years (1900-2049) untouched
+  const parseLotDateToAd = (dateStr) => {
+    if (!dateStr) return new Date();
+    const str = String(dateStr).trim();
+    const parts = str.split(/[-/]/).map(p => parseInt(p, 10));
+    if (parts.length === 3 && parts.every(Number.isFinite)) {
+      const [y, m, d] = parts;
+      if (y >= 2050 && y <= 2099) {
+        const ad = bsToAd(y, m, d);
+        if (ad instanceof Date && !isNaN(ad.getTime())) return ad;
+      }
+      return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    }
+    const parsed = new Date(str);
+    return isNaN(parsed.getTime()) ? new Date() : parsed;
+  };
+
+  // Sort lots chronologically using normalized AD dates (oldest first for strict FIFO)
   const sortedLots = [...lots]
     .filter(l => Number(l.qty || l.quantity || l.units || 0) > 0)
-    .sort((a, b) => new Date(a.date || '2020-01-01') - new Date(b.date || '2020-01-01'));
+    .sort((a, b) => parseLotDateToAd(a.date || '2020-01-01') - parseLotDateToAd(b.date || '2020-01-01'));
 
   let totalUnits = 0;
   let economicTotalCost = 0;
@@ -476,12 +495,13 @@ export function calculateFifoWaccAndSegregatedCgt(lots = [], sellOrder = null) {
     };
   }
 
-  // ── STRICT FIFO SALE & CGT SEGREGATION (<= 365 Days @ 7.5% vs > 365 Days @ 5.0%) ──
+  // ── STRICT FIFO SALE & CGT SEGREGATION (<= 365 Days @ 5.0% vs > 365 Days @ 3.75%) ──
   const sellQtyRequested = Math.min(totalUnits, Number(sellOrder.sellQty));
   const sellPrice = Number(sellOrder.sellPrice);
-  const sellDateObj = sellOrder.sellDate ? new Date(sellOrder.sellDate) : new Date();
+  const sellDateObj = sellOrder.sellDate ? parseLotDateToAd(sellOrder.sellDate) : new Date();
   const isInstitutional = sellOrder.investorType === 'institutional';
-  const activeWacc = sellOrder.waccMode === 'cdsc' ? cdscStatutoryWacc : economicWacc;
+  // Default to CDSC statutory WACC (Bonus @ Rs. 100) for Nepal IRD CGT compliance
+  const activeWacc = sellOrder.waccMode === 'economic' ? economicWacc : cdscStatutoryWacc;
 
   const grossSellValue = sellQtyRequested * sellPrice;
   const totalSellCommission = calculateBrokerCommission(grossSellValue);
@@ -504,21 +524,8 @@ export function calculateFifoWaccAndSegregatedCgt(lots = [], sellOrder = null) {
     lot.remainingQty -= matchedQty;
     qtyToMatch -= matchedQty;
 
-    const parseLotDateToAd = (dateStr) => {
-      if (!dateStr) return new Date();
-      const parts = String(dateStr).split(/[-/]/).map(p => parseInt(p, 10));
-      if (parts.length === 3) {
-        const [y, m, d] = parts;
-        if (y >= 2000 && y <= 2095) {
-          const ad = bsToAd(y, m, d);
-          if (ad instanceof Date && !isNaN(ad.getTime())) return ad;
-        }
-      }
-      return new Date(dateStr);
-    };
-
     const buyDateObj = parseLotDateToAd(lot.date);
-    const holdingDays = Math.max(1, Math.floor((sellDateObj - buyDateObj) / (1000 * 60 * 60 * 24)));
+    const holdingDays = Math.max(0, Math.floor((sellDateObj - buyDateObj) / (1000 * 60 * 60 * 24)));
     const isLongTerm = holdingDays > 365;
 
     // Pro-rate sell-side friction across the matched tranche
@@ -528,7 +535,7 @@ export function calculateFifoWaccAndSegregatedCgt(lots = [], sellOrder = null) {
     const trancheCostBasis = matchedQty * activeWacc;
     const tranchePreTaxProfit = trancheSellGross - trancheCostBasis - trancheSellFees;
 
-    const cgtRate = isInstitutional ? 0.10 : (isLongTerm ? 0.05 : 0.075);
+    const cgtRate = isInstitutional ? 0.10 : (isLongTerm ? 0.0375 : 0.05);
     const trancheTaxable = Math.max(0, tranchePreTaxProfit);
     const trancheCgt = +(trancheTaxable * cgtRate).toFixed(2);
 
@@ -550,7 +557,7 @@ export function calculateFifoWaccAndSegregatedCgt(lots = [], sellOrder = null) {
       matchedQty,
       waccUsed: activeWacc,
       tranchePreTaxProfit: +tranchePreTaxProfit.toFixed(2),
-      cgtRatePct: +(cgtRate * 100).toFixed(1),
+      cgtRatePct: +(cgtRate * 100).toFixed(2),
       trancheCgt
     });
   }

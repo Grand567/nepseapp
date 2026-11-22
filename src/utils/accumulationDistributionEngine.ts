@@ -249,15 +249,27 @@ export function calculateChaikinADL(candles: Candle[]): ADLResult {
     };
   }
 
+  // Sort candles chronologically ascending (DESC SQLite arrays inverted ADL trend and divergence)
+  const sorted = [...candles].sort((a, b) => {
+    const da = new Date(a.date || a.time || 0).getTime();
+    const db = new Date(b.date || b.time || 0).getTime();
+    return da - db;
+  });
+
   let cumulativeADL = 0;
   const points: ADLPoint[] = [];
 
-  for (let i = 0; i < candles.length; i++) {
-    const c = candles[i];
-    const high = Number(c.high) || Number(c.close) || 100;
-    const low = Number(c.low) || Number(c.close) || 100;
-    const close = Number(c.close) || 100;
+  for (let i = 0; i < sorted.length; i++) {
+    const c = sorted[i];
+    const high = Number(c.high);
+    const low = Number(c.low);
+    const close = Number(c.close);
     const volume = Math.max(0, Number(c.volume) || 0);
+
+    // Skip corrupt bars without valid finite positive price data
+    if (!Number.isFinite(close) || close <= 0 || !Number.isFinite(high) || high <= 0 || !Number.isFinite(low) || low <= 0 || high < low) {
+      continue;
+    }
 
     const range = high - low;
     // Money Flow Multiplier (CLV) is normalized to [-1, 1]
@@ -278,6 +290,17 @@ export function calculateChaikinADL(candles: Candle[]): ADLResult {
       mfv: Math.round(mfv),
       adl: Math.round(cumulativeADL)
     });
+  }
+
+  if (points.length < 2) {
+    return {
+      currentADL: points[0]?.adl ?? 0,
+      latestMFM: points[0]?.mfm ?? 0,
+      latestMFV: points[0]?.mfv ?? 0,
+      trend: 'Neutral',
+      divergence: 'None',
+      points
+    };
   }
 
   const latest = points[points.length - 1];

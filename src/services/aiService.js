@@ -190,10 +190,11 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
     0
   );
 
-  // Fallback 1: Extract latest close from realPriceHistory
+  // Fallback 1: Extract latest close from realPriceHistory (sorted chronologically)
   if ((!ltp || isNaN(ltp) || ltp <= 0) && Array.isArray(realPriceHistory) && realPriceHistory.length > 0) {
-    for (let i = realPriceHistory.length - 1; i >= 0; i--) {
-      const c = realPriceHistory[i];
+    const sortedHist = realPriceHistory.slice().filter(c => c && (c.date || c.t || c.time)).sort((a, b) => new Date(a.date || a.t || a.time) - new Date(b.date || b.t || b.time));
+    for (let i = sortedHist.length - 1; i >= 0; i--) {
+      const c = sortedHist[i];
       const p = Number(c?.close || c?.closePrice || c?.ltp || c?.y || 0);
       if (p > 0) {
         ltp = p;
@@ -204,7 +205,7 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
 
   // Fallback 2: Extract from candle history if attached on stock
   if ((!ltp || isNaN(ltp) || ltp <= 0) && Array.isArray(actualStock.history || actualStock.candles)) {
-    const arr = actualStock.history || actualStock.candles;
+    const arr = (actualStock.history || actualStock.candles).slice().filter(c => c && (c.date || c.t || c.time)).sort((a, b) => new Date(a.date || a.t || a.time) - new Date(b.date || b.t || b.time));
     for (let i = arr.length - 1; i >= 0; i--) {
       const c = arr[i];
       const p = Number(c?.close || c?.closePrice || c?.ltp || 0);
@@ -221,30 +222,30 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
 • Quantitative analysis cannot be performed without verified price telemetry.`;
   }
 
-  const rsi = stock.rsi != null && !isNaN(Number(stock.rsi)) ? Number(stock.rsi) : null;
-  const pe = stock.pe != null && !isNaN(Number(stock.pe)) && Number(stock.pe) > 0 ? Number(stock.pe) : null;
-  const eps = stock.eps != null && !isNaN(Number(stock.eps)) ? Number(stock.eps) : null;
-  const bookValue = stock.bookValue != null && Number(stock.bookValue) > 0 ? Number(stock.bookValue) : (stock.bvps != null && Number(stock.bvps) > 0 ? Number(stock.bvps) : null);
-  const pChg = Number(stock.pChange) || 0;
-  const volume = stock.volume != null && !isNaN(Number(stock.volume)) ? Number(stock.volume) : null;
-  const turnover = stock.turnover != null && !isNaN(Number(stock.turnover)) ? Number(stock.turnover) : (volume != null ? (ltp * volume) : null);
+  const rsi = actualStock.rsi != null && !isNaN(Number(actualStock.rsi)) ? Number(actualStock.rsi) : null;
+  const pe = actualStock.pe != null && !isNaN(Number(actualStock.pe)) && Number(actualStock.pe) > 0 ? Number(actualStock.pe) : null;
+  const eps = actualStock.eps != null && !isNaN(Number(actualStock.eps)) ? Number(actualStock.eps) : null;
+  const bookValue = actualStock.bookValue != null && Number(actualStock.bookValue) > 0 ? Number(actualStock.bookValue) : (actualStock.bvps != null && Number(actualStock.bvps) > 0 ? Number(actualStock.bvps) : null);
+  const pChg = Number(actualStock.pChange || actualStock.percentageChange) || 0;
+  const volume = actualStock.volume != null && !isNaN(Number(actualStock.volume)) ? Number(actualStock.volume) : null;
+  const turnover = actualStock.turnover != null && !isNaN(Number(actualStock.turnover)) ? Number(actualStock.turnover) : (volume != null ? (ltp * volume) : null);
 
   const hasRealHistory = Array.isArray(realPriceHistory) && realPriceHistory.length > 0;
   const historyList = hasRealHistory
     ? realPriceHistory.slice().filter(c => c && (c.date || c.t || c.time)).sort((a, b) => new Date(a.date || a.t || a.time) - new Date(b.date || b.t || b.time))
     : [];
 
-  const high12M = (stock.high52w && Number(stock.high52w) > 0)
-    ? Number(stock.high52w)
+  const high12M = (actualStock.high52w && Number(actualStock.high52w) > 0)
+    ? Number(actualStock.high52w)
     : (hasRealHistory ? Math.max(...historyList.map(h => Number(h.high || h.close))) : null);
 
-  const low12M = (stock.low52w && Number(stock.low52w) > 0)
-    ? Number(stock.low52w)
+  const low12M = (actualStock.low52w && Number(actualStock.low52w) > 0)
+    ? Number(actualStock.low52w)
     : (hasRealHistory ? Math.min(...historyList.map(h => Number(h.low || h.close))) : null);
 
   const yearAgoClose = hasRealHistory && historyList[0]?.close
     ? Number(historyList[0].close)
-    : (Number(stock.prevYearClose) || null);
+    : (Number(actualStock.prevYearClose) || null);
   const return12M = (yearAgoClose && yearAgoClose > 0) ? (((ltp - yearAgoClose) / yearAgoClose) * 100).toFixed(2) : null;
 
   const closes = historyList.map(h => Number(h.close || h.ltp)).filter(c => !isNaN(c) && c > 0);
@@ -258,27 +259,31 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
     ? (ltp >= sma200 ? 'Bullish (Above 200 SMA)' : 'Bearish (Below 200 SMA)')
     : 'Insufficient history for 200 SMA';
 
-  const wyckoff = detectWyckoffPhase(historyList, volume || 0, realBrokerAnalysis || stock?.realBrokerAnalysis);
+  const wyckoff = detectWyckoffPhase(historyList, volume || 0, realBrokerAnalysis || actualStock?.realBrokerAnalysis);
   const atrVal = calculateATR(historyList);
   const targets = (high12M != null && low12M != null && atrVal != null)
     ? calculateMultiHorizonTargets(ltp, high12M, low12M, atrVal, pChg)
     : { target1: null, target2: null, stopLoss: null };
 
   const newsHighlight = customNewsPulse || null;
-  const probMatrix = calculateProbabilisticMatrix(stock, historyList, newsHighlight);
+  const probMatrix = calculateProbabilisticMatrix(actualStock, historyList, newsHighlight);
 
   const graham = (eps != null && bookValue != null)
     ? calculateGrahamIntrinsicValue(eps, bookValue, ltp)
     : { intrinsicValue: null, marginOfSafetyPct: null };
-  const actionZone = classifyActionZone({ ...stock, eps, bookValue, ltp, candles: historyList, history: historyList });
-  const zVol = volume != null
-    ? calculateVolumeZScore(volume, stock.avgVolume20D || volume)
+  const actionZone = classifyActionZone({ ...actualStock, eps, bookValue, ltp, candles: historyList, history: historyList });
+  const zVol = volume != null && actualStock.avgVolume20D > 0
+    ? calculateVolumeZScore(volume, actualStock.avgVolume20D)
     : { zScore: '—' };
 
-  const chg = stock.change != null ? Number(stock.change) : (pChg ? Number((ltp * (pChg / 100)).toFixed(2)) : 0);
-  const pClose = stock.prevClose != null ? Number(stock.prevClose) : (chg ? Number((ltp - chg).toFixed(2)) : null);
-  const dayHigh = stock.high != null ? Number(stock.high) : null;
-  const dayLow = stock.low != null ? Number(stock.low) : null;
+  const pClose = actualStock.prevClose != null && Number(actualStock.prevClose) > 0
+    ? Number(actualStock.prevClose)
+    : (pChg !== 0 && ltp > 0 ? Number((ltp / (1 + pChg / 100)).toFixed(2)) : null);
+  const chg = actualStock.change != null
+    ? Number(actualStock.change)
+    : (pClose !== null ? Number((ltp - pClose).toFixed(2)) : 0);
+  const dayHigh = actualStock.high != null ? Number(actualStock.high) : null;
+  const dayLow = actualStock.low != null ? Number(actualStock.low) : null;
 
   const dataGaps = [];
   if (volume == null) dataGaps.push('Trading volume');

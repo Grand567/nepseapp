@@ -16,6 +16,8 @@
 
 // ── 1. NUMBER / STRING EXTRACTION UTILITIES ──────────────────────────────────
 
+import { formatNptDateIso } from './nepseCalendar.js';
+
 export function parseCleanNumber(val, defaultVal = null) {
   if (val === null || val === undefined) return defaultVal;
   if (typeof val === 'number') return isNaN(val) ? defaultVal : val;
@@ -46,7 +48,7 @@ export function parseDateToIso(dateStr) {
   // Millisecond timestamp or ISO date
   const parsed = new Date(str);
   if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString().slice(0, 10);
+    return formatNptDateIso(parsed);
   }
   return null;
 }
@@ -75,25 +77,34 @@ export function normalizeLiveQuote(raw) {
 
   const change = parseCleanNumber(raw.change ?? raw.c ?? raw.pointChange ?? raw.changePrice ?? 0);
   
+  // Percentage change
+  let pChange = parseCleanNumber(
+    raw.pChange ?? raw.percentageChange ?? raw.pc ?? raw.changePercent ?? raw.percentChange
+  );
+
   // Previous close calculation
   let prevClose = parseCleanNumber(
     raw.previousClose ?? raw.prevClose ?? raw.pcClose ?? raw.yesterdayClose
   );
   if (prevClose === null || prevClose <= 0) {
-    prevClose = change !== 0 ? +(ltp - change).toFixed(2) : ltp;
+    if (change !== 0) {
+      prevClose = +(ltp - change).toFixed(2);
+    } else if (pChange !== null && pChange !== 0) {
+      prevClose = +(ltp / (1 + pChange / 100)).toFixed(2);
+    } else {
+      prevClose = ltp;
+    }
   }
 
-  // Percentage change
-  let pChange = parseCleanNumber(
-    raw.pChange ?? raw.percentageChange ?? raw.pc ?? raw.changePercent ?? raw.percentChange
-  );
   if (pChange === null) {
     pChange = prevClose > 0 ? +(((ltp - prevClose) / prevClose) * 100).toFixed(2) : 0;
   }
 
   const open = parseCleanNumber(raw.open ?? raw.op ?? raw.openPrice ?? prevClose);
-  const high = parseCleanNumber(raw.high ?? raw.h ?? raw.maxPrice ?? raw.highPrice ?? Math.max(open, ltp));
-  const low = parseCleanNumber(raw.low ?? raw.l ?? raw.minPrice ?? raw.lowPrice ?? Math.min(open, ltp));
+  let rawHigh = parseCleanNumber(raw.high ?? raw.h ?? raw.maxPrice ?? raw.highPrice);
+  let rawLow = parseCleanNumber(raw.low ?? raw.l ?? raw.minPrice ?? raw.lowPrice);
+  const high = Math.max(open, ltp, (rawHigh !== null && rawHigh > 0 ? rawHigh : Math.max(open, ltp)));
+  const low = Math.min(open, ltp, (rawLow !== null && rawLow > 0 ? rawLow : Math.min(open, ltp)));
   const volume = parseCleanNumber(raw.volume ?? raw.q ?? raw.totalTradedQuantity ?? raw.tradedShares ?? 0);
   const turnover = parseCleanNumber(raw.turnover ?? raw.t ?? raw.totalTurnover ?? raw.totalTradedValue ?? (volume > 0 ? ltp * volume : 0));
   const transactions = parseCleanNumber(raw.transactions ?? raw.totalTrades ?? raw.tx ?? raw.trades ?? 0);
@@ -160,7 +171,7 @@ export function normalizeCandleSeries(rawData) {
       if (close === null || close <= 0) continue;
       const timestamp = Number(rawData.t[i]);
       const date = !isNaN(timestamp)
-        ? (timestamp > 1e11 ? new Date(timestamp) : new Date(timestamp * 1000)).toISOString().slice(0, 10)
+        ? formatNptDateIso(timestamp > 1e11 ? new Date(timestamp) : new Date(timestamp * 1000))
         : null;
       if (!date) continue;
 
@@ -426,7 +437,7 @@ export function normalizeShareStructure(raw) {
   if (lockInExpiryDate) {
     const diffMs = new Date(lockInExpiryDate).getTime() - Date.now();
     daysToLockInExpiry = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    isLockInNearExpiry = daysToLockInExpiry >= 0 && daysToLockInExpiry <= 60;
+    isLockInNearExpiry = daysToLockInExpiry >= 0 && daysToLockInExpiry < 120;
   }
 
   return {

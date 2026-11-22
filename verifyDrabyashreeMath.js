@@ -169,7 +169,7 @@ function calculateNepseFees(turnover, isBuy = true, isShortTerm = true, capitalG
   const commission = Math.max(10, turnover * commRate);
   const sebonFee = turnover * 0.00015; // 0.015%
   const dpFee = 25.0; // Rs. 25 per scrip transfer
-  const cgtRate = isInstitutional ? 0.10 : (isShortTerm ? 0.075 : 0.05); // 10% Institutional vs 7.5% (<365d) / 5.0% (>=365d) Individual
+  const cgtRate = isInstitutional ? 0.10 : (isShortTerm ? 0.05 : 0.0375); // 10% Institutional vs 5.0% (<=365d) / 3.75% (>365d) Individual
   const cgt = !isBuy && capitalGain > 0 ? Number((capitalGain * cgtRate).toFixed(2)) : 0;
   return { commission, sebonFee, dpFee, cgt };
 }
@@ -198,8 +198,8 @@ const sellShortTerm = calculateNepseFees(500000, false, true, 100000, false);
 const sellLongTerm = calculateNepseFees(500000, false, false, 100000, false);
 const sellInstitutional = calculateNepseFees(500000, false, false, 100000, true);
 assertCheck(
-  'Capital Gains Tax enforces 7.5% Individual ST (<365d), 5.0% Individual LT (>=365d), and 10.0% Institutional',
-  sellShortTerm.cgt === 7500 && sellLongTerm.cgt === 5000 && sellInstitutional.cgt === 10000,
+  'Capital Gains Tax enforces 5.0% Individual ST (<=365d), 3.75% Individual LT (>365d), and 10.0% Institutional',
+  sellShortTerm.cgt === 5000 && sellLongTerm.cgt === 3750 && sellInstitutional.cgt === 10000,
   `ST: Rs. ${sellShortTerm.cgt}, LT: Rs. ${sellLongTerm.cgt}, Inst: Rs. ${sellInstitutional.cgt}`
 );
 

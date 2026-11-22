@@ -59,8 +59,8 @@ export function calculateBonusAdjustedPrice(marketPrice, bonusPercent) {
 export function calculateRightAdjustedPrice(marketPrice, rightRatioOrPct, subscriptionPrice = PAR_VALUE_EQUITY) {
   const p = Number(marketPrice || 0);
   const rawR = Math.max(0, Number(rightRatioOrPct || 0));
-  // Normalize: if caller passed > 3 (e.g. 25, 50, 100 for 25%, 50%, 100%), convert to decimal ratio
-  const r = rawR > 3.0 ? rawR / 100 : rawR;
+  // Treat percentage inputs (> 1.0) as percent; only fractional decimals (0..1) are direct ratios
+  const r = rawR > 1.0 ? rawR / 100 : rawR;
   const sub = Number(subscriptionPrice || PAR_VALUE_EQUITY);
   if (p <= 0) return 0;
   return +(((p + (r * sub)) / (1 + r)).toFixed(2));
@@ -84,7 +84,8 @@ export function calculateNepseCorporateActionAdjustment({
 
   const bRatio = Math.max(0, Number(bonusPercent || 0)) / 100;
   const rawRight = Math.max(0, Number(rightPercent || 0));
-  const rRatio = rawRight > 3.0 ? rawRight / 100 : rawRight;
+  // Parameter is explicitly rightPercent (e.g. 2.5 -> 0.025, 50 -> 0.50, 100 -> 1.00)
+  const rRatio = rawRight / 100;
   const cashPct = Math.max(0, Number(cashDividendPercent || 0));
   const par = Number(paidUpValue || PAR_VALUE_EQUITY);
   const subPrice = Number(subscriptionPrice || PAR_VALUE_EQUITY);
@@ -93,9 +94,9 @@ export function calculateNepseCorporateActionAdjustment({
   const dividendTaxPerShare = +(grossCashDivPerShare * STATUTORY_DIVIDEND_TAX_RATE).toFixed(2);
   const netCashDivPerShare = +(grossCashDivPerShare - dividendTaxPerShare).toFixed(2);
 
-  // NEPSE Bylaw: Cash dividend reduces base price ONLY if gross cash dividend > 10% of previous closing market price
+  // NEPSE Bylaw: Cash dividend reduces base price ONLY if gross cash dividend >= 10% of previous closing market price
   const cashDivToMarketRatio = pCum > 0 ? grossCashDivPerShare / pCum : 0;
-  const isCashDivPriceAdjusted = cashDivToMarketRatio > NEPSE_CASH_DIV_PRICE_ADJ_THRESHOLD;
+  const isCashDivPriceAdjusted = cashDivToMarketRatio >= (NEPSE_CASH_DIV_PRICE_ADJ_THRESHOLD - 1e-6);
 
   const cashDeduction = isCashDivPriceAdjusted ? grossCashDivPerShare : 0;
   const denominator = 1 + bRatio + rRatio;
@@ -131,43 +132,26 @@ export function calculateNepseCorporateActionAdjustment({
 function parseCorporateAction(action) {
   if (!action) return null;
 
-  // Determine the ex-date: prefer 'exDate', fallback to 'bookCloseDate', 'bookClosure', 'bookclose_date' or 'date'
-  const rawDate = action.exDate || action.bookCloseDate || action.bookClosure || action.bookclose_date || action.date;
+  // Determine the ex-date: prefer 'exDate', fallback to 'bookCloseDate', 'book_close_date', 'bookClosure', 'bookclose_date' or 'date'
+  const rawDate = action.exDate || action.bookCloseDate || action.book_close_date || action.bookClosure || action.bookclose_date || action.date;
   if (!rawDate) return null;
   const date = String(rawDate).slice(0, 10); // YYYY-MM-DD
 
-  const type = (action.type || '').toLowerCase();
-
-  // ── Bonus share ──────────────────────────────────────────────────────────────
-  if (type === 'bonus' || action.bonusPercent > 0 || action.bonusShare > 0) {
-    const pct = Number(action.bonusPercent || action.bonusShare || 0);
-    if (pct <= 0 || pct > 500) return null; // sanity check
-    const adjustmentFactor = 1 / (1 + pct / 100);
-    return { date, type: 'bonus', pct, adjustmentFactor,
-      label: `${pct}% Bonus` };
+  const bonusPct = Number(action.bonusPercent ?? action.bonusShare ?? action.bonusSharePct ?? action.bonus_share_pct ?? 0);
+  let rightPct = Number(action.rightPercent ?? action.rightShare ?? action.rightSharePct ?? 0);
+  if (!rightPct && typeof (action.rightShareRatio ?? action.right_share_ratio) === 'string') {
+    const m = String(action.rightShareRatio ?? action.right_share_ratio).match(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/);
+    if (m && Number(m[1]) > 0) rightPct = (Number(m[2]) / Number(m[1])) * 100;
   }
+  const issuePrice = Number(action.issuePrice || action.rightIssuePrice || PAR_VALUE_EQUITY);
+  const cashDivPct = Number(action.cashDividendPct ?? action.cash_dividend_pct ?? action.cashDividend ?? action.cashDiv ?? action.dividend ?? 0);
 
-  // ── Right share ───────────────────────────────────────────────────────────────
-  if (type === 'right' || action.rightPercent > 0 || action.rightShare > 0) {
-    const pct = Number(action.rightPercent || action.rightShare || 0);
-    const issuePrice = Number(action.issuePrice || action.rightIssuePrice || 100); // par = Rs.100
-    if (pct <= 0 || pct > 200) return null;
-    // Theoretical adjustment: proportion of new shares × (issue price / current price)
-    // We store the raw values and compute the factor at call-time (needs current price context)
-    return { date, type: 'right', pct, issuePrice, adjustmentFactor: null,
-      label: `${pct}% Rights @ Rs.${issuePrice}` };
-  }
+  const safeBonus = bonusPct > 0 && bonusPct <= 500 ? bonusPct : 0;
+  const safeRight = rightPct > 0 && rightPct <= 500 ? rightPct : 0;
+  const safeCash = cashDivPct > 0 ? cashDivPct : 0;
+  if (!safeBonus && !safeRight && !safeCash) return null;
 
-  // ── Cash dividend ─────────────────────────────────────────────────────────────
-  if (type === 'cash' || type === 'dividend' || action.cashDividend > 0 || action.dividend > 0) {
-    const div = Number(action.cashDividend || action.dividend || 0);
-    if (div <= 0) return null;
-    // Factor is computed at call-time since we need the cum-dividend price
-    return { date, type: 'cash', div, adjustmentFactor: null,
-      label: `Rs.${div} Cash Dividend` };
-  }
-
-  return null;
+  return { date, bonusPct: safeBonus, rightPct: safeRight, issuePrice, cashDivPct: safeCash };
 }
 
 /**
@@ -198,60 +182,44 @@ export function adjustPricesForCorporateActions(candles, corporateActions = [], 
 
   const { adjustVolume = false } = options;
 
-  // Parse and filter valid actions, sort descending (most recent first)
-  const actions = corporateActions
-    .map(a => parseCorporateAction(a))
-    .filter(Boolean)
-    .sort((a, b) => b.date.localeCompare(a.date)); // newest first
+  // Merge simultaneous corporate actions sharing the same ex-date so Bonus + Right + Cash use exact NEPSE formula
+  const byDate = new Map();
+  for (const raw of corporateActions) {
+    const parsed = parseCorporateAction(raw);
+    if (!parsed) continue;
+    const prev = byDate.get(parsed.date) || { date: parsed.date, bonusPct: 0, rightPct: 0, issuePrice: PAR_VALUE_EQUITY, cashDivPct: 0 };
+    prev.bonusPct += parsed.bonusPct;
+    prev.rightPct += parsed.rightPct;
+    if (parsed.rightPct > 0) prev.issuePrice = parsed.issuePrice;
+    prev.cashDivPct += parsed.cashDivPct;
+    byDate.set(parsed.date, prev);
+  }
+  const actions = Array.from(byDate.values()).sort((a, b) => b.date.localeCompare(a.date));
 
   if (actions.length === 0) {
     return candles.map(c => ({ ...c, isAdjusted: false, adjustmentFactor: 1, rawClose: c.close }));
   }
 
-  // Work through candles newest-to-oldest, accumulating adjustment factors
-  // We iterate candles in reverse order (newest first) so we can look up the
-  // closing price immediately before each ex-date for right/cash factor calculation.
-
   const result = candles.map(c => ({ ...c })); // shallow copy
-
-  // Cumulative factor applied to bars before the current action date
   let cumulativeFactor = 1;
 
-  // Process actions newest-to-oldest
   for (const action of actions) {
-    // Find the index of the first candle ON or AFTER the ex-date
     const firstAdjustedIdx = result.findIndex(c => String(c.date).slice(0, 10) >= action.date);
-    if (firstAdjustedIdx <= 0) continue; // action is before all data or no pre-ex candles
+    if (firstAdjustedIdx <= 0) continue;
 
-    // For right shares and cash dividends: use the closing price of the candle
-    // just before ex-date to calculate the adjustment factor dynamically
-    let actionFactor = action.adjustmentFactor;
+    const cumClose = result[firstAdjustedIdx - 1]?.close || 0;
+    if (cumClose <= 0) continue;
 
-    if (action.type === 'right' && actionFactor === null) {
-      // Theoretical ex-right price: P_ex = (P_cum + ratio × issue_price) / (1 + ratio)
-      // where ratio = rightPercent / 100
-      const cumClose = result[firstAdjustedIdx - 1]?.close || 0;
-      if (cumClose > 0) {
-        const ratio = action.pct / 100;
-        const exPrice = (cumClose + ratio * action.issuePrice) / (1 + ratio);
-        actionFactor = exPrice / cumClose;
-      } else {
-        actionFactor = 1; // cannot compute — skip
-      }
-    }
+    const adj = calculateNepseCorporateActionAdjustment({
+      marketPrice: cumClose,
+      bonusPercent: action.bonusPct,
+      rightPercent: action.rightPct,
+      cashDividendPercent: action.cashDivPct,
+      subscriptionPrice: action.issuePrice
+    });
+    const actionFactor = adj && cumClose > 0 ? adj.adjustedPrice / cumClose : 1;
+    if (Math.abs(actionFactor - 1) < 1e-6) continue;
 
-    if (action.type === 'cash' && actionFactor === null) {
-      const cumClose = result[firstAdjustedIdx - 1]?.close || 0;
-      if (cumClose > 0 && action.div < cumClose) {
-        actionFactor = (cumClose - action.div) / cumClose;
-      } else {
-        actionFactor = 1;
-      }
-    }
-
-    if (!actionFactor || actionFactor <= 0 || actionFactor > 2) continue; // safety guard
-
-    // Accumulate: prior candles need ALL factors applied (compound)
     cumulativeFactor *= actionFactor;
 
     // Apply this factor to all candles BEFORE the ex-date.
@@ -311,21 +279,25 @@ export function aggregateToWeeklyCandles(dailyCandles) {
   const weeks = new Map(); // weekStartISO → accumulated candle
 
   for (const d of dailyCandles) {
-    const dt = new Date(d.date);
+    const dateStr = d.date ? String(d.date).slice(0, 10) : '';
+    const [y, m, dayNum] = dateStr.split('-').map(Number);
+    const dt = (!isNaN(y) && !isNaN(m) && !isNaN(dayNum))
+      ? new Date(Date.UTC(y, m - 1, dayNum, 12, 0, 0))
+      : new Date(d.date);
     if (isNaN(dt.getTime())) continue;
 
     // Regime Shift: Before April 6, 2026, trading week started Sunday (day 0).
     // From April 6, 2026 onward, trading week starts Monday (day 1).
-    const dateStr = d.date ? String(d.date).slice(0, 10) : dt.toISOString().slice(0, 10);
     const isPostShift = dateStr >= '2026-04-06';
     const weekStartDt = new Date(dt);
     if (isPostShift) {
-      const day = dt.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+      const day = dt.getUTCDay(); // 0=Sun, 1=Mon ... 6=Sat
       const daysToMonday = day === 0 ? 6 : day - 1; // roll back to Monday
-      weekStartDt.setDate(dt.getDate() - daysToMonday);
+      weekStartDt.setUTCDate(dt.getUTCDate() - daysToMonday);
     } else {
-      const day = dt.getDay(); // roll back to Sunday (day 0)
-      weekStartDt.setDate(dt.getDate() - day);
+      const day = dt.getUTCDay(); // roll back to Sunday (day 0)
+      const daysToSunday = day === 6 ? 6 : day;
+      weekStartDt.setUTCDate(dt.getUTCDate() - daysToSunday);
     }
     const weekKey = weekStartDt.toISOString().slice(0, 10);
 

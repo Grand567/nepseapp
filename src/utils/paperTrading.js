@@ -3,6 +3,8 @@
 // PERSISTENT PLAYGROUND (Rs. 10 Lakhs Virtual Capital)
 
 import { calculateBuyDetails, calculateSellDetails } from './calculations.js';
+import { calculateT2SettlementDate } from './nepseCalendar.js';
+import { calculateBrokerCommission, calculateSebonFee, calculateDpFee, STATUTORY_CHARGES } from '../constants/marketRules.js';
 
 const STORAGE_KEY = 'nepse_paper_trading_sandbox_v1';
 export const INITIAL_CAPITAL = 1000000; // Rs. 10 Lakhs
@@ -97,84 +99,107 @@ export function validateAndExecutePaperOrder({
       };
     }
 
+      const t2Sched = calculateT2SettlementDate(new Date(orderTimestamp));
+      const settledAtMs = t2Sched?.settlementDate ? t2Sched.settlementDate.getTime() : (orderTimestamp + (2 * 24 * 60 * 60 * 1000));
+      return {
+        executed: true,
+        side: 'BUY',
+        symbol: sym,
+        quantity: qty,
+        fillPrice: price,
+        commission: buyMath.commission,
+        sebonFee: buyMath.sebonFee,
+        dpFee: buyMath.dpFee,
+        totalCashDebited: +buyMath.totalAmount.toFixed(2),
+        remainingCash: +(availableCash - buyMath.totalAmount).toFixed(2),
+        waccPerShare: +buyMath.costPerShare.toFixed(2),
+        settledAtMs
+      };
+    }
+
+    // 3. SELL Execution with T+2 Settlement Lockup & FIFO CGT Check
+    const normalizedLots = existingHoldingsLots.map(l => ({
+      ...l,
+      symbol: String(l?.symbol || '').toUpperCase().trim(),
+      qty: Number(l?.qty ?? l?.quantity ?? 0),
+      waccPerShare: Number(l?.waccPerShare ?? l?.wacc ?? l?.buyPrice ?? l?.price ?? price)
+    }));
+
+    const sortedLots = [...normalizedLots]
+      .filter(l => l.symbol === sym && Number(l.qty || 0) > 0)
+      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+    const totalHeld = sortedLots.reduce((s, l) => s + Number(l.qty || 0), 0);
+    const t2ClearedLots = sortedLots.filter(l => !enforceT2Settlement || (orderTimestamp >= (l.settledAtMs || 0)));
+    const t2SalableQty = t2ClearedLots.reduce((s, l) => s + Number(l.qty || 0), 0);
+
+    if (qty > totalHeld) {
+      return { executed: false, reason: `Insufficient Holdings: Attempting to sell ${qty} kitta of ${sym}, but only ${totalHeld} kitta held.` };
+    }
+    if (qty > t2SalableQty) {
+      return {
+        executed: false,
+        reason: `T+2 Settlement Lockup Active: You hold ${totalHeld} kitta of ${sym}, but only ${t2SalableQty} kitta have cleared T+2 Demat settlement.`
+      };
+    }
+
+    // Compute FIFO lot matching and statutory fees
+    const turnover = qty * price;
+    const commission = calculateBrokerCommission(turnover);
+    const sebonFee = calculateSebonFee(turnover);
+    const dpFee = calculateDpFee();
+    const totalSellFriction = commission + sebonFee + dpFee;
+
+    let rem = qty;
+    let totalCostBasis = 0;
+    let totalCgt = 0;
+    let weightedDays = 0;
+
+    for (const lot of t2ClearedLots) {
+      if (rem <= 0) break;
+      const take = Math.min(rem, Number(lot.qty));
+      rem -= take;
+      const lotWacc = Number(lot.waccPerShare || lot.wacc || lot.buyPrice || lot.price || price);
+      const lotTimestamp = lot.timestamp ? new Date(lot.timestamp).getTime() : orderTimestamp;
+      const days = Math.max(0, Math.floor((orderTimestamp - lotTimestamp) / (24 * 60 * 60 * 1000)));
+
+      const lotCost = take * lotWacc;
+      const lotShareOfTurnover = (take / qty) * turnover;
+      const lotShareOfFriction = (take / qty) * totalSellFriction;
+      const lotNetGain = (lotShareOfTurnover - lotShareOfFriction) - lotCost;
+
+      const lotCgtRate = days > 365 ? 0.0375 : 0.050;
+      const lotCgt = lotNetGain > 0 ? lotNetGain * lotCgtRate : 0;
+
+      totalCostBasis += lotCost;
+      totalCgt += lotCgt;
+      weightedDays += take * days;
+    }
+
+    const avgWacc = totalCostBasis / qty;
+    const avgHoldingDays = weightedDays / qty;
+    const netReceivable = turnover - totalSellFriction - totalCgt;
+    const netRealizedPnl = netReceivable - totalCostBasis;
+    const netProfitBeforeTax = turnover - totalSellFriction - totalCostBasis;
+    const effectiveCgtRate = netProfitBeforeTax > 0 ? (totalCgt / netProfitBeforeTax) : (avgHoldingDays > 365 ? 0.0375 : 0.050);
+
     return {
       executed: true,
-      side: 'BUY',
+      side: 'SELL',
       symbol: sym,
       quantity: qty,
       fillPrice: price,
-      commission: buyMath.commission,
-      sebonFee: buyMath.sebonFee,
-      dpFee: buyMath.dpFee,
-      totalCashDebited: +buyMath.totalAmount.toFixed(2),
-      remainingCash: +(availableCash - buyMath.totalAmount).toFixed(2),
-      waccPerShare: +buyMath.costPerShare.toFixed(2),
-      settledAtMs: orderTimestamp + (2 * 24 * 60 * 60 * 1000) // T+2 Settlement Lockup
+      waccBasis: +avgWacc.toFixed(2),
+      holdingDays: Math.round(avgHoldingDays),
+      commission: +commission.toFixed(2),
+      sebonFee: +sebonFee.toFixed(2),
+      dpFee: +dpFee.toFixed(2),
+      cgt: +totalCgt.toFixed(2),
+      cgtRatePct: +(effectiveCgtRate * 100).toFixed(1),
+      netCashCredited: +netReceivable.toFixed(2),
+      netRealizedPnl: +netRealizedPnl.toFixed(2),
+      remainingCash: +(availableCash + netReceivable).toFixed(2)
     };
-  }
-
-  // 3. SELL Execution with T+2 Settlement Lockup & FIFO CGT Check
-  const normalizedLots = existingHoldingsLots.map(l => ({
-    ...l,
-    symbol: String(l?.symbol || '').toUpperCase().trim(),
-    qty: Number(l?.qty ?? l?.quantity ?? 0),
-    waccPerShare: Number(l?.waccPerShare ?? l?.wacc ?? l?.buyPrice ?? l?.price ?? price)
-  }));
-
-  const sortedLots = [...normalizedLots]
-    .filter(l => l.symbol === sym && Number(l.qty || 0) > 0)
-    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-
-  const totalHeld = sortedLots.reduce((s, l) => s + Number(l.qty || 0), 0);
-  const t2ClearedLots = sortedLots.filter(l => !enforceT2Settlement || (orderTimestamp >= (l.settledAtMs || 0)));
-  const t2SalableQty = t2ClearedLots.reduce((s, l) => s + Number(l.qty || 0), 0);
-
-  if (qty > totalHeld) {
-    return { executed: false, reason: `Insufficient Holdings: Attempting to sell ${qty} kitta of ${sym}, but only ${totalHeld} kitta held.` };
-  }
-  if (qty > t2SalableQty) {
-    return {
-      executed: false,
-      reason: `T+2 Settlement Lockup Active: You hold ${totalHeld} kitta of ${sym}, but only ${t2SalableQty} kitta have cleared T+2 Demat settlement.`
-    };
-  }
-
-  // Compute Weighted WACC and Holding Period across matched FIFO lots
-  let rem = qty;
-  let weightedCost = 0;
-  let weightedDays = 0;
-  for (const lot of t2ClearedLots) {
-    if (rem <= 0) break;
-    const take = Math.min(rem, Number(lot.qty));
-    rem -= take;
-    const lotWacc = Number(lot.waccPerShare || lot.wacc || lot.buyPrice || lot.price || price);
-    const days = Math.max(1, Math.floor((orderTimestamp - (lot.timestamp || orderTimestamp)) / (24 * 60 * 60 * 1000)));
-    weightedCost += take * lotWacc;
-    weightedDays += take * days;
-  }
-
-  const avgWacc = weightedCost / qty;
-  const avgHoldingDays = weightedDays / qty;
-  const holdingType = avgHoldingDays > 365 ? 'long' : 'short';
-  const sellMath = calculateSellDetails(qty, price, avgWacc, holdingType);
-
-  return {
-    executed: true,
-    side: 'SELL',
-    symbol: sym,
-    quantity: qty,
-    fillPrice: price,
-    waccBasis: +avgWacc.toFixed(2),
-    holdingDays: Math.round(avgHoldingDays),
-    commission: sellMath.commission,
-    sebonFee: sellMath.sebonFee,
-    dpFee: sellMath.dpFee,
-    cgt: +sellMath.cgt.toFixed(2),
-    cgtRatePct: +(sellMath.cgtRate * 100).toFixed(1),
-    netCashCredited: +sellMath.netReceivable.toFixed(2),
-    netRealizedPnl: +sellMath.netProfitLoss.toFixed(2),
-    remainingCash: +(availableCash + sellMath.netReceivable).toFixed(2)
-  };
 }
 
 export function executePaperBuy(symbol, ltp, quantity, targetPrice = null, stopLoss = null, previousClose = null) {
@@ -262,7 +287,7 @@ export function executePaperSell(positionId, currentLtp, previousClose = null, o
     previousClose: previousClose || sellPrice,
     availableCash: state.cash,
     existingHoldingsLots: [pos],
-    enforceT2Settlement: options.enforceT2Settlement ?? false // allow sandbox flexibility if requested
+    enforceT2Settlement: options.enforceT2Settlement ?? true // enforce Demat clearing by default
   });
 
   if (!validation.executed) {
@@ -305,15 +330,18 @@ export function calculateSandboxSummary(state, currentPrices = {}) {
 
   const positionsEnriched = s.positions.map(p => {
     const ltp = currentPrices[p.symbol] ? Number(currentPrices[p.symbol]) : p.buyPrice;
-    const currentVal = p.quantity * ltp;
-    const pnl = currentVal - p.totalCost;
-    const pnlPct = +((pnl / p.totalCost) * 100).toFixed(2);
+    const qty = Number(p.quantity ?? p.qty ?? 0);
+    const totalCost = Number(p.totalCost || 0);
+    const currentVal = qty * ltp;
+    const pnl = currentVal - totalCost;
+    const pnlPct = totalCost > 0 ? +((pnl / totalCost) * 100).toFixed(2) : 0;
     openHoldingsValue += currentVal;
-    totalCostOpen += p.totalCost;
+    totalCostOpen += totalCost;
     unrealizedPnl += pnl;
 
     return {
       ...p,
+      quantity: qty,
       currentLtp: ltp,
       currentValue: currentVal,
       unrealizedPnl: +pnl.toFixed(2),

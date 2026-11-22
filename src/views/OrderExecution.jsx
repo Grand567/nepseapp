@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, ShieldCheck, Zap, X } from 'lucide-react';
 import { calculateBrokerCommission, calculateSebonFee } from '../utils/calculations';
 
@@ -17,23 +17,37 @@ export function OrderExecution({
   const [orderSide, setOrderSide] = useState('BUY');
   const [orderType, setOrderType] = useState('Limit');
   const [kitta, setKitta] = useState(100);
+  const [waccPrice, setWaccPrice] = useState(defaultPrice);
+  const [cgtRegime, setCgtRegime] = useState('short'); // 'short' (5.0% <=365d) | 'long' (3.75% >365d) | 'corp' (10%)
   const [price, setPrice] = useState(defaultPrice);
   const [submittedMessage, setSubmittedMessage] = useState('');
+  const closeTimerRef = useRef(null);
+
+  useEffect(() => {
+    setPrice(defaultPrice);
+    setWaccPrice(defaultPrice);
+  }, [symbol, defaultPrice]);
+
+  useEffect(() => () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); }, []);
 
   const turnover = kitta * price;
   const brokerComm = calculateBrokerCommission(turnover);
   const sebonFee = calculateSebonFee(turnover);
   const dpFee = 25.00;
-  // Compute CGT (Capital Gains Tax) for sell orders if profitable over default purchase price
-  const estimatedCostBasis = defaultPrice > 0 ? (kitta * defaultPrice) : turnover;
-  const grossProfit = Math.max(0, turnover - estimatedCostBasis);
-  const capitalGainsTax = orderSide === 'SELL' && grossProfit > 0 ? Number((grossProfit * 0.075).toFixed(2)) : 0;
   const statutoryFees = brokerComm + sebonFee + dpFee;
+  // Nepal IRD/CDSC rule: CGT applies to NET profit after sell fees (5.0% ST <=365d, 3.75% LT >365d, 10.0% Corp)
+  const estimatedCostBasis = waccPrice > 0 ? (kitta * waccPrice) : turnover;
+  const netProfitBeforeTax = Math.max(0, (turnover - statutoryFees) - estimatedCostBasis);
+  const cgtRate = cgtRegime === 'corp' ? 0.10 : cgtRegime === 'long' ? 0.0375 : 0.05;
+  const capitalGainsTax = orderSide === 'SELL' && netProfitBeforeTax > 0 ? Number((netProfitBeforeTax * cgtRate).toFixed(2)) : 0;
   const totalFees = statutoryFees + capitalGainsTax;
   const totalPayable = orderSide === 'BUY' ? (turnover + totalFees) : Math.max(0, turnover - totalFees);
 
   const handleKittaChange = (delta) => {
-    setKitta(prev => Math.max(10, prev + delta));
+    setKitta(prev => {
+      const next = Math.max(10, prev + delta);
+      return orderSide === 'SELL' ? Math.min(Math.max(10, maxUnits), next) : next;
+    });
   };
 
   const handlePriceChange = (delta) => {
@@ -46,7 +60,8 @@ export function OrderExecution({
       : `✅ Order Prepared: ${symbol} (${kitta} Kitta @ Rs ${price.toFixed(2)}) ready for TMS Broker 58 routing.`;
     setSubmittedMessage(successMsg);
     if (onCompleteOrder) onCompleteOrder();
-    setTimeout(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
       if (onClose) onClose();
     }, 1800);
   };
@@ -198,8 +213,30 @@ export function OrderExecution({
         </div>
         {capitalGainsTax > 0 && (
           <div className="flex justify-between text-slate-400">
-            <span>{isNe ? 'पूँजीगत लाभकर (CGT 7.5%):' : 'Capital Gains Tax (CGT 7.5%):'}</span>
+            <span>{isNe ? `पूँजीगत लाभकर (CGT ${(cgtRate * 100).toFixed(2)}%):` : `Capital Gains Tax (CGT ${(cgtRate * 100).toFixed(2)}%):`}</span>
             <span className="text-rose-400">Rs {capitalGainsTax.toFixed(2)}</span>
+          </div>
+        )}
+        {orderSide === 'SELL' && (
+          <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/[0.04]">
+            <span className="text-[11px] text-slate-400">WACC / CGT:</span>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                value={waccPrice}
+                onChange={e => setWaccPrice(Math.max(0, Number(e.target.value) || 0))}
+                className="w-20 rounded bg-[#141A28] border border-white/[0.1] px-2 py-0.5 text-right text-xs text-white"
+              />
+              <select
+                value={cgtRegime}
+                onChange={e => setCgtRegime(e.target.value)}
+                className="rounded bg-[#141A28] border border-white/[0.1] px-2 py-0.5 text-xs text-slate-300"
+              >
+                <option value="short">ST 5.0% (&le;365d)</option>
+                <option value="long">LT 3.75% (&gt;365d)</option>
+                <option value="corp">Corp 10.0%</option>
+              </select>
+            </div>
           </div>
         )}
         <div className="border-t border-white/[0.08] pt-2 flex justify-between items-baseline font-bold text-sm">

@@ -101,6 +101,7 @@ export default function PortfolioHub({
         {subTab === 'portfolio' ? (
           <Portfolio
             marketStocks={marketStocks}
+            apiStatus={apiStatus}
             userId={userId}
             userEmail={userEmail}
             onSelectStock={onSelectStock}

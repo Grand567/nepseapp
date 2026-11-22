@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { InfoBanner, StatCard, StockSearchSelect } from './ui';
 import { getCachedStockFundamentals, fetchStockFundamentals } from '../utils/liveData';
 import { getSectorBenchmark } from '../utils/fundamentals';
@@ -24,6 +24,7 @@ export function GrahamValuation({
   const [result, setResult] = useState<any>(null);
   const [validationError, setValidationError] = useState('');
   const [isLoadingFund, setIsLoadingFund] = useState(false);
+  const requestIdRef = useRef(0);
 
   const runCalc = (f: { eps: string; bvps: string; price: string; growthRate: string; fdRate: string }, mType: 'classical' | 'interest_adjusted') => {
     const eps = parseFloat(f.eps);
@@ -108,6 +109,7 @@ export function GrahamValuation({
   const handleStockSelect = async (sym: string) => {
     const cleanSym = String(sym || '').toUpperCase().trim();
     setSelectedSym(cleanSym);
+    const reqId = ++requestIdRef.current;
     if (!cleanSym) return;
 
     const found = stocks.find((s: any) => s.symbol?.toUpperCase() === cleanSym) || { symbol: cleanSym };
@@ -134,8 +136,10 @@ export function GrahamValuation({
           if (priceVal == null && fresh.ltp) priceVal = Number(fresh.ltp);
         }
       } catch (_) {}
+      if (reqId !== requestIdRef.current) return;
       setIsLoadingFund(false);
     }
+    if (reqId !== requestIdRef.current) return;
 
     const newForm = {
       eps: epsVal != null && !Number.isNaN(epsVal) ? String(epsVal) : '',
@@ -154,10 +158,14 @@ export function GrahamValuation({
     }
   };
 
+  const initializedRef = useRef(false);
   useEffect(() => {
+    if (initializedRef.current && !initialSymbol) return;
+    if (!initialSymbol && stocks.length === 0) return;
+    initializedRef.current = true;
     const sym = initialSymbol || selectedSym || (stocks.length > 0 ? stocks[0]?.symbol : 'NABIL') || 'NABIL';
     handleStockSelect(sym);
-  }, [initialSymbol, stocks.length]);
+  }, [initialSymbol]);
 
   const calc = () => {
     runCalc(form, modelType);
@@ -316,7 +324,7 @@ export function BrokerageCalculator({ stocks: rawStocks = [], initialSymbol = ''
     const totalCost = buyBrok + sellBrok + sebonBuy + sebonSell + dpFee;
     const grossProfit = sellTotal - buyTotal;
     const taxableProfit = netSellProceedsBeforeTax - totalBuyCost;
-    const cgtRate = f.holdingType === 'individual_short' || f.holdingType === 'short' ? 0.075 : f.holdingType === 'long' ? 0.05 : 0.10;
+    const cgtRate = f.holdingType === 'individual_short' || f.holdingType === 'short' ? 0.05 : f.holdingType === 'long' ? 0.0375 : 0.10;
     const cgt = taxableProfit > 0 ? taxableProfit * cgtRate : 0;
     const netReturn = taxableProfit - cgt;
     const returnPct = (netReturn / totalBuyCost) * 100;
@@ -385,15 +393,15 @@ export function BrokerageCalculator({ stocks: rawStocks = [], initialSymbol = ''
         </div>
       )}
       <InfoBanner>
-        <strong>SEBON Regulatory Norms:</strong> 5-tier broker commission (0.36% down to 0.24%, min Rs 10) + SEBON fee 0.015% + CDSC DP fee Rs 25/txn + Capital Gains Tax (7.5% short-term &le;365d, 5.0% long-term &gt;365d, 10% corporate).
+        <strong>SEBON Regulatory Norms:</strong> 5-tier broker commission (0.36% down to 0.24%, min Rs 10) + SEBON fee 0.015% + CDSC DP fee Rs 25/txn + Capital Gains Tax (5.0% short-term &le;365d, 3.75% long-term &gt;365d, 10% corporate, effective 22 Sept 2026).
       </InfoBanner>
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
         <input type="number" placeholder="Buy Price NPR" value={form.buy} onChange={(e) => setForm((f) => ({ ...f, buy: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Sell Price NPR" value={form.sell} onChange={(e) => setForm((f) => ({ ...f, sell: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Quantity" value={form.qty} onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} className={inputCls} />
         <select value={form.holdingType} onChange={(e) => setForm((f) => ({ ...f, holdingType: e.target.value }))} className={inputCls}>
-          <option value="short">Individual Short &le;365d — 7.5% CGT</option>
-          <option value="long">Individual Long &gt;365d — 5.0% CGT</option>
+          <option value="short">Individual Short &le;365d — 5.0% CGT</option>
+          <option value="long">Individual Long &gt;365d — 3.75% CGT</option>
           <option value="institutional">Institutional / Corporate — 10% CGT</option>
         </select>
         <select value={form.slabType} onChange={(e) => setForm((f) => ({ ...f, slabType: e.target.value }))} className={`${inputCls} col-span-2 md:col-span-1`}>
@@ -442,15 +450,18 @@ export function DividendCalculator() {
     const pr = parseFloat(f.price) || 0;
     if (!s || s <= 0) return;
     const grossCash = (fv * c / 100) * s;
-    const tax = grossCash * 0.05;
-    const netCash = grossCash - tax;
+    const cashTax = grossCash * 0.05;
     const bonusShares = Math.floor((s * b) / 100);
+    const bonusTax = bonusShares * fv * 0.05; // Nepal 5% dividend tax on bonus share face value
+    const tax = cashTax + bonusTax;
+    const netCash = grossCash - tax;
     const newTotal = s + bonusShares;
     
     // Dividend Yield calculations
     const dps = (fv * c) / 100;
     const cashYield = pr > 0 ? (dps / pr) * 100 : null;
-    const bonusValue = pr > 0 ? bonusShares * pr : 0;
+    const exBonusPrice = pr > 0 ? pr / (1 + b / 100) : 0;
+    const bonusValue = exBonusPrice > 0 ? bonusShares * exBonusPrice : 0;
     const totalYield = pr > 0 ? (((grossCash + bonusValue) / (s * pr)) * 100) : null;
 
     setResult({
@@ -764,25 +775,20 @@ export function RiskRewardCalculator({ stocks: rawStocks = [], initialSymbol = '
 }
 
 // Helper to parse ratios like "1:2", "1/2", "10:3", "0.5", "50%"
+// Standard NEPSE ratio format: Existing:Right (e.g., 1:1 = 100%, 10:3 = 30%, 2:1 = 50%, 4:1 = 25%)
 function parseRatio(str: string): number {
   if (!str) return 1;
   const clean = str.trim();
   if (clean.includes(':')) {
     const parts = clean.split(':').map((p) => parseFloat(p.trim()));
     if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[1] !== 0 && parts[0] !== 0) {
-      if (parts[0] > parts[1] && parts[0] >= 5) {
-        return parts[1] / parts[0];
-      }
-      return parts[0] / parts[1];
+      return parts[1] / parts[0];
     }
   }
   if (clean.includes('/')) {
     const parts = clean.split('/').map((p) => parseFloat(p.trim()));
     if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[1] !== 0 && parts[0] !== 0) {
-      if (parts[0] > parts[1] && parts[0] >= 5) {
-        return parts[1] / parts[0];
-      }
-      return parts[0] / parts[1];
+      return parts[1] / parts[0];
     }
   }
   if (clean.endsWith('%')) {
@@ -811,7 +817,8 @@ export function BonusAdjustmentCalculator() {
     const adjustedPrice = pClose / (1 + bonusRatio);
     const bonusShares = Math.floor(s * bonusRatio);
     const totalShares = s + bonusShares;
-    const adjustedWacc = (s * w) / totalShares;
+    // Mandatory CDSC/IRD NEPSE WACC rule: bonus shares carry Rs. 100 face value cost basis
+    const adjustedWacc = ((s * w) + (bonusShares * 100)) / totalShares;
     const totalMarketValuePre = s * pClose;
     const totalMarketValuePost = totalShares * adjustedPrice;
 
@@ -1341,8 +1348,8 @@ export function StockSplitCalculator() {
 // ── Multi-Lot Buy Averaging & Blended WACC Calculator (with Bonus & Right Dilution) ──
 export function WaccAveragingCalculator() {
   const [lots, setLots] = useState([
-    { id: 1, qty: '100', price: '450' },
-    { id: 2, qty: '100', price: '500' }
+    { id: 1, qty: '100', price: '450', type: 'secondary' as 'secondary' | 'primary' },
+    { id: 2, qty: '100', price: '500', type: 'secondary' as 'secondary' | 'primary' }
   ]);
   const [bonusPct, setBonusPct] = useState('0');
   const [rightPct, setRightPct] = useState('0');
@@ -1350,7 +1357,7 @@ export function WaccAveragingCalculator() {
   const [result, setResult] = useState<any>(null);
 
   const addLot = () => {
-    setLots(prev => [...prev, { id: Date.now(), qty: '100', price: '400' }]);
+    setLots(prev => [...prev, { id: Date.now(), qty: '100', price: '400', type: 'secondary' }]);
   };
 
   const removeLot = (id: number) => {
@@ -1358,7 +1365,7 @@ export function WaccAveragingCalculator() {
     setLots(prev => prev.filter(l => l.id !== id));
   };
 
-  const updateLot = (id: number, field: 'qty' | 'price', val: string) => {
+  const updateLot = (id: number, field: 'qty' | 'price' | 'type', val: string) => {
     setLots(prev => prev.map(l => l.id === id ? { ...l, [field]: val } : l));
   };
 
@@ -1383,13 +1390,21 @@ export function WaccAveragingCalculator() {
       if (q > 0 && p > 0) {
         baseQty += q;
         totalRawCost += (q * p);
-        const lotDetails = calculateBuyDetails(q, p);
-        totalCostWithFees += lotDetails.totalAmount;
-        totalFees += (lotDetails.commission + lotDetails.sebonFee + lotDetails.dpFee);
+        if (lot.type === 'primary') {
+          // Mandatory NEPSE rule: IPO / FPO / Rights incur Rs. 0 brokerage, SEBON, and DP fees
+          totalCostWithFees += (q * p);
+        } else {
+          const lotDetails = calculateBuyDetails(q, p);
+          totalCostWithFees += lotDetails.totalAmount;
+          totalFees += (lotDetails.commission + lotDetails.sebonFee + lotDetails.dpFee);
+        }
       }
     });
 
-    if (baseQty <= 0) return;
+    if (baseQty <= 0) {
+      setResult(null);
+      return;
+    }
 
     const bPct = Math.max(0, parseFloat(bonusPct) || 0);
     const rPct = Math.max(0, parseFloat(rightPct) || 0);
@@ -1399,22 +1414,24 @@ export function WaccAveragingCalculator() {
     const rightUnits = Math.floor((baseQty * rPct) / 100);
     const rightCost = rightUnits * rPrice;
     const bonusTaxTds = bonusUnits * 100 * 0.05; // 5% TDS on bonus share face value (Rs. 100)
+    const bonusStatutoryParBasis = bonusUnits * 100; // Mandatory CDSC/IRD Rs. 100 par cost basis in WACC
 
     const totalQty = baseQty + bonusUnits + rightUnits;
     totalRawCost += rightCost;
     totalFees += bonusTaxTds;
-    totalCostWithFees += (rightCost + bonusTaxTds);
 
-    const blendedWacc = totalCostWithFees / totalQty;
+    const cashOutlayTotal = totalCostWithFees + rightCost + bonusTaxTds;
+    const statutoryTaxCostBasis = totalCostWithFees + rightCost + bonusStatutoryParBasis;
+    const blendedWacc = statutoryTaxCostBasis / totalQty;
 
-    // Iterative exact tiered SEBON break-even solver (covers buy fees + sell commission + 0.015% SEBON + Rs. 25 sell DP)
-    let be = blendedWacc;
+    // Iterative exact cash break-even solver (covers actual cash outlay + sell brokerage + 0.015% SEBON + Rs. 25 sell DP)
+    let be = cashOutlayTotal / totalQty;
     for (let i = 0; i < 30; i++) {
       const grossSell = be * totalQty;
       const sellComm = getTieredSellCommission(grossSell);
       const sellSebon = grossSell * 0.00015;
       const netProceeds = grossSell - sellComm - sellSebon - 25;
-      const diff = totalCostWithFees - netProceeds;
+      const diff = cashOutlayTotal - netProceeds;
       if (Math.abs(diff) < 0.05) break;
       be += diff / totalQty;
     }
@@ -1426,7 +1443,8 @@ export function WaccAveragingCalculator() {
       totalQty,
       totalRawCost,
       blendedWacc,
-      totalCostWithFees,
+      totalCostWithFees: cashOutlayTotal,
+      statutoryTaxCostBasis,
       totalFees,
       breakEvenPrice: be
     });
@@ -1458,6 +1476,14 @@ export function WaccAveragingCalculator() {
         {lots.map((lot, idx) => (
           <div key={lot.id} className="flex items-center gap-2 bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
             <span className="text-xs font-mono font-bold text-slate-400 w-12">Lot {idx + 1}</span>
+            <select
+              value={lot.type}
+              onChange={(e) => updateLot(lot.id, 'type', e.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-[11px] text-slate-200 outline-none focus:border-blue-500"
+            >
+              <option value="secondary">Secondary</option>
+              <option value="primary">IPO/FPO (0 Fee)</option>
+            </select>
             <div className="flex-1">
               <input
                 type="number"

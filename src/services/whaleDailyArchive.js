@@ -15,6 +15,8 @@
 import { calculateBrokerConcentration, calculateQuietAccumulationIndex, estimateTradablePublicFloat } from '../utils/accumulationDistributionEngine.ts';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse.js';
 import { getCircuitLimits, NEPSE_RULES } from '../utils/nepseRules.js';
+import { isPureNepseEquity } from '../utils/nepseEquityFilter.js';
+import { formatNptDateIso } from '../utils/nepseCalendar.js';
 
 const STORAGE_KEY = 'drabyashree_whale_daily_archive';
 const MAX_ARCHIVE_DAYS = 30; // Keep up to 30 trading sessions
@@ -113,11 +115,17 @@ export function captureDailyWhaleSnapshot(stocks = [], floorsheet = [], customDa
     }
   }
   if (!marketDate) {
-    marketDate = new Date().toISOString().split('T')[0];
+    marketDate = formatNptDateIso(new Date());
   }
 
   const existingArchive = getStoredWhaleArchive();
-  const previousSnapshot = existingArchive.find(s => s.date !== marketDate);
+  const sortedArchiveDesc = [...existingArchive].sort((a, b) => (b.date > a.date ? 1 : (b.date < a.date ? -1 : 0)));
+  const previousSnapshot = sortedArchiveDesc.find(s => s.date < marketDate);
+
+  // Evict older session trades from registry if a new marketDate begins (prevents memory leak)
+  for (const regDate of SESSION_FLOORSHEET_REGISTRY.keys()) {
+    if (regDate !== marketDate) SESSION_FLOORSHEET_REGISTRY.delete(regDate);
+  }
 
   // Merge incoming floorsheet into cumulative session registry to prevent morning trade eviction (Loophole 1 Fix)
   if (!SESSION_FLOORSHEET_REGISTRY.has(marketDate)) {
@@ -125,14 +133,15 @@ export function captureDailyWhaleSnapshot(stocks = [], floorsheet = [], customDa
   }
   const sessionTradesMap = SESSION_FLOORSHEET_REGISTRY.get(marketDate);
   if (Array.isArray(floorsheet) && floorsheet.length > 0) {
-    floorsheet.forEach((t, idx) => {
+    floorsheet.forEach((t) => {
       const sym = String(t.stockSymbol || t.symbol || '').toUpperCase().trim();
       if (!sym) return;
       const bBroker = String(t.buyerMemberId || t.buyerBroker || t.buyer || '').replace(/^0+/, '').trim();
       const sBroker = String(t.sellerMemberId || t.sellerBroker || t.seller || '').replace(/^0+/, '').trim();
       const qty = Number(t.contractQuantity || t.quantity || t.qty || 0);
       const rate = Number(t.contractRate || t.rate || t.price || 0);
-      const key = t.contractId ? String(t.contractId) : `${sym}_${bBroker}_${sBroker}_${qty}_${rate}_${t.tradeTime || idx}`;
+      const contractId = t.contractId ?? t.contractNo ?? t.contract_no;
+      const key = contractId ? String(contractId) : `${sym}_${bBroker}_${sBroker}_${qty}_${rate}_${t.tradeTime || ''}`;
       sessionTradesMap.set(key, t);
     });
   }
@@ -154,9 +163,8 @@ export function captureDailyWhaleSnapshot(stocks = [], floorsheet = [], customDa
   for (const s of stocks) {
     const sym = String(s.symbol || '').toUpperCase().trim();
     if (!sym || !s.ltp) continue;
-    // Skip mutual funds and debentures for whale equity tracking
-    const rawSecLower = String(s.sector || '').toLowerCase();
-    if (sym.includes('D8') || sym.includes('D9') || sym.endsWith('MF') || sym.endsWith('BS') || sym.endsWith('SF') || sym.endsWith('EF') || sym.endsWith('GF') || sym.endsWith('FF') || rawSecLower.includes('mutual')) continue;
+    // Strictly preserve pure equities (exclude mutual funds, debentures, and promoter shares)
+    if (!isPureNepseEquity(s, s.sector)) continue;
 
     const trades = fsMap.get(sym) || [];
     const conc = calculateBrokerConcentration(trades, sym, s);
@@ -222,7 +230,7 @@ export function captureDailyWhaleSnapshot(stocks = [], floorsheet = [], customDa
 
     // ── Float Normalization & Dynamic Sector Turnover Calibration (Loophole 3 Fix) ──
     const uInfo = UNIVERSE_MAP.get(sym) || {};
-    const listedShares = Number(s.listedShares || s.totalListedShares || (uInfo.sharesOut ? uInfo.sharesOut * 1000000 : 0)) || 10000000;
+    const listedShares = Number(s.listedShares || s.totalListedShares || (uInfo.sharesOut ? uInfo.sharesOut * 1000000 : 0)) || null;
     const sector = s.sector || uInfo.sector || 'Equities';
     const secLower = sector.toLowerCase();
 
@@ -235,8 +243,8 @@ export function captureDailyWhaleSnapshot(stocks = [], floorsheet = [], customDa
     else if (secLower.includes('manufacturing')) publicFloatFraction = 0.25;
     else if (secLower.includes('hotel')) publicFloatFraction = 0.30;
 
-    const estFloatShares = Math.max(500000, Math.round(listedShares * publicFloatFraction));
-    const floatTurnoverPct = estFloatShares > 0 ? Number(((Number(s.volume || 0) / estFloatShares) * 100).toFixed(3)) : 0;
+    const estFloatShares = listedShares ? Math.max(500000, Math.round(listedShares * publicFloatFraction)) : null;
+    const floatTurnoverPct = estFloatShares ? Number(((Number(s.volume || 0) / estFloatShares) * 100).toFixed(3)) : 0;
 
     // Dynamic sector-calibrated turnover floor (Rs.)
     let dynamicTurnoverFloor = 3000000; // Rs. 30 Lakh default

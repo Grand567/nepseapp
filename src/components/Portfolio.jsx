@@ -129,7 +129,7 @@ const getRealClientId = async (boid, dpCode) => {
   return 101;
 };
 
-export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altStocks, allStocks: altAllStocks, userId = 'local', userEmail = '', onSelectStock, onSwitchToAccounts, onSwitchToSimulator }) {
+export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altStocks, allStocks: altAllStocks, apiStatus = 'live', userId = 'local', userEmail = '', onSelectStock, onSwitchToAccounts, onSwitchToSimulator }) {
   const marketStocks = Array.isArray(rawMarketStocks) ? rawMarketStocks : (Array.isArray(altStocks) ? altStocks : (Array.isArray(altAllStocks) ? altAllStocks : []));
 
   const [transactions, setTransactions] = useState([]);
@@ -813,10 +813,19 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
       importParsedItems.forEach(item => {
         const idx = existingHoldings.findIndex(h => (h.symbol || '').toUpperCase() === item.symbol);
         if (idx !== -1) {
+          const oldH = existingHoldings[idx];
+          const oldUnits = Number(oldH.units) || 0;
+          const oldWacc = Number(oldH.wacc) || item.rate;
+          const mergedUnits = oldUnits + Number(item.units);
+          const weightedWacc = mergedUnits > 0 ? Number((((oldUnits * oldWacc) + (Number(item.units) * Number(item.rate))) / mergedUnits).toFixed(2)) : item.rate;
+          const unitPrev = oldH.prevClose > 0 ? oldH.prevClose : (oldUnits > 0 && oldH.valueAsOfPrevClose > 0 ? oldH.valueAsOfPrevClose / oldUnits : 0);
+          const unitLtp = oldH.currentLtp > 0 ? oldH.currentLtp : (oldUnits > 0 && oldH.valueAsOfLTP > 0 ? oldH.valueAsOfLTP / oldUnits : 0);
           existingHoldings[idx] = {
-            ...existingHoldings[idx],
-            units: existingHoldings[idx].units + item.units,
-            wacc: item.rate,
+            ...oldH,
+            units: mergedUnits,
+            wacc: weightedWacc,
+            valueAsOfPrevClose: unitPrev > 0 ? Number((mergedUnits * unitPrev).toFixed(2)) : 0,
+            valueAsOfLTP: unitLtp > 0 ? Number((mergedUnits * unitLtp).toFixed(2)) : 0,
             waccSource: item.source || 'BROKER_TMS',
             isCustomWacc: true
           };
@@ -824,8 +833,8 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
           existingHoldings.push({
             symbol: item.symbol,
             name: item.symbol,
-            units: item.units,
-            wacc: item.rate,
+            units: Number(item.units),
+            wacc: Number(item.rate),
             waccSource: item.source || 'BROKER_TMS',
             isCustomWacc: true
           });
@@ -842,8 +851,9 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
         id: `${Date.now()}_${item.symbol}_${Math.random().toString(36).substr(2, 4)}`,
         type: 'buy',
         symbol: item.symbol,
-        quantity: item.units,
-        price: item.rate,
+        quantity: Number(item.units),
+        price: Number(item.rate),
+        feesIncluded: item.source === 'BROKER_TMS' || item.source === 'MEROSHARE',
         date: formatNptDateIso(new Date())
       }));
 
@@ -861,7 +871,9 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
 
   const handleAddTransaction = (e) => {
     e.preventDefault();
-    if (quantity <= 0 || price <= 0) {
+    const numQty = Number(quantity);
+    const numPrice = type === 'bonus' ? 100 : Number(price);
+    if (!Number.isFinite(numQty) || numQty <= 0 || !Number.isFinite(numPrice) || numPrice <= 0) {
       alert("Quantity and Price must be positive numbers.");
       return;
     }
@@ -870,8 +882,8 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
       id: Date.now().toString(),
       type,
       symbol: symbol.trim().toUpperCase(),
-      quantity,
-      price,
+      quantity: numQty,
+      price: numPrice,
       date
     };
 
@@ -1524,25 +1536,45 @@ Based on this data, provide a robust analysis using this exact markdown structur
   
   const getManualHoldingsRaw = () => {
     const holdingsMap = {};
-    const chronologicalTxs = [...transactions].reverse();
+    // Sort strictly by transaction date ascending; on identical dates process buys/acquisitions before sells
+    const txOrder = (t) => (t === 'sell' ? 1 : 0);
+    const chronologicalTxs = [...transactions].sort((a, b) => {
+      const da = String(a?.date || '');
+      const db = String(b?.date || '');
+      if (da !== db) return da.localeCompare(db);
+      return txOrder(a?.type) - txOrder(b?.type);
+    });
     const manualCustomWaccMap = getCustomWaccMap(userId, 'manual');
     const globalCustomWaccMap = getCustomWaccMap(userId);
 
     chronologicalTxs.forEach(tx => {
-      const sym = tx.symbol.trim().toUpperCase();
+      const sym = String(tx.symbol || '').trim().toUpperCase();
+      const qty = Number(tx.quantity) || 0;
+      const px = Number(tx.price) || 0;
+      if (!sym || qty <= 0) return;
       if (!holdingsMap[sym]) {
         holdingsMap[sym] = { symbol: sym, units: 0, totalInvestedCost: 0, wacc: 0, waccSource: 'MANUAL_LEDGER', isCustomWacc: true };
       }
       const holding = holdingsMap[sym];
 
-      if (tx.type === 'buy') {
-        const details = calculateBuyDetails(tx.quantity, tx.price);
-        holding.units += tx.quantity;
+      if (tx.type === 'bonus') {
+        // Mandatory CDSC/IRD rule: Bonus shares carry Rs. 100 face value with ZERO brokerage/SEBON/DP fees
+        holding.units += qty;
+        holding.totalInvestedCost += qty * 100;
+        holding.wacc = holding.units > 0 ? holding.totalInvestedCost / holding.units : 0;
+      } else if (tx.type === 'ipo' || tx.type === 'fpo' || tx.type === 'rights' || tx.feesIncluded) {
+        // Mandatory NEPSE rule: IPO/FPO/Rights (and pre-computed TMS WACC imports) incur ZERO extra buy fees
+        holding.units += qty;
+        holding.totalInvestedCost += qty * px;
+        holding.wacc = holding.units > 0 ? holding.totalInvestedCost / holding.units : 0;
+      } else if (tx.type === 'buy') {
+        const details = calculateBuyDetails(qty, px);
+        holding.units += qty;
         holding.totalInvestedCost += details.totalAmount;
         holding.wacc = holding.units > 0 ? holding.totalInvestedCost / holding.units : 0;
       } else {
         const previousUnits = holding.units;
-        holding.units = Math.max(0, holding.units - tx.quantity);
+        holding.units = Math.max(0, holding.units - qty);
         if (previousUnits > 0) {
           holding.totalInvestedCost = holding.units * holding.wacc;
         } else {
@@ -1579,20 +1611,28 @@ Based on this data, provide a robust analysis using this exact markdown structur
             currentLtp: h.currentLtp || 0,
             prevClose: h.prevClose || 0,
             valueAsOfLTP: 0,
-            valueAsOfPrevClose: 0
+            valueAsOfPrevClose: 0,
+            allHaveLtpVal: true,
+            allHavePrevCloseVal: true
           };
         }
-        holdingsMap[sym].units += (h.units || 0);
-        holdingsMap[sym].totalInvestedCost += ((h.units || 0) * (h.wacc || 100));
+        const u = Number(h.units) || 0;
+        holdingsMap[sym].units += u;
+        holdingsMap[sym].totalInvestedCost += (u * (Number(h.wacc) || 100));
         if (h.currentLtp > 0) holdingsMap[sym].currentLtp = h.currentLtp;
         if (h.prevClose > 0) holdingsMap[sym].prevClose = h.prevClose;
-        if (h.valueAsOfLTP > 0) holdingsMap[sym].valueAsOfLTP += h.valueAsOfLTP;
-        if (h.valueAsOfPrevClose > 0) holdingsMap[sym].valueAsOfPrevClose += h.valueAsOfPrevClose;
+        if (h.valueAsOfLTP > 0) holdingsMap[sym].valueAsOfLTP += Number(h.valueAsOfLTP);
+        else holdingsMap[sym].allHaveLtpVal = false;
+        if (h.valueAsOfPrevClose > 0) holdingsMap[sym].valueAsOfPrevClose += Number(h.valueAsOfPrevClose);
+        else holdingsMap[sym].allHavePrevCloseVal = false;
       });
     });
 
     return Object.values(holdingsMap).map(h => {
       h.wacc = h.units > 0 ? h.totalInvestedCost / h.units : 100;
+      // Prevent partial-account valuation drop when one family account lacks valueAsOfPrevClose/valueAsOfLTP
+      if (!h.allHaveLtpVal) h.valueAsOfLTP = h.currentLtp > 0 ? Number((h.units * h.currentLtp).toFixed(2)) : 0;
+      if (!h.allHavePrevCloseVal) h.valueAsOfPrevClose = h.prevClose > 0 ? Number((h.units * h.prevClose).toFixed(2)) : 0;
       return h;
     }).filter(h => h.units > 0);
   };
@@ -2775,35 +2815,27 @@ Based on this data, provide a robust analysis using this exact markdown structur
         <form onSubmit={handleAddTransaction} className="card" style={{ marginBottom: 16 }}>
           <h3 className="section-title" style={{ marginBottom: 12 }}>Log Buy/Sell Transaction</h3>
 
-          <div style={{ display: 'flex', gap: 6, marginBottom: 14, background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 12, border: '1px solid var(--border)' }}>
-            <button 
-              type="button" 
-              onClick={() => setType('buy')}
-              style={{
-                flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 12, fontWeight: 800,
-                border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6,
-                background: type === 'buy' ? 'var(--primary)' : 'transparent',
-                color: type === 'buy' ? '#ffffff' : 'var(--text-muted)',
-                boxShadow: type === 'buy' ? '0 0 16px rgba(79,70,229,0.4)' : 'none',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <PlusCircle style={{ width: 14, height: 14 }} /> BUY
-            </button>
-            <button 
-              type="button" 
-              onClick={() => setType('sell')}
-              style={{
-                flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 12, fontWeight: 800,
-                border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6,
-                background: type === 'sell' ? 'var(--bear)' : 'transparent',
-                color: type === 'sell' ? '#ffffff' : 'var(--text-muted)',
-                boxShadow: type === 'sell' ? '0 0 16px rgba(244,63,94,0.4)' : 'none',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <MinusCircle style={{ width: 14, height: 14 }} /> SELL
-            </button>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 14, background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 12, border: '1px solid var(--border)' }}>
+            {[
+              { id: 'buy', label: 'BUY', bg: 'var(--primary)' },
+              { id: 'sell', label: 'SELL', bg: 'var(--bear)' },
+              { id: 'ipo', label: 'IPO/Rights', bg: '#059669' },
+              { id: 'bonus', label: 'Bonus (100)', bg: '#7c3aed' }
+            ].map(opt => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => { setType(opt.id); if (opt.id === 'bonus') setPrice(100); }}
+                style={{
+                  padding: '8px 4px', borderRadius: 8, fontSize: 11.5, fontWeight: 800,
+                  border: 'none', cursor: 'pointer',
+                  background: type === opt.id ? opt.bg : 'transparent',
+                  color: type === opt.id ? '#ffffff' : 'var(--text-muted)'
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>

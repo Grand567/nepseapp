@@ -66,6 +66,21 @@ export default function SwingTradeSelectorView({
       ? idxDailyPct
       : (total > 0 ? (equityStocks.reduce((acc, s) => acc + Number(s.pChange || 0), 0) / total) : 0);
 
+    // Compute pctAboveEma50 strictly from equities with verified ema50/sma50
+    const stocksWithEma50 = equityStocks.filter(s => {
+      const ema = Number(s.ema50 ?? s.sma50 ?? 0);
+      const ltp = Number(s.ltp ?? s.close ?? 0);
+      return ema > 0 && ltp > 0;
+    });
+    const aboveEma50Count = stocksWithEma50.filter(s => {
+      const ema = Number(s.ema50 ?? s.sma50 ?? 0);
+      const ltp = Number(s.ltp ?? s.close ?? 0);
+      return ltp > ema;
+    }).length;
+    const pctAboveEma50 = stocksWithEma50.length > 0
+      ? Math.round((aboveEma50Count / stocksWithEma50.length) * 100)
+      : 0;
+
     return {
       nepseIndex,
       nepseEma20,
@@ -73,7 +88,7 @@ export default function SwingTradeSelectorView({
       advancers: adv,
       decliners: dec,
       dailyChangePct: avgChange,
-      pctAboveEma50: Math.round((adv / (total || 1)) * 100)
+      pctAboveEma50
     };
   }, [equityStocks, indices]);
 
@@ -144,7 +159,7 @@ export default function SwingTradeSelectorView({
               🔴 NO EDGE: do not trade this system
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 max-w-3xl leading-relaxed">
-              Multi-year walk-forward backtesting across 40 closed trades with strict statutory frictions (5-tier broker commission, SEBON 0.015%, DP fee Rs. 25, 7.5% CGT) produced a <strong className="text-rose-300 font-bold">Profit Factor of 0.45x</strong> and net loss of <strong className="text-rose-300 font-bold">-Rs. 226,739.06</strong>. Per fiduciary protocol, this strategy is locked into simulation mode until empirical edge exceeds 1.25x across 200+ samples.
+              Multi-year walk-forward backtesting across 40 closed trades with strict statutory frictions (5-tier broker commission, SEBON 0.015%, DP fee Rs. 25, 5.0% ST / 3.75% LT CGT) produced a <strong className="text-rose-300 font-bold">Profit Factor of 0.45x</strong> and net loss of <strong className="text-rose-300 font-bold">-Rs. 226,739.06</strong>. Per fiduciary protocol, this strategy is locked into simulation mode until empirical edge exceeds 1.25x across 200+ samples.
             </p>
           </div>
           <div className="flex flex-col items-start md:items-end justify-center bg-slate-900/80 p-3 rounded-xl border border-slate-800 shrink-0">
@@ -231,7 +246,15 @@ export default function SwingTradeSelectorView({
                 </div>
                 <div className="border-l border-slate-800 pl-3">
                   <span className="text-slate-400 block text-[10px]">Index Trend</span>
-                  <span className="font-bold text-slate-200">20 & 50 EMA Support</span>
+                  <span className="font-bold text-slate-200">
+                    {marketContext.nepseIndex > 0 && marketContext.nepseEma50 > 0
+                      ? (marketContext.nepseIndex >= marketContext.nepseEma20 && marketContext.nepseIndex >= marketContext.nepseEma50
+                          ? '20 & 50 EMA Support'
+                          : marketContext.nepseIndex >= marketContext.nepseEma50
+                            ? 'Above 50 EMA'
+                            : 'Below 50 EMA (Defensive)')
+                      : (marketContext.dailyChangePct >= 0 ? 'Advancing' : 'Declining')}
+                  </span>
                 </div>
               </div>
             </div>
@@ -612,7 +635,7 @@ export default function SwingTradeSelectorView({
               </h3>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Because the backtest produced negative expectancy after costs, this module operates in <strong>Paper-Trading Mode Only</strong>. All candidate signals are tracked virtually in memory and on disk with real T+2 Demat lockout, 5-tier broker commission, and 7.5% CGT. No real capital is ever placed at risk.
+              Because the backtest produced negative expectancy after costs, this module operates in <strong>Paper-Trading Mode Only</strong>. All candidate signals are tracked virtually in memory and on disk with real T+2 Demat lockout, 5-tier broker commission, and 5.0% ST / 3.75% LT CGT. No real capital is ever placed at risk.
             </p>
           </div>
 

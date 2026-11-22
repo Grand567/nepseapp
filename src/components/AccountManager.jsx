@@ -174,7 +174,7 @@ export default function AccountManager({ userId = null }) {
           const sym = (h.script || h.scrip || h.symbol || '').toUpperCase().trim();
           if (sym) {
             const rate = Number(h.userWacc || h.wacc || h.purchasePrice || h.effectiveRate || 0);
-            if (rate > 0 && (h.isCustomWacc || h.waccSource === 'CUSTOM_USER_SET' || rate !== 100)) {
+            if (rate > 0 && (h.isCustomWacc === true || h.waccSource === 'CUSTOM_USER_SET')) {
               existingWaccMap[sym] = rate;
             }
           }

@@ -53,6 +53,7 @@ export async function fetchMerolaganiNews(force = false) {
 
     const fetchOne = async (targetUrl) => {
       try {
+        let html = '';
         if (Capacitor.isNativePlatform()) {
           const nativeRes = await CapacitorHttp.request({
             url: targetUrl,
@@ -61,16 +62,17 @@ export async function fetchMerolaganiNews(force = false) {
             connectTimeout: 8000,
             readTimeout: 10000
           });
-          return typeof nativeRes.data === 'string' ? nativeRes.data : '';
+          html = typeof nativeRes.data === 'string' ? nativeRes.data : '';
         } else {
           const webRes = await fetch(targetUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
             signal: AbortSignal.timeout(7000)
           });
-          return await webRes.text();
+          html = await webRes.text();
         }
+        return { url: targetUrl, html };
       } catch (_) {
-        return '';
+        return { url: targetUrl, html: '' };
       }
     };
 
@@ -79,8 +81,9 @@ export async function fetchMerolaganiNews(force = false) {
     const seen = new Set();
 
     for (const res of htmlResults) {
-      if (res.status !== 'fulfilled' || !res.value || res.value.length < 500) continue;
-      const html = res.value;
+      if (res.status !== 'fulfilled' || !res.value?.html || res.value.html.length < 500) continue;
+      const { url: sourceUrl, html } = res.value;
+      const isPopularArchive = sourceUrl.includes('popular=true');
       const matches = [...html.matchAll(/<a[^>]*href=["']([^"']*(?:NewsDetail\.aspx\?newsID=|AnnouncementDetail\.aspx\?id=)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi)];
       for (const m of matches) {
         const href = m[1];
@@ -95,7 +98,8 @@ export async function fetchMerolaganiNews(force = false) {
             headline: title,
             source: isAnn ? 'MeroLagani Announcements' : 'MeroLagani',
             url: `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`,
-            date: 'Today',
+            date: getIsoDateInNPT(),
+            isPopularArchive,
             paragraphs: [
               title,
               isAnn
@@ -518,13 +522,15 @@ export async function detectMarketHaltFromNews(articles = null) {
   ];
 
   for (const article of newsList) {
+    if (article.isPopularArchive) continue;
     const title = (article.title || article.headline || '').trim();
     if (!title) continue;
 
-    const isSingleCompany = singleCompanyTerms.some(m => title.includes(m)) && !title.includes('सम्पूर्ण कारोबार') && !title.includes('नेप्से परिसूचक');
+    const lowerTitle = title.toLowerCase();
+    const isSingleCompany = singleCompanyTerms.some(m => lowerTitle.includes(m.toLowerCase())) && !title.includes('सम्पूर्ण कारोबार') && !title.includes('नेप्से परिसूचक');
     if (isSingleCompany) continue;
 
-    const matched = marketWideHaltTerms.some(term => title.includes(term));
+    const matched = marketWideHaltTerms.some(term => lowerTitle.includes(term.toLowerCase()));
     if (matched) {
       const haltInfo = {
         isHalted: true,

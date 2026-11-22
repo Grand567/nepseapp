@@ -122,10 +122,12 @@ export const STATUTORY_CHARGES = Object.freeze({
 
 // 6. CAPITAL GAINS TAX (CGT)
 export const CAPITAL_GAINS_TAX = Object.freeze({
-  individualShortTermRatePct: 7.5, // Held <= 365 days
-  individualShortTermDecimal: 0.075,
-  individualLongTermRatePct: 5.0, // Held > 365 days
-  individualLongTermDecimal: 0.05,
+  individualShortTermRatePct: 5.0, // Held <= 365 days
+  individualShortTermDecimal: 0.05,
+  shortTermIndividual: 0.05,
+  individualLongTermRatePct: 3.75, // Held > 365 days
+  individualLongTermDecimal: 0.0375,
+  longTermIndividual: 0.0375,
   corporateResidentRatePct: 10.0,
   corporateResidentDecimal: 0.10,
   nonResidentRatePct: 25.0,
@@ -307,7 +309,7 @@ export function calculateDpFee() {
 export function calculateCgt(netGain, holdingDays = 10, investorType = 'individual') {
   if (netGain <= 0) return 0;
   let rate = CAPITAL_GAINS_TAX.individualShortTermDecimal;
-  if (investorType === 'corporate') {
+  if (investorType === 'corporate' || investorType === 'institutional') {
     rate = CAPITAL_GAINS_TAX.corporateResidentDecimal;
   } else if (investorType === 'non_resident') {
     rate = CAPITAL_GAINS_TAX.nonResidentDecimal;
@@ -393,7 +395,7 @@ export function calculateRoundTripNetReturn({
     netProfitNpr: +finalNetProfit.toFixed(2),
     grossReturnPct,
     netReturnPct,
-    totalFrictionNpr: +(buyCommission + buySebonFee + sellCommission + sellSebonFee + dpFee + cgt).toFixed(2),
+    totalFrictionNpr: +(buyCommission + buySebonFee + buyDpFee + sellCommission + sellSebonFee + dpFee + cgt).toFixed(2),
     cgtDeductedNpr: cgt,
     frictionCostPct
   };
@@ -462,7 +464,7 @@ export function getMarketRulesAuditInventory() {
       isVerified: true
     },
     {
-      rule: 'Capital Gains Tax (7.5% Short-Term, 5.0% Long-Term, 10.0% Corporate)',
+      rule: 'Capital Gains Tax (5.0% Short-Term, 3.75% Long-Term, 10.0% Corporate)',
       status: CAPITAL_GAINS_TAX.status,
       citation: CAPITAL_GAINS_TAX.citation,
       isVerified: true

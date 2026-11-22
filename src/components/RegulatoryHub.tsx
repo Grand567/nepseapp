@@ -493,8 +493,8 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
                 <div className="font-bold text-slate-300 mb-2">Capital Gains Tax (CGT)</div>
                 <div className="space-y-1.5 font-mono text-[11px] text-slate-400">
-                  <div className="flex justify-between"><span>Short-term (&le;365d):</span> <span className="text-rose-400 font-bold">7.5%</span></div>
-                  <div className="flex justify-between"><span>Long-term (&gt;365d):</span> <span className="text-emerald-400 font-bold">5.0%</span></div>
+                  <div className="flex justify-between"><span>Short-term (&le;365d):</span> <span className="text-rose-400 font-bold">5.0%</span></div>
+                  <div className="flex justify-between"><span>Long-term (&gt;365d):</span> <span className="text-emerald-400 font-bold">3.75%</span></div>
                   <div className="flex justify-between"><span>Corporate / Inst.:</span> <span className="text-blue-400 font-bold">10.0%</span></div>
                 </div>
               </div>

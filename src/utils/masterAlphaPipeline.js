@@ -1,9 +1,9 @@
 // src/utils/masterAlphaPipeline.js
-import { evaluateMasterStock } from './masterProfitEngine';
-import { calculateDynamicPositionSizing, getUserConfiguredCapital } from './dynamicCapitalEngine';
-import { getDetailedMarketStatus } from './nepseCalendar';
-import { getCachedRealPriceHistory, getCachedRealBrokerAnalysis } from './liveData';
-import { adjustForCorporateActionsWithConfirmation } from './setupAnalyzer';
+import { evaluateMasterStock } from './masterProfitEngine.ts';
+import { calculateDynamicPositionSizing, getUserConfiguredCapital } from './dynamicCapitalEngine.js';
+import { getDetailedMarketStatus } from './nepseCalendar.js';
+import { getCachedRealPriceHistory, getCachedRealBrokerAnalysis } from './liveData.js';
+import { adjustForCorporateActionsWithConfirmation } from './setupAnalyzer.js';
 import { isPureNepseEquity } from './nepseEquityFilter.js';
 
 const EPSILON = 1e-8;
@@ -41,7 +41,14 @@ export function extractSafeFeatureVector(candles = [], idx = candles.length - 1)
     };
   }
 
-  const slice = candles.slice(0, idx + 1);
+  // Ensure candles are sorted ascending (DESC SQLite arrays inverted momentum and features)
+  const sortedCandles = [...candles].sort((a, b) => {
+    const da = new Date(a.date || a.t || 0).getTime();
+    const db = new Date(b.date || b.t || 0).getTime();
+    return da - db;
+  });
+
+  const slice = sortedCandles.slice(0, idx + 1);
   const n = slice.length;
   const curr = slice[n - 1];
   const close = Math.max(EPSILON, Number(curr.close ?? curr.ltp ?? 0));
@@ -181,9 +188,9 @@ export function predictMultiHorizonProbabilities(candles = [], nrbMetrics = {}, 
       reason: 'Insufficient trading history (< 5 sessions) for reliable probability inference.',
       macro,
       horizons: {
-        '1D': { horizon: '1D', probabilityPct: 52.0, rawProbabilityPct: 50.0, convictionThresholdPct: macro.breakoutConvictionThreshold, isActionableBullish: false, signal: 'NEUTRAL_HOLD' },
-        '3D': { horizon: '3D', probabilityPct: 54.0, rawProbabilityPct: 50.0, convictionThresholdPct: macro.breakoutConvictionThreshold, isActionableBullish: false, signal: 'NEUTRAL_HOLD' },
-        '5D': { horizon: '5D', probabilityPct: 55.0, rawProbabilityPct: 50.0, convictionThresholdPct: macro.breakoutConvictionThreshold, isActionableBullish: false, signal: 'NEUTRAL_HOLD' }
+        '1D': { horizon: '1D', probabilityPct: 50.0, rawProbabilityPct: 50.0, convictionThresholdPct: macro.breakoutConvictionThreshold, isActionableBullish: false, signal: 'NEUTRAL_HOLD' },
+        '3D': { horizon: '3D', probabilityPct: 50.0, rawProbabilityPct: 50.0, convictionThresholdPct: macro.breakoutConvictionThreshold, isActionableBullish: false, signal: 'NEUTRAL_HOLD' },
+        '5D': { horizon: '5D', probabilityPct: 50.0, rawProbabilityPct: 50.0, convictionThresholdPct: macro.breakoutConvictionThreshold, isActionableBullish: false, signal: 'NEUTRAL_HOLD' }
       }
     };
   }
@@ -347,8 +354,13 @@ export function computeSectorRelativeStrengthRanks(stocks = []) {
     const hist = getCachedRealPriceHistory(s.symbol);
     let ret10D = pChg;
     if (Array.isArray(hist) && hist.length >= 10) {
-      const latestClose = Number(hist[hist.length - 1]?.close || s.ltp || 0);
-      const close10DAgo = Number(hist[Math.max(0, hist.length - 10)]?.close || 0);
+      const sortedHist = [...hist].sort((a, b) => {
+        const da = new Date(a.date || a.t || 0).getTime();
+        const db = new Date(b.date || b.t || 0).getTime();
+        return da - db;
+      });
+      const latestClose = Number(sortedHist[sortedHist.length - 1]?.close || s.ltp || 0);
+      const close10DAgo = Number(sortedHist[Math.max(0, sortedHist.length - 10)]?.close || 0);
       if (latestClose > 0 && close10DAgo > 0) {
         ret10D = ((latestClose - close10DAgo) / close10DAgo) * 100;
       }
@@ -458,11 +470,12 @@ export function runUnifiedFiveStepAlphaDesk({
     const step1SectorPassed = sectorRank <= 3 || (sectorRank <= 5 && masterEval.setupScore >= 82);
 
     // ── STEP 2 CHECK: 8-Gate Quality Screener & Confluence Score >= 72 ──
+    const turnoverLakhs = masterEval.turnoverLakhs ?? (masterEval.turnover ? +(masterEval.turnover / 100000).toFixed(2) : 0);
     const step2GatePassed = Boolean(
       masterEval.gatesPassedCount >= 6 &&
       masterEval.setupScore >= 72 &&
       !masterEval.isPromoterLockinNear &&
-      masterEval.turnoverLakhs >= 40
+      turnoverLakhs >= 40
     );
 
     // ── STEP 3 CHECK: Wyckoff VDU + Broker Flow + Anti-Shadow-Distribution Wick Check ──
@@ -727,7 +740,7 @@ export function evaluateSingleStockAlphaDossier(stockOrSymbol, {
   userCapital = getUserConfiguredCapital(),
   riskTolerancePct = 1.5,
   requiredNetRRR = 2.5,
-  cgtRate = 0.075
+  cgtRate = 0.050
 } = {}) {
   let rawStock = typeof stockOrSymbol === 'object' && stockOrSymbol !== null ? stockOrSymbol : null;
   const sym = typeof stockOrSymbol === 'string'
@@ -759,7 +772,8 @@ export function evaluateSingleStockAlphaDossier(stockOrSymbol, {
   const deployableCapital = Math.round(safeUserCapital * 0.90);
 
   const symbol = sym;
-  const ltp = Number(rawStock.ltp || rawStock.closePrice || 100);
+  const ltp = Number(rawStock.ltp || rawStock.closePrice || 0);
+  if (!Number.isFinite(ltp) || ltp <= 0) return null;
   const sector = rawStock.sector || rawStock.sectorName || 'Others';
   const sectorRank = Number(sectorRanks[sector] ?? 99);
 
@@ -780,11 +794,12 @@ export function evaluateSingleStockAlphaDossier(stockOrSymbol, {
   const step1SectorPassed = sectorRank <= 3 || (sectorRank <= 5 && masterEval.setupScore >= 82);
 
   // Step 2: 8-Gate Quality
+  const turnoverLakhs = masterEval.turnoverLakhs ?? (masterEval.turnover ? +(masterEval.turnover / 100000).toFixed(2) : 0);
   const step2GatePassed = Boolean(
     masterEval.gatesPassedCount >= 6 &&
     masterEval.setupScore >= 72 &&
     !masterEval.isPromoterLockinNear &&
-    masterEval.turnoverLakhs >= 40
+    turnoverLakhs >= 40
   );
 
   // Step 3: Wyckoff & Broker Flow & Anti-Wick
@@ -835,7 +850,7 @@ export function evaluateSingleStockAlphaDossier(stockOrSymbol, {
     stopLoss,
     target1,
     target2,
-    median20DayTurnover: Math.max(5000000, masterEval.turnoverLakhs * 100000)
+    median20DayTurnover: Math.max(5000000, (turnoverLakhs || 40) * 100000)
   });
 
   const rawKitta = Number(dynSizing?.finalKitta || 10);
@@ -857,9 +872,10 @@ export function evaluateSingleStockAlphaDossier(stockOrSymbol, {
   const blendedRunnerGain = runnerT3Kitta > 0 ? calculateExactStatutoryTrade(ltp, target3Runner, runnerT3Kitta, cgtRate).netRealizedGain : 0;
   const maximizedLadderNetProfit = Math.round(blendedTier1Gain + blendedTier2Gain + blendedRunnerGain);
 
-  const riskPerShare = Math.max(1, ltp - stopLoss);
-  const totalRiskRupees = Math.round(strict10LotKitta * riskPerShare);
-  const netRRR1 = totalRiskRupees > 0 ? +(netTradeT1.netRealizedGain / totalRiskRupees).toFixed(2) : Number(masterEval.netRRR || 2.5);
+  const slTrade = calculateExactStatutoryTrade(ltp, stopLoss, strict10LotKitta, cgtRate);
+  const totalNetRiskRupees = Math.max(1, Math.abs(slTrade.netRealizedGain));
+  const totalRiskRupees = totalNetRiskRupees;
+  const netRRR1 = +(netTradeT1.netRealizedGain / totalNetRiskRupees).toFixed(2);
 
   const step4SizingPassed = Boolean(
     strict10LotKitta >= 10 &&

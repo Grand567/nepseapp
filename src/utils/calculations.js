@@ -230,7 +230,7 @@ export function calculateNepseNetTrade({
 
   // CGT is strictly levied on Net Capital Gain AFTER deducting buy & sell commissions, SEBON fees, and DP charges
   const netCapitalGain = Math.max(0, netSellBeforeTax - totalBuyCost);
-  const cgtRate = isCorporate ? 0.10 : (Number(holdingDays) > 365 ? 0.05 : 0.075);
+  const cgtRate = isCorporate ? 0.10 : (Number(holdingDays) > 365 ? 0.0375 : 0.05);
   const cgtTax = +(netCapitalGain * cgtRate).toFixed(2);
 
   const netReceivable = +(netSellBeforeTax - cgtTax).toFixed(2);
@@ -248,7 +248,7 @@ export function calculateNepseNetTrade({
     sellComm,
     sellSebon,
     sellDp,
-    cgtRatePct: +(cgtRate * 100).toFixed(1),
+    cgtRatePct: +(cgtRate * 100).toFixed(2),
     cgtTax,
     netReceivable,
     netProfit,
@@ -393,11 +393,14 @@ export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingT
   
   let isLongTerm = false;
   let isInstitutional = false;
+  let isNonResident = false;
   
   if (holdingTypeOrPurchaseDate === 'long') {
     isLongTerm = true;
-  } else if (holdingTypeOrPurchaseDate === 'institutional') {
+  } else if (holdingTypeOrPurchaseDate === 'institutional' || holdingTypeOrPurchaseDate === 'corporate') {
     isInstitutional = true;
+  } else if (holdingTypeOrPurchaseDate === 'non_resident') {
+    isNonResident = true;
   } else if (holdingTypeOrPurchaseDate === 'short') {
     isLongTerm = false;
   } else {
@@ -413,26 +416,29 @@ export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingT
   }
 
   // Capital Gains Tax (CGT) per SEBON & Nepal Income Tax Act (Section 95Ka):
-  // Finance Act 2083: Short-Term 10.0%, Long-Term 7.5%
-  // Legacy / Baseline: Short-Term 7.5%, Long-Term 5.0%, Corporate 10.0%
-  let cgtRate = 0.075; // Default short-term individual (7.5%)
-  if (options && options.financeAct2083) {
-    cgtRate = isLongTerm ? 0.075 : 0.100;
+  // Current statutory schedule (effective 22 Sept 2026 / Cabinet decision under Finance Act 2083):
+  // Resident Individual <= 365 days: 5.0%
+  // Resident Individual > 365 days: 3.75%
+  // Corporate / Institution: 10.0%
+  // Non-Resident: 25.0%
+  let cgtRate = 0.05; // Default short-term individual (5.0%)
+  if (isNonResident) {
+    cgtRate = 0.25;
   } else if (isInstitutional) {
     cgtRate = 0.10;
   } else if (isLongTerm) {
-    cgtRate = 0.05;
+    cgtRate = 0.0375;
   }
   if (options && options.cgtRate !== undefined) {
     cgtRate = Number(options.cgtRate);
   }
 
   const taxableProfit = Math.max(0, netProfitBase);
-  const cgt = taxableProfit * cgtRate;
+  const cgt = +(taxableProfit * cgtRate).toFixed(2);
   
-  const totalExpenses = commission + sebonFee + dpFee + cgt;
-  const netReceivable = sellValue - commission - sebonFee - dpFee - cgt;
-  const netProfitLoss = netReceivable - totalBuyingCost;
+  const totalExpenses = +(commission + sebonFee + dpFee + cgt).toFixed(2);
+  const netReceivable = +(sellValue - commission - sebonFee - dpFee - cgt).toFixed(2);
+  const netProfitLoss = +(netReceivable - totalBuyingCost).toFixed(2);
 
   return {
     sellValue,
@@ -519,18 +525,18 @@ export function calculateNetRiskRewardRatio({
   const buyLeg = calculateBuyDetails(qty, entry);
   const waccPerShare = buyLeg.costPerShare;
 
-  // 2. Exact Net Take-Home Profit at Target 1 (includes 7.5% Short-Term CGT on net gain above WACC)
-  const sellT1 = calculateSellDetails(qty, t1, waccPerShare, holdingType, new Date(), { cgtRate: holdingType === 'long' ? 0.05 : 0.075 });
+  // 2. Exact Net Take-Home Profit at Target 1 (includes 5.0% Short-Term CGT on net gain above WACC)
+  const sellT1 = calculateSellDetails(qty, t1, waccPerShare, holdingType, new Date(), { cgtRate: holdingType === 'long' ? 0.0375 : 0.05 });
   const netProfitT1 = +sellT1.netProfitLoss.toFixed(2);
   const netProfitPerShareT1 = +(netProfitT1 / qty).toFixed(2);
 
   // 3. Exact Net Take-Home Profit at Target 2
-  const sellT2 = calculateSellDetails(qty, t2, waccPerShare, holdingType, new Date(), { cgtRate: holdingType === 'long' ? 0.05 : 0.075 });
+  const sellT2 = calculateSellDetails(qty, t2, waccPerShare, holdingType, new Date(), { cgtRate: holdingType === 'long' ? 0.0375 : 0.05 });
   const netProfitT2 = +sellT2.netProfitLoss.toFixed(2);
   const netProfitPerShareT2 = +(netProfitT2 / qty).toFixed(2);
 
   // 4. Exact Net Loss at Stop-Loss (no CGT on loss, includes full buy + sell friction)
-  const sellSL = calculateSellDetails(qty, stop, waccPerShare, holdingType, new Date(), { cgtRate: 0.075 });
+  const sellSL = calculateSellDetails(qty, stop, waccPerShare, holdingType, new Date(), { cgtRate: 0.05 });
   const netLossSL = +Math.abs(sellSL.netProfitLoss).toFixed(2);
   const netLossPerShareSL = +(netLossSL / qty).toFixed(2);
 
@@ -563,7 +569,7 @@ export function calculateNetRiskRewardRatio({
     netRRR1,
     netRRR2,
     requiredNetRRR,
-    cgtRatePct: holdingType === 'long' ? 5.0 : 7.5,
+    cgtRatePct: holdingType === 'long' ? 3.75 : 5.0,
     stopToBreakevenRule: {
       enabled: true,
       triggerAtPrice: t1,
@@ -1490,11 +1496,14 @@ export function calculateNepseStatutoryTrade({
   const netProceedsBeforeTax = grossSellAmount - sellCommission - sellSebonFee - sellDpFee;
   const taxableGain = Math.max(0, netProceedsBeforeTax - totalBuyCost);
 
-  let cgtRate = 0.075; // Default 7.5% Short-Term Individual (<= 365 days)
-  if (String(investorType).toUpperCase() === "INSTITUTIONAL") {
+  let cgtRate = 0.05; // Default 5.0% Short-Term Individual (<= 365 days)
+  const normType = String(investorType).toUpperCase();
+  if (normType === "INSTITUTIONAL" || normType === "CORPORATE") {
     cgtRate = 0.10; // 10.0% Corporate/Institutional
+  } else if (normType === "NON_RESIDENT") {
+    cgtRate = 0.25; // 25.0% Non-Resident
   } else if (Number(holdingDays) > 365) {
-    cgtRate = 0.05; // 5.0% Long-Term Individual (> 365 days)
+    cgtRate = 0.0375; // 3.75% Long-Term Individual (> 365 days)
   }
 
   const cgtAmount = taxableGain > 0 ? Number((taxableGain * cgtRate).toFixed(2)) : 0;

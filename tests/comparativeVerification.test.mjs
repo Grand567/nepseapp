@@ -316,11 +316,11 @@ assert(Math.abs(sebonFee - 15.0) < 1e-6, `SEBON regulatory fee is strictly 0.015
 // C. Exact CGT Deductions
 // Selling 100 shares @ 500, bought @ 400 (Profit base approx Rs. 10,000 less fees)
 const sellShort = calculateSellDetails(100, 500, 400, 'short');
-assert(sellShort.cgtRate === 0.075, `Short-term (<365d) CGT rate is strictly 7.5%`);
+assert(sellShort.cgtRate === 0.05, `Short-term (<=365d) CGT rate is strictly 5.0%`);
 assert(sellShort.dpFee === 25, `DP fee is strictly Rs. 25`);
 
 const sellLong = calculateSellDetails(100, 500, 400, 'long');
-assert(sellLong.cgtRate === 0.05, `Long-term (>365d) CGT rate is strictly 5.0%`);
+assert(sellLong.cgtRate === 0.0375, `Long-term (>365d) CGT rate is strictly 3.75%`);
 assert(sellLong.cgt < sellShort.cgt, `Long-term CGT (Rs. ${sellLong.cgt}) is less than short-term (Rs. ${sellShort.cgt})`);
 
 const sellInst = calculateSellDetails(100, 500, 400, 'institutional');

@@ -15,6 +15,7 @@ import {
   DEFAULT_USER_CAPITAL,
   NEPSE_FRICTION_FY2083
 } from '../utils/dynamicCapitalEngine';
+import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
 
 export function CapitalRiskSimulatorView({ 
   onNavigateToPortfolio,
@@ -53,9 +54,11 @@ export function CapitalRiskSimulatorView({
   // Stop-Loss Inversion Guard & Half-Kelly Position Sizing (p = 0.635)
   const isStopValid = numPrice > 0 && numStopLoss > 0 && numStopLoss < numPrice;
   const isTargetValid = numTarget > numPrice;
-  const perShareRisk = isStopValid ? (numPrice - numStopLoss) : 0;
+  // Round-trip variable friction rate (buy + sell brokerage slabs + 2 x 0.015% SEBON)
+  const roundTripFrictionPerShare = (numPrice + numStopLoss) * (commissionRate + 0.00015);
+  const effectiveRiskPerShare = isStopValid ? (numPrice - numStopLoss + roundTripFrictionPerShare) : 0;
   const perShareGain = isTargetValid ? (numTarget - numPrice) : 0;
-  const bRatio = isStopValid && perShareRisk > 0 ? perShareGain / perShareRisk : 0;
+  const bRatio = isStopValid && effectiveRiskPerShare > 0 ? perShareGain / effectiveRiskPerShare : 0;
 
   // Half-Kelly fraction: f*_half = 0.5 * (p - (1 - p) / b) with p = 0.635
   const winProb = 0.635;
@@ -63,23 +66,25 @@ export function CapitalRiskSimulatorView({
   const halfKellyFraction = fullKelly > 0 ? Math.min(tierConfig.maxSlotAllocationPct, fullKelly * 0.5) : 0;
   const effectiveSlotCeilingRs = Math.min(maxSlotCapitalRs, Math.round(capital * halfKellyFraction));
 
-  const theoreticalUnits = isStopValid && halfKellyFraction > 0 && perShareRisk > 0 ? (maxRiskRs / perShareRisk) : 0;
+  const theoreticalUnits = isStopValid && halfKellyFraction > 0 && effectiveRiskPerShare > 0 ? Math.floor(maxRiskRs / effectiveRiskPerShare) : 0;
   const maxUnitsBySlot = isStopValid && halfKellyFraction > 0 && numPrice > 0 ? Math.floor(effectiveSlotCeilingRs / numPrice) : 0;
   const rawUnits = isStopValid && halfKellyFraction > 0 ? Math.max(0, Math.min(theoreticalUnits, maxUnitsBySlot)) : 0;
 
   // Invalid stops (StopLoss >= Price) or negative Kelly expectancy strictly yield 0 suggested kitta
-  const suggestedKitta = !isStopValid || halfKellyFraction <= 0
+  // Enforce 10-kitta regular board lot minimum (0 for < 10)
+  const suggestedKitta = !isStopValid || halfKellyFraction <= 0 || rawUnits < 10
     ? 0
-    : rawUnits >= 10
-    ? Math.floor(rawUnits / 10) * 10
-    : Math.floor(rawUnits);
+    : Math.floor(rawUnits / 10) * 10;
 
   const totalOutlay = suggestedKitta * numPrice;
-  const actualRiskRs = Math.round(suggestedKitta * perShareRisk);
-  const totalGainRs = Math.round(suggestedKitta * perShareGain);
-  const riskRewardRatio = isStopValid && perShareRisk > 0 ? (perShareGain / perShareRisk).toFixed(2) : '0.00';
-  const estimatedBrokerFee = totalOutlay > 0 ? calculateDynamicBrokerFee(totalOutlay) : 0;
-  const sebonFee = totalOutlay > 0 ? Math.round(totalOutlay * NEPSE_FRICTION_FY2083.sebonFeeRate * 100) / 100 : 0;
+  const buyDetails = suggestedKitta > 0 ? calculateBuyDetails(suggestedKitta, numPrice, true) : null;
+  const slSellDetails = suggestedKitta > 0 ? calculateSellDetails(suggestedKitta, numStopLoss, numPrice, 'short') : null;
+  const targetSellDetails = suggestedKitta > 0 ? calculateSellDetails(suggestedKitta, numTarget, numPrice, 'short') : null;
+
+  const actualRiskRs = buyDetails && slSellDetails ? Math.max(0, Math.round(buyDetails.totalAmount - slSellDetails.netReceivable)) : 0;
+  const totalGainRs = buyDetails && targetSellDetails ? Math.max(0, Math.round(targetSellDetails.netReceivable - buyDetails.totalAmount)) : 0;
+  const riskRewardRatio = isStopValid && actualRiskRs > 0 && totalGainRs > 0 ? (totalGainRs / actualRiskRs).toFixed(2) : '0.00';
+  const entryFrictionRs = buyDetails ? (buyDetails.commission + buyDetails.sebonFee + buyDetails.dpFee) : 0;
 
   return (
     <div className={`space-y-5 p-4 max-w-6xl mx-auto ${className}`}>
@@ -346,12 +351,12 @@ export function CapitalRiskSimulatorView({
 
             <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3.5 text-center flex flex-col justify-center">
               <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400 block">
-                Broker + SEBON
+                Broker + SEBON + DP
               </span>
               <span className="text-sm font-black font-mono text-cyan-400 mt-1 block">
-                Rs. {(estimatedBrokerFee + sebonFee).toFixed(2)}
+                Rs. {entryFrictionRs.toFixed(2)}
               </span>
-              <span className="text-[10px] text-slate-500 mt-0.5">Estimated Entry Friction</span>
+              <span className="text-[10px] text-slate-500 mt-0.5">Estimated Entry Friction (incl. Rs. 25 DP)</span>
             </div>
           </div>
         </div>

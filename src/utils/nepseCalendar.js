@@ -449,10 +449,14 @@ export function isNepseTradingDay(date = getAppNow()) {
  * @returns {Date}
  */
 export function addTradingDays(startDate = getAppNow(), days = 2) {
-  const cur = new Date(startDate);
+  const refIso = (startDate instanceof Date) ? formatNptDateIso(startDate) : String(startDate).trim().slice(0, 10);
+  const [ry, rm, rd] = refIso.split('-').map(Number);
+  const cur = (!isNaN(ry) && !isNaN(rm) && !isNaN(rd))
+    ? new Date(Date.UTC(ry, rm - 1, rd, 12, 0, 0))
+    : new Date(startDate);
   let added = 0;
   while (added < days) {
-    cur.setDate(cur.getDate() + 1);
+    cur.setUTCDate(cur.getUTCDate() + 1);
     if (isNepseTradingDay(cur)) {
       added++;
     }
@@ -564,11 +568,11 @@ export function latestTradingSession(now = getAppNow(), requireCompleted = false
         return formatNptDateIso(d);
       }
       const prevDate = new Date(d);
-      prevDate.setDate(prevDate.getDate() - 1);
+      prevDate.setUTCDate(prevDate.getUTCDate() - 1);
       return formatNptDateIso(getLastValidTradingDay(prevDate, false));
     }
     const prevDate = new Date(d);
-    prevDate.setDate(prevDate.getDate() - 1);
+    prevDate.setUTCDate(prevDate.getUTCDate() - 1);
     return formatNptDateIso(getLastValidTradingDay(prevDate, false));
   }
 
@@ -989,7 +993,8 @@ export function getDetailedMarketStatus(now = getAppNow()) {
       sessionLabel: 'Continuous Live Trading (NEPSE NOTS)',
       statusLabel: 'Market Open',
       message: 'NEPSE Live Session Active • Continuous Trading Active',
-      lastTradingDay: formatNptDateIso(now),
+      lastTradingDay: new Date(now),
+      lastTradingDayIso: formatNptDateIso(now),
       timeRemaining: 'Closing at 3:00 PM NPT'
     };
   }
