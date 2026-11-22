@@ -60,8 +60,8 @@ export function GrahamSafetyCard({
     }
   }
 
-  // 3. Reject synthetic estimation: if real eps or bookValue is missing or <= 0, show explicit insufficient state
-  if (eps === null || bookValue === null || eps <= 0 || bookValue <= 0) {
+  // 3. Reject synthetic estimation: if real eps or bookValue is missing or bookValue <= 0, show explicit insufficient state
+  if (eps === null || bookValue === null || bookValue <= 0) {
     return (
       <div
         style={{

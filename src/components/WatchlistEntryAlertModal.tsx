@@ -320,8 +320,12 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => handleToggle(item.symbol)}
-                          className={`rounded-lg px-2 py-1 text-[10px] font-semibold transition-colors ${
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggle(item.symbol);
+                          }}
+                          className={`rounded-lg px-2 py-1 text-[10px] font-semibold transition-colors cursor-pointer ${
                             item.alertEnabled
                               ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800'
                               : 'bg-slate-800 text-slate-400 border border-slate-700'
@@ -330,8 +334,12 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
                           {item.alertEnabled ? 'Active' : 'Paused'}
                         </button>
                         <button
-                          onClick={() => handleRemove(item.symbol)}
-                          className="rounded-lg p-1 text-slate-500 hover:text-red-400 transition-colors"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemove(item.symbol);
+                          }}
+                          className="rounded-lg p-1 text-slate-500 hover:text-red-400 transition-colors cursor-pointer"
                           title="Remove alert"
                         >
                           <Trash2 size={13} />

@@ -64,8 +64,9 @@ function computeMultiPeriodRS(s: any, nepseChange: number): { rsScore: number; r
   // Composite RS score: 60% recovery + 40% range position
   const rsScore = Math.round(0.60 * Math.min(recovery52w, 100) + 0.40 * Math.max(0, Math.min(100, rangePosition)));
 
-  // RS vs NEPSE: stock's recent momentum > index momentum (never fabricate recovery52w > 30 from 0.70*ltp!)
-  const rsVsNepse = Number(s.pChange || 0) > nepseChange || recovery52w > 30;
+  // True RS vs NEPSE: require active relative outperformance vs index (or verified RS rating >= 70), not redundant 52W low distance
+  const rsRating = Number(s.rsRating ?? s.mansfieldRS ?? NaN);
+  const rsVsNepse = Number.isFinite(rsRating) ? rsRating >= 70 : (Number(s.pChange || 0) > nepseChange && rangePosition >= 50);
 
   return { rsScore, rsVsNepse };
 }
@@ -74,6 +75,7 @@ function evaluateMinervini(s: any, nepseChange: number): { checks: boolean[]; sc
   const ltp        = Number(s.ltp   || 0);
   const ema20      = Number(s.ema20 || 0);
   const ema50      = Number(s.ema50 || 0);
+  const ema200     = Number(s.ema200 || 0);
   const high52w    = Number(s.high52w || s.high52 || s.fiftyTwoWeekHigh || 0);
   const low52w     = Number(s.low52w  || s.low52  || s.fiftyTwoWeekLow  || 0);
   const volZ       = Number(s.volumeZScore || 0);
@@ -82,7 +84,7 @@ function evaluateMinervini(s: any, nepseChange: number): { checks: boolean[]; sc
   const { rsVsNepse } = computeMultiPeriodRS(s, nepseChange);  // P5: multi-period RS
 
   const c1 = ltp > 0 && ema50 > 0 && ltp > ema50;
-  const c2 = ema50 > 0 && ema20 > 0 && ema20 >= ema50 * 0.99;  // EMA20 not far below EMA50
+  const c2 = ema50 > 0 && ema20 > 0 && ema20 > ema50 && (ema200 <= 0 || (ltp > ema200 && ema50 >= ema200));
   const c3 = ltp > 0 && high52w > 0 && ltp >= high52w * 0.75;   // within 25% of verified 52W high
   const c4 = ltp > 0 && low52w  > 0 && ltp >= low52w  * 1.30;   // > 30% above verified 52W low
   const c5 = rsVsNepse;                                          // P5: multi-period RS vs NEPSE
@@ -223,7 +225,10 @@ export function MinerviniLeaderboard({ stocks: rawStocks = [], indices, onSelect
             {oamiLeaders.map(s => (
               <div key={s.symbol}
                 className="flex-shrink-0 rounded-xl bg-slate-800/60 border border-slate-700 p-3 min-w-[100px] text-center cursor-pointer hover:border-amber-600/50 transition"
-                onClick={() => window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'entry-exit-analyzer', symbol: s.symbol } }))}
+                onClick={() => {
+                  if (onSelectStock) onSelectStock(s);
+                  else window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'entry-exit-analyzer', symbol: s.symbol } }));
+                }}
               >
                 <div className="font-extrabold text-white text-sm">{s.symbol}</div>
                 <div className="text-[10px] text-slate-400 mt-0.5">OAMI</div>
@@ -359,7 +364,10 @@ export function MinerviniLeaderboard({ stocks: rawStocks = [], indices, onSelect
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <button
-                        onClick={() => window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'entry-exit-analyzer', symbol: s.symbol } }))}
+                        onClick={() => {
+                  if (onSelectStock) onSelectStock(s);
+                  else window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'entry-exit-analyzer', symbol: s.symbol } }));
+                }}
                         className="inline-flex items-center gap-1 text-[9px] px-2 py-1 rounded-lg bg-purple-900/40 text-purple-300 border border-purple-700/40 hover:bg-purple-800/40 transition font-semibold whitespace-nowrap"
                       >
                         <Target className="w-3 h-3" /> Analyze

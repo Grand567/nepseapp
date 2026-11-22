@@ -132,12 +132,11 @@ export default function NepseAgentDashboard({
     }
   }, [symbol]);
 
-  // Quick select stock from pill or dropdown
+  // Quick select stock from pill or dropdown (keep user inside Agent Dashboard)
   const handleSelectScrip = (s) => {
     if (!s) return;
     const sym = String(s).toUpperCase().trim();
     setSymbol(sym);
-    if (onSelectStock) onSelectStock(sym);
   };
 
   // Verdict color and badge helper

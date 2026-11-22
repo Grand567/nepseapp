@@ -33,28 +33,35 @@ export function SeasonalityAnalyticsService() {
   const [calendarMode, setCalendarMode] = useState<'BS' | 'AD'>('BS');
   const [seasonalityData, setSeasonalityData] = useState<MonthStat[]>(HISTORICAL_SEASONALITY_DATA);
   const [selectedMonth, setSelectedMonth] = useState<MonthStat>(HISTORICAL_SEASONALITY_DATA[3]); // Shrawan default
+  const [isStaticBaseline, setIsStaticBaseline] = useState<boolean>(true);
 
   useEffect(() => {
+    let isMounted = true;
     fetchSeasonalityAnalytics().then(res => {
+      if (!isMounted) return;
       const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : null);
       if (data && data.length > 0) {
         setSeasonalityData(data);
         setSelectedMonth(data[3] || data[0]);
+        setIsStaticBaseline(false);
       }
     }).catch(() => {});
+    return () => { isMounted = false; };
   }, []);
 
   const bestMonth = useMemo(() => {
-    return [...seasonalityData].sort((a, b) => b.avgReturn - a.avgReturn)[0] || seasonalityData[0];
+    return [...seasonalityData].sort((a, b) => (Number(b.avgReturn) || 0) - (Number(a.avgReturn) || 0))[0] || seasonalityData[0];
   }, [seasonalityData]);
 
   const worstMonth = useMemo(() => {
-    return [...seasonalityData].sort((a, b) => a.avgReturn - b.avgReturn)[0] || seasonalityData[0];
+    return [...seasonalityData].sort((a, b) => (Number(a.avgReturn) || 0) - (Number(b.avgReturn) || 0))[0] || seasonalityData[0];
   }, [seasonalityData]);
 
   const overallWinRate = useMemo(() => {
-    const totalWin = seasonalityData.reduce((acc, m) => acc + m.winRate, 0);
-    return (totalWin / (seasonalityData.length || 1)).toFixed(0);
+    const valid = seasonalityData.filter(m => Number.isFinite(Number(m.winRate)));
+    if (valid.length === 0) return 'N/A';
+    const totalWin = valid.reduce((acc, m) => acc + Number(m.winRate), 0);
+    return (totalWin / valid.length).toFixed(0);
   }, [seasonalityData]);
 
   return (
@@ -83,10 +90,10 @@ export function SeasonalityAnalyticsService() {
 
       {/* Metric Cards */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <StatCard label="Historical Best Month" value={calendarMode === 'BS' ? bestMonth.bsMonth : bestMonth.adMonth} subtitle={`+${bestMonth.avgReturn}% Avg Return (80% Win)`} color="#10b981" />
-        <StatCard label="Historical Worst Month" value={calendarMode === 'BS' ? worstMonth.bsMonth : worstMonth.adMonth} subtitle={`${worstMonth.avgReturn}% Avg Return (Fiscal Year-End)`} color="#f43f5e" />
+        <StatCard label="Historical Best Month" value={calendarMode === 'BS' ? bestMonth.bsMonth : bestMonth.adMonth} subtitle={`${Number(bestMonth.avgReturn) >= 0 ? '+' : ''}${Number(bestMonth.avgReturn || 0).toFixed(2)}% Avg Return (${bestMonth.winRate ?? '—'}% Win)`} color="#10b981" />
+        <StatCard label="Historical Worst Month" value={calendarMode === 'BS' ? worstMonth.bsMonth : worstMonth.adMonth} subtitle={`${Number(worstMonth.avgReturn) >= 0 ? '+' : ''}${Number(worstMonth.avgReturn || 0).toFixed(2)}% Avg Return (${worstMonth.winRate ?? '—'}% Win)`} color="#f43f5e" />
         <StatCard label="Bullish Months" value={`${seasonalityData.filter(m => (Number(m.avgReturn) || 0) >= 0).length} / ${seasonalityData.length || 12} Months`} subtitle="Positive Expectancy" color="#10b981" />
-        <StatCard label="Avg Seasonal Win Rate" value={`${overallWinRate}%`} big color="#06b6d4" />
+        <StatCard label="Avg Seasonal Win Rate" value={overallWinRate === 'N/A' ? 'N/A' : `${overallWinRate}%`} big color="#06b6d4" />
       </div>
 
       {/* Heatmap Matrix Grid */}
@@ -161,11 +168,11 @@ export function SeasonalityAnalyticsService() {
             </div>
             <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
               <span className="text-[10px] text-slate-400 block font-sans">YEARS GREEN</span>
-              <span className="font-bold text-sm text-emerald-400">{selectedMonth.yearsUp} out of 10</span>
+              <span className="font-bold text-sm text-emerald-400">{selectedMonth.yearsUp} out of {(Number(selectedMonth.yearsUp) || 0) + (Number(selectedMonth.yearsDown) || 0)}</span>
             </div>
             <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
               <span className="text-[10px] text-slate-400 block font-sans">YEARS RED</span>
-              <span className="font-bold text-sm text-rose-400">{selectedMonth.yearsDown} out of 10</span>
+              <span className="font-bold text-sm text-rose-400">{selectedMonth.yearsDown} out of {(Number(selectedMonth.yearsUp) || 0) + (Number(selectedMonth.yearsDown) || 0)}</span>
             </div>
           </div>
         </div>

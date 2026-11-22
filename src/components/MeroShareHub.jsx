@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, CheckCircle2, ShieldCheck, ShieldAlert, HelpCircle, Loader2, Sparkles, 
   Copy, Check, ExternalLink, ArrowRight, Search, RefreshCw, TrendingUp, 
@@ -164,6 +164,8 @@ const getRealClientId = async (boid, dpCode) => {
 export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'guest_local', userEmail = '', initialTab = 'accounts', onSwitchToPortfolio, hideTopNav = false }) {
   // Profiles state
   const [profiles, setProfiles] = useState([]);
+  const profilesRef = useRef(profiles);
+  profilesRef.current = profiles;
   
   // Toast & Confirm state
   const [toast, setToast] = useState(null);
@@ -590,7 +592,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
     // Auto-navigate to Portfolio and begin retrieval for the new profile
     setActiveSubTab('portfolio');
-    setTimeout(() => handleRetrievePortfolio(newProfile.id), 150);
+    setTimeout(() => handleRetrievePortfolio(newProfile.id, newProfile), 150);
   };
 
   const handleDeleteProfile = async (id) => {
@@ -820,21 +822,61 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
     let successCount = 0;
 
-    for (let i = 0; i < targetProfiles.length; i++) {
-      const profile = targetProfiles[i];
+    try {
+      for (let i = 0; i < targetProfiles.length; i++) {
+        const profile = targetProfiles[i];
 
-      if (i > 0) {
-        await new Promise(r => setTimeout(r, 800));
-      }
+        if (i > 0) {
+          await new Promise(r => setTimeout(r, 800));
+        }
 
-      setAppliedCheckResults(prev => [
-        ...prev.filter(r => r.id !== profile.id),
-        { id: profile.id, name: profile.name, boid: profile.boid, status: 'loading', resultText: 'Checking C-ASBA report...' }
-      ]);
+        setAppliedCheckResults(prev => [
+          ...prev.filter(r => r.id !== profile.id),
+          { id: profile.id, name: profile.name, boid: profile.boid, status: 'loading', resultText: 'Checking C-ASBA report...' }
+        ]);
 
-      try {
-        const check = await checkBoidAlreadyApplied(profile, selectedIpo);
-        if (!check.success || check.error) {
+        try {
+          const check = await checkBoidAlreadyApplied(profile, selectedIpo);
+          if (!check.success || check.error) {
+            setAppliedCheckResults(prev => [
+              ...prev.filter(r => r.id !== profile.id),
+              {
+                id: profile.id,
+                name: profile.name,
+                boid: profile.boid,
+                status: 'failed',
+                resultText: `🔴 ${check.message || 'Authentication / Verification Failed'}`
+              }
+            ]);
+          } else if (check.applied) {
+            setAppliedCheckResults(prev => [
+              ...prev.filter(r => r.id !== profile.id),
+              {
+                id: profile.id,
+                name: profile.name,
+                boid: profile.boid,
+                status: 'applied',
+                resultText: '✅ Already Applied for this IPO',
+                units: check.units || 10
+              }
+            ]);
+            successCount++;
+          } else {
+            setAppliedCheckResults(prev => [
+              ...prev.filter(r => r.id !== profile.id),
+              {
+                id: profile.id,
+                name: profile.name,
+                boid: profile.boid,
+                status: 'not_applied',
+                resultText: '🟢 Ready to Apply',
+                units: 0
+              }
+            ]);
+            successCount++;
+          }
+        } catch (err) {
+          console.error('Check already applied error:', err);
           setAppliedCheckResults(prev => [
             ...prev.filter(r => r.id !== profile.id),
             {
@@ -842,52 +884,14 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               name: profile.name,
               boid: profile.boid,
               status: 'failed',
-              resultText: `🔴 ${check.message || 'Authentication / Verification Failed'}`
+              resultText: `⚠️ ${err.message || 'Verification error'}`
             }
           ]);
-        } else if (check.applied) {
-          setAppliedCheckResults(prev => [
-            ...prev.filter(r => r.id !== profile.id),
-            {
-              id: profile.id,
-              name: profile.name,
-              boid: profile.boid,
-              status: 'applied',
-              resultText: '✅ Already Applied for this IPO',
-              units: check.units || 10
-            }
-          ]);
-          successCount++;
-        } else {
-          setAppliedCheckResults(prev => [
-            ...prev.filter(r => r.id !== profile.id),
-            {
-              id: profile.id,
-              name: profile.name,
-              boid: profile.boid,
-              status: 'not_applied',
-              resultText: '🟢 Ready to Apply',
-              units: 0
-            }
-          ]);
-          successCount++;
         }
-      } catch (err) {
-        console.error('Check already applied error:', err);
-        setAppliedCheckResults(prev => [
-          ...prev.filter(r => r.id !== profile.id),
-          {
-            id: profile.id,
-            name: profile.name,
-            boid: profile.boid,
-            status: 'failed',
-            resultText: `⚠️ ${err.message || 'Verification error'}`
-          }
-        ]);
       }
+    } finally {
+      setIsCheckingApplied(false);
     }
-
-    setIsCheckingApplied(false);
     showToast(`Verification completed for ${successCount}/${targetProfiles.length} accounts.`, "success");
   };
 
@@ -927,37 +931,39 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 0; i < targetProfiles.length; i++) {
-      const profile = targetProfiles[i];
+    try {
+      for (let i = 0; i < targetProfiles.length; i++) {
+        const profile = targetProfiles[i];
 
-      if (i > 0) {
-        await new Promise(r => setTimeout(r, 1200));
-      }
-
-      setApplyResults(prev => [
-        ...prev.filter(r => r.id !== profile.id),
-        { id: profile.id, name: profile.name, boid: profile.boid, status: 'loading', resultText: 'Authenticating & Submitting C-ASBA...' }
-      ]);
-
-      const targetCompanyId = String(activeIpo.id || selectedIpo || '').trim();
-      const res = await applyIpoDirect(profile, targetCompanyId, totalKitta, activeIpo);
-      if (res.success) successCount++;
-      else failCount++;
-
-      setApplyResults(prev => [
-        ...prev.filter(r => r.id !== profile.id),
-        {
-          id: profile.id,
-          name: profile.name,
-          boid: profile.boid,
-          status: res.success ? 'applied' : 'failed',
-          resultText: res.success ? `✅ ${res.message}` : `❌ ${res.message}`,
-          units: res.success ? totalKitta : 0
+        if (i > 0) {
+          await new Promise(r => setTimeout(r, 1200));
         }
-      ]);
-    }
 
-    setIsApplying(false);
+        setApplyResults(prev => [
+          ...prev.filter(r => r.id !== profile.id),
+          { id: profile.id, name: profile.name, boid: profile.boid, status: 'loading', resultText: 'Authenticating & Submitting C-ASBA...' }
+        ]);
+
+        const targetCompanyId = String(activeIpo.id || selectedIpo || '').trim();
+        const res = await applyIpoDirect(profile, targetCompanyId, totalKitta, activeIpo);
+        if (res.success) successCount++;
+        else failCount++;
+
+        setApplyResults(prev => [
+          ...prev.filter(r => r.id !== profile.id),
+          {
+            id: profile.id,
+            name: profile.name,
+            boid: profile.boid,
+            status: res.success ? 'applied' : 'failed',
+            resultText: res.success ? `✅ ${res.message}` : `❌ ${res.message}`,
+            units: res.success ? totalKitta : 0
+          }
+        ]);
+      }
+    } finally {
+      setIsApplying(false);
+    }
     showToast(
       `Bulk Apply Finished: ✅ ${successCount} Successful, ❌ ${failCount} Failed.`,
       failCount > 0 ? 'warning' : 'success'
@@ -1018,9 +1024,9 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
   };
 
   // Trigger direct live retrieval of Demat portfolio from CDSC MeroShare
-  const handleRetrievePortfolio = async (profileId) => {
+  const handleRetrievePortfolio = async (profileId, explicitProfile = null) => {
     if (!profileId) return;
-    const profile = profiles.find(p => p.id === profileId);
+    const profile = explicitProfile || profilesRef.current.find(p => p.id === profileId) || profiles.find(p => p.id === profileId);
     if (!profile) return;
 
     setIsRetrieving(true);
@@ -1097,7 +1103,10 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       await new Promise(r => setTimeout(r, 400));
 
       // Update profiles with holdings and last-synced timestamp, then save
-      const updatedProfiles = profiles.map(p => {
+      const baseProfiles = profilesRef.current.some(p => p.id === profileId)
+        ? profilesRef.current
+        : (profiles.some(p => p.id === profileId) ? profiles : [...profilesRef.current, profile]);
+      const updatedProfiles = baseProfiles.map(p => {
         if (p.id === profileId) {
           return {
             ...p,

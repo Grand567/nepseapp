@@ -27,7 +27,22 @@ const startBsDay = 1;
  * Convert an AD Date object to BS date.
  */
 export function adToBS(date) {
-  const targetDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) {
+    return { year: startBsYear, month: 0, day: 1, monthName: 'Baisakh' };
+  }
+  let y, m, dayNum;
+  try {
+    const isoNpt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kathmandu',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(d);
+    [y, m, dayNum] = isoNpt.split('-').map(Number);
+  } catch (_) {
+    const npt = new Date(d.getTime() + (5 * 60 + 45) * 60000);
+    [y, m, dayNum] = [npt.getUTCFullYear(), npt.getUTCMonth() + 1, npt.getUTCDate()];
+  }
+  const targetDate = new Date(Date.UTC(y, m - 1, dayNum));
   let daysDiff = Math.floor((targetDate - startAdDate) / (1000 * 60 * 60 * 24));
   
   if (daysDiff < 0) {

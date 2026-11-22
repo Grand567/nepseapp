@@ -137,8 +137,20 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   // ── 2. Sector Relative Strength (RS) vs NEPSE Benchmark (P1) ──
   const secKey = sectorName.toLowerCase().replace(/[^a-z0-9]/g, '');
   let sectorChange = 0;
-  if (indices && typeof indices === 'object') {
+  let foundSector = false;
+  if (Array.isArray(indices?.subIndices)) {
+    for (const sub of indices.subIndices) {
+      const subName = (sub.index || sub.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (subName.includes(secKey) || secKey.includes(subName)) {
+        sectorChange = Number(sub.pChange ?? sub.changePercent ?? sub.percentageChange ?? 0);
+        foundSector = true;
+        break;
+      }
+    }
+  }
+  if (!foundSector && indices && typeof indices === 'object') {
     for (const k in indices) {
+      if (k === 'subIndices') continue;
       const normK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (normK.includes(secKey) || secKey.includes(normK)) {
         sectorChange = Number(indices[k]?.pChange ?? indices[k]?.changePercent ?? 0);

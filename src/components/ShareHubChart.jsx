@@ -250,6 +250,14 @@ export default function ShareHubChart({
   const effectiveShowInstVwap = activeIsFullscreen && showInstVwap;
   const effectiveShowPoc = activeIsFullscreen && showPoc;
 
+  // Sync stock-specific indicators when switching between index and individual stocks
+  useEffect(() => {
+    setShowVwap(isIndividualStock);
+    setShowTradePlan(isIndividualStock);
+    setShowInstVwap(isIndividualStock);
+    setShowPoc(isIndividualStock);
+  }, [isIndividualStock]);
+
   // Sync props when chartTimeframe or mode changes from parent
   useEffect(() => {
     if (chartTimeframe) setActiveTf(chartTimeframe);
@@ -869,12 +877,12 @@ export default function ShareHubChart({
         } else {
           if (typeof time === 'number') {
             const ts = time > 1e11 ? Math.floor(time / 1000) : time;
-            time = new Date(ts * 1000).toISOString().slice(0, 10);
+            time = formatNptDate(new Date(ts * 1000));
           } else if (typeof time === 'string') {
             const trimmed = time.trim();
             if (/^\d{9,12}$/.test(trimmed)) {
               const ts = parseInt(trimmed, 10);
-              time = new Date(ts * 1000).toISOString().slice(0, 10);
+              time = formatNptDate(new Date(ts * 1000));
             } else {
               time = trimmed.slice(0, 10);
             }
@@ -1230,11 +1238,17 @@ export default function ShareHubChart({
           lineWidth: 1.5,
           title: 'RSI(14)',
           priceScaleId: 'rsi_scale',
-          priceFormat: { type: 'price', precision: 1, minMove: 0.1 }
+          priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
+          autoscaleInfoProvider: () => ({
+            priceRange: {
+              minValue: 0,
+              maxValue: 100,
+            },
+          }),
         });
         chart.priceScale('rsi_scale').applyOptions({
           scaleMargins: safeScaleMargins(rsiTop, rsiBottom),
-          autoScale: false,
+          autoScale: true,
         });
         rsiSeries.setData(rsiData);
         rsiSeries.createPriceLine({ price: 70, color: 'rgba(251, 113, 133, 0.55)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: 'OB 70' });

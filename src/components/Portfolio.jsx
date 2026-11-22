@@ -755,7 +755,7 @@ export default function Portfolio({ marketStocks: rawMarketStocks, stocks: altSt
 
       const tokens = line.split(/[,\t|]|\s{2,}/).map(t => t.trim().replace(/['"]/g, '')).filter(Boolean);
       if (tokens.length >= 2) {
-        const symIdx = tokens.findIndex(t => /^[A-Z]{2,6}$/i.test(t));
+        const symIdx = tokens.findIndex(t => /^[A-Z0-9/]{2,12}$/i.test(t) && !/^\d+$/.test(t));
         if (symIdx !== -1) {
           const sym = tokens[symIdx].toUpperCase();
           const numbers = tokens.slice(symIdx + 1).map(t => parseFloat(t.replace(/,/g, ''))).filter(n => !isNaN(n) && n > 0);
@@ -2920,53 +2920,46 @@ Based on this data, provide a robust analysis using this exact markdown structur
           </div>
 
           {/* 1. Manual Ledger Holdings (Shown if manual ledger selected or consolidated) */}
-          {(activeView === 'manual' || activeView === 'consolidated') && manualRaw.length > 0 && (
-            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 16px', boxShadow: 'var(--shadow-card)' }}>
-              {/* ── Tier 1: Identity & Value ── */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <h3 style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
-                    <BookOpen style={{ width: 16, height: 16, color: '#f59e0b', flexShrink: 0 }} />
-                    <span>Manual Ledger Portfolio</span>
-                  </h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Offline Ledger</span>
-                    {(() => {
-                      const processed = getProcessedHoldings(manualRaw, 'manual');
-                      return <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>• {processed.length} Scrips</span>;
-                    })()}
+          {(activeView === 'manual' || activeView === 'consolidated') && manualRaw.length > 0 && (() => {
+            const processedAll = getProcessedHoldings(manualRaw, 'manual', false);
+            const subCost = processedAll.reduce((sum, h) => sum + (h.units * (h.wacc || 100)), 0);
+            const subValue = processedAll.reduce((sum, h) => sum + h.currentValue, 0);
+            const subPL = subValue - subCost;
+            const subPLPct = subCost > 0 ? (subPL / subCost) * 100 : 0;
+            const bookProfitCount = processedAll.filter(h => h.signal?.type === 'BOOK_PROFIT' || h.signal?.type === 'SUPER_GAIN').length;
+            const defenseCount = processedAll.filter(h => h.signal?.type === 'STOP_LOSS' || h.signal?.type === 'DEFENSE_ALERT').length;
+            const breakoutCount = processedAll.filter(h => h.signal?.type === 'BREAKOUT' || h.signal?.type === 'ACCUMULATE').length;
+            const holdCount = processedAll.filter(h => h.signal?.type === 'HOLD_RIDE' || h.signal?.type === 'HOLD_WAIT').length;
+            const activeAccFilter = accountSignalFilters['manual'] || 'all';
+            const displayHoldings = getFilteredAccountHoldings(manualRaw, 'manual');
+
+            return (
+              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 16px', boxShadow: 'var(--shadow-card)' }}>
+                {/* ── Tier 1: Identity & Value ── */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <h3 style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                      <BookOpen style={{ width: 16, height: 16, color: '#f59e0b', flexShrink: 0 }} />
+                      <span>Manual Ledger Portfolio</span>
+                    </h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Offline Ledger</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        • {displayHoldings.length === processedAll.length ? `${processedAll.length} Scrips` : `Showing ${displayHoldings.length} of ${processedAll.length} Scrips`}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                      {formatRs(subValue)}
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
+                      {subPL >= 0 ? '+' : ''}{Number(subPLPct || 0).toFixed(2)}% ({formatRs(subPL)})
+                    </div>
                   </div>
                 </div>
-                {(() => {
-                  const processed = getProcessedHoldings(manualRaw, 'manual');
-                  const subCost = processed.reduce((sum, h) => sum + h.units * h.wacc, 0);
-                  const subValue = processed.reduce((sum, h) => sum + h.currentValue, 0);
-                  const subPL = subValue - subCost;
-                  const subPLPct = subCost > 0 ? (subPL / subCost) * 100 : 0;
-                  return (
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
-                        {formatRs(subValue)}
-                      </div>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
-                        {subPL >= 0 ? '+' : ''}{Number(subPLPct || 0).toFixed(2)}% ({formatRs(subPL)})
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
 
-              {/* ── Tier 2: Summative Action Indicators & Filters ── */}
-              {(() => {
-                const processedAll = getProcessedHoldings(manualRaw, 'manual', false);
-                const bookProfitCount = processedAll.filter(h => h.signal?.type === 'BOOK_PROFIT' || h.signal?.type === 'SUPER_GAIN').length;
-                const defenseCount = processedAll.filter(h => h.signal?.type === 'STOP_LOSS' || h.signal?.type === 'DEFENSE_ALERT').length;
-                const breakoutCount = processedAll.filter(h => h.signal?.type === 'BREAKOUT' || h.signal?.type === 'ACCUMULATE').length;
-                const holdCount = processedAll.filter(h => h.signal?.type === 'HOLD_RIDE' || h.signal?.type === 'HOLD_WAIT').length;
-                const activeAccFilter = accountSignalFilters['manual'] || 'all';
-                const displayHoldings = getFilteredAccountHoldings(manualRaw, 'manual');
-
-                return (
+                {/* ── Tier 2: Summative Action Indicators & Filters ── */}
                   <>
                     {(bookProfitCount > 0 || defenseCount > 0 || breakoutCount > 0 || holdCount > 0 || activeAccFilter !== 'all') && (
                       <div style={{ display: 'flex', gap: 5, marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.06)', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -3118,10 +3111,9 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       )}
                     </div>
                   </>
-                );
-              })()}
-            </div>
-          )}
+                </div>
+              );
+            })()}
 
           {/* 2. MeroShare Holdings — Separated by Account */}
           {(activeView === 'meroshare' || activeView === 'consolidated') && meroshareProfiles.map(p => {

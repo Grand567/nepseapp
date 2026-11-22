@@ -105,7 +105,7 @@ export default function Calculator() {
     if (sellQty <= 0 || buyWacc <= 0) return null;
     
     let low = buyWacc;
-    let high = Math.max(buyWacc * 2 + 50, 500);
+    let high = Math.max(buyWacc * 3 + 100, 1000);
     let breakEvenPrice = buyWacc;
     
     for (let i = 0; i < 60; i++) {

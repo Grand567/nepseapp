@@ -75,50 +75,18 @@ export default function PullToRefresh({
       } catch (_) {}
 
       setPullDistance(50); // Snap to loading height
-      onRefresh();
+      try {
+        const res = onRefresh();
+        if (res && typeof res.finally === 'function') {
+          res.finally(() => {
+            setTimeout(() => setPullDistance(0), 300);
+          });
+        }
+      } catch (_) {
+        setPullDistance(0);
+      }
     } else {
       setPullDistance(0);
-    }
-  };
-
-  // Mouse Drag (Desktop testing support)
-  const handleMouseDown = (e) => {
-    if (disabled || isRefreshing) return;
-    if (isAtTop() && e.button === 0) {
-      startYRef.current = e.clientY;
-      currentYRef.current = startYRef.current;
-      isDraggingRef.current = true;
-
-      const handleMouseMove = (moveEvent) => {
-        if (!isDraggingRef.current) return;
-        currentYRef.current = moveEvent.clientY;
-        const diff = currentYRef.current - startYRef.current;
-        if (diff > 0 && isAtTop()) {
-          const distance = Math.min(MAX_PULL, diff * 0.42);
-          setPullDistance(distance);
-          setIsPulling(true);
-        } else {
-          setPullDistance(0);
-          setIsPulling(false);
-        }
-      };
-
-      const handleMouseUp = () => {
-        isDraggingRef.current = false;
-        setIsPulling(false);
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-
-        if (currentYRef.current - startYRef.current >= PULL_THRESHOLD * 2 && !isRefreshing && onRefresh) {
-          setPullDistance(50);
-          onRefresh();
-        } else {
-          setPullDistance(0);
-        }
-      };
-
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
     }
   };
 
@@ -129,6 +97,13 @@ export default function PullToRefresh({
         setPullDistance(0);
       }, 250);
       return () => clearTimeout(timer);
+    }
+    if (isRefreshing) {
+      // Safety timeout: reset pull distance after 8s even if refreshing never resets
+      const safety = setTimeout(() => {
+        setPullDistance(0);
+      }, 8000);
+      return () => clearTimeout(safety);
     }
   }, [isRefreshing]);
 
@@ -141,7 +116,6 @@ export default function PullToRefresh({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      onMouseDown={handleMouseDown}
       style={{
         position: 'relative',
         width: '100%',

@@ -192,6 +192,17 @@ export function detectCycleStartDate(chronologicalSeries, direction = "ACCUMULAT
   }
 
   const totalActive = oldestFirst.length;
+  // Calculate trailing contiguous streak from the most recent session backward
+  let contiguousStreak = 0;
+  for (let i = oldestFirst.length - 1; i >= 0; i--) {
+    const vol = Number(oldestFirst[i].netVol ?? oldestFirst[i].netQty ?? 0);
+    if (isAccum ? vol > 0 : vol < 0) {
+      contiguousStreak++;
+    } else {
+      break;
+    }
+  }
+
   if (isAccum) {
     // Find first net-buy date on or after the cumulative trough
     const startIdx = oldestFirst.findIndex((d) => {
@@ -199,7 +210,7 @@ export function detectCycleStartDate(chronologicalSeries, direction = "ACCUMULAT
       return String(d.date || '') >= inflectionDateAccum && vol > 0;
     });
     const startDate = startIdx >= 0 ? oldestFirst[startIdx].date : oldestFirst[0].date;
-    const streakDays = startIdx >= 0 ? oldestFirst.length - startIdx : accumDays;
+    const streakDays = contiguousStreak > 0 ? contiguousStreak : (startIdx >= 0 ? oldestFirst.length - startIdx : accumDays);
     const consistencyPct = totalActive > 0 ? Number(((accumDays / totalActive) * 100).toFixed(0)) : 0;
     return { startDate, streakDays, activeDaysCount: accumDays, totalActive, consistencyPct };
   } else {
@@ -209,7 +220,7 @@ export function detectCycleStartDate(chronologicalSeries, direction = "ACCUMULAT
       return String(d.date || '') >= inflectionDateDump && vol < 0;
     });
     const startDate = startIdx >= 0 ? oldestFirst[startIdx].date : oldestFirst[0].date;
-    const streakDays = startIdx >= 0 ? oldestFirst.length - startIdx : dumpDays;
+    const streakDays = contiguousStreak > 0 ? contiguousStreak : (startIdx >= 0 ? oldestFirst.length - startIdx : dumpDays);
     const consistencyPct = totalActive > 0 ? Number(((dumpDays / totalActive) * 100).toFixed(0)) : 0;
     return { startDate, streakDays, activeDaysCount: dumpDays, totalActive, consistencyPct };
   }

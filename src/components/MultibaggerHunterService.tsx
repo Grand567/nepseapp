@@ -17,13 +17,17 @@ export function MultibaggerHunterService({ stocks: rawStocks = [], indices, onSe
   const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const [filterScore, setFilterScore] = useState<number | null>(null);
   const [filterSector, setFilterSector] = useState<string | null>(null);
-  const [brokerMapLoaded, setBrokerMapLoaded] = useState(false);
+  const [brokerMap, setBrokerMap] = useState<Record<string, any>>({});
 
   useEffect(() => {
     let isMounted = true;
     fetchMarketWideBrokerSummaryMap(1).then((map: any) => {
       if (isMounted && map && Object.keys(map).length > 0) {
-        setBrokerMapLoaded(true);
+        const upperMap: Record<string, any> = {};
+        for (const [k, v] of Object.entries(map)) {
+          upperMap[String(k).toUpperCase().trim()] = v;
+        }
+        setBrokerMap(upperMap);
       }
     }).catch(() => {});
     return () => { isMounted = false; };
@@ -34,18 +38,23 @@ export function MultibaggerHunterService({ stocks: rawStocks = [], indices, onSe
 
   const evaluated = useMemo(() => {
     return stocks
-      .filter(s => s && s.symbol && s.ltp > 0 && isPureNepseEquity(s))
+      .filter(s => s && s.symbol && Number(s.ltp) > 0 && isPureNepseEquity(s))
       .map(s => {
-        const hasFloatData = s.promoterHolding != null && (s.sharesOut != null || s.listedShares != null);
-        const publicFloatM = hasFloatData ? (1 - Number(s.promoterHolding) / 100) * Number(s.sharesOut || (Number(s.listedShares) / 1000000)) : null;
-        const bvps = s.bvps || s.bookValue || 0;
-        const g = s.eps > 0 && bvps > 0 ? Math.sqrt(22.5 * s.eps * bvps) : 0;
-        const mos = g > 0 ? ((g - s.ltp) / g) * 100 : null;
+        const ltpNum = Number(s.ltp);
+        const pChangeNum = s.pChange != null && Number.isFinite(Number(s.pChange)) ? Number(s.pChange) : 0;
+        const promoterPct = s.promoterHolding ?? s.promoter_share_pct ?? null;
+        const rawSharesM = Number(s.sharesOut) > 0 ? Number(s.sharesOut) : (Number(s.listedShares) > 0 ? Number(s.listedShares) / 1000000 : NaN);
+        const hasFloatData = promoterPct != null && Number.isFinite(Number(promoterPct)) && Number.isFinite(rawSharesM) && rawSharesM > 0;
+        const publicFloatM = hasFloatData ? (1 - Number(promoterPct) / 100) * rawSharesM : null;
+        const epsNum = Number(s.eps ?? s.eps_ttm ?? 0);
+        const bvps = Number(s.bvps ?? s.bookValue ?? s.book_value_per_share ?? 0);
+        const g = epsNum > 0 && bvps > 0 ? Math.sqrt(22.5 * epsNum * bvps) : 0;
+        const mos = g > 0 ? ((g - ltpNum) / g) * 100 : null;
         
         const gates = (() => {
           const sym = String(s.symbol || '').toUpperCase().trim();
           const cachedHist = sym ? getCachedRealPriceHistory(sym) : null;
-          const realBroker = s.brokerAnalysis || s.realBrokerAnalysis || (sym ? getCachedRealBrokerAnalysis(sym) : null) || undefined;
+          const realBroker = s.brokerAnalysis || s.realBrokerAnalysis || (sym ? brokerMap[sym] : null) || (sym ? getCachedRealBrokerAnalysis(sym) : null) || undefined;
           
           const volume = Number(s.volume ?? s.totalTradedQuantity ?? realBroker?.totalVolume ?? realBroker?.totalTradedQty ?? 0);
           const isMicroSample = volume < 200;
@@ -90,12 +99,12 @@ export function MultibaggerHunterService({ stocks: rawStocks = [], indices, onSe
 
           return [
             publicFloatM !== null && publicFloatM <= 15,
-            (s.promoterHolding || 0) >= 52 || stealthScore >= 55,
-            s.bollinger?.squeeze === true || (Math.abs(s.pChange || 0) <= 2.0 && (s.volume || 0) > 5000),
+            (Number(promoterPct) || 0) >= 52 || stealthScore >= 55,
+            s.bollinger?.squeeze === true || (Math.abs(pChangeNum) <= 2.0 && (Number(s.volume) || 0) > 5000),
             (s.volumeZScore || 0) >= 1.5 || (s.volumeSurgeRatio || 0) >= 1.8 || s.isVolumeShocker === true,
             brokerGatePassed,
             (s.dpi || 0) >= 65 || (s.technicalScore || 0) >= 65,
-            mos !== null ? mos >= 5 : (s.pe > 0 && s.pe < 28),
+            mos !== null ? mos >= 5 : (Number(s.pe) > 0 && Number(s.pe) < 28),
             seasonOk,
           ];
         })();
@@ -103,10 +112,10 @@ export function MultibaggerHunterService({ stocks: rawStocks = [], indices, onSe
         const gatesPass = gates.filter(Boolean).length;
         const isEstimated = s.rsi === null || s.rsi === undefined || s.volumeZScore === null || s.volumeZScore === undefined;
         
-        return { ...s, gates, gatesPass, isEstimated, mos, publicFloatM };
+        return { ...s, ltp: ltpNum, pChange: pChangeNum, gates, gatesPass, isEstimated, mos, publicFloatM };
       })
       .sort((a, b) => b.gatesPass - a.gatesPass || (b.turnover || 0) - (a.turnover || 0));
-  }, [stocks, seasonOk, brokerMapLoaded]);
+  }, [stocks, seasonOk, brokerMap]);
 
   const filtered = useMemo(() => {
     let res = evaluated;
@@ -118,7 +127,7 @@ export function MultibaggerHunterService({ stocks: rawStocks = [], indices, onSe
         const sector = (s.sector || '').toLowerCase();
         if (filterSector === 'hydro') return sector.includes('hydro');
         if (filterSector === 'banks') return sector.includes('commercial bank') || sector.includes('bank');
-        if (filterSector === 'finance') return sector.includes('finance');
+        if (filterSector === 'finance') return sector.includes('finance') && !sector.includes('micro');
         if (filterSector === 'micro') return sector.includes('microfinance');
         return true;
       });

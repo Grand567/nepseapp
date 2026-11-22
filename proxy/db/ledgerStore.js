@@ -1345,8 +1345,11 @@ export function getLedgerStatusInfo(forceRefresh = false) {
  * Rebuilds the in-memory 1D, 5D, 15D, and 30D precomputed snapshots.
  * Computes all 4 horizons for all ~250 NEPSE stocks in ~40ms total and stores them in RAM.
  */
+let activeRebuildPromise = null;
 export async function rebuildHotCache() {
-  const startTime = Date.now();
+  if (activeRebuildPromise) return activeRebuildPromise;
+  activeRebuildPromise = (async () => {
+    const startTime = Date.now();
   const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
   const todayNpt = nowNpt.toISOString().split('T')[0];
 
@@ -1573,7 +1576,11 @@ export async function rebuildHotCache() {
     try { global.gc(); } catch (_) {}
   }
 
-  return true;
+    return true;
+  })().finally(() => {
+    activeRebuildPromise = null;
+  });
+  return activeRebuildPromise;
 }
 
 /**

@@ -141,6 +141,10 @@ export function decryptAccount(acc) {
   const crnRes = decryptField(acc.crn);
   const pinRes = decryptField(acc.transactionPin);
 
+  if (passRes.failed || crnRes.failed || pinRes.failed) {
+    throw new Error(`Credential decryption failed for account ${acc.name || acc.id}. Check MEROSHARE_ENCRYPTION_KEY / MEROSHARE_ENCRYPTION_KEY_PREVIOUS before retrying to avoid CDSC lockout.`);
+  }
+
   const needsReEncrypt = Boolean(passRes.usedPreviousKey || crnRes.usedPreviousKey || pinRes.usedPreviousKey);
 
   return {
@@ -213,7 +217,9 @@ export function saveAccounts(accounts, filePath = getAccountsFilePath()) {
       const { account } = migrateAccount(acc);
       return account;
     });
-    fs.writeFileSync(filePath, JSON.stringify(migratedAccounts, null, 2), 'utf8');
+    const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(migratedAccounts, null, 2), 'utf8');
+    fs.renameSync(tmpPath, filePath);
   } catch (e) {
     console.error('[meroshare-bulk] Error saving accounts:', e.message);
   }
@@ -283,7 +289,7 @@ const validateJsonResponse = (response, label = 'MeroShare API') => {
 const primeSession = async (client) => {
   try {
     const jar = client?.jar;
-    const cookies = jar ? jar.getCookiesSync('https://backend.cdsc.com.np') : [];
+    const cookies = jar ? jar.getCookiesSync('https://webbackend.cdsc.com.np') : [];
     if (cookies && cookies.length > 0) {
       return;
     }
@@ -373,8 +379,9 @@ router.get('/accounts', (req, res) => {
 // 2. Add or Update Account
 router.post('/accounts', (req, res) => {
   try {
-    const { id, name, boid, username, dpCode, dpName, password, crn, pin } = req.body;
-    if (!name || boid.length !== 16 || !username || !password || !crn || String(pin).length !== 4) {
+    const { id, name, boid, username, dpCode, dpName, password, crn, pin } = req.body || {};
+    const cleanBoid = String(boid || '').trim();
+    if (!name || cleanBoid.length !== 16 || !username || !password || !crn || String(pin || '').length !== 4) {
       return res.status(400).json({ success: false, error: 'Invalid or missing fields. BOID must be 16 digits, PIN must be 4 digits.' });
     }
 
@@ -627,11 +634,12 @@ router.post('/apply', requireAdminSecret, async (req, res) => {
 
       const payload = {
         ...template,
+        ...valResult.sanitizedPayload,
         appliedKitta: Number(appliedKitta),
         crnNumber: crn.trim(),
         transactionPin: pin.trim(),
-        boid: acc.boid,
-        demat: acc.boid,
+        boid: valResult.sanitizedPayload?.boid || acc.boid,
+        demat: valResult.sanitizedPayload?.demat || acc.boid,
       };
 
       const submitResponse = await client.post(`${MEROSHARE_BASE}/applicantForm/share/apply`, payload, {

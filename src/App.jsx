@@ -854,7 +854,7 @@ function AppInner() {
           isPreOpen = Boolean(status.isPreOpen);
         }
 
-        let currentStocks = stocks;
+        let currentStocks = (liveStocksRef.current && liveStocksRef.current.length > 0) ? liveStocksRef.current : stocks;
         let hasFreshData = false;
 
         const pStatus = fetchMarketStatus().catch(() => null);
@@ -1059,9 +1059,14 @@ function AppInner() {
 
     tickerTimer = setTimeout(tickFastIndex, 100);
 
+    let lastVisTick = 0;
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        tickFastIndex();
+        const now = Date.now();
+        if (now - lastVisTick > 2000) {
+          lastVisTick = now;
+          tickFastIndex();
+        }
       }
     };
     if (typeof window !== 'undefined') {
@@ -1225,6 +1230,7 @@ function AppInner() {
     const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
     if (!isNative) return;
 
+    let isMounted = true;
     let appListenerHandle = null;
     try {
       CapacitorApp.addListener('appStateChange', ({ isActive }) => {
@@ -1234,7 +1240,11 @@ function AppInner() {
           syncDevicePushToken().catch(() => {});
         }
       }).then(handle => {
-        appListenerHandle = handle;
+        if (!isMounted) {
+          if (handle && typeof handle.remove === 'function') handle.remove();
+        } else {
+          appListenerHandle = handle;
+        }
       }).catch(err => {
         console.warn('[App] appStateChange listener registration error:', err);
       });
@@ -1243,6 +1253,7 @@ function AppInner() {
     }
 
     return () => {
+      isMounted = false;
       if (appListenerHandle && typeof appListenerHandle.remove === 'function') {
         appListenerHandle.remove();
       }

@@ -11,6 +11,7 @@ import {
   getNepseBrokerCommissionRate,
   DEFAULT_USER_CAPITAL
 } from '../utils/dynamicCapitalEngine';
+import { loadEncryptedUserProfiles, resolveActiveUserId } from '../utils/profileVaultStorage';
 
 const PRESET_CAPITALS = [
   { label: 'Rs. 50K', value: 50000, tier: 'Tier 1' },
@@ -62,30 +63,43 @@ export function CapitalRiskSimulatorBar({ onCapitalChange, className = '' }) {
     applyCapital(Number(inputVal));
   };
 
-  const handleSyncWithPortfolio = () => {
+  const handleSyncWithPortfolio = async () => {
     try {
+      const uid = resolveActiveUserId();
       let foundValue = 0;
-      // Search for stored holdings or portfolio data
-      const keys = Object.keys(localStorage);
-      for (const k of keys) {
-        if (k.startsWith('nepse_portfolio_txs_') || k.startsWith('nepse_hub_') || k === 'nepse_holdings' || k === 'nepse_portfolio_v1') {
-          try {
-            const parsed = JSON.parse(localStorage.getItem(k) || '[]');
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const val = parsed.reduce((sum, h) => sum + (Number(h.totalCost || h.currentValue || (h.units * h.wacc) || 0)), 0);
-              if (val > foundValue) foundValue = val;
-            }
-          } catch (_) {}
-        }
-      }
+
+      const profiles = await loadEncryptedUserProfiles(uid);
+      (profiles || []).forEach(p => {
+        (p.holdings || []).forEach(h => {
+          foundValue += Number(h.valueAsOfLTP || h.valueAsOfPrevClose || h.currentValue || ((Number(h.units) || 0) * (Number(h.currentLtp || h.prevClose || h.wacc) || 0)) || 0);
+        });
+      });
+
+      try {
+        const txs = JSON.parse(localStorage.getItem(`nepse_hub_${uid}_transactions`) || '[]');
+        const netMap = {};
+        [...(Array.isArray(txs) ? txs : [])].reverse().forEach(tx => {
+          const sym = String(tx.symbol || '').toUpperCase();
+          if (!sym) return;
+          if (!netMap[sym]) netMap[sym] = { units: 0, cost: 0 };
+          const q = Number(tx.quantity) || 0;
+          const p = Number(tx.price) || 0;
+          if (tx.type === 'sell') {
+            const avg = netMap[sym].units > 0 ? netMap[sym].cost / netMap[sym].units : 0;
+            netMap[sym].units = Math.max(0, netMap[sym].units - q);
+            netMap[sym].cost = netMap[sym].units * avg;
+          } else {
+            netMap[sym].units += q;
+            netMap[sym].cost += q * (tx.type === 'bonus' ? 100 : p);
+          }
+        });
+        Object.values(netMap).forEach(h => { foundValue += Math.max(0, h.cost); });
+      } catch (_) {}
 
       if (foundValue > 10000) {
         applyCapital(foundValue);
         setSyncedSuccess(true);
         setTimeout(() => setSyncedSuccess(false), 3000);
-      } else {
-        // Fallback to default
-        applyCapital(DEFAULT_USER_CAPITAL);
       }
     } catch (_) {}
   };

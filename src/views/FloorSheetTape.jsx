@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Zap, RefreshCw, Search, Filter, Clock, ArrowRight, ShieldCheck, ChevronLeft, ChevronRight, X, Calendar } from 'lucide-react';
 import { fetchRealFloorsheet, fetchAvailableTradingDates } from '../utils/liveData';
 import { getBrokerName } from '../utils/accumulationDistributionEngine';
@@ -64,8 +64,10 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
     businessDate: '',
     availableDates: []
   });
+  const reqIdRef = useRef(0);
 
   const loadFloorsheet = useCallback(async (pg = 1, showRefreshSpinner = false, currentTf = timeframe, currentDate = selectedDate) => {
+    const reqId = ++reqIdRef.current;
     if (showRefreshSpinner) setRefreshing(true);
     else setLoading(true);
 
@@ -81,6 +83,7 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
       };
 
       const res = await fetchRealFloorsheet(sym, currentDate, pg, size, opts);
+      if (reqId !== reqIdRef.current) return;
       if (res && Array.isArray(res.rows)) {
         setFloorsheetData(prev => ({
           ...res,
@@ -90,10 +93,13 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
         setLastSyncTime(new Date().toLocaleTimeString('en-US', { hour12: false }));
       }
     } catch (err) {
+      if (reqId !== reqIdRef.current) return;
       console.warn('[FloorSheetTape] Fetch error:', err.message);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (reqId === reqIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [filterScrip, searchQuery, buyerFilter, sellerFilter, size, timeframe, selectedDate]);
 

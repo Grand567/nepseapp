@@ -673,7 +673,7 @@ export default function PredictorHub({
               ? `NEPSE (${nepseIdx.toFixed(1)} pts) displays bullish bias driven by favorable sector breadth (${advances} advances vs ${declines} declines). Tactical upside target set at ${target1} pts (extension ${target2} pts, bounded by daily index circuit ${circuitCeiling} pts) with trailing stop floor at ${Math.min(target1, stopFloor)} pts (RRR ${rrr}:1).`
               : dir === 'down'
               ? `NEPSE (${nepseIdx.toFixed(1)} pts) signals bearish retracement pressure (${declines} declines vs ${advances} advances). Downside target: ${target1} pts (extension ${target2} pts), invalidation ceiling: ${stopFloor} pts.`
-              : `NEPSE (${nepseIdx.toFixed(1)} pts) indicates consolidation near benchmark levels. Support floor: ${stopFloor} pts, Resistance ceiling: ${target1} pts.`
+              : `NEPSE (${nepseIdx.toFixed(1)} pts) indicates consolidation near benchmark levels. Support floor: ${Math.min(stopFloor, target1)} pts, Resistance ceiling: ${Math.max(stopFloor, target1)} pts.`
           });
         }
 
@@ -862,38 +862,33 @@ export default function PredictorHub({
     if (stockFilter === 'catalyst') {
       // 4. Corporate Catalysts: Filter confirmed corporate actions & dividends, sort by catalyst relevance!
       const candidates = [...searchFiltered].filter(s => {
-        const sym = String(s.symbol || '').toUpperCase().trim();
-        const uInfo = UNIVERSE_MAP.get(sym);
         return Boolean(
           s.corporate_action_flag ||
           s.catalystLabel ||
           Number(s.dividendYield || 0) > 0 ||
           Number(s.bonusShare || 0) > 0 ||
-          Number(s.rightShare || 0) > 0 ||
-          (uInfo?.sharesOut && uInfo.sharesOut <= 3.5)
+          Number(s.rightShare || 0) > 0
         );
       }).sort((a, b) => {
         const scoreA = (a.corporate_action_flag ? 25 : 0) + (a.catalystLabel ? 15 : 0) + Number(a.composite_score || 0);
         const scoreB = (b.corporate_action_flag ? 25 : 0) + (b.catalystLabel ? 15 : 0) + Number(b.composite_score || 0);
         return scoreB - scoreA;
       });
-      return candidates.length >= 5 ? candidates : [...searchFiltered].filter(s => Number(s.composite_score) >= 45).slice(0, 35);
+      return candidates;
     }
 
     if (stockFilter === 'coiled') {
       // 5. Pre-Breakout / Coiling Radar: Stocks 0.5% to 5.0% below 20-day high or pivot level
       const candidates = [...searchFiltered].filter(s => {
         const dist = s.pivot_distance_pct ?? s.pivotDistancePct;
-        const ltp = Number(s.ltp || s.price || 0);
-        const high20 = Number(s.high20 || s.high52 || ltp);
-        const distPct = dist != null ? Number(dist) : (high20 > 0 ? ((high20 - ltp) / high20) * 100 : 99);
+        const distPct = dist != null && Number.isFinite(Number(dist)) ? Number(dist) : 99;
         return distPct >= 0.2 && distPct <= 5.5;
       }).sort((a, b) => {
         const distA = Math.abs(Number(a.pivot_distance_pct ?? a.pivotDistancePct ?? 5));
         const distB = Math.abs(Number(b.pivot_distance_pct ?? b.pivotDistancePct ?? 5));
         return distA - distB;
       });
-      return candidates.length >= 5 ? candidates : [...searchFiltered].filter(s => Number(s.composite_score) >= 50).slice(0, 35);
+      return candidates;
     }
 
     return searchFiltered;
@@ -2996,7 +2991,7 @@ export default function PredictorHub({
                             border: '1px solid rgba(6, 182, 212, 0.35)'
                           }}>
                             <Target style={{ width: 12, height: 12 }} />
-                            Float {s.sharesOut}M
+                            {s.sharesOut != null ? `Float ${s.sharesOut}M` : 'Float N/A'}
                           </div>
                         ) : stockFilter === 'catalyst' ? (
                           <div style={{
@@ -3040,13 +3035,15 @@ export default function PredictorHub({
                           </div>
                         )}
                         <div style={{ fontSize: 13, fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>
-                          Rs. {s.ltp}
+                          {Number.isFinite(Number(s.ltp)) && Number(s.ltp) > 0 ? `Rs. ${Number(s.ltp).toFixed(1)}` : '—'}
                           <span style={{
                             fontSize: 12,
                             marginLeft: 6,
-                            color: s.pChange >= 0 ? 'var(--bull)' : 'var(--bear)'
+                            color: s.pChange == null ? 'var(--text-muted)' : Number(s.pChange) >= 0 ? 'var(--bull)' : 'var(--bear)'
                           }}>
-                            {s.pChange >= 0 ? `+${s.pChange}%` : `${s.pChange}%`}
+                            {s.pChange != null && Number.isFinite(Number(s.pChange))
+                              ? `${Number(s.pChange) >= 0 ? '+' : ''}${Number(s.pChange).toFixed(2)}%`
+                              : '—'}
                           </span>
                         </div>
                       </div>
@@ -3302,7 +3299,7 @@ export default function PredictorHub({
                 <span>Scraped News Headlines & AI Sentiment Scoring</span>
                 {Array.isArray(sentimentNews) && sentimentNews[0]?.isOfflineFallback && (
                   <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
-                    Offline Sample Data (Last Updated: 2026-11-08)
+                    Offline Sample Data ({sentimentNews[0]?.published_at || sentimentNews[0]?.date || 'Cached'})
                   </span>
                 )}
               </div>

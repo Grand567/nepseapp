@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ExternalLink, Calendar, Newspaper, Loader2, Share2, TrendingUp, Sparkles, BookOpen } from 'lucide-react';
-import { useBackHandler, useNavigation } from '../context/NavigationContext';
+import { useNavigation } from '../context/NavigationContext';
 import { fetchNewsArticle } from '../utils/servicesApi';
+import { openExternalUrl } from '../utils/externalLinks';
 
 const SOURCE_CONFIG = {
   sharesansar: { label: 'ShareSansar', badgeBg: 'rgba(59, 130, 246, 0.15)', badgeColor: '#60a5fa', badgeBorder: 'rgba(59, 130, 246, 0.35)' },
@@ -36,14 +37,6 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
   const navigation = useNavigation();
   const openStockDetail = navigation?.openStockDetail;
   const setActiveTab = navigation?.setActiveTab;
-
-  useBackHandler(() => {
-    if (isOpen) {
-      onClose();
-      return true;
-    }
-    return false;
-  }, isOpen, 90);
 
   useEffect(() => {
     if (!isOpen || !article) {
@@ -170,17 +163,16 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
               </button>
             )}
 
-            {currentDetail.url && (
-              <a
-                href={currentDetail.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 text-xs font-bold transition active:scale-95"
+            {currentDetail.url && /^https?:\/\//i.test(currentDetail.url) && (
+              <button
+                type="button"
+                onClick={() => openExternalUrl(currentDetail.url)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 text-xs font-bold transition active:scale-95 cursor-pointer"
                 title="Open publisher portal"
               >
                 <span>Original Link</span>
                 <ExternalLink size={12} />
-              </a>
+              </button>
             )}
           </div>
         </div>
@@ -208,7 +200,7 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
                 title={`Open ${currentDetail.symbol} market depth and radar`}
               >
                 <TrendingUp size={11} />
-                <span>${currentDetail.symbol}</span>
+                <span>{currentDetail.symbol}</span>
               </button>
             )}
 
@@ -289,7 +281,7 @@ export function InAppNewsReaderModal({ article, isOpen, onClose }) {
                 className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/50 border border-emerald-400/30 transition active:scale-[0.98] cursor-pointer"
               >
                 <TrendingUp size={15} />
-                <span>View ${currentDetail.symbol} Market Depth & Institutional Radar</span>
+                <span>View {currentDetail.symbol} Market Depth & Institutional Radar</span>
               </button>
             </div>
           )}

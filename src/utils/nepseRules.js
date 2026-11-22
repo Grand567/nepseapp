@@ -102,8 +102,10 @@ export function clampToDailyCircuitBand(projectedPrice, prevClose, circuitPct = 
  * @returns {{ lower: number, upper: number, circuitPct: number }}
  */
 export function clampReturnIntervalToCircuit(lowerPct, upperPct, circuitPct = NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT) {
-  const rawLower = Number(lowerPct) || -circuitPct;
-  const rawUpper = Number(upperPct) || circuitPct;
+  const parsedLower = Number(lowerPct);
+  const parsedUpper = Number(upperPct);
+  const rawLower = Number.isFinite(parsedLower) ? parsedLower : -circuitPct;
+  const rawUpper = Number.isFinite(parsedUpper) ? parsedUpper : circuitPct;
   return {
     lower: Math.max(-circuitPct, rawLower),
     upper: Math.min(circuitPct, rawUpper),
@@ -121,7 +123,9 @@ export function clampReturnIntervalToCircuit(lowerPct, upperPct, circuitPct = NE
 export function checkCircuitStatus(ltp, prevClose, pChange = null) {
   const p = Number(ltp) || 0;
   const prev = Number(prevClose) || p;
-  const chg = pChange !== null ? Number(pChange) : (prev > 0 ? ((p - prev) / prev) * 100 : 0);
+  const chg = (pChange != null && Number.isFinite(Number(pChange)))
+    ? Number(pChange)
+    : (prev > 0 ? ((p - prev) / prev) * 100 : 0);
   const { floor, ceiling } = getCircuitLimits(prev);
 
   const isCeilingLocked = chg >= NEPSE_RULES.CIRCUIT_LOCKED_THRESHOLD_PCT || (ceiling !== null && p >= ceiling);

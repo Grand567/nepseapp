@@ -120,18 +120,21 @@ export function EntryExitAnalyzer({
 
   // Prepopulate symbol list for instant autocomplete
   useEffect(() => {
+    let isMounted = true;
     if (stocks && stocks.length > 0) {
       setAllSymbols(stocks.map((s: any) => s.symbol).filter(Boolean).sort());
     } else {
       fetchAllSecurities().then((r) => {
-        if (r?.data) setAllSymbols(r.data.map((s: any) => s.symbol).filter(Boolean).sort());
-      });
+        if (isMounted && r?.data) setAllSymbols(r.data.map((s: any) => s.symbol).filter(Boolean).sort());
+      }).catch(() => {});
     }
+    return () => { isMounted = false; };
   }, [stocks]);
 
   const analyze = useCallback(
     async (targetSymbol: string) => {
       if (!targetSymbol) return;
+      setMktStatus(getDetailedMarketStatus());
       const reqSeq = ++loadSeqRef.current;
       const sym = targetSymbol.toUpperCase().trim();
       setSymbol(sym);
@@ -704,11 +707,14 @@ export function EntryExitAnalyzer({
                 color: (pChange === 0 && changeVal === 0) ? '#94a3b8' : ((changeVal !== 0 ? changeVal : pChange) > 0 ? '#34d399' : '#fb7185'),
                 border: (pChange === 0 && changeVal === 0) ? '1px solid rgba(148,163,184,0.3)' : ((changeVal !== 0 ? changeVal : pChange) > 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(244, 63, 94, 0.3)')
               }}>
-                {(pChange === 0 && changeVal === 0)
-                  ? '0.0 (0.00%)'
-                  : (changeVal !== 0 ? changeVal : pChange) > 0
-                  ? `+${changeVal.toFixed(1)} (+${pChange.toFixed(2)}%)`
-                  : `${changeVal.toFixed(1)} (${pChange.toFixed(2)}%)`}
+                {(() => {
+                  const isNeutral = pChange === 0 && changeVal === 0;
+                  if (isNeutral) return '0.0 (0.00%)';
+                  const isPositive = (changeVal !== 0 ? changeVal : pChange) > 0;
+                  return isPositive
+                    ? `+${Math.abs(changeVal).toFixed(1)} (+${Math.abs(pChange).toFixed(2)}%)`
+                    : `-${Math.abs(changeVal).toFixed(1)} (-${Math.abs(pChange).toFixed(2)}%)`;
+                })()}
               </div>
             </div>
           </div>

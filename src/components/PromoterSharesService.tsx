@@ -29,6 +29,7 @@ export function PromoterSharesService() {
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'critical' | 'locked' | 'expiring' | 'high_float'>('all');
 
   useEffect(() => {
+    let isMounted = true;
     const timeoutFallback = new Promise<[any, { stocks: any[] }]>((resolve) => {
       setTimeout(() => resolve([null, { stocks: [] }]), 5000);
     });
@@ -40,6 +41,7 @@ export function PromoterSharesService() {
       ]),
       timeoutFallback
     ]).then(([apiLockin, { stocks: liveStocks }]) => {
+      if (!isMounted) return;
       const lockinMap = new Map<string, any>();
       const lockinList = Array.isArray(apiLockin) ? apiLockin : (Array.isArray(apiLockin?.data) ? apiLockin.data : []);
       lockinList.forEach((item: any) => {
@@ -60,13 +62,14 @@ export function PromoterSharesService() {
         const sym = (item.symbol || '').toUpperCase();
         if (sym && !symbolSet.has(sym)) {
           symbolSet.add(sym);
+          const parsedTotal = item.totalShares ? parseInt(String(item.totalShares).replace(/,/g, ''), 10) : NaN;
           combinedStocks.push({
             symbol: sym,
             name: item.name,
             sector: item.sector,
-            promoterHolding: item.promoterRatio,
+            promoterHolding: item.promoterRatio ?? item.promoter_share_pct,
             ltp: Number(item.ltp || item.close || 0),
-            sharesOut: item.totalShares ? parseInt(String(item.totalShares).replace(/,/g, ''), 10) / 1e6 : 0
+            sharesOut: Number.isFinite(parsedTotal) && parsedTotal > 0 ? parsedTotal / 1e6 : 0
           });
         }
       });
@@ -79,18 +82,20 @@ export function PromoterSharesService() {
 
         // Authentic promoter holding: prioritize official filing disclosures, then live stock holding (no fabricated 51%/49% defaults)
         let promoterPct: number | null = null;
-        if (apiItem?.promoterRatio != null && Number.isFinite(Number(apiItem.promoterRatio)) && Number(apiItem.promoterRatio) > 0) {
-          promoterPct = Math.min(99, Math.max(1, +Number(apiItem.promoterRatio).toFixed(1)));
-        } else if (s.promoterHolding != null && Number.isFinite(Number(s.promoterHolding)) && Number(s.promoterHolding) > 0) {
-          promoterPct = Math.min(99, Math.max(1, +Number(s.promoterHolding).toFixed(1)));
-        } else if (s.promoterSharePct != null && Number.isFinite(Number(s.promoterSharePct)) && Number(s.promoterSharePct) > 0) {
-          promoterPct = Math.min(99, Math.max(1, +Number(s.promoterSharePct).toFixed(1)));
+        const rawPromoter = apiItem?.promoterRatio ?? apiItem?.promoter_share_pct ?? s.promoterHolding ?? s.promoterSharePct ?? s.promoter_share_pct;
+        if (rawPromoter != null && rawPromoter !== '' && Number.isFinite(Number(rawPromoter)) && Number(rawPromoter) > 0) {
+          promoterPct = Math.min(99, Math.max(1, +Number(rawPromoter).toFixed(1)));
         }
 
         const publicPct: number | null = promoterPct != null ? +(100 - promoterPct).toFixed(1) : null;
 
-        const sharesM = Number(s.sharesOut || (apiItem?.totalShares ? parseInt(String(apiItem.totalShares).replace(/,/g, ''), 10) / 1e6 : (s.listedShares ? s.listedShares / 1e6 : 0)));
-        const totalShares = Math.round(sharesM * 1e6);
+        const parsedApiTotal = apiItem?.totalShares ? parseInt(String(apiItem.totalShares).replace(/,/g, ''), 10) : NaN;
+        const rawSharesM = Number(s.sharesOut) > 0
+          ? Number(s.sharesOut)
+          : (Number.isFinite(parsedApiTotal) && parsedApiTotal > 0
+              ? parsedApiTotal / 1e6
+              : (Number(s.listedShares) > 0 ? Number(s.listedShares) / 1e6 : 0));
+        const totalShares = Number.isFinite(rawSharesM) && rawSharesM > 0 ? Math.round(rawSharesM * 1e6) : 0;
         const promoterShares = promoterPct != null ? Math.round(totalShares * (promoterPct / 100)) : 0;
         const publicShares = promoterPct != null ? (totalShares - promoterShares) : 0;
 
@@ -99,10 +104,16 @@ export function PromoterSharesService() {
         let daysRemaining = 0;
         let lockInExpiryDate = 'Unlocked';
 
-        if (apiItem) {
-          lockInExpiryDate = apiItem.lockinExpiry || 'Unlocked';
-          daysRemaining = Number(apiItem.daysRemaining || 0);
-          if (apiItem.isExpired || lockInExpiryDate === 'Unlocked') {
+        const rawExpiry = apiItem?.lockinExpiry || apiItem?.promoter_unlock_date || s.promoter_unlock_date;
+        if (apiItem || rawExpiry) {
+          lockInExpiryDate = rawExpiry || 'Unlocked';
+          const parsedExpiryMs = rawExpiry && rawExpiry !== 'Unlocked' ? Date.parse(String(rawExpiry)) : NaN;
+          if (Number.isFinite(parsedExpiryMs)) {
+            daysRemaining = Math.ceil((parsedExpiryMs - Date.now()) / (1000 * 60 * 60 * 24));
+          } else {
+            daysRemaining = Number(apiItem?.daysRemaining || 0);
+          }
+          if (apiItem?.isExpired || lockInExpiryDate === 'Unlocked' || daysRemaining <= 0) {
             lockInStatus = 'Unlocked';
             daysRemaining = 0;
             lockInExpiryDate = 'Unlocked';
@@ -213,7 +224,7 @@ export function PromoterSharesService() {
 
       {/* Metric Cards */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <StatCard label="Avg Promoter Holding" value={`${avgPromoterHolding}%`} big color="#3b82f6" />
+        <StatCard label="Avg Promoter Holding" value={avgPromoterHolding === 'N/A' ? 'N/A' : `${avgPromoterHolding}%`} big color="#3b82f6" />
         <StatCard label="Critical Shock (≤60D)" value={criticalCount} subtitle="Severe Supply Flood" color="#ef4444" big />
         <StatCard label="Lock-in Expiring (≤90D)" value={expiringCount} subtitle="Supply Overhang" color="#f59e0b" />
         <StatCard label="Mandatory Hydro Lock-in" value="3 Years" subtitle="SEBON Statutory Rule" />
@@ -271,7 +282,7 @@ export function PromoterSharesService() {
                     <div className="text-[10px] text-slate-400 font-sans truncate max-w-[170px]">{s.name}</div>
                   </td>
                   <td className="p-3 text-right font-black text-white">
-                    Rs. {s.ltp}
+                    {s.ltp > 0 ? `Rs. ${s.ltp.toLocaleString()}` : '—'}
                   </td>
                   <td className="p-3 w-40">
                     {s.promoterPct != null && s.publicPct != null ? (

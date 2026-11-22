@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useBackHandler } from '../context/NavigationContext';
 import {
   BarChart3, Bookmark, Activity, PieChart,
   Search, Bell, ArrowLeft, LogOut
@@ -60,6 +61,14 @@ export function StitchHub({ onExit, stocks: rawStocks = [], indices = null, mark
 
   const isSubPage = ['details', 'order', 'wacc'].includes(activeTab);
 
+  // Intercept hardware Back inside Stitch fullscreen overlay before App exits
+  useBackHandler(() => {
+    if (orderModal.isOpen) { closeOrderModal(); return true; }
+    if (history.length > 1) { handleBack(); return true; }
+    if (onExit) { onExit(); return true; }
+    return false;
+  }, true, 95);
+
   const titles = {
     dashboard: {
       ne: "द्रव्यश्री नेप्से (Drabyashree)",
@@ -99,9 +108,9 @@ export function StitchHub({ onExit, stocks: rawStocks = [], indices = null, mark
     },
     order: {
       ne: `सेयर किनबेच - ${selectedSymbol}`,
-      subNe: "Himalayan Sec (TMS #58)",
+      subNe: "Naasa Securities (TMS #58)",
       en: `Order Execution - ${selectedSymbol}`,
-      subEn: "Himalayan Sec (TMS #58)"
+      subEn: "Naasa Securities (TMS #58)"
     }
   };
 
@@ -161,7 +170,13 @@ export function StitchHub({ onExit, stocks: rawStocks = [], indices = null, mark
 
             {/* Notification Bell */}
             <button
-              onClick={() => alert(isNe ? 'नेप्से सूचना: बजार ३७.१५ अंकले वृद्धि; नबिल बैंकको साधारणसभा मिति घोषणा!' : 'NEPSE Alert: Market up +37.15 pts; NABIL AGM scheduled!')}
+              onClick={() => {
+                const chg = indices?.nepse?.change;
+                const msg = chg != null
+                  ? `NEPSE Index: ${Number(indices.nepse.value).toFixed(2)} (${Number(chg) >= 0 ? '+' : ''}${Number(chg).toFixed(2)} pts)`
+                  : 'Live NEPSE alerts are available in the main header Notification Center.';
+                alert(msg);
+              }}
               className="relative flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-white/[0.06] hover:text-white transition-all tap-active"
             >
               <Bell size={16} />

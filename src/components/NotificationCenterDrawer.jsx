@@ -497,9 +497,9 @@ export function NotificationCenterDrawer({
                       </span>
                     )}
 
-                    {item.ltp > 0 && (
+                    {Number.isFinite(Number(item.ltp)) && Number(item.ltp) > 0 && (
                       <span className="text-xs font-mono font-bold text-emerald-400">
-                        Rs. {item.ltp.toFixed(2)}
+                        Rs. {Number(item.ltp).toFixed(2)}
                       </span>
                     )}
 

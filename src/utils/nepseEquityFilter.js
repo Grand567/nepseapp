@@ -40,7 +40,7 @@ export function isMutualFundOrDebenture(sym = '', sector = '', name = '', ltp = 
 
   // 3. Known mutual fund / promoter / preference suffixes and slash-series tickers
   if (s.includes('/') || /(PO|PR|PNP)$/.test(s) || s.includes('DEB')) return true;
-  if (s.endsWith('D') && s !== 'NFD' && s.length >= 4) return true;
+  if (s.endsWith('D') && s !== 'NFD' && s !== 'FOWAD' && s.length >= 4) return true;
   if (s.endsWith('P') && !PROTECTED_ORDINARY_EQUITIES.has(s)) return true;
   if (KNOWN_NON_EQUITY_SYMBOLS_RE.test(s)) return true;
 

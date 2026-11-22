@@ -26,6 +26,7 @@ import {
   Share2
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
+import { useBackHandler } from '../context/NavigationContext';
 import { PRO_PLANS } from '../utils/subscription';
 import { cleanDeviceId, formatDeviceId, generateLicenseKeyOnServer } from '../utils/licenseEngine';
 import { openExternalUrl } from '../utils/externalLinks';
@@ -33,11 +34,13 @@ import { openExternalUrl } from '../utils/externalLinks';
 export default function SubscriptionModal() {
   const {
     isPro,
+    isLifetime,
     daysRemaining,
     formattedExpiry,
     planDuration,
     deviceId,
     isModalOpen,
+    modalInitialPlan,
     closeSubscriptionModal,
     lockedFeatureName,
     redeemCode,
@@ -50,6 +53,24 @@ export default function SubscriptionModal() {
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
+
+  // Register Android back handler for open modal
+  useBackHandler(() => {
+    if (isModalOpen) {
+      closeSubscriptionModal();
+      return true;
+    }
+    return false;
+  }, isModalOpen, 75);
+
+  // Sync selectedPlanId with modalInitialPlan when opened
+  useEffect(() => {
+    if (isModalOpen && modalInitialPlan) {
+      if (PRO_PLANS.some(p => p.id === modalInitialPlan)) {
+        setSelectedPlanId(modalInitialPlan);
+      }
+    }
+  }, [isModalOpen, modalInitialPlan]);
 
   // Server-Authenticated Admin Key Generator State (secret kept ephemeral in memory only)
   const [showDevPanel, setShowDevPanel] = useState(false);
@@ -72,6 +93,11 @@ export default function SubscriptionModal() {
     if (!isModalOpen) {
       setDevAdminKey('');
       setDevError(null);
+      setPromoMessage(null);
+      setPromoInput('');
+      setShowCancelConfirm(false);
+      setShowDevPanel(false);
+      setGeneratedKey(null);
     }
   }, [isModalOpen]);
 
@@ -340,7 +366,11 @@ export default function SubscriptionModal() {
               </div>
               {isPro ? (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
-                  Expires: <strong style={{ color: '#fff' }}>{formattedExpiry}</strong> · <strong style={{ color: '#10B981' }}>{daysRemaining} days remaining</strong>
+                  {isLifetime ? (
+                    <strong style={{ color: '#10B981' }}>Lifetime Pro Active (Never Expires)</strong>
+                  ) : (
+                    <>Expires: <strong style={{ color: '#fff' }}>{formattedExpiry}</strong> · <strong style={{ color: '#10B981' }}>{daysRemaining} days remaining</strong></>
+                  )}
                 </div>
               ) : (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>

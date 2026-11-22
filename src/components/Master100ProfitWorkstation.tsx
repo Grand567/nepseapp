@@ -22,6 +22,7 @@ import { getProxyBase, fetchMarketWideBrokerSummaryMap } from '../utils/liveData
 import { AlphaCommandCenter } from './AlphaCommandCenter';
 import { Capacitor } from '@capacitor/core';
 import { openExternalUrl } from '../utils/externalLinks';
+import { addToWatchlist } from '../utils/watchlist';
 
 interface Master100ProfitWorkstationProps {
   stocks?: any[];
@@ -116,10 +117,12 @@ export function Master100ProfitWorkstation({
 
     try {
       const base = getProxyBase();
+      const payload: any = { chatId: chat, enabled: true };
+      if (token) payload.botToken = token;
       const res = await fetch(`${base}/api/telegram/config`, {
         method: 'POST',
         headers: buildTelegramHeaders(),
-        body: JSON.stringify({ botToken: token, chatId: chat, enabled: true })
+        body: JSON.stringify(payload)
       });
       const text = await res.text();
       let data: any = null;
@@ -150,7 +153,10 @@ export function Master100ProfitWorkstation({
     const token = cleanBotToken(telegramToken);
     const chat = String(telegramChatId || '').trim();
 
-    if (!token || !chat) {
+    const effectiveToken = token || (telegramStatus?.isConfigured ? 'SERVER_CONFIGURED' : '');
+    const effectiveChat = chat || telegramStatus?.chatId || '';
+
+    if (!effectiveToken || !effectiveChat) {
       setTelegramTestMsg({
         type: 'error',
         text: '⚠️ Both Bot Token and Chat ID are required. Please paste your token and click Auto-Detect.'
@@ -162,10 +168,13 @@ export function Master100ProfitWorkstation({
     // Route test ping through secure backend proxy (prevents bot token leakage in URLs or client network traces)
     try {
       const base = getProxyBase();
+      const payload: any = {};
+      if (token) payload.botToken = token;
+      if (chat) payload.chatId = chat;
       const res = await fetch(`${base}/api/telegram/test`, {
         method: 'POST',
         headers: buildTelegramHeaders(),
-        body: JSON.stringify({ botToken: token, chatId: chat })
+        body: JSON.stringify(payload)
       });
       const text = await res.text();
       let data: any = null;
@@ -342,21 +351,35 @@ export function Master100ProfitWorkstation({
   const handleSaveDiscord = async () => {
     setDiscordSaving(true);
     setDiscordTestMsg(null);
+    const url = discordWebhookUrl.trim();
+    if (url && !/^https:\/\/(canary\.|ptb\.)?discord\.com\/api\/webhooks\//i.test(url)) {
+      setDiscordTestMsg({ type: 'error', text: '⚠️ Invalid Discord Webhook URL. It must begin with https://discord.com/api/webhooks/...' });
+      setDiscordSaving(false);
+      return;
+    }
     try {
       const base = getProxyBase();
+      const payload: any = { enabled: true };
+      if (url) payload.webhookUrl = url;
       const res = await fetch(`${base}/api/discord/config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ webhookUrl: discordWebhookUrl, enabled: true })
+        headers: buildTelegramHeaders(),
+        body: JSON.stringify(payload)
       });
-      const data = await res.json();
-      if (data.success) {
+      const text = await res.text();
+      let data: any = null;
+      try { data = text ? JSON.parse(text) : null; } catch {}
+      if (res.ok && data?.success) {
+        setDiscordWebhookUrl('');
         setDiscordTestMsg({ type: 'success', text: '✅ Discord Webhook saved successfully!' });
-        const sRes = await fetch(`${base}/api/discord/status`);
-        const sData = await sRes.json();
-        if (sData?.success) setDiscordStatus(sData);
+        try {
+          const sRes = await fetch(`${base}/api/discord/status`);
+          const sText = await sRes.text();
+          const sData = sText ? JSON.parse(sText) : null;
+          if (sData?.success) setDiscordStatus(sData);
+        } catch {}
       } else {
-        setDiscordTestMsg({ type: 'error', text: data.message || 'Failed to save Discord webhook.' });
+        setDiscordTestMsg({ type: 'error', text: data?.message || data?.error || 'Failed to save Discord webhook.' });
       }
     } catch (err: any) {
       setDiscordTestMsg({ type: 'error', text: err.message || 'Network error saving settings.' });
@@ -372,14 +395,16 @@ export function Master100ProfitWorkstation({
       const base = getProxyBase();
       const res = await fetch(`${base}/api/discord/test`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildTelegramHeaders(),
         body: JSON.stringify({ webhookUrl: discordWebhookUrl || undefined })
       });
-      const data = await res.json();
-      if (data.success) {
+      const text = await res.text();
+      let data: any = null;
+      try { data = text ? JSON.parse(text) : null; } catch {}
+      if (res.ok && data?.success) {
         setDiscordTestMsg({ type: 'success', text: '✅ Test ping received on Discord! Check your mobile app.' });
       } else {
-        setDiscordTestMsg({ type: 'error', text: data.error || 'Failed to send test ping to Discord.' });
+        setDiscordTestMsg({ type: 'error', text: data?.error || data?.message || 'Failed to send test ping to Discord.' });
       }
     } catch (err: any) {
       setDiscordTestMsg({ type: 'error', text: err.message || 'Connection error.' });
@@ -395,17 +420,19 @@ export function Master100ProfitWorkstation({
       const base = getProxyBase();
       const res = await fetch(`${base}/api/discord/test-alert`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildTelegramHeaders(),
         body: JSON.stringify({
           symbol: inspectedStock?.symbol || 'HATHY',
           ltp: inspectedStock?.ltp || 420
         })
       });
-      const data = await res.json();
-      if (data.success) {
+      const text = await res.text();
+      let data: any = null;
+      try { data = text ? JSON.parse(text) : null; } catch {}
+      if (res.ok && data?.success) {
         setDiscordTestMsg({ type: 'success', text: '🚀 Sample 100K Alert sent to your Discord channel!' });
       } else {
-        setDiscordTestMsg({ type: 'error', text: data.message || 'Failed to dispatch Discord sample alert.' });
+        setDiscordTestMsg({ type: 'error', text: data?.message || data?.error || 'Failed to dispatch Discord sample alert.' });
       }
     } catch (err: any) {
       setDiscordTestMsg({ type: 'error', text: err.message || 'Failed to dispatch Discord sample alert.' });
@@ -476,13 +503,9 @@ export function Master100ProfitWorkstation({
   };
 
   const handleAddToWatchlist = () => {
-    if (!inspectedStock) return;
+    if (!inspectedStock?.symbol) return;
     try {
-      const savedList = JSON.parse(localStorage.getItem('nepse_watchlist') || '[]');
-      if (!savedList.includes(inspectedStock.symbol)) {
-        savedList.push(inspectedStock.symbol);
-        localStorage.setItem('nepse_watchlist', JSON.stringify(savedList));
-      }
+      addToWatchlist(inspectedStock.symbol);
       setWatchlistSuccess(true);
       setTimeout(() => setWatchlistSuccess(false), 2500);
     } catch (_) {}
@@ -2153,10 +2176,13 @@ export function Master100ProfitWorkstation({
                     <div>{telegramTestMsg.text}</div>
                     {telegramTestMsg.link && (
                       <div style={{ marginTop: 8 }}>
-                        <a
-                          href={telegramTestMsg.link}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (/^https?:\/\//i.test(telegramTestMsg.link!)) {
+                              openExternalUrl(telegramTestMsg.link!);
+                            }
+                          }}
                           style={{
                             display: 'inline-block',
                             padding: '6px 12px',
@@ -2164,12 +2190,13 @@ export function Master100ProfitWorkstation({
                             color: '#0f172a',
                             borderRadius: 6,
                             fontWeight: 800,
-                            textDecoration: 'none',
-                            fontSize: 12
+                            fontSize: 12,
+                            border: 'none',
+                            cursor: 'pointer'
                           }}
                         >
                           {telegramTestMsg.linkText || 'Open Bot in Telegram'}
-                        </a>
+                        </button>
                       </div>
                     )}
                   </div>

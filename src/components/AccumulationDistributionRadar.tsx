@@ -136,6 +136,8 @@ const StockTableRow = React.memo(function StockTableRow({
   const bcr3Buy = Number(stock.bcr3Buy ?? stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? stock.realBrokerAnalysis?.bcr3BuyPct ?? stock.brokerData?.bcr3BuyPct ?? 0);
   const bcr3Sell = Number(stock.bcr3Sell ?? stock.bcr3SellPct ?? stock.brokerAnalysis?.bcr3SellPct ?? stock.realBrokerAnalysis?.bcr3SellPct ?? stock.brokerData?.bcr3SellPct ?? 0);
   const bcr5Buy = Number(stock.bcr5Buy ?? stock.bcr5BuyPct ?? stock.bcr5NetPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? stock.realBrokerAnalysis?.bcr5BuyPct ?? stock.brokerData?.bcr5BuyPct ?? 0);
+  const hasLtp = Number.isFinite(Number(stock.ltp)) && Number(stock.ltp) > 0;
+  const hasPChange = stock.pChange !== null && stock.pChange !== undefined && Number.isFinite(Number(stock.pChange));
   const isTrap = stock.isTrap;
   const isDumping = stock.isDumping;
   const isAccumulation = stock.isAccumulation;
@@ -165,18 +167,19 @@ const StockTableRow = React.memo(function StockTableRow({
         )}
       </td>
       <td className="py-2.5 px-3 text-right font-bold text-white whitespace-nowrap">
-        Rs. {stock.ltp?.toLocaleString()}
+        {hasLtp ? `Rs. ${Number(stock.ltp).toLocaleString()}` : '—'}
       </td>
       <td className="py-2.5 px-3 text-right font-bold whitespace-nowrap">
         <span
           className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] ${
-            (stock.pChange || 0) >= 0
+            !hasPChange
+              ? 'text-slate-400 bg-slate-800'
+              : Number(stock.pChange) >= 0
               ? 'text-emerald-400 bg-emerald-500/10'
               : 'text-red-400 bg-red-500/10'
           }`}
         >
-          {(stock.pChange || 0) >= 0 ? '+' : ''}
-          {stock.pChange?.toFixed(2)}%
+          {hasPChange ? `${Number(stock.pChange) >= 0 ? '+' : ''}${Number(stock.pChange).toFixed(2)}%` : '—'}
         </span>
       </td>
       <td className="py-2.5 px-3 whitespace-nowrap">
@@ -394,6 +397,8 @@ const StockRadarCard = React.memo(function StockRadarCard({
   const bcr3Buy = Number(stock.bcr3Buy ?? stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? stock.realBrokerAnalysis?.bcr3BuyPct ?? stock.brokerData?.bcr3BuyPct ?? 0);
   const bcr3Sell = Number(stock.bcr3Sell ?? stock.bcr3SellPct ?? stock.brokerAnalysis?.bcr3SellPct ?? stock.realBrokerAnalysis?.bcr3SellPct ?? stock.brokerData?.bcr3SellPct ?? 0);
   const bcr5Buy = Number(stock.bcr5Buy ?? stock.bcr5BuyPct ?? stock.bcr5NetPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? stock.realBrokerAnalysis?.bcr5BuyPct ?? stock.brokerData?.bcr5BuyPct ?? 0);
+  const hasLtp = Number.isFinite(Number(stock.ltp)) && Number(stock.ltp) > 0;
+  const hasPChange = stock.pChange !== null && stock.pChange !== undefined && Number.isFinite(Number(stock.pChange));
   const isTrap = stock.isTrap;
   const isDumping = stock.isDumping;
   const isAccumulation = stock.isAccumulation;
@@ -427,17 +432,18 @@ const StockRadarCard = React.memo(function StockRadarCard({
 
         <div className="text-right">
           <div className="font-black text-sm text-white">
-            Rs. {stock.ltp?.toLocaleString()}
+            {hasLtp ? `Rs. ${Number(stock.ltp).toLocaleString()}` : '—'}
           </div>
           <span
             className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-bold mt-0.5 ${
-              (stock.pChange || 0) >= 0
+              !hasPChange
+                ? 'text-slate-400 bg-slate-800'
+                : Number(stock.pChange) >= 0
                 ? 'text-emerald-400 bg-emerald-500/10'
                 : 'text-red-400 bg-red-500/10'
             }`}
           >
-            {(stock.pChange || 0) >= 0 ? '+' : ''}
-            {stock.pChange?.toFixed(2)}%
+            {hasPChange ? `${Number(stock.pChange) >= 0 ? '+' : ''}${Number(stock.pChange).toFixed(2)}%` : '—'}
           </span>
         </div>
       </div>
@@ -622,7 +628,7 @@ export function AccumulationDistributionRadar({
   const [sortBy, setSortBy] = useState<'qai' | 'stealth' | 'dumpRisk' | 'pChange' | 'turnover' | 'cmf'>('qai');
   const [brokerLedgerMetric, setBrokerLedgerMetric] = useState<'netFlow' | 'turnover' | 'kitta'>('netFlow');
   const [radarDays, setRadarDays] = useState<number>(1);
-  const [radarDate, setRadarDate] = useState<string>(incomingDate || BUNDLED_BROKER_DATE);
+  const [radarDate, setRadarDate] = useState<string>(incomingDate || '');
 
   // Sync date when incoming props from ServicesHub or App change
   useEffect(() => {
@@ -689,10 +695,11 @@ export function AccumulationDistributionRadar({
     const reqId = ++radarReqIdRef.current;
     setRadarDays(d);
     setDiagnosticDays(d);
+    setRadarDate('');
     setIsRecalculatingTimeframe(true);
     setLoading(true);
     try {
-      const fastRadar = !radarDate ? await fetchPrecomputedRadar(d).catch(() => null) : null;
+      const fastRadar = await fetchPrecomputedRadar(d).catch(() => null);
       if (radarReqIdRef.current !== reqId) return;
       if (fastRadar?.success) {
         if (typeof fastRadar.loadedTradingDays === 'number') {
@@ -819,8 +826,18 @@ export function AccumulationDistributionRadar({
     setLoading(true);
     setIsRecalculatingTimeframe(true);
     try {
-      const brokerMap = await fetchMarketWideBrokerSummaryMap(radarDays, { date: dt, refresh: true });
+      const [liveRes, brokerMap, fsRes] = await Promise.all([
+        loadNepseData(dt || '').catch(() => null),
+        fetchMarketWideBrokerSummaryMap(radarDays, { date: dt || undefined, refresh: true }).catch(() => null),
+        fetchRealFloorsheet(dt || undefined).catch(() => [])
+      ]);
       if (radarReqIdRef.current !== reqId) return;
+      if (Array.isArray(liveRes?.stocks) && liveRes.stocks.length > 0) {
+        setStocks(liveRes.stocks);
+      }
+      if (Array.isArray(fsRes)) {
+        setFloorsheet(fsRes);
+      }
       if (brokerMap && typeof brokerMap === 'object') {
         const keyedMap: Record<string, any> = {};
         for (const [k, v] of Object.entries(brokerMap)) {
@@ -899,18 +916,19 @@ export function AccumulationDistributionRadar({
       setLoading(true);
       try {
         const effInitialDate = radarDate || incomingDate || '';
-        const [liveRes, datesRes, brokerMapRes] = await Promise.allSettled([
+        const [liveRes, datesRes, brokerMapRes, fsRes] = await Promise.allSettled([
           loadNepseData(effInitialDate),
           fetchAvailableTradingDates(),
-          fetchMarketWideBrokerSummaryMap(1, { date: effInitialDate })
+          fetchMarketWideBrokerSummaryMap(1, { date: effInitialDate || undefined }),
+          fetchRealFloorsheet(effInitialDate || undefined)
         ]);
         if (!isMounted) return;
+        if (fsRes.status === 'fulfilled' && Array.isArray(fsRes.value)) {
+          setFloorsheet(fsRes.value);
+        }
         if (datesRes.status === 'fulfilled' && Array.isArray(datesRes.value) && datesRes.value.length > 0) {
           setAvailableSessionDates(datesRes.value);
-          const freshestDate = datesRes.value[0];
-          if (!incomingDate && freshestDate && (!effInitialDate || freshestDate > effInitialDate)) {
-            handleRadarDateChange(freshestDate);
-          }
+          setLoadedTradingDays(datesRes.value.length);
         }
         if (brokerMapRes.status === 'fulfilled' && brokerMapRes.value && typeof brokerMapRes.value === 'object') {
           const map1D: Record<string, any> = {};
@@ -1659,17 +1677,11 @@ export function AccumulationDistributionRadar({
     analyzedStocks.forEach((s) => {
       const st = s.wyckoff?.stage || '';
       const ph = s.phase || '';
-      if (ph === 'STEALTH_ACCUMULATION' || st.includes('STEALTH') || s.isAccumulation) {
-        stealthCount++;
-      } else if (ph === 'ACTIVE_MARKUP' || st.includes('PUMP')) {
-        pumpCount++;
-      } else if (ph === 'DISTRIBUTION_DANGER' || st.includes('DISTRIBUTION') || st.includes('EUPHORIA')) {
-        distributionCount++;
-      } else if (ph === 'BULL_TRAP' || st.includes('DUMP') || s.isTrap || s.isDumping) {
-        dumpCount++;
-      } else if (st.includes('SPRING')) {
-        springCount++;
-      }
+      if (ph === 'STEALTH_ACCUMULATION' || st.includes('STEALTH') || s.isAccumulation) stealthCount++;
+      if (ph === 'ACTIVE_MARKUP' || st.includes('PUMP')) pumpCount++;
+      if (ph === 'DISTRIBUTION_DANGER' || st.includes('DISTRIBUTION') || st.includes('EUPHORIA')) distributionCount++;
+      if (ph === 'BULL_TRAP' || st.includes('DUMP') || s.isTrap || s.isDumping) dumpCount++;
+      if (st.includes('SPRING')) springCount++;
       totalCMF += (s.wyckoff?.cmf || 0);
 
       const qai = s.wyckoff?.qaiScore || 0;
@@ -1829,7 +1841,11 @@ export function AccumulationDistributionRadar({
               {stats.step4AccumulationCount > 0 ? (
                 <span>
                   🟢 <strong className="text-emerald-400">{stats.step4AccumulationCount} Institutional Accumulations</strong> (&gt;40% BCR₃) | 
-                  Top sector: <span className="text-amber-300">Hydro Power ({sectorFlowStats.find(s=>s.sector.toLowerCase().includes('hydro'))?.accumulatingCount || 0})</span> | 
+                  Top sector: <span className="text-amber-300">
+                    {sectorFlowStats[0]
+                      ? `${sectorFlowStats[0].sector} (${sectorFlowStats[0].accumulatingCount})`
+                      : 'N/A'}
+                  </span> | 
                   🚨 {stats.step4TrapCount} Distribution Trap alerts flagged
                 </span>
               ) : (
@@ -3236,7 +3252,7 @@ export function AccumulationDistributionRadar({
                         <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80">
                           <div className="text-[11px] text-slate-400 font-medium">Session Turnover &amp; Float</div>
                           <div className="font-extrabold text-white text-sm mt-0.5">
-                            Rs. {(stock.turnover / 1e7).toFixed(2)} Cr
+                            {Number.isFinite(Number(stock.turnover)) ? `Rs. ${(Number(stock.turnover) / 1e7).toFixed(2)} Cr` : '—'}
                           </div>
                           <div className="text-[11px] text-emerald-400 font-semibold mt-0.5">
                             {stock.floatAbsorptionPct || stock.floatTurnoverPct ? `${(stock.floatAbsorptionPct || stock.floatTurnoverPct)}% Float` : `${stock.volume?.toLocaleString()} sh`}
@@ -3400,7 +3416,7 @@ export function AccumulationDistributionRadar({
                         <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80">
                           <div className="text-[11px] text-slate-400 font-medium">Session Turnover &amp; Float</div>
                           <div className="font-extrabold text-white text-sm mt-0.5">
-                            Rs. {(stock.turnover / 1e7).toFixed(2)} Cr
+                            {Number.isFinite(Number(stock.turnover)) ? `Rs. ${(Number(stock.turnover) / 1e7).toFixed(2)} Cr` : '—'}
                           </div>
                           <div className="text-[11px] text-rose-400 font-semibold mt-0.5">
                             {stock.floatTurnoverPct ? `${stock.floatTurnoverPct}% of Float` : `${stock.volume?.toLocaleString()} sh`}

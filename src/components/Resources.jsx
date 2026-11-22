@@ -378,7 +378,7 @@ export default function Resources({ onNavigateTab }) {
                   </div>
                   <button 
                     type="button"
-                    onClick={() => openExternalUrl(`https://tms${broker.number}.nepalstock.com.np/`)}
+                    onClick={() => openExternalUrl(`https://tms${String(broker.number).padStart(2, '0')}.nepalstock.com.np/`)}
                     title={`Open Broker #${broker.number} TMS`}
                     style={{ padding: 6, background: 'var(--primary-subtle)', border: '1px solid rgba(91,94,244,0.2)', borderRadius: 8, color: 'var(--primary-light)', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer' }}
                   >

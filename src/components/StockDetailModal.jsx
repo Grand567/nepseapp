@@ -3323,7 +3323,7 @@ export default function StockDetailModal({
       setPriceInput(String(d.ltp));
       setWaccInput(String(Number(d.ltp * 0.92).toFixed(1)));
     }
-  }, [d?.symbol, d?.ltp, priceInput]);
+  }, [d?.symbol, d?.ltp]);
 
   // Statutory NEPSE WACC & CGT Breakdown Helper
   const computeNepseRoundTripTrade = useCallback(({
@@ -4684,19 +4684,19 @@ export default function StockDetailModal({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>
                     <span style={{ fontSize: 12.5, color: '#94a3b8' }}>Market Cap</span>
                     <span style={{ fontSize: 13.5, fontWeight: 800, color: '#f8fafc', fontFamily: 'var(--font-mono)' }}>
-                      Rs. {Number(stockMetrics.marketCap).toLocaleString()}
+                      {Number.isFinite(Number(stockMetrics.marketCap)) && Number(stockMetrics.marketCap) > 0 ? `Rs. ${Number(stockMetrics.marketCap).toLocaleString()}` : '—'}
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>
                     <span style={{ fontSize: 12.5, color: '#94a3b8' }}>Float Market Cap</span>
                     <span style={{ fontSize: 13.5, fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
-                      Rs. {Number(stockMetrics.floatMarketCap).toLocaleString()}
+                      {Number.isFinite(Number(stockMetrics.floatMarketCap)) && Number(stockMetrics.floatMarketCap) > 0 ? `Rs. ${Number(stockMetrics.floatMarketCap).toLocaleString()}` : '—'}
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>
                     <span style={{ fontSize: 12.5, color: '#94a3b8' }}>Paid Up Cap</span>
                     <span style={{ fontSize: 13.5, fontWeight: 800, color: '#f8fafc', fontFamily: 'var(--font-mono)' }}>
-                      Rs. {Number(stockMetrics.paidUpCapital).toLocaleString()}
+                      {Number.isFinite(Number(stockMetrics.paidUpCapital)) && Number(stockMetrics.paidUpCapital) > 0 ? `Rs. ${Number(stockMetrics.paidUpCapital).toLocaleString()}` : '—'}
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>
@@ -5654,7 +5654,7 @@ export default function StockDetailModal({
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                         <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Bollinger Bands (20, 2σ)</span>
                         <span style={{ fontSize: 12, fontWeight: 800, color: isSqueeze ? '#2dd4bf' : '#94a3b8', background: isSqueeze ? 'rgba(45, 212, 191, 0.15)' : 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: 4 }}>
-                          {isSqueeze ? '⚡ Volatility Squeeze' : `Width ${bbBandwidth}%`}
+                          {isSqueeze ? '⚡ Volatility Squeeze' : (bbBandwidth != null && Number.isFinite(Number(bbBandwidth)) ? `Width ${bbBandwidth}%` : 'Insufficient Data')}
                         </span>
                       </div>
                       <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>

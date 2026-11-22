@@ -12,7 +12,7 @@
  *   3. Add to SERVICE_COMPONENTS: 'dividend-history': DividendHistoryPanel
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { TrendingUp, Gift, RotateCcw, Info, Calendar, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { fetchRealDividendHistory, totalCashDividend, totalBonusShare, dividendPayingYears, latestDividendRecord } from '../utils/dividendHistory';
 import { InfoBanner, NoData, Spinner, StockSearchSelect } from './ui';
@@ -65,22 +65,34 @@ export function DividendHistoryPanel({
   const [loading, setLoading] = useState(false);
   const [result, setResult]   = useState<any>(null);
   const [error, setError]     = useState('');
+  const reqSeqRef             = useRef(0);
 
   const analyze = useCallback(async (sym: string) => {
     if (!sym) return;
+    const reqId = ++reqSeqRef.current;
     setSymbol(sym);
     setLoading(true);
     setResult(null);
     setError('');
+
+    let timer: any = null;
     try {
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Dividend fetch timeout')), 5000));
+      const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Dividend fetch timeout')), 5000);
+      });
       const res = await Promise.race([fetchRealDividendHistory(sym), timeoutPromise]) as any;
+      if (reqId !== reqSeqRef.current) return;
       setResult(res);
       if (!res.real && res.error) setError(res.error);
     } catch (e: any) {
+      if (reqId !== reqSeqRef.current) return;
       setError(e.message || 'Failed to fetch dividend history');
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (reqId === reqSeqRef.current) {
+        setLoading(false);
+      }
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -142,7 +154,7 @@ export function DividendHistoryPanel({
               </span>
             )}
             {result.fetchedAt && (
-              <span className="text-slate-500">as of {new Date(result.fetchedAt).toLocaleTimeString()}</span>
+              <span className="text-slate-500">as of {new Date(result.fetchedAt).toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu', hour12: true })} NPT</span>
             )}
           </div>
 
@@ -260,7 +272,7 @@ export function DividendHistoryPanel({
             </>
           )}
 
-          {dividends.length === 0 && result.real === false && (
+          {dividends.length === 0 && (
             <NoData message={error || `No dividend or bonus share records found for ${symbol || initialSymbol}. The stock may be newly listed, or records may not be available from the data source.`} />
           )}
         </div>

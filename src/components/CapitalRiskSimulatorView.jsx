@@ -289,6 +289,15 @@ export function CapitalRiskSimulatorView({
               <span>Risk Per Share: <b className="text-rose-400 font-mono">Rs. {effectiveRiskPerShare.toFixed(2)}</b></span>
               <span>Reward Per Share: <b className="text-emerald-400 font-mono">Rs. {perShareGain.toFixed(2)}</b></span>
             </div>
+
+            {(!isStopValid || !isTargetValid) && (
+              <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-800/50 text-[11px] text-rose-300 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>
+                  {!isStopValid && !isTargetValid ? 'Stop-Loss must be below Entry Price, and Target must be above Entry Price.' : !isStopValid ? 'Invalid Stop-Loss: Stop-loss price must be strictly lower than Entry price.' : 'Invalid Target: Target price must be strictly higher than Entry price.'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Outputs */}

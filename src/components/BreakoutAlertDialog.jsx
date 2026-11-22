@@ -292,11 +292,11 @@ export default function BreakoutAlertDialog({
                 <span>1. Breakout Target Price (Rs.)</span>
                 {isPriceMetNow ? (
                   <span style={{ fontSize: 12, color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <CheckCircle2 size={11} /> Met (LTP {ltp})
+                    <CheckCircle2 size={11} /> Met (LTP {ltp > 0 ? ltp : '—'})
                   </span>
                 ) : (
                   <span style={{ fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>
-                    {(((Number(breakoutPrice) - ltp) / ltp) * 100).toFixed(1)}% to trigger
+                    {ltp > 0 && Number(breakoutPrice) > 0 ? `${(((Number(breakoutPrice) - ltp) / ltp) * 100).toFixed(1)}% to trigger` : 'Target set'}
                   </span>
                 )}
               </label>

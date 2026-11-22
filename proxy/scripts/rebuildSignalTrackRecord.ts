@@ -214,7 +214,7 @@ export function rebuildSignalTrackRecord(
 
   const {
     capitalPerTradeNpr = 250000,
-    shortTermCgtRate = 0.075,
+    shortTermCgtRate = 0.05,
     minTradableTurnoverNpr = 1500000,
     ratchetTriggerR = 1.2,
     ratchetLockGainPct = 1.2,
@@ -224,21 +224,23 @@ export function rebuildSignalTrackRecord(
 
   const upsertStmt = db.prepare(`
     INSERT INTO algorithmic_signal_ledger (
-      signal_id, symbol, sector, strategy,
+      signal_id, symbol, sector, strategy, signal_type,
       signal_date, trigger_ltp, initial_risk_pct, reward_multiple,
-      entry_date, entry_vwap, entry_turnover_npr,
-      target_price, initial_stop_price, active_stop_price, is_ratchet_armed,
-      settlement_unlock_date, status, exit_date, exit_price, holding_days,
+      entry_date, entry_price, entry_vwap, entry_turnover_npr,
+      target_price, target1_price, target2_price,
+      initial_stop_price, stop_loss_price, active_stop_price, is_ratchet_armed,
+      settlement_unlock_date, t2_unlock_date, status, exit_date, exit_price, holding_days,
       mfe_pct, mae_pct, gross_return_pct, net_return_pct,
       nepse_index_return_pct, nepse_alpha_pct,
       primary_broker_id, broker_anomaly_score, avg_ticket_kitta, market_regime,
       updated_at
     ) VALUES (
-      @signal_id, @symbol, @sector, @strategy,
+      @signal_id, @symbol, @sector, @strategy, @signal_type,
       @signal_date, @trigger_ltp, @initial_risk_pct, @reward_multiple,
-      @entry_date, @entry_vwap, @entry_turnover_npr,
-      @target_price, @initial_stop_price, @active_stop_price, @is_ratchet_armed,
-      @settlement_unlock_date, @status, @exit_date, @exit_price, @holding_days,
+      @entry_date, @entry_price, @entry_vwap, @entry_turnover_npr,
+      @target_price, @target1_price, @target2_price,
+      @initial_stop_price, @stop_loss_price, @active_stop_price, @is_ratchet_armed,
+      @settlement_unlock_date, @t2_unlock_date, @status, @exit_date, @exit_price, @holding_days,
       @mfe_pct, @mae_pct, @gross_return_pct, @net_return_pct,
       @nepse_index_return_pct, @nepse_alpha_pct,
       @primary_broker_id, @broker_anomaly_score, @avg_ticket_kitta, @market_regime,
@@ -282,6 +284,7 @@ export function rebuildSignalTrackRecord(
 
         const avgVol20 = window20.reduce((s, c) => s + c.volume, 0) / 20;
         const vol3DayAvg = window3.reduce((s, c) => s + c.volume, 0) / 3;
+        if (!candles[t - 3] || candles[t - 3].close <= 0 || dayT.close <= 0) continue;
         const threeDayGainPct = ((dayT.close - candles[t - 3].close) / candles[t - 3].close) * 100;
         const threeDayHigh = Math.max(...window20.map((c) => c.high));
 
@@ -293,10 +296,11 @@ export function rebuildSignalTrackRecord(
         const smartMoney = evaluateBrokerSmartMoney(brokerRows3D, totalVol3D, brokerBaselines);
 
         // Determine Market Regime using 20-day NEPSE Index slope
+        const nepseBase20 = candles[t - 20]?.nepseIndexClose;
         const nepse20ChangePct =
-          ((dayT.nepseIndexClose - candles[t - 20].nepseIndexClose) /
-            candles[t - 20].nepseIndexClose) *
-          100;
+          nepseBase20 > 0
+            ? ((dayT.nepseIndexClose - nepseBase20) / nepseBase20) * 100
+            : 0;
         const marketRegime = dayT.isQuarterEndWindow
           ? 'QUARTER_END_PRESSURE'
           : nepse20ChangePct >= 3.5
@@ -337,10 +341,10 @@ export function rebuildSignalTrackRecord(
           (dayTPlus1.vwap || (dayTPlus1.high + dayTPlus1.low + dayTPlus1.close) / 3).toFixed(2)
         );
 
-        // Check if Day T+1 locked in an unfillable +9.8% upper circuit or illiquid trap
+        // Check if Day T+1 locked in an unfillable +14.9% upper circuit or illiquid trap
         const dayTPlus1LowJumpPct = ((dayTPlus1.low - dayT.close) / dayT.close) * 100;
         const isUnfillableCircuit =
-          dayTPlus1LowJumpPct >= 9.6 || dayTPlus1.turnover < minTradableTurnoverNpr;
+          dayTPlus1LowJumpPct >= 14.9 || dayTPlus1.turnover < minTradableTurnoverNpr;
 
         const initialRiskPct = triggeredStrategy === 'STEALTH_ACCUMULATION' ? 5.0 : 6.0;
         const rewardMultiple = triggeredStrategy === 'STEALTH_ACCUMULATION' ? 2.4 : 2.2;
@@ -349,6 +353,7 @@ export function rebuildSignalTrackRecord(
         const targetPrice = Number(
           (entryVwap * (1 + (initialRiskPct * rewardMultiple) / 100)).toFixed(2)
         );
+        const target2Price = Number((entryVwap * 1.15).toFixed(2));
 
         const signalId = `${symbol}_${dayT.date}_${triggeredStrategy}`;
 
@@ -358,18 +363,24 @@ export function rebuildSignalTrackRecord(
             symbol,
             sector: dayT.sector || 'OTHERS',
             strategy: triggeredStrategy,
+            signal_type: triggeredStrategy,
             signal_date: dayT.date,
             trigger_ltp: dayT.close,
             initial_risk_pct: initialRiskPct,
             reward_multiple: rewardMultiple,
             entry_date: dayTPlus1.date,
+            entry_price: entryVwap,
             entry_vwap: entryVwap,
             entry_turnover_npr: dayTPlus1.turnover,
             target_price: targetPrice,
+            target1_price: targetPrice,
+            target2_price: target2Price,
             initial_stop_price: initialStopPrice,
+            stop_loss_price: initialStopPrice,
             active_stop_price: initialStopPrice,
             is_ratchet_armed: 0,
             settlement_unlock_date: null,
+            t2_unlock_date: 'UNFILLABLE_SKIP',
             status: 'UNFILLABLE_SKIP',
             exit_date: null,
             exit_price: null,
@@ -427,7 +438,7 @@ export function rebuildSignalTrackRecord(
           // 1. Check Stop-Loss / Ratchet Stop Breach (Conservative: check stop before target)
           if (c.low <= activeStopPrice) {
             status = isRatchetArmed ? 'RATCHET_STOP_WIN' : 'STOP_LOSS';
-            exitPrice = activeStopPrice;
+            exitPrice = Number(Math.min(c.open > 0 ? c.open : activeStopPrice, activeStopPrice).toFixed(2));
             exitIdx = k;
             break;
           }
@@ -467,13 +478,16 @@ export function rebuildSignalTrackRecord(
           shortTermCgtRate
         );
 
-        const nepseIndexReturnPct = Number(
-          (
-            ((candles[exitIdx].nepseIndexClose - dayTPlus1.nepseIndexClose) /
-              dayTPlus1.nepseIndexClose) *
-            100
-          ).toFixed(2)
-        );
+        const nepseIndexReturnPct =
+          dayTPlus1.nepseIndexClose > 0
+            ? Number(
+                (
+                  ((candles[exitIdx].nepseIndexClose - dayTPlus1.nepseIndexClose) /
+                    dayTPlus1.nepseIndexClose) *
+                  100
+                ).toFixed(2)
+              )
+            : 0;
         const nepseAlphaPct = Number((netReturnPct - nepseIndexReturnPct).toFixed(2));
 
         upsertStmt.run({
@@ -481,18 +495,24 @@ export function rebuildSignalTrackRecord(
           symbol,
           sector: dayT.sector || 'OTHERS',
           strategy: triggeredStrategy,
+          signal_type: triggeredStrategy,
           signal_date: dayT.date,
           trigger_ltp: dayT.close,
           initial_risk_pct: initialRiskPct,
           reward_multiple: rewardMultiple,
           entry_date: dayTPlus1.date,
+          entry_price: entryVwap,
           entry_vwap: entryVwap,
           entry_turnover_npr: dayTPlus1.turnover,
           target_price: targetPrice,
+          target1_price: targetPrice,
+          target2_price: target2Price,
           initial_stop_price: initialStopPrice,
+          stop_loss_price: initialStopPrice,
           active_stop_price: activeStopPrice,
           is_ratchet_armed: isRatchetArmed,
           settlement_unlock_date: settlementUnlockDate,
+          t2_unlock_date: settlementUnlockDate || dayTPlus1.date,
           status,
           exit_date: status === 'ACTIVE' ? null : candles[exitIdx].date,
           exit_price: exitPrice,

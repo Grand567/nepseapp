@@ -148,18 +148,19 @@ export function analyzePoliticalAndMarketPulse(newsArticles = []) {
 
   newsArticles.slice(0, 15).forEach(article => {
     const t = article.title || article.headline || '';
+    const tLower = t.toLowerCase();
     highlights.push(t);
 
-    const isZeroDiv = zeroDivTerms.some(z => t.includes(z));
+    const isZeroDiv = zeroDivTerms.some(z => t.includes(z) || tLower.includes(z));
     if (isZeroDiv) {
       riskScore += 2.0; // Severe scrip risk
     } else {
-      positiveTerms.forEach(term => { if (t.includes(term)) positiveScore += 1; });
+      positiveTerms.forEach(term => { if (t.includes(term) || tLower.includes(term)) positiveScore += 1; });
     }
 
-    riskTerms.forEach(term => { if (t.includes(term)) riskScore += 1; });
+    riskTerms.forEach(term => { if (t.includes(term) || tLower.includes(term)) riskScore += 1; });
     politicalTerms.forEach(term => {
-      if (t.includes(term)) {
+      if (t.includes(term) || tLower.includes(term)) {
         if (t.includes('अन्तरिम आदेश नदिए') || t.includes('सहमति')) positiveScore += 0.5;
         else riskScore += 0.5;
       }
@@ -319,11 +320,12 @@ export function detectCorporateActionAlerts(newsArticles = []) {
   for (const article of (newsArticles || [])) {
     const text = (article.title || article.headline || '').trim();
     if (!text) continue;
+    const textLower = text.toLowerCase();
 
     const detectedSym = resolveSymbolFromText(text);
 
     // Detect Zero Dividend announcement
-    const hasZeroDiv = zeroDivTerms.some(term => text.includes(term));
+    const hasZeroDiv = zeroDivTerms.some(term => text.includes(term) || textLower.includes(term));
     if (hasZeroDiv) {
       zeroDivAlerts.push({
         type: 'ZERO_DIVIDEND_RISK',
@@ -336,7 +338,7 @@ export function detectCorporateActionAlerts(newsArticles = []) {
     }
 
     // Detect Dividend Declaration
-    const hasDivDecl = divDeclTerms.some(term => text.includes(term)) && !hasZeroDiv;
+    const hasDivDecl = (divDeclTerms.some(term => text.includes(term) || textLower.includes(term))) && !hasZeroDiv;
     if (hasDivDecl) {
       const pctMatch = text.match(/([०-९0-9.]+)\s*प्रतिशत/);
       dividendDeclarations.push({
@@ -350,7 +352,7 @@ export function detectCorporateActionAlerts(newsArticles = []) {
     }
 
     // Detect Right Share Issue
-    const hasRight = rightTerms.some(term => text.includes(term));
+    const hasRight = rightTerms.some(term => text.includes(term) || textLower.includes(term));
     if (hasRight) {
       const ratioMatch = text.match(/([०-९0-9]+)\s*[:：]\s*([०-९0-9.]+)/) || text.match(/([०-९0-9.]+)\s*प्रतिशत/);
       rightShareAlerts.push({
@@ -364,7 +366,7 @@ export function detectCorporateActionAlerts(newsArticles = []) {
     }
 
     // Detect Book Closure / AGM Notice
-    const hasBookClose = bookCloseTerms.some(term => text.includes(term));
+    const hasBookClose = bookCloseTerms.some(term => text.includes(term) || textLower.includes(term));
     if (hasBookClose) {
       bookClosureAlerts.push({
         type: 'BOOK_CLOSURE_ALERT',

@@ -127,7 +127,7 @@ async function runAuditPipeline() {
     { table: 'daily_stock_summary', query: 'SELECT MAX(trade_date) as max_val, COUNT(*) as cnt FROM daily_stock_summary' },
     { table: 'daily_broker_ledger', query: 'SELECT MAX(trade_date) as max_val, COUNT(*) as cnt FROM daily_broker_ledger' },
     { table: 'algorithmic_signal_ledger', query: 'SELECT MAX(signal_date) as max_val, COUNT(*) as cnt FROM algorithmic_signal_ledger' },
-    { table: 'floorsheet_contracts', query: 'SELECT MAX(trade_time) as max_val, COUNT(*) as cnt FROM floorsheet_contracts' },
+    { table: 'floorsheet_contracts', query: 'SELECT MAX(trade_date) as max_val, COUNT(*) as cnt FROM floorsheet_contracts' },
     { table: 'market_depth_cache', query: 'SELECT MAX(updated_at) as max_val, COUNT(*) as cnt FROM market_depth_cache' },
     { table: 'scrip_fundamentals', query: 'SELECT MAX(updated_at) as max_val, COUNT(*) as cnt FROM scrip_fundamentals' },
     { table: 'daily_ingestion_log', query: 'SELECT MAX(ingested_at) as max_val, COUNT(*) as cnt FROM daily_ingestion_log' },
@@ -443,7 +443,7 @@ async function runAuditPipeline() {
     { ep: '/api/sector-heatmap', mod: 'Services: Sector Heatmap' },
     { ep: '/api/smart-money/sector-ad', mod: 'Services: Smart Money Sector A/D' },
     { ep: '/api/brokers/directory', mod: 'Services: Brokers Directory' },
-    { ep: '/api/market/broker-summary?date=2026-11-19', mod: 'Services: Market Broker Summary' },
+    { ep: `/api/market/broker-summary?date=${sampleDate}`, mod: 'Services: Market Broker Summary' },
     { ep: '/api/smart-money/broker-desk/58', mod: 'Services: Broker 58 Desk Analysis' },
     { ep: '/api/smart-money/broker-holdings/58', mod: 'Services: Broker 58 Holdings' },
     { ep: '/api/floorsheet/daily-archive', mod: 'Services: Floorsheet Daily Archive' },
@@ -477,15 +477,14 @@ async function runAuditPipeline() {
           const dbNabilVol = db.prepare(`
             SELECT SUM(buy_vol) as total_buy_vol
             FROM daily_broker_ledger
-            WHERE trade_date = '2026-11-19' AND symbol = 'NABIL'
-          `).get() as any;
+            WHERE trade_date = ? AND symbol = 'NABIL'
+          `).get(sampleDate) as any;
 
-          if (dbNabilVol && nabilBroker.totalVolume !== dbNabilVol.total_buy_vol) {
-            // Note: broker ledger total volume could represent buy or turnover
-            if (nabilBroker.totalVolume === 0) {
-              parityMatches = false;
-              discrepancies.push(`Broker summary totalVolume is 0 for NABIL on 2026-11-19`);
-            }
+          if (dbNabilVol && Number(nabilBroker.totalVolume) !== Number(dbNabilVol.total_buy_vol)) {
+            parityMatches = false;
+            discrepancies.push(
+              `Broker summary volume mismatch for NABIL on ${sampleDate}: API=${nabilBroker.totalVolume} vs DB=${dbNabilVol.total_buy_vol}`
+            );
           }
         }
       }

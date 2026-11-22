@@ -100,6 +100,11 @@ let _hotHistoricalLedger: Historical4DayLedger | null = null;
 let _hotLiveSession: any = null;
 let _isInitializing = false;
 const _initListeners: Array<(ledger: Historical4DayLedger | null) => void> = [];
+const _ledgerUpdateSubscribers = new Set<(ledger: Historical4DayLedger) => void>();
+
+function notifyLedgerSubscribers(ledger: Historical4DayLedger) {
+  _ledgerUpdateSubscribers.forEach(cb => { try { cb(ledger); } catch (_) {} });
+}
 
 /**
  * Initializes the client-side local ledger.
@@ -181,10 +186,10 @@ export async function syncLedgerFromServer(): Promise<Historical4DayLedger | nul
     if (!data && typeof fetch !== 'undefined') {
       const base = getProxyBase();
       try {
-        const res = await fetch(`${base}/api/ledger/5day-history`);
+        const res = await fetch(`${base}/api/ledger/5day-history`, { signal: AbortSignal.timeout(10000) });
         if (res.ok) data = await res.json();
       } catch (_) {
-        const res2 = await fetch(`${base}/api/ledger/4day-history`);
+        const res2 = await fetch(`${base}/api/ledger/4day-history`, { signal: AbortSignal.timeout(10000) });
         if (res2.ok) data = await res2.json();
       }
     }
@@ -201,6 +206,7 @@ export async function syncLedgerFromServer(): Promise<Historical4DayLedger | nul
 
       if (isNewer) {
         _hotHistoricalLedger = data;
+        notifyLedgerSubscribers(data);
         // Persist to IndexedDB with 7-day safety TTL, automatically replacing older 5-day window
         await idbSet(STORAGE_KEY_4D, data, 7 * 24 * 60 * 60 * 1000);
         console.log(`[LocalLedger] 🔄 Auto-replaced local 5-day ledger with new sessions: ${data.trading_sessions?.join(', ')}`);
@@ -265,7 +271,11 @@ export function useScrip5DayData(symbol: string) {
     }
 
     loadData();
-    return () => { isMounted = false; };
+    const onUpdate = (updated: Historical4DayLedger) => {
+      if (isMounted) setScripData(updated.stocks?.[cleanSym] || null);
+    };
+    _ledgerUpdateSubscribers.add(onUpdate);
+    return () => { isMounted = false; _ledgerUpdateSubscribers.delete(onUpdate); };
   }, [cleanSym]);
 
   return {
@@ -313,7 +323,11 @@ export function useServiceHubData() {
       }
     }
     load();
-    return () => { isMounted = false; };
+    const onUpdate = (updated: Historical4DayLedger) => {
+      if (isMounted && updated.service_hub) setHubData(updated.service_hub);
+    };
+    _ledgerUpdateSubscribers.add(onUpdate);
+    return () => { isMounted = false; _ledgerUpdateSubscribers.delete(onUpdate); };
   }, []);
 
   return { hubData, isLoading };
@@ -331,7 +345,7 @@ export async function fetchCloudHistoricalData(symbol: string, days: number = 36
     if (data) return data;
     if (typeof fetch !== 'undefined') {
       const base = getProxyBase();
-      const res = await fetch(`${base}/api/history/${sym}?days=${days}`);
+      const res = await fetch(`${base}/api/history/${sym}?days=${days}`, { signal: AbortSignal.timeout(12000) });
       if (res.ok) return await res.json();
     }
     return null;

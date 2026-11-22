@@ -136,7 +136,8 @@ export async function cdscRequest(options) {
     const fetchRes = await fetch(options.url, {
       method,
       headers: webHeaders,
-      body: options.data ? (typeof options.data === 'string' ? options.data : JSON.stringify(options.data)) : undefined
+      body: options.data ? (typeof options.data === 'string' ? options.data : JSON.stringify(options.data)) : undefined,
+      signal: AbortSignal.timeout(25000)
     });
 
     const text = await fetchRes.text();
@@ -440,14 +441,24 @@ export async function authenticateMeroShare(account) {
     const primaryId = await resolveDpClientId(account);
     addCandidate(primaryId);
 
-    // 2. All DPs sharing same bank name as the primary (sibling codes from mergers)
+    // 2. Sibling DPs sharing a distinctive institution name (excluding generic stopwords to prevent 133-request WAF floods)
+    const DP_STOPWORDS = new Set([
+      'limited', 'bank', 'capital', 'securities', 'private', 'company',
+      'finance', 'investment', 'merchant', 'stock', 'broker', 'broking', 'nepal', 'development', 'bikash', 'bikas'
+    ]);
     const primaryEntry = MEROSHARE_DP_LIST.find(d => d.id === String(primaryId));
     if (primaryEntry) {
-      const bankKeywords = primaryEntry.name.split(' - ')[1]?.toLowerCase().split(' ').filter(w => w.length > 3) || [];
-      MEROSHARE_DP_LIST.forEach(d => {
-        const dname = d.name.toLowerCase();
-        if (bankKeywords.some(kw => dname.includes(kw))) addCandidate(d.id);
-      });
+      const bankKeywords = (primaryEntry.name.split(' - ')[1] || '')
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter(w => w.length > 3 && !DP_STOPWORDS.has(w));
+      if (bankKeywords.length > 0) {
+        MEROSHARE_DP_LIST.forEach(d => {
+          if (candidateIds.length >= 3) return;
+          const dname = d.name.toLowerCase();
+          if (bankKeywords.some(kw => dname.includes(kw))) addCandidate(d.id);
+        });
+      }
     }
 
     // 3. User-saved DP fallback

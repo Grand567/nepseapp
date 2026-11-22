@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Play, Activity, AlertOctagon, ShieldAlert, Cpu } from 'lucide-react';
 import { calculateBuyDetails, calculateSellDetails, calculateWacc } from '../utils/calculations';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
@@ -17,9 +17,17 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
   ]);
   const [isRunning, setIsRunning] = useState(false);
   const [testResult, setTestResult] = useState(null); // 'pass' or 'fail'
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   const addLog = (type, text) => {
-    setTestLogs(prev => [...prev, { type, text, time: new Date().toLocaleTimeString() }]);
+    if (!isMountedRef.current) return;
+    const timeStr = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu', hour12: true });
+    setTestLogs(prev => [...prev, { type, text, time: timeStr }]);
   };
 
   const runAllTests = async () => {
@@ -148,16 +156,19 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
 
     // Test 6: Live Core Market & Indices Feeds
     await new Promise(r => setTimeout(r, 300));
+    if (!isMountedRef.current) return;
     addLog('info', '🧪 Test 6: Live NEPSE Feeds & Market Indices API');
     try {
       const base = getProxyBase();
       const hResp = await fetch(`${base}/api/health`);
+      if (!hResp.ok) throw new Error(`Health endpoint returned HTTP ${hResp.status}`);
       const hData = await hResp.json();
       const iResp = await fetch(`${base}/api/market-indices`);
+      if (!iResp.ok) throw new Error(`Market indices returned HTTP ${iResp.status}`);
       const iData = await iResp.json();
       const val = iData?.nepse?.value || iData?.data?.nepse?.value || 0;
-      if (hResp.ok && val > 1000) {
-        addLog('success', `✅ Test 6 Passed: Live feeds active (NEPSE: ${Number(val).toFixed(2)} pts, Proxy: ${hData.status || 'OK'}).`);
+      if (val > 1000) {
+        addLog('success', `✅ Test 6 Passed: Live feeds active (NEPSE: ${Number(val).toFixed(2)} pts, Proxy: ${hData?.status || 'OK'}).`);
       } else {
         throw new Error(`Feed issue: HTTP ${hResp.status}, NEPSE value: ${val}`);
       }
@@ -168,10 +179,12 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
 
     // Test 7: Floorsheet Zero-Sum Broker Invariant
     await new Promise(r => setTimeout(r, 300));
+    if (!isMountedRef.current) return;
     addLog('info', '🧪 Test 7: Floorsheet Zero-Sum Broker Law (Buy Qty == Sell Qty)');
     try {
       const base = getProxyBase();
       const bResp = await fetch(`${base}/api/broker-analysis/NABIL?days=1&refresh=true`);
+      if (!bResp.ok) throw new Error(`Broker analysis returned HTTP ${bResp.status}`);
       const bData = await bResp.json();
       const brokers = (bData?.data || bData)?.brokers || [];
       const sumBuy = brokers.reduce((s, b) => s + (Number(b.buyVol ?? b.buyQty ?? 0) || 0), 0);
@@ -218,6 +231,7 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
       passed = false;
     }
 
+    if (!isMountedRef.current) return;
     setIsRunning(false);
     setTestResult(passed ? 'pass' : 'fail');
     if (passed) {
@@ -323,11 +337,11 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 12 }}>CDSC Connection Status:</span>
             <button 
-              onClick={() => setApiStatus(prev => prev === 'online' ? 'offline' : 'online')}
-              className={`badge ${apiStatus === 'online' ? 'badge-bull' : 'badge-bear'}`}
+              onClick={() => setApiStatus(prev => prev === 'live' ? 'offline' : 'live')}
+              className={`badge ${apiStatus === 'live' ? 'badge-bull' : 'badge-bear'}`}
               style={{ padding: '4px 12px', border: '1px solid', cursor: 'pointer' }}
             >
-              {apiStatus === 'online' ? 'Server Online' : 'Network Failure Mode'}
+              {apiStatus === 'live' ? 'Server Live' : 'Network Failure Mode'}
             </button>
           </div>
           <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>

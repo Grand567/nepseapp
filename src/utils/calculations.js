@@ -545,8 +545,8 @@ export function calculateNetRiskRewardRatio({
   const netRRR2 = netLossSL > 0 ? +(netProfitT2 / netLossSL).toFixed(2) : 0;
   const isBuyAllowed = netProfitT1 > 0 && netRRR1 >= requiredNetRRR;
 
-  // 6. Stop-to-Breakeven Rule at Target 1 (50% scale-out, remaining 50% runner risk-free)
-  const scaleOutQty = Math.max(10, Math.floor((qty * 0.5) / 10) * 10);
+  // 6. Stop-to-Breakeven Rule at Target 1 (50% scale-out if >= 20 kitta, remaining runner risk-free; single exit if 10 kitta)
+  const scaleOutQty = qty >= 20 ? Math.floor((qty * 0.5) / 10) * 10 : qty;
   const runnerQty = Math.max(0, qty - scaleOutQty);
   const breakevenObj = calculateStatutoryBreakevenPrice(Math.max(10, runnerQty), entry);
 
@@ -573,12 +573,14 @@ export function calculateNetRiskRewardRatio({
     stopToBreakevenRule: {
       enabled: true,
       triggerAtPrice: t1,
-      scaleOutPct: 50,
+      scaleOutPct: qty >= 20 ? 50 : 100,
       scaleOutQty,
       runnerQty,
       newStopLossPrice: breakevenObj.breakevenPrice,
       runnerRiskRupees: 0,
-      instruction: `At Target 1 (Rs. ${t1}), sell ${scaleOutQty} kitta (50%) and immediately raise Stop-Loss on the remaining ${runnerQty} kitta to Statutory Breakeven (Rs. ${breakevenObj.breakevenPrice}) for a 100% risk-free runner.`
+      instruction: runnerQty > 0
+        ? `At Target 1 (Rs. ${t1}), sell ${scaleOutQty} kitta (50%) and immediately raise Stop-Loss on the remaining ${runnerQty} kitta to Statutory Breakeven (Rs. ${breakevenObj.breakevenPrice}) for a 100% risk-free runner.`
+        : `At Target 1 (Rs. ${t1}), sell entire ${scaleOutQty} kitta (minimum 10-kitta lot, single exit).`
     }
   };
 }

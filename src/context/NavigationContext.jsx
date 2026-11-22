@@ -167,13 +167,19 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
 
   // Hook into Capacitor Native Android Hardware Back Button & Swipe Gestures
   useEffect(() => {
+    let isMounted = true;
     let listenerHandle = null;
 
     const setupCapacitor = async () => {
       try {
-        listenerHandle = await CapacitorApp.addListener('backButton', () => {
+        const handle = await CapacitorApp.addListener('backButton', () => {
           if (goBackRef.current) goBackRef.current();
         });
+        if (!isMounted) {
+          if (handle && typeof handle.remove === 'function') handle.remove();
+        } else {
+          listenerHandle = handle;
+        }
       } catch (_) {
         // Web / non-Capacitor environment
       }
@@ -188,6 +194,7 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
     window.addEventListener('popstate', handlePopState);
 
     return () => {
+      isMounted = false;
       if (listenerHandle && typeof listenerHandle.remove === 'function') {
         listenerHandle.remove();
       }

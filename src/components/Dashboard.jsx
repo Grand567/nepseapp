@@ -620,7 +620,7 @@ const isCircuitStock = (s, direction = 'any') => {
   const chg = Number(s?.pChange) || 0;
   const dateStr = s?.date || s?.businessDate || '';
   const isPreRegime = Boolean(dateStr && dateStr < '2026-04-20');
-  const threshold = isPreRegime ? 9.5 : 14.0;
+  const threshold = isPreRegime ? 9.85 : 14.85;
   const isPos = chg >= threshold || (Boolean(s?.isCircuitHit) && chg > 0);
   const isNeg = chg <= -threshold || (Boolean(s?.isCircuitHit) && chg < 0);
   if (direction === 'pos') return isPos;
@@ -821,11 +821,18 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
     }
 
     return list.sort((a, b) => {
+      if (sortField === 'symbol') {
+        const sA = String(a.symbol || '');
+        const sB = String(b.symbol || '');
+        return sortAsc ? sA.localeCompare(sB) : sB.localeCompare(sA);
+      }
       let vA = a[sortField] || 0;
       let vB = b[sortField] || 0;
       return sortAsc ? vA - vB : vB - vA;
     });
   }, [stocks, tab, search, sortField, sortAsc]);
+
+  const pureEquities = useMemo(() => stocks.filter(s => isPureNepseEquity(s)), [stocks]);
 
   const handleSort = (field) => {
     if (sortField === field) setSortAsc(!sortAsc);
@@ -852,11 +859,11 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
 
         <div style={{ display: 'flex', gap: 6, padding: '10px 14px', overflowX: 'auto', borderBottom: '1px solid var(--border)' }}>
           {[
-            { id: 'advanced', label: 'Advanced', count: stocks.filter(s => (s.pChange || 0) > 0).length, color: 'var(--bull)' },
-            { id: 'declined', label: 'Declined', count: stocks.filter(s => (s.pChange || 0) < 0).length, color: '#F43F5E' },
-            { id: 'unchanged', label: 'Unchanged', count: stocks.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0)).length, color: 'var(--text-muted)' },
-            { id: 'circuit_pos', label: '+ve Circuit (15%)', count: stocks.filter(s => isCircuitStock(s, 'pos')).length, color: 'var(--bull)' },
-            { id: 'circuit_neg', label: '-ve Circuit (15%)', count: stocks.filter(s => isCircuitStock(s, 'neg')).length, color: '#F43F5E' },
+            { id: 'advanced', label: 'Advanced', count: pureEquities.filter(s => (s.pChange || 0) > 0).length, color: 'var(--bull)' },
+            { id: 'declined', label: 'Declined', count: pureEquities.filter(s => (s.pChange || 0) < 0).length, color: '#F43F5E' },
+            { id: 'unchanged', label: 'Unchanged', count: pureEquities.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0)).length, color: 'var(--text-muted)' },
+            { id: 'circuit_pos', label: '+ve Circuit (15%)', count: pureEquities.filter(s => isCircuitStock(s, 'pos')).length, color: 'var(--bull)' },
+            { id: 'circuit_neg', label: '-ve Circuit (15%)', count: pureEquities.filter(s => isCircuitStock(s, 'neg')).length, color: '#F43F5E' },
           ].map(t => (
             <button
               key={t.id}
@@ -1109,6 +1116,7 @@ const TopSearchBar = React.memo(function TopSearchBar({
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('touchstart', handleOutsideClick);
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
   }, [setIsSearching]);
 
@@ -1618,11 +1626,23 @@ function Dashboard({
 
   // Hook back handlers for local modals
   useBackHandler(() => {
+    if (isHeroFullscreen) { handleToggleHeroFullscreen(); return true; }
+    if (showSignalTrackerModal) { setShowSignalTrackerModal(false); return true; }
     if (breadthModalTab) { setBreadthModalTab(null); return true; }
     if (showSubIndicesModal) { setShowSubIndicesModal(false); return true; }
     if (showTVModal) { setShowTVModal(false); return true; }
     return false;
-  }, Boolean(breadthModalTab || showSubIndicesModal || showTVModal), 30);
+  }, Boolean(isHeroFullscreen || showSignalTrackerModal || breadthModalTab || showSubIndicesModal || showTVModal), 30);
+
+  // Ensure fullscreen & landscape lock are always released on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+        if (window.screen?.orientation?.unlock) window.screen.orientation.unlock();
+      } catch (_) {}
+    };
+  }, []);
 
   const primeDailyPickRef = useRef(null);
 
@@ -1870,6 +1890,42 @@ function Dashboard({
     return () => { active = false; };
   }, [activeHeroIndex.key, activeHeroIndex.name, heroTimeframe]);
 
+  // Live 1D intraday tick appender so chart stays synced with live NOTS ticks during market hours
+  useEffect(() => {
+    if (heroTimeframe !== '1D' || !marketStatus?.isOpen || apiStatus !== 'live') return;
+    const liveVal = activeHeroIndex?.isStock
+      ? Number(activeHeroIndex?.val?.value || 0)
+      : (activeHeroIndex.key === 'nepse' ? Number(indices?.nepse?.value || 0) : Number(activeHeroIndex?.val?.value || 0));
+    if (!Number.isFinite(liveVal) || liveVal <= 0) return;
+
+    setHeroHistory(prev => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      const lastPt = prev[prev.length - 1];
+      if (!lastPt || Math.abs(Number(lastPt.close) - liveVal) < 0.01) return prev;
+      const nowNpt = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' });
+      const next = [...prev];
+      if (lastPt.time === nowNpt) {
+        next[next.length - 1] = {
+          ...lastPt,
+          close: liveVal,
+          high: Math.max(Number(lastPt.high || liveVal), liveVal),
+          low: Math.min(Number(lastPt.low || liveVal), liveVal),
+        };
+      } else {
+        next.push({
+          time: nowNpt,
+          timestamp: Math.floor(Date.now() / 1000),
+          open: Number(lastPt.close || liveVal),
+          high: Math.max(Number(lastPt.close || liveVal), liveVal),
+          low: Math.min(Number(lastPt.close || liveVal), liveVal),
+          close: liveVal,
+          volume: 0,
+        });
+      }
+      return next;
+    });
+  }, [indices?.nepse?.value, activeHeroIndex?.isStock, activeHeroIndex?.key, activeHeroIndex?.val?.value, heroTimeframe, marketStatus?.isOpen, apiStatus]);
+
   const handleHeroTimeframeChange = (tf) => {
     triggerHaptic(25);
     setHeroTimeframe(tf);
@@ -1915,12 +1971,12 @@ function Dashboard({
     const adRatio = advancedCount / totalTraded;
     const breadthScore = adRatio * 100;
     
-    const nepseVal = Number(currentHeroValue) || 2550;
-    
-    // Dynamically compute 200-period SMA from heroHistory when available
+    // Anchor strictly to NEPSE index + cached daily NEPSE history (never currentHeroValue or 1D ticks/single stock)
+    const nepseVal = Number(indices?.nepse?.value || getCachedIndices()?.nepse?.value || 0);
     let dynamicSma200 = null;
-    if (Array.isArray(heroHistory) && heroHistory.length >= 20) {
-      const closeValues = heroHistory.map(h => Number(h.close || h.value || 0)).filter(v => v > 0);
+    const nepseDaily = getCachedRealPriceHistory('NEPSE');
+    if (Array.isArray(nepseDaily) && nepseDaily.length >= 20) {
+      const closeValues = nepseDaily.map(h => Number(h.close || h.value || 0)).filter(v => v > 0);
       if (closeValues.length >= 20) {
         const period = Math.min(200, closeValues.length);
         const slice = closeValues.slice(-period);
@@ -1928,9 +1984,12 @@ function Dashboard({
       }
     }
     const sma200 = dynamicSma200 || nepseVal;
-    const trendScore = nepseVal >= sma200 ? 65 + Math.min(25, (nepseVal - sma200) / 20) : 35 - Math.min(25, (sma200 - nepseVal) / 20);
+    const trendScore = (nepseVal > 0 && sma200 > 0)
+      ? (nepseVal >= sma200 ? 65 + Math.min(25, (nepseVal - sma200) / 20) : 35 - Math.min(25, (sma200 - nepseVal) / 20))
+      : 50;
     
-    const avgPChange = stocks.length > 0 ? (stocks.reduce((acc, s) => acc + (Number(s.pChange) || 0), 0) / stocks.length) : 0;
+    const tradedEquities = stocks.filter(s => isPureNepseEquity(s) && ((Number(s.volume) || 0) > 0 || (Number(s.turnover) || 0) > 0));
+    const avgPChange = tradedEquities.length > 0 ? (tradedEquities.reduce((acc, s) => acc + (Number(s.pChange) || 0), 0) / tradedEquities.length) : 0;
     const rsiScore = 50 + (avgPChange * 12);
 
     const rawScore = Math.round(breadthScore * 0.35 + trendScore * 0.35 + rsiScore * 0.30);
@@ -1963,7 +2022,7 @@ function Dashboard({
     }
 
     return { score, label, color, desc };
-  }, [advancedCount, declinedCount, unchangedCount, currentHeroValue, stocks, heroHistory]);
+  }, [advancedCount, declinedCount, unchangedCount, indices?.nepse?.value, stocks]);
 
   // Robust Movers Data Lists
   const isDebentureOrBond = (s) => {
@@ -2266,10 +2325,10 @@ function Dashboard({
     }
 
     // When market is closed (e.g. Sat, Sun, public holidays, or closed off-hours), avoid continuous re-evaluations
+    if (!Array.isArray(stocks) || stocks.length === 0) return;
     if (!status.isOpen && lastEvaluatedSessionRef.current === status.targetSessionDate) {
       return;
     }
-    lastEvaluatedSessionRef.current = status.targetSessionDate;
 
     // Collect top candidates in strict priority order to verify against quantitative setup engine
     const prioritySymbols = [];
@@ -2328,6 +2387,7 @@ function Dashboard({
       });
 
     if (prioritySymbols.length === 0) return;
+    lastEvaluatedSessionRef.current = status.targetSessionDate;
 
     let isMounted = true;
     setIsEvaluatingCandidates(true);
@@ -2455,7 +2515,7 @@ function Dashboard({
       isMounted = false;
       setIsEvaluatingCandidates(false);
     };
-  }, [stocks?.length, watchedOrAlertSymbols, activeBreakoutToast?.symbol, cashDefenseActive, backtestCacheVersion]);
+  }, [stocks?.length, watchedOrAlertSymbols, activeBreakoutToast?.symbol, cashDefenseActive]);
 
   // Poll Level-2 pre-open order book during pre-open / post-market sessions for the Prime Pick
   useEffect(() => {

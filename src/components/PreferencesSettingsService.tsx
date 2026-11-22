@@ -165,15 +165,33 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
     await saveEncryptedUserProfiles(updated, activeUserId);
   };
 
+  const safeParseArray = (key: string): any[] => {
+    try {
+      const raw = localStorage.getItem(key);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
+    }
+  };
+
+  const readCanonicalPortfolio = (): any[] => {
+    const profiles = safeParseArray('nepse_portfolio_profiles');
+    if (profiles.length > 0) return profiles;
+    const userTx = safeParseArray(`nepse_hub_${activeUserId}_transactions`);
+    if (userTx.length > 0) return userTx;
+    return safeParseArray('nepse_portfolio_v1');
+  };
+
   // Backup Export
   const handleExportBackup = () => {
     try {
       const backup = {
         exportedAt: new Date().toISOString(),
         watchlist: getWatchlist(),
-        portfolio: JSON.parse(localStorage.getItem('nepse_portfolio_v1') || '[]'),
-        notes: JSON.parse(localStorage.getItem('nepse_notes_v1') || '[]'),
-        alerts: JSON.parse(localStorage.getItem('nepse_alerts_v1') || '[]'),
+        portfolio: readCanonicalPortfolio(),
+        notes: safeParseArray('nepse_trade_notes'),
+        alerts: safeParseArray('nepse_stock_alerts'),
         meroShareAccounts: accounts.map(a => ({
           ...a,
           password: '••••••••',
@@ -189,9 +207,9 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
   };
 
   const watchlistCount = getWatchlist().length;
-  const portfolioCount = (JSON.parse(localStorage.getItem('nepse_portfolio_v1') || '[]')).length;
-  const notesCount = (JSON.parse(localStorage.getItem('nepse_notes_v1') || '[]')).length;
-  const alertsCount = (JSON.parse(localStorage.getItem('nepse_alerts_v1') || '[]')).length;
+  const portfolioCount = readCanonicalPortfolio().length;
+  const notesCount = safeParseArray('nepse_trade_notes').length;
+  const alertsCount = safeParseArray('nepse_stock_alerts').length;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4">
@@ -621,7 +639,7 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
                       ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
                       : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
                   }`}>
-                    {monitoringData?.overallStatus || 'HEALTHY'}
+                    {loadingHealth ? 'CHECKING...' : (monitoringData?.overallStatus || 'UNKNOWN')}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -642,7 +660,7 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
 
           {/* Quick Metrics Grid */}
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <StatCard label="Memory Securities" value={cachedStocksCount || '247 Stocks'} color="#3b82f6" />
+            <StatCard label="Memory Securities" value={`${cachedStocksCount} Stocks`} color="#3b82f6" />
             <StatCard 
               label="Data Completeness" 
               value={monitoringData?.completeness?.completenessPct != null ? `${monitoringData.completeness.completenessPct}%` : 'N/A'} 
@@ -683,13 +701,13 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
               <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
                 <div 
                   className={`h-full transition-all duration-500 ${
-                    (monitoringData?.completeness?.completenessPct ?? 100) >= 98
+                    (monitoringData?.completeness?.completenessPct ?? 0) >= 98
                       ? 'bg-emerald-500'
-                      : (monitoringData?.completeness?.completenessPct ?? 100) >= 80
+                      : (monitoringData?.completeness?.completenessPct ?? 0) >= 80
                       ? 'bg-amber-500'
                       : 'bg-rose-500'
                   }`}
-                  style={{ width: `${Math.min(100, Math.max(5, monitoringData?.completeness?.completenessPct ?? 100))}%` }}
+                  style={{ width: `${Math.min(100, Math.max(0, monitoringData?.completeness?.completenessPct ?? 0))}%` }}
                 />
               </div>
 
@@ -708,35 +726,36 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
               <Server size={14} className="text-purple-400" /> 2. Scraper Telemetry &amp; Failover Status
             </h4>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {Object.values(monitoringData?.scrapers || {
-                nepse_nots: { name: 'NEPSE NOTS Direct API', successRatePct: 100, consecutiveFailures: 0, health: 'HEALTHY' },
-                floorsheet_scraper: { name: 'Daily Floorsheet Scraper', successRatePct: 100, consecutiveFailures: 0, health: 'HEALTHY' },
-                broker_vault: { name: 'Broker Accumulation Vault', successRatePct: 100, consecutiveFailures: 0, health: 'HEALTHY' },
-                fundamentals_scraper: { name: 'Quarterly Fundamentals Scraper', successRatePct: 100, consecutiveFailures: 0, health: 'HEALTHY' }
-              }).map((s: any, idx) => (
-                <div key={idx} className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-xs font-bold text-white">{s.name}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      Success Rate: <span className="text-slate-200 font-mono">{s.successRatePct ?? 100}%</span>
-                      {s.consecutiveFailures > 0 && (
-                        <span className="text-rose-400 ml-1.5">({s.consecutiveFailures} fails)</span>
-                      )}
+            {!monitoringData?.scrapers ? (
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-400">
+                {loadingHealth ? 'Loading live scraper telemetry...' : 'Scraper telemetry unavailable while backend proxy is offline or degraded.'}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {Object.values(monitoringData.scrapers).map((s: any, idx) => (
+                  <div key={idx} className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-white">{s.name}</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        Success Rate: <span className="text-slate-200 font-mono">{s.successRatePct ?? 100}%</span>
+                        {s.consecutiveFailures > 0 && (
+                          <span className="text-rose-400 ml-1.5">({s.consecutiveFailures} fails)</span>
+                        )}
+                      </div>
                     </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                      s.health === 'DEGRADED'
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                        : s.health === 'WARNING'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    }`}>
+                      {s.health || 'HEALTHY'}
+                    </span>
                   </div>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                    s.health === 'DEGRADED'
-                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                      : s.health === 'WARNING'
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                  }`}>
-                    {s.health || 'HEALTHY'}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 3. STALE DATA MONITORING */}

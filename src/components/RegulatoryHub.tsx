@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Landmark, Coins, FileText, Gem, ArrowRightLeft,
   ExternalLink, Search, RefreshCw, Shield, AlertCircle,
@@ -11,6 +11,7 @@ import {
 } from '../utils/servicesApi';
 import { formatNptDateIso } from '../utils/nepseCalendar';
 import { NRBMacroWidget } from './NRBMacroWidget';
+import { openExternalUrl } from '../utils/externalLinks';
 
 export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' | 'macro' | 'bullion' | 'circulars' } = {}) {
   const [activeSubTab, setActiveSubTab] = useState<'forex' | 'macro' | 'bullion' | 'circulars'>(initialTab);
@@ -44,14 +45,24 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
   const [circularsLoading, setCircularsLoading] = useState(false);
   const [circularSearch, setCircularSearch] = useState('');
 
-  const timeoutRace = <T,>(p: Promise<T>, ms = 5000): Promise<T> =>
-    Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
+  const isMountedRef = useRef(true);
+
+  const timeoutRace = <T,>(p: Promise<T>, ms = 5000): Promise<T> => {
+    let timer: any;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('timeout')), ms);
+    });
+    return Promise.race([p, timeout]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  };
 
   // Fetch Forex Rates
   const fetchForex = async () => {
     setForexLoading(true);
     try {
       const res: any = await timeoutRace(fetchForexRates());
+      if (!isMountedRef.current) return;
       if (res) {
         const rawRates = Array.isArray(res) ? res : (res?.rates || res?.data?.rates || res?.data || []);
         const normalized = rawRates.map((item: any) => ({
@@ -69,7 +80,7 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
     } catch (e) {
       console.warn('Forex fetch error', e);
     } finally {
-      setForexLoading(false);
+      if (isMountedRef.current) setForexLoading(false);
     }
   };
 
@@ -78,13 +89,14 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
     setMacroLoading(true);
     try {
       const res: any = await timeoutRace(fetchMacroIndicators());
+      if (!isMountedRef.current) return;
       if (res && (res.monetaryPolicy || res.indicators || res.data || res.inflationRate != null)) {
         setMacroData(res.data || res);
       }
     } catch (e) {
       console.warn('Macro fetch error', e);
     } finally {
-      setMacroLoading(false);
+      if (isMountedRef.current) setMacroLoading(false);
     }
   };
 
@@ -93,13 +105,14 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
     setBullionLoading(true);
     try {
       const res: any = await timeoutRace(fetchBullionRates());
+      if (!isMountedRef.current) return;
       if (res && (res.fineGold24k || res.fineGold || res.data || res.silver)) {
         setBullionData(res.data || res);
       }
     } catch (e) {
       console.warn('Bullion fetch error', e);
     } finally {
-      setBullionLoading(false);
+      if (isMountedRef.current) setBullionLoading(false);
     }
   };
 
@@ -111,6 +124,7 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
         timeoutRace(fetchNrbCirculars()),
         timeoutRace(fetchSebonCirculars()),
       ]);
+      if (!isMountedRef.current) return;
       if (nrbRes.status === 'fulfilled' && nrbRes.value) {
         const val = nrbRes.value;
         const list = Array.isArray(val) ? val : (Array.isArray(val?.data) ? val.data : []);
@@ -124,15 +138,19 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
     } catch (e) {
       console.warn('Circulars fetch error', e);
     } finally {
-      setCircularsLoading(false);
+      if (isMountedRef.current) setCircularsLoading(false);
     }
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
     fetchForex();
     fetchMacro();
     fetchBullion();
     fetchCirculars();
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   const filteredForex = forexData.filter((item) => {
@@ -342,7 +360,7 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
                     {filteredForex.map((c, i) => {
                       const buy = parseFloat(c.buy) || 0;
                       const sell = parseFloat(c.sell) || 0;
-                      const spread = (sell - buy).toFixed(2);
+                      const spread = (sell <= 0 || buy <= 0) ? '—' : `Rs. ${Math.abs(sell - buy).toFixed(2)}`;
                       return (
                         <tr key={c.iso3 || i} className="hover:bg-slate-800/30 transition-colors">
                           <td className="py-3 px-4">
@@ -357,13 +375,13 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
                             {c.unit}
                           </td>
                           <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
-                            {buy.toFixed(2)}
+                            {buy > 0 ? buy.toFixed(2) : '—'}
                           </td>
                           <td className="py-3 px-4 text-right font-mono font-bold text-blue-400">
-                            {sell.toFixed(2)}
+                            {sell > 0 ? sell.toFixed(2) : '—'}
                           </td>
                           <td className="py-3 px-4 text-right font-mono text-slate-400">
-                            Rs. {spread}
+                            {spread}
                           </td>
                         </tr>
                       );
@@ -694,15 +712,14 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
                         ? `https://www.nrb.org.np${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`
                         : `https://www.sebon.gov.np${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`);
                     return (
-                      <a
-                        href={resolvedUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-blue-400 hover:bg-slate-700 shrink-0"
+                      <button
+                        type="button"
+                        onClick={() => openExternalUrl(resolvedUrl)}
+                        className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-blue-400 hover:bg-slate-700 shrink-0 cursor-pointer"
                       >
                         <span>View</span>
                         <ExternalLink className="h-3 w-3" />
-                      </a>
+                      </button>
                     );
                   })()}
                 </div>

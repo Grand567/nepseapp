@@ -3,7 +3,7 @@ import {
   ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Target, TrendingUp,
   BarChart3, BookOpen, Lock, Scale, RefreshCw, SlidersHorizontal, Layers,
   Search, Info, ExternalLink, Shield, Flame, Activity, Clock, DollarSign,
-  ChevronRight, ChevronDown, Check, ArrowUpRight, ArrowDownRight
+  ChevronRight, ChevronDown, Check, ArrowUpRight, ArrowDownRight, ArrowLeft
 } from 'lucide-react';
 import { StatCard, InfoBanner, Spinner } from '../ui';
 import {
@@ -105,6 +105,21 @@ export default function SwingTradeSelectorView({
     return list.filter(s => (s.symbol || '').toUpperCase().includes(q));
   }, [equityStocks, searchQuery]);
 
+  // Memoize stock evaluation so typing in search does not recompute for 250+ equities
+  const evaluatedDisplayStocks = useMemo(() => {
+    return displayStocks.map(stock => ({
+      stock,
+      evalResult: evaluateStockSwingGates(stock, screeningResult.marketRegime)
+    }));
+  }, [displayStocks, screeningResult.marketRegime]);
+
+  const formatNprPnL = (val: number) => {
+    const num = Number(val || 0);
+    const isNeg = num < 0;
+    const absK = (Math.abs(num) / 1000).toFixed(1);
+    return `${isNeg ? '-Rs. ' : '+Rs. '}${absK}k`;
+  };
+
   const paperSummary = useMemo(() => {
     const priceMap: Record<string, number> = {};
     equityStocks.forEach((s) => {
@@ -142,6 +157,16 @@ export default function SwingTradeSelectorView({
 
   return (
     <div className="space-y-6 pb-16 text-slate-100 max-w-6xl mx-auto px-2 sm:px-4">
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700/80 transition cursor-pointer"
+        >
+          <ArrowLeft size={14} />
+          <span>बन्द गर्नुहोस् (Back)</span>
+        </button>
+      )}
       {/* 1. OFFICIAL FIDUCIARY VERDICT BANNER */}
       <div className="rounded-2xl border-2 border-rose-500/50 bg-rose-950/30 p-5 shadow-xl backdrop-blur-md">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -293,8 +318,7 @@ export default function SwingTradeSelectorView({
 
             {/* Scrip Cards / Table */}
             <div className="space-y-3">
-              {displayStocks.map((stock) => {
-                const evalResult = evaluateStockSwingGates(stock, screeningResult.marketRegime);
+              {evaluatedDisplayStocks.map(({ stock, evalResult }) => {
                 const isExpanded = expandedScrip === stock.symbol;
 
                 return (
@@ -329,16 +353,28 @@ export default function SwingTradeSelectorView({
                             </span>
                           </div>
                           <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
-                            <span>LTP: <strong className="text-white">Rs. {stock.ltp}</strong></span>
-                            <span className={stock.pChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                              {stock.pChange >= 0 ? '+' : ''}{stock.pChange}%
+                            <span>LTP: <strong className="text-white">Rs. {Number(stock.ltp || stock.close || 0).toFixed(1)}</strong></span>
+                            <span className={Number(stock.pChange || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                              {Number(stock.pChange || 0) >= 0 ? '+' : ''}{Number(stock.pChange || 0).toFixed(2)}%
                             </span>
-                            <span>Turnover: Rs. {((stock.turnover || 0)/100000).toFixed(1)}L</span>
+                            <span>Turnover: Rs. {((Number(stock.turnover || 0))/100000).toFixed(1)}L</span>
                           </div>
                         </div>
                       </div>
 
                       <div className="flex items-center justify-between sm:justify-end gap-3">
+                        {onSelectStock && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectStock(stock);
+                            }}
+                            className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700 cursor-pointer transition active:scale-95"
+                          >
+                            Details ↗
+                          </button>
+                        )}
                         <div className="text-right">
                           <span className={`text-xs font-bold px-2.5 py-1 rounded-md ${
                             evalResult.allGatesPassed
@@ -448,7 +484,9 @@ export default function SwingTradeSelectorView({
             </div>
             <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
               <span className="text-[11px] text-slate-400 font-medium">Net Realized PnL</span>
-              <div className="text-xl font-black text-rose-400 mt-1">-Rs. {(Math.abs(backtest.fullSystem.netPnLNpr)/1000).toFixed(1)}k</div>
+              <div className={`text-xl font-black mt-1 ${backtest.fullSystem.netPnLNpr >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {formatNprPnL(backtest.fullSystem.netPnLNpr)}
+              </div>
               <span className="text-[10px] text-slate-400">Fee drag: Rs. {(backtest.fullSystem.totalFrictionNpr/1000).toFixed(1)}k</span>
             </div>
           </div>
@@ -479,24 +517,24 @@ export default function SwingTradeSelectorView({
                     <td className="py-2.5 px-3 font-bold text-white">Full 7-Gate System (Candidate 1)</td>
                     <td className="py-2.5 px-3 text-center">{backtest.fullSystem.totalTrades}</td>
                     <td className="py-2.5 px-3 text-center">{backtest.fullSystem.winRatePct}%</td>
-                    <td className="py-2.5 px-3 text-center font-bold text-rose-400">{backtest.fullSystem.profitFactor}x</td>
-                    <td className="py-2.5 px-3 text-right text-rose-400 font-bold">-Rs. {(Math.abs(backtest.fullSystem.netPnLNpr)/1000).toFixed(1)}k</td>
+                    <td className={`py-2.5 px-3 text-center font-bold ${backtest.fullSystem.profitFactor >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>{backtest.fullSystem.profitFactor}x</td>
+                    <td className={`py-2.5 px-3 text-right font-bold ${backtest.fullSystem.netPnLNpr >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatNprPnL(backtest.fullSystem.netPnLNpr)}</td>
                     <td className="py-2.5 px-3 text-right text-slate-400">Rs. {(backtest.fullSystem.totalFrictionNpr/1000).toFixed(1)}k</td>
                   </tr>
                   <tr>
                     <td className="py-2.5 px-3 text-rose-300">Without Market Regime Gate (Ablation 1)</td>
                     <td className="py-2.5 px-3 text-center">{backtest.ablations.noRegimeSystem.totalTrades}</td>
                     <td className="py-2.5 px-3 text-center">{backtest.ablations.noRegimeSystem.winRatePct}%</td>
-                    <td className="py-2.5 px-3 text-center font-bold text-rose-400">{backtest.ablations.noRegimeSystem.profitFactor}x</td>
-                    <td className="py-2.5 px-3 text-right text-rose-400 font-bold">-Rs. {(Math.abs(backtest.ablations.noRegimeSystem.netPnLNpr)/1000).toFixed(1)}k</td>
+                    <td className={`py-2.5 px-3 text-center font-bold ${backtest.ablations.noRegimeSystem.profitFactor >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>{backtest.ablations.noRegimeSystem.profitFactor}x</td>
+                    <td className={`py-2.5 px-3 text-right font-bold ${backtest.ablations.noRegimeSystem.netPnLNpr >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatNprPnL(backtest.ablations.noRegimeSystem.netPnLNpr)}</td>
                     <td className="py-2.5 px-3 text-right text-slate-400">Rs. {(backtest.ablations.noRegimeSystem.totalFrictionNpr/1000).toFixed(1)}k</td>
                   </tr>
                   <tr>
                     <td className="py-2.5 px-3 text-slate-300">Without Broker Flow Gate (Ablation 2)</td>
                     <td className="py-2.5 px-3 text-center">{backtest.ablations.noBrokerSystem.totalTrades}</td>
                     <td className="py-2.5 px-3 text-center">{backtest.ablations.noBrokerSystem.winRatePct}%</td>
-                    <td className="py-2.5 px-3 text-center font-bold text-rose-400">{backtest.ablations.noBrokerSystem.profitFactor}x</td>
-                    <td className="py-2.5 px-3 text-right text-rose-400 font-bold">-Rs. {(Math.abs(backtest.ablations.noBrokerSystem.netPnLNpr)/1000).toFixed(1)}k</td>
+                    <td className={`py-2.5 px-3 text-center font-bold ${backtest.ablations.noBrokerSystem.profitFactor >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>{backtest.ablations.noBrokerSystem.profitFactor}x</td>
+                    <td className={`py-2.5 px-3 text-right font-bold ${backtest.ablations.noBrokerSystem.netPnLNpr >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatNprPnL(backtest.ablations.noBrokerSystem.netPnLNpr)}</td>
                     <td className="py-2.5 px-3 text-right text-slate-400">Rs. {(backtest.ablations.noBrokerSystem.totalFrictionNpr/1000).toFixed(1)}k</td>
                   </tr>
                 </tbody>

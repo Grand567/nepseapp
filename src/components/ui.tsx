@@ -458,7 +458,7 @@ export function StockSearchSelect({
   }, [search, allAvailableStocks, stocks]);
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
+    function handleClickOutside(e: MouseEvent | TouchEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
         setIsOpen(false);
         const q = search.trim().toUpperCase();
@@ -472,7 +472,11 @@ export function StockSearchSelect({
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
   }, [search, allAvailableStocks, value, onChange]);
 
   const displayValue = isOpen
@@ -640,8 +644,10 @@ export function StockSearchSelect({
               filtered.map((stock) => {
                 const isSelected = stock.symbol.toUpperCase() === value?.toUpperCase();
                 const liveData = livePriceMap[stock.symbol.toUpperCase()];
-                const price = liveData?.ltp || stock.basePrice || 0;
-                const pChange = liveData?.pChange;
+                const hasLivePrice = liveData?.ltp != null && Number(liveData.ltp) > 0;
+                const price = hasLivePrice ? Number(liveData.ltp) : (stock.basePrice && stock.basePrice !== 100 ? stock.basePrice : 0);
+                const isEstimated = !hasLivePrice && price > 0;
+                const pChange = hasLivePrice ? liveData?.pChange : null;
 
                 return (
                   <div
@@ -693,6 +699,7 @@ export function StockSearchSelect({
                     {price > 0 && (
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ color: '#ffffff', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 800 }}>
+                          {isEstimated ? <span style={{ fontSize: 10, color: '#94a3b8', marginRight: 4 }}>Est.</span> : null}
                           Rs. {Number(price).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                         </div>
                         {pChange != null && !isNaN(pChange) && (

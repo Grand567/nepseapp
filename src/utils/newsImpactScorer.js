@@ -4,6 +4,7 @@
  * dividends, corporate actions, and monetary/capital market policies.
  */
 import { bsToAd } from './bikramSambat.js';
+import { isNepseTradingDay } from './nepseCalendar.js';
 
 export function getNepseImpactScore(article) {
   if (!article) return { score: 0, impactType: null };
@@ -132,7 +133,7 @@ export const ENTITY_GROUPS = [
   { id: 'LSL', aliases: ['लक्ष्मी सनराइज', 'लक्ष्मी', 'lsl', 'lxbl'] },
   { id: 'MBL', aliases: ['माछापुच्छ्रे', 'mbl'] },
   { id: 'NMB', aliases: ['एनएमबि', 'nmb'] },
-  { id: 'PBL', aliases: ['प्राइम', 'pbl'] },
+  { id: 'PCBL', aliases: ['प्राइम', 'pcbl'] },
   { id: 'NIMB', aliases: ['नेपाल इन्भेष्टमेन्ट', 'nimb'] },
   { id: 'HBL', aliases: ['हिमालयन', 'hbl'] },
   { id: 'SCB', aliases: ['स्ट्याण्डर्ड चार्टर्ड', 'scb'] },
@@ -141,7 +142,7 @@ export const ENTITY_GROUPS = [
   { id: 'MNBBL', aliases: ['मुक्तिनाथ', 'mnbbl'] },
   { id: 'GBBL', aliases: ['गरिमा', 'gbbl', 'gblbs'] },
   { id: 'JBBL', aliases: ['ज्योति', 'jbbl', 'jebl'] },
-  { id: 'KDLBL', aliases: ['कामना', 'kdlbl'] },
+  { id: 'KSBBL', aliases: ['कामना', 'ksbbl'] },
   { id: 'MLBL', aliases: ['महालक्ष्मी', 'mlbl'] },
   { id: 'SADBL', aliases: ['सांग्रिला', 'sadbl'] },
   { id: 'SHINE', aliases: ['शाइन रेसुंगा', 'shine'] },
@@ -150,13 +151,13 @@ export const ENTITY_GROUPS = [
   { id: 'UPPER', aliases: ['अपर तामाकोशी', 'अपर', 'upper'] },
   { id: 'CHCL', aliases: ['चिलिमे', 'chcl'] },
   { id: 'SHPC', aliases: ['सानिमा माई', 'shpc'] },
-  { id: 'BPCL', aliases: ['बुधु', 'bpcl'] },
+  { id: 'BPCL', aliases: ['बुटवल पावर', 'bpcl'] },
   { id: 'HIDCL', aliases: ['एचआइडिसीएल', 'hidcl'] },
   // Manufacturing & Others
   { id: 'SHIVM', aliases: ['शिवम्', 'शिवम', 'shivm'] },
-  { id: 'GCCL', aliases: ['घोडाही', 'gccl'] },
+  { id: 'GCIL', aliases: ['घोराही', 'gcil'] },
   { id: 'SHL', aliases: ['सोल्टी', 'shl'] },
-  { id: 'CGBL', aliases: ['चन्द्रागिरि', 'cgbl'] },
+  { id: 'CGH', aliases: ['चन्द्रागिरि', 'cgh'] },
   { id: 'NTC', aliases: ['नेपाल टेलिकम', 'ntc'] },
   // Insurance
   { id: 'NLIC', aliases: ['नेपाल लाइफ', 'nlic'] },
@@ -378,8 +379,10 @@ export function parseNewsTimestamp(item) {
   const rawDate = item.pubDate || item.date || '';
   if (!rawDate) return 0;
 
+  const normalizedRaw = String(rawDate).trim().replace(/[०-९]/g, d => '०१२३४५६७८९'.indexOf(d));
+
   // 1. Direct standard JS date parsing (guard against BS year >= 2050 being parsed as future Gregorian)
-  const bsMatch = String(rawDate).trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  const bsMatch = normalizedRaw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
   if (bsMatch && parseInt(bsMatch[1], 10) >= 2050) {
     try {
       const bsYear = parseInt(bsMatch[1], 10);
@@ -413,7 +416,7 @@ export function parseNewsTimestamp(item) {
   if (str.includes('hour') || str.includes('घण्टा') || str.includes('घन्टा')) {
     return now - val * 3600 * 1000;
   }
-  if (str.includes('day') || str.includes('दिन') || str.includes('हिजो')) {
+  if (str.includes('yesterday') || str.includes('day') || str.includes('दिन') || str.includes('हिजो')) {
     return now - val * 86400 * 1000;
   }
   if (str.includes('week') || str.includes('हप्ता')) {
@@ -511,8 +514,8 @@ export function calculateTradingSessionHoursElapsed(fromTimestampMs, toTimestamp
     const day = nptDate.getUTCDay(); // 0: Sun, 1: Mon, 2: Tue, 3: Wed, 4: Thu, 5: Fri, 6: Sat
     const mins = nptDate.getUTCHours() * 60 + nptDate.getUTCMinutes();
 
-    // Active trading session: Monday (1) to Friday (5), 11:00 AM (660m) to 3:00 PM (900m)
-    if (day >= 1 && day <= 5 && mins >= 660 && mins < 900) {
+    // Active trading session: Non-holiday trading day, 11:00 AM (660m) to 3:00 PM (900m) NPT
+    if (day >= 1 && day <= 5 && mins >= 660 && mins < 900 && isNepseTradingDay(new Date(t))) {
       tradingMinutes += 15;
     }
   }

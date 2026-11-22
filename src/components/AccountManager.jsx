@@ -114,23 +114,25 @@ export default function AccountManager({ userId = null }) {
     const dpId = selectedDp.id || '128';
     const dpName = selectedDp.name || 'Capital DP';
 
-    const newAccount = {
-      id: Date.now().toString(),
-      name,
-      boid,
-      username,
-      dpCode,
-      dpId,
-      dpName,
-      password,
-      crn,
-      pin: String(pin),
-      holdings: [],
-      lastSyncedAt: null
-    };
-
     try {
       const existing = await loadEncryptedUserProfiles(activeUserId);
+      const existingMatching = existing.find(a => a.boid === boid);
+
+      const newAccount = {
+        id: existingMatching?.id || Date.now().toString(),
+        name,
+        boid,
+        username,
+        dpCode,
+        dpId,
+        dpName,
+        password,
+        crn,
+        pin: String(pin),
+        holdings: existingMatching?.holdings || [],
+        lastSyncedAt: existingMatching?.lastSyncedAt || null
+      };
+
       const filtered = existing.filter(a => a.boid !== boid);
       const updated = [...filtered, newAccount];
       await saveEncryptedUserProfiles(updated, activeUserId);

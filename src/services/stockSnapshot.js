@@ -44,7 +44,8 @@ export async function fetchStockSnapshot(symbol) {
     floatMarketCap: null,
     rvol: null, avgVolume20D: null, liquidityClass: null, liquidityLabel: null, isIlliquid: null, liquidityWarning: null,
     bonusShare: null, cashDiv: null,
-    dataTimestamp: new Date().toISOString(),
+    dataTimestamp: null,
+    isStale: true,
     dataSource: 'nepse-api'
   };
 
@@ -65,6 +66,8 @@ export async function fetchStockSnapshot(symbol) {
     }
 
     if (liveDetail) {
+      snapshot.dataTimestamp = liveDetail.asOf || liveDetail.updatedAt || liveDetail.timestamp || new Date().toISOString();
+      snapshot.isStale = Boolean(liveDetail.isStale);
       snapshot.companyName = liveDetail.companyName || liveDetail.securityName || snapshot.companyName;
       snapshot.sector = liveDetail.sector || snapshot.sector;
       
@@ -113,7 +116,9 @@ export async function fetchStockSnapshot(symbol) {
       snapshot.listedShares = liveDetail.listedShares ?? liveDetail.sharesOutstanding ?? snapshot.listedShares;
       snapshot.paidUpCapital = liveDetail.paidUpCapital ?? null;
       snapshot.promoterPercentage = liveDetail.promoterPercentage ?? liveDetail.promoterHolding ?? null;
-      snapshot.publicPercentage = liveDetail.publicPercentage ?? (liveDetail.promoterPercentage ? 100 - liveDetail.promoterPercentage : null);
+      snapshot.publicPercentage =
+        liveDetail.publicPercentage ??
+        (snapshot.promoterPercentage !== null && Number.isFinite(Number(snapshot.promoterPercentage)) ? 100 - Number(snapshot.promoterPercentage) : null);
       
       snapshot.rvol = liveDetail.rvol ?? null;
       snapshot.avgVolume20D = liveDetail.avgVolume20D ?? null;
@@ -137,11 +142,14 @@ export async function fetchStockSnapshot(symbol) {
     snapshot.isIlliquid = liquidityInfo.isIlliquid ?? null;
     snapshot.liquidityWarning = liquidityInfo.warning || null;
 
-    snapshotCache.set(sym, { timestamp: Date.now(), data: snapshot });
+    if (liveDetail && snapshot.ltp != null && Number(snapshot.ltp) > 0) {
+      snapshotCache.set(sym, { timestamp: Date.now(), data: snapshot });
+    }
 
     return snapshot;
   } catch (error) {
     snapshot.dataSource = 'partial';
+    snapshot.isStale = true;
     return snapshot;
   }
 }
@@ -149,9 +157,9 @@ export async function fetchStockSnapshot(symbol) {
 export function enrichStockFromSnapshot(snapshot, liveDetail) {
     if (!snapshot) return liveDetail;
     return {
-        ...snapshot,
         ...liveDetail,
-        marketCap: snapshot.marketCap ?? liveDetail.marketCap,
-        floatMarketCap: snapshot.floatMarketCap ?? liveDetail.floatMarketCap,
+        ...snapshot,
+        marketCap: snapshot.marketCap ?? liveDetail?.marketCap,
+        floatMarketCap: snapshot.floatMarketCap ?? liveDetail?.floatMarketCap,
     };
 }

@@ -30,13 +30,22 @@ export function SmartAlertBanner({ onOpenCard }) {
   if (!visible || !activeAlert || !activeAlert.symbol) return null;
 
   const sym = activeAlert.symbol;
-  const ltp = Number(activeAlert.ltp || 0);
+  const rawLtp = Number(activeAlert.ltp);
+  const ltp = Number.isFinite(rawLtp) && rawLtp > 0 ? rawLtp : null;
+
+  const handleDismiss = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setVisible(false);
+  };
 
   return (
     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md animate-in slide-in-from-top-4 duration-300">
       <div 
         onClick={() => {
-          setVisible(false);
+          handleDismiss();
           if (onOpenCard) onOpenCard(activeAlert);
         }}
         className="cursor-pointer bg-slate-900/95 backdrop-blur-md border border-emerald-500/50 rounded-2xl p-3.5 shadow-2xl shadow-emerald-950/80 flex items-center justify-between gap-3 text-left hover:border-emerald-400 transition-all group"
@@ -51,7 +60,9 @@ export function SmartAlertBanner({ onOpenCard }) {
               <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                 Institutional Entry
               </span>
-              <span className="text-xs font-mono font-semibold text-emerald-400">NPR {ltp.toFixed(2)}</span>
+              {ltp !== null && (
+                <span className="text-xs font-mono font-semibold text-emerald-400">NPR {ltp.toFixed(2)}</span>
+              )}
             </div>
             <p className="text-xs text-slate-300 truncate mt-0.5">
               {activeAlert.dominantBrokersText || activeAlert.body || 'Smart Money Flow detected'}
@@ -66,9 +77,9 @@ export function SmartAlertBanner({ onOpenCard }) {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setVisible(false);
+              handleDismiss();
             }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>

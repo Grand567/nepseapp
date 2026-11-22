@@ -460,11 +460,11 @@ export function PaperTradingJournalScreen() {
                       <td className="p-3 font-mono">{t.shares}</td>
                       <td className="p-3 font-mono">Rs. {t.entryPrice}</td>
                       <td className="p-3 font-mono">Rs. {t.exitPrice}</td>
-                      <td className={`p-3 font-mono font-bold ${t.returnPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {t.returnPct >= 0 ? '+' : ''}{t.returnPct}%
+                      <td className={`p-3 font-mono font-bold ${(Number(t.returnPct) || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {Number.isFinite(Number(t.returnPct)) ? `${Number(t.returnPct) >= 0 ? '+' : ''}${Number(t.returnPct)}%` : '—'}
                       </td>
-                      <td className={`p-3 font-mono font-bold ${t.realizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        Rs. {t.realizedPnl.toLocaleString()}
+                      <td className={`p-3 font-mono font-bold ${(Number(t.realizedPnl) || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {Number.isFinite(Number(t.realizedPnl)) ? `Rs. ${Number(t.realizedPnl).toLocaleString()}` : '—'}
                       </td>
                       <td className="p-3 font-mono">{t.holdSessions}d</td>
                       <td className="p-3 text-slate-300">{t.exitReason}</td>
@@ -517,11 +517,11 @@ export function PaperTradingJournalScreen() {
                           {item.winRatePct}% ({item.wins}W / {item.losses}L)
                         </td>
                         <td className="p-3 font-mono">{item.profitFactor}x</td>
-                        <td className={`p-3 font-mono font-bold ${item.avgReturnPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {item.avgReturnPct >= 0 ? '+' : ''}{item.avgReturnPct}%
+                        <td className={`p-3 font-mono font-bold ${(Number(item.avgReturnPct) || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {Number.isFinite(Number(item.avgReturnPct)) ? `${Number(item.avgReturnPct) >= 0 ? '+' : ''}${Number(item.avgReturnPct)}%` : '—'}
                         </td>
-                        <td className={`p-3 font-mono font-bold ${item.netPnlNpr >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          Rs. {item.netPnlNpr.toLocaleString()}
+                        <td className={`p-3 font-mono font-bold ${(Number(item.netPnlNpr) || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {Number.isFinite(Number(item.netPnlNpr)) ? `Rs. ${Number(item.netPnlNpr).toLocaleString()}` : '—'}
                         </td>
                         <td className="p-3">
                           {item.edgeVerdict === 'HIGH_ALPHA_SIGNAL' && (
@@ -700,18 +700,18 @@ export function PaperTradingJournalScreen() {
                       <td className="p-3 font-mono font-bold text-slate-100">{pick.compositeScore} / 100</td>
                       <td className="p-3 font-mono text-slate-300">{pick.confidence}%</td>
                       <td className="p-3 font-mono text-slate-300">
-                        {pick.entryZone ? `Rs. ${pick.entryZone[0]} – ${pick.entryZone[1]}` : '—'}
+                        {Array.isArray(pick.entryZone) && pick.entryZone.length >= 2 && pick.entryZone[0] != null && pick.entryZone[1] != null ? `Rs. ${pick.entryZone[0]} – ${pick.entryZone[1]}` : '—'}
                       </td>
                       <td className="p-3 font-mono text-red-400">{pick.stopLoss ? `Rs. ${pick.stopLoss}` : '—'}</td>
                       <td className="p-3 font-mono text-emerald-400">
-                        {pick.target1 ? `Rs. ${pick.target1} / ${pick.target2}` : '—'}
+                        {pick.target1 ? `Rs. ${pick.target1}${pick.target2 != null ? ` / ${pick.target2}` : ''}` : '—'}
                       </td>
                       <td className="p-3 text-[11px] text-slate-400">
                         {pick.rejectionReasons && pick.rejectionReasons.length > 0 ? (
                           <span className="text-red-400">{pick.rejectionReasons[0]}</span>
                         ) : (
                           <div className="flex flex-wrap gap-1">
-                            {pick.triggers.map((tr, i) => (
+                            {(pick.triggers || []).map((tr, i) => (
                               <span key={i} className="rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-300">
                                 {tr}
                               </span>

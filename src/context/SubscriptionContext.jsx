@@ -1,7 +1,7 @@
 // src/context/SubscriptionContext.jsx
 // Global React context providing server-verified Pro state, monthly timeframe management, and modal controls.
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   getStoredSubscription,
   saveStoredSubscription,
@@ -25,13 +25,15 @@ export function SubscriptionProvider({ children }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalInitialPlan, setModalInitialPlan] = useState('1m');
   const [lockedFeatureName, setLockedFeatureName] = useState(null);
+  const mutationVersionRef = useRef(0);
 
   // Hydrate authoritative subscription state from server on mount & check expiry every 60s
   useEffect(() => {
     let active = true;
+    const reqVersion = mutationVersionRef.current;
 
     fetchServerLicenseStatus(deviceId).then((serverSub) => {
-      if (!active || !serverSub || typeof serverSub !== 'object') return;
+      if (!active || reqVersion !== mutationVersionRef.current || !serverSub || typeof serverSub !== 'object') return;
       const norm = normalizeSubscription(serverSub);
       saveStoredSubscription(norm);
       setSubState(norm);
@@ -57,6 +59,7 @@ export function SubscriptionProvider({ children }) {
 
   // Cancel / Reset local subscription state to free tier
   const cancelPlan = useCallback(async () => {
+    mutationVersionRef.current += 1;
     await revokeServerLicenseStatusOnServer(deviceId).catch(() => {});
     const free = getFreeSubscription();
     saveStoredSubscription(free);
@@ -67,6 +70,7 @@ export function SubscriptionProvider({ children }) {
   const redeemCode = useCallback(async (code) => {
     const result = await redeemVoucherKey(code, deviceId);
     if (result.success && result.subscription) {
+      mutationVersionRef.current += 1;
       const verified = normalizeSubscription(result.subscription);
       saveStoredSubscription(verified);
       setSubState(verified);
@@ -76,8 +80,9 @@ export function SubscriptionProvider({ children }) {
 
   // Refresh authoritative Pro entitlement from license server instead of trusting cloud sync blobs
   const syncFromCloud = useCallback((_cloudSub) => {
+    const reqVersion = mutationVersionRef.current;
     fetchServerLicenseStatus(deviceId).then((serverSub) => {
-      if (!serverSub || typeof serverSub !== 'object') return;
+      if (reqVersion !== mutationVersionRef.current || !serverSub || typeof serverSub !== 'object') return;
       const verified = normalizeSubscription(serverSub);
       saveStoredSubscription(verified);
       setSubState(verified);

@@ -62,8 +62,8 @@ async function fetchIposDirectly(account) {
   if (boidStr.length === 16) {
     const dpPrefix = boidStr.substring(0, 8);
     const shortPrefix = boidStr.substring(3, 8);
-    const resolvedId = parseInt(shortPrefix, 10);
-    if (!isNaN(resolvedId) && resolvedId >= 100 && resolvedId <= 300) {
+    const resolvedId = parseInt(boidStr.substring(3, 8), 10);
+    if (!isNaN(resolvedId) && resolvedId >= 100 && resolvedId <= 400) {
       clientId = resolvedId;
     }
   }
@@ -914,7 +914,7 @@ export default function IPOList({ initialTab = 'apply', userId = null }) {
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-muted)' }}>Closing Date:</span>
                         <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>
-                          {ipo.closeDate ? ipo.closeDate.split('T')[0] : 'Open / Ongoing'}
+                          {ipo.closeDate ? formatNptDateIso(ipo.closeDate) : 'Open / Ongoing'}
                         </span>
                       </div>
                       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 4 }}>

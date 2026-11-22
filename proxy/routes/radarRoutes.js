@@ -23,7 +23,7 @@ import {
   rebuildSignalTrackRecord
 } from "../db/ledgerStore.js";
 import { calculateMultiDayDiagnostics } from "../utils/microstructureEngine.js";
-import { requireAdminSecret } from "../middleware/requireAdminSecret.mjs";
+import { requireAdminSecret, isValidAdminRequest } from "../middleware/requireAdminSecret.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -87,7 +87,7 @@ export async function ensureHotCacheReady() {
     try {
       console.log("[RadarRoutes] HOT_CACHE is empty on request. Initializing disk vault / snapshot seed...");
       seedFromDiskVault();
-      rebuildHotCache();
+      await rebuildHotCache();
       const loaded = (HOT_CACHE.radarByTimeframe[30] || []).length;
       console.log(`[RadarRoutes] HOT_CACHE initialization completed. Loaded ${loaded} stocks in 30D window.`);
       return loaded > 0;
@@ -155,7 +155,7 @@ export function computeCapitalRotations(validDays = 30, brokerIdFilter = "ALL") 
   const brokerFlowMap = new Map();
 
   for (const s of universe) {
-    const sDiag = HOT_CACHE.stockDiagnostics.get(`${s.symbol}_${validDays}`) || s;
+    const sDiag = Map.prototype.get.call(HOT_CACHE.stockDiagnostics, `${s.symbol}_${validDays}`) || s;
     if (!sDiag) continue;
     const smMeta = stockMap[s.symbol] || {};
     const symCompany = smMeta.name || s.name || sDiag.companyName || s.symbol;
@@ -263,7 +263,10 @@ router.get("/radar/broker-tracker", async (req, res) => {
   const results = [];
 
   for (const stock of universe) {
-    const diag = HOT_CACHE.stockDiagnostics.get(`${stock.symbol}_${validDays}`) || stock;
+    const cachedDiag = Map.prototype.get.call(HOT_CACHE.stockDiagnostics, `${stock.symbol}_${validDays}`);
+    const diag = cachedDiag || (brokerIdFilter !== "ALL" || brokerNumberMatch
+      ? HOT_CACHE.stockDiagnostics.get(`${stock.symbol}_${validDays}`)
+      : stock) || stock;
     const smInfo = stockMap[stock.symbol] || {};
     const stockSector = smInfo.sector || stock.sector || diag.sector || "Others";
     const companyName = smInfo.name || stock.name || diag.companyName || stock.symbol;
@@ -531,7 +534,8 @@ router.get(["/radar/early-ignition", "/early-ignition"], handleEarlyIgnition);
  */
 export async function handleSignalTrackRecord(req, res) {
   await ensureHotCacheReady();
-  const forceRebuild = req.query.force === "true" || req.query.rebuild === "true";
+  const wantsForce = req.query.force === "true" || req.query.rebuild === "true";
+  const forceRebuild = wantsForce && isValidAdminRequest(req);
   if (forceRebuild || !HOT_CACHE.signalTrackRecord || !HOT_CACHE.signalTrackRecord.signals?.length) {
     try {
       rebuildSignalTrackRecord(db, HOT_CACHE, { force: forceRebuild });
@@ -1156,7 +1160,7 @@ router.get("/radar/status", (req, res) => {
  * POST /api/radar/ingest
  * Ingests a session's raw floorsheet trades, compresses into SQLite, and rebuilds RAM cache
  */
-router.post("/radar/ingest", requireAdminSecret, (req, res) => {
+router.post("/radar/ingest", requireAdminSecret, async (req, res) => {
   try {
     const { tradeDate, trades } = req.body || {};
     if (!tradeDate || !Array.isArray(trades) || trades.length === 0) {
@@ -1167,7 +1171,7 @@ router.post("/radar/ingest", requireAdminSecret, (req, res) => {
     }
 
     const count = ingestDailyFloorsheetTransaction(tradeDate, trades);
-    rebuildHotCache();
+    await rebuildHotCache();
 
     return res.json({
       success: true,
@@ -1188,13 +1192,13 @@ router.post("/radar/ingest", requireAdminSecret, (req, res) => {
  * POST / GET /api/radar/rebuild-cache & /api/admin/rebuild-cache
  * Manually forces RAM cache rebuild, optional forceSnapshot=true
  */
-const handleRebuildCache = (req, res) => {
+const handleRebuildCache = async (req, res) => {
   try {
     const forceSnapshot = req.query.forceSnapshot === "true" || req.body?.forceSnapshot === true;
     if (forceSnapshot) {
       seedFromSnapshotGz(true);
     }
-    const ok = rebuildHotCache();
+    const ok = await rebuildHotCache();
     const status = getLedgerStatusInfo();
     return res.json({
       success: ok,
