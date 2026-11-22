@@ -1,7 +1,7 @@
 // src/hooks/useUnifiedStockTelemetry.ts
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveValidNepseSymbol } from "@/services/aiGuru/runAiQuantitativeAssessment";
 import { getProxyBase } from "@/utils/proxyBase.js";
 import type { AtomicStockTelemetryApiResponse } from "@/types/stockTelemetry";
@@ -11,12 +11,19 @@ export function useUnifiedStockTelemetry(rawSymbol?: string | null) {
   const [data, setData] = useState<AtomicStockTelemetryApiResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(
-    async (signal?: AbortSignal) => {
+    async () => {
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      const { signal } = controller;
+
       if (!validSymbol) {
         setData(null);
         setError("Select a valid NEPSE scrip symbol to load telemetry.");
+        setLoading(false);
         return;
       }
 
@@ -33,24 +40,28 @@ export function useUnifiedStockTelemetry(rawSymbol?: string | null) {
             cache: "no-store",
           }
         );
-        const json = (await res.json()) as AtomicStockTelemetryApiResponse & {
-          error?: string;
-        };
-
-        if (!res.ok || !json.ok) {
-          throw new Error(json.error || `Failed to load telemetry for ${validSymbol}`);
+        const rawText = await res.text();
+        let json: (AtomicStockTelemetryApiResponse & { error?: string }) | null = null;
+        try {
+          json = JSON.parse(rawText);
+        } catch {
+          throw new Error(`Invalid telemetry response (HTTP ${res.status})`);
         }
-        if (!signal?.aborted) {
+
+        if (!res.ok || !json?.ok) {
+          throw new Error(json?.error || `Failed to load telemetry for ${validSymbol} (HTTP ${res.status})`);
+        }
+        if (!signal.aborted) {
           setData(json);
         }
       } catch (err) {
-        if ((err as Error)?.name !== "AbortError" && !signal?.aborted) {
+        if ((err as Error)?.name !== "AbortError" && !signal.aborted) {
           setError(
             err instanceof Error ? err.message : "Telemetry synchronization failed"
           );
         }
       } finally {
-        if (!signal?.aborted) {
+        if (!signal.aborted) {
           setLoading(false);
         }
       }
@@ -59,9 +70,10 @@ export function useUnifiedStockTelemetry(rawSymbol?: string | null) {
   );
 
   useEffect(() => {
-    const controller = new AbortController();
-    refresh(controller.signal);
-    return () => controller.abort();
+    refresh();
+    return () => {
+      abortControllerRef.current?.abort();
+    };
   }, [refresh]);
 
   return {

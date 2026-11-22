@@ -9,6 +9,7 @@ export interface SmartAlertData {
   id?: string;
   symbol: string;
   ltp: number;
+  body?: string;
   vwap?: number;
   triggeredAt?: string;
   buyZone?: {
@@ -48,20 +49,29 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
 
   const sym = alert.symbol;
   const ltp = Number(alert.ltp || 0);
-  const buyLow = Number(alert.buyZone?.low || (ltp > 0 ? Math.round(ltp * 0.99) : 0));
-  const buyHigh = Number(alert.buyZone?.high || (ltp > 0 ? Math.round(ltp * 1.02) : 0));
+  const buyLow = Number(alert.buyZone?.low || 0);
+  const buyHigh = Number(alert.buyZone?.high || 0);
+  const hasBuyZone = buyLow > 0 && buyHigh > 0;
+  const isInsideBuyZone = hasBuyZone && ltp >= buyLow && ltp <= buyHigh;
   const brokersText = alert.dominantBrokersText || alert.body || 'Smart Money Accumulation Flow';
   const concentration = alert.concentrationPct || 0;
-  const target1 = alert.target1 || (ltp > 0 ? Math.round(ltp * 1.15) : 0);
-  const target2 = alert.target2 || (ltp > 0 ? Math.round(ltp * 1.25) : 0);
-  const stopLoss = alert.stopLoss || (ltp > 0 ? Math.round(ltp * 0.95) : 0);
-  const rr = alert.riskRewardRatio || +((target1 - ltp) / Math.max(1, ltp - stopLoss)).toFixed(2);
+  const target1 = Number(alert.target1 || 0);
+  const target2 = Number(alert.target2 || 0);
+  const stopLoss = Number(alert.stopLoss || 0);
+  const isValidRisk = ltp > 0 && stopLoss > 0 && ltp > stopLoss && target1 > ltp;
+  const rr = alert.riskRewardRatio != null
+    ? Number(alert.riskRewardRatio)
+    : (isValidRisk ? +((target1 - ltp) / (ltp - stopLoss)).toFixed(2) : 0);
+
+  const triggeredLabel = alert.triggeredAt && !isNaN(new Date(alert.triggeredAt).getTime())
+    ? `${new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kathmandu', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(alert.triggeredAt))} NPT`
+    : 'Timestamp N/A';
 
   const copySummary = () => {
     const text = `🔔 DRAVYASHREE ALERT: ${sym} is Ready for Entry\n` +
-      `LTP: NPR ${ltp.toFixed(2)} (Inside Buy Zone: NPR ${buyLow} - ${buyHigh})\n` +
+      `LTP: NPR ${ltp > 0 ? ltp.toFixed(2) : '—'} ${hasBuyZone ? `(Inside Buy Zone: NPR ${buyLow} - ${buyHigh})` : ''}\n` +
       `${brokersText} absorbing ${concentration}% of morning float. Seller volume dry.\n` +
-      `Target: NPR ${target1} - ${target2} | Stop-Loss: NPR ${stopLoss} (R:R ${rr}:1)\n` +
+      `Target: ${target1 > 0 ? `NPR ${target1}${target2 > 0 ? ` - ${target2}` : ''}` : '—'} | Stop-Loss: ${stopLoss > 0 ? `NPR ${stopLoss}` : '—'} ${isValidRisk ? `(R:R ${rr}:1)` : ''}\n` +
       `Dravyashree Smart Institutional Alert`;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).catch(() => {});
@@ -120,18 +130,18 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
               <div className="flex-1">
                 <div className="text-sm font-bold text-white flex items-center justify-between">
                   <span>Dravyashree Alert: {sym} is Ready for Entry</span>
-                  <span className="text-[10px] text-slate-400 font-mono">Just Now</span>
+                  <span className="text-[10px] text-slate-400 font-mono">{triggeredLabel}</span>
                 </div>
                 <div className="mt-1 text-xs font-semibold text-emerald-400">
-                  LTP: NPR {ltp.toFixed(2)} <span className="text-slate-300 font-normal">(Inside Buy Zone: {buyLow} - {buyHigh})</span>
+                  LTP: {ltp > 0 ? `NPR ${ltp.toFixed(2)}` : '—'} {hasBuyZone ? <span className="text-slate-300 font-normal">(Buy Zone: {buyLow} - {buyHigh})</span> : null}
                 </div>
                 <div className="mt-1 text-xs text-slate-300 leading-relaxed">
                   {brokersText} absorbing <strong className="text-emerald-300">{concentration}%</strong> of morning float. Seller volume dry.
                 </div>
                 <div className="mt-1.5 text-xs font-mono font-medium text-amber-300 flex items-center gap-2">
-                  <span>Target: NPR {target1} - {target2}</span>
+                  <span>Target: {target1 > 0 ? `NPR ${target1}${target2 > 0 ? ` - ${target2}` : ''}` : '—'}</span>
                   <span className="text-slate-600">|</span>
-                  <span className="text-rose-400">Stop-Loss: NPR {stopLoss}</span>
+                  <span className="text-rose-400">Stop-Loss: {stopLoss > 0 ? `NPR ${stopLoss}` : '—'}</span>
                 </div>
               </div>
             </div>
@@ -146,16 +156,20 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
             {/* Condition 1: Price in Base */}
             <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                {isInsideBuyZone ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                )}
                 <div>
                   <div className="text-xs font-bold text-slate-200">Condition 1: Price in Base</div>
                   <div className="text-[11px] text-slate-400">
-                    LTP NPR {ltp.toFixed(2)} is within [VWAP, VWAP + 2%] buy pocket
+                    {hasBuyZone ? `LTP NPR ${ltp > 0 ? ltp.toFixed(2) : '—'} within [${buyLow}, ${buyHigh}] buy zone` : 'Buy zone pending verification'}
                   </div>
                 </div>
               </div>
               <span className="text-xs font-bold font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                {buyLow} - {buyHigh}
+                {hasBuyZone ? `${buyLow} - ${buyHigh}` : '—'}
               </span>
             </div>
 
@@ -182,7 +196,11 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
             {/* Condition 3: Seller Volume Dry */}
             <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                {alert.sellerStatus || alert.topBuyerBrokers ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                )}
                 <div>
                   <div className="text-xs font-bold text-slate-200">Condition 3: Seller Volume Dry</div>
                   <div className="text-[11px] text-slate-400">
@@ -200,25 +218,25 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
           <div className="grid grid-cols-3 gap-2 pt-1">
             <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-700/50 text-center">
               <div className="text-[10px] text-slate-400 font-semibold uppercase">Stop Loss</div>
-              <div className="mt-1 text-sm font-black font-mono text-rose-400">NPR {stopLoss}</div>
+              <div className="mt-1 text-sm font-black font-mono text-rose-400">{stopLoss > 0 ? `NPR ${stopLoss}` : '—'}</div>
               <div className="text-[10px] text-rose-500/80 font-mono mt-0.5">
-                {ltp > 0 ? `-${(((ltp - stopLoss) / ltp) * 100).toFixed(1)}%` : '—'}
+                {ltp > 0 && stopLoss > 0 ? `-${(((ltp - stopLoss) / ltp) * 100).toFixed(1)}%` : '—'}
               </div>
             </div>
 
             <div className="p-3 rounded-xl bg-slate-800/40 border border-emerald-500/30 text-center">
               <div className="text-[10px] text-slate-400 font-semibold uppercase">Target 1</div>
-              <div className="mt-1 text-sm font-black font-mono text-emerald-400">NPR {target1}</div>
+              <div className="mt-1 text-sm font-black font-mono text-emerald-400">{target1 > 0 ? `NPR ${target1}` : '—'}</div>
               <div className="text-[10px] text-emerald-500/80 font-mono mt-0.5">
-                {ltp > 0 ? `+${(((target1 - ltp) / ltp) * 100).toFixed(1)}%` : '—'}
+                {ltp > 0 && target1 > 0 ? `+${(((target1 - ltp) / ltp) * 100).toFixed(1)}%` : '—'}
               </div>
             </div>
 
             <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-700/50 text-center">
               <div className="text-[10px] text-slate-400 font-semibold uppercase">Target 2</div>
-              <div className="mt-1 text-sm font-black font-mono text-emerald-300">NPR {target2}</div>
+              <div className="mt-1 text-sm font-black font-mono text-emerald-300">{target2 > 0 ? `NPR ${target2}` : '—'}</div>
               <div className="text-[10px] text-emerald-500/80 font-mono mt-0.5">
-                {ltp > 0 ? `+${(((target2 - ltp) / ltp) * 100).toFixed(1)}%` : '—'}
+                {ltp > 0 && target2 > 0 ? `+${(((target2 - ltp) / ltp) * 100).toFixed(1)}%` : '—'}
               </div>
             </div>
           </div>
@@ -226,7 +244,7 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
           {/* Risk Reward Banner */}
           <div className="px-3.5 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between text-xs">
             <span className="text-slate-300 font-medium">Asymmetric Risk-Reward</span>
-            <span className="text-emerald-400 font-bold font-mono">1 : {rr}</span>
+            <span className="text-emerald-400 font-bold font-mono">{isValidRisk ? `1 : ${rr}` : '—'}</span>
           </div>
 
           {/* Dynamic Capital & Position Sizing Section */}

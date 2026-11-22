@@ -49,7 +49,7 @@ export function OneClickAlphaButton({
           userCapital: effectiveCapital,
           riskTolerancePct: 1.5,
           requiredNetRRR: 2.5,
-          cgtRate: 0.075
+          cgtRate: 0.05
         });
         setScanResult(desk);
       } catch (err) {

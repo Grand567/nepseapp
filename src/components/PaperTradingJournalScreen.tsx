@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { StatCard, InfoBanner, Spinner } from './ui';
 import { getProxyBase } from '../utils/proxyBase.js';
+import { SETTLEMENT_CYCLE } from '../constants/marketRules.js';
 
 interface SignalAttributionItem {
   signal: string;
@@ -119,7 +120,8 @@ export function PaperTradingJournalScreen() {
       if (seq !== loadSeqRef.current) return;
 
       if (stateRes?.success && stateRes.data) {
-        setCapital(stateRes.data.capital || 1000000);
+        const parsedCap = Number(stateRes.data.capital);
+        setCapital(Number.isFinite(parsedCap) ? parsedCap : 1000000);
         setDailyPicks(stateRes.data.dailyPicks || []);
         setOpenPositions(stateRes.data.openPositions || []);
         setClosedJournal(stateRes.data.closedJournal || []);
@@ -148,29 +150,42 @@ export function PaperTradingJournalScreen() {
   }, []);
 
   const handleToggleBot = async (enable: boolean) => {
+    const previous = botConfig;
     const updated = { ...botConfig, enabled: enable };
     setBotConfig(updated);
+    setError(null);
     try {
       const base = getProxyBase();
-      await fetch(`${base}/api/paper-trading/bot-config`, {
+      const resp = await fetch(`${base}/api/paper-trading/bot-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
       });
-    } catch (_) {}
+      if (!resp.ok) {
+        throw new Error(`Bot config update rejected (HTTP ${resp.status})`);
+      }
+    } catch (err: any) {
+      setBotConfig(previous);
+      setError(err?.message || 'Failed to update Autonomous Paper-Execution Bot state.');
+    }
   };
 
   const handleRunBotStep = async () => {
     setSteppingBot(true);
+    setError(null);
     try {
       const base = getProxyBase();
-      await fetch(`${base}/api/paper-trading/auto-step`, {
+      const resp = await fetch(`${base}/api/paper-trading/auto-step`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
       });
+      if (!resp.ok) {
+        throw new Error(`Bot auto-step failed (HTTP ${resp.status})`);
+      }
       await loadData(true);
-    } catch (_) {
+    } catch (err: any) {
+      setError(err?.message || 'Failed to execute bot step.');
     } finally {
       setSteppingBot(false);
     }
@@ -617,15 +632,15 @@ export function PaperTradingJournalScreen() {
                             </span>
                           )}
                         </td>
-                        <td className="p-3 font-mono">{pos.holdSessions}d</td>
+                        <td className="p-3 font-mono">{pos.holdSessions ?? 0}d</td>
                         <td className="p-3">
-                          {pos.holdSessions >= 2 ? (
+                          {(pos.holdSessions ?? 0) >= SETTLEMENT_CYCLE.sellableDays ? (
                             <span className="inline-flex items-center gap-1 rounded bg-emerald-950/60 px-2 py-0.5 text-[10px] text-emerald-400 border border-emerald-800">
                               <CheckCircle2 size={10} /> Cleared Demat
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded bg-amber-950/60 px-2 py-0.5 text-[10px] text-amber-400 border border-amber-800">
-                              <Clock size={10} /> T+{pos.holdSessions} Lock
+                              <Clock size={10} /> T+{pos.holdSessions ?? 0} Lock
                             </span>
                           )}
                         </td>

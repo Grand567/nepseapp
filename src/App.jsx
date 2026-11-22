@@ -76,10 +76,15 @@ function AppInner() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [marketTrend, setMarketTrend] = useState('flat');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState(new Date());
+  const [lastSyncTime, setLastSyncTime] = useState(() => {
+    const cachedTs = typeof getLastMarketSyncTime === 'function' ? getLastMarketSyncTime() : null;
+    return cachedTs ? new Date(cachedTs) : null;
+  });
 
   const formattedSyncTime = useMemo(() => {
-    const d = lastSyncTime ? new Date(lastSyncTime) : new Date();
+    if (!lastSyncTime) return '';
+    const d = new Date(lastSyncTime);
+    if (isNaN(d.getTime())) return '';
     try {
       return new Intl.DateTimeFormat('en-US', {
         timeZone: 'Asia/Kathmandu',
@@ -104,6 +109,7 @@ function AppInner() {
   const [marketStatus, setMarketStatus] = useState(() => getDetailedMarketStatus());
   const [aiTargetStock, setAiTargetStock] = useState(null);
   const liveStocksRef = useRef(initialStocks);
+  const triggerTickRef = useRef(null);
 
   // ── Proxy Cold-Start & Cache Warm-Up Status ──
   const [serverWarmup, setServerWarmup] = useState(() => getServerWarmupInfo());
@@ -1014,8 +1020,12 @@ function AppInner() {
     let isMounted = true;
     let tickerTimer = null;
     let consecutiveErrors = 0;
+    let inFlight = false;
 
     const tickFastIndex = async () => {
+      if (!isMounted || inFlight) return;
+      if (tickerTimer) { clearTimeout(tickerTimer); tickerTimer = null; }
+      inFlight = true;
       const status = getDetailedMarketStatus();
       try {
         const liveIdx = await fetchMarketIndices();
@@ -1036,6 +1046,8 @@ function AppInner() {
         }
       } catch (_) {
         consecutiveErrors++;
+      } finally {
+        inFlight = false;
       }
 
       if (!isMounted) return;
@@ -1156,7 +1168,7 @@ function AppInner() {
           const liveVal = Number(latestTick?.close || latestTick?.value || 0);
           if (liveVal > 0) {
             setIndices(prev => {
-              const prevClose = Number(prev?.nepse?.prevClose || firstTick?.open || 2629.82);
+              const prevClose = Number(prev?.nepse?.prevClose || firstTick?.open || liveVal);
               const chg = +(liveVal - prevClose).toFixed(2);
               const pChg = +(prevClose > 0 ? (chg / prevClose) * 100 : 0).toFixed(2);
               const to = Number(response?.turnover || prev?.nepse?.turnover || currentStocks?.reduce((acc, s) => acc + (s.turnover || 0), 0) || 0);
@@ -1184,7 +1196,7 @@ function AppInner() {
               saveCachedIndices(computed);
               return { ...prev, ...computed };
             }
-            if (prev?.nepse?.value && Number(prev.nepse.value) > 0 && !prev.isPlaceholder && Math.abs(Number(prev.nepse.value) - 2629.82) >= 0.05) {
+            if (prev?.nepse?.value && Number(prev.nepse.value) > 1000 && !prev.isPlaceholder) {
               return prev; // PRESERVE authentic live index! Never revert to yesterday!
             }
             return prev;
@@ -1206,6 +1218,7 @@ function AppInner() {
       setIsRefreshing(false);
     }
   };
+  triggerTickRef.current = triggerTick;
 
   // ── Native App Resume Refresh (Capacitor Mobile) ──
   useEffect(() => {
@@ -1217,8 +1230,7 @@ function AppInner() {
       CapacitorApp.addListener('appStateChange', ({ isActive }) => {
         if (isActive) {
           console.log('[App] Resumed from background — refreshing live quotes & market depth');
-          triggerTick();
-          setLastSyncTime(new Date());
+          triggerTickRef.current?.();
           syncDevicePushToken().catch(() => {});
         }
       }).then(handle => {
@@ -1263,7 +1275,16 @@ function AppInner() {
     const liveMatch = stocks.find(
       s => String(s.symbol || '').toUpperCase().trim() === targetSym
     );
-    return liveMatch ? { ...liveMatch, ...baseObj, name: liveMatch.name || baseObj.name, ltp: liveMatch.ltp || baseObj.ltp } : baseObj;
+    return liveMatch
+      ? {
+          ...baseObj,
+          ...liveMatch,
+          name: liveMatch.name || baseObj.name,
+          initialTab: baseObj.initialTab ?? liveMatch.initialTab,
+          isHistoricalSession: baseObj.isHistoricalSession,
+          sessionDate: baseObj.sessionDate ?? baseObj.date,
+        }
+      : baseObj;
   }, [selectedStock, stocks]);
 
   // ── Auth checking splash ──
@@ -1360,8 +1381,10 @@ function AppInner() {
               title={marketStatus?.message || 'NEPSE Market Status — Tap to view full calendar'}
             >
               <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-extrabold border ${
-                marketStatus?.isOpen
+                marketStatus?.isOpen && apiStatus === 'live' && lastSyncTime && !marketStatus?.isEmergencyHalt
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
+                  : marketStatus?.isOpen
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                   : marketStatus?.isPreOpen
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                   : marketStatus?.isHoliday
@@ -1370,20 +1393,26 @@ function AppInner() {
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                   : 'bg-slate-800/80 text-slate-400 border-slate-700/60'
               }`}>
-                {marketStatus?.isOpen ? (
+                {marketStatus?.isOpen && apiStatus === 'live' && lastSyncTime && !marketStatus?.isEmergencyHalt ? (
                   <span className="relative flex h-2 w-2 mr-0.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]" />
                   </span>
                 ) : (
                   <span className={`h-1.5 w-1.5 rounded-full ${
-                    marketStatus?.isPreOpen ? 'bg-amber-400' : marketStatus?.isHoliday ? 'bg-purple-400' : marketStatus?.isWeekend ? 'bg-amber-400' : 'bg-slate-500'
+                    marketStatus?.isOpen ? 'bg-amber-400' : marketStatus?.isPreOpen ? 'bg-amber-400' : marketStatus?.isHoliday ? 'bg-purple-400' : marketStatus?.isWeekend ? 'bg-amber-400' : 'bg-slate-500'
                   }`} />
                 )}
-                {marketStatus?.isOpen ? 'Market Open' : marketStatus?.isPreOpen ? 'Pre-Open' : 'Market Closed'}
+                {marketStatus?.isOpen
+                  ? (apiStatus === 'live' && lastSyncTime ? 'Market Open (Live)' : 'Market Open (Cached)')
+                  : marketStatus?.isPreOpen
+                  ? 'Pre-Open'
+                  : 'Market Closed'}
               </span>
-              <span className="text-[10px] font-mono text-slate-400" title={`Last synced: ${formattedSyncTime} NPT`}>
-                {formattedSyncTime ? `Updated: ${formattedSyncTime} NPT` : (marketStatus?.nptTime ? `${marketStatus.nptTime} NPT` : '')}
+              <span className="text-[10px] font-mono text-slate-400" title={formattedSyncTime ? `Last synced: ${formattedSyncTime} NPT` : 'Not yet synced'}>
+                {formattedSyncTime
+                  ? `${apiStatus === 'live' || apiStatus === 'closing' ? 'Updated' : 'Cached'}: ${formattedSyncTime} NPT`
+                  : 'Syncing live feed...'}
               </span>
             </div>
           </div>
@@ -1729,7 +1758,7 @@ function AppInner() {
 
                         // 2. Merge local and remote
                         const localTxs = JSON.parse(localStorage.getItem(userTxKey) || '[]');
-                        const localProfs = JSON.parse(localStorage.getItem(userProfileKey) || '[]');
+                        const localProfs = await loadEncryptedUserProfiles(uid);
                         const localBulk = JSON.parse(localStorage.getItem(bulkKey) || '[]');
 
                         const mergedProfs = [...localProfs];
@@ -1737,7 +1766,13 @@ function AppInner() {
                           const idx = mergedProfs.findIndex(mp => mp.boid === p.boid || mp.id === p.id);
                           if (idx === -1) mergedProfs.push(p);
                           else if (p.holdings?.length > 0 && (!mergedProfs[idx].holdings || mergedProfs[idx].holdings.length === 0)) {
-                            mergedProfs[idx] = { ...mergedProfs[idx], ...p };
+                            mergedProfs[idx] = {
+                              ...p,
+                              password: mergedProfs[idx].password || '',
+                              crn: mergedProfs[idx].crn || '',
+                              pin: mergedProfs[idx].pin || '',
+                              transactionPin: mergedProfs[idx].transactionPin || ''
+                            };
                           }
                         });
 
@@ -1748,16 +1783,20 @@ function AppInner() {
 
                         const mergedWatchlist = [...new Set([...currentWatchlist, ...pulledWatchlist])];
 
-                        // 3. Save locally
-                        safeStorageSetItem(userProfileKey, JSON.stringify(mergedProfs));
+                        // 3. Save locally via AES-256-GCM encrypted vault
+                        await saveEncryptedUserProfiles(mergedProfs, uid);
                         safeStorageSetItem(userTxKey, JSON.stringify(mergedTxs));
                         safeStorageSetItem('nepse_user_watchlist', JSON.stringify(mergedWatchlist));
 
-                        // 4. Push combined snapshot to cloud
+                        // 4. Push combined snapshot to cloud (ZERO raw credentials uploaded)
+                        const stripCredentials = ({ password: _p, crn: _c, pin: _pn, transactionPin: _tp, vaultEnvelope: _ve, ...safe }) => safe;
+                        const sanitizedProfiles = mergedProfs.map(stripCredentials);
+                        const sanitizedBulk = (Array.isArray(localBulk) ? localBulk : []).map(stripCredentials);
+
                         await syncUserDataToCloud(uid, {
-                          profiles: mergedProfs,
+                          profiles: sanitizedProfiles,
                           transactions: mergedTxs,
-                          bulkAccounts: localBulk,
+                          bulkAccounts: sanitizedBulk,
                           watchlist: mergedWatchlist
                         }, email);
 

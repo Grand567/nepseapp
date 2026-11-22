@@ -614,6 +614,8 @@ export function AccumulationDistributionRadar({
     }
     return keyed;
   });
+  const radarReqIdRef = React.useRef(0);
+  const diagReqIdRef = React.useRef(0);
   const [whaleArchive, setWhaleArchive] = useState<any[]>(() => getStoredWhaleArchive());
   const [selectedArchiveDate, setSelectedArchiveDate] = useState<string>(incomingDate || '');
   const [modalStock, setModalStock] = useState<any>(null);
@@ -684,12 +686,14 @@ export function AccumulationDistributionRadar({
   };
 
   const handleRadarTimeframeChange = async (d: number) => {
+    const reqId = ++radarReqIdRef.current;
     setRadarDays(d);
     setDiagnosticDays(d);
     setIsRecalculatingTimeframe(true);
     setLoading(true);
     try {
       const fastRadar = !radarDate ? await fetchPrecomputedRadar(d).catch(() => null) : null;
+      if (radarReqIdRef.current !== reqId) return;
       if (fastRadar?.success) {
         if (typeof fastRadar.loadedTradingDays === 'number') {
           setLoadedTradingDays(fastRadar.loadedTradingDays);
@@ -730,9 +734,12 @@ export function AccumulationDistributionRadar({
           brokerMap[symUpper] = entry;
           brokerMap[`${symUpper}_${d}`] = entry;
         }
-        setStockBrokerDataMap(prev => ({ ...prev, ...brokerMap }));
+        if (radarReqIdRef.current === reqId) {
+          setStockBrokerDataMap(prev => ({ ...prev, ...brokerMap }));
+        }
       } else {
         const brokerMap = await fetchMarketWideBrokerSummaryMap(d, { date: radarDate || undefined, refresh: true });
+        if (radarReqIdRef.current !== reqId) return;
         if (brokerMap && typeof brokerMap === 'object' && Object.keys(brokerMap).length > 0) {
           const mapWithKeys: Record<string, any> = {};
           for (const [k, v] of Object.entries(brokerMap)) {
@@ -747,6 +754,7 @@ export function AccumulationDistributionRadar({
       if (selectedStockSymbol) {
         const symU = selectedStockSymbol.toUpperCase();
         const diagFast = await fetchPrecomputedDiagnostic(selectedStockSymbol, d, radarDate ? { date: radarDate } : {}).catch(() => null);
+        if (radarReqIdRef.current !== reqId) return;
         if (diagFast) {
           setStockBrokerDataMap(prev => ({ ...prev, [symU]: diagFast, [`${symU}_${d}`]: diagFast }));
           if (typeof (diagFast as any).loadedTradingDays === 'number') {
@@ -757,6 +765,7 @@ export function AccumulationDistributionRadar({
           }
         } else {
           const res = await fetchRealBrokerAnalysis(selectedStockSymbol, d, { date: radarDate || undefined, refresh: true }).catch(() => null);
+          if (radarReqIdRef.current !== reqId) return;
           if (res) {
             setStockBrokerDataMap(prev => ({ ...prev, [symU]: res, [`${symU}_${d}`]: res }));
           }
@@ -764,18 +773,22 @@ export function AccumulationDistributionRadar({
       }
     } catch (_) {
     } finally {
-      setIsRecalculatingTimeframe(false);
-      setLoading(false);
+      if (radarReqIdRef.current === reqId) {
+        setIsRecalculatingTimeframe(false);
+        setLoading(false);
+      }
     }
   };
 
   const handleDiagnosticDaysChange = async (d: number) => {
+    const reqId = ++diagReqIdRef.current;
     setDiagnosticDays(d);
     if (!selectedStockSymbol) return;
     setDiagnosticLoading(true);
     const symU = selectedStockSymbol.toUpperCase();
     try {
       const diagFast = await fetchPrecomputedDiagnostic(selectedStockSymbol, d, radarDate ? { date: radarDate } : {}).catch(() => null);
+      if (diagReqIdRef.current !== reqId) return;
       if (diagFast) {
         setStockBrokerDataMap(prev => ({ ...prev, [symU]: diagFast, [`${symU}_${d}`]: diagFast }));
         if (typeof (diagFast as any).loadedTradingDays === 'number') {
@@ -786,23 +799,28 @@ export function AccumulationDistributionRadar({
         }
       } else {
         const res = await fetchRealBrokerAnalysis(selectedStockSymbol, d, { date: radarDate || undefined, refresh: true }).catch(() => null);
+        if (diagReqIdRef.current !== reqId) return;
         if (res) {
           setStockBrokerDataMap(prev => ({ ...prev, [symU]: res, [`${symU}_${d}`]: res }));
         }
       }
     } catch (_) {
     } finally {
-      setDiagnosticLoading(false);
+      if (diagReqIdRef.current === reqId) {
+        setDiagnosticLoading(false);
+      }
     }
   };
 
   // FIX BUG-A2-01: Populate both `sym` and `${sym}_${radarDays}` keys when switching session dates
   const handleRadarDateChange = async (dt: string) => {
+    const reqId = ++radarReqIdRef.current;
     setRadarDate(dt);
     setLoading(true);
     setIsRecalculatingTimeframe(true);
     try {
       const brokerMap = await fetchMarketWideBrokerSummaryMap(radarDays, { date: dt, refresh: true });
+      if (radarReqIdRef.current !== reqId) return;
       if (brokerMap && typeof brokerMap === 'object') {
         const keyedMap: Record<string, any> = {};
         for (const [k, v] of Object.entries(brokerMap)) {
@@ -816,6 +834,7 @@ export function AccumulationDistributionRadar({
         const symU = selectedStockSymbol.toUpperCase().trim();
         const diagFast = await fetchPrecomputedDiagnostic(symU, radarDays, dt ? { date: dt } : {}).catch(() => null);
         const res = diagFast || await fetchRealBrokerAnalysis(symU, radarDays, { date: dt, refresh: true }).catch(() => null);
+        if (radarReqIdRef.current !== reqId) return;
         if (res) {
           setStockBrokerDataMap(prev => ({
             ...prev,
@@ -827,8 +846,10 @@ export function AccumulationDistributionRadar({
       }
     } catch (_) {
     } finally {
-      setIsRecalculatingTimeframe(false);
-      setLoading(false);
+      if (radarReqIdRef.current === reqId) {
+        setIsRecalculatingTimeframe(false);
+        setLoading(false);
+      }
     }
   };
 
@@ -939,7 +960,7 @@ export function AccumulationDistributionRadar({
                 }
               });
               if (Object.keys(batchMap).length > 0) {
-                setStockBrokerDataMap(prev => ({ ...batchMap, ...prev }));
+                setStockBrokerDataMap(prev => ({ ...prev, ...batchMap }));
               }
             }
           }
@@ -1512,6 +1533,14 @@ export function AccumulationDistributionRadar({
       stockSummaryWithBroker,
       diagBrokerAnalysis
     );
+    const wyckoff = classifyWyckoffStage(stockSummaryWithBroker, historyCandles, brokerData);
+    const step4 = evaluateUnifiedStep4Flow(
+      brokerData,
+      intradayPChange,
+      wyckoff?.stage || '',
+      Boolean(diagBrokerAnalysis),
+      stockTrades.length
+    );
 
     const dailyHistory = buildDailyHistoryFromStockData(
       stockSummaryWithBroker,
@@ -1520,18 +1549,26 @@ export function AccumulationDistributionRadar({
     );
     const multiDayDiag = calculateMultiDayDiagnostics(dailyHistory, diagnosticDays);
 
-    const stockLtp = Number(base.ltp || base.closePrice || 100);
-    const buyZoneMin = multiDayDiag?.buyZoneMin || +(stockLtp * 0.98).toFixed(1);
-    const buyZoneMax = multiDayDiag?.buyZoneMax || +(stockLtp * 1.02).toFixed(1);
+    const stockLtp = Number(base.ltp || base.closePrice || 0);
+    const buyZoneMin = multiDayDiag?.buyZoneMin || (stockLtp > 0 ? +(stockLtp * 0.98).toFixed(1) : 0);
+    const buyZoneMax = multiDayDiag?.buyZoneMax || (stockLtp > 0 ? +(stockLtp * 1.02).toFixed(1) : 0);
 
-    return {
+    const nextDiagStock = {
       ...base,
+      realBrokerAnalysis: diagBrokerAnalysis || null,
       intradayPChange,
       pChange: effectivePChange,
       volume: effectiveVolume,
       timeframeDays: diagnosticDays,
       multiDayDiag,
       brokerData,
+      wyckoff,
+      isTrap: step4.isTrap,
+      isDumping: step4.isDumping,
+      isSellerDominant: step4.isSellerDominant,
+      isAccumulation: step4.isAccumulation,
+      bcr3Buy: step4.bcr3Buy,
+      bcr3Sell: step4.bcr3Sell,
       buyZoneMin,
       buyZoneMax,
       bcr5NetPct: multiDayDiag?.bcr5NetPct ?? brokerData?.bcr5BuyPct ?? base.bcr5NetPct,
@@ -1553,6 +1590,7 @@ export function AccumulationDistributionRadar({
       entryStatus: multiDayDiag?.entryStatus || base.entryStatus,
       entryDescription: multiDayDiag?.entryDescription || base.entryDescription,
     };
+    return { ...nextDiagStock, corneringAnalysis: calculateStockCorneringScore(nextDiagStock) };
   }, [
     analyzedStocks,
     selectedStockSymbol,
@@ -1560,6 +1598,8 @@ export function AccumulationDistributionRadar({
     radarDays,
     stockBrokerDataMap,
     floorsheetBySymbol,
+    evaluateUnifiedStep4Flow,
+    radarDate
   ]);
 
   const runZeroSumVerification = async (symToVerify?: string) => {

@@ -60,6 +60,7 @@ import InvestorDecisionGuideModal from './InvestorDecisionGuideModal';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { clampToDailyCircuitBand, getCircuitLimits, clampReturnIntervalToCircuit, calculateDynamicRSI } from '../utils/dynamicCalculationEngine';
 import { evaluateOrderFlowVeto } from '../utils/sharedBrokerAggregationEngine';
+import { isPureNepseEquity } from '../utils/nepseEquityFilter.js';
 
 const UNIVERSE_MAP = new Map(NEPSE_UNIVERSE.map(u => [String(u.symbol).toUpperCase(), u]));
 
@@ -230,20 +231,29 @@ export default function PredictorHub({
     return () => { isMounted = false; };
   }, [selectedNewsArticle]);
 
+  const stocksRef = useRef(stocks);
+  const indicesRef = useRef(indices);
+  const sentimentNewsRef = useRef(sentimentNews);
+  const fetchSeqRef = useRef(0);
+  useEffect(() => { stocksRef.current = stocks; }, [stocks]);
+  useEffect(() => { indicesRef.current = indices; }, [indices]);
+  useEffect(() => { sentimentNewsRef.current = sentimentNews; }, [sentimentNews]);
+
   const fallbackStockScoring = React.useCallback(() => {
-    if (!Array.isArray(stocks) || stocks.length === 0) return;
+    const currentStocks = stocksRef.current;
+    if (!Array.isArray(currentStocks) || currentStocks.length === 0) return;
     const activePreset = STRATEGY_PRESETS.find(p => p.id === activeStrategyPreset) || STRATEGY_PRESETS[0];
     const techMult = Number((activePreset.weights.technical / 0.25).toFixed(2));
     const flowMult = Number((activePreset.weights.brokerFloorsheet / 0.35).toFixed(2));
     const fundMult = Number((activePreset.weights.fundamental / 0.20).toFixed(2));
 
-    const computed = stocks.map(s => {
+    const computed = currentStocks.filter(s => s && s.symbol && Number(s.ltp || s.closePrice || 0) > 0 && isPureNepseEquity(s)).map(s => {
       const sym = String(s.symbol || '').toUpperCase().trim();
       const uInfo = UNIVERSE_MAP.get(sym);
       const pCh = Number(s.pChange || 0);
-      const vol = Number(s.volume || s.totalTradedQuantity || 1000);
-      const ltp = Number(s.ltp || s.closePrice || 100);
-      const vsr = Number(s.volumeSurgeRatio || (vol > 15000 ? 1.55 : 0.95));
+      const vol = Number(s.volume ?? s.totalTradedQuantity ?? 0);
+      const ltp = Number(s.ltp || s.closePrice || 0);
+      const vsr = Number(s.volumeSurgeRatio || s.rvol || 1.0);
 
       const brokerInfo = s.realBrokerAnalysis || s.brokerAnalysis || getCachedRealBrokerAnalysis(sym);
       const bcr3Buy = Number(brokerInfo?.bcr3BuyPct || s.bcr3BuyPct || 0);
@@ -345,11 +355,11 @@ export default function PredictorHub({
       }
 
       // ── Upper Rejection Wick Anti-Dump Check ─────────────────────────────
-      const pHigh = Number(s.high || s.dayHigh || s.ltp);
-      const pLow = Number(s.low || s.dayLow || s.ltp);
-      const pOpen = Number(s.open || s.ltp);
+      const pHigh = Number(s.high || s.dayHigh || ltp);
+      const pLow = Number(s.low || s.dayLow || ltp);
+      const pOpen = Number(s.open || ltp);
       const pRange = Math.max(0.1, pHigh - pLow);
-      const upperWickRatio = pHigh > pLow ? ((pHigh - Math.max(pOpen, s.ltp)) / pRange) : 0;
+      const upperWickRatio = pHigh > pLow ? ((pHigh - Math.max(pOpen, ltp)) / pRange) : 0;
       const isUpperWickDump = upperWickRatio >= 0.35;
       if (isUpperWickDump) {
         score -= 22; // Penalize severe intraday rejection
@@ -381,7 +391,10 @@ export default function PredictorHub({
 
       // ── Apply Hard Trend Ceiling, Upper Wick Cap & Order Flow Veto ──────────
       const rawScore = Math.max(10, Math.min(98, Math.round(score)));
-      let compositeScore = isOrderFlowVetoed ? Math.min(25, rawScore) : (isUpperWickDump ? Math.min(45, rawScore) : (hardCeilingApplied ? Math.min(48, rawScore) : rawScore));
+      const isIlliquidZeroVol = vol < 200;
+      let compositeScore = isIlliquidZeroVol
+        ? Math.min(35, rawScore)
+        : (isOrderFlowVetoed ? Math.min(25, rawScore) : (isUpperWickDump ? Math.min(45, rawScore) : (hardCeilingApplied ? Math.min(48, rawScore) : rawScore)));
 
       // Deep dry season hydro stocks are also capped at 55 to prevent speculative traps
       if (hydroSeason.isHydro && hydroSeason.isDrySeason && hydroSeason.penaltyPoints <= -15) {
@@ -429,12 +442,20 @@ export default function PredictorHub({
         Number(s.rightShare || 0) > 0 ? `${s.rightShare}% Right Share Issue` :
         'Corporate Action / AGM Disclosure';
 
+      const high20 = closes.length >= 5
+        ? Math.max(...closes.slice(-20))
+        : Number(s.high20 || s.high52 || s.fiftyTwoWeekHigh || 0);
+      const pivotDistPct = high20 > 0 && ltp > 0 ? +(((high20 - ltp) / high20) * 100).toFixed(2) : null;
+
       return {
         symbol: s.symbol,
         companyName: s.companyName || s.name || uInfo?.name || s.symbol,
         sector: s.sector || uInfo?.sector || 'Others',
         ltp,
         pChange: pCh,
+        high20: high20 > 0 ? high20 : null,
+        high52: Number(s.high52 || s.fiftyTwoWeekHigh || 0) || null,
+        pivot_distance_pct: pivotDistPct,
         volume: vol,
         turnover: Number(s.turnover || (ltp * vol) || 0),
         dividendYield: Number(s.dividendYield || 0),
@@ -455,7 +476,7 @@ export default function PredictorHub({
         corporate_action_flag: hasCatalyst ? 'corporate_catalyst' : null,
         catalystLabel: hasCatalyst ? catalystLabel : null,
         composite_score: compositeScore,
-        signal: compositeScore >= (activePreset.thresholds?.buyScore || 70) ? 'BUY' : compositeScore >= (activePreset.thresholds?.watchScore || 50) ? 'WATCH' : 'AVOID',
+        signal: isIlliquidZeroVol ? 'AVOID' : (compositeScore >= (activePreset.thresholds?.buyScore || 70) ? 'BUY' : compositeScore >= (activePreset.thresholds?.watchScore || 50) ? 'WATCH' : 'AVOID'),
         activePreset: activePreset.id,
         presetName: activePreset.shortName,
         bcr3BuyPct: bcr3Buy,
@@ -466,13 +487,16 @@ export default function PredictorHub({
     });
 
     setScoredStocks(computed.sort((a, b) => b.composite_score - a.composite_score));
-  }, [stocks, activeStrategyPreset]);
+  }, [activeStrategyPreset]);
 
 
   // Fetch prediction data from backend or generate instant deterministic fallback
   const fetchPredictionData = React.useCallback(async () => {
+    const reqId = ++fetchSeqRef.current;
     setLoading(true);
     const proxyBase = getProxyBase();
+    const currentStocks = stocksRef.current || [];
+    const currentIndices = indicesRef.current || {};
 
     // Trigger parallel market-wide broker summary map hydration
     fetchMarketWideBrokerSummaryMap(1).catch(() => null);
@@ -480,164 +504,178 @@ export default function PredictorHub({
     try {
       // 1. Fetch Index Prediction
       const predRes = await fetch(`${proxyBase}/api/predict/nepse`).catch(() => null);
+      if (fetchSeqRef.current !== reqId) return;
       if (predRes && predRes.ok) {
         const json = await predRes.json();
+        if (fetchSeqRef.current !== reqId) return;
         if (json.prediction) {
           setIndexPrediction(json.prediction);
           if (json.trackRecord) setTrackRecord(json.trackRecord);
         }
       } else {
         // High-fidelity client-side deterministic fallback
-        let advances = 0, declines = 0, adRatio = 1;
-        if (stocks && stocks.length > 0) {
-          advances = stocks.filter(s => Number(s.pChange || 0) > 0).length;
-          declines = stocks.filter(s => Number(s.pChange || 0) < 0).length;
-          adRatio = advances / Math.max(1, declines);
+        const rawNepseIdx = Number(currentIndices?.nepse?.current || currentIndices?.nepse?.value || currentIndices?.nepse?.index || 0);
+        if (!Number.isFinite(rawNepseIdx) || rawNepseIdx <= 0) {
+          setIndexPrediction(null);
+        } else {
+          let advances = 0, declines = 0, adRatio = 1;
+          if (currentStocks.length > 0) {
+            advances = currentStocks.filter(s => Number(s.pChange || 0) > 0).length;
+            declines = currentStocks.filter(s => Number(s.pChange || 0) < 0).length;
+            adRatio = advances / Math.max(1, declines);
+          }
+          
+          const nepseIdx = rawNepseIdx;
+          const nepseChange = Number(currentIndices?.nepse?.pChange || currentIndices?.nepse?.pointChange || 0);
+          const fiscal = computeFiscalCycle(new Date());
+
+          // 4-Pillar Weighted Score (35% Technical, 25% Breadth, 25% Macro, 15% Sentiment)
+          const totalAd = advances + declines;
+          const breadthRatio = totalAd > 0 ? (advances - declines) / totalAd : 0;
+          const techFactor = Math.max(-1, Math.min(1, nepseChange / 2.5));
+          const newsItems = sentimentNewsRef.current || [];
+          const sentimentFactor = newsItems.length > 0
+            ? Number((newsItems.reduce((acc, n) => acc + Number(n.sentiment_score || 0), 0) / newsItems.length).toFixed(2))
+            : 0;
+          const macroFactor = Number(Math.max(-1, Math.min(1, fiscal.scoreBonus)).toFixed(2));
+          const rawScore = Number(((techFactor * 0.35) + (breadthRatio * 0.25) + (macroFactor * 0.25) + (sentimentFactor * 0.15)).toFixed(2));
+
+          // Dynamic ATR derived from index magnitude and current daily velocity
+          const dynVolPct = Math.max(0.009, Math.abs(nepseChange / 100) * 0.8 + 0.007);
+          const atr = Number((nepseIdx * dynVolPct).toFixed(1));
+
+          // ── STRICT NEPSE INDEX CIRCUIT CLAMPING (5.0% / 8.0%) ──────────────────────────────────
+          const prevIndexClose = Number(
+            currentIndices?.nepse?.prevClose ||
+            (currentIndices?.nepse?.pointChange ? nepseIdx - Number(currentIndices.nepse.pointChange) : null) ||
+            (currentIndices?.nepse?.pChange ? +(nepseIdx / (1 + Number(currentIndices.nepse.pChange) / 100)).toFixed(2) : null) ||
+            nepseIdx
+          );
+          const { floor: circuitFloor, ceiling: circuitCeiling } = getCircuitLimits(prevIndexClose, 8.0);
+
+          // Dynamic moving averages for NEPSE Index (calculated from genuine history or null)
+          let ema_20 = null;
+          let ema_50 = null;
+          let ema_200 = null;
+          const nepseHist = getCachedRealPriceHistory('NEPSE');
+          if (Array.isArray(nepseHist) && nepseHist.length >= 20) {
+            const isSorted = nepseHist.length <= 1 || (nepseHist[0].date <= nepseHist[nepseHist.length - 1].date);
+            const sorted = isSorted ? nepseHist : nepseHist.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+            const closes = sorted.map(c => Number(c.close ?? c.ltp ?? 0)).filter(c => c > 0);
+            if (closes.length >= 20) {
+              const arr = calculateEMA(closes, 20);
+              if (arr.length > 0 && arr[arr.length - 1] != null) ema_20 = Number(arr[arr.length - 1].toFixed(1));
+            }
+            if (closes.length >= 50) {
+              const arr = calculateEMA(closes, 50);
+              if (arr.length > 0 && arr[arr.length - 1] != null) ema_50 = Number(arr[arr.length - 1].toFixed(1));
+            }
+            if (closes.length >= 200) {
+              const arr = calculateEMA(closes, 200);
+              if (arr.length > 0 && arr[arr.length - 1] != null) ema_200 = Number(arr[arr.length - 1].toFixed(1));
+            }
+          }
+          const is_above_50_ema = (ema_50 != null && ema_50 > 0) ? (nepseIdx >= ema_50) : null;
+          const is_above_200_ema = (ema_200 != null && ema_200 > 0) ? (nepseIdx >= ema_200) : null;
+          const golden_cross = (ema_50 != null && ema_200 != null) ? (ema_50 >= ema_200) : null;
+          const hard_ceiling_applied = is_above_50_ema === false;
+
+          const rawDir = rawScore > 0.08 ? 'up' : rawScore < -0.08 ? 'down' : 'consolidate';
+          const dir = (hard_ceiling_applied && rawDir === 'up') ? 'consolidate' : rawDir;
+
+          const rawT1 = dir === 'down' ? +(nepseIdx - atr * 1.4).toFixed(1) : +(nepseIdx + atr * 1.4).toFixed(1);
+          const rawT2 = dir === 'down' ? +(nepseIdx - atr * 2.8).toFixed(1) : +(nepseIdx + atr * 2.8).toFixed(1);
+          const rawStop = dir === 'down' ? +(nepseIdx + atr * 1.1).toFixed(1) : +(nepseIdx - atr * 1.1).toFixed(1);
+
+          const target1 = clampToDailyCircuitBand(rawT1, prevIndexClose, 8.0);
+          const target2 = clampToDailyCircuitBand(rawT2, prevIndexClose, 8.0);
+          const stopFloor = clampToDailyCircuitBand(rawStop, prevIndexClose, 8.0);
+          const rrr = +(Math.abs(target1 - nepseIdx) / Math.max(0.01, Math.abs(nepseIdx - stopFloor))).toFixed(2);
+
+          const baselineVolPct = nepseIdx > 0 ? (atr / nepseIdx) * 100 : 1.2;
+          const expectedMeanPct = +(rawScore * baselineVolPct * 1.5).toFixed(2);
+          const zScore90 = 1.645;
+          const margin90 = +(zScore90 * baselineVolPct * 1.0).toFixed(2);
+          
+          // Strict circuit-bounded return distribution (Index 8.0% halt threshold)
+          const returnInterval = clampReturnIntervalToCircuit(
+            expectedMeanPct - margin90,
+            expectedMeanPct + margin90,
+            8.0
+          );
+
+          const expectedReturnRange = {
+            mean: expectedMeanPct,
+            lower90: returnInterval.lower,
+            upper90: returnInterval.upper,
+            intervalWidth: +(returnInterval.upper - returnInterval.lower).toFixed(2),
+            confidenceLevel: 90,
+            uncertaintyMultiplier: 1.0,
+            isEventWidened: returnInterval.isCapped,
+            circuitLimitPct: 8.0
+          };
+
+          const floatDiv = {
+            divergenceDetected: false,
+            signal: 'neutral',
+            scoreModifier: 0.0,
+            headlinePChange: Number(currentIndices?.nepse?.pChange || 0),
+            floatPChange: Number(currentIndices?.float?.pChange || 0),
+            sensitiveFloatPChange: Number(currentIndices?.sensitive_float?.pChange || 0),
+            explanation: 'Headline NEPSE and free-float index are moving in normal correlation.'
+          };
+
+          setIndexPrediction({
+            prediction_date: formatNptDateIso(new Date()),
+            direction: dir,
+            confidence: Math.round(55 + Math.abs(rawScore) * 40),
+            raw_score: rawScore,
+            market_regime: dir === 'up' ? 'Bullish Expansion' : dir === 'down' ? 'Bearish Retracement' : 'Consolidation Range',
+            expected_return_range: expectedReturnRange,
+            float_divergence: floatDiv,
+            circuit_limits: { floor: circuitFloor, ceiling: circuitCeiling, circuitPct: 8.0 },
+            targets: {
+              target1,
+              target2,
+              stopFloor,
+              rrr,
+              atr
+            },
+            trend_structure: {
+              is_above_50_ema,
+              is_above_200_ema,
+              golden_cross,
+              ema_20,
+              ema_50,
+              ema_200,
+              hard_ceiling_applied
+            },
+            fiscal_cycle: fiscal,
+            contributing_factors: {
+              technical: Number(techFactor.toFixed(2)),
+              breadth: Number(breadthRatio.toFixed(2)),
+              sentiment: sentimentFactor,
+              macro: macroFactor,
+              weights: { technical: 0.35, breadth: 0.25, macro: 0.25, sentiment: 0.15 }
+            },
+            features: {
+              rsi_14: null,
+              macd_signal: dir === 'up' ? 'bullish' : 'bearish',
+              advance_decline_ratio: +adRatio.toFixed(2),
+              sector_breadth_pct: +(advances / Math.max(1, currentStocks.length || 1)).toFixed(2),
+              weighted_breadth_pct: +(advances / Math.max(1, currentStocks.length || 1)).toFixed(2),
+              turnover_ratio_vs_20d_avg: null,
+              m2_growth_pct: null,
+              interest_rate_pct: null
+            },
+            model_version: 'quant-v2.2-institutional',
+            explanation: dir === 'up'
+              ? `NEPSE (${nepseIdx.toFixed(1)} pts) displays bullish bias driven by favorable sector breadth (${advances} advances vs ${declines} declines). Tactical upside target set at ${target1} pts (extension ${target2} pts, bounded by daily index circuit ${circuitCeiling} pts) with trailing stop floor at ${Math.min(target1, stopFloor)} pts (RRR ${rrr}:1).`
+              : dir === 'down'
+              ? `NEPSE (${nepseIdx.toFixed(1)} pts) signals bearish retracement pressure (${declines} declines vs ${advances} advances). Downside target: ${target1} pts (extension ${target2} pts), invalidation ceiling: ${stopFloor} pts.`
+              : `NEPSE (${nepseIdx.toFixed(1)} pts) indicates consolidation near benchmark levels. Support floor: ${stopFloor} pts, Resistance ceiling: ${target1} pts.`
+          });
         }
-        
-        const nepseIdx = Number(indices?.nepse?.current || indices?.nepse?.value || indices?.nepse?.index || 2650);
-        const nepseChange = Number(indices?.nepse?.pChange || indices?.nepse?.pointChange || 0);
-        const fiscal = computeFiscalCycle(new Date());
-
-        // Market Breadth impact in [-1, +1]
-        const totalAd = advances + declines;
-        const breadthRatio = totalAd > 0 ? (advances - declines) / totalAd : 0;
-        const momentumImpact = Math.max(-1, Math.min(1, nepseChange / 2.5));
-        const rawScore = Number(((breadthRatio * 0.60) + (momentumImpact * 0.40)).toFixed(2));
-        const dir = rawScore > 0.08 ? 'up' : rawScore < -0.08 ? 'down' : 'consolidate';
-
-        // Dynamic ATR derived from index magnitude and current daily velocity
-        const dynVolPct = Math.max(0.009, Math.abs(nepseChange / 100) * 0.8 + 0.007);
-        const atr = Number((nepseIdx * dynVolPct).toFixed(1));
-
-        // ── STRICT NEPSE INDEX CIRCUIT CLAMPING (5.0% / 8.0%) ──────────────────────────────────
-        const prevIndexClose = Number(
-          indices?.nepse?.prevClose ||
-          (indices?.nepse?.pointChange ? nepseIdx - Number(indices.nepse.pointChange) : null) ||
-          (indices?.nepse?.pChange ? +(nepseIdx / (1 + Number(indices.nepse.pChange) / 100)).toFixed(2) : null) ||
-          nepseIdx
-        );
-        const { floor: circuitFloor, ceiling: circuitCeiling } = getCircuitLimits(prevIndexClose, 8.0);
-
-        const rawT1 = dir === 'up' ? +(nepseIdx + atr * 1.4).toFixed(1) : +(nepseIdx - atr * 1.4).toFixed(1);
-        const rawT2 = dir === 'up' ? +(nepseIdx + atr * 2.8).toFixed(1) : +(nepseIdx - atr * 2.8).toFixed(1);
-        const rawStop = dir === 'up' ? +(nepseIdx - atr * 1.1).toFixed(1) : +(nepseIdx + atr * 1.1).toFixed(1);
-
-        const target1 = clampToDailyCircuitBand(rawT1, prevIndexClose, 8.0);
-        const target2 = clampToDailyCircuitBand(rawT2, prevIndexClose, 8.0);
-        const stopFloor = clampToDailyCircuitBand(rawStop, prevIndexClose, 8.0);
-        const rewardDist = Math.abs(target1 - nepseIdx);
-        const riskDist = Math.max(0.01, Math.abs(nepseIdx - stopFloor));
-        const rrr = +(rewardDist / riskDist).toFixed(2);
-
-        const baselineVolPct = nepseIdx > 0 ? (atr / nepseIdx) * 100 : 1.2;
-        const expectedMeanPct = +(rawScore * baselineVolPct * 1.5).toFixed(2);
-        const zScore90 = 1.645;
-        const margin90 = +(zScore90 * baselineVolPct * 1.0).toFixed(2);
-        
-        // Strict circuit-bounded return distribution (Index 8.0% halt threshold)
-        const returnInterval = clampReturnIntervalToCircuit(
-          expectedMeanPct - margin90,
-          expectedMeanPct + margin90,
-          8.0
-        );
-
-        const expectedReturnRange = {
-          mean: expectedMeanPct,
-          lower90: returnInterval.lower,
-          upper90: returnInterval.upper,
-          intervalWidth: +(returnInterval.upper - returnInterval.lower).toFixed(2),
-          confidenceLevel: 90,
-          uncertaintyMultiplier: 1.0,
-          isEventWidened: returnInterval.isCapped,
-          circuitLimitPct: 8.0
-        };
-
-        const floatDiv = {
-          divergenceDetected: false,
-          signal: 'neutral',
-          scoreModifier: 0.0,
-          headlinePChange: Number(indices?.nepse?.pChange || 0),
-          floatPChange: Number(indices?.float?.pChange || 0),
-          sensitiveFloatPChange: Number(indices?.sensitive_float?.pChange || 0),
-          explanation: 'Headline NEPSE and free-float index are moving in normal correlation.'
-        };
-
-        // Dynamic moving averages for NEPSE Index (calculated from genuine history or null)
-        let ema_20 = null;
-        let ema_50 = null;
-        let ema_200 = null;
-        const nepseHist = getCachedRealPriceHistory('NEPSE');
-        if (Array.isArray(nepseHist) && nepseHist.length >= 20) {
-          const isSorted = nepseHist.length <= 1 || (nepseHist[0].date <= nepseHist[nepseHist.length - 1].date);
-          const sorted = isSorted ? nepseHist : nepseHist.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
-          const closes = sorted.map(c => Number(c.close ?? c.ltp ?? 0)).filter(c => c > 0);
-          if (closes.length >= 20) {
-            const arr = calculateEMA(closes, 20);
-            if (arr.length > 0 && arr[arr.length - 1] != null) ema_20 = Number(arr[arr.length - 1].toFixed(1));
-          }
-          if (closes.length >= 50) {
-            const arr = calculateEMA(closes, 50);
-            if (arr.length > 0 && arr[arr.length - 1] != null) ema_50 = Number(arr[arr.length - 1].toFixed(1));
-          }
-          if (closes.length >= 200) {
-            const arr = calculateEMA(closes, 200);
-            if (arr.length > 0 && arr[arr.length - 1] != null) ema_200 = Number(arr[arr.length - 1].toFixed(1));
-          }
-        }
-        const is_above_50_ema = (ema_50 != null && ema_50 > 0) ? (nepseIdx >= ema_50) : null;
-        const is_above_200_ema = (ema_200 != null && ema_200 > 0) ? (nepseIdx >= ema_200) : null;
-        const golden_cross = (ema_50 != null && ema_200 != null) ? (ema_50 >= ema_200) : null;
-        const hard_ceiling_applied = is_above_50_ema === false;
-
-        setIndexPrediction({
-          prediction_date: formatNptDateIso(new Date()),
-          direction: dir,
-          confidence: Math.round(55 + Math.abs(rawScore) * 40),
-          raw_score: rawScore,
-          market_regime: dir === 'up' ? 'Bullish Expansion' : dir === 'down' ? 'Bearish Retracement' : 'Consolidation Range',
-          expected_return_range: expectedReturnRange,
-          float_divergence: floatDiv,
-          circuit_limits: { floor: circuitFloor, ceiling: circuitCeiling, circuitPct: 8.0 },
-          targets: {
-            target1,
-            target2,
-            stopFloor,
-            rrr,
-            atr
-          },
-          trend_structure: {
-            is_above_50_ema,
-            is_above_200_ema,
-            golden_cross,
-            ema_20,
-            ema_50,
-            ema_200,
-            hard_ceiling_applied
-          },
-          fiscal_cycle: fiscal,
-          contributing_factors: {
-            technical: dir === 'up' ? 0.35 : -0.25,
-            breadth: +(adRatio - 1).toFixed(2),
-            sentiment: 0.30,
-            macro: +(0.25 + fiscal.scoreBonus).toFixed(2),
-            weights: { technical: 0.35, breadth: 0.25, macro: 0.25, sentiment: 0.15 }
-          },
-          features: {
-            rsi_14: null,
-            macd_signal: dir === 'up' ? 'bullish' : 'bearish',
-            advance_decline_ratio: +adRatio.toFixed(2),
-            sector_breadth_pct: +(advances / Math.max(1, stocks?.length || 1)).toFixed(2),
-            weighted_breadth_pct: +(advances / Math.max(1, stocks?.length || 1)).toFixed(2),
-            turnover_ratio_vs_20d_avg: 1.05,
-            m2_growth_pct: null,
-            interest_rate_pct: null
-          },
-          model_version: 'quant-v2.2-institutional',
-          explanation: dir === 'up'
-            ? `NEPSE (${nepseIdx.toFixed(1)} pts) displays bullish bias driven by favorable sector breadth (${advances} advances vs ${declines} declines). Tactical upside target set at ${target1} pts (extension ${target2} pts, bounded by daily index circuit ${circuitCeiling} pts) with trailing stop floor at ${Math.min(target1, stopFloor)} pts (RRR ${rrr}:1).`
-            : `NEPSE (${nepseIdx.toFixed(1)} pts) indicates consolidation near benchmark levels. Support floor: ${Math.min(target1, stopFloor)} pts, Resistance ceiling: ${Math.max(target1, stopFloor)} pts.`
-        });
 
         // Load authentic verified prediction history if recorded; otherwise return explicit insufficient_history
         let savedHistory = [];
@@ -667,13 +705,20 @@ export default function PredictorHub({
       }
 
       // 2. Fetch Scored Stocks
-      const stockRes = await fetch(`${proxyBase}/api/predict/stocks`).catch(() => null);
+      const stockRes = await fetch(`${proxyBase}/api/predict/stocks?preset=${encodeURIComponent(activeStrategyPreset)}`).catch(() => null);
+      if (fetchSeqRef.current !== reqId) return;
       if (stockRes && stockRes.ok) {
         const json = await stockRes.json();
+        if (fetchSeqRef.current !== reqId) return;
         if (Array.isArray(json.data) && json.data.length > 0) {
+          const activePreset = STRATEGY_PRESETS.find(p => p.id === activeStrategyPreset) || STRATEGY_PRESETS[0];
+          const liveMap = new Map(currentStocks.map(st => [String(st.symbol || '').toUpperCase().trim(), st]));
           const enriched = json.data.map(item => {
             const sym = String(item.symbol || '').toUpperCase().trim();
             const uInfo = UNIVERSE_MAP.get(sym);
+            const liveStk = liveMap.get(sym);
+            const resolvedLtp = Number(liveStk?.ltp || liveStk?.closePrice || item.ltp || 0);
+            const resolvedPChange = liveStk?.pChange != null ? Number(liveStk.pChange) : (item.pChange != null ? Number(item.pChange) : null);
             const sharesOutM = Number(uInfo?.sharesOut || item.sharesOut || 0);
             const isLowFloat = sharesOutM > 0 && sharesOutM <= 5;
             const hasCatalyst = Boolean(
@@ -687,16 +732,23 @@ export default function PredictorHub({
               Number(item.dividendYield || 0) > 0 ? `${item.dividendYield}% Dividend Yield` :
               Number(item.rightShare || 0) > 0 ? `${item.rightShare}% Right Share Issue` :
               'Corporate Action / AGM Disclosure';
+            const highRef = Number(item.high20 || liveStk?.high20 || liveStk?.high52 || liveStk?.fiftyTwoWeekHigh || 0);
+            const pivotDist = item.pivot_distance_pct ?? (highRef > 0 && resolvedLtp > 0 ? +(((highRef - resolvedLtp) / highRef) * 100).toFixed(2) : null);
             return {
               ...item,
               companyName: item.companyName || uInfo?.name || item.symbol,
               sector: item.sector || uInfo?.sector || 'Others',
-              volume: Number(item.volume || 0),
-              turnover: Number(item.turnover || 0),
-              sharesOut: sharesOutM,
+              ltp: resolvedLtp,
+              pChange: resolvedPChange,
+              high20: highRef > 0 ? highRef : null,
+              pivot_distance_pct: pivotDist,
+              volume: Number(liveStk?.volume || item.volume || 0),
+              turnover: Number(liveStk?.turnover || item.turnover || 0),
+              sharesOut: sharesOutM > 0 ? sharesOutM : null,
               float_risk_flag: isLowFloat ? 'low_float' : (item.float_risk_flag || 'normal'),
               corporate_action_flag: hasCatalyst ? 'corporate_catalyst' : (item.corporate_action_flag || null),
-              catalystLabel: hasCatalyst ? catalystLabel : null
+              catalystLabel: hasCatalyst ? catalystLabel : null,
+              signal: Number(item.composite_score) >= (activePreset.thresholds?.buyScore || 70) ? 'BUY' : Number(item.composite_score) >= (activePreset.thresholds?.watchScore || 50) ? 'WATCH' : 'AVOID'
             };
           });
           setScoredStocks(enriched);
@@ -709,6 +761,7 @@ export default function PredictorHub({
 
       // 3. Fetch Sentiment
       const sentRes = await fetch(`${proxyBase}/api/predict/sentiment`).catch(() => null);
+      if (fetchSeqRef.current !== reqId) return;
       if (sentRes && sentRes.ok) {
         const json = await sentRes.json();
         if (Array.isArray(json.data) && json.data.length > 0) {
@@ -722,6 +775,7 @@ export default function PredictorHub({
 
       // 4. Fetch Macro
       const macroRes = await fetch(`${proxyBase}/api/predict/macro`).catch(() => null);
+      if (fetchSeqRef.current !== reqId) return;
       if (macroRes && macroRes.ok) {
         const json = await macroRes.json();
         if (json.data && Object.keys(json.data).length > 0) {
@@ -736,9 +790,9 @@ export default function PredictorHub({
       console.warn('[PredictorHub] Fetch error:', e);
       fallbackStockScoring();
     } finally {
-      setLoading(false);
+      if (fetchSeqRef.current === reqId) setLoading(false);
     }
-  }, [stocks, indices, fallbackStockScoring]);
+  }, [activeStrategyPreset, fallbackStockScoring]);
 
   // Immediate hydration so scoredStocks is NEVER empty on initial render
   useEffect(() => {
@@ -999,7 +1053,8 @@ export default function PredictorHub({
             ...result,
             symbol: sym,
             sessionDate: primeDailyPick?.sessionDate || status.targetSessionDate,
-            isLockedForSession: true
+            isLockedForSession: isPassing,
+            passedActionableVerification: isPassing
           };
           setPrimePlan(planWithSymbol);
           if (isPassing) {
@@ -1042,6 +1097,7 @@ export default function PredictorHub({
 
   useEffect(() => {
     const sym = primeDailyPick?.symbol;
+    setHubMarketDepth(null);
     if (!sym) return;
     let isMounted = true;
 
@@ -2363,7 +2419,7 @@ export default function PredictorHub({
                             const masterStock = Array.isArray(stocks) ? stocks.find(s => s?.symbol === sym) : null;
                             return (primeDailyPick.sector && primeDailyPick.sector !== 'Unknown' && primeDailyPick.sector !== 'NEPSE')
                               ? primeDailyPick.sector
-                              : (masterStock?.sector || 'Commercial Banks');
+                              : (masterStock?.sector || 'NEPSE Equity');
                           })()}
                         </span>
                         {hasPlan && (
@@ -2430,7 +2486,7 @@ export default function PredictorHub({
                       <div style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '8px 10px' }}>
                         <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Data Quality</div>
                         <div style={{ fontSize: 12, fontWeight: 800, color: '#60a5fa', marginTop: 2 }}>
-                          {primePlan.dataQuality?.overall || 'HIGH'} ({primePlan.dataQuality?.historyDays || 227} bars)
+                          {primePlan.dataQuality?.overall || 'AVAILABLE'} ({primePlan.dataQuality?.historyDays ?? '—'} bars)
                         </div>
                       </div>
                     </div>

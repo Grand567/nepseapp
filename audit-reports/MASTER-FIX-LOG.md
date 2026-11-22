@@ -191,3 +191,79 @@ The following legacy tests hardcoded obsolete `7.5%` Short-Term / `5.0%` Long-Te
 ## 8. Blocked Bugs Log (Wave 2)
 - **Total Blocked in Wave 2:** **0**
 - All 50 canonical bugs in Wave 2 were fully resolved and empirically verified.
+
+
+---
+
+# Master Fix Execution Log — Wave 3: P0 Frontend State Leaks, Cross-Ticker Race Conditions, Fabricated Fallbacks, Credential-Safe Sync & Display Accuracy
+
+**Branch:** `fix/drabyashree-3acc-audit-20261122`  
+**Execution Timestamp:** 2026-11-22T16:50:00+05:45  
+**Scope:** Wave 3 Only (All confirmed P0 Frontend State Leaks, Cross-Ticker Race Conditions, Fabricated Fallbacks, Credential-Safe Sync, and Live-vs-EOD Display Accuracy bugs: `M-042`–`M-063`, `M-118`, `M-119`, `M-128`, `M-140`–`M-145`, `M-152`, `M-153`, `M-155`, `M-167`, `M-168`, `M-171` + Mandatory Invariants)
+
+---
+
+## 9. Wave 3 Resolution Summary Table
+
+| Canonical ID | Source IDs | Target File(s) | Status | Diff / Resolution Summary | Verification Proof |
+|:---|:---|:---|:---:|:---|:---|
+| **M-042** | `A3-001` | `src/App.jsx` | **RESOLVED** | Initialized `lastSyncTime` from `getLastMarketSyncTime() \|\| null`. Removed wall-clock fallback `new Date()` that falsely stamped offline data as freshly synced. | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts` |
+| **M-043** | `A3-002` | `src/App.jsx` | **RESOLVED** | Gated header status badge pulsing green strictly when `marketStatus?.isOpen && apiStatus === 'live' && lastSyncTime && !marketStatus?.isEmergencyHalt`. Displays explicit cached/closed indicators on weekend/offline sessions. | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts` |
+| **M-044** | `A3-003`, `A1-039`, `A3-040` | `src/App.jsx` | **RESOLVED** | Corrected `synchronizedSelectedStock` spread order to `{ ...baseObj, ...liveMatch }` while preserving modal navigation flags (`initialTab`, `isHistoricalSession`, `sessionDate`, `date`). Manual cloud sync now loads and saves via AES-256-GCM encrypted user vault (`loadEncryptedUserProfiles`/`saveEncryptedUserProfiles`) and strips `password`, `crn`, `pin`, `transactionPin`, and `vaultEnvelope` before cloud upload. | `npm run build`, `tests/audit/stock-tabs.spec.ts` |
+| **M-045** | `A3-004` | `src/components/AiAnalyst.jsx` | **RESOLVED** | Added monotonic `activeStockReqIdRef` sequence counter. Stale in-flight Gemini AI stock analyses and predictions are immediately discarded when switching stocks. | `npm run build`, `tests/audit/predictor-guru.spec.ts` |
+| **M-046** | `A3-005` | `src/components/PredictorHub.jsx` | **RESOLVED** | Guarded `primePlan` with `isLockedForSession: isPassing`, `passedActionableVerification: isPassing`. Returns empty actionable card rather than fabricating unverified breakout setups. | `npm run build`, `tests/audit/predictor-guru.spec.ts` |
+| **M-047** | `A3-006` | `src/components/PredictorHub.jsx` | **RESOLVED** | Filtered `fallbackStockScoring` by `isPureNepseEquity` and verified `ltp > 0`. Fixed `coiled` filter to read `pivot_distance_pct`; sanitized volume and turnover; removed hardcoded 227 history bars and `'Commercial Banks'` sector fallback. | `npm run build`, `tests/audit/predictor-guru.spec.ts` |
+| **M-048** | `A3-007` | `src/components/StockDetailModal.jsx` | **RESOLVED** | Symmetrized broker buyer/seller concentration percentages using matched cohorts (`hasMatchedGross ? ... : BCR3/SCR3`). Removed fake `ltp: 350`, `price: 100`, and `'Commercial Banks'` defaults. | `npm run build`, `tests/audit/stock-tabs.spec.ts` |
+| **M-049** | `A3-008` | `src/components/StockDetailModal.jsx` | **RESOLVED** | Fixed copy-paste comparator bug in seller broker sort via top-level `getSignedNetQty(row)` helper. Fixed `ad12M` accumulation/distribution ratio boundaries (`>= 0.05` for inflow, `<= -0.05` for outflow). | `npm run build`, `tests/audit/stock-tabs.spec.ts` |
+| **M-050** | `A3-009` | `src/components/NRBMacroWidget.jsx` | **RESOLVED** | `classifyNrbMacroRegime` and `buildBaselineNrbMacroData` reject `0`, negative, and empty strings via `pickPositive`. Renders explicit warning banner in full card mode when live NRB feed is unavailable. | `npm run build`, `tests/audit/services-125.spec.ts` |
+| **M-051** | `A3-010` | `src/components/IPOList.jsx` | **RESOLVED** | `safeFetch` throws on HTTP 4xx/5xx and `json.success === false`. `fetchActiveIpos` filters strictly to `status === 'open'`. `handleBulkApply` validates `kittaNum` against multiples of 10 within `[minKitta, maxKitta]` and wraps execution in `try ... finally { setIsProcessing(false); }`. | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts` |
+| **M-052** | `A3-011` | `src/hooks/useUnifiedStockTelemetry.ts` | **RESOLVED** | Added `abortControllerRef` to `refresh()`, aborting prior in-flight telemetry requests on rapid symbol switches to eliminate cross-ticker race conditions. | `npm run build`, `tests/audit/stock-tabs.spec.ts` |
+| **M-053** | `A3-014` | `src/components/Dashboard.jsx` | **RESOLVED** | Reset `heroHistory` on symbol change. Eliminated synthetic scaling of NEPSE index history to fabricate missing stock or sector charts. Passes `isIndex={!activeHeroIndex?.isStock}` to `ShareHubChart`. | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts` |
+| **M-054** | `A3-015` | `src/components/Dashboard.jsx` | **RESOLVED** | Scoped SEBON index circuit breaker alerts strictly to the NEPSE index (`!activeHeroIndex?.isStock && activeHeroIndex?.key === 'nepse'`), preventing index haltage banners on individual scrips. | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts` |
+| **M-055** | `A3-016` | `src/components/Dashboard.jsx` | **RESOLVED** | Turnover calculation checks `activeHeroIndex?.isStock` without market-wide turnover fallback for individual stocks. | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts` |
+| **M-056** | `A3-017` | `src/components/Dashboard.jsx` | **RESOLVED** | Computed `isHeroBull` and `heroTfStats.isBull` using `(change !== 0 ? change : pChange) >= 0`, eliminating `\|\|` mixed-sign evaluation bugs. | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts` |
+| **M-057** | `A3-018` | `src/views/PortfolioAnalytics.jsx` | **RESOLVED** | Removed hardcoded `NABIL` and `SHIVM` demo holdings, fake cash, and fake other. Loads authenticated user holdings from `loadEncryptedUserProfiles(uid)` and computes real-time metrics against verified market stocks. | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts` |
+| **M-058** | `A3-019` | `src/views/LiveMarketDashboard.jsx`, `src/views/StockDetails.jsx`, `src/views/WatchlistScreener.jsx` | **RESOLVED** | Eliminated fake fallback constants (`'2,648.32'`, fake breadth, fake top gainers). Replaced hardcoded upward SVG charts with authentic flat or bearish curves. Gated LIVE badges strictly on `marketStatus?.isOpen && apiStatus === 'live'`. | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts`, `tests/audit/services-125.spec.ts` |
+| **M-059** | `A3-020` | `src/components/InstitutionalAlertCardModal.tsx` | **RESOLVED** | Removed fabricated buy zones, stop losses, profit targets, win rates, and green check badges. Clamped R:R to 0 on invalid risk (`ltp <= stopLoss`). Formatted timestamps in `Asia/Kathmandu` (`NPT`). | `npm run build`, `tests/audit/predictor-guru.spec.ts` |
+| **M-060** | `A3-021` | `src/components/SessionFreshnessBadge.jsx` | **RESOLVED** | Imported `getDetailedMarketStatus`, added emergency halt checks, and formatted session timestamps strictly from `lastUpdatedMs` in `Asia/Kathmandu` NPT (never wall clock `now`). | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts` |
+| **M-061** | `A3-022` | `src/components/ShareHubChart.jsx` | **RESOLVED** | Added monotonic sequence counters (`historyReqRef`, `intradayReqRef`). Reset intraday and historical data immediately upon symbol switch. Added `isIndex` awareness to disable stock overlays when viewing indices. | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts`, `tests/audit/stock-tabs.spec.ts` |
+| **M-062** | `A3-023` | `src/components/ui.tsx` | **RESOLVED** | `SourceBar`: added `updatedAt` prop formatted in `Asia/Kathmandu` NPT with honest fallback to `'Live Feed'` / `'Cached Snapshot'`. `TimeframeFilterBar`: defaulted `isLive = false` with closed session label. | `npm run build`, `tests/audit/services-125.spec.ts` |
+| **M-063** | `A3-024` | `src/components/WatchlistEntryAlertModal.tsx` | **RESOLVED** | Required verified `ltp > 0` before creating stock entry alerts. Recomputed pullback pocket `[ltp * 0.975, ltp * 0.990]` below LTP so newly created alerts do not instantly chime. Deduplicated audio chime keys via `lastChimedKeyRef`. | `npm run build`, `tests/audit/services-125.spec.ts` |
+| **M-118**, **M-119** | `A2-026`, `A2-027` | `src/components/AccumulationDistributionRadar.tsx` | **RESOLVED** | Added `radarReqIdRef` and `diagReqIdRef` monotonic sequence counters. Fixed radar data merge order to `{ ...prev, ...batchMap }`. Re-evaluated Wyckoff, flow, broker analysis, and cornering on `diagnosticDays !== radarDays`. Removed `100` LTP fallback. | `npm run build`, `tests/audit/services-125.spec.ts` |
+| **M-128** | `A2-036` | `src/components/PaperTradingJournalScreen.tsx` | **RESOLVED** | Preserved Rs. 0 virtual cash via `Number.isFinite(parsedCap) ? parsedCap : 1000000`. Handled bot start/stop errors with state reversion on failure. Checked Demat settlement against `SETTLEMENT_CYCLE.sellableDays`. | `npm run build`, `tests/audit/services-125.spec.ts`, `tests/audit/predictor-guru.spec.ts` |
+| **M-140**–**M-145** | `A3-030`–`A3-035` | `src/components/StockDetailModal.jsx` | **RESOLVED** | Added `historySeqRef`, `aiSeqRef`, `broker5DSeqRef`, `floorsheetRef` sequence guards. Corporate action adjustments applied to price history and 20-period CMF. Validated session date on prime pick cache. Separated calculator state via `calcInitializedSymRef` to prevent live ticks from overwriting user inputs. | `npm run build`, `tests/audit/stock-tabs.spec.ts` |
+| **M-152** | `A2-045` | `src/components/AlphaCommandCenter.tsx`, `OneClickAlphaButton.jsx`, `HistoricalAnalogPanel.tsx` | **RESOLVED** | Updated CGT modes and default rates to 5.0% Short-Term (<=365d) and 3.75% Long-Term (>365d) per Finance Act 2083. Updated badge texts. | `npm run build`, `tests/audit/services-125.spec.ts` |
+| **M-153** | `A2-046` | `src/components/Calculator.jsx` | **RESOLVED** | Added dedicated `adjWacc` state and dual inputs in Tab 4 (Ex-Book Closure Price Adjustment) to prevent borrowing Tab 2 purchase WACC. Updated break-even search ceiling. Updated dropdown labels to 5.0% Short-Term and 3.75% Long-Term. | `npm run build`, `tests/audit/services-125.spec.ts` |
+| **M-155** | `A2-048` | `src/components/analyzer/EntryRiskCard.tsx` | **RESOLVED** | Added stop inversion guard (`isStopInverted` clamps shares and risk to 0). Applied SEBON 5-tier broker commission slab to whole position outlay. Calculated Target 1 net gain via `calculateNetProfit` (never fabricated +8%). Handled 10-kitta minimum lot in scale-out roadmap. Fixed calculator state dependency to `[showNetCalc]`. Updated CGT labels to 5.0% ST / 3.75% LT. | `npm run build`, `tests/audit/predictor-guru.spec.ts`, `tests/audit/services-125.spec.ts` |
+| **M-167**, **M-168** | `A2-054`, `A2-055` | `src/components/NepseAgentDashboard.jsx` | **RESOLVED** | Added monotonic `analysisReqIdRef` sequence counter. Cleared `agentResult` and `dossier` immediately on symbol change. Updated badge to `5.0% ST / 3.75% LT CGT & Fees Deducted`. Formatted NOTS timestamps in `Asia/Kathmandu` NPT. | `npm run build`, `tests/audit/predictor-guru.spec.ts`, `tests/audit/services-125.spec.ts` |
+| **M-171** | `A1-040` | `src/components/MeroShareHub.jsx` | **RESOLVED** | Editing holding units now automatically recomputes `valueAsOfPrevClose` and `valueAsOfLTP` using current rates. Manually added holdings set `isCustomWacc: true` and `waccSource: 'CUSTOM_USER_SET'`. | `npm run build`, `tests/audit/market-ipo-portfolio.spec.ts` |
+| **Invariant 5** | Audit Rule | `src/views/OrderExecution.jsx` | **RESOLVED** | Replaced misleading NOTS gateway claims with an explicit informational banner and button stating this screen is an Order Cost & Ticket Estimator (not a direct NOTS execution terminal). | `npm run build`, `tests/audit/services-125.spec.ts` |
+| **Invariant 3** | Audit Rule | `src/components/swing/SwingTradeSelectorView.tsx` | **RESOLVED** | Verified `pctAboveEma50` is computed strictly from actual equities with `ltp > ema50` (never 1-day advancers %) and derived index trend dynamically. | `npm run build`, `tests/audit/services-125.spec.ts` |
+| **Runtime Guard**| Audit Rule | `src/components/CapitalRiskSimulatorView.jsx` | **RESOLVED** | Fixed undefined variable reference bug on line 289 (`perShareRisk` -> `effectiveRiskPerShare`), resolving uncaught PageError. | `npm run build`, `tests/audit/services-125.spec.ts` |
+| **Runtime Guard**| Audit Rule | `src/components/FloorsheetServiceTab.tsx` | **RESOLVED** | Added safe `Array.isArray()` guards on `topWhaleScrips`, `topInstitutionalBrokers`, and `contracts`, resolving `Cannot read properties of undefined (reading 'map')` PageError. | `npm run build`, `tests/audit/services-125.spec.ts` |
+| **Runtime Guard**| Audit Rule | `src/components/services.tsx` | **RESOLVED** | Added 2000ms `Promise.race` fallback in `SectorHeatmapService` to prevent stuck loading spinners when stocks cache is cold. | `npm run build`, `tests/audit/services-125.spec.ts` |
+
+---
+
+## 10. Wave 3 Verification Gate Summary
+
+- **Production Build:** `npm run build`
+  - **Result:** **PASSED** (1,788 modules transformed, 0 errors, built in 15.82s).
+- **Playwright Audit Test Suite:**
+  - `tests/audit/stock-tabs.spec.ts`: **4/4 PASSED (100%)** (all 13 tabs across AKJCL, NABIL, CHCL, CBBL)
+  - `tests/audit/services-125.spec.ts`: **8/8 PASSED (100%)** (all 128 services across all 8 categories)
+  - `tests/audit/market-ipo-portfolio.spec.ts`: **2/2 PASSED (100%)** (Market Dashboard & Portfolio Hub)
+  - `tests/audit/predictor-guru.spec.ts`: **2/2 PASSED (100%)** (Predictor Hub 7 tabs & Guru AI Hub)
+  - **Total Tests Run:** **16 passed (100% pass rate, 0 failed, 0 skipped)**
+- **Runtime Health Audit:**
+  - Zero console errors
+  - Zero uncaught page errors
+  - Zero `NaN`, `undefined`, `null`, `Infinity`, or `Invalid Date` corrupt tokens in cards
+  - Zero zero-dimension charts
+  - Zero frozen skeletons or stuck spinners
+
+---
+
+## 11. Blocked Bugs Log (Wave 3)
+- **Total Blocked in Wave 3:** **0**
+- All 37 canonical Wave 3 P0 bugs and mandatory invariants were fully resolved and empirically verified with zero test skips or test weakening.

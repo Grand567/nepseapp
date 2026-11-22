@@ -22,8 +22,8 @@ interface AlphaCommandCenterProps {
 
 const CAPITAL_PRESETS = [50000, 100000, 250000, 500000, 1000000];
 const CGT_MODES = [
-  { rate: 0.05, label: '5.0% CGT (Gazette 2083)' },
-  { rate: 0.075, label: '7.5% CGT (Standard ST)' },
+  { rate: 0.05, label: '5.0% CGT (ST <=365d)' },
+  { rate: 0.0375, label: '3.75% CGT (LT >365d)' },
   { rate: 0.10, label: '10.0% CGT (Institutional)' }
 ];
 
@@ -43,7 +43,7 @@ export function AlphaCommandCenter({
     return 100000;
   });
 
-  const [cgtRate, setCgtRate] = useState<number>(0.075);
+  const [cgtRate, setCgtRate] = useState<number>(0.05);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);

@@ -78,7 +78,7 @@ export function OrderExecution({
           )}
           <span className="font-mono text-base font-extrabold text-white">{symbol}</span>
           <span className="rounded bg-sky-500/20 text-sky-400 text-[10px] font-mono px-2 py-0.5 font-bold">
-            TMS Broker 58
+            Order Cost & Ticket Estimator
           </span>
         </div>
         {isModal && onClose && (
@@ -89,6 +89,16 @@ export function OrderExecution({
             <X size={16} />
           </button>
         )}
+      </div>
+
+      {/* Estimator Notice Banner */}
+      <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-[11px] text-amber-300 flex items-start gap-2">
+        <ShieldCheck size={14} className="shrink-0 mt-0.5 text-amber-400" />
+        <span>
+          {isNe
+            ? 'सूचना: यो अर्डर लागत र टिकट अनुमानक हो, प्रत्यक्ष NOTS कार्यान्वयन गेटवे होइन। गणना गरिएको टिकट आफ्नो ब्रोकर TMS मा प्रविष्ट गर्नुहोस्।'
+            : 'Notice: This is an Order Cost & Ticket Estimator, not a live NOTS execution gateway. Copy the estimated ticket values into your broker TMS.'}
+        </span>
       </div>
 
       {/* Buy / Sell Switcher */}
@@ -255,13 +265,13 @@ export function OrderExecution({
         }`}
       >
         ⚡ {orderSide === 'BUY'
-          ? (isNe ? 'CONFIRM & SUBMIT BUY ORDER' : 'CONFIRM & SUBMIT BUY ORDER')
-          : (isNe ? 'CONFIRM & SUBMIT SELL ORDER' : 'CONFIRM & SUBMIT SELL ORDER')}
+          ? (isNe ? 'अर्डर टिकट तयार गर्नुहोस् (PREPARE TICKET)' : 'CALCULATE & PREPARE BUY TICKET')
+          : (isNe ? 'अर्डर टिकट तयार गर्नुहोस् (PREPARE TICKET)' : 'CALCULATE & PREPARE SELL TICKET')}
       </button>
 
       <div className="text-[11px] text-center text-slate-400 flex items-center justify-center gap-1.5 font-sans">
         <ShieldCheck size={14} className="text-sky-400" />
-        <span>{isNe ? 'SEBON स्वीकृत • सुरक्षित NEPSE NOTS इन्जिन जडान' : 'SEBON Authorized • Direct NEPSE NOTS Gateway'}</span>
+        <span>{isNe ? 'SEBON दर र दस्तुर गणना • ब्रोकर TMS अर्डर टिकट अनुमानक' : 'SEBON Statutory Calculation • Broker TMS Order Ticket Estimator'}</span>
       </div>
     </div>
   );

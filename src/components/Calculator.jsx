@@ -18,11 +18,12 @@ export default function Calculator() {
   const [sellQty, setSellQty] = useState(100);
   const [sellPrice, setSellPrice] = useState(300);
   const [buyWacc, setBuyWacc] = useState(250);
-  const [holdingType, setHoldingType] = useState('short'); // 'short' (7.5% - Individual <= 365d), 'long' (5.0% - Individual > 365d), 'institutional' (10.0%)
+  const [holdingType, setHoldingType] = useState('short'); // 'short' (5.0% - Individual <= 365d), 'long' (3.75% - Individual > 365d), 'institutional' (10.0%)
   const [sellResult, setSellResult] = useState(null);
 
   // ── 3. Bonus & Right Adjustment State ──
   const [adjLtp, setAdjLtp] = useState(450);
+  const [adjWacc, setAdjWacc] = useState(450);
   const [bonusPct, setBonusPct] = useState(10);
   const [rightPct, setRightPct] = useState(0);
   const [rightIssuePrice, setRightIssuePrice] = useState(100);
@@ -104,7 +105,7 @@ export default function Calculator() {
     if (sellQty <= 0 || buyWacc <= 0) return null;
     
     let low = buyWacc;
-    let high = buyWacc * 2 + 50;
+    let high = Math.max(buyWacc * 2 + 50, 500);
     let breakEvenPrice = buyWacc;
     
     for (let i = 0; i < 60; i++) {
@@ -132,7 +133,7 @@ export default function Calculator() {
     const rightPctNum = parseFloat(rightPct) || 0;
     const pr = parseFloat(rightIssuePrice) || 100;
     const qty = parseInt(userShares) || 0;
-    const currentWacc = parseFloat(buyWacc) || p0;
+    const currentWacc = parseFloat(adjWacc) > 0 ? parseFloat(adjWacc) : p0;
 
     if (p0 <= 0) return null;
 
@@ -156,7 +157,7 @@ export default function Calculator() {
       postValue: Math.floor(sim.totalNewUnits) * sim.adjustedPrice,
       dilutionAudit
     };
-  }, [adjLtp, bonusPct, rightPct, rightIssuePrice, userShares, buyWacc]);
+  }, [adjLtp, adjWacc, bonusPct, rightPct, rightIssuePrice, userShares]);
 
   // ── SIP Calculation ──
   const sipResult = useMemo(() => {
@@ -434,8 +435,8 @@ export default function Calculator() {
                 onChange={(e) => setHoldingType(e.target.value)}
                 className="select-input"
               >
-                <option value="short">Individual Short Term (≤ 365 Days, 7.5% CGT — Final Tax)</option>
-                <option value="long">Individual Long Term (&gt; 365 Days, 5.0% CGT — Final Tax)</option>
+                <option value="short">Individual Short Term (≤ 365 Days, 5.0% CGT — Final Tax)</option>
+                <option value="long">Individual Long Term (&gt; 365 Days, 3.75% CGT — Final Tax)</option>
                 <option value="institutional">Institutional Investor (10.0% CGT)</option>
               </select>
             </div>
@@ -526,8 +527,8 @@ export default function Calculator() {
                 onChange={(e) => setHoldingType(e.target.value)}
                 className="select-input"
               >
-                <option value="short">Individual Short Term (7.5% CGT — Final Tax)</option>
-                <option value="long">Individual Long Term (5.0% CGT — Final Tax)</option>
+                <option value="short">Individual Short Term (5.0% CGT — Final Tax)</option>
+                <option value="long">Individual Long Term (3.75% CGT — Final Tax)</option>
                 <option value="institutional">Institutional / Corporate (10.0% CGT — Advance Tax)</option>
               </select>
             </div>
@@ -563,15 +564,27 @@ export default function Calculator() {
               🎁 Ex-Book Closure Price Adjustment
             </h3>
 
-            <div style={{ marginBottom: 12 }}>
-              <label className="input-label">Market Price before Book Closure (LTP in Rs.)</label>
-              <input
-                type="number"
-                value={adjLtp}
-                onChange={(e) => setAdjLtp(parseFloat(e.target.value) || 0)}
-                className="input"
-                placeholder="e.g. 450"
-              />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+              <div>
+                <label className="input-label">Price before Book Closure (LTP)</label>
+                <input
+                  type="number"
+                  value={adjLtp}
+                  onChange={(e) => setAdjLtp(e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="input"
+                  placeholder="e.g. 450"
+                />
+              </div>
+              <div>
+                <label className="input-label">Your Purchase WACC (Rs.)</label>
+                <input
+                  type="number"
+                  value={adjWacc}
+                  onChange={(e) => setAdjWacc(e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="input"
+                  placeholder="e.g. 450"
+                />
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
@@ -1147,7 +1160,7 @@ export default function Calculator() {
                     fontWeight: 600
                   }}
                 >
-                  <option value="individual">Individual (7.5% Short-Term)</option>
+                  <option value="individual">Individual (5.0% Short-Term)</option>
                   <option value="institutional">Institutional (10% CGT)</option>
                 </select>
               </div>

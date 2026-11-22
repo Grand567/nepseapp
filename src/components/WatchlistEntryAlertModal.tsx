@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Bell, BellRing, Volume2, VolumeX, ShieldAlert, ArrowUpRight,
   TrendingUp, CheckCircle2, Clock, Trash2, Plus, RefreshCw, AlertTriangle
@@ -6,14 +6,13 @@ import {
 import {
   getAllWatchlistAlertConfigs,
   saveWatchlistAlertConfig,
-  removeWatchlistAlertConfig,
+  deleteWatchlistAlertConfig,
   getAlertHistory,
-  recordAlertHistory,
   playBreakoutChime,
   triggerBreakoutVibration
 } from '../utils/watchlistAlerts';
-import { StatCard, InfoBanner, Spinner, StockSearchSelect } from './ui';
-import { fetchFromBackend, loadNepseData } from '../utils/liveData';
+import { StockSearchSelect } from './ui';
+import { loadNepseData } from '../utils/liveData';
 
 interface WatchlistAlertItem {
   symbol: string;
@@ -31,28 +30,42 @@ interface WatchlistAlertItem {
 
 export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectStock?: ((stk: any) => void) | null } = {}) {
   const [configs, setConfigs] = useState<Record<string, any>>({});
+  const [marketStocks, setMarketStocks] = useState<any[]>([]);
   const [marketQuotes, setMarketQuotes] = useState<Record<string, number>>({});
   const [alertHistory, setAlertHistory] = useState<any[]>([]);
   const [newSymbol, setNewSymbol] = useState<string>('');
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [errorMsg, setErrorMsg] = useState<string>('');
+  const isMountedRef = useRef(true);
+  const lastChimedKeyRef = useRef<string>('');
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   // Load configs & history
   const reloadData = useCallback(async (isManualRefresh = false) => {
     if (isManualRefresh) setRefreshing(true);
     else setLoading(true);
+    let timerId: any = null;
     try {
       const cfg = getAllWatchlistAlertConfigs();
-      setConfigs(cfg || {});
-      setAlertHistory(getAlertHistory() || []);
+      if (isMountedRef.current) {
+        setConfigs(cfg || {});
+        setAlertHistory(getAlertHistory() || []);
+      }
 
       // Fetch live market prices with 4s timeout race
       const timeout = new Promise<{ stocks: any[] }>((resolve) => {
-        setTimeout(() => resolve({ stocks: [] }), 4000);
+        timerId = setTimeout(() => resolve({ stocks: [] }), 4000);
       });
       const res = await Promise.race([loadNepseData(), timeout]);
+      if (!isMountedRef.current) return;
       const list = res?.stocks || [];
+      setMarketStocks(list);
       const quoteMap: Record<string, number> = {};
       list.forEach((s: any) => {
         if (s.symbol) quoteMap[s.symbol.toUpperCase()] = Number(s.ltp || s.price || 0);
@@ -60,8 +73,11 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
       setMarketQuotes(quoteMap);
     } catch (_) {
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (timerId) clearTimeout(timerId);
+      if (isMountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
@@ -74,13 +90,20 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
     if (!sym) return;
     const s = sym.toUpperCase().trim();
     const ltp = marketQuotes[s] || 0;
-    const entryMin = ltp > 0 ? Number((ltp * 0.992).toFixed(1)) : 0;
-    const entryMax = ltp > 0 ? Number((ltp * 1.004).toFixed(1)) : 0;
-    const stopLoss = ltp > 0 ? Number((ltp * 0.954).toFixed(1)) : 0; // 4.6% stop
-    const target1 = ltp > 0 ? Number((ltp * 1.069).toFixed(1)) : 0; // 6.9% target
-    const target2 = ltp > 0 ? Number((ltp * 1.115).toFixed(1)) : 0; // 11.5% target
+    if (ltp <= 0) {
+      setErrorMsg(`Live quote for ${s} is unavailable. Refresh market feed before adding an alert.`);
+      return;
+    }
+    setErrorMsg('');
+    // Pullback entry pocket slightly below live LTP so adding a stock does not immediately fire a false alert
+    const entryMin = Number((ltp * 0.975).toFixed(1));
+    const entryMax = Number((ltp * 0.990).toFixed(1));
+    const stopLoss = Number((ltp * 0.954).toFixed(1)); // 4.6% stop
+    const target1 = Number((ltp * 1.069).toFixed(1)); // 6.9% target
+    const target2 = Number((ltp * 1.115).toFixed(1)); // 11.5% target
 
     const newCfg = {
+      ...(configs[s] || {}),
       symbol: s,
       entryZone: [entryMin, entryMax],
       stopLoss,
@@ -91,36 +114,39 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
     };
 
     saveWatchlistAlertConfig(s, newCfg);
+    setConfigs(getAllWatchlistAlertConfigs() || {});
     setNewSymbol('');
-    reloadData();
   };
 
   const handleToggle = (sym: string) => {
     const cfg = configs[sym];
     if (!cfg) return;
     saveWatchlistAlertConfig(sym, { ...cfg, alertEnabled: !cfg.alertEnabled });
-    reloadData();
+    setConfigs(getAllWatchlistAlertConfigs() || {});
   };
 
   const handleRemove = (sym: string) => {
-    removeWatchlistAlertConfig(sym);
-    reloadData();
+    deleteWatchlistAlertConfig(sym);
+    setConfigs(getAllWatchlistAlertConfigs() || {});
   };
 
   // Evaluate alerts against live quotes
   const activeAlertItems = useMemo(() => {
     return Object.keys(configs).map(sym => {
       const cfg = configs[sym];
-      const ltp = marketQuotes[sym] || cfg.entryZone?.[0] || 0;
-      const [entryMin, entryMax] = cfg.entryZone || [ltp * 0.99, ltp * 1.01];
-      const sl = cfg.stopLoss || (ltp * 0.95);
-      const t1 = cfg.target1 || (ltp * 1.07);
-      const t2 = cfg.target2 || (ltp * 1.12);
+      const liveLtp = Number(marketQuotes[sym] || 0);
+      const hasLive = Number.isFinite(liveLtp) && liveLtp > 0;
+      const [entryMin, entryMax] = Array.isArray(cfg.entryZone) && cfg.entryZone[0] > 0 && cfg.entryZone[1] > 0
+        ? cfg.entryZone
+        : [0, 0];
+      const sl = Number(cfg.stopLoss || 0);
+      const t1 = Number(cfg.target1 || 0);
+      const t2 = Number(cfg.target2 || 0);
 
-      const inEntryZone = ltp >= entryMin && ltp <= entryMax;
-      const nearStopLoss = ltp <= (sl * 1.015);
-      const target1Reached = ltp >= t1;
-      const target2Reached = ltp >= t2;
+      const inEntryZone = hasLive && entryMin > 0 && entryMax > 0 && liveLtp >= entryMin && liveLtp <= entryMax;
+      const nearStopLoss = hasLive && sl > 0 && liveLtp <= (sl * 1.015);
+      const target1Reached = hasLive && t1 > 0 && liveLtp >= t1;
+      const target2Reached = hasLive && t2 > 0 && liveLtp >= t2;
 
       return {
         symbol: sym,
@@ -128,7 +154,7 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
         stopLoss: sl,
         target1: t1,
         target2: t2,
-        currentPrice: ltp,
+        currentPrice: liveLtp,
         inEntryZone,
         nearStopLoss,
         target1Reached,
@@ -141,10 +167,14 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
   // Audio and vibration side-effects isolated strictly to useEffect lifecycle
   useEffect(() => {
     if (!audioEnabled) return;
-    const hasTriggered = activeAlertItems.some(
-      item => item.alertEnabled && (item.inEntryZone || item.nearStopLoss || item.target1Reached || item.target2Reached)
-    );
-    if (hasTriggered) {
+    const triggerKey = activeAlertItems
+      .filter(item => item.alertEnabled && (item.inEntryZone || item.nearStopLoss || item.target1Reached || item.target2Reached))
+      .map(item => `${item.symbol}:${item.inEntryZone ? 'E' : ''}${item.nearStopLoss ? 'S' : ''}${item.target1Reached ? '1' : ''}${item.target2Reached ? '2' : ''}`)
+      .sort()
+      .join('|');
+
+    if (triggerKey && triggerKey !== lastChimedKeyRef.current) {
+      lastChimedKeyRef.current = triggerKey;
       playBreakoutChime();
       triggerBreakoutVibration();
     }
@@ -197,6 +227,7 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
           <div className="w-full sm:w-64">
             <StockSearchSelect
               value={newSymbol}
+              stocks={marketStocks}
               onChange={(s) => {
                 setNewSymbol(s);
                 handleAddStock(s);
@@ -204,9 +235,13 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
               placeholder="Add stock to entry alerts..."
             />
           </div>
-          <span className="text-[11px] text-slate-500">
-            Automatically calculates entry zone, ATR stop-loss, and profit targets
-          </span>
+          {errorMsg ? (
+            <span className="text-xs font-semibold text-rose-400">{errorMsg}</span>
+          ) : (
+            <span className="text-[11px] text-slate-500">
+              Automatically calculates entry zone, ATR stop-loss, and profit targets
+            </span>
+          )}
         </div>
       </div>
 
@@ -239,9 +274,13 @@ export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectSto
                 </tr>
               ) : (
                 activeAlertItems.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-slate-800/30">
+                  <tr
+                    key={item.symbol}
+                    onClick={() => onSelectStock && onSelectStock({ symbol: item.symbol, ltp: item.currentPrice })}
+                    className={`hover:bg-slate-800/30 ${onSelectStock ? 'cursor-pointer' : ''}`}
+                  >
                     <td className="p-3 font-bold text-white font-mono text-sm">{item.symbol}</td>
-                    <td className="p-3 font-mono font-bold">Rs. {item.currentPrice}</td>
+                    <td className="p-3 font-mono font-bold">{item.currentPrice > 0 ? `Rs. ${item.currentPrice}` : 'Awaiting Quote'}</td>
                     <td className="p-3 font-mono text-slate-300">
                       Rs. {item.entryZone[0]} – {item.entryZone[1]}
                     </td>

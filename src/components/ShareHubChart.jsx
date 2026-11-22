@@ -193,6 +193,8 @@ export default function ShareHubChart({
   const chartRef = useRef(null);
   const mainSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
+  const historyReqRef = useRef(0);
+  const intradayReqRef = useRef(0);
 
   const activeIsFullscreen = Boolean(isFullscreen);
 
@@ -257,11 +259,31 @@ export default function ShareHubChart({
     if (mode) setActiveMode(mode);
   }, [mode]);
 
+  // Reset ticker-scoped state immediately on symbol change to prevent cross-ticker chart leaks
+  useEffect(() => {
+    setIntradayData([]);
+    setHoverData(null);
+    setError(null);
+    if (!Array.isArray(history) || history.length === 0) {
+      setRawHistory([]);
+    }
+  }, [symbol]);
+
+  // Sync stock-only overlay defaults when switching between NEPSE Index and an individual stock
+  useEffect(() => {
+    setShowVwap(isIndividualStock);
+    setShowTradePlan(isIndividualStock);
+    setShowInstVwap(isIndividualStock);
+    setShowPoc(isIndividualStock);
+  }, [isIndividualStock]);
+
   useEffect(() => {
     if (Array.isArray(history) && history.length > 0) {
       setRawHistory(history);
       setLoading(false);
       setError(null);
+    } else if (Array.isArray(history) && history.length === 0) {
+      setRawHistory([]);
     }
   }, [history]);
 
@@ -273,22 +295,24 @@ export default function ShareHubChart({
     if (!symbol) return;
 
     let isMounted = true;
+    const reqId = ++historyReqRef.current;
     setLoading(true);
+    setError(null);
 
     async function loadData() {
       try {
         const cleanSymbol = (symbol === 'NEPSE Index' || symbol === 'nepse') ? 'NEPSE' : symbol;
         const data = await fetchRealPriceHistory(cleanSymbol, 500);
-        if (!isMounted) return;
+        if (!isMounted || reqId !== historyReqRef.current) return;
         if (!data || data.length === 0) {
           throw new Error('No historical records found for ' + cleanSymbol);
         }
         setRawHistory(data);
         setError(null);
       } catch (err) {
-        if (isMounted) setError(err.message);
+        if (isMounted && reqId === historyReqRef.current) setError(err.message);
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted && reqId === historyReqRef.current) setLoading(false);
       }
     }
     loadData();
@@ -318,13 +342,14 @@ export default function ShareHubChart({
     }
 
     let isMounted = true;
+    const reqId = ++intradayReqRef.current;
     if (rawHistory.length === 0) setLoading(true);
 
     async function loadIntraday() {
       try {
         const cleanSymbol = (symbol === 'NEPSE Index' || symbol === 'nepse' || !symbol) ? 'NEPSE' : symbol;
         const res = await fetchNepseIntradayGraph(cleanSymbol);
-        if (!isMounted) return;
+        if (!isMounted || reqId !== intradayReqRef.current) return;
         if (res && Array.isArray(res) && res.length > 0) {
           setIntradayData(res);
           setError(null);
@@ -333,9 +358,9 @@ export default function ShareHubChart({
         }
       } catch (err) {
         console.warn('[ShareHubChart] Intraday fetch error:', err);
-        if (isMounted) setIntradayData([]);
+        if (isMounted && reqId === intradayReqRef.current) setIntradayData([]);
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted && reqId === intradayReqRef.current) setLoading(false);
       }
     }
 

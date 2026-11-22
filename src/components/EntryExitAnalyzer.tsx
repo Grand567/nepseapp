@@ -188,11 +188,12 @@ export function EntryExitAnalyzer({
             setRawCandles(cached.plan.candles || []);
             setAnalyzedTime(
               new Date(cached.ts).toLocaleTimeString('en-US', {
+                timeZone: 'Asia/Kathmandu',
                 hour: '2-digit',
                 minute: '2-digit',
                 second: '2-digit',
                 hour12: true,
-              })
+              }) + ' NPT'
             );
             setLoading(false);
             return;
@@ -293,11 +294,12 @@ export function EntryExitAnalyzer({
         setPlan(result);
         setAnalyzedTime(
           new Date().toLocaleTimeString('en-US', {
+            timeZone: 'Asia/Kathmandu',
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
             hour12: true,
-          })
+          }) + ' NPT'
         );
 
         // If this plan is an authentic BUY / ACCUMULATE setup, sync with prime pick cache & broadcast
@@ -532,7 +534,11 @@ export function EntryExitAnalyzer({
   const changeVal = Number(stockInfo?.change || 0);
   const companyName = stockInfo?.name || stockInfo?.companyName || symbol;
 
-  const mktStatus = useMemo(() => getDetailedMarketStatus(), []);
+  const [mktStatus, setMktStatus] = useState(() => getDetailedMarketStatus());
+  useEffect(() => {
+    const id = setInterval(() => setMktStatus(getDetailedMarketStatus()), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-5 font-sans text-slate-100">
@@ -694,11 +700,15 @@ export function EntryExitAnalyzer({
                 padding: '4px 8px',
                 borderRadius: 8,
                 fontFamily: 'var(--font-mono, monospace)',
-                background: pChange >= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
-                color: pChange >= 0 ? '#34d399' : '#fb7185',
-                border: pChange >= 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(244, 63, 94, 0.3)'
+                background: (pChange === 0 && changeVal === 0) ? 'rgba(148,163,184,0.12)' : ((changeVal !== 0 ? changeVal : pChange) > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)'),
+                color: (pChange === 0 && changeVal === 0) ? '#94a3b8' : ((changeVal !== 0 ? changeVal : pChange) > 0 ? '#34d399' : '#fb7185'),
+                border: (pChange === 0 && changeVal === 0) ? '1px solid rgba(148,163,184,0.3)' : ((changeVal !== 0 ? changeVal : pChange) > 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(244, 63, 94, 0.3)')
               }}>
-                {pChange >= 0 ? `+${changeVal.toFixed(1)} (+${pChange.toFixed(2)}%)` : `${changeVal.toFixed(1)} (${pChange.toFixed(2)}%)`}
+                {(pChange === 0 && changeVal === 0)
+                  ? '0.0 (0.00%)'
+                  : (changeVal !== 0 ? changeVal : pChange) > 0
+                  ? `+${changeVal.toFixed(1)} (+${pChange.toFixed(2)}%)`
+                  : `${changeVal.toFixed(1)} (${pChange.toFixed(2)}%)`}
               </div>
             </div>
           </div>

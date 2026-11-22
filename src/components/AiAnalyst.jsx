@@ -1559,6 +1559,7 @@ export default function AiAnalyst({
   const [allSymbols, setAllSymbols] = useState([]);
   const [portfolio, setPortfolio] = useState([]);
   const [marketData, setMarketData] = useState(null);
+  const activeStockReqIdRef = useRef(0);
   const [apiKeyMissing, setApiKeyMissing] = useState(false);
   const [paperModalScrip, setPaperModalScrip] = useState(null);
   const [paperShares, setPaperShares] = useState(50);
@@ -1697,6 +1698,7 @@ export default function AiAnalyst({
 
   const analyzeStock = async (sym) => {
     if (!sym) return;
+    const reqId = ++activeStockReqIdRef.current;
     setLoading(true);
 
     const userMsg = {
@@ -1709,6 +1711,8 @@ export default function AiAnalyst({
     const loadingMsg = {
       role: 'assistant',
       isLoading: true,
+      analysisType: 'stock',
+      symbol: sym,
       id: loadingId,
       timestamp: new Date().toLocaleTimeString()
     };
@@ -1732,6 +1736,7 @@ export default function AiAnalyst({
         fetchPriceHistory(sym, 365).catch(() => []),
         fetchBrokerAnalysis(sym, 15).catch(() => null)
       ]);
+      if (activeStockReqIdRef.current !== reqId) return;
 
       const rawCandles = Array.isArray(historyRes) ? historyRes : (historyRes?.data || []);
       const candles = normalizeCorporateActionPrices(rawCandles);
@@ -1839,6 +1844,7 @@ export default function AiAnalyst({
 
       // If data is unavailable or quote is invalid, skip predictions and LLM overrides
       if (synthesizedReport.dataUnavailable || ltp <= 0) {
+        if (activeStockReqIdRef.current !== reqId) return;
         setAnalysis(synthesizedReport);
         setMessages(prev => prev.map(m =>
           m.id === loadingId ? {
@@ -1904,9 +1910,11 @@ export default function AiAnalyst({
           body: JSON.stringify(predictPayload),
           signal: AbortSignal.timeout(20000)
         });
+        if (activeStockReqIdRef.current !== reqId) return;
 
         if (predictRes.ok) {
           const pred = await predictRes.json();
+          if (activeStockReqIdRef.current !== reqId) return;
           if (pred && (pred.verdict || pred.confidenceScore)) {
             const rawT1 = Number(pred.riskReward?.profitTarget || pred.riskReward?.target1);
             const verifiedT1 = Number.isFinite(rawT1) && rawT1 > ltp && rawT1 <= ltp * 1.50
@@ -1965,6 +1973,7 @@ export default function AiAnalyst({
             adi, wyckoff, graham, targets, zone, rrr, report: synthesizedReport
           });
           const result = await callGuruAI(prompt, 'stock');
+          if (activeStockReqIdRef.current !== reqId) return;
           if (result && (result.data || typeof result === 'object')) {
             const aiData = result.data || result;
             if (aiData && typeof aiData === 'object' && !aiData.raw) {
@@ -1994,6 +2003,7 @@ export default function AiAnalyst({
         }
       }
 
+      if (activeStockReqIdRef.current !== reqId) return;
       setMessages(prev => prev.map(m =>
         m.id === loadingId ? {
           role: 'assistant',
@@ -2004,6 +2014,7 @@ export default function AiAnalyst({
       ));
 
     } catch (err) {
+      if (activeStockReqIdRef.current !== reqId) return;
       setMessages(prev => prev.map(m =>
         m.id === loadingId ? {
           role: 'assistant',
@@ -2014,8 +2025,10 @@ export default function AiAnalyst({
       ));
     }
 
-    setLoading(false);
-    scrollToTop();
+    if (activeStockReqIdRef.current === reqId) {
+      setLoading(false);
+      scrollToTop();
+    }
   };
 
   useEffect(() => {

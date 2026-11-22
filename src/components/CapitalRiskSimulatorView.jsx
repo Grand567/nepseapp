@@ -286,7 +286,7 @@ export function CapitalRiskSimulatorView({
             </div>
 
             <div className="pt-2 text-[11px] text-slate-400 flex items-center justify-between">
-              <span>Risk Per Share: <b className="text-rose-400 font-mono">Rs. {perShareRisk.toFixed(2)}</b></span>
+              <span>Risk Per Share: <b className="text-rose-400 font-mono">Rs. {effectiveRiskPerShare.toFixed(2)}</b></span>
               <span>Reward Per Share: <b className="text-emerald-400 font-mono">Rs. {perShareGain.toFixed(2)}</b></span>
             </div>
           </div>

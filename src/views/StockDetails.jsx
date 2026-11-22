@@ -7,6 +7,8 @@ export function StockDetails({
   onOpenOrder,
   lang = 'ne',
   stocks: rawStocks = [],
+  marketStatus = null,
+  apiStatus = 'offline',
 }) {
   const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const isNe = lang === 'ne';
@@ -83,9 +85,13 @@ export function StockDetails({
             >
               <Bookmark size={16} />
             </button>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-mono font-bold text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              {isNe ? 'कारोबार चालू' : 'LIVE'}
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-mono font-bold border ${
+              marketStatus?.isOpen && apiStatus === 'live'
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                : 'bg-slate-800/80 border-slate-700 text-slate-400'
+            }`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${marketStatus?.isOpen && apiStatus === 'live' ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+              {marketStatus?.isOpen && apiStatus === 'live' ? (isNe ? 'कारोबार चालू' : 'LIVE') : (isNe ? 'बन्द / क्यास' : 'EOD / CACHED')}
             </span>
           </div>
         </div>
@@ -168,13 +174,27 @@ export function StockDetails({
             <svg viewBox="0 0 300 80" className="h-full w-full overflow-visible">
               <defs>
                 <linearGradient id="scripGradLive" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor={isPos ? "#10B981" : "#F43F5E"} stopOpacity="0.30" />
-                  <stop offset="100%" stopColor={isPos ? "#10B981" : "#F43F5E"} stopOpacity="0.0" />
+                  <stop offset="0%" stopColor={ltp <= 0 ? "#64748B" : isPos ? "#10B981" : "#F43F5E"} stopOpacity="0.30" />
+                  <stop offset="100%" stopColor={ltp <= 0 ? "#64748B" : isPos ? "#10B981" : "#F43F5E"} stopOpacity="0.0" />
                 </linearGradient>
               </defs>
-              <path d="M0,70 Q40,65 80,68 T160,40 T240,25 L300,10 L300,80 L0,80 Z" fill="url(#scripGradLive)" />
-              <path d="M0,70 Q40,65 80,68 T160,40 T240,25 L300,10" fill="none" stroke={isPos ? "#10B981" : "#F43F5E"} strokeWidth="2.5" />
-              <circle cx="300" cy="10" r="4" fill={isPos ? "#10B981" : "#F43F5E"} />
+              {ltp > 0 ? (
+                <>
+                  <path
+                    d={isPos ? "M0,70 Q40,65 80,68 T160,40 T240,25 L300,10 L300,80 L0,80 Z" : "M0,10 Q40,15 80,12 T160,40 T240,55 L300,70 L300,80 L0,80 Z"}
+                    fill="url(#scripGradLive)"
+                  />
+                  <path
+                    d={isPos ? "M0,70 Q40,65 80,68 T160,40 T240,25 L300,10" : "M0,10 Q40,15 80,12 T160,40 T240,55 L300,70"}
+                    fill="none"
+                    stroke={isPos ? "#10B981" : "#F43F5E"}
+                    strokeWidth="2.5"
+                  />
+                  <circle cx="300" cy={isPos ? 10 : 70} r="4" fill={isPos ? "#10B981" : "#F43F5E"} />
+                </>
+              ) : (
+                <path d="M0,40 L300,40" fill="none" stroke="#64748B" strokeWidth="1.5" strokeDasharray="4 4" />
+              )}
             </svg>
           </div>
         </div>
@@ -308,15 +328,19 @@ export function StockDetails({
                   </div>
                   {liveStock.marketDepth.bids.slice(0, 5).map((bid, i) => {
                     const ask = liveStock.marketDepth.asks?.[i];
+                    const bidQty = Number(bid.quantity ?? bid.kitta ?? 0);
+                    const bidPx = Number(bid.rate ?? bid.price ?? 0);
+                    const askQty = ask ? Number(ask.quantity ?? ask.kitta ?? 0) : 0;
+                    const askPx = ask ? Number(ask.rate ?? ask.price ?? 0) : 0;
                     return (
                       <div key={i} className="grid grid-cols-2 gap-3">
                         <div className="flex justify-between rounded-xl bg-emerald-500/[0.08] border border-emerald-500/20 px-2.5 py-1.5">
-                          <span className="text-slate-300 font-medium">{Number(bid.quantity || 0).toLocaleString()}</span>
-                          <span className="font-bold text-emerald-400">Rs {Number(bid.rate || 0).toFixed(2)}</span>
+                          <span className="text-slate-300 font-medium">{bidQty.toLocaleString()}</span>
+                          <span className="font-bold text-emerald-400">Rs {bidPx.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between rounded-xl bg-rose-500/[0.08] border border-rose-500/20 px-2.5 py-1.5">
-                          <span className="font-bold text-rose-400">{ask ? `Rs ${Number(ask.rate || 0).toFixed(2)}` : '—'}</span>
-                          <span className="text-slate-300 font-medium">{ask ? Number(ask.quantity || 0).toLocaleString() : '—'}</span>
+                          <span className="font-bold text-rose-400">{ask ? `Rs ${askPx.toFixed(2)}` : '—'}</span>
+                          <span className="text-slate-300 font-medium">{ask ? askQty.toLocaleString() : '—'}</span>
                         </div>
                       </div>
                     );

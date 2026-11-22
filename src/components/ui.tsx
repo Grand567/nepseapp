@@ -295,9 +295,12 @@ export function DataTable({ data = [], cols = [], loading = false, onRowClick }:
   );
 }
 
-export function SourceBar({ count, source, totalCount = 247 }: { count: number; source: string; totalCount?: number }) {
+export function SourceBar({ count, source, totalCount = 247, updatedAt }: { count: number; source: string; totalCount?: number; updatedAt?: string | number | null }) {
   const live = source === 'live';
   const isFiltered = totalCount > 0 && count < totalCount;
+  const updatedLabel = updatedAt && !isNaN(new Date(updatedAt).getTime())
+    ? `Updated ${new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kathmandu', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).format(new Date(updatedAt))} NPT`
+    : (live ? 'Live Feed' : 'Cached Snapshot');
   return (
     <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3.5 py-2">
       <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-200">
@@ -317,7 +320,7 @@ export function SourceBar({ count, source, totalCount = 247 }: { count: number; 
           <span className={`h-1.5 w-1.5 rounded-full ${live ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
           {live ? 'LIVE NEPSE OFFICIAL FEED' : source.toUpperCase()}
         </span>
-        <span className="font-mono text-slate-500">Updated {new Date().toLocaleTimeString()}</span>
+        <span className="font-mono text-slate-500">{updatedLabel}</span>
       </div>
     </div>
   );
@@ -722,7 +725,7 @@ export function TimeframeFilterBar({
   timeframe,
   onSelectTimeframe,
   asOf,
-  isLive = true,
+  isLive = false,
   onRefresh,
   isRefreshing = false,
   timeframes = ['1D', '1W', '15D', '1M', '3M', '6M', '1Y'],
@@ -752,7 +755,7 @@ export function TimeframeFilterBar({
           <div className="flex flex-col">
             {title && <span className="text-xs font-bold text-white">{title}</span>}
             <span className="text-[11px] font-mono text-slate-400">
-              {asOf ? `As of: ${asOf}` : `As of: ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
+              {asOf ? `As of: ${asOf}` : 'As of: Latest Session'}
               {isLive ? ' (Live Session)' : ' (Session Closed)'}
             </span>
           </div>

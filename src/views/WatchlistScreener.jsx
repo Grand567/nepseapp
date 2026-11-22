@@ -102,7 +102,7 @@ export function WatchlistScreener({ onSelectScrip, lang = 'ne', stocks = [] }) {
   ];
 
   const watchlistData = useMemo(() => {
-    if (!stocks || stocks.length === 0) return defaultWatchlist;
+    if (!stocks || stocks.length === 0) return [];
 
     return stocks.map(stock => {
       const ltp = Number(stock.ltp || stock.close || 0);
@@ -135,9 +135,12 @@ export function WatchlistScreener({ onSelectScrip, lang = 'ne', stocks = [] }) {
         vol: volStr,
         high52,
         low52,
-        isPos: chg >= 0,
+        isFlat: chg === 0 && pct === 0,
+        isPos: (chg !== 0 ? chg : pct) > 0,
         topMover: pct >= 5,
-        sentiment: chg >= 0 ? (isNe ? "Bullish (खरिद अनुकूल)" : "Bullish (Buy)") : (isNe ? "Bearish (बिक्री दबाब)" : "Bearish (Sell)")
+        sentiment: (chg === 0 && pct === 0)
+          ? (isNe ? "तटस्थ (Neutral)" : "Neutral (Flat)")
+          : (chg !== 0 ? chg : pct) > 0 ? (isNe ? "Bullish (खरिद अनुकूल)" : "Bullish (Buy)") : (isNe ? "Bearish (बिक्री दबाब)" : "Bearish (Sell)")
       };
     });
   }, [stocks, isNe]);

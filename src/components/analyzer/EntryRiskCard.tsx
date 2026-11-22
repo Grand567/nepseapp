@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Target, ShieldAlert, TrendingUp, Info, Calculator, Coins, AlertTriangle, CheckCircle2, Lock, ArrowRight } from 'lucide-react';
 import { calculateNetProfit, formatRiskReward } from '../../utils/riskManagement';
+import { calculateBrokerCommission } from '../../constants/marketRules';
 
 interface EntryRiskCardProps {
   levels: {
@@ -113,46 +114,60 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
   const effectiveRiskPct = Math.min(2.5, Math.max(0.75, riskTolerancePct));
   const maxCapitalAtRisk = portfolioCapital * (effectiveRiskPct / 100);
 
-  // Include round-trip broker commission (0.36% starter / 0.33% standard, min Rs. 10), SEBON (0.015%), and Rs. 50 round-trip DP fee
-  const estBrokerRate = portfolioCapital <= 150000 ? 0.0036 : 0.0033;
-  const rawPriceRisk = Math.max(0.5, entryPx - stopPx);
-  const perShareVarFriction = (entryPx + stopPx) * (estBrokerRate + 0.00015);
-  const effectiveRiskPerShare = rawPriceRisk + perShareVarFriction;
+  // Guard invalid/inverted stop-loss (live LTP <= stopPx) so sizing clamps to 0 instead of max cap
+  const isStopInverted = entryPx <= stopPx || entryPx <= 0 || stopPx <= 0;
+  const rawPriceRisk = isStopInverted ? 0 : (entryPx - stopPx);
 
-  const rawQuantity = Math.floor(Math.max(0, maxCapitalAtRisk - 50) / effectiveRiskPerShare);
+  // Exact SEBON 5-tier whole-trade broker slab lookup for estimated order value
+  const getSlabRate = (val: number) =>
+    val <= 50000 ? 0.0036 : val <= 500000 ? 0.0033 : val <= 2000000 ? 0.0031 : val <= 10000000 ? 0.0027 : 0.0024;
+  const estOrderValue = Math.min(portfolioCapital * 0.25, Math.max(10 * entryPx, maxCapitalAtRisk * 10));
+  const estBrokerRate = getSlabRate(estOrderValue);
+  const perShareVarFriction = (entryPx + stopPx) * (estBrokerRate + 0.00015);
+  const effectiveRiskPerShare = isStopInverted ? 0 : (rawPriceRisk + perShareVarFriction);
+
+  const rawQuantity = isStopInverted ? 0 : Math.floor(Math.max(0, maxCapitalAtRisk - 50) / effectiveRiskPerShare);
 
   // Maximum single-stock allocation cap (25% of portfolio) AND 5% of 20-day median turnover cap
   const median20DTurnover = Number((levels as any)?.median20DayTurnover || (levels as any)?.t2Risk?.median20DayTurnover || 8000000);
   const maxLiquidityOrderValue = Math.floor(0.05 * median20DTurnover);
   const maxSlotValue = Math.min(portfolioCapital * 0.25, maxLiquidityOrderValue);
-  const maxAllocationShares = Math.floor(Math.max(0, maxSlotValue - 25) / (entryPx * (1 + estBrokerRate + 0.00015)));
+  const maxAllocationShares = isStopInverted ? 0 : Math.floor(Math.max(0, maxSlotValue - 25) / (entryPx * (1 + getSlabRate(maxSlotValue) + 0.00015)));
 
   const t2Multiplier = levels?.t2Risk?.recommendedPositionMultiplier ?? levels?.recommendedPositionMultiplier ?? 1.0;
   const scaledShares = Math.floor((Math.min(rawQuantity, maxAllocationShares) * t2Multiplier) / 10) * 10;
 
   // Verify 10-kitta minimum lot does not breach 2.0% hard portfolio loss cap
   const lossAt10Kitta = 10 * effectiveRiskPerShare + 50;
-  const finalShares = scaledShares >= 10
-    ? scaledShares
-    : (lossAt10Kitta <= portfolioCapital * 0.02 && 10 * entryPx <= maxSlotValue ? 10 : 0);
+  const finalShares = isStopInverted
+    ? 0
+    : (scaledShares >= 10
+        ? scaledShares
+        : (lossAt10Kitta <= portfolioCapital * 0.02 && 10 * entryPx <= maxSlotValue ? 10 : 0));
 
   const buyOrderVal = finalShares * entryPx;
-  const buyBrokerComm = finalShares > 0 ? Math.max(10, +(buyOrderVal * estBrokerRate).toFixed(2)) : 0;
+  const buyBrokerComm = finalShares > 0 ? calculateBrokerCommission(buyOrderVal) : 0;
   const buySebon = finalShares > 0 ? +(buyOrderVal * 0.00015).toFixed(2) : 0;
   const buyDp = finalShares > 0 ? 25 : 0;
   const totalPositionOutlay = Math.round(buyOrderVal + buyBrokerComm + buySebon + buyDp);
 
   const portfolioAllocationPct = portfolioCapital > 0 ? +((totalPositionOutlay / portfolioCapital) * 100).toFixed(1) : 0;
-  const actualRiskRupees = finalShares > 0 ? Math.round(finalShares * effectiveRiskPerShare + 50) : 0;
+  const sellAtStopVal = finalShares * stopPx;
+  const sellAtStopFees = finalShares > 0 ? (calculateBrokerCommission(sellAtStopVal) + +(sellAtStopVal * 0.00015).toFixed(2) + 25) : 0;
+  const actualRiskRupees = finalShares > 0 ? Math.max(0, Math.round(totalPositionOutlay - (sellAtStopVal - sellAtStopFees))) : 0;
   const actualRiskPctOfCapital = portfolioCapital > 0 ? +((actualRiskRupees / portfolioCapital) * 100).toFixed(2) : 0;
 
   const statutoryBePx = levels?.statutoryBreakeven?.breakevenPrice || +(entryPx * 1.0085).toFixed(1);
-  const scaleOutShares = finalShares >= 20 ? Math.floor((finalShares * 0.5) / 10) * 10 : Math.floor(finalShares * 0.5);
+  const scaleOutShares = finalShares >= 20 ? Math.floor((finalShares * 0.5) / 10) * 10 : finalShares;
   const runnerShares = Math.max(0, finalShares - scaleOutShares);
 
-  // Expected Net Return in Rupees at Target 1
-  const t1NetGainPerShare = levels?.target1?.netGainPerShare || (levels?.target1?.price ? levels.target1.price - entryPx : entryPx * 0.08);
-  const target1NetGainRupees = Math.round(finalShares * t1NetGainPerShare);
+  // Expected Net Return in Rupees at Target 1 (real fees + 5.0% ST CGT, never fabricated +8%)
+  const target1NetGainRupees = useMemo(() => {
+    if (finalShares <= 0 || !levels?.target1?.price || entryPx <= 0) return 0;
+    if (levels.target1.netGainPerShare != null) return Math.round(finalShares * levels.target1.netGainPerShare);
+    const res = calculateNetProfit({ shares: finalShares, buyPrice: entryPx, sellPrice: levels.target1.price, holdingDays: 90, investorType: 'individual' });
+    return res && !res.error ? Math.round(res.netProfitLoss) : 0;
+  }, [finalShares, levels?.target1?.price, levels?.target1?.netGainPerShare, entryPx]);
 
   // ── E-batch: Net P&L Calculator State ──
   const [showNetCalc, setShowNetCalc] = useState(false);
@@ -186,12 +201,14 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
   const [calcShares, setCalcShares] = useState<number>(0);
   const [calcHoldingType, setCalcHoldingType] = useState<'short' | 'long'>('short');
 
-  // Sync calc inputs when levels/entryPx change
+  // Sync calc inputs when not actively open, so typing is not overwritten
   const t1Price = levels?.target1?.price || entryPx * 1.10;
   useEffect(() => {
-    if (t1Price > 0) setCalcSellPrice(t1Price);
-    if (finalShares > 0) setCalcShares(finalShares);
-  }, [entryPx, t1Price, finalShares]);
+    if (!showNetCalc) {
+      if (t1Price > 0) setCalcSellPrice(t1Price);
+      if (finalShares > 0) setCalcShares(finalShares);
+    }
+  }, [entryPx, t1Price, finalShares, showNetCalc]);
   const netCalcResult = useMemo(() => {
     if (!levels || !showNetCalc || !entryPx || !calcSellPrice || !calcShares) return null;
     try {
@@ -309,7 +326,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
           </div>
           <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
             <div className="text-[11px] font-bold text-emerald-300">
-              Net: {levels.target1?.netReturnPct != null ? `+${levels.target1.netReturnPct}%` : '—'} <span className="text-[9.5px] font-normal text-slate-400">(-7.5% CGT/fees)</span>
+              Net: {levels.target1?.netReturnPct != null ? `+${levels.target1.netReturnPct}%` : '—'} <span className="text-[9.5px] font-normal text-slate-400">(-5.0% CGT/fees)</span>
             </div>
             <div className="text-[10.5px] text-slate-400">
               {levels.target1?.horizon || '1–2 Weeks Horizon'}
@@ -329,7 +346,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
           </div>
           <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
             <div className="text-[11px] font-bold text-teal-300">
-              Net: {levels.target2?.netReturnPct != null ? `+${levels.target2.netReturnPct}%` : '—'} <span className="text-[9.5px] font-normal text-slate-400">(-7.5% CGT/fees)</span>
+              Net: {levels.target2?.netReturnPct != null ? `+${levels.target2.netReturnPct}%` : '—'} <span className="text-[9.5px] font-normal text-slate-400">(-5.0% CGT/fees)</span>
             </div>
             <div className="text-[10.5px] text-slate-400">
               {levels.target2?.horizon || '3–6 Weeks Horizon'}
@@ -557,7 +574,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
               +Rs. {target1NetGainRupees.toLocaleString()}
             </div>
             <div className="text-[10px] text-emerald-400/80 mt-0.5">
-              Net of 7.5% CGT & broker fees
+              Net of 5.0% ST CGT & broker fees
             </div>
           </div>
         </div>
@@ -568,7 +585,11 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
             <Coins size={14} className="text-emerald-400 shrink-0 mt-0.5" />
             <div>
               <span className="font-bold text-white">Execution Roadmap: </span>
-              <span>Sell {scaleOutShares} shares (50%) at Target 1 ({levels.target1?.label || `Rs. ${levels.target1?.price}`}) ➔ Raise Stop-Loss on remaining {runnerShares} runner shares to Statutory Breakeven (Rs. {statutoryBePx}) for zero risk.</span>
+              {runnerShares > 0 ? (
+                <span>Sell {scaleOutShares} shares (50%) at Target 1 ({levels.target1?.label || `Rs. ${levels.target1?.price}`}) ➔ Raise Stop-Loss on remaining {runnerShares} runner shares to Statutory Breakeven (Rs. {statutoryBePx}) for zero risk.</span>
+              ) : (
+                <span>Sell entire {scaleOutShares} shares at Target 1 ({levels.target1?.label || `Rs. ${levels.target1?.price}`}) (minimum 10-kitta lot, single exit).</span>
+              )}
             </div>
           </div>
         )}
@@ -629,8 +650,8 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => setCalcHoldingType('short')} className={`text-[10px] px-2.5 py-1 rounded-full border transition-colors ${calcHoldingType === 'short' ? 'bg-blue-950 border-blue-700 text-blue-300' : 'border-slate-700 text-slate-500'}`}>Short-term CGT 7.5%</button>
-              <button onClick={() => setCalcHoldingType('long')} className={`text-[10px] px-2.5 py-1 rounded-full border transition-colors ${calcHoldingType === 'long' ? 'bg-emerald-950 border-emerald-700 text-emerald-300' : 'border-slate-700 text-slate-500'}`}>Long-term CGT 5%</button>
+              <button onClick={() => setCalcHoldingType('short')} className={`text-[10px] px-2.5 py-1 rounded-full border transition-colors ${calcHoldingType === 'short' ? 'bg-blue-950 border-blue-700 text-blue-300' : 'border-slate-700 text-slate-500'}`}>Short-term CGT 5.0% (≤365d)</button>
+              <button onClick={() => setCalcHoldingType('long')} className={`text-[10px] px-2.5 py-1 rounded-full border transition-colors ${calcHoldingType === 'long' ? 'bg-emerald-950 border-emerald-700 text-emerald-300' : 'border-slate-700 text-slate-500'}`}>Long-term CGT 3.75% (&gt;365d)</button>
             </div>
 
             {netCalcResult && !netCalcResult.error ? (
@@ -677,7 +698,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
       <div className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/60 text-xs text-slate-400">
         <Info size={14} className="text-blue-400 shrink-0 mt-0.5" />
         <span>
-          <strong>Real Net Return & Settlement Accounting:</strong> Net targets incorporate round-trip SEBON fees (0.015%), broker commission (~0.24%-0.36%), DP fee (Rs. 25), and <strong>CGT (7.5% short-term ≤1yr / 5% long-term &gt;1yr)</strong> per Finance Act 2083. NEPSE trades <strong>Monday–Friday, 11:00 AM–3:00 PM NPT</strong>; trades settle T+2 and shares can only be sold from T+3. Position sizing accounts for 2-session lockup volatility.
+          <strong>Real Net Return & Settlement Accounting:</strong> Net targets incorporate round-trip SEBON fees (0.015%), broker commission (~0.24%-0.36%), DP fee (Rs. 25), and <strong>CGT (5.0% short-term ≤365d / 3.75% long-term &gt;365d)</strong> per Finance Act 2083. NEPSE trades <strong>Monday–Friday, 11:00 AM–3:00 PM NPT</strong>; trades settle T+2 and shares can only be sold from T+3. Position sizing accounts for 2-session lockup volatility.
         </span>
       </div>
     </div>

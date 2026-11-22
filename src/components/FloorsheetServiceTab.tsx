@@ -274,7 +274,7 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
               🐋 Top Whale-Accumulated Scrips (Click to Inspect Stock Hub)
             </div>
             <div className="divide-y divide-slate-800/70">
-              {data?.topWhaleScrips.map((s) => (
+              {Array.isArray(data?.topWhaleScrips) && data.topWhaleScrips.map((s) => (
                 <div
                   key={s.symbol}
                   onClick={() => {
@@ -307,7 +307,7 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
               🏛️ Top Institutional Accumulator Brokers (Baseline-Deflated)
             </div>
             <div className="divide-y divide-slate-800/70">
-              {data?.topInstitutionalBrokers.map((b) => (
+              {Array.isArray(data?.topInstitutionalBrokers) && data.topInstitutionalBrokers.map((b) => (
                 <div
                   key={b.brokerId}
                   onClick={() => setBuyerBrokerInput(String(b.brokerId))}
@@ -349,63 +349,71 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {data?.contracts.map((c) => (
-                <tr key={c.contractNo} className="hover:bg-slate-900/60">
-                  <td className="p-2.5 font-mono text-slate-400">
-                    {c.contractNo.slice(-10)}
-                  </td>
-                  <td
-                    onClick={() => onSelectSymbol?.(c.symbol)}
-                    className="p-2.5 font-bold text-white cursor-pointer hover:text-indigo-300"
-                  >
-                    {c.symbol}
-                  </td>
-                  <td
-                    onClick={() => setBuyerBrokerInput(String(c.buyerBroker))}
-                    className="p-2.5 font-semibold text-emerald-400 cursor-pointer"
-                  >
-                    #{c.buyerBroker}
-                  </td>
-                  <td
-                    onClick={() => setSellerBrokerInput(String(c.sellerBroker))}
-                    className="p-2.5 font-semibold text-rose-400 cursor-pointer"
-                  >
-                    #{c.sellerBroker}
-                  </td>
-                  <td className="p-2.5 text-right font-semibold text-white">
-                    {c.kitta.toLocaleString()}
-                  </td>
-                  <td className="p-2.5 text-right text-slate-200">
-                    {c.rate.toLocaleString()}
-                  </td>
-                  <td className="p-2.5 text-right text-slate-300">
-                    {c.amount.toLocaleString()}
-                  </td>
-                  <td className="p-2.5 text-center space-x-1">
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                        c.aggressor === "BUY"
-                          ? "bg-emerald-500/15 text-emerald-300"
-                          : c.aggressor === "SELL"
-                          ? "bg-rose-500/15 text-rose-300"
-                          : "bg-slate-800 text-slate-400"
-                      }`}
+              {Array.isArray(data?.contracts) && data.contracts.length > 0 ? (
+                data.contracts.map((c) => (
+                  <tr key={c.contractNo} className="hover:bg-slate-900/60">
+                    <td className="p-2.5 font-mono text-slate-400">
+                      {c.contractNo.slice(-10)}
+                    </td>
+                    <td
+                      onClick={() => onSelectSymbol?.(c.symbol)}
+                      className="p-2.5 font-bold text-white cursor-pointer hover:text-indigo-300"
                     >
-                      {c.aggressor}
-                    </span>
-                    {c.isWhalePrint && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-300 font-semibold">
-                        WHALE
+                      {c.symbol}
+                    </td>
+                    <td
+                      onClick={() => setBuyerBrokerInput(String(c.buyerBroker))}
+                      className="p-2.5 font-semibold text-emerald-400 cursor-pointer"
+                    >
+                      #{c.buyerBroker}
+                    </td>
+                    <td
+                      onClick={() => setSellerBrokerInput(String(c.sellerBroker))}
+                      className="p-2.5 font-semibold text-rose-400 cursor-pointer"
+                    >
+                      #{c.sellerBroker}
+                    </td>
+                    <td className="p-2.5 text-right font-semibold text-white">
+                      {c.kitta.toLocaleString()}
+                    </td>
+                    <td className="p-2.5 text-right text-slate-200">
+                      {c.rate.toLocaleString()}
+                    </td>
+                    <td className="p-2.5 text-right text-slate-300">
+                      {c.amount.toLocaleString()}
+                    </td>
+                    <td className="p-2.5 text-center space-x-1">
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                          c.aggressor === "BUY"
+                            ? "bg-emerald-500/15 text-emerald-300"
+                            : c.aggressor === "SELL"
+                            ? "bg-rose-500/15 text-rose-300"
+                            : "bg-slate-800 text-slate-400"
+                        }`}
+                      >
+                        {c.aggressor}
                       </span>
-                    )}
-                    {c.isInternalCross && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 font-semibold">
-                        SELF-CROSS
-                      </span>
-                    )}
+                      {c.isWhalePrint && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-300 font-semibold">
+                          WHALE
+                        </span>
+                      )}
+                      {c.isInternalCross && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 font-semibold">
+                          SELF-CROSS
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={8} className="p-4 text-center text-slate-500 font-medium">
+                    {loading ? "Loading tape..." : "No contracts found matching filter criteria."}
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

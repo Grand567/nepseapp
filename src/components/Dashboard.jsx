@@ -1782,6 +1782,8 @@ function Dashboard({
 
   useEffect(() => {
     let active = true;
+    // Clear prior symbol's chart immediately to prevent cross-ticker chart flash during load
+    setHeroHistory([]);
     async function loadHeroHistory() {
       if (active) setHeroChartLoading(true);
       try {
@@ -1839,22 +1841,7 @@ function Dashboard({
         }
 
         let data = await fetchPriceHistory(sym, 500);
-        // Fallback for sub-indices/sectors: if sector history is empty, scale from NEPSE's history
-        if ((!data || !Array.isArray(data) || data.length === 0) && sym !== 'NEPSE') {
-          const nepseData = await fetchPriceHistory('NEPSE', 500);
-          if (nepseData && Array.isArray(nepseData) && nepseData.length > 0) {
-            const nepseClose = Number(nepseData[nepseData.length - 1]?.close || currentHeroValue || 0);
-            const targetVal = Number(currentHeroValue || nepseClose || 0);
-            const scaleFactor = nepseClose > 0 ? (targetVal / nepseClose) : 1;
-            data = nepseData.map(d => ({
-              ...d,
-              open: +(Number(d.open) * scaleFactor).toFixed(2),
-              high: +(Number(d.high) * scaleFactor).toFixed(2),
-              low: +(Number(d.low) * scaleFactor).toFixed(2),
-              close: +(Number(d.close) * scaleFactor).toFixed(2),
-            }));
-          }
-        }
+        // Never fabricate stock or sector historical charts by scaling NEPSE index history
 
         if (!active) return;
         if (data && Array.isArray(data) && data.length > 0) {
@@ -2722,7 +2709,7 @@ function Dashboard({
     : (((activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && indices?.nepse && Number(indices.nepse.value) > 0)
         ? indices.nepse
         : (activeHeroIndex?.val || indices?.nepse || fallbackHero));
-  const isHeroBull = (heroVal.pChange || 0) >= 0 || (heroVal.change || 0) >= 0;
+  const isHeroBull = ((Number(heroVal.change) || 0) !== 0 ? Number(heroVal.change) : (Number(heroVal.pChange) || 0)) >= 0;
 
   // Slice history according to the active timeframe
   // 1W: 5 trading days, 1M: 22 trading days, 3M: 65 trading days, 6M: 130 trading days, 1Y: 245 trading days, ALL: all available
@@ -2761,7 +2748,7 @@ function Dashboard({
       return {
         change: c,
         pChange: pc,
-        isBull: c >= 0 || pc >= 0,
+        isBull: (c !== 0 ? c : pc) >= 0,
         periodLabel: '1D'
       };
     }
@@ -2782,7 +2769,7 @@ function Dashboard({
     return {
       change: c,
       pChange: pc,
-      isBull: c >= 0 || pc >= 0,
+      isBull: (c !== 0 ? c : pc) >= 0,
       periodLabel: '1D'
     };
   }, [heroTimeframe, slicedHeroHistory, heroVal, indices]);
@@ -3362,15 +3349,15 @@ function Dashboard({
               alignItems: 'center',
               gap: 4
             }}>
-              <span>{heroTfStats.isBull ? '▲ +' : '▼ '}{fmt(heroTfStats.change)} pts</span>
-              <span>({heroTfStats.isBull ? '+' : ''}{(heroTfStats.pChange || 0).toFixed(2)}%)</span>
+              <span>{heroTfStats.isBull ? '▲ +' : '▼ -'}{fmt(Math.abs(heroTfStats.change || 0))} pts</span>
+              <span>({heroTfStats.isBull ? '+' : '-'}{Math.abs(heroTfStats.pChange || 0).toFixed(2)}%)</span>
               {heroTimeframe !== '1D' && <span style={{ fontSize: 12, opacity: 0.85 }}>· {heroTimeframe}</span>}
             </span>
           </div>
 
           <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
             Turnover: <strong style={{ color: '#fff' }}>{(() => {
-              const to = Number(heroVal.turnover || indices?.nepse?.turnover || 0);
+              const to = Number(activeHeroIndex?.isStock ? (heroVal.turnover || 0) : (heroVal.turnover || indices?.nepse?.turnover || 0));
               if (to >= 1e9) return `${(to / 1e9).toFixed(2)} Arba`;
               if (to > 0) return `${(to / 1e7).toFixed(2)} Cr`;
               return '—';
@@ -3426,7 +3413,7 @@ function Dashboard({
         </div>
 
         {/* SEBON Market-Wide Index Circuit Breaker Telemetry Alert (5% & 8% Thresholds) */}
-        {heroTimeframe === '1D' && Math.abs(heroTfStats.pChange || 0) >= 4.0 && (
+        {!activeHeroIndex?.isStock && activeHeroIndex?.key === 'nepse' && heroTimeframe === '1D' && Math.abs(heroTfStats.pChange || 0) >= 4.0 && (
           <div style={{
             marginBottom: 10,
             padding: '7px 12px',
@@ -3509,7 +3496,7 @@ function Dashboard({
         <ShareHubChart
           history={slicedHeroHistory}
           symbol={activeHeroIndex?.symbol || activeHeroIndex.name}
-          isIndex={true}
+          isIndex={!activeHeroIndex?.isStock}
           isIntraday={heroTimeframe === '1D'}
           mode={heroChartMode}
           stock={{
@@ -5687,7 +5674,7 @@ function Dashboard({
       {showTVModal && (
         <AdvancedChartModal
           symbol={activeHeroIndex.symbol || activeHeroIndex.key || 'NEPSE'}
-          stock={{ ltp: heroVal.value, change: heroVal.change, pChange: heroVal.pChange, name: activeHeroIndex.name, sector: 'NEPSE Index' }}
+          stock={{ ltp: heroVal.value, change: heroVal.change, pChange: heroVal.pChange, name: activeHeroIndex.name, sector: activeHeroIndex?.isStock ? (stocks.find(s => s.symbol === activeHeroIndex.symbol)?.sector || 'NEPSE Equity') : 'NEPSE Index' }}
           initialTimeframe={heroTimeframe}
           onClose={() => setShowTVModal(false)}
         />
@@ -5722,7 +5709,7 @@ function Dashboard({
                 color: heroTfStats.isBull ? 'var(--bull)' : '#F43F5E',
                 fontFamily: 'var(--font-mono)'
               }}>
-                {heroTfStats.isBull ? '+' : ''}{fmt(heroTfStats.change)} ({heroTfStats.isBull ? '+' : ''}{(heroTfStats.pChange != null ? heroTfStats.pChange : heroVal.pChange || 0).toFixed(2)}%)
+                {heroTfStats.isBull ? '+' : '-'}{fmt(Math.abs(heroTfStats.change || 0))} ({heroTfStats.isBull ? '+' : '-'}{Math.abs(heroTfStats.pChange != null ? heroTfStats.pChange : heroVal.pChange || 0).toFixed(2)}%)
               </span>
               <button 
                 type="button"
@@ -5756,7 +5743,7 @@ function Dashboard({
                     : '#f87171'
                 }}
               >
-                {marketStatus?.isOpen && (
+                {marketStatus?.isOpen && apiStatus === 'live' && (
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]" />
@@ -5765,7 +5752,7 @@ function Dashboard({
                 {marketStatus?.isEmergencyHalt
                   ? 'Emergency Halt'
                   : marketStatus?.isOpen
-                  ? 'Market Open'
+                  ? (apiStatus === 'live' ? 'Market Open (Live)' : 'Market Open (Cached)')
                   : marketStatus?.isPreOpen
                   ? 'Pre-Open'
                   : 'Market Closed'}
@@ -5839,7 +5826,7 @@ function Dashboard({
             <ShareHubChart
               history={slicedHeroHistory}
               symbol={activeHeroIndex.symbol || activeHeroIndex.key || 'NEPSE'}
-              isIndex={true}
+              isIndex={!activeHeroIndex?.isStock}
               isIntraday={heroTimeframe === '1D'}
               mode={heroChartMode}
               stock={{
@@ -5866,9 +5853,9 @@ function Dashboard({
             fontSize: 12, flexShrink: 0
           }}>
             <div><span style={{ color: 'var(--text-muted)' }}>Index Value: </span><strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{fmt(heroVal.value)}</strong></div>
-            <div><span style={{ color: 'var(--text-muted)' }}>Point Change: </span><strong style={{ color: isHeroBull ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>{isHeroBull ? '+' : ''}{fmt(heroVal.change)}</strong></div>
-            <div><span style={{ color: 'var(--text-muted)' }}>Percent Change: </span><strong style={{ color: isHeroBull ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>{(heroVal.pChange || 0).toFixed(2)}%</strong></div>
-            <div><span style={{ color: 'var(--text-muted)' }}>Turnover: </span><strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{fmtCr(heroVal.turnover || indices?.nepse?.turnover || 0)}</strong></div>
+            <div><span style={{ color: 'var(--text-muted)' }}>Point Change: </span><strong style={{ color: isHeroBull ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>{isHeroBull ? '+' : '-'}{fmt(Math.abs(heroVal.change || 0))}</strong></div>
+            <div><span style={{ color: 'var(--text-muted)' }}>Percent Change: </span><strong style={{ color: isHeroBull ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>{isHeroBull ? '+' : '-'}{Math.abs(heroVal.pChange || 0).toFixed(2)}%</strong></div>
+            <div><span style={{ color: 'var(--text-muted)' }}>Turnover: </span><strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{fmtCr(activeHeroIndex?.isStock ? (heroVal.turnover || 0) : (heroVal.turnover || indices?.nepse?.turnover || 0))}</strong></div>
             <div><span style={{ color: 'var(--text-muted)' }}>Market: </span><strong style={{ color: marketStatus?.isOpen ? 'var(--bull)' : '#f87171' }}>{marketStatus?.isOpen ? 'OPEN' : 'CLOSED'}</strong></div>
           </div>
         </div>

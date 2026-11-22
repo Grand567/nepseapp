@@ -105,6 +105,7 @@ const fmtCr = n => {
   if (n >= 100000) return `Rs. ${(n / 100000).toFixed(2)}L`;
   return `Rs. ${fmt(n)}`;
 };
+const getSignedNetQty = (row) => (row?.netQty !== undefined ? Number(row.netQty) : (Number(row?.buyQty || 0) - Number(row?.sellQty || 0)));
 
 function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onOpenAlert, onOpenAgent, currentRvol, loading = false }) {
   if (loading && (!entryExitPlan || entryExitPlan.supported === false)) {
@@ -441,13 +442,15 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
             fontFamily: 'var(--font-mono)',
             marginTop: 2
           }}>
-            Rs. {t1Price} (+{t1GrossPct}%)
+            {t1Price != null ? `Rs. ${fmt(t1Price)}${t1GrossPct != null ? ` (${t1GrossPct >= 0 ? '+' : ''}${t1GrossPct}%)` : ''}` : '—'}
           </div>
           <div style={{ fontSize: 12, fontWeight: 700, color: isAvoid ? '#94a3b8' : '#34d399', marginTop: 1 }}>
             {isAvoid ? (
               <span style={{ color: '#94a3b8', fontSize: 12 }}>Profit-Taking / Trim Resistance</span>
+            ) : t1NetPct != null ? (
+              <>Net: {t1NetPct >= 0 ? '+' : ''}{t1NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span></>
             ) : (
-              <>Net: +{t1NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span></>
+              <span style={{ color: '#64748b', fontSize: 12 }}>—</span>
             )}
           </div>
         </div>
@@ -464,13 +467,15 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
             fontFamily: 'var(--font-mono)',
             marginTop: 2
           }}>
-            Rs. {t2Price} (+{t2GrossPct}%)
+            {t2Price != null ? `Rs. ${fmt(t2Price)}${t2GrossPct != null ? ` (${t2GrossPct >= 0 ? '+' : ''}${t2GrossPct}%)` : ''}` : '—'}
           </div>
           <div style={{ fontSize: 12, fontWeight: 700, color: isAvoid ? '#64748b' : '#c084fc', marginTop: 1 }}>
             {isAvoid ? (
               <span style={{ color: '#64748b', fontSize: 12 }}>Heavy Overhead Supply</span>
+            ) : t2NetPct != null ? (
+              <>Net: {t2NetPct >= 0 ? '+' : ''}{t2NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span></>
             ) : (
-              <>Net: +{t2NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span></>
+              <span style={{ color: '#64748b', fontSize: 12 }}>—</span>
             )}
           </div>
         </div>
@@ -481,7 +486,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
             {isExtremeValuation ? 'Trailing Stop (Floor)' : isAvoid ? 'Cut-Loss Floor (Exit)' : 'Stop Loss (Structural)'}
           </div>
           <div style={{ fontSize: 13, fontWeight: 800, color: isExtremeValuation ? '#fbbf24' : '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-            Rs. {slPrice} (-{slPct}%)
+            {slPrice != null ? `Rs. ${fmt(slPrice)}${slPct != null ? ` (-${slPct}%)` : ''}` : '—'}
           </div>
           <div style={{ fontSize: 12, color: isAvoid ? '#fca5a5' : isExtremeValuation ? '#fde68a' : '#64748b', marginTop: 1 }}>
             {isExtremeValuation ? 'Protect capital if holding' : isAvoid ? 'Protect capital if holding' : 'Invalidation Point'}
@@ -565,7 +570,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
           <AlertTriangle style={{ width: 15, height: 15, color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
           <div>
             <span style={{ fontWeight: 800, color: '#f59e0b' }}>Confirmation Prerequisite: </span>
-            This asset is in a consolidation phase (Score: {setupScore}/100{winRate != null ? `, Analog Win Rate: ${winRate}%` : ''}). Price must establish a confirmed high-volume close above Rs. {entryHigh} before entering fresh positions.
+            This asset is in a consolidation phase (Score: {setupScore}/100{winRate != null ? `, Analog Win Rate: ${winRate}%` : ''}). {entryHigh != null ? `Price must establish a confirmed high-volume close above Rs. ${fmt(entryHigh)} before entering fresh positions.` : 'Await confirmed volume breakout before entering fresh positions.'}
           </div>
         </div>
       )}
@@ -639,7 +644,9 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
         padding: '6px 2px'
       }}>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span>Risk:Reward: <strong style={{ color: '#38bdf8' }}>{entryExitPlan?.levels?.rrr1 != null ? entryExitPlan.levels.rrr1 : rrr1} : 1</strong></span>
+          <span>Risk:Reward: <strong style={{ color: '#38bdf8' }}>
+            {(entryExitPlan?.levels?.rrr1 ?? rrr1) != null ? `${entryExitPlan?.levels?.rrr1 ?? rrr1} : 1` : '—'}
+          </strong></span>
           {winRate != null && (
             <span>
               Win Rate: <strong style={{ color: winRate >= 55 ? '#34d399' : winRate >= 45 ? '#fbbf24' : '#f87171' }}>{winRate}%</strong> ({sampleSize} Analogs)
@@ -820,24 +827,22 @@ function BeginnerConfidenceCard({
 
   const bcr3Buy = Number(realBrokerAnalysis?.bcr3BuyPct ?? brokerConcentration?.bcr3BuyPct ?? 0);
   const bcr3Sell = Number(realBrokerAnalysis?.bcr3SellPct ?? brokerConcentration?.bcr3SellPct ?? 0);
+
+  // Strictly compare apples-to-apples broker cohorts (matched Top-N buy vs Top-N sell)
+  const hasMatchedGross =
+    (isHistorySufficient && multiDayDiag?.grossBuyConcentrationPct != null && multiDayDiag?.grossSellConcentrationPct != null) ||
+    (realBrokerAnalysis?.grossBuyConcentrationPct != null && realBrokerAnalysis?.grossSellConcentrationPct != null);
   const grossBuyPct = Number(
-    (isHistorySufficient ? multiDayDiag?.grossBuyConcentrationPct : null) ??
-    realBrokerAnalysis?.grossBuyConcentrationPct ??
-    realBrokerAnalysis?.bcr5BuyPct ??
-    realBrokerAnalysis?.bcr3BuyPct ??
-    multiDayDiag?.grossBuyConcentrationPct ??
-    bcr3Buy ??
-    0
+    hasMatchedGross
+      ? ((isHistorySufficient ? multiDayDiag?.grossBuyConcentrationPct : null) ?? realBrokerAnalysis?.grossBuyConcentrationPct ?? 0)
+      : (realBrokerAnalysis?.bcr3BuyPct ?? bcr3Buy ?? 0)
   );
   const grossSellPct = Number(
-    (isHistorySufficient ? multiDayDiag?.grossSellConcentrationPct : null) ??
-    realBrokerAnalysis?.grossSellConcentrationPct ??
-    realBrokerAnalysis?.scr3SellPct ??
-    realBrokerAnalysis?.bcr3SellPct ??
-    multiDayDiag?.grossSellConcentrationPct ??
-    bcr3Sell ??
-    0
+    hasMatchedGross
+      ? ((isHistorySufficient ? multiDayDiag?.grossSellConcentrationPct : null) ?? realBrokerAnalysis?.grossSellConcentrationPct ?? 0)
+      : (realBrokerAnalysis?.bcr3SellPct ?? realBrokerAnalysis?.scr3SellPct ?? bcr3Sell ?? 0)
   );
+  const cohortLabel = hasMatchedGross ? 'Top institutional brokers' : 'Top 3 brokers';
   const nbar = Number(realBrokerAnalysis?.nbar ?? (grossSellPct > 0 ? grossBuyPct / grossSellPct : 1.0));
   const rawWhaleVwap = (isHistorySufficient ? multiDayDiag?.bigBrokerVWAP : null) ??
     realBrokerAnalysis?.bigBrokerVWAP ??
@@ -915,7 +920,7 @@ function BeginnerConfidenceCard({
       check2Border = 'rgba(244, 63, 94, 0.35)';
     } else if (isStrongAccumulation) {
       check2Badge = '🟢 Big Players Accumulating';
-      check2Desc = `Top 5 brokers absorbed ${grossBuyPct.toFixed(1)}% of all shares bought${whaleVwap ? ` at Big Broker VWAP of Rs. ${whaleVwap}` : ''} (Net absorption: ${bcr5Net}%).`;
+      check2Desc = `${cohortLabel} absorbed ${grossBuyPct.toFixed(1)}% of buy volume vs ${grossSellPct.toFixed(1)}% sell concentration${whaleVwap ? ` at Big Broker VWAP of Rs. ${whaleVwap}` : ''}.`;
       check2Color = '#10b981';
       check2Bg = 'rgba(16, 185, 129, 0.08)';
       check2Border = 'rgba(16, 185, 129, 0.25)';
@@ -934,7 +939,7 @@ function BeginnerConfidenceCard({
     return (!isNaN(n) && isFinite(n) && n > 0) ? n : null;
   };
 
-  const ltp = Number(d?.ltp || 100);
+  const ltp = Number(d?.ltp || 0);
   const pChange = Number(d?.pChange || 0);
   const lv = entryExitPlan?.levels;
   const entryLow = Number(
@@ -1051,9 +1056,12 @@ function BeginnerConfidenceCard({
   const check4Desc = `Setup Quality Score is ${setupScore}/100${winRate != null ? ` with a ${winRate}% historical win rate across similar past NEPSE setups.` : '.'}`;
 
   // Rupee Investment Simulator calculations
-  const buyPrice = ltp > 0 ? ltp : 100;
-  const kitta = Math.max(10, Math.floor(selectedCapital / (buyPrice * 1.006)));
-  const buyCalc = calculateBuyDetails(kitta, buyPrice) || { totalAmount: kitta * buyPrice };
+  const hasLiveLtp = Number.isFinite(ltp) && ltp > 0;
+  const buyPrice = hasLiveLtp ? ltp : 0;
+  const rawAffordableKitta = buyPrice > 0 ? Math.floor(selectedCapital / (buyPrice * 1.006)) : 0;
+  const minLotExceedsCapital = buyPrice > 0 && rawAffordableKitta < 10;
+  const kitta = buyPrice > 0 ? Math.max(10, rawAffordableKitta) : 0;
+  const buyCalc = buyPrice > 0 ? (calculateBuyDetails(kitta, buyPrice) || { totalAmount: kitta * buyPrice }) : { totalAmount: 0 };
   const t1Price = Number(entryExitPlan?.levels?.target1?.price || +(buyPrice * 1.10).toFixed(1));
   const t2Price = Number(entryExitPlan?.levels?.target2?.price || +(buyPrice * 1.20).toFixed(1));
   const slPrice = Number(entryExitPlan?.levels?.stopLoss?.price || +(buyPrice * 0.94).toFixed(1));
@@ -1566,6 +1574,15 @@ export default function StockDetailModal({
   const depthSeqRef = useRef(0);
   const brokerAccumSeqRef = useRef(0);
   const compareSeqRef = useRef(0);
+  const historySeqRef = useRef(0);
+  const aiSeqRef = useRef(0);
+  const broker5DSeqRef = useRef(0);
+  const brokerDaysRef = useRef(brokerDays);
+  const brokerDateRef = useRef(brokerDate);
+  const floorsheetRef = useRef(realFloorsheet);
+  useEffect(() => { brokerDaysRef.current = brokerDays; }, [brokerDays]);
+  useEffect(() => { brokerDateRef.current = brokerDate; }, [brokerDate]);
+  useEffect(() => { floorsheetRef.current = realFloorsheet; }, [realFloorsheet]);
   const [liveQuote, setLiveQuote] = useState(null);
   const [clockTime, setClockTime] = useState(() => getDetailedMarketStatus().nptTime);
   const [quarterlyReports, setQuarterlyReports] = useState([]);
@@ -1584,11 +1601,11 @@ export default function StockDetailModal({
     if (!stock) return null;
     if (typeof stock === 'string') {
       const found = allStocks.find(s => s && s.symbol === stock.toUpperCase());
-      return found || { symbol: stock.toUpperCase(), name: stock.toUpperCase(), ltp: 350, pChange: 0, sector: 'Commercial Banks' };
+      return found || { symbol: stock.toUpperCase(), name: stock.toUpperCase(), ltp: 0, pChange: 0, sector: 'Others' };
     }
     if (typeof stock === 'object') {
       const sym = (stock.symbol || stock.stockSymbol || stock.sym || stock.scrip || stock.ticker || stock.item?.symbol || stock.name || '').toUpperCase();
-      if (!sym) return { symbol: 'STOCK', name: 'Stock Details', ltp: 350, pChange: 0, sector: 'Commercial Banks' };
+      if (!sym) return { symbol: 'STOCK', name: 'Stock Details', ltp: 0, pChange: 0, sector: 'Others' };
       const found = allStocks.find(s => s && s.symbol === sym);
       if (!found) return { ...stock, symbol: sym };
       return {
@@ -1695,16 +1712,19 @@ export default function StockDetailModal({
             if (isMounted && depth) setRealMarketDepth(depth);
           }).catch(() => {});
 
-          // Refresh live intraday broker execution data every 10 seconds ONLY during live active session when no past date is selected
-          if (marketStatus.isOpen && !brokerDate && liveTickCount % 4 === 0) {
+          // Refresh live intraday broker execution data every 10 seconds ONLY when viewing 1D live session
+          if (marketStatus.isOpen && !brokerDateRef.current && brokerDaysRef.current === 1 && liveTickCount % 4 === 0) {
             fetchRealBrokerAnalysis(sym, 1, { refresh: true }).then(ba => {
-              if (isMounted && ba) setRealBrokerAnalysis(ba);
+              if (isMounted && ba && brokerDaysRef.current === 1 && !brokerDateRef.current) {
+                setRealBrokerAnalysis(ba);
+                setBroker1DData(ba);
+              }
             }).catch(() => {});
           }
 
           // Refresh live intraday floorsheet tape every 5 seconds ONLY during live active session when no past date is selected
           if (marketStatus.isOpen && !floorsheetDate && liveTickCount % 2 === 0 && (activeTab === 'floorsheet' || activeTab === 'market_depth' || activeTab === 'depth_broker' || showHubModal)) {
-            const lastSeenId = realFloorsheet?.rows?.[0]?.contractId || realFloorsheet?.rows?.[0]?.contractNo || '';
+            const lastSeenId = floorsheetRef.current?.rows?.[0]?.contractId || floorsheetRef.current?.rows?.[0]?.contractNo || '';
             fetchRealFloorsheet(sym, '', 1, 500, { refresh: true, sinceContractId: lastSeenId }).then(fs => {
               if (isMounted && fs && Array.isArray(fs.rows) && fs.rows.length > 0) {
                 if (!lastSeenId) {
@@ -1738,7 +1758,7 @@ export default function StockDetailModal({
 
   // Derived stock merged with live fundamentals with complete null safety (Strictly NO mock data)
   const d = useMemo(() => {
-    const s = resolvedStock || { symbol: 'STOCK', name: 'Stock Details', ltp: 350, pChange: 0, sector: 'Commercial Banks' };
+    const s = resolvedStock || { symbol: 'STOCK', name: 'Stock Details', ltp: 0, pChange: 0, sector: 'Others' };
     
     // Live exchange price from single-stock quote or active market feed (allStocks) ALWAYS takes absolute priority
     const quoteLtp = Number(liveQuote?.ltp || liveQuote?.closePrice || 0);
@@ -1748,7 +1768,7 @@ export default function StockDetailModal({
       ltp = Number(realPriceHistory[realPriceHistory.length - 1]?.close || realPriceHistory[0]?.close || 0);
     }
     if (ltp <= 0) {
-      ltp = Number(s.prevClose || s.previousClose || s.high || 100);
+      ltp = Number(s.prevClose || s.previousClose || s.high || 0);
     }
 
     let livePChange = Number(
@@ -1826,32 +1846,40 @@ export default function StockDetailModal({
     const isRealEps = (val) => val !== undefined && val !== null && val !== '' && !isNaN(Number(val)) && Number(val) !== 0;
     const isNegativeEps = (val) => val !== undefined && val !== null && !isNaN(Number(val)) && Number(val) < 0;
 
+    const liveEpsRaw = liveDetail?.eps ?? liveDetail?.eps_ttm ?? liveDetail?.epsTtm;
+    const stockEpsRaw = s.eps ?? s.eps_ttm ?? s.epsTtm;
+    const cachedEpsRaw = cachedFundObj?.eps ?? cachedFundObj?.eps_ttm ?? cachedFundObj?.epsTtm;
     let validEps = undefined;
-    if (isRealEps(liveDetail?.eps)) validEps = Number(liveDetail.eps);
-    else if (isRealEps(s.eps)) validEps = Number(s.eps);
-    else if (isRealEps(cachedFundObj?.eps)) validEps = Number(cachedFundObj.eps);
-    else if (isNegativeEps(liveDetail?.eps)) validEps = Number(liveDetail.eps);
-    else if (isNegativeEps(s.eps)) validEps = Number(s.eps);
-    else if (isNegativeEps(cachedFundObj?.eps)) validEps = Number(cachedFundObj.eps);
+    if (isRealEps(liveEpsRaw)) validEps = Number(liveEpsRaw);
+    else if (isRealEps(stockEpsRaw)) validEps = Number(stockEpsRaw);
+    else if (isRealEps(cachedEpsRaw)) validEps = Number(cachedEpsRaw);
+    else if (isNegativeEps(liveEpsRaw)) validEps = Number(liveEpsRaw);
+    else if (isNegativeEps(stockEpsRaw)) validEps = Number(stockEpsRaw);
+    else if (isNegativeEps(cachedEpsRaw)) validEps = Number(cachedEpsRaw);
 
     const eps = validEps;
 
     const isRealBv = (val) => val !== undefined && val !== null && val !== '' && !isNaN(Number(val)) && Number(val) > 0;
+    const liveBvRaw = liveDetail?.bookValue ?? liveDetail?.bvps ?? liveDetail?.book_value_per_share ?? liveDetail?.bookValuePerShare;
+    const stockBvRaw = s.bookValue ?? s.bvps ?? s.bv ?? s.book_value_per_share;
+    const cachedBvRaw = cachedFundObj?.bookValue ?? cachedFundObj?.bvps ?? cachedFundObj?.book_value_per_share;
     let validBv = undefined;
-    if (isRealBv(liveDetail?.bookValue || liveDetail?.bvps)) validBv = Number(liveDetail.bookValue || liveDetail.bvps);
-    else if (isRealBv(s.bookValue || s.bvps || s.bv)) validBv = Number(s.bookValue || s.bvps || s.bv);
-    else if (isRealBv(cachedFundObj?.bookValue || cachedFundObj?.bvps)) validBv = Number(cachedFundObj.bookValue || cachedFundObj.bvps);
+    if (isRealBv(liveBvRaw)) validBv = Number(liveBvRaw);
+    else if (isRealBv(stockBvRaw)) validBv = Number(stockBvRaw);
+    else if (isRealBv(cachedBvRaw)) validBv = Number(cachedBvRaw);
 
     const bookValue = validBv;
 
-    const liveTrades = Number(
+    const liveTrades = sessionCandle
+      ? (Number(sessionCandle.trades || 0) || undefined)
+      : (Number(
       liveQuote?.trades || liveQuote?.totalTransactions ||
       s.trades || s.totalTrades || s.totalTransactions || s.transactions ||
       liveDetail?.totalTransactions || liveDetail?.trades ||
       (realFloorsheet?.totalElements || (Array.isArray(realFloorsheet?.rows) ? realFloorsheet.rows.length : 0)) ||
       realBrokerAnalysis?.totalTransactions ||
       latestHistCandle?.trades || 0
-    ) || undefined;
+    ) || undefined);
 
     const effectiveSector = (s.sector && s.sector !== 'Unknown') ? s.sector : (liveDetail?.sector || 'Others');
     const bench = getSectorBenchmark(effectiveSector);
@@ -1876,13 +1904,13 @@ export default function StockDetailModal({
 
     // Cascade through all variants of promoter & public float percentages
     // When promoter lock-in has expired (or promoter = 0), public float is 100% of listed shares
-    const rawPromoterPct = liveDetail?.promoterPercentage ?? liveDetail?.promoterPct ??
-      s.promoterPercentage ?? s.promoterPct ?? s.promoter_pct;
+    const rawPromoterPct = liveDetail?.promoterPercentage ?? liveDetail?.promoterPct ?? liveDetail?.promoter_share_pct ??
+      s.promoterPercentage ?? s.promoterPct ?? s.promoter_pct ?? s.promoter_share_pct ?? s.promoterHolding;
     const hasPromoterData = rawPromoterPct !== undefined && rawPromoterPct !== null && !isNaN(Number(rawPromoterPct));
     const promoterPercentage = hasPromoterData ? Number(rawPromoterPct) : null;
 
-    const rawPublicPct = liveDetail?.publicPercentage ?? liveDetail?.publicFloatPct ?? liveDetail?.publicPct ??
-      s.publicPercentage ?? s.publicFloatPct ?? s.publicPct ?? s.public_pct;
+    const rawPublicPct = liveDetail?.publicPercentage ?? liveDetail?.publicFloatPct ?? liveDetail?.publicPct ?? liveDetail?.public_share_pct ??
+      s.publicPercentage ?? s.publicFloatPct ?? s.publicPct ?? s.public_pct ?? s.public_share_pct;
     const hasPublicData = rawPublicPct !== undefined && rawPublicPct !== null && !isNaN(Number(rawPublicPct)) && Number(rawPublicPct) > 0;
     const publicPercentage = hasPublicData
       ? Number(rawPublicPct)
@@ -1989,9 +2017,11 @@ export default function StockDetailModal({
         const item = localStorage.getItem('prime_pick_plan_cache');
         if (item) {
           const parsed = JSON.parse(item);
+          const expectedSession = getDetailedMarketStatus().targetSessionDate;
           const plan = parsed?.plan || parsed;
           const symbol = parsed?.symbol || plan?.symbol;
-          if (symbol && plan) {
+          const cachedSession = parsed?.sessionDate || plan?.sessionDate;
+          if (symbol && plan && (!cachedSession || cachedSession === expectedSession)) {
             return { symbol: String(symbol).toUpperCase().trim(), plan };
           }
         }
@@ -2130,9 +2160,17 @@ export default function StockDetailModal({
     if (typeof setGlobalActiveTab === 'function') setGlobalActiveTab('predictor');
   }, [d?.symbol, onClose, setGlobalActiveTab]);
 
-  // Helper: compute performance return for N days using real price history
+  // Corporate-action-adjusted price history shared by returns, CMF, and oscillators
+  const adjustedPriceHistory = useMemo(() => {
+    const baseHist = (realPriceHistory && realPriceHistory.length > 0) ? realPriceHistory : (history || []);
+    if (!baseHist.length) return [];
+    const corpActions = dividendHistory?.dividends || dividendHistory?.actions || [];
+    return corpActions.length > 0 ? adjustPricesForCorporateActions(baseHist, corpActions) : baseHist;
+  }, [realPriceHistory, history, dividendHistory]);
+
+  // Helper: compute performance return for N days using corporate-action-adjusted history
   const computePerformance = useCallback((days) => {
-    const hist = realPriceHistory;
+    const hist = adjustedPriceHistory;
     if (!hist || hist.length < 2) return null;
     const latest = hist[hist.length - 1]?.close;
     const idx = Math.max(0, hist.length - 1 - days);
@@ -2140,7 +2178,7 @@ export default function StockDetailModal({
     if (!latest || !past || past === 0) return null;
     const pct = ((latest - past) / past) * 100;
     return { pct: Number(pct.toFixed(2)), bull: pct >= 0 };
-  }, [realPriceHistory]);
+  }, [adjustedPriceHistory]);
 
   // Fetch real price history (500 trading days) & corporate dividend history
   useEffect(() => {
@@ -2262,14 +2300,17 @@ export default function StockDetailModal({
     setDividendHistory(null);
     setQuarterlyReports([]);
     setLedgerTelemetry(null);
+    const preservedHistDate = (typeof stock === 'object' && stock?.isHistoricalSession)
+      ? (propSelectedDate || propSessionDate || propDate || stock?.sessionDate || stock?.businessDate || stock?.date || '')
+      : '';
     setAiResult('');
-    setHistoryFilterDate('');
-    setFloorsheetDate('');
+    setHistoryFilterDate(preservedHistDate);
+    setFloorsheetDate(preservedHistDate);
     setFloorsheetBuyerInput('');
     setFloorsheetSellerInput('');
     setFloorsheetAppliedBuyer('');
     setFloorsheetAppliedSeller('');
-    setBrokerDate('');
+    setBrokerDate(preservedHistDate);
 
     // Keep real historical data intact by initializing from snapshot/fundamentals cache immediately
     const cachedSnap = getSnapshotCache(d.symbol);
@@ -2658,11 +2699,11 @@ export default function StockDetailModal({
     return {
       symbol: d?.symbol,
       sector: (d?.sector && d?.sector !== 'Unknown') ? d.sector : (liveDetail?.sector || 'Others'),
-      epsTtm: Number(d?.eps ?? liveDetail?.eps ?? 0),
-      bookValuePerShare: Number(d?.bookValue ?? liveDetail?.bookValue ?? 100),
-      paidUpCapital: Number(d?.paidUpCapital ?? liveDetail?.paidUpCapital ?? (d?.listedShares ? d.listedShares * 100 : 0)),
-      promoterSharePct: Number(d?.promoterPercentage ?? liveDetail?.promoterPercentage ?? 51),
-      publicSharePct: Number(d?.publicPercentage ?? liveDetail?.publicPercentage ?? 49),
+      epsTtm: d?.eps ?? liveDetail?.eps ?? liveDetail?.eps_ttm ?? null,
+      bookValuePerShare: d?.bookValue ?? liveDetail?.bookValue ?? liveDetail?.book_value_per_share ?? null,
+      paidUpCapital: d?.paidUpCapital ?? liveDetail?.paidUpCapital ?? liveDetail?.paid_up_capital ?? (d?.listedShares ? d.listedShares * 100 : null),
+      promoterSharePct: d?.promoterPercentage ?? liveDetail?.promoterPercentage ?? liveDetail?.promoter_share_pct ?? null,
+      publicSharePct: d?.publicPercentage ?? liveDetail?.publicPercentage ?? liveDetail?.public_share_pct ?? null,
       fiscalQuarter: d?.quarter || liveDetail?.quarter || 'Q4 2082/83',
       ...liveDetail,
     };
@@ -2680,20 +2721,21 @@ export default function StockDetailModal({
       '1W': 7, '1M': 30, '2M': 60, '3M': 90, '6M': 180, '1Y': 260, '2Y/All': 500
     };
     const days = daysMap[brokerAccumPeriod] || brokerDays || 5;
-    const isStale = !brokerAccumData || brokerAccumData.tradingDays !== days;
+    const targetDate = brokerDate || '';
+    const isStale = !brokerAccumData || brokerAccumData._requestedDays !== days || (brokerAccumData._requestedDate || '') !== targetDate;
     if (isStale) {
       setBrokerAccumLoading(true);
-      fetchRealBrokerAnalysis(d.symbol, days, { refresh: false })
+      fetchRealBrokerAnalysis(d.symbol, targetDate ? 1 : days, { date: targetDate || undefined, refresh: false })
         .then(data => {
           if (active && seq === brokerAccumSeqRef.current && data) {
-            setBrokerAccumData(data);
+            setBrokerAccumData({ ...data, _requestedDays: days, _requestedDate: targetDate });
           }
         })
         .catch(() => {})
         .finally(() => { if (active && seq === brokerAccumSeqRef.current) setBrokerAccumLoading(false); });
     }
     return () => { active = false; };
-  }, [activeTab, brokerAccumPeriod, d?.symbol]);
+  }, [activeTab, brokerAccumPeriod, brokerDate, d?.symbol]);
 
   // Trigger real data fetch on modal mount (overview) or when switching to Market Depth, Floorsheet, or Broker Analysis tabs
   useEffect(() => {
@@ -2706,8 +2748,8 @@ export default function StockDetailModal({
           .catch(() => {})
           .finally(() => { if (!isCancelled) setMarketDepthLoading(false); });
       }
-      // Ensure 1D live broker analysis is always loaded for today's live session
-      if ((!realBrokerAnalysis || realBrokerAnalysis.tradingDays !== 1) && !brokerAnalysisLoading) {
+      // Ensure 1D live broker analysis is loaded only when user is on 1D horizon
+      if (brokerDays === 1 && (!realBrokerAnalysis || realBrokerAnalysis.tradingDays !== 1) && !brokerAnalysisLoading) {
         fetchBrokerAnalysisData(1, brokerDate || modalSessionDate || '');
       }
       // Ensure 1D live floorsheet is loaded so intraday contract microstructure is available
@@ -2790,6 +2832,8 @@ export default function StockDetailModal({
     triggerHaptic(25);
     setChartTimeframe(tf);
     if (!d?.symbol) return;
+    const reqSym = d.symbol;
+    const hSeq = ++historySeqRef.current;
 
     if (tf === '1D') {
       return; // ShareHubChart autonomously switches to intraday ticks
@@ -2798,7 +2842,8 @@ export default function StockDetailModal({
       // If we don't already have enough data, fetch more from the proxy
       if (!realPriceHistory || realPriceHistory.length < (daysNeeded > 1000 ? 550 : 300)) {
         try {
-          const fullHistory = await fetchRealPriceHistory(d.symbol, daysNeeded);
+          const fullHistory = await fetchRealPriceHistory(reqSym, daysNeeded);
+          if (historySeqRef.current !== hSeq) return;
           if (fullHistory && fullHistory.length > 0) {
             setRealPriceHistory(fullHistory);
             const formatted = fullHistory.map(item => ({
@@ -3021,8 +3066,9 @@ export default function StockDetailModal({
   // A/D from real broker analysis & authentic Chaikin Money Flow
   const ad12M = useMemo(() => {
     if (realBrokerAnalysis) {
-      const topNetB = (realBrokerAnalysis.topNetBuyers || []).reduce((s, b) => s + (b.netAmt || (b.netQty * (d.ltp || 350))), 0);
-      const topNetS = (realBrokerAnalysis.topNetSellers || []).reduce((s, b) => s + Math.abs(b.netAmt || (b.netQty * (d.ltp || 350))), 0);
+      const refPrice = Number(d?.ltp || 0);
+      const topNetB = (realBrokerAnalysis.topNetBuyers || []).reduce((s, b) => s + (b.netAmt || (refPrice > 0 ? b.netQty * refPrice : 0)), 0);
+      const topNetS = (realBrokerAnalysis.topNetSellers || []).reduce((s, b) => s + Math.abs(b.netAmt || (refPrice > 0 ? b.netQty * refPrice : 0)), 0);
       const netCr = (topNetB - topNetS) / 1e7;
       let inflowStr = '';
       if (Math.abs(netCr) >= 0.01) {
@@ -3039,8 +3085,8 @@ export default function StockDetailModal({
       // Authentic 20-period Chaikin Money Flow from genuine candle history
       let cmfValue = 0;
       let hasCmf = false;
-      if (Array.isArray(realPriceHistory) && realPriceHistory.length >= 20) {
-        const slice20 = realPriceHistory.slice(-20);
+      if (Array.isArray(adjustedPriceHistory) && adjustedPriceHistory.length >= 20) {
+        const slice20 = adjustedPriceHistory.slice(-20);
         let sumMFV = 0;
         let sumVol = 0;
         slice20.forEach(c => {
@@ -3067,10 +3113,10 @@ export default function StockDetailModal({
                 ? `+${realBrokerAnalysis.smartMoneyNetFlowPct.toFixed(1)}% (Broker Net Inflow)` 
                 : `${realBrokerAnalysis.smartMoneyNetFlowPct.toFixed(1)}% (Broker Outflow)`)
             : (Number.isFinite(realBrokerAnalysis?.adRatio)
-                ? (realBrokerAnalysis.adRatio >= 1.05
-                    ? `+${((realBrokerAnalysis.adRatio - 1) * 100).toFixed(1)}% (Broker Net Inflow)`
-                    : realBrokerAnalysis.adRatio <= 0.95
-                        ? `-${((1 - realBrokerAnalysis.adRatio) * 100).toFixed(1)}% (Broker Outflow)`
+                ? (realBrokerAnalysis.adRatio >= 0.05
+                    ? `+${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% (Broker Net Inflow)`
+                    : realBrokerAnalysis.adRatio <= -0.05
+                        ? `${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% (Broker Outflow)`
                         : '0.0% (Neutral Flow)')
                 : '0.0% (Neutral Flow)'));
 
@@ -3254,6 +3300,7 @@ export default function StockDetailModal({
   }, [d, history12M, stockMetrics]);
 
   // Calculator State
+  const calcInitializedSymRef = useRef('');
   const [qtyInput, setQtyInput] = useState('100');
   const [priceInput, setPriceInput] = useState(String(d?.ltp || ''));
   const [waccInput, setWaccInput] = useState(String(d?.ltp ? Number(d.ltp * 0.92).toFixed(1) : ''));
@@ -3263,13 +3310,20 @@ export default function StockDetailModal({
   const [holdingPeriod, setHoldingPeriod] = useState('SHORT_TERM'); // 'SHORT_TERM' (<365d) | 'LONG_TERM' (>=365d)
 
   useEffect(() => {
-    if (d?.ltp > 0) {
+    if (!d?.symbol) return;
+    if (calcInitializedSymRef.current !== d.symbol) {
+      calcInitializedSymRef.current = d.symbol;
+      if (d?.ltp > 0) {
+        setPriceInput(String(d.ltp));
+        setWaccInput(String(Number(d.ltp * 0.92).toFixed(1)));
+      }
+      setInvestorType('INDIVIDUAL');
+      setHoldingPeriod('SHORT_TERM');
+    } else if (!priceInput && d?.ltp > 0) {
       setPriceInput(String(d.ltp));
       setWaccInput(String(Number(d.ltp * 0.92).toFixed(1)));
     }
-    setInvestorType('INDIVIDUAL');
-    setHoldingPeriod('SHORT_TERM');
-  }, [d?.symbol, d?.ltp]);
+  }, [d?.symbol, d?.ltp, priceInput]);
 
   // Statutory NEPSE WACC & CGT Breakdown Helper
   const computeNepseRoundTripTrade = useCallback(({
@@ -3381,6 +3435,8 @@ export default function StockDetailModal({
   }, [d?.symbol]);
 
   const generateAi = async () => {
+    const seq = ++aiSeqRef.current;
+    const reqSym = d?.symbol;
     setAiLoading(true);
     setAiResult('');
     try {
@@ -3409,6 +3465,7 @@ export default function StockDetailModal({
         realPriceHistory,
         realBrokerAnalysis
       });
+      if (aiSeqRef.current !== seq || d?.symbol !== reqSym) return;
       const textOut = res?.report || res?.text;
       if (textOut) {
         setAiResult(textOut);
@@ -3416,9 +3473,10 @@ export default function StockDetailModal({
         setAiResult(generateOfflineStockReport(d, null, realPriceHistory, realBrokerAnalysis));
       }
     } catch (_) {
+      if (aiSeqRef.current !== seq || d?.symbol !== reqSym) return;
       setAiResult(generateOfflineStockReport(d, null, realPriceHistory, realBrokerAnalysis));
     }
-    setAiLoading(false);
+    if (aiSeqRef.current === seq) setAiLoading(false);
   };
 
   const bookClosureAlert = useMemo(() => {
@@ -4978,11 +5036,12 @@ export default function StockDetailModal({
                         onClick={() => {
                           setOverviewBrokerTapeMode('5D_SWING');
                           if (!broker5DData && !broker5DLoading) {
+                            const b5Seq = ++broker5DSeqRef.current;
                             setBroker5DLoading(true);
                             fetchRealBrokerAnalysis(d.symbol, 5, { refresh: false })
-                              .then(b5 => { if (b5) setBroker5DData(b5); })
+                              .then(b5 => { if (broker5DSeqRef.current === b5Seq && b5) setBroker5DData(b5); })
                               .catch(() => {})
-                              .finally(() => setBroker5DLoading(false));
+                              .finally(() => { if (broker5DSeqRef.current === b5Seq) setBroker5DLoading(false); });
                           }
                         }}
                         style={{
@@ -5786,7 +5845,7 @@ export default function StockDetailModal({
             (Array.isArray(pure1DBa?.topNetSellers) && pure1DBa.topNetSellers.length > 0) ? pure1DBa.topNetSellers :
             (Array.isArray(liveBc?.topNetDistributors) && liveBc.topNetDistributors.length > 0) ? liveBc.topNetDistributors :
             (Array.isArray(pure1DBa?.topNetDistributors) && pure1DBa.topNetDistributors.length > 0) ? pure1DBa.topNetDistributors :
-            (Array.isArray(pure1DBa?.brokers) && pure1DBa.brokers.length > 0) ? pure1DBa.brokers.filter(b => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) < 0).sort((a, b) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - a.sellQty))) :
+            (Array.isArray(pure1DBa?.brokers) && pure1DBa.brokers.length > 0) ? pure1DBa.brokers.filter(b => getSignedNetQty(b) < 0).sort((a, b) => getSignedNetQty(a) - getSignedNetQty(b)) :
             (Array.isArray(liveBc?.topSellerBrokers) && liveBc.topSellerBrokers.length > 0) ? liveBc.topSellerBrokers :
             (Array.isArray(pure1DBa?.topSellers) && pure1DBa.topSellers.length > 0) ? pure1DBa.topSellers : []
           );
@@ -6000,10 +6059,16 @@ export default function StockDetailModal({
                       type="button"
                       onClick={() => {
                         triggerHaptic(25);
-                        fetchMarketDepth(d.symbol);
+                        const dSeq = ++depthSeqRef.current;
+                        setMarketDepthLoading(true);
+                        fetchMarketDepth(d.symbol, modalSessionDate)
+                          .then(depth => { if (depthSeqRef.current === dSeq && depth) setRealMarketDepth(depth); })
+                          .catch(() => {})
+                          .finally(() => { if (depthSeqRef.current === dSeq) setMarketDepthLoading(false); });
                         fetchBrokerAnalysisData(1, '', { refresh: true });
                         fetchFloorsheetData(1, { refresh: true });
-                        fetchRealBrokerAnalysis(d.symbol, 5, { refresh: true }).then(b5 => { if (b5) setBroker5DData(b5); });
+                        const b5Seq = ++broker5DSeqRef.current;
+                        fetchRealBrokerAnalysis(d.symbol, 5, { refresh: true }).then(b5 => { if (broker5DSeqRef.current === b5Seq && b5) setBroker5DData(b5); }).catch(() => {});
                       }}
                       style={{
                         padding: '4px 10px',
@@ -6129,10 +6194,10 @@ export default function StockDetailModal({
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
                     <span style={{ color: '#10b981' }}>
-                      🟢 Live Bought: {liveNetBuyShares > 0 ? liveNetBuyShares.toLocaleString() : 'Active'} shs ({liveBuyPct}%)
+                      🟢 Top Net Accumulators: {liveNetBuyShares > 0 ? `+${liveNetBuyShares.toLocaleString()}` : '0'} shs ({liveBuyPct}%)
                     </span>
                     <span style={{ color: '#f43f5e' }}>
-                      🔴 Live Sold: {liveNetSellShares > 0 ? liveNetSellShares.toLocaleString() : 'Active'} shs ({liveSellPct}%)
+                      🔴 Top Net Distributors: {liveNetSellShares > 0 ? `-${liveNetSellShares.toLocaleString()}` : '0'} shs ({liveSellPct}%)
                     </span>
                   </div>
                   <div style={{ display: 'flex', height: 10, borderRadius: 6, overflow: 'hidden', background: 'rgba(255,255,255,0.06)' }}>
@@ -6174,7 +6239,7 @@ export default function StockDetailModal({
                               <strong style={{ color: '#10b981', marginRight: 4 }}>#{id}</strong> {bName}
                             </span>
                             <span style={{ color: '#10b981', fontWeight: 900, fontFamily: 'var(--font-mono)' }}>
-                              +{netKitta.toLocaleString()} sh
+                              {netKitta >= 0 ? `+${netKitta.toLocaleString()}` : netKitta.toLocaleString()} sh
                             </span>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#94a3b8', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
@@ -6262,6 +6327,14 @@ export default function StockDetailModal({
                   );
                 }
 
+                if (!b5) {
+                  return (
+                    <div style={{ background: '#111827', border: '1px solid rgba(148, 163, 184, 0.25)', borderRadius: 16, padding: '16px 18px', fontSize: 12, color: '#94a3b8' }}>
+                      5-Day institutional swing broker data is currently unavailable for {d.symbol}. Click Live Refresh to retry.
+                    </div>
+                  );
+                }
+
                 const b5Accums = (
                   (Array.isArray(b5?.topAccumulators) && b5.topAccumulators.length > 0) ? b5.topAccumulators :
                   (Array.isArray(b5?.topNetBuyers) && b5.topNetBuyers.length > 0) ? b5.topNetBuyers :
@@ -6271,7 +6344,7 @@ export default function StockDetailModal({
                 const b5Dists = (
                   (Array.isArray(b5?.topDistributors) && b5.topDistributors.length > 0) ? b5.topDistributors :
                   (Array.isArray(b5?.topNetSellers) && b5.topNetSellers.length > 0) ? b5.topNetSellers :
-                  (Array.isArray(b5?.brokers) && b5.brokers.length > 0) ? b5.brokers.filter(b => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) < 0).sort((a, b) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - a.sellQty))) : []
+                  (Array.isArray(b5?.brokers) && b5.brokers.length > 0) ? b5.brokers.filter(b => getSignedNetQty(b) < 0).sort((a, b) => getSignedNetQty(a) - getSignedNetQty(b)) : []
                 );
 
                 const b5TopAccum = b5Accums[0] || null;
@@ -6757,7 +6830,7 @@ export default function StockDetailModal({
                 (Array.isArray(ba?.topNetSellers) && ba.topNetSellers.length > 0) ? ba.topNetSellers :
                 (Array.isArray(bc?.topNetDistributors) && bc.topNetDistributors.length > 0) ? bc.topNetDistributors :
                 (Array.isArray(ba?.topNetDistributors) && ba.topNetDistributors.length > 0) ? ba.topNetDistributors :
-                (Array.isArray(ba?.brokers) && ba.brokers.length > 0) ? ba.brokers.filter(b => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) < 0).sort((a, b) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - a.sellQty))) :
+                (Array.isArray(ba?.brokers) && ba.brokers.length > 0) ? ba.brokers.filter(b => getSignedNetQty(b) < 0).sort((a, b) => getSignedNetQty(a) - getSignedNetQty(b)) :
                 (Array.isArray(ba?.topSellers) && ba.topSellers.length > 0) ? ba.topSellers :
                 (Array.isArray(bc?.topSellerBrokers) && bc.topSellerBrokers.length > 0) ? bc.topSellerBrokers : []
               );

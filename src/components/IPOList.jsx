@@ -44,6 +44,9 @@ async function safeFetch(url, options = {}) {
     if (!res.ok) throw new Error(`Server error ${res.status}`);
     return text;
   }
+  if (!res.ok || (json && typeof json === 'object' && json.success === false)) {
+    throw new Error(json?.message || json?.error || `Request failed (${res.status})`);
+  }
   return json;
 }
 
@@ -249,16 +252,20 @@ export default function IPOList({ initialTab = 'apply', userId = null }) {
               if (isStale) {
                 setStaleWarning(liveData?.staleWarning || 'Live exchange source returned 403 Forbidden. Showing last verified cached IPO data.');
               }
-              // Map live-listings format to IPO list format
-              list = liveListing.map(item => ({
+              // Only expose Open issues inside the Bulk Apply dropdown and preserve real public issue units
+              list = liveListing
+                .filter(item => item && String(item.status || '').toLowerCase() === 'open')
+                .map(item => ({
                 id: item.id || item.companyShareId,
                 name: item.name || item.companyName,
                 scrip: item.scrip || '',
                 type: item.type || item.shareTypeName || 'IPO',
-                status: item.status || 'Open',
-                units: item.minKitta || item.units || 10,
-                minKitta: item.minKitta || 10,
-                maxKitta: item.maxKitta || 10000000,
+                status: 'Open',
+                generalPublicUnits: Number(item.generalPublicUnits || item.issueUnits || item.units || 0) || 0,
+                totalApplicants: Number(item.totalApplicants || item.applicants || 0) || 0,
+                oversubscriptionTimes: Number(item.oversubscriptionTimes || item.times || 0) || 0,
+                minKitta: Number(item.minKitta) || 10,
+                maxKitta: Number(item.maxKitta) || 10000000,
                 amountPerShare: item.issuePrice || item.amountPerShare || 100,
                 openDate: item.openDate || item.issueOpenDate || '',
                 closeDate: item.closeDate || item.issueCloseDate || '',
@@ -283,15 +290,19 @@ export default function IPOList({ initialTab = 'apply', userId = null }) {
           if (isStale) {
             setStaleWarning(liveData?.staleWarning || 'Live exchange source returned 403 Forbidden. Showing last verified cached IPO data.');
           }
-          const list = liveListing.map(item => ({
+          const list = liveListing
+            .filter(item => item && String(item.status || '').toLowerCase() === 'open')
+            .map(item => ({
             id: item.id || item.companyShareId,
             name: item.name || item.companyName,
             scrip: item.scrip || '',
             type: item.type || 'IPO',
-            status: item.status || 'Open',
-            units: item.minKitta || 10,
-            minKitta: item.minKitta || 10,
-            maxKitta: item.maxKitta || 10000000,
+            status: 'Open',
+            generalPublicUnits: Number(item.generalPublicUnits || item.issueUnits || item.units || 0) || 0,
+            totalApplicants: Number(item.totalApplicants || item.applicants || 0) || 0,
+            oversubscriptionTimes: Number(item.oversubscriptionTimes || item.times || 0) || 0,
+            minKitta: Number(item.minKitta) || 10,
+            maxKitta: Number(item.maxKitta) || 10000000,
             amountPerShare: item.issuePrice || 100,
             openDate: item.openDate || '',
             closeDate: item.closeDate || '',
@@ -502,7 +513,16 @@ export default function IPOList({ initialTab = 'apply', userId = null }) {
     if (selectedAccounts.length === 0) { alert('Please select at least one account.'); return; }
     if (!selectedIpo) { alert('Please select an active IPO.'); return; }
 
-    const confirmMsg = `CONFIRM LIVE IPO SUBMISSION\n\nApply ${appliedKitta} kitta for ${selectedAccounts.length} selected accounts in CDSC.\n\nProceed?`;
+    const activeIpo = ipos.find(i => String(i.id) === String(selectedIpo));
+    const minKitta = Math.max(10, Number(activeIpo?.minKitta || 10));
+    const maxKitta = Math.max(minKitta, Number(activeIpo?.maxKitta || 10000000));
+    const kittaNum = Number(appliedKitta || 0);
+    if (!Number.isFinite(kittaNum) || kittaNum < minKitta || kittaNum > maxKitta || kittaNum % 10 !== 0) {
+      setError(`Quantity must be between ${minKitta} and ${maxKitta} kitta in multiples of 10.`);
+      return;
+    }
+
+    const confirmMsg = `CONFIRM LIVE IPO SUBMISSION\n\nApply ${kittaNum} kitta for ${selectedAccounts.length} selected accounts in CDSC.\n\nProceed?`;
     if (!window.confirm(confirmMsg)) return;
 
     setError(''); setSuccess(''); setIsProcessing(true);
@@ -513,6 +533,8 @@ export default function IPOList({ initialTab = 'apply', userId = null }) {
       id: acc.id, name: acc.name, username: acc.username,
       status: 'loading', resultText: 'Submitting...'
     })));
+
+    try {
 
     if (isNative) {
       // Direct sequential submission on Android
@@ -664,6 +686,8 @@ export default function IPOList({ initialTab = 'apply', userId = null }) {
       }
 
       setSuccess('Bulk IPO Apply execution completed.');
+    }
+    } finally {
       setIsProcessing(false);
     }
   };

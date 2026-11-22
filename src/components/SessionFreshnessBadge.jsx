@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { isMarketOpen, latestTradingSession, formatNptDateIso } from '../utils/nepseCalendar.js';
+import { getDetailedMarketStatus, latestTradingSession } from '../utils/nepseCalendar.js';
 import { RefreshCw, AlertTriangle, Clock } from 'lucide-react';
 
 /**
@@ -28,14 +28,19 @@ export default function SessionFreshnessBadge({
     return () => clearInterval(timer);
   }, []);
 
-  const isOpen = isMarketOpen(now);
+  const mktStatus = getDetailedMarketStatus(now);
+  const isOpen = Boolean(mktStatus?.isOpen && !mktStatus?.isEmergencyHalt);
   const effectiveSessionDate = sessionDate || latestTradingSession(now, !isOpen);
-  const timeStr = now.toLocaleTimeString('en-US', {
-    timeZone: 'Asia/Kathmandu',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
+  const parsedLastMs = lastUpdatedMs != null ? Number(lastUpdatedMs) : null;
+  const hasValidLastUpdate = Number.isFinite(parsedLastMs) && parsedLastMs > 0;
+  const timeStr = hasValidLastUpdate
+    ? new Date(parsedLastMs).toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Kathmandu',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      })
+    : '';
 
   if (isWarmingUp) {
     return (
@@ -46,16 +51,24 @@ export default function SessionFreshnessBadge({
     );
   }
 
-  const lastUpdate = lastUpdatedMs ? Number(lastUpdatedMs) : now.getTime();
-  const lagMs = Math.max(0, now.getTime() - lastUpdate);
-  const isStale = isOpen && Boolean(lastUpdatedMs) && lagMs > staleThresholdMs;
+  const lagMs = hasValidLastUpdate ? Math.max(0, now.getTime() - parsedLastMs) : Infinity;
+  const isStale = isOpen && hasValidLastUpdate && lagMs > staleThresholdMs;
 
   if (isOpen) {
+    if (!hasValidLastUpdate) {
+      return (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: 8, padding: compact ? '2px 8px' : '4px 10px', fontSize: compact ? 10.5 : 12, fontWeight: 700, color: '#fbbf24' }}>
+          <AlertTriangle style={{ width: 12, height: 12 }} />
+          <span>Awaiting Live Feed • Showing {effectiveSessionDate}</span>
+        </div>
+      );
+    }
+
     if (isStale) {
       return (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: 8, padding: compact ? '2px 8px' : '4px 10px', fontSize: compact ? 10.5 : 12, fontWeight: 700, color: '#fbbf24' }}>
           <AlertTriangle style={{ width: 12, height: 12 }} />
-          <span>⚠️ Data Lag ({Math.round(lagMs / 60000)}m) • As of {effectiveSessionDate} {timeStr} NPT</span>
+          <span>⚠️ Data Lag ({Math.round(lagMs / 60000)}m) • Last tick {effectiveSessionDate} {timeStr} NPT</span>
         </div>
       );
     }

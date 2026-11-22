@@ -70,6 +70,7 @@ export default function NepseAgentDashboard({
   const [agentResult, setAgentResult] = useState(null);
   const [dossier, setDossier] = useState(null);
   const [activeLangTab, setActiveLangTab] = useState('english'); // 'english' | 'nepali'
+  const analysisReqIdRef = useRef(0);
 
   // Handle symbol change from props
   useEffect(() => {
@@ -84,6 +85,7 @@ export default function NepseAgentDashboard({
     const sym = (targetSym || symbol || '').toUpperCase().trim();
     if (!sym) return;
 
+    const reqId = ++analysisReqIdRef.current;
     setLoading(true);
     setError(null);
     setLoadingStep('1/3: Gathering NOTS quotes & 120-session floor sheet...');
@@ -91,6 +93,7 @@ export default function NepseAgentDashboard({
     try {
       // Step 1: Pre-fetch dossier for instant UI context
       const dos = await fetchAgentScripDossier(sym);
+      if (analysisReqIdRef.current !== reqId) return;
       setDossier(dos);
 
       setLoadingStep('2/3: Calculating RSI, MACD, EMAs & BCR3 smart money concentration...');
@@ -103,22 +106,28 @@ export default function NepseAgentDashboard({
         model: selectedModel
       });
 
+      if (analysisReqIdRef.current !== reqId) return;
       setAgentResult(analysis);
       if (analysis?.dossier) {
         setDossier(analysis.dossier);
       }
     } catch (err) {
+      if (analysisReqIdRef.current !== reqId) return;
       console.error('[NepseAgentDashboard] Analysis failed:', err);
       setError(err.message || 'Failed to complete agent analysis. Please check network connection.');
     } finally {
-      setLoading(false);
-      setLoadingStep('');
+      if (analysisReqIdRef.current === reqId) {
+        setLoading(false);
+        setLoadingStep('');
+      }
     }
   }, [symbol, customQuery, selectedModel]);
 
-  // Run initial analysis on mount or when symbol changes
+  // Run initial analysis on mount or when symbol changes (clear stale data first)
   useEffect(() => {
     if (symbol) {
+      setDossier(null);
+      setAgentResult(null);
       handleRunAnalysis(symbol, PRESET_QUERIES[0]);
     }
   }, [symbol]);
@@ -533,7 +542,7 @@ export default function NepseAgentDashboard({
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Clock style={{ width: 12, height: 12 }} />
-                <span>Verified NOTS data as of {new Date(dossier?.meta?.asOf || Date.now()).toLocaleTimeString()}</span>
+                <span>Verified NOTS data as of {dossier?.meta?.asOf ? `${new Date(dossier.meta.asOf).toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu', hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' })} NPT` : 'Latest Verified Session'}</span>
               </div>
             </div>
           </div>
@@ -718,7 +727,7 @@ export default function NepseAgentDashboard({
                     Net Profit Targets
                   </span>
                   <span style={{ fontSize: 12, color: '#d8b4fe', background: 'rgba(147, 51, 234, 0.15)', padding: '2px 6px', borderRadius: 6 }}>
-                    7.5% CGT & Fees Deducted
+                    5.0% ST / 3.75% LT CGT & Fees Deducted
                   </span>
                 </div>
                 {(() => {

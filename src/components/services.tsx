@@ -2284,7 +2284,14 @@ export function SectorHeatmapService({ selectedDate: propSelectedDate, date: pro
     if (!sectors.length) setLoading(true);
     try {
       const cached = getCachedStocks();
-      const rawStocks = (cached && cached.length > 20) ? cached : (await loadNepseData(activeDate))?.stocks;
+      let rawStocks = cached && cached.length > 20 ? cached : null;
+      if (!rawStocks) {
+        const res = await Promise.race([
+          loadNepseData(activeDate),
+          new Promise<any>((resolve) => setTimeout(() => resolve({ stocks: getCachedStocks() || [], source: 'cached-fallback' }), 2000))
+        ]);
+        rawStocks = res?.stocks;
+      }
       if (seq !== heatmapSeqRef.current) return;
       const stocks = (rawStocks || []).filter((s: any) => isPureNepseEquity(s));
 

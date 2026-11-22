@@ -16,28 +16,31 @@ export function LiveMarketDashboard({
 
   // ── 1. Live NEPSE Hero Index ──
   const liveNepse = indices?.nepse;
-  const nepseVal = liveNepse?.value
+  const hasLiveIndex = Boolean(liveNepse && Number(liveNepse.value) > 0);
+  const nepseVal = hasLiveIndex
     ? Number(liveNepse.value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : '2,648.32';
-  const nepseChange = liveNepse?.change !== undefined ? Number(liveNepse.change) : 37.15;
-  const nepsePChange = liveNepse?.pChange !== undefined ? Number(liveNepse.pChange) : 1.42;
-  const isNepseUp = nepseChange >= 0;
+    : '—';
+  const nepseChange = hasLiveIndex && liveNepse?.change !== undefined ? Number(liveNepse.change) : 0;
+  const nepsePChange = hasLiveIndex && liveNepse?.pChange !== undefined ? Number(liveNepse.pChange) : 0;
+  const isNepseUp = (nepseChange !== 0 ? nepseChange : nepsePChange) >= 0;
 
-  const lowNum = Number(liveNepse?.low || 2611.17);
-  const highNum = Number(liveNepse?.high || 2654.80);
-  const curNum = Number(liveNepse?.value || 2648.32);
+  const lowNum = hasLiveIndex ? Number(liveNepse?.low || liveNepse.value) : 0;
+  const highNum = hasLiveIndex ? Number(liveNepse?.high || liveNepse.value) : 0;
+  const curNum = hasLiveIndex ? Number(liveNepse.value) : 0;
   const rangeSpan = Math.max(0.1, highNum - lowNum);
-  const rangePct = Math.min(100, Math.max(0, ((curNum - lowNum) / rangeSpan) * 100));
-  const rangeDiff = Math.abs(highNum - lowNum).toFixed(2);
+  const rangePct = hasLiveIndex ? Math.min(100, Math.max(0, ((curNum - lowNum) / rangeSpan) * 100)) : 0;
+  const rangeDiff = hasLiveIndex ? Math.abs(highNum - lowNum).toFixed(2) : '0.00';
 
   // ── 2. Live Turnover & Volume ──
-  let turnoverDisplay = isNe ? 'रु ४.८२ अर्ब' : 'NPR 4.82 Arba';
+  let turnoverDisplay = '—';
   const totalRawTurnover = liveNepse?.turnover || stocks.reduce((acc, s) => acc + (s.turnover || 0), 0);
   if (totalRawTurnover > 0) {
     if (totalRawTurnover >= 1e9) {
       turnoverDisplay = `रु ${(totalRawTurnover / 1e9).toFixed(2)} अर्ब`;
     } else if (totalRawTurnover >= 1e7) {
       turnoverDisplay = `रु ${(totalRawTurnover / 1e7).toFixed(2)} करोड`;
+    } else {
+      turnoverDisplay = `रु ${totalRawTurnover.toLocaleString()}`;
     }
   }
 
@@ -48,13 +51,13 @@ export function LiveMarketDashboard({
       : totalRawVolume >= 1e5
       ? `${(totalRawVolume / 1e5).toFixed(2)} लाख`
       : totalRawVolume.toLocaleString())
-    : (isNe ? '१.२४ करोड' : '12.44 M');
+    : '—';
 
   // ── 3. Live Market Breadth ──
-  let advancers = 164;
-  let decliners = 71;
-  let unchanged = 9;
-  let pctProfitable = 67;
+  let advancers = 0;
+  let decliners = 0;
+  let unchanged = 0;
+  let pctProfitable = 0;
 
   if (stocks && stocks.length > 0) {
     advancers = stocks.filter(s => (s.pointChange || s.change || 0) > 0).length;
@@ -65,7 +68,7 @@ export function LiveMarketDashboard({
   }
 
   // ── 4. Live Market Status ──
-  const isOpen = Boolean(marketStatus?.isOpen);
+  const isOpen = Boolean(marketStatus?.isOpen && apiStatus === 'live');
   const statusLabel = isOpen
     ? (isNe ? 'NEPSE LIVE • बजार खुला छ' : 'NEPSE LIVE • Market Open')
     : (isNe ? 'NEPSE • बजार बन्द छ' : 'NEPSE • Market Closed');
@@ -90,61 +93,27 @@ export function LiveMarketDashboard({
     {
       icon: "💧",
       name: isNe ? 'जलविद्युत (Hydro)' : 'Hydropower',
-      gain: Number.isFinite(hydroSub?.pChange) ? `${hydroSub.pChange >= 0 ? '+' : ''}${hydroSub.pChange.toFixed(2)}%` : '+2.40%'
+      gain: Number.isFinite(hydroSub?.pChange) ? `${hydroSub.pChange >= 0 ? '+' : ''}${hydroSub.pChange.toFixed(2)}%` : '—'
     },
     {
       icon: "🏨",
       name: isNe ? 'होटल तथा पर्यटन' : 'Hotels & Tourism',
-      gain: Number.isFinite(hotelSub?.pChange) ? `${hotelSub.pChange >= 0 ? '+' : ''}${hotelSub.pChange.toFixed(2)}%` : '+3.14%'
+      gain: Number.isFinite(hotelSub?.pChange) ? `${hotelSub.pChange >= 0 ? '+' : ''}${hotelSub.pChange.toFixed(2)}%` : '—'
     },
     {
       icon: "🏭",
       name: isNe ? 'उत्पादन (Mfg)' : 'Manufacturing',
-      gain: Number.isFinite(mfgSub?.pChange) ? `${mfgSub.pChange >= 0 ? '+' : ''}${mfgSub.pChange.toFixed(2)}%` : '+1.95%'
+      gain: Number.isFinite(mfgSub?.pChange) ? `${mfgSub.pChange >= 0 ? '+' : ''}${mfgSub.pChange.toFixed(2)}%` : '—'
     },
     {
       icon: "🏛️",
       name: isNe ? 'वाणिज्य बैंक' : 'Commercial Bank',
-      gain: Number.isFinite(bankSub?.pChange) ? `${bankSub.pChange >= 0 ? '+' : ''}${bankSub.pChange.toFixed(2)}%` : '+0.82%'
+      gain: Number.isFinite(bankSub?.pChange) ? `${bankSub.pChange >= 0 ? '+' : ''}${bankSub.pChange.toFixed(2)}%` : '—'
     },
   ];
 
   // ── 6. Live Top Gainers ──
-  let topGainers = [
-    {
-      symbol: "NABIL",
-      name: "नबिल बैंक लिमिटेड",
-      enName: "Nabil Bank Ltd.",
-      sector: "Bank",
-      ltp: 585.00,
-      change: "+1.92%",
-      changeAmt: "+11.00",
-      tag: "⚡ Popular",
-      color: "sky"
-    },
-    {
-      symbol: "SHIVM",
-      name: "शिवम् सिमेन्ट्स लिमिटेड",
-      enName: "Shivam Cements Ltd.",
-      sector: "Mfg",
-      ltp: 612.40,
-      change: "+14.80%",
-      changeAmt: "+82.50",
-      tag: "Circuit +14.8%",
-      color: "emerald"
-    },
-    {
-      symbol: "CHCL",
-      name: "चिलिमे जलविद्युत कम्पनी",
-      enName: "Chilime Hydropower",
-      sector: "Hydro",
-      ltp: 542.00,
-      change: "+7.11%",
-      changeAmt: "+36.00",
-      tag: "+7.1% Gain",
-      color: "emerald"
-    },
-  ];
+  let topGainers = [];
 
   if (stocks && stocks.length > 0) {
     const liveFiltered = stocks
@@ -247,13 +216,27 @@ export function LiveMarketDashboard({
           <svg viewBox="0 0 300 70" className="h-full w-full overflow-visible">
             <defs>
               <linearGradient id="gradNepseLive" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor={isNepseUp ? "#10B981" : "#F43F5E"} stopOpacity="0.35" />
-                <stop offset="100%" stopColor={isNepseUp ? "#10B981" : "#F43F5E"} stopOpacity="0.0" />
+                <stop offset="0%" stopColor={!hasLiveIndex ? "#64748B" : isNepseUp ? "#10B981" : "#F43F5E"} stopOpacity="0.35" />
+                <stop offset="100%" stopColor={!hasLiveIndex ? "#64748B" : isNepseUp ? "#10B981" : "#F43F5E"} stopOpacity="0.0" />
               </linearGradient>
             </defs>
-            <path d="M0,60 Q40,58 90,48 T180,30 T260,14 L300,6 L300,70 L0,70 Z" fill="url(#gradNepseLive)" />
-            <path d="M0,60 Q40,58 90,48 T180,30 T260,14 L300,6" fill="none" stroke={isNepseUp ? "#10B981" : "#F43F5E"} strokeWidth="2.5" />
-            <circle cx="300" cy="6" r="4" fill={isNepseUp ? "#10B981" : "#F43F5E"} />
+            {hasLiveIndex ? (
+              <>
+                <path
+                  d={isNepseUp ? "M0,60 Q40,58 90,48 T180,30 T260,14 L300,6 L300,70 L0,70 Z" : "M0,10 Q40,14 90,24 T180,44 T260,58 L300,64 L300,70 L0,70 Z"}
+                  fill="url(#gradNepseLive)"
+                />
+                <path
+                  d={isNepseUp ? "M0,60 Q40,58 90,48 T180,30 T260,14 L300,6" : "M0,10 Q40,14 90,24 T180,44 T260,58 L300,64"}
+                  fill="none"
+                  stroke={isNepseUp ? "#10B981" : "#F43F5E"}
+                  strokeWidth="2.5"
+                />
+                <circle cx="300" cy={isNepseUp ? 6 : 64} r="4" fill={isNepseUp ? "#10B981" : "#F43F5E"} />
+              </>
+            ) : (
+              <path d="M0,35 L300,35" fill="none" stroke="#64748B" strokeWidth="1.5" strokeDasharray="4 4" />
+            )}
           </svg>
         </div>
 
@@ -262,19 +245,23 @@ export function LiveMarketDashboard({
           <div className="rounded-xl bg-[#0B0F17]/60 p-2 border border-white/[0.03]">
             <div className="text-[10px] text-slate-400 uppercase">{isNe ? 'कुल रकम (Turnover)' : 'Turnover'}</div>
             <div className="mt-0.5 text-xs font-bold text-white">{turnoverDisplay}</div>
-            <div className="text-[9px] text-emerald-400 font-semibold">{isNe ? 'उच्च तरलता' : 'High Liquidity'}</div>
+            <div className={`text-[9px] font-semibold ${totalRawTurnover > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+              {totalRawTurnover > 0 ? (isNe ? 'सक्रिय तरलता' : 'Active Liquidity') : '—'}
+            </div>
           </div>
           <div className="rounded-xl bg-[#0B0F17]/60 p-2 border border-white/[0.03]">
             <div className="text-[10px] text-slate-400 uppercase">{isNe ? 'कारोबार कित्ता' : 'Traded Vol'}</div>
             <div className="mt-0.5 text-xs font-bold text-white">{volumeDisplay}</div>
-            <div className="text-[9px] text-slate-400">{stocks.length > 0 ? `${stocks.length} scrips` : (isNe ? '७८,४१२ पटक' : '78,412 Trades')}</div>
+            <div className="text-[9px] text-slate-400">{stocks.length > 0 ? `${stocks.length} scrips` : '—'}</div>
           </div>
           <div className="rounded-xl bg-[#0B0F17]/60 p-2 border border-white/[0.03]">
             <div className="text-[10px] text-slate-400 uppercase">{isNe ? 'बजार प्रवृति' : 'Market Trend'}</div>
-            <div className={`mt-0.5 text-xs font-bold ${isNepseUp ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {isNepseUp ? 'Bullish ↗' : 'Bearish ↘'}
+            <div className={`mt-0.5 text-xs font-bold ${!hasLiveIndex ? 'text-slate-400' : isNepseUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {!hasLiveIndex ? 'Neutral —' : isNepseUp ? 'Bullish ↗' : 'Bearish ↘'}
             </div>
-            <div className="text-[9px] text-emerald-400">{isNe ? 'EMA(20) भन्दा माथि' : '> EMA(20)'}</div>
+            <div className={`text-[9px] ${!hasLiveIndex ? 'text-slate-500' : isNepseUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {!hasLiveIndex ? '—' : isNepseUp ? (isNe ? 'EMA(20) भन्दा माथि' : '> EMA(20)') : (isNe ? 'EMA(20) भन्दा तल' : '< EMA(20)')}
+            </div>
           </div>
         </div>
       </div>

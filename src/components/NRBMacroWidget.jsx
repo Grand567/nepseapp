@@ -22,9 +22,13 @@ const REGIME_META = {
 };
 
 export function classifyNrbMacroRegime(interbankRate = 4.5, policyRepoRate = 5.0, cdRatio = 81.5) {
-  const ibor = Number.isFinite(Number(interbankRate)) ? Number(interbankRate) : 4.5;
-  const repo = Number.isFinite(Number(policyRepoRate)) ? Number(policyRepoRate) : 5.0;
-  const cd = Number.isFinite(Number(cdRatio)) ? Number(cdRatio) : 81.5;
+  const parsedIbor = Number(interbankRate);
+  const parsedRepo = Number(policyRepoRate);
+  const parsedCd = Number(cdRatio);
+  // Reject 0 / empty-string / negative scrape failures so they never trigger fake EASING
+  const ibor = Number.isFinite(parsedIbor) && parsedIbor > 0 ? parsedIbor : 4.5;
+  const repo = Number.isFinite(parsedRepo) && parsedRepo > 0 ? parsedRepo : 5.0;
+  const cd = Number.isFinite(parsedCd) && parsedCd > 0 ? parsedCd : 81.5;
 
   if (ibor > 8.5 || cd > 89.0) {
     return {
@@ -73,9 +77,14 @@ export function classifyNrbMacroRegime(interbankRate = 4.5, policyRepoRate = 5.0
 export function buildBaselineNrbMacroData(overrides = {}) {
   const rawRegime = overrides?.macroRegime || {};
   const mp = overrides?.monetaryPolicy || {};
-  const ibor = Number(rawRegime.interbankRate ?? mp?.interbankRate?.value ?? 4.5);
-  const repo = Number(rawRegime.policyRepoRate ?? mp?.policyRepoRate?.value ?? 5.0);
-  const cdRatio = Number(rawRegime.cdRatio ?? mp?.cdRatio?.value ?? 81.5);
+  const pickPositive = (a, b, fallback) => {
+    const na = Number(a); if (Number.isFinite(na) && na > 0) return na;
+    const nb = Number(b); if (Number.isFinite(nb) && nb > 0) return nb;
+    return fallback;
+  };
+  const ibor = pickPositive(rawRegime.interbankRate, mp?.interbankRate?.value, 4.5);
+  const repo = pickPositive(rawRegime.policyRepoRate, mp?.policyRepoRate?.value, 5.0);
+  const cdRatio = pickPositive(rawRegime.cdRatio, mp?.cdRatio?.value, 81.5);
   const normalizedRegime = classifyNrbMacroRegime(ibor, repo, cdRatio);
 
   return {
@@ -255,6 +264,16 @@ export function NRBMacroWidget({ compact = false }) {
           borderRadius: 8, padding: '4px 8px', color: '#94a3b8', cursor: 'pointer', fontSize: 12
         }}>↻ Refresh</button>
       </div>
+
+      {!activeData.liveDataAvailable && (
+        <div style={{
+          fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,0.10)',
+          border: '1px solid rgba(251,191,36,0.35)', borderRadius: 10,
+          padding: '8px 12px', marginBottom: 12, fontWeight: 700
+        }}>
+          ⚠️ {loading ? 'Syncing live NRB monetary indicators...' : 'Offline Baseline Snapshot Active — Live NRB feed unavailable. Verify current IBOR & CD Ratio at nrb.org.np before relying on macro multiplier.'}
+        </div>
+      )}
 
       <div style={{
         fontSize: 12, color: '#cbd5e1', lineHeight: 1.7, marginBottom: 14,

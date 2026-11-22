@@ -1270,30 +1270,54 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       return;
     }
 
+    const cleanSym = String(newHoldingSymbol || '').trim().toUpperCase();
+    setScripCustomWacc(cleanSym, wacc, userId, selectedProfileId);
+
     const updatedProfiles = profiles.map(p => {
       if (p.id === selectedProfileId) {
         const existingHoldings = p.holdings || [];
-        const exists = existingHoldings.some(h => h.symbol === newHoldingSymbol);
+        const exists = existingHoldings.some(h => (h.symbol || '').toUpperCase() === cleanSym);
         let newHoldings;
         if (exists) {
           newHoldings = existingHoldings.map(h => {
-            if (h.symbol === newHoldingSymbol) {
+            if ((h.symbol || '').toUpperCase() === cleanSym) {
               const newUnits = h.units + units;
-              const newWacc = ((h.units * h.wacc) + (units * wacc)) / newUnits;
-              return { ...h, units: newUnits, wacc: Number(Number(newWacc || 0).toFixed(2)) };
+              const newWacc = ((h.units * (h.wacc || wacc)) + (units * wacc)) / newUnits;
+              const prevPerShare = h.prevClose > 0 ? h.prevClose : (h.valueAsOfPrevClose > 0 && h.units > 0 ? (h.valueAsOfPrevClose / h.units) : (h.currentLtp || wacc));
+              const ltpPerShare = h.currentLtp > 0 ? h.currentLtp : (h.valueAsOfLTP > 0 && h.units > 0 ? (h.valueAsOfLTP / h.units) : (h.prevClose || wacc));
+              return {
+                ...h,
+                units: newUnits,
+                wacc: Number(Number(newWacc || 0).toFixed(2)),
+                userWacc: Number(Number(newWacc || 0).toFixed(2)),
+                valueAsOfPrevClose: Number((newUnits * prevPerShare).toFixed(2)),
+                valueAsOfLTP: Number((newUnits * ltpPerShare).toFixed(2)),
+                isCustomWacc: true,
+                waccSource: 'CUSTOM_USER_SET'
+              };
             }
             return h;
           });
         } else {
-          const stk = marketStocks.find(s => s.symbol === newHoldingSymbol);
+          const stk = marketStocks.find(s => (s.symbol || '').toUpperCase() === cleanSym);
+          const livePrice = (stk && stk.ltp > 0) ? stk.ltp : ((stk && stk.close > 0) ? stk.close : wacc);
+          const prevPrice = (stk && stk.previousClose > 0) ? stk.previousClose : ((stk && stk.prevClose > 0) ? stk.prevClose : livePrice);
           newHoldings = [...existingHoldings, {
-            symbol: newHoldingSymbol,
-            name: stk ? stk.name : newHoldingSymbol,
+            symbol: cleanSym,
+            name: stk ? stk.name : cleanSym,
             units,
-            wacc
+            wacc: Number(wacc.toFixed(2)),
+            userWacc: Number(wacc.toFixed(2)),
+            prevClose: prevPrice,
+            currentLtp: livePrice,
+            valueAsOfPrevClose: Number((units * prevPrice).toFixed(2)),
+            valueAsOfLTP: Number((units * livePrice).toFixed(2)),
+            isCustomWacc: true,
+            waccSource: 'CUSTOM_USER_SET'
           }];
         }
-        return { ...p, holdings: newHoldings };
+        const sanitized = sanitizeMeroShareHoldings(newHoldings, userId, selectedProfileId);
+        return { ...p, holdings: sanitized.map(h => stripHoldingForStorage(h)).filter(Boolean) };
       }
       return p;
     });
@@ -1319,9 +1343,13 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       if (p.id === selectedProfileId) {
         const newHoldings = (p.holdings || []).map(h => {
           if ((h.symbol || '').toUpperCase() === cleanSym) {
+            const prevPerShare = h.prevClose > 0 ? h.prevClose : (h.valueAsOfPrevClose > 0 && h.units > 0 ? (h.valueAsOfPrevClose / h.units) : (h.currentLtp || wacc));
+            const ltpPerShare = h.currentLtp > 0 ? h.currentLtp : (h.valueAsOfLTP > 0 && h.units > 0 ? (h.valueAsOfLTP / h.units) : (h.prevClose || wacc));
             return {
               ...h,
               units,
+              valueAsOfPrevClose: Number((units * prevPerShare).toFixed(2)),
+              valueAsOfLTP: Number((units * ltpPerShare).toFixed(2)),
               wacc: Number(wacc.toFixed(2)),
               userWacc: Number(wacc.toFixed(2)),
               isCustomWacc: true,
