@@ -272,72 +272,7 @@ export async function GET(
       }
     }
 
-    // Fallback: Synthesize representative contract rows from `floorsheet_broker_summary` if tick table is empty
-    if (
-      rawFloorsheetContracts.length === 0 &&
-      tableExists(db, "floorsheet_broker_summary")
-    ) {
-      try {
-        const latestBrokerDate = db
-          .prepare(
-            `SELECT MAX(trade_date) AS latest_date
-             FROM floorsheet_broker_summary
-             WHERE UPPER(symbol) = ?`
-          )
-          .get(validSymbol) as { latest_date?: string } | undefined;
-
-        if (latestBrokerDate?.latest_date) {
-          const summaryRows = db
-            .prepare(
-              `SELECT
-                symbol,
-                trade_date,
-                broker_no,
-                buy_kitta,
-                sell_kitta,
-                COALESCE(vwap, ?) AS rate
-              FROM floorsheet_broker_summary
-              WHERE UPPER(symbol) = ? AND trade_date = ?
-              ORDER BY (buy_kitta + sell_kitta) DESC
-              LIMIT 120`
-            )
-            .all(
-              safeNum(quoteData?.ltp ?? ledgerTelemetry?.ltp ?? ledgerTelemetry?.entry_vwap, 500),
-              validSymbol,
-              latestBrokerDate.latest_date
-            ) as Array<{
-            symbol: string;
-            trade_date: string;
-            broker_no: number;
-            buy_kitta: number;
-            sell_kitta: number;
-            rate: number;
-          }>;
-
-          rawFloorsheetContracts = summaryRows
-            .filter((r) => safeNum(r.buy_kitta, 0) > 0 || safeNum(r.sell_kitta, 0) > 0)
-            .map((r, idx) => {
-              const kitta = Math.max(safeNum(r.buy_kitta, 0), safeNum(r.sell_kitta, 0));
-              const rate = safeNum(r.rate, 500);
-              return {
-                contractNo: `${r.trade_date.replace(/-/g, "")}-${validSymbol}-${100 + idx}`,
-                symbol: validSymbol,
-                tradeDate: r.trade_date,
-                tradeTime: "14:58:00",
-                buyerBroker:
-                  safeNum(r.buy_kitta, 0) >= safeNum(r.sell_kitta, 0) ? r.broker_no : 58,
-                sellerBroker:
-                  safeNum(r.sell_kitta, 0) > safeNum(r.buy_kitta, 0) ? r.broker_no : 45,
-                kitta,
-                rate,
-                amount: Number((kitta * rate).toFixed(2)),
-              };
-            });
-        }
-      } catch {
-        // Ignore synthesis error
-      }
-    }
+    // Note: Do NOT synthesize fake floorsheet contracts if tick table is empty. Keep empty array to preserve data integrity.
 
     // 6. Fetch Cached L2 Market Depth (if present in `market_depth_cache`)
     let liveDepth: AtomicStockTelemetryApiResponse["liveDepth"] = null;
@@ -428,7 +363,7 @@ export async function GET(
       verifiedPrice: tabTelemetry.overview.verifiedPrice,
       rawFundamentals: rawFundamentals || {
         symbol: validSymbol,
-        sector: String(quoteData?.sector ?? ledgerTelemetry?.sector ?? "Commercial Banks"),
+        sector: String(quoteData?.sector ?? ledgerTelemetry?.sector ?? "Others"),
       },
       corporateActions,
     });

@@ -766,12 +766,13 @@ export function evaluatePortfolioShield(itemsInput, rawDays = 30) {
     } : null;
 
     // Operator margins & User metrics
-    const operatorProfitMarginPct = bigBrokerVWAP > 0 ? Number((((ltp - bigBrokerVWAP) / bigBrokerVWAP) * 100).toFixed(2)) : 0;
-    const userProfitLossPct = buyPrice > 0 ? Number((((ltp - buyPrice) / buyPrice) * 100).toFixed(2)) : null;
-    const unrealizedPnL = (buyPrice > 0 && qty > 0) ? Number(((ltp - buyPrice) * qty).toFixed(2)) : null;
+    const priceUnavailable = ltp <= 0;
+    const operatorProfitMarginPct = (!priceUnavailable && bigBrokerVWAP > 0) ? Number((((ltp - bigBrokerVWAP) / bigBrokerVWAP) * 100).toFixed(2)) : 0;
+    const userProfitLossPct = (!priceUnavailable && buyPrice > 0) ? Number((((ltp - buyPrice) / buyPrice) * 100).toFixed(2)) : null;
+    const unrealizedPnL = (!priceUnavailable && buyPrice > 0 && qty > 0) ? Number(((ltp - buyPrice) * qty).toFixed(2)) : null;
     const costAdvantageVsOperatorPct = (buyPrice > 0 && bigBrokerVWAP > 0) ? Number((((bigBrokerVWAP - buyPrice) / bigBrokerVWAP) * 100).toFixed(2)) : null;
 
-    const positionValue = qty > 0 ? qty * ltp : 0;
+    const positionValue = (!priceUnavailable && qty > 0) ? Number((qty * ltp).toFixed(2)) : 0;
     if (positionValue > 0) totalPortfolioValue += positionValue;
     if (unrealizedPnL !== null) totalPortfolioPnL += unrealizedPnL;
 
@@ -839,7 +840,7 @@ export function evaluatePortfolioShield(itemsInput, rawDays = 30) {
       tacticalAdvice = `Institutional syndicate co-accumulating near Rs. ${bigBrokerVWAP.toFixed(1)} cost basis (Safe Buy Zone: Rs. ${buyZoneMin}–${buyZoneMax}). Strong hold / accumulate on dips.`;
     }
     // 4. 🟢 SAFE_ACCUMULATION_ZONE (SAFE_ACCUMULATE)
-    else if (phase === "STEALTH_ACCUMULATION" || phase === "ACTIVE_MARKUP" || (leadAccAmt > leadDistAmt && leadAccAmt > 0 && ltp <= buyZoneMax * 1.08)) {
+    else if (!priceUnavailable && (phase === "STEALTH_ACCUMULATION" || phase === "ACTIVE_MARKUP" || (leadAccAmt > leadDistAmt && leadAccAmt > 0 && ltp <= buyZoneMax * 1.08))) {
       shieldVerdict = "SAFE_ACCUMULATION_ZONE";
       riskLevel = "SAFE_ACCUMULATE";
       badge = "🟢 SAFE ACCUMULATION";
@@ -853,6 +854,10 @@ export function evaluatePortfolioShield(itemsInput, rawDays = 30) {
     // 5. ⚪ RETAIL_DRIFT_WATCH (NEUTRAL_HOLD)
     else {
       neutralCount++;
+      if (priceUnavailable) {
+        badge = "⚪ PRICE UNAVAILABLE";
+        tacticalAdvice = "Live/historical price quote unavailable for this scrip. P&L and market value calculation paused.";
+      }
     }
 
     const weight = positionValue > 0 ? positionValue : 1;
@@ -867,6 +872,7 @@ export function evaluatePortfolioShield(itemsInput, rawDays = 30) {
       qty,
       buyPrice,
       ltp,
+      priceUnavailable: Boolean(priceUnavailable),
       bigBrokerVWAP,
       marketVWAP,
       buyZoneMin,

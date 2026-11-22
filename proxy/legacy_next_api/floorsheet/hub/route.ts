@@ -174,58 +174,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 2. Fallback Path: If `floorsheet_contracts` is empty, synthesize representative tape from `floorsheet_broker_summary`
-    if (rawContracts.length === 0 && tableExists(db, "floorsheet_broker_summary")) {
-      const latestDateRow = db
-        .prepare(`SELECT MAX(trade_date) AS latest_date FROM floorsheet_broker_summary`)
-        .get() as { latest_date?: string } | undefined;
-
-      if (latestDateRow?.latest_date) {
-        asOfDate = latestDateRow.latest_date;
-        source = "SQLITE_BROKER_SUMMARY_SYNTHESIS";
-
-        const summaryRows = db
-          .prepare(
-            `SELECT
-              symbol,
-              trade_date,
-              broker_no,
-              buy_kitta,
-              sell_kitta,
-              COALESCE(vwap, 500) AS rate
-            FROM floorsheet_broker_summary
-            WHERE trade_date = ?
-            ORDER BY (buy_kitta + sell_kitta) DESC
-            LIMIT 400`
-          )
-          .all(asOfDate) as Array<{
-          symbol: string;
-          trade_date: string;
-          broker_no: number;
-          buy_kitta: number;
-          sell_kitta: number;
-          rate: number;
-        }>;
-
-        rawContracts = summaryRows
-          .filter((r) => safeNum(r.buy_kitta, 0) > 0 || safeNum(r.sell_kitta, 0) > 0)
-          .map((r, i) => {
-            const kitta = Math.max(safeNum(r.buy_kitta, 0), safeNum(r.sell_kitta, 0));
-            const rate = safeNum(r.rate, 500);
-            return {
-              contractNo: `${asOfDate.replace(/-/g, "")}-SYN-${1000 + i}`,
-              symbol: r.symbol,
-              tradeDate: r.trade_date,
-              tradeTime: "14:59:00",
-              buyerBroker: safeNum(r.buy_kitta, 0) >= safeNum(r.sell_kitta, 0) ? r.broker_no : 58,
-              sellerBroker: safeNum(r.sell_kitta, 0) > safeNum(r.buy_kitta, 0) ? r.broker_no : 45,
-              kitta,
-              rate,
-              amount: Number((kitta * rate).toFixed(2)),
-            };
-          });
-      }
-    }
+    // Do NOT fabricate synthetic counterparties (#58/#45) when tick-level contracts are absent.
+    // Preserve source = "EMPTY" so callers display an explicit tick-data-unavailable state.
 
     // 3. Enrich contracts per scrip so Tick-Test Aggressor works per ticker
     const bySymbolMap = new Map<string, RawFloorsheetContract[]>();
@@ -285,7 +235,7 @@ export async function GET(request: NextRequest) {
 
     const brokerAgg = new Map<
       number,
-      { buyKitta: number; sellKitta: number; turnover: number; whaleTrades: number; trades: number }
+      { buyKitta: number; sellKitta: number; turnover: number; whaleTrades: number; trades: number; sideCount: number }
     >();
 
     for (const c of allEnriched) {
@@ -329,11 +279,13 @@ export async function GET(request: NextRequest) {
           turnover: 0,
           whaleTrades: 0,
           trades: 0,
+          sideCount: 0,
         };
         b.buyKitta += c.kitta;
         b.turnover += c.amount;
         if (c.isWhalePrint) b.whaleTrades += 1;
         b.trades += 1;
+        b.sideCount += 1;
         brokerAgg.set(c.buyerBroker, b);
       }
 
@@ -345,9 +297,18 @@ export async function GET(request: NextRequest) {
           turnover: 0,
           whaleTrades: 0,
           trades: 0,
+          sideCount: 0,
         };
         sl.sellKitta += c.kitta;
+        sl.sideCount += 1;
         // Avoid double-counting turnover and trade count on self-trades (buyerBroker === sellerBroker)
+        if (!isSelfTrade) {
+          sl.turnover += c.amount;
+          sl.trades += 1;
+        }
+        brokerAgg.set(c.sellerBroker, sl);
+      }
+    }
         if (!isSelfTrade) {
           sl.turnover += c.amount;
           sl.trades += 1;
@@ -384,7 +345,7 @@ export async function GET(request: NextRequest) {
     const topInstitutionalBrokers: MarketWideBrokerRollup[] = Array.from(brokerAgg.entries())
       .map(([brokerId, br]) => {
         const netKitta = br.buyKitta - br.sellKitta;
-        const avgTicket = (br.buyKitta + br.sellKitta) / Math.max(1, br.trades);
+        const avgTicket = (br.buyKitta + br.sellKitta) / Math.max(1, br.sideCount);
         const baseline = RETAIL_GIANT_BASELINE[brokerId] ?? 0.018;
         const buyShare = totalKitta > 0 ? br.buyKitta / totalKitta : baseline;
         const ticketMult = avgTicket >= 300 ? 1.35 : avgTicket < 45 ? 0.65 : 1.0;

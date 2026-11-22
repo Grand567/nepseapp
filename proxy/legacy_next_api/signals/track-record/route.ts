@@ -206,6 +206,7 @@ export async function GET(request: NextRequest) {
         if (isWhale) {
           whaleCountBySymbol.set(sym, (whaleCountBySymbol.get(sym) || 0) + 1);
         }
+        const isSelfTrade = buyer > 0 && buyer === seller;
 
         const symBrokers = tempMap.get(sym) || new Map<number, BrokerScripStat>();
         if (buyer > 0) {
@@ -236,8 +237,10 @@ export async function GET(request: NextRequest) {
           };
           sStat.sellKitta += kitta;
           sStat.netKitta -= kitta;
-          sStat.turnover += amount;
-          sStat.trades += 1;
+          if (!isSelfTrade) {
+            sStat.turnover += amount;
+            sStat.trades += 1;
+          }
           symBrokers.set(seller, sStat);
         }
         tempMap.set(sym, symBrokers);
@@ -349,8 +352,8 @@ export async function GET(request: NextRequest) {
 
       // Authentic Alpha = Net Return - NEPSE Index Return over the same holding window
       const nepseBenchmarkReturnPct = safeNum(
-        row.nepse_return_pct ?? row.benchmark_return_pct,
-        0.45
+        row.nepse_index_return_pct ?? row.nepse_return_pct ?? row.benchmark_return_pct,
+        0
       );
       const authenticAlphaPct = isUnfillableGapTrap
         ? 0
@@ -396,11 +399,13 @@ export async function GET(request: NextRequest) {
       } else if (!t2SettlementUnlocked) {
         // Hard T+2 Settlement Lock: Never allow a signal with holdingDays < 2 to close prematurely
         status = holdingDays === 0 ? "OPEN_T1_LOCKED" : "OPEN_T2_LOCKED";
-      } else if (rawStatus.includes("WIN") || netReturnPct >= 4.0) {
+      } else if (rawStatus.includes("OPEN") || rawStatus === "ACTIVE") {
+        status = "OPEN_SETTLED";
+      } else if (rawStatus.includes("WIN") || rawStatus === "TARGET_HIT") {
         status = "CLOSED_WIN";
-      } else if (ratchetActive && netReturnPct > 0.2 && rawStatus.includes("CLOSED")) {
+      } else if (rawStatus.includes("RATCHET") || (ratchetActive && netReturnPct > 0.2 && rawStatus.includes("CLOSED"))) {
         status = "RATCHET_SAVED";
-      } else if (rawStatus.includes("LOSS") || rawStatus.includes("STOPPED") || currentLtp <= stopLossPrice) {
+      } else if (rawStatus.includes("LOSS") || rawStatus.includes("STOPPED") || rawStatus === "STOP_LOSS") {
         status = "CLOSED_LOSS";
       }
 
@@ -414,24 +419,28 @@ export async function GET(request: NextRequest) {
       // Join 5D Floorsheet Broker Stats for this Symbol
       const brokerStats = scripBrokerMap.get(symbol) || [];
       let totalScripVol = 0;
-      let positiveNetKitta = 0;
       let topAccBroker: number | null = null;
       let topAccNetKitta = 0;
       let topDistBroker: number | null = null;
       let topDistNetKitta = 0;
       let bestAnomalyScore = safeNum(row.broker_anomaly_score, 1.0);
 
+      const positiveNets: number[] = [];
+      const negativeNets: number[] = [];
       for (const b of brokerStats) {
         totalScripVol += b.buyKitta + b.sellKitta;
         if (b.netKitta > 0) {
-          positiveNetKitta += b.netKitta;
+          positiveNets.push(b.netKitta);
           if (b.netKitta > topAccNetKitta) {
             topAccNetKitta = b.netKitta;
             topAccBroker = b.brokerId;
           }
-        } else if (b.netKitta < topDistNetKitta) {
-          topDistNetKitta = b.netKitta;
-          topDistBroker = b.brokerId;
+        } else if (b.netKitta < 0) {
+          negativeNets.push(Math.abs(b.netKitta));
+          if (b.netKitta < topDistNetKitta) {
+            topDistNetKitta = b.netKitta;
+            topDistBroker = b.brokerId;
+          }
         }
       }
 
@@ -444,10 +453,14 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      // Directional Top-5 Buyer vs Top-3 Seller Net Concentration (fixes zero-sum symmetry bug)
+      const top5BuyNet = positiveNets.sort((a, b) => b - a).slice(0, 5).reduce((s, v) => s + v, 0);
+      const top3SellNet = negativeNets.sort((a, b) => b - a).slice(0, 3).reduce((s, v) => s + v, 0);
+      const dirDenom = top5BuyNet + top3SellNet;
       const live5DNetAccumulationPct =
-        totalScripVol > 0
-          ? Number((((positiveNetKitta * 2) / totalScripVol) * 100).toFixed(1))
-          : safeNum(row.net_accumulation_pct ?? row.bcr5_net_pct, 52.0);
+        dirDenom > 0
+          ? Number(((top5BuyNet / dirDenom) * 100).toFixed(1))
+          : 50.0;
 
       const whalePrintCount5D =
         whaleCountBySymbol.get(symbol) ??
@@ -481,7 +494,7 @@ export async function GET(request: NextRequest) {
         holdingDays,
         t2SettlementUnlocked,
         live5DNetAccumulationPct,
-        topAccumulatorBroker: topAccBroker ?? (Math.round(safeNum(row.lead_broker_id ?? row.primary_broker_id ?? row.top_broker, 28)) || 28),
+        topAccumulatorBroker: topAccBroker ?? (Math.round(safeNum(row.lead_broker_id ?? row.primary_broker_id ?? row.top_broker, 0)) || null),
         topAccumulatorNetKitta: topAccNetKitta,
         topDistributorBroker: topDistBroker,
         brokerAnomalyScore: bestAnomalyScore,
@@ -566,10 +579,13 @@ export async function GET(request: NextRequest) {
     // 6. Compute Summary Portfolio Telemetry
     const totalSignals = enrichedSignals.length;
     const openSignalsCount = enrichedSignals.filter((s) => s.status.startsWith("OPEN")).length;
-    const winningSignals = enrichedSignals.filter(
+    const closedSignals = enrichedSignals.filter(
+      (s) => !s.status.startsWith("OPEN") && s.status !== "UNFILLABLE_SKIP"
+    );
+    const winningSignals = closedSignals.filter(
       (s) => s.netReturnPct > 0 || s.status === "RATCHET_SAVED"
     );
-    const losingSignals = enrichedSignals.filter((s) => s.netReturnPct < 0);
+    const losingSignals = closedSignals.filter((s) => s.netReturnPct < 0);
 
     const grossProfit = winningSignals.reduce((acc, s) => acc + Math.max(0, s.netReturnPct), 0);
     const grossLoss = Math.abs(
@@ -580,15 +596,15 @@ export async function GET(request: NextRequest) {
       totalSignals,
       openSignalsCount,
       verifiedWinRatePct:
-        totalSignals > 0
-          ? Number(((winningSignals.length / totalSignals) * 100).toFixed(1))
+        closedSignals.length > 0
+          ? Number(((winningSignals.length / closedSignals.length) * 100).toFixed(1))
           : 0,
       avgNetReturnPct:
-        totalSignals > 0
+        closedSignals.length > 0
           ? Number(
               (
-                enrichedSignals.reduce((acc, s) => acc + s.netReturnPct, 0) /
-                totalSignals
+                closedSignals.reduce((acc, s) => acc + s.netReturnPct, 0) /
+                closedSignals.length
               ).toFixed(2)
             )
           : 0,

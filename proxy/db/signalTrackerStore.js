@@ -231,21 +231,22 @@ export function ensureUpgradedLedgerSchema(db) {
 
     // Create Institutional Strategy Scorecard View
     db.exec(`
-      CREATE VIEW IF NOT EXISTS v_strategy_institutional_metrics AS
+      DROP VIEW IF EXISTS v_strategy_institutional_metrics;
+      CREATE VIEW v_strategy_institutional_metrics AS
       SELECT
           strategy,
           COUNT(*) FILTER (WHERE status != 'UNFILLABLE_SKIP') AS total_tradable_signals,
           COUNT(*) FILTER (WHERE status = 'UNFILLABLE_SKIP') AS skipped_circuit_traps,
           ROUND(
-              100.0 * COUNT(*) FILTER (WHERE status IN ('TARGET_HIT', 'RATCHET_STOP_WIN', 'WIN_T1', 'WIN_T2', 'WIN_RATCHET_STOP') OR (status != 'UNFILLABLE_SKIP' AND net_return_pct > 0))
+              100.0 * COUNT(*) FILTER (WHERE status IN ('TARGET_HIT', 'RATCHET_STOP_WIN', 'WIN_T1', 'WIN_T2', 'WIN_RATCHET_STOP') OR (status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP') AND net_return_pct > 0))
               / NULLIF(COUNT(*) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 0),
               2
           ) AS verified_win_rate_pct,
           ROUND(AVG(net_return_pct) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 2) AS net_expectancy_pct,
           ROUND(AVG(nepse_alpha_pct) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 2) AS avg_nepse_alpha_pct,
           ROUND(
-              SUM( CASE WHEN net_return_pct > 0 THEN net_return_pct ELSE 0 END )
-              / NULLIF(ABS(SUM( CASE WHEN net_return_pct < 0 THEN net_return_pct ELSE 0 END )), 0),
+              SUM( CASE WHEN status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP') AND net_return_pct > 0 THEN net_return_pct ELSE 0 END )
+              / NULLIF(ABS(SUM( CASE WHEN status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP') AND net_return_pct < 0 THEN net_return_pct ELSE 0 END )), 0),
               2
           ) AS profit_factor,
           ROUND(AVG(mfe_pct) FILTER (WHERE status NOT IN ('UNFILLABLE_SKIP')), 2) AS avg_mfe_pct,
@@ -441,6 +442,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
       sellVol: b.sell_vol,
       buyAmt: b.buy_amt,
       sellAmt: b.sell_amt,
+      crossVol: b.cross_vol || 0,
       trades: b.buy_trades || b.trade_count || b.trades || null,
     });
   }
@@ -678,10 +680,10 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
           const fwdRec = symbolDateMap.get(`${symbol}_${fwdDate}`);
           if (!fwdRec) continue;
 
+          const fwdOpen = fwdRec.openPrice || fwdRec.closePrice || entryPrice;
           const fwdHigh = fwdRec.highPrice || fwdRec.closePrice || entryPrice;
           const fwdLow = fwdRec.lowPrice || fwdRec.closePrice || entryPrice;
           const fwdClose = fwdRec.closePrice || entryPrice;
-          if (fwdHigh > peakPrice) peakPrice = fwdHigh;
 
           // Track Adverse Excursion even during T+2 settlement lock
           const dayDrawdownPct = Number((((fwdLow - entryPrice) / entryPrice) * 100).toFixed(2));
@@ -691,6 +693,18 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
 
           // Invariant: Entry occurs at entryIdx = i + 1; T+2 Demat unlock requires >= 2 elapsed sessions after entry (j >= entryIdx + 2 === i + 3)
           if (j >= entryIdx + 2) {
+            if (fwdHigh > peakPrice) peakPrice = fwdHigh;
+
+            // Conservative stop-loss / ratchet check BEFORE targets (accounts for gap-down opens)
+            if (fwdLow <= activeStopPrice) {
+              exitPrice = Number(Math.min(fwdOpen, activeStopPrice).toFixed(2));
+              const { netReturnPct: stopNet } = calculateNepseNetReturn(entryPrice, exitPrice);
+              status = isRatchetArmed && stopNet > 0 ? "WIN_RATCHET_STOP" : "STOPPED_OUT";
+              exitDate = fwdDate;
+              holdingDays = j - entryIdx;
+              break;
+            }
+
             if (fwdHigh >= target2Price) {
               status = "WIN_T2";
               exitPrice = target2Price;
@@ -734,14 +748,6 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
                 holdingDays = j - entryIdx;
                 break;
               }
-            } else {
-              if (fwdClose <= stopLossPrice) {
-                status = "STOPPED_OUT";
-                exitPrice = fwdClose;
-                exitDate = fwdDate;
-                holdingDays = j - entryIdx;
-                break;
-              }
             }
 
             // 12-Session Time-Stop
@@ -763,11 +769,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
         const latestRec = symbolDateMap.get(`${symbol}_${dates[latestDateIndex]}`);
         const latestClose = latestRec ? latestRec.closePrice : entryPrice;
 
-        if (latestDateIndex >= entryIdx + 2 && (hasHitT1 || peakPrice >= target1Price)) {
-          status = "WIN_T1";
-          exitPrice = target1Price;
-          exitDate = dates[latestDateIndex];
-        } else if (holdingDays >= 12 || i < cutoffSession8d) {
+        if (holdingDays >= 12 || i < cutoffSession8d) {
           exitPrice = Number(latestClose.toFixed(2));
           const { netReturnPct: timeNet } = calculateNepseNetReturn(entryPrice, exitPrice);
           status = timeNet > 0 ? "WIN_T1" : "TIME_EXPIRED";
@@ -781,7 +783,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
 
       // Exact NEPSE return calculation
       let { grossReturnPct, netReturnPct } =
-        status === "UNFILLABLE_SKIP"
+        status === "UNFILLABLE_SKIP" || !hasT1Session
           ? { grossReturnPct: 0, netReturnPct: 0 }
           : calculateNepseNetReturn(entryPrice, exitPrice);
 

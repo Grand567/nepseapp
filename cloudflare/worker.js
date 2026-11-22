@@ -45,15 +45,35 @@ function getCorsHeaders(request) {
   };
 }
 
-function isNepseTradingHours() {
+function getNptTimeInfo() {
   const now = new Date();
   const nptOffset = (5 * 60 + 45) * 60 * 1000;
   const npt = new Date(now.getTime() + nptOffset);
   const day = npt.getUTCDay(); // 0: Sun, 1: Mon, ..., 5: Fri, 6: Sat
-  // Mon to Fri (April 2026 regime)
-  if (day === 0 || day === 6) return false;
   const mins = npt.getUTCHours() * 60 + npt.getUTCMinutes();
-  return mins >= 660 && mins <= 900; // 11:00 AM (660) to 3:00 PM (900)
+  const secs = npt.getUTCSeconds();
+  return { day, mins, secs };
+}
+
+function isNepseTradingHours() {
+  const { day, mins } = getNptTimeInfo();
+  // Mon to Fri (April 2026 regime): include Pre-Open (10:30) through Odd-Lot close (15:05)
+  if (day === 0 || day === 6) return false;
+  return mins >= 630 && mins <= 905;
+}
+
+function secondsUntilNextPreOpen() {
+  const { day, mins, secs } = getNptTimeInfo();
+  const isWeekday = day >= 1 && day <= 5;
+  if (isWeekday && mins < 630) {
+    return Math.max(5, (630 - mins) * 60 - secs);
+  }
+  let daysAhead = 1;
+  while (((day + daysAhead) % 7) === 0 || ((day + daysAhead) % 7) === 6) {
+    daysAhead++;
+  }
+  const secsLeftToday = (24 * 60 - mins) * 60 - secs;
+  return Math.max(5, secsLeftToday + (daysAhead - 1) * 86400 + 630 * 60);
 }
 
 function getCacheTtlSeconds(pathname) {
@@ -71,6 +91,7 @@ function getCacheTtlSeconds(pathname) {
   }
 
   const isLive = isNepseTradingHours();
+  const maxOffHoursTtl = isLive ? Infinity : secondsUntilNextPreOpen();
 
   // 2. High-frequency live endpoints
   if (
@@ -80,7 +101,7 @@ function getCacheTtlSeconds(pathname) {
     pathname.includes('/live-index') ||
     pathname.includes('/intraday-graph')
   ) {
-    return isLive ? 3 : 1800; // 3 sec during market, 30 min off-hours
+    return isLive ? 3 : Math.min(1800, maxOffHoursTtl); // 3 sec during market, up to 30 min off-hours
   }
 
   // 3. Historical, ledger, dividend, fundamentals, analytics
@@ -93,7 +114,7 @@ function getCacheTtlSeconds(pathname) {
     pathname.includes('/news') ||
     pathname.includes('/seasonality')
   ) {
-    return isLive ? 300 : 86400; // 5 min during market, 24 hours off-hours
+    return isLive ? 300 : Math.min(86400, maxOffHoursTtl); // 5 min during market, up to 24 hours off-hours
   }
 
   // 4. Health checks & ping
@@ -101,7 +122,7 @@ function getCacheTtlSeconds(pathname) {
     return 10;
   }
 
-  return isLive ? 10 : 3600;
+  return isLive ? 10 : Math.min(3600, maxOffHoursTtl);
 }
 
 export default {
@@ -155,21 +176,10 @@ export default {
         method: request.method,
         headers: originHeaders,
         body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
-        redirect: 'follow'
+        redirect: 'follow',
+        signal: AbortSignal.timeout(12000)
       });
     } catch (err) {
-      // ── Cold-Start Shield / Error Handling ──
-      // If Render is down or cold-booting and we have an expired cached response, return it
-      if (isCacheable) {
-        const stale = await cache.match(cacheKey);
-        if (stale) {
-          const sHeaders = new Headers(stale.headers);
-          Object.entries(corsHeaders).forEach(([k, v]) => sHeaders.set(k, v));
-          sHeaders.set('X-Edge-Cache', 'STALE-FALLBACK');
-          return new Response(stale.body, { status: 200, headers: sHeaders });
-        }
-      }
-
       return new Response(
         JSON.stringify({
           error: 'Backend gateway waking up. Please retry in a few seconds.',
@@ -192,12 +202,13 @@ export default {
     Object.entries(corsHeaders).forEach(([k, v]) => responseHeaders.set(k, v));
     responseHeaders.set('X-Edge-Cache', 'MISS');
     responseHeaders.set('X-Edge-Node', 'Cloudflare-CDN');
+    responseHeaders.set('X-Data-Cached-At', new Date().toISOString());
 
     // If cacheable, store into Cloudflare Edge Cache
     if (isCacheable && originResponse.status === 200) {
       responseHeaders.set(
         'Cache-Control',
-        `public, max-age=${cacheTtl}, s-maxage=${cacheTtl}, stale-while-revalidate=60`
+        `public, max-age=${cacheTtl}, s-maxage=${cacheTtl}`
       );
 
       const responseToCache = new Response(originResponse.clone().body, {

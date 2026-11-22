@@ -51,21 +51,22 @@ CREATE INDEX IF NOT EXISTS idx_ledger_status_strategy ON algorithmic_signal_ledg
 CREATE INDEX IF NOT EXISTS idx_ledger_broker ON algorithmic_signal_ledger(primary_broker_id);
 
 -- Institutional Strategy Scorecard View
-CREATE VIEW IF NOT EXISTS v_strategy_institutional_metrics AS
+DROP VIEW IF EXISTS v_strategy_institutional_metrics;
+CREATE VIEW v_strategy_institutional_metrics AS
 SELECT
     strategy,
     COUNT(*) FILTER (WHERE status != 'UNFILLABLE_SKIP') AS total_tradable_signals,
     COUNT(*) FILTER (WHERE status = 'UNFILLABLE_SKIP') AS skipped_circuit_traps,
     ROUND(
-        100.0 * COUNT(*) FILTER (WHERE status IN ('TARGET_HIT', 'RATCHET_STOP_WIN', 'WIN_T1', 'WIN_T2', 'WIN_RATCHET_STOP') OR (status != 'UNFILLABLE_SKIP' AND net_return_pct > 0))
+        100.0 * COUNT(*) FILTER (WHERE status IN ('TARGET_HIT', 'RATCHET_STOP_WIN', 'WIN_T1', 'WIN_T2', 'WIN_RATCHET_STOP') OR (status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP') AND net_return_pct > 0))
         / NULLIF(COUNT(*) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 0),
         2
     ) AS verified_win_rate_pct,
     ROUND(AVG(net_return_pct) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 2) AS net_expectancy_pct,
     ROUND(AVG(nepse_alpha_pct) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 2) AS avg_nepse_alpha_pct,
     ROUND(
-        SUM( CASE WHEN net_return_pct > 0 THEN net_return_pct ELSE 0 END )
-        / NULLIF(ABS(SUM( CASE WHEN net_return_pct < 0 THEN net_return_pct ELSE 0 END )), 0),
+        SUM( CASE WHEN status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP') AND net_return_pct > 0 THEN net_return_pct ELSE 0 END )
+        / NULLIF(ABS(SUM( CASE WHEN status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP') AND net_return_pct < 0 THEN net_return_pct ELSE 0 END )), 0),
         2
     ) AS profit_factor,
     ROUND(AVG(mfe_pct) FILTER (WHERE status NOT IN ('UNFILLABLE_SKIP')), 2) AS avg_mfe_pct,

@@ -7,11 +7,11 @@ import {
   type RawQuotePayload,
   type HistoricalCandle,
   type LedgerTelemetryRow,
-} from "../../../../services/aiGuru/runAiQuantitativeAssessment";
+} from "@/services/aiGuru/runAiQuantitativeAssessment";
 import {
   loadScripBundleFromDb,
   normalize5DBrokerPayloadForAi,
-} from "../../../../lib/db/drabyashreeDb";
+} from "@/lib/db/drabyashreeDb";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +36,9 @@ export function buildDeterministicInstitutionalAnalysis(
     ? `Retail herd churn detected (${Math.round(m.avgTicketKitta)} kitta avg ticket is below the 45-kitta noise floor)`
     : `Moderate blended participation (${Math.round(m.avgTicketKitta)} kitta avg ticket)`;
 
-  const ratchetCleared = m.mfePct >= 1.2;
+  const ratchetCleared =
+    Boolean((m as unknown as { ratchetTriggered?: boolean }).ratchetTriggered) ||
+    (m.verifiedPrice >= m.ratchetTriggerPrice && m.ratchetTriggerPrice > 0);
   const topAccList =
     m.smartMoney5D.topAccumulators.length > 0
       ? m.smartMoney5D.topAccumulators

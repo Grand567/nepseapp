@@ -8,7 +8,7 @@ import {
   type HistoricalCandle,
   type LedgerTelemetryRow,
   type BrokerSmartMoney5DSummary,
-} from "../../services/aiGuru/runAiQuantitativeAssessment";
+} from "@/services/aiGuru/runAiQuantitativeAssessment";
 
 const globalForSqlite = globalThis as unknown as {
   drabyashreeDb?: Database.Database;
@@ -16,19 +16,58 @@ const globalForSqlite = globalThis as unknown as {
 
 export function getDrabyashreeDb(): Database.Database {
   if (!globalForSqlite.drabyashreeDb) {
+    const envDataDir = process.env.NEPSE_DATA_DIR || process.env.RENDER_DISK_PATH;
+    const envDirPath = envDataDir ? path.join(envDataDir, "drabyashree_ledger.db") : null;
     const defaultProxyPath = path.join(process.cwd(), "proxy", "data", "drabyashree_ledger.db");
     const defaultRootPath = path.join(process.cwd(), "drabyashree_ledger.db");
     const dbPath =
       process.env.DRABYASHREE_DB_PATH ||
+      (envDirPath && fs.existsSync(envDataDir!) ? envDirPath : null) ||
       (fs.existsSync(defaultProxyPath) ? defaultProxyPath : defaultRootPath);
 
-    const db = new Database(dbPath, { fileMustExist: false });
+    const db = new Database(dbPath, { fileMustExist: false, timeout: 10000 });
     db.pragma("journal_mode = WAL");
     db.pragma("synchronous = NORMAL");
+    db.pragma("busy_timeout = 10000");
     db.pragma("foreign_keys = ON");
     globalForSqlite.drabyashreeDb = db;
   }
   return globalForSqlite.drabyashreeDb;
+}
+
+function getTableColumns(db: Database.Database, table: string): Set<string> {
+  try {
+    return new Set(
+      (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name)
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function buildSignalSelectSql(db: Database.Database, signalTable: string): string {
+  const cols = getTableColumns(db, signalTable);
+  const pick = (candidates: string[], fallback: string) => {
+    const existing = candidates.filter((c) => cols.has(c));
+    if (existing.length === 0) return fallback;
+    return existing.length === 1 ? existing[0] : `COALESCE(${existing.join(", ")}, ${fallback})`;
+  };
+  return `SELECT
+    symbol,
+    ${pick(["strategy_name", "strategy", "signal_type"], "'UNKNOWN'")} AS strategy_name,
+    ${pick(["entry_vwap", "broker_vwap", "entry_price"], "0")} AS entry_vwap,
+    ${pick(["settlement_unlock_date", "t2_unlock_date"], "'POST_DASHAIN_T2'")} AS settlement_unlock_date,
+    ${pick(["mfe_pct", "max_gain_pct"], "0")} AS mfe_pct,
+    ${pick(["mae_pct"], "0")} AS mae_pct,
+    ${pick(["nepse_alpha_pct"], "0")} AS nepse_alpha_pct,
+    ${pick(["broker_anomaly_score"], "1.0")} AS broker_anomaly_score,
+    ${pick(["avg_ticket_kitta"], "0")} AS avg_ticket_kitta,
+    ${pick(["ratchet_triggered", "is_ratchet_armed"], "0")} AS ratchet_triggered,
+    status
+  FROM ${signalTable}
+  WHERE UPPER(symbol) = ?
+  ORDER BY ${cols.has("signal_date") ? "signal_date DESC, rowid DESC" : "rowid DESC"}
+  LIMIT 1`;
 }
 
 function tableExists(db: Database.Database, name: string): boolean {
@@ -44,7 +83,7 @@ function tableExists(db: Database.Database, name: string): boolean {
   }
 }
 
-export { normalize5DBrokerPayloadForAi } from "../../services/aiGuru/runAiQuantitativeAssessment";
+export { normalize5DBrokerPayloadForAi } from "@/services/aiGuru/runAiQuantitativeAssessment";
 
 export function getLatestSignalTelemetryForSymbol(rawSymbol: string): LedgerTelemetryRow | null {
   const db = getDrabyashreeDb();
@@ -58,26 +97,7 @@ export function getLatestSignalTelemetryForSymbol(rawSymbol: string): LedgerTele
   if (!signalTable) return null;
   try {
     return (
-      (db
-        .prepare(
-          `SELECT
-            symbol,
-            COALESCE(strategy_name, strategy) AS strategy_name,
-            COALESCE(entry_vwap, broker_vwap, entry_price, 0) AS entry_vwap,
-            COALESCE(settlement_unlock_date, t2_unlock_date, 'POST_DASHAIN_T2') AS settlement_unlock_date,
-            COALESCE(mfe_pct, max_gain_pct, 0) AS mfe_pct,
-            COALESCE(mae_pct, 0) AS mae_pct,
-            COALESCE(nepse_alpha_pct, 0) AS nepse_alpha_pct,
-            COALESCE(broker_anomaly_score, 1.0) AS broker_anomaly_score,
-            COALESCE(avg_ticket_kitta, 0) AS avg_ticket_kitta,
-            COALESCE(ratchet_triggered, is_ratchet_armed, 0) AS ratchet_triggered,
-            status
-          FROM ${signalTable}
-          WHERE UPPER(symbol) = ?
-          ORDER BY rowid DESC
-          LIMIT 1`
-        )
-        .get(symbol) as LedgerTelemetryRow) || null
+      (db.prepare(buildSignalSelectSql(db, signalTable)).get(symbol) as LedgerTelemetryRow) || null
     );
   } catch {
     return null;
@@ -171,26 +191,7 @@ export function loadScripBundleFromDb(rawSymbol: string): {
   if (signalTable) {
     try {
       ledgerTelemetry =
-        (db
-          .prepare(
-            `SELECT
-              symbol,
-              COALESCE(strategy_name, strategy) AS strategy_name,
-              COALESCE(entry_vwap, broker_vwap, entry_price, 0) AS entry_vwap,
-              COALESCE(settlement_unlock_date, t2_unlock_date, 'POST_DASHAIN_T2') AS settlement_unlock_date,
-              COALESCE(mfe_pct, max_gain_pct, 0) AS mfe_pct,
-              COALESCE(mae_pct, 0) AS mae_pct,
-              COALESCE(nepse_alpha_pct, 0) AS nepse_alpha_pct,
-              COALESCE(broker_anomaly_score, 1.0) AS broker_anomaly_score,
-              COALESCE(avg_ticket_kitta, 0) AS avg_ticket_kitta,
-              COALESCE(ratchet_triggered, is_ratchet_armed, 0) AS ratchet_triggered,
-              status
-            FROM ${signalTable}
-            WHERE UPPER(symbol) = ?
-            ORDER BY rowid DESC
-            LIMIT 1`
-          )
-          .get(symbol) as LedgerTelemetryRow) || null;
+        (db.prepare(buildSignalSelectSql(db, signalTable)).get(symbol) as LedgerTelemetryRow) || null;
     } catch {
       ledgerTelemetry = null;
     }
@@ -206,24 +207,31 @@ export function loadScripBundleFromDb(rawSymbol: string): {
 
   if (candleTable) {
     try {
+      const cCols = getTableColumns(db, candleTable);
+      const dCol = cCols.has("trade_date") ? "trade_date" : "date";
+      const oCol = cCols.has("open_price") ? "open_price" : "open";
+      const hCol = cCols.has("high_price") ? "high_price" : "high";
+      const lCol = cCols.has("low_price") ? "low_price" : "low";
+      const clCol = cCols.has("close_price") ? "close_price" : "close";
+      const vCol = cCols.has("total_volume") ? "total_volume" : "volume";
+      const tCol = cCols.has("total_turnover") ? "total_turnover" : (cCols.has("turnover") ? "turnover" : null);
+      const vwapExpr = tCol
+        ? `CASE WHEN COALESCE(${vCol}, 0) > 0 THEN (${tCol} / ${vCol}) ELSE COALESCE(${clCol}, 0) END`
+        : (cCols.has("vwap") ? "COALESCE(vwap, " + clCol + ", 0)" : `COALESCE(${clCol}, 0)`);
       candles =
         (db
           .prepare(
             `SELECT
-              COALESCE(trade_date, date) AS date,
-              COALESCE(open_price, open) AS open,
-              COALESCE(high_price, high) AS high,
-              COALESCE(low_price, low) AS low,
-              COALESCE(close_price, close) AS close,
-              COALESCE(total_volume, volume) AS volume,
-              CASE
-                WHEN COALESCE(total_volume, volume, 0) > 0
-                THEN (COALESCE(total_turnover, turnover, 0) / COALESCE(total_volume, volume, 1))
-                ELSE COALESCE(close_price, close, 0)
-              END AS vwap
+              ${dCol} AS date,
+              ${oCol} AS open,
+              ${hCol} AS high,
+              ${lCol} AS low,
+              ${clCol} AS close,
+              ${vCol} AS volume,
+              ${vwapExpr} AS vwap
             FROM ${candleTable}
             WHERE UPPER(symbol) = ?
-            ORDER BY COALESCE(trade_date, date) DESC
+            ORDER BY ${dCol} DESC
             LIMIT 35`
           )
           .all(symbol) as HistoricalCandle[]) || [];

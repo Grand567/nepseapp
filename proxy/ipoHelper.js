@@ -124,8 +124,6 @@ export async function getLiveIpoListings(forceRefresh = false) {
       dataList.forEach((item, i) => {
         const rawSym = (item.stockSymbol || '').toUpperCase().trim();
         const rawName = item.companyName || '';
-        const isBeni = rawSym === 'BENI' || rawName.toLowerCase().includes('beni hydropower');
-
         let closeDate = item.extendedDateAD || item.closingDateAD || item.closingDateBS || '';
         let openDate = item.openingDateAD || item.openingDateBS || '';
         let status = item.status || 'Open';
@@ -133,10 +131,7 @@ export async function getLiveIpoListings(forceRefresh = false) {
         const compOpenDate = (item.openingDateAD || '').split('T')[0];
         const compCloseDate = (item.extendedDateAD || item.closingDateAD || '').split('T')[0];
 
-        if (isBeni) {
-          closeDate = '2026-09-11';
-          status = isBefore5pmNpt ? 'Open' : 'Closed';
-        } else if (compOpenDate && compOpenDate > todayNptStr) {
+        if (compOpenDate && compOpenDate > todayNptStr) {
           status = 'Upcoming';
         } else if (compCloseDate === todayNptStr) {
           status = isBefore5pmNpt ? 'Open' : 'Closed';
@@ -293,7 +288,8 @@ export async function getLiveIpoListings(forceRefresh = false) {
       staleWarning: `⚠️ Cached Record: Live scrapers returned 403 Forbidden. Showing persistent snapshot from ${diskSnapshot.savedAt}.`
     }));
     ipoCache = labeled;
-    lastCacheTime = now;
+    // Set short 30-second retry TTL for fallback snapshots to avoid locking out live scrapers for 15 minutes
+    lastCacheTime = now - CACHE_TTL_MS + 30000;
     return labeled;
   }
 
@@ -302,7 +298,8 @@ export async function getLiveIpoListings(forceRefresh = false) {
   const sebonFallback = loadSebonFallback();
   if (sebonFallback.length > 0) {
     ipoCache = sebonFallback;
-    lastCacheTime = now;
+    // Set short 30-second retry TTL for fallback to allow prompt live recovery
+    lastCacheTime = now - CACHE_TTL_MS + 30000;
     return sebonFallback;
   }
 

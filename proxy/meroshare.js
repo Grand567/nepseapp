@@ -435,7 +435,15 @@ router.get('/ipos', async (req, res) => {
     try {
       const liveData = await getLiveIpoListings();
       if (liveData && liveData.length > 0) {
-        return res.json({ success: true, data: liveData, source: 'live-listings' });
+        const isStale = Boolean(liveData.some(d => d.isStale));
+        const asOf = liveData[0]?.asOf || new Date().toISOString();
+        return res.json({
+          success: true,
+          data: liveData,
+          source: isStale ? 'cached-fallback' : 'live-listings',
+          isStale,
+          asOf
+        });
       }
     } catch (_) {}
     return res.status(isValidAdminRequest(req) ? 400 : 401).json({ success: false, error: 'Admin authorization or server account setup required.' });
@@ -510,7 +518,15 @@ router.get('/ipos', async (req, res) => {
     try {
       const liveData = await getLiveIpoListings();
       if (liveData && liveData.length > 0) {
-        return res.json({ success: true, data: liveData, source: 'live-listings' });
+        const isStale = Boolean(liveData.some(d => d.isStale));
+        const asOf = liveData[0]?.asOf || new Date().toISOString();
+        return res.json({
+          success: true,
+          data: liveData,
+          source: isStale ? 'cached-fallback' : 'live-listings',
+          isStale,
+          asOf
+        });
       }
     } catch (_) {}
     res.status(500).json({ success: false, error: 'Failed to fetch current IPOs: ' + error.message });
@@ -724,7 +740,8 @@ router.post('/check-result', requireAdminSecret, async (req, res) => {
 
       let status, message, units;
       if (isCdscResponse) {
-        const isAllotted = data?.success === true || (msgStr.includes('allotted') && !msgStr.includes('not'));
+        const isNotAllotted = msgStr.includes('not allotted') || msgStr.includes('sorry') || msgStr.includes('not');
+        const isAllotted = !isNotAllotted && (msgStr.includes('congratulations') || msgStr.includes('allotted'));
         if (isAllotted) {
           const match = data.message ? data.message.match(/\d+/) : null;
           units = match ? parseInt(match[0]) : 10;

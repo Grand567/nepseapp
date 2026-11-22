@@ -396,18 +396,21 @@ export function useTodayStaticAnalytics(symbol?: string | null) {
 
     let isMounted = true;
     async function loadStatic() {
-      // 1. Check in-memory cache
-      if (_staticAnalyticsCache.has(cleanSym)) {
-        setData(_staticAnalyticsCache.get(cleanSym));
+      const targetSession = latestTradingSession(new Date(), !isMarketOpen(new Date()));
+
+      // 1. Check in-memory cache (verify session freshness if session_date present)
+      const memCached = _staticAnalyticsCache.get(cleanSym);
+      if (memCached && (!memCached.session_date || memCached.session_date === targetSession)) {
+        setData(memCached);
         setIsLoading(false);
         return;
       }
 
-      // 2. Check IndexedDB
+      // 2. Check IndexedDB (verify session freshness)
       try {
         const idbKey = `today_static_${cleanSym}`;
         const cachedIdb = await idbGet(idbKey);
-        if (cachedIdb && isMounted) {
+        if (cachedIdb && (!cachedIdb.session_date || cachedIdb.session_date === targetSession) && isMounted) {
           _staticAnalyticsCache.set(cleanSym, cachedIdb);
           setData(cachedIdb);
           setIsLoading(false);
@@ -415,19 +418,22 @@ export function useTodayStaticAnalytics(symbol?: string | null) {
         }
       } catch (_) {}
 
-      // 3. Local bundled asset check (0ms offline APK access without network call)
+      // 3. Local bundled asset check (only accept if session_date matches targetSession)
       try {
         let raw: any = null;
         for (const candidate of ['./data/today_static_analytics.json', '/data/today_static_analytics.json']) {
           try {
             const localRes = await fetch(candidate);
             if (localRes.ok) {
-              raw = await localRes.json();
-              break;
+              const parsed = await localRes.json();
+              if (parsed?.session_date === targetSession) {
+                raw = parsed;
+                break;
+              }
             }
           } catch (_) {}
         }
-        if (raw && raw.scrips) {
+        if (raw && raw.scrips && (!raw.session_date || raw.session_date === targetSession)) {
           const scripData = raw.scrips[cleanSym];
           if (scripData && isMounted) {
             _staticAnalyticsCache.set(cleanSym, scripData);
@@ -688,32 +694,37 @@ export async function getHistoricalSubfileDirect(dateOrOffset: string | number):
   let subfileNum: number | null = typeof dateOrOffset === 'number' && dateOrOffset >= 1 && dateOrOffset <= 5 ? dateOrOffset : null;
   if (!subfileNum && typeof dateOrOffset === 'string') {
     let manifest = _subfileMemoryCache.get('manifest') as any;
-    if (!manifest && typeof process !== 'undefined' && process?.versions?.node) {
-      try {
-        const fsMod = 'fs';
-        const pathMod = 'path';
-        const fs = await import(/* @vite-ignore */ fsMod);
-        const path = await import(/* @vite-ignore */ pathMod);
-        const indexPath = path.resolve(process.cwd(), `public/data/subfiles/historical_subfiles_index.json`);
-        if (fs.existsSync(indexPath)) {
-          manifest = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
-          _subfileMemoryCache.set('manifest', manifest);
-        }
-      } catch (_) {}
+    if (!manifest) {
+      if (typeof process !== 'undefined' && process?.versions?.node) {
+        try {
+          const fsMod = 'fs';
+          const pathMod = 'path';
+          const fs = await import(/* @vite-ignore */ fsMod);
+          const path = await import(/* @vite-ignore */ pathMod);
+          const indexPath = path.resolve(process.cwd(), `public/data/subfiles/historical_subfiles_index.json`);
+          if (fs.existsSync(indexPath)) {
+            manifest = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+            _subfileMemoryCache.set('manifest', manifest);
+          }
+        } catch (_) {}
+      } else {
+        try {
+          for (const cand of ['./data/subfiles/historical_subfiles_index.json', '/data/subfiles/historical_subfiles_index.json']) {
+            const r = await fetch(cand);
+            if (r.ok) {
+              manifest = await r.json();
+              if (manifest) {
+                _subfileMemoryCache.set('manifest', manifest);
+                break;
+              }
+            }
+          }
+        } catch (_) {}
+      }
     }
     if (manifest && Array.isArray(manifest.subfiles)) {
       const found = manifest.subfiles.find((s: any) => s.session_date === dateOrOffset);
       if (found) subfileNum = found.day_offset;
-    }
-    if (!subfileNum) {
-      const dateMap: Record<string, number> = {
-        '2026-11-19': 1,
-        '2026-11-18': 2,
-        '2026-11-17': 3,
-        '2026-11-13': 4,
-        '2026-11-06': 5
-      };
-      if (dateMap[dateOrOffset]) subfileNum = dateMap[dateOrOffset];
     }
   }
 
@@ -728,10 +739,15 @@ export async function getHistoricalSubfileDirect(dateOrOffset: string | number):
         if (fs.existsSync(filePath)) {
           const json = JSON.parse(fs.readFileSync(filePath, 'utf8'));
           if (json && json.scrips) {
-            _subfileMemoryCache.set(cacheKey, json);
-            if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
-            if (json.day_offset) _subfileMemoryCache.set(json.day_offset, json);
-            return json;
+            // Guard: ensure session_date matches requested date string
+            if (typeof dateOrOffset === 'string' && json.session_date && json.session_date !== dateOrOffset) {
+              // Mismatched subfile date; fall through to network proxy
+            } else {
+              _subfileMemoryCache.set(cacheKey, json);
+              if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
+              if (json.day_offset) _subfileMemoryCache.set(json.day_offset, json);
+              return json;
+            }
           }
         }
       } catch (_) {}
@@ -743,6 +759,9 @@ export async function getHistoricalSubfileDirect(dateOrOffset: string | number):
         if (localRes.ok) {
           const json = await localRes.json();
           if (json && json.scrips) {
+            if (typeof dateOrOffset === 'string' && json.session_date && json.session_date !== dateOrOffset) {
+              continue;
+            }
             _subfileMemoryCache.set(cacheKey, json);
             if (json.session_date) _subfileMemoryCache.set(json.session_date, json);
             if (json.day_offset) _subfileMemoryCache.set(json.day_offset, json);
@@ -826,16 +845,17 @@ export async function getHistoricalSubfileBrokerAnalysis(
       }));
       const totalHeld = Number(cum.totalSharesHeldTillNow || cum.totalHoldQty || 0) || topAccs.reduce((s: number, a: any) => s + (a.netQty > 0 ? a.netQty : 0), 0);
       const tradingSessions = Number(cum.coverage?.sessionCount || cum.coverage?.tradingDays || cum.tradingDays || cum.timeframeDays || 42);
-      const coverageObj = cum.coverage || {
-        startDate: '2026-08-27',
-        endDate: latestTradingSession(new Date(), !isMarketOpen(new Date())),
+      const snapshotDate = cum.compiled_at || cum.session_date || cum.coverage?.endDate || '2026-09-07';
+      const coverageObj = {
+        startDate: cum.coverage?.startDate || '2026-08-27',
+        endDate: cum.coverage?.endDate || snapshotDate,
         sessionCount: tradingSessions,
         tradingDays: tradingSessions,
         isLifetime: false,
-        label: `Since 2026-08-27 (${tradingSessions} sessions)`,
-        disclaimer: `Covered from 2026-08-27 (${tradingSessions} sessions). Pre-2026-08-27 baseline unknown. Unadjusted for corporate actions.`,
-        isLiveIncomplete: false,
-        lastUpdated: new Date().toISOString()
+        label: `Snapshot as of ${snapshotDate} (${tradingSessions} sessions)`,
+        disclaimer: `Covered from 2026-08-27 to ${snapshotDate} (${tradingSessions} sessions). Static snapshot; unadjusted for live real-time contracts.`,
+        isLiveIncomplete: true,
+        lastUpdated: cum.compiled_at || snapshotDate
       };
       return {
         symbol: sym,
@@ -862,7 +882,9 @@ export async function getHistoricalSubfileBrokerAnalysis(
         scr3SellPct: cum.scr3Cumulative || 0,
         smartMoneyNetFlowPct: cum.smartMoneyNetFlowPct || 0,
         adSignal: (cum.smartMoneyNetFlowPct || 0) > 5 ? 'Accumulation' : (cum.smartMoneyNetFlowPct || 0) < -5 ? 'Distribution' : 'Neutral',
-        isReal: true,
+        isReal: false,
+        isStale: true,
+        compiledAt: cum.compiled_at || snapshotDate,
         source: 'cumulative_broker_ledger_baseline',
         coverage: coverageObj
       };
@@ -998,15 +1020,9 @@ export async function getHistoricalSubfileBrokerAnalysis(
   // Multi-Day Synthesis across subfiles (up to requested numDays)
   let startOffset = 1;
   if (targetDate) {
-    const dateMap: Record<string, number> = {
-      '2026-11-19': 1,
-      '2026-11-18': 2,
-      '2026-11-17': 3,
-      '2026-11-13': 4,
-      '2026-11-06': 5
-    };
-    if (dateMap[targetDate]) {
-      startOffset = dateMap[targetDate];
+    const targetSf = await getHistoricalSubfileDirect(targetDate);
+    if (targetSf?.day_offset) {
+      startOffset = targetSf.day_offset;
     }
   }
   const daysToLoad = Math.min(Math.max(1, numDays), 5 - startOffset + 1);
@@ -1398,115 +1414,28 @@ export async function getHistoricalSubfileFloorsheet(
 
   const totalVol = Number(quote?.volume || 0);
   const totalAmt = Number(quote?.turnover || 0);
-  const vwap = Number(quote?.vwap || (totalVol > 0 ? +(totalAmt / totalVol).toFixed(2) : 100));
   const sessionDate = sf.session_date || targetDate || '';
-
-  const buyers = (flow?.top_5_buyers || []).map((b: any) => ({
-    brokerId: String(b.broker_id),
-    qty: Number(b.buy_kitta || b.net_kitta || 0),
-    vwap: Number(b.buy_vwap || vwap)
-  }));
-
-  const sellers = (flow?.top_5_sellers || []).map((s: any) => ({
-    brokerId: String(s.broker_id),
-    qty: Number(s.sell_kitta || s.net_dump_kitta || 0),
-    vwap: Number(s.sell_vwap || vwap)
-  }));
-
-  const rawRows: any[] = [];
-  let contractNo = 202611000000 + Math.floor(Math.random() * 10000);
-  const baseTimeSec = 11 * 3600 + 15 * 60;
-
-  let bIdx = 0;
-  let sIdx = 0;
-  const maxTrades = Math.min(120, Math.max(25, (buyers.length + sellers.length) * 8));
-
-  for (let i = 0; i < maxTrades; i++) {
-    const b = buyers[bIdx % (buyers.length || 1)] || { brokerId: '62', qty: 1000, vwap };
-    const s = sellers[sIdx % (sellers.length || 1)] || { brokerId: '60', qty: 1000, vwap };
-    bIdx++;
-    sIdx += (i % 2 === 0 ? 1 : 2);
-
-    const tradeRate = Number((((b.vwap + s.vwap) / 2) + ((Math.sin(i * 1.7) * 0.8))).toFixed(2));
-    let tradeQty = Math.max(10, Math.min(2500, Math.round((Math.sin(i * 0.9) + 1.2) * 180 / 10) * 10));
-    // Introduce institutional block / bulk deals (>= 500 kitta) periodically
-    if (i % 6 === 0) {
-      tradeQty = 500 + ((i * 150) % 1500);
-    }
-    const tradeAmt = Number((tradeRate * tradeQty).toFixed(2));
-    const timeOffsetSec = baseTimeSec + (i * 95);
-    const hrs = Math.floor(timeOffsetSec / 3600);
-    const mins = Math.floor((timeOffsetSec % 3600) / 60);
-    const secs = timeOffsetSec % 60;
-    const timeStr = `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-
-    contractNo += Math.floor(Math.random() * 15) + 1;
-
-    rawRows.push({
-      contractNo: String(contractNo),
-      transactionNo: String(contractNo),
-      id: String(contractNo),
-      symbol: sym,
-      stockSymbol: sym,
-      buyerBroker: b.brokerId,
-      buyer: b.brokerId,
-      sellerBroker: s.brokerId,
-      seller: s.brokerId,
-      quantity: tradeQty,
-      qty: tradeQty,
-      rate: tradeRate,
-      amount: tradeAmt,
-      time: timeStr,
-      date: sessionDate,
-      businessDate: sessionDate
-    });
-  }
-
-  let filtered = rawRows;
-  if (filterBuyer) filtered = filtered.filter(r => r.buyerBroker === filterBuyer || r.buyer === filterBuyer);
-  if (filterSeller) filtered = filtered.filter(r => r.sellerBroker === filterSeller || r.seller === filterSeller);
-
-  const pvMap: Record<string, { rate: number; qty: number; amount: number; trades: number }> = {};
-  for (const r of rawRows) {
-    const k = r.rate.toFixed(2);
-    if (!pvMap[k]) pvMap[k] = { rate: r.rate, qty: 0, amount: 0, trades: 0 };
-    pvMap[k].qty += r.qty;
-    pvMap[k].amount += r.amount;
-    pvMap[k].trades += 1;
-  }
-  const totQ = Object.values(pvMap).reduce((s, x) => s + x.qty, 0) || 1;
-  const priceVolumeBreakdown = Object.values(pvMap)
-    .map(x => ({ ...x, pct: +((x.qty / totQ) * 100).toFixed(2) }))
-    .sort((a, b) => b.rate - a.rate);
-
-  const bulkTransactions = [...rawRows]
-    .filter(r => r.qty >= 500 || r.amount >= 150000)
-    .sort((a, b) => b.amount - a.amount);
-
-  const totalElements = filtered.length;
-  const totalPages = Math.ceil(totalElements / pageSize) || 1;
-  const startIndex = (page - 1) * pageSize;
-  const pagedRows = filtered.slice(startIndex, startIndex + pageSize);
 
   return {
     symbol: sym,
     date: sessionDate,
     businessDate: sessionDate,
-    rows: pagedRows,
+    rows: [],
     page,
     size: pageSize,
-    totalPages,
-    totalElements: totalElements > 0 ? (totalVol > 0 ? Math.max(totalElements, 360) : totalElements) : 0,
-    totalQuantity: totalVol > 0 ? totalVol : rawRows.reduce((s, r) => s + r.qty, 0),
-    totalQty: totalVol > 0 ? totalVol : rawRows.reduce((s, r) => s + r.qty, 0),
-    totalAmount: totalAmt > 0 ? totalAmt : rawRows.reduce((s, r) => s + r.amount, 0),
-    totalAmt: totalAmt > 0 ? totalAmt : rawRows.reduce((s, r) => s + r.amount, 0),
-    totalTrades: totalElements > 0 ? (totalVol > 0 ? Math.max(totalElements, 360) : totalElements) : 0,
-    priceVolumeBreakdown,
-    bulkTransactions,
-    isReal: true,
-    isEstimatedFlow: true,
-    source: 'offline_subfiles_synthesized'
+    totalPages: 0,
+    totalElements: 0,
+    totalQuantity: totalVol,
+    totalQty: totalVol,
+    totalAmount: totalAmt,
+    totalAmt: totalAmt,
+    totalTrades: 0,
+    priceVolumeBreakdown: [],
+    bulkTransactions: [],
+    isReal: false,
+    isTickDataUnavailable: true,
+    isEstimatedFlow: false,
+    source: 'offline_subfiles_summary_only'
   };
 }
 

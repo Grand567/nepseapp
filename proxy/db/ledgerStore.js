@@ -207,8 +207,8 @@ db.exec(`
     ROUND(buy_amt / NULLIF(buy_vol, 0), 2) AS avg_buy_price,
     ROUND(sell_amt / NULLIF(sell_vol, 0), 2) AS avg_sell_price,
     ROUND((buy_amt + sell_amt) / NULLIF(buy_vol + sell_vol, 0), 2) AS vwap,
-    0 AS avg_ticket_kitta,
-    0 AS broker_anomaly_score
+    NULL AS avg_ticket_kitta,
+    NULL AS broker_anomaly_score
   FROM daily_broker_ledger;
 
   -- 5. Daily Data Ingestion & Completeness Audit Log
@@ -541,7 +541,7 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
     const buyer = parseBrokerInt(trade.buyerMemberId ?? trade.buyerBroker ?? trade.buyer_broker ?? trade.buyer);
     const seller = parseBrokerInt(trade.sellerMemberId ?? trade.sellerBroker ?? trade.seller_broker ?? trade.seller);
 
-    if (qty <= 0 || (!buyer && !seller)) continue;
+    if (qty <= 0 || buyer <= 0 || seller <= 0) continue;
     pureEquityTrades.push({ ...trade, contractId: cid || undefined, amount: amt, rate, kitta: qty });
 
     let s = stockAggMap.get(symbol);
@@ -618,29 +618,17 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
       cross_vol = excluded.cross_vol
   `);
 
+  const deletePriorBrokers = db.prepare(`
+    DELETE FROM daily_broker_ledger WHERE trade_date = ? AND symbol = ?
+  `);
+
   let count = 0;
   for (const [symbol, data] of stockAggMap.entries()) {
-    // Enforce strict Zero-Sum Conservation Law: sum(buy_vol) === sum(sell_vol) === total_volume
-    if (data.buyVolSum !== data.sellVolSum) {
-      const resBroker = data.brokers.get(999) || { buyVol: 0, sellVol: 0, buyAmt: 0, sellAmt: 0 };
-      if (data.buyVolSum > data.sellVolSum) {
-        resBroker.sellVol += data.buyVolSum - data.sellVolSum;
-        resBroker.sellAmt += Math.max(0, data.buyAmtSum - data.sellAmtSum);
-        data.sellVolSum = data.buyVolSum;
-        data.sellAmtSum = Math.max(data.buyAmtSum, data.sellAmtSum);
-      } else {
-        resBroker.buyVol += data.sellVolSum - data.buyVolSum;
-        resBroker.buyAmt += Math.max(0, data.sellAmtSum - data.buyAmtSum);
-        data.buyVolSum = data.sellVolSum;
-        data.buyAmtSum = Math.max(data.buyAmtSum, data.sellAmtSum);
-      }
-      data.brokers.set(999, resBroker);
-    }
-
     const conservedVolume = data.buyVolSum;
     const conservedTurnover = Number(data.buyAmtSum.toFixed(2));
 
     upsertStock.run(tradeDate, symbol, data.open, data.high, data.low, data.close, conservedVolume, conservedTurnover);
+    deletePriorBrokers.run(tradeDate, symbol);
     count++;
     for (const [brokerId, bData] of data.brokers.entries()) {
       upsertBroker.run(tradeDate, symbol, brokerId, bData.buyVol, bData.sellVol, bData.buyAmt, bData.sellAmt, bData.crossVol || 0);
@@ -948,7 +936,7 @@ export const ingestFloorsheetContractsTransaction = db.transaction((tradeDate, r
         : Number((rawAmt > 0 ? rawAmt : expectedAmt).toFixed(2));
 
       const rawCid = String(t.contractId ?? t.contract_no ?? t.contractNo ?? "").trim();
-      const cid = rawCid || `SYN-${date}-${sym}-${buyer}-${seller}-${qty}-${rate}-${idx + 1}`;
+      const cid = rawCid || (time ? `SYN-${date}-${sym}-${buyer || '0'}-${seller || '0'}-${qty}-${rate}-${time}` : `SYN-${date}-${sym}-${buyer || '0'}-${seller || '0'}-${qty}-${rate}-${idx + 1}`);
 
       if (seenContractIds.has(cid)) continue;
       seenContractIds.add(cid);
@@ -1171,8 +1159,18 @@ export function seedFromSnapshotGz(force = false) {
         const normalizedTempPath = tempDbPath.replace(/\\/g, "/");
         try {
           db.exec(`ATTACH DATABASE '${normalizedTempPath}' AS seed_db;`);
-          db.exec(`INSERT OR REPLACE INTO daily_stock_summary SELECT * FROM seed_db.daily_stock_summary;`);
-          db.exec(`INSERT OR REPLACE INTO daily_broker_ledger SELECT * FROM seed_db.daily_broker_ledger;`);
+          db.exec(`
+            INSERT OR IGNORE INTO daily_stock_summary
+              (trade_date, symbol, open_price, high_price, low_price, close_price, total_volume, total_turnover)
+            SELECT trade_date, symbol, open_price, high_price, low_price, close_price, total_volume, total_turnover
+            FROM seed_db.daily_stock_summary;
+          `);
+          db.exec(`
+            INSERT OR IGNORE INTO daily_broker_ledger
+              (trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt)
+            SELECT trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt
+            FROM seed_db.daily_broker_ledger;
+          `);
         } finally {
           try { db.exec(`DETACH DATABASE seed_db;`); } catch (_) {}
           try { fs.unlinkSync(tempDbPath); } catch (_) {}
@@ -1287,6 +1285,7 @@ export function getSymbolHistoryFromDb(symbol, days = 30) {
         sellVol: row.sell_vol,
         buyAmt: row.buy_amt,
         sellAmt: row.sell_amt,
+        crossVol: row.cross_vol || 0,
       });
     }
 
@@ -1421,7 +1420,7 @@ export async function rebuildHotCache() {
   }
 
   const allBrokers = db
-    .prepare(`SELECT trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt FROM daily_broker_ledger WHERE trade_date >= ?`)
+    .prepare(`SELECT trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt, cross_vol FROM daily_broker_ledger WHERE trade_date >= ?`)
     .all(oldestDate);
   const brokersBySymDate = new Map();
   for (let idx = 0; idx < allBrokers.length; idx++) {
@@ -1438,6 +1437,7 @@ export async function rebuildHotCache() {
       sellVol: b.sell_vol,
       buyAmt: b.buy_amt,
       sellAmt: b.sell_amt,
+      crossVol: b.cross_vol || 0,
     });
   }
   // Free the raw 340k row array immediately to relieve memory
@@ -1834,7 +1834,7 @@ export async function backfillRealHistoricalFloorsheets(targetTradingDays = 30, 
         console.log(`[Real Backfill Pipeline] Ingested ${trades.length} authentic trades for ${dt} across ${count} scrips.`);
         
         // Progressively rebuild hot cache so 5D, 15D, 30D views update with real data immediately
-        rebuildHotCache();
+        await rebuildHotCache();
       }
 
       // Safe rate-limit delay between upstream requests
@@ -2292,8 +2292,9 @@ export function auditAntiDematDumpGuard(symbol, floorsheetTrades = []) {
       return { isTrap: false, reason: 'Insufficient historical sessions to evaluate demat dump' };
     }
 
-    // Prior 3 sessions (excluding today's latest session)
-    const priorDates = recentDates.slice(1, 4);
+    const hasLiveTrades = Array.isArray(floorsheetTrades) && floorsheetTrades.length > 0;
+    // Prior 3 sessions (if live trades are passed, include recentDates[0] as previous session)
+    const priorDates = hasLiveTrades ? recentDates.slice(0, 3) : recentDates.slice(1, 4);
     if (priorDates.length === 0) return { isTrap: false, reason: 'No prior sessions' };
 
     const placeholders = priorDates.map(() => '?').join(',');
