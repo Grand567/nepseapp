@@ -1185,6 +1185,151 @@ export function getLiveMarketTurnover(todayIso = '') {
   return 0;
 }
 
+export let lastKnownIntradayGraph = [];
+export let lastKnownIntradaySessionDate = null;
+
+export function getIntradayTicksDate(ticks) {
+  if (!Array.isArray(ticks) || ticks.length === 0) return null;
+  const sample = ticks[0];
+  if (!sample) return null;
+  if (sample.timestamp) {
+    const tsMs = sample.timestamp > 1e11 ? sample.timestamp : sample.timestamp * 1000;
+    return formatNptDateIso(new Date(tsMs));
+  }
+  if (sample.date) {
+    return String(sample.date).slice(0, 10);
+  }
+  return null;
+}
+
+export function getNptMinutesFromDate(date = getAppNow()) {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kathmandu',
+      hour12: false,
+      hour: 'numeric',
+      minute: 'numeric'
+    });
+    const parts = formatter.formatToParts(date);
+    const h = parseInt(parts.find(p => p.type === 'hour').value, 10) % 24;
+    const m = parseInt(parts.find(p => p.type === 'minute').value, 10);
+    return h * 60 + m;
+  } catch (_) {
+    const utcMins = date.getUTCHours() * 60 + date.getUTCMinutes();
+    return (utcMins + 5 * 60 + 45) % (24 * 60);
+  }
+}
+
+export function isStaleMiddayIndexSnapshot(idx, sessionDate) {
+  if (!idx || !idx.nepse || !(Number(idx.nepse.value) > 0)) return true;
+  const appNow = getAppNow();
+  const todayIso = formatNptDateIso(appNow);
+  const targetDate = sessionDate || idx.asOfDate || todayIso;
+
+  if (targetDate !== todayIso) return false;
+
+  const currentStatus = getProxyMarketStatus();
+  const nptMinutes = getNptMinutesFromDate(appNow);
+  const isPostClose = nptMinutes >= 15 * 60 || (!currentStatus?.isOpen && !currentStatus?.isPreOpen && nptMinutes >= 11 * 60);
+
+  if (isPostClose) {
+    if (idx.isClosing === true) return false;
+    const ts = idx.timestamp || idx.nepse.timestamp || (idx.updatedAt ? new Date(idx.updatedAt).getTime() : 0);
+    if (ts > 0) {
+      const tsMinutes = getNptMinutesFromDate(new Date(ts));
+      // Generated before 15:00 NPT on today's session = stale midday cache
+      if (tsMinutes < 15 * 60) {
+        return true;
+      }
+    } else {
+      // Missing timestamp on closed session = treat as stale to force reconciliation
+      return true;
+    }
+  }
+  return false;
+}
+
+export function getIntradayTicksForToday(sessionDate) {
+  if (lastKnownIntradaySessionDate === sessionDate && Array.isArray(lastKnownIntradayGraph) && lastKnownIntradayGraph.length > 0) {
+    return lastKnownIntradayGraph;
+  }
+  try {
+    const diskPath = path.resolve('proxy/data/nepse_intraday_latest.json');
+    if (fs.existsSync(diskPath)) {
+      const diskTicks = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
+      if (Array.isArray(diskTicks) && diskTicks.length > 0 && getIntradayTicksDate(diskTicks) === sessionDate) {
+        return diskTicks;
+      }
+    }
+  } catch (_) {}
+  return [];
+}
+
+export function reconcileNepseWithIntradayTicks(indices, intradayTicks, sessionDate) {
+  if (!indices || !indices.nepse || !Array.isArray(intradayTicks) || intradayTicks.length === 0) {
+    return indices;
+  }
+  const tickDate = getIntradayTicksDate(intradayTicks);
+  const targetDate = sessionDate || indices.asOfDate || formatNptDateIso(getAppNow());
+  if (tickDate && targetDate && tickDate !== targetDate) {
+    // Cross-session mismatch: never reconcile across different dates
+    return indices;
+  }
+
+  const lastTick = intradayTicks[intradayTicks.length - 1];
+  const lastClose = Number(lastTick?.close || lastTick?.value || 0);
+  if (!(lastClose > 0)) return indices;
+
+  const currentVal = Number(indices.nepse.value || 0);
+  const lastTs = Number(lastTick.timestamp || 0) * (Number(lastTick.timestamp) < 1e11 ? 1000 : 1);
+  const idxTs = Number(indices.timestamp || indices.nepse.timestamp || (indices.updatedAt ? new Date(indices.updatedAt).getTime() : 0));
+
+  const isDifferent = Math.abs(currentVal - lastClose) > 0.01;
+  const isNewer = lastTs > 0 && idxTs > 0 && lastTs > idxTs;
+  const isStale = isStaleMiddayIndexSnapshot(indices, targetDate);
+
+  if (isDifferent && (isNewer || isStale || idxTs === 0)) {
+    let prevClose = Number(indices.nepse.prevClose || 0);
+    if (!(prevClose > 0)) {
+      if (currentVal > 0 && indices.nepse.change) {
+        prevClose = +(currentVal - Number(indices.nepse.change)).toFixed(2);
+      } else {
+        prevClose = Number(intradayTicks[0]?.open || intradayTicks[0]?.close || lastClose);
+      }
+    }
+    const change = +(lastClose - prevClose).toFixed(2);
+    const pChange = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+
+    const tickHighs = intradayTicks.map(t => Number(t.high || t.close || 0)).filter(v => v > 0);
+    const tickLows = intradayTicks.map(t => Number(t.low || t.close || 0)).filter(v => v > 0);
+    const high = tickHighs.length > 0 ? Math.max(...tickHighs, Number(indices.nepse.high || lastClose)) : Number(indices.nepse.high || lastClose);
+    const low = tickLows.length > 0 ? Math.min(...tickLows, Number(indices.nepse.low || lastClose)) : Number(indices.nepse.low || lastClose);
+
+    const reconciledNepse = {
+      ...indices.nepse,
+      value: lastClose,
+      change,
+      pChange,
+      prevClose,
+      high,
+      low,
+      reconciledWithIntraday: true,
+      timestamp: Math.max(lastTs, Date.now())
+    };
+
+    return {
+      ...indices,
+      nepse: reconciledNepse,
+      asOfDate: targetDate,
+      isClosing: isStale || indices.isClosing || false,
+      timestamp: Math.max(lastTs, Date.now()),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  return indices;
+}
+
 let LAST_GOOD_INDICES = {
   nepse: { value: 2695.6, change: 31.54, pChange: 1.18, open: 2658.8, high: 2695.63, low: 2658.78, prevClose: 2664.06, turnover: 0 },
   sensitive: { value: 488.21, change: 6.41, pChange: 1.33, open: 480.39, high: 488.21, low: 480.39, prevClose: 481.80 },
@@ -1288,6 +1433,11 @@ export function getFallbackTodayPrices() {
 
 // Warm memory caches immediately on module load for sub-millisecond cold start
 try {
+  const bootSessionDate = formatNptDateIso(getAppNow());
+  const bootIntraday = getIntradayTicksForToday(bootSessionDate);
+  if (bootIntraday.length > 0 && LAST_GOOD_INDICES?.nepse?.value > 0) {
+    LAST_GOOD_INDICES = reconcileNepseWithIntradayTicks(LAST_GOOD_INDICES, bootIntraday, bootSessionDate);
+  }
   if (LAST_GOOD_INDICES?.nepse?.value > 0) {
     setCache('market-indices', LAST_GOOD_INDICES, 60000);
   }
@@ -1559,12 +1709,14 @@ export async function getMarketIndicesInternal(targetDate = '') {
 
   const cacheKey = 'market-indices';
   const cached = getCache(cacheKey);
-  if (cached && cached.nepse && cached.nepse.value > 0) return cached;
-
   const currentStatus = getProxyMarketStatus();
   const indexTtl = currentStatus?.isOpen ? 4000 : (currentStatus?.isPreOpen ? 6000 : 30000);
 
-  if (!currentStatus?.isOpen && !currentStatus?.isPreOpen && LAST_GOOD_INDICES?.nepse?.value > 0) {
+  const isStaleCache = isStaleMiddayIndexSnapshot(cached, todayIso);
+  if (cached && cached.nepse && cached.nepse.value > 0 && !isStaleCache) return cached;
+
+  const isStaleLastGood = isStaleMiddayIndexSnapshot(LAST_GOOD_INDICES, todayIso);
+  if (!currentStatus?.isOpen && !currentStatus?.isPreOpen && LAST_GOOD_INDICES?.nepse?.value > 0 && !isStaleLastGood) {
     setCache(cacheKey, LAST_GOOD_INDICES, indexTtl);
     return LAST_GOOD_INDICES;
   }
@@ -1635,9 +1787,12 @@ export async function getMarketIndicesInternal(targetDate = '') {
       indices.asOfDate = todayIso;
 
       if (indices.nepse && indices.nepse.value > 0) {
-        setCache(cacheKey, indices, indexTtl);
-        LAST_GOOD_INDICES = indices;
-        return indices;
+        indices.timestamp = Date.now();
+        indices.isClosing = !currentStatus?.isOpen && !currentStatus?.isPreOpen;
+        const reconciled = reconcileNepseWithIntradayTicks(indices, getIntradayTicksForToday(todayIso), todayIso);
+        setCache(cacheKey, reconciled, indexTtl);
+        LAST_GOOD_INDICES = reconciled;
+        return reconciled;
       }
     }
   } catch (err) {
@@ -1693,9 +1848,12 @@ export async function getMarketIndicesInternal(targetDate = '') {
           subIndices: (LAST_GOOD_INDICES?.subIndices?.length > 0) ? LAST_GOOD_INDICES.subIndices : [],
           asOfDate: npDate
         };
-        setCache(cacheKey, npIndices, indexTtl);
-        LAST_GOOD_INDICES = { ...LAST_GOOD_INDICES, ...npIndices };
-        return npIndices;
+        npIndices.timestamp = Date.now();
+        npIndices.isClosing = !currentStatus?.isOpen && !currentStatus?.isPreOpen;
+        const reconciled = reconcileNepseWithIntradayTicks(npIndices, getIntradayTicksForToday(todayIso), todayIso);
+        setCache(cacheKey, reconciled, indexTtl);
+        LAST_GOOD_INDICES = { ...LAST_GOOD_INDICES, ...reconciled };
+        return reconciled;
       }
     }
   } catch (npErr) {
@@ -1745,9 +1903,12 @@ export async function getMarketIndicesInternal(targetDate = '') {
     indices.subIndices = subIndices;
     indices.asOfDate = asOfDate;
     if (indices.nepse && indices.nepse.value > 0) {
-      setCache(cacheKey, indices, indexTtl);
-      LAST_GOOD_INDICES = indices;
-      return indices;
+      indices.timestamp = Date.now();
+      indices.isClosing = !currentStatus?.isOpen && !currentStatus?.isPreOpen;
+      const reconciled = reconcileNepseWithIntradayTicks(indices, getIntradayTicksForToday(todayIso), todayIso);
+      setCache(cacheKey, reconciled, indexTtl);
+      LAST_GOOD_INDICES = reconciled;
+      return reconciled;
     }
   } catch (err) {
     console.warn('[proxy] ShareSansar market table error:', err.message);
@@ -1789,6 +1950,8 @@ export async function getMarketIndicesInternal(targetDate = '') {
           subIndices: LAST_GOOD_INDICES?.subIndices || [],
           asOfDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })
         };
+        synth.timestamp = Date.now();
+        synth.isClosing = !currentStatus?.isOpen && !currentStatus?.isPreOpen;
         setCache(cacheKey, synth, indexTtl);
         LAST_GOOD_INDICES = synth;
         return synth;
@@ -1814,6 +1977,15 @@ export async function getMarketIndicesInternal(targetDate = '') {
     }
   } catch (_) {}
 
+  const intradayForToday = getIntradayTicksForToday(todayIso);
+  if (intradayForToday.length > 0 && LAST_GOOD_INDICES?.nepse) {
+    const reconciled = reconcileNepseWithIntradayTicks(LAST_GOOD_INDICES, intradayForToday, todayIso);
+    if (reconciled !== LAST_GOOD_INDICES) {
+      LAST_GOOD_INDICES = reconciled;
+      setCache(cacheKey, reconciled, indexTtl);
+    }
+  }
+
   return LAST_GOOD_INDICES;
 }
 
@@ -1823,16 +1995,25 @@ app.get(['/api/market-indices', '/api/indices'], async (req, res) => {
     const targetDate = String(req.query.date || '').trim();
     const indices = await getMarketIndicesInternal(targetDate);
     if (indices && Object.keys(indices).length > 0) {
-      if (indices.nepse && (!indices.nepse.turnover || indices.nepse.turnover <= 0 || indices.nepse.turnover === 8570096748.35)) {
-        const liveTurnover = getLiveMarketTurnover(indices.asOfDate || targetDate || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' }));
+      const appNow = getAppNow();
+      const todayIso = formatNptDateIso(appNow);
+      const sessionDate = targetDate || indices.asOfDate || todayIso;
+      const intradayTicks = getIntradayTicksForToday(sessionDate);
+      const resolved = (intradayTicks.length > 0) ? reconcileNepseWithIntradayTicks(indices, intradayTicks, sessionDate) : indices;
+
+      if (resolved.nepse && (!resolved.nepse.turnover || resolved.nepse.turnover <= 0 || resolved.nepse.turnover === 8570096748.35)) {
+        const liveTurnover = getLiveMarketTurnover(resolved.asOfDate || sessionDate);
         if (liveTurnover > 0) {
-          indices.nepse.turnover = liveTurnover;
+          resolved.nepse.turnover = liveTurnover;
         }
       }
-      return res.json({ success: true, data: indices });
+      return res.json({ success: true, data: resolved });
     }
     return res.status(500).json({ success: false, error: 'Failed to fetch indices' });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -3860,22 +4041,7 @@ app.get('/api/news/merolagani', async (req, res) => {
    Returns real OHLCV history from NEPSE official API
    GET /api/price-history/:symbol?length=365
    ═══════════════════════════════════════════════════ */
-let lastKnownIntradayGraph = [];
-let lastKnownIntradaySessionDate = null;
-
-function getIntradayTicksDate(ticks) {
-  if (!Array.isArray(ticks) || ticks.length === 0) return null;
-  const sample = ticks[0];
-  if (!sample) return null;
-  if (sample.timestamp) {
-    const tsMs = sample.timestamp > 1e11 ? sample.timestamp : sample.timestamp * 1000;
-    return formatNptDateIso(new Date(tsMs));
-  }
-  if (sample.date) {
-    return String(sample.date).slice(0, 10);
-  }
-  return null;
-}
+// State and helper definitions (lastKnownIntradayGraph, lastKnownIntradaySessionDate, getIntradayTicksDate) declared above
 
 app.get('/api/nepse/intraday-graph', async (req, res) => {
   const reqDate = req.query.date || req.query.sessionDate;
@@ -6087,6 +6253,35 @@ app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async 
   }
 });
 
+export const inFlightDividendRequests = new Map();
+
+export const shareSansarDividendBreaker = {
+  consecutiveFailures: 0,
+  trippedUntil: 0,
+  maxFailures: 3,
+  cooldownMs: 5 * 60 * 1000, // 5 minutes
+  isTripped() {
+    return Date.now() < this.trippedUntil;
+  },
+  recordFailure(err) {
+    const isTimeout = err?.code === 'ECONNABORTED' || String(err?.message || '').toLowerCase().includes('timeout');
+    const is403 = err?.response?.status === 403 || String(err?.message || '').includes('403');
+    if (isTimeout || is403) {
+      this.consecutiveFailures++;
+      if (this.consecutiveFailures >= this.maxFailures && !this.isTripped()) {
+        this.trippedUntil = Date.now() + this.cooldownMs;
+        console.warn('[dividend-history] ⚡ ShareSansar Dividend Circuit Breaker ACTIVE: 3 consecutive timeouts/403s. Fast-bypassing ShareSansar scraping for 5 minutes.');
+      }
+    }
+  },
+  recordSuccess() {
+    if (this.consecutiveFailures > 0) {
+      this.consecutiveFailures = 0;
+      this.trippedUntil = 0;
+    }
+  }
+};
+
 /**
  * Fetches verified dividend, bonus share, and right share history for a given stock
  * by querying ShareSansar corporate actions with Merolagani fallback.
@@ -6098,7 +6293,12 @@ export async function getDividendHistoryInternal(rawSymbol) {
   const cached = getCache(cacheKey);
   if (cached) return cached;
 
-  const normalizeDividendFy = (raw, fallbackDate = null) => {
+  if (inFlightDividendRequests.has(symbol)) {
+    return inFlightDividendRequests.get(symbol);
+  }
+
+  const runTask = (async () => {
+    const normalizeDividendFy = (raw, fallbackDate = null) => {
     if (raw) {
       const s = String(raw).trim().replace(/^FY:?\s*/i, '').replace(/[()]/g, '').trim();
       // Match 2-4 digit year on each side: handles "2082/2083", "082/083", "82-83", "081-82"
@@ -6164,7 +6364,8 @@ export async function getDividendHistoryInternal(rawSymbol) {
     }
 
     // ── 1. ShareSansar corporate actions (primary for detailed bonus, cash & rights) ──
-    if (fyMap.size === 0) try {
+    const canScrapeShareSansar = !shareSansarDividendBreaker.isTripped();
+    if (fyMap.size === 0 && canScrapeShareSansar) try {
       const ssJar = new CookieJar();
       const ssClient = wrapper(axios.create({ jar: ssJar, headers: HEADERS, timeout: 2500 }));
       const ssPage = await ssClient.get(`https://www.sharesansar.com/company/${symbol}`);
@@ -6204,8 +6405,12 @@ export async function getDividendHistoryInternal(rawSymbol) {
             if (!entry.source) entry.source = 'sharesansar';
             if (!entry.announcementDate && row.announcement_date) entry.announcementDate = row.announcement_date;
           }
+          shareSansarDividendBreaker.recordSuccess();
         } catch (e) {
-          console.warn(`[dividend-history] ShareSansar div failed for ${symbol}:`, e.message);
+          shareSansarDividendBreaker.recordFailure(e);
+          if (!shareSansarDividendBreaker.isTripped()) {
+            console.warn(`[dividend-history] ShareSansar div failed for ${symbol}:`, e.message);
+          }
         }
 
         // Fetch Right Shares — try both known endpoint variants
@@ -6247,7 +6452,10 @@ export async function getDividendHistoryInternal(rawSymbol) {
         }
       }
     } catch (e) {
-      console.warn(`[dividend-history] ShareSansar base failed for ${symbol}:`, e.message);
+      shareSansarDividendBreaker.recordFailure(e);
+      if (!shareSansarDividendBreaker.isTripped()) {
+        console.warn(`[dividend-history] ShareSansar base failed for ${symbol}:`, e.message);
+      }
     }
 
     // ── 2. Merolagani scraping (panel-targeted for clean cash, bonus, and rights) ──
@@ -6355,6 +6563,14 @@ export async function getDividendHistoryInternal(rawSymbol) {
   } catch (err) {
     console.error(`[dividend-history] ${symbol}:`, err.message);
     return { symbol, dividends: [], data: [], totalEntries: 0, sources: [], error: err.message };
+  }
+  })();
+
+  inFlightDividendRequests.set(symbol, runTask);
+  try {
+    return await runTask;
+  } finally {
+    inFlightDividendRequests.delete(symbol);
   }
 }
 
@@ -15120,6 +15336,7 @@ app.get('/api/company/:symbol/industry-comparison', async (req, res) => {
   }
 });
 
+if (process.env.NODE_ENV !== 'test') {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 NEPSE Proxy Server running on http://0.0.0.0:${PORT}`);
     console.log(`   🔸 Live trading:    /api/market-summary`);
@@ -15455,3 +15672,4 @@ app.listen(PORT, '0.0.0.0', () => {
     };
     setTimeout(autoWarmupCloudLedger, 25000);
 });
+}

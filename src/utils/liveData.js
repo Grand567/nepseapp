@@ -2350,8 +2350,25 @@ export function saveCachedIndices(indices) {
       const todayIso = formatNptDateIso(new Date());
       const toSave = {
         ...indices,
-        asOfDate: indices.asOfDate || todayIso
+        asOfDate: indices.asOfDate || todayIso,
+        timestamp: indices.timestamp || Date.now(),
+        isClosing: Boolean(indices.isClosing)
       };
+
+      // Guard: do not let older/midday snapshot overwrite fresher verified closing indices
+      if (MEM_INDICES && MEM_INDICES.nepse && (MEM_INDICES.asOfDate === toSave.asOfDate || !toSave.asOfDate)) {
+        const existingTs = Number(MEM_INDICES.timestamp || MEM_INDICES.nepse.timestamp || 0);
+        const incomingTs = Number(toSave.timestamp || toSave.nepse.timestamp || 0);
+        if (existingTs > 0 && incomingTs > 0 && incomingTs < existingTs) {
+          // Reject older snapshot from overwriting newer in-memory state
+          return;
+        }
+        if (MEM_INDICES.isClosing && !toSave.isClosing && Math.abs(Number(toSave.nepse.value) - Number(MEM_INDICES.nepse.value)) > 0.01) {
+          // Reject unverified midday snapshot from overwriting confirmed closing index
+          return;
+        }
+      }
+
       MEM_INDICES = toSave;
       localStorage.setItem(INDICES_CACHE_KEY, JSON.stringify(toSave));
       idbSet(INDICES_CACHE_KEY, toSave).catch(() => {});
@@ -2730,6 +2747,35 @@ export async function fetchMarketIndices(targetDate) {
       if (r.status === 'fulfilled' && r.value?.nepse?.value > 0) {
         indicesData = r.value;
         break;
+      }
+    }
+
+    // Consistency reconciliation guard: if intraday ticks for today's session have a closing tick, reconcile
+    const intradayFeed = directResults[2]?.status === 'fulfilled' ? directResults[2].value : null;
+    if (intradayFeed?.nepse?.value > 0) {
+      const intradayClose = Number(intradayFeed.nepse.value);
+      const isPostClose = !calStatus.isOpen;
+      if (indicesData?.nepse && (isPostClose || Math.abs(Number(indicesData.nepse.value) - intradayClose) > 0.01)) {
+        const prevC = Number(indicesData.nepse.prevClose || intradayFeed.nepse.prevClose || (intradayClose - (indicesData.nepse.change || 0)));
+        const chg = +(intradayClose - prevC).toFixed(2);
+        const pChg = prevC > 0 ? +((chg / prevC) * 100).toFixed(2) : 0;
+        indicesData = {
+          ...indicesData,
+          nepse: {
+            ...indicesData.nepse,
+            value: intradayClose,
+            change: chg,
+            pChange: pChg,
+            prevClose: prevC,
+            high: Math.max(Number(indicesData.nepse.high || intradayClose), Number(intradayFeed.nepse.high || intradayClose)),
+            low: Math.min(Number(indicesData.nepse.low || intradayClose), Number(intradayFeed.nepse.low || intradayClose)),
+            reconciledWithIntraday: true
+          },
+          isClosing: isPostClose,
+          timestamp: Date.now()
+        };
+      } else if (!indicesData?.nepse) {
+        indicesData = intradayFeed;
       }
     }
 

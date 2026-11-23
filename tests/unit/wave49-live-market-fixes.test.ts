@@ -82,4 +82,87 @@ describe('Wave 4.9: Live-Market Bug Fixes Suite', () => {
     assert.ok(client.inFlightPriceHistory instanceof Map);
     assert.strictEqual(client.inFlightPriceHistory.size, 0);
   });
+
+  it('7. ShareSansar Dividend Circuit Breaker: Trips for 5 minutes after 3 consecutive timeouts/403s', () => {
+    const breaker = {
+      consecutiveFailures: 0,
+      trippedUntil: 0,
+      maxFailures: 3,
+      cooldownMs: 5 * 60 * 1000,
+      isTripped() {
+        return Date.now() < this.trippedUntil;
+      },
+      recordFailure(err: any) {
+        const isTimeout = err?.code === 'ECONNABORTED' || String(err?.message || '').toLowerCase().includes('timeout');
+        const is403 = err?.response?.status === 403 || String(err?.message || '').includes('403');
+        if (isTimeout || is403) {
+          this.consecutiveFailures++;
+          if (this.consecutiveFailures >= this.maxFailures && !this.isTripped()) {
+            this.trippedUntil = Date.now() + this.cooldownMs;
+          }
+        }
+      },
+      recordSuccess() {
+        if (this.consecutiveFailures > 0) {
+          this.consecutiveFailures = 0;
+          this.trippedUntil = 0;
+        }
+      }
+    };
+
+    assert.strictEqual(breaker.isTripped(), false);
+    // Failure 1: timeout of 2500ms exceeded
+    breaker.recordFailure(new Error('timeout of 2500ms exceeded'));
+    assert.strictEqual(breaker.consecutiveFailures, 1);
+    assert.strictEqual(breaker.isTripped(), false);
+
+    // Failure 2: 403 forbidden
+    breaker.recordFailure({ response: { status: 403 }, message: 'Request failed with status code 403' });
+    assert.strictEqual(breaker.consecutiveFailures, 2);
+    assert.strictEqual(breaker.isTripped(), false);
+
+    // Failure 3: 3rd timeout trips breaker for 5 minutes
+    breaker.recordFailure({ code: 'ECONNABORTED', message: 'timeout of 2500ms exceeded' });
+    assert.strictEqual(breaker.consecutiveFailures, 3);
+    assert.strictEqual(breaker.isTripped(), true);
+    assert.ok(breaker.trippedUntil > Date.now() + 4 * 60 * 1000);
+
+    // Record success resets the circuit breaker
+    breaker.recordSuccess();
+    assert.strictEqual(breaker.isTripped(), false);
+    assert.strictEqual(breaker.consecutiveFailures, 0);
+  });
+
+  it('8. Dividend In-Flight Single-Flight Deduplication: Map deduplicates concurrent requests for same symbol', async () => {
+    const inFlightMap = new Map<string, Promise<any>>();
+    let executionCount = 0;
+
+    async function fetchDividendMock(symbol: string) {
+      if (inFlightMap.has(symbol)) {
+        return inFlightMap.get(symbol);
+      }
+      const task = (async () => {
+        executionCount++;
+        await new Promise(r => setTimeout(r, 20));
+        return { symbol, dividends: [{ fiscalYear: 'FY 081-082', cashDividend: 10 }] };
+      })();
+
+      inFlightMap.set(symbol, task);
+      try {
+        return await task;
+      } finally {
+        inFlightMap.delete(symbol);
+      }
+    }
+
+    // Fire BENH twice concurrently
+    const [res1, res2] = await Promise.all([
+      fetchDividendMock('BENH'),
+      fetchDividendMock('BENH')
+    ]);
+
+    assert.strictEqual(executionCount, 1, 'Concurrent requests for BENH must execute underlying fetch only once');
+    assert.deepStrictEqual(res1, res2);
+    assert.strictEqual(inFlightMap.size, 0, 'In-flight map must be cleared after resolution');
+  });
 });

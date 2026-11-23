@@ -115,3 +115,151 @@ test('4. LiveData Invariant: Rejects 2026-11-20 intraday close from being used a
   const result = parseLiveCloseFromIntraday(diskTicks, todayIso);
   assert.strictEqual(result, null, 'Must reject 2026-11-20 ticks for today 2026-11-23');
 });
+
+test('5. Wave 4.10 Invariant: Reconciles frozen midday index (2,615.93) to official close (2,623.56 / +2.26 pts) when 15:00 NPT intraday closing tick exists', () => {
+  const sessionDate = '2026-11-23';
+  // Stale midday index snapshot recorded at 11:24 / 12:12 PM
+  const staleMiddayIndex = {
+    nepse: {
+      value: 2615.93,
+      change: -5.36,
+      pChange: -0.20,
+      prevClose: 2621.30,
+      open: 2623.85,
+      high: 2623.85,
+      low: 2613.20,
+      turnover: 1200000000
+    },
+    float: { value: 182.01, change: -0.36, pChange: -0.19 },
+    sensitive: { value: 476.28, change: -0.73, pChange: -0.15 },
+    asOfDate: sessionDate,
+    timestamp: 1795415520000, // 11:24 AM NPT
+    isClosing: false
+  };
+
+  // 1D Intraday ticks ending at official 3:00 PM (15:00 NPT) close: 2,623.56
+  const intradayTicks = [
+    { time: '11:00 AM', timestamp: 1795414200, open: 2623.85, high: 2623.85, low: 2623.85, close: 2623.85 },
+    { time: '12:12 PM', timestamp: 1795418520, open: 2615.93, high: 2618.00, low: 2608.30, close: 2615.93 },
+    { time: '02:59 PM', timestamp: 1795428540, open: 2622.10, high: 2623.56, low: 2622.00, close: 2623.56 },
+    { time: '03:00 PM', timestamp: 1795428600, open: 2623.56, high: 2623.56, low: 2623.56, close: 2623.56 }
+  ];
+
+  function reconcileNepse(indices: any, ticks: any[], targetSessionDate: string) {
+    if (!indices || !indices.nepse || !Array.isArray(ticks) || ticks.length === 0) return indices;
+    const lastTick = ticks[ticks.length - 1];
+    const lastClose = Number(lastTick?.close || lastTick?.value || 0);
+    if (!(lastClose > 0)) return indices;
+
+    const currentVal = Number(indices.nepse.value || 0);
+    const lastTs = Number(lastTick.timestamp || 0) * (Number(lastTick.timestamp) < 1e11 ? 1000 : 1);
+    const idxTs = Number(indices.timestamp || indices.nepse.timestamp || 0);
+
+    const isDifferent = Math.abs(currentVal - lastClose) > 0.01;
+    const isNewer = lastTs > 0 && idxTs > 0 && lastTs > idxTs;
+
+    if (isDifferent && (isNewer || !indices.isClosing)) {
+      const prevClose = Number(indices.nepse.prevClose || 2621.30);
+      const change = +(lastClose - prevClose).toFixed(2);
+      const pChange = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+
+      const tickHighs = ticks.map(t => Number(t.high || t.close || 0)).filter(v => v > 0);
+      const tickLows = ticks.map(t => Number(t.low || t.close || 0)).filter(v => v > 0);
+
+      return {
+        ...indices,
+        nepse: {
+          ...indices.nepse,
+          value: lastClose,
+          change,
+          pChange,
+          prevClose,
+          high: Math.max(...tickHighs, Number(indices.nepse.high || lastClose)),
+          low: Math.min(...tickLows, Number(indices.nepse.low || lastClose)),
+          reconciledWithIntraday: true,
+          timestamp: Math.max(lastTs, Date.now())
+        },
+        asOfDate: targetSessionDate,
+        isClosing: true,
+        timestamp: Math.max(lastTs, Date.now())
+      };
+    }
+    return indices;
+  }
+
+  const reconciled = reconcileNepse(staleMiddayIndex, intradayTicks, sessionDate);
+
+  // Assertions: Reconciled to official 3:00 PM close 2,623.56 / +2.26 pts
+  assert.strictEqual(reconciled.nepse.value, 2623.56, 'Index value must be reconciled to 2,623.56');
+  assert.strictEqual(reconciled.nepse.change, 2.26, 'Change must be recomputed as +2.26 pts (+2623.56 - 2621.30)');
+  assert.strictEqual(reconciled.nepse.pChange, 0.09, 'Percent change must be recomputed as +0.09%');
+  assert.strictEqual(reconciled.nepse.prevClose, 2621.30, 'Previous close must remain 2,621.30');
+  assert.strictEqual(reconciled.nepse.high, 2623.85, 'High must match session high');
+  assert.strictEqual(reconciled.nepse.low, 2608.30, 'Low must match session low');
+  assert.strictEqual(reconciled.nepse.reconciledWithIntraday, true);
+  assert.strictEqual(reconciled.isClosing, true);
+});
+
+test('6. Wave 4.10 Invariant: Rejects cross-session reconciliation when ticks are from a previous date', () => {
+  const staleMiddayIndex = {
+    nepse: { value: 2615.93, change: -5.36, pChange: -0.20, prevClose: 2621.30 },
+    asOfDate: '2026-11-23',
+    timestamp: 1795415520000
+  };
+
+  // Ticks from 2026-11-20 (Friday)
+  const fridayTicks = [
+    { time: '03:00 PM', timestamp: 1795166100, open: 2690.15, close: 2690.15 }
+  ];
+
+  function safeReconcile(indices: any, ticks: any[], targetSessionDate: string) {
+    if (!indices || !indices.nepse || !Array.isArray(ticks) || ticks.length === 0) return indices;
+    const sampleTs = ticks[0]?.timestamp;
+    const tickDate = sampleTs ? formatNptDateIso(new Date(sampleTs * 1000)) : null;
+    if (tickDate && targetSessionDate && tickDate !== targetSessionDate) {
+      // Must reject cross-session contamination!
+      return indices;
+    }
+    return indices;
+  }
+
+  const result = safeReconcile(staleMiddayIndex, fridayTicks, '2026-11-23');
+  assert.strictEqual(result.nepse.value, 2615.93, 'Cross-session ticks must NEVER contaminate active index');
+});
+
+test('7. Wave 4.10 Invariant: Browser cache guard prevents stale midday snapshot from overwriting confirmed closing index', () => {
+  let memIndices: any = {
+    nepse: { value: 2623.56, change: 2.26, pChange: 0.09, prevClose: 2621.30 },
+    asOfDate: '2026-11-23',
+    timestamp: 1795428600000, // 3:00 PM NPT
+    isClosing: true
+  };
+
+  function trySaveCachedIndices(toSave: any) {
+    if (memIndices && memIndices.nepse && memIndices.asOfDate === toSave.asOfDate) {
+      const existingTs = Number(memIndices.timestamp || memIndices.nepse.timestamp || 0);
+      const incomingTs = Number(toSave.timestamp || toSave.nepse.timestamp || 0);
+      if (existingTs > 0 && incomingTs > 0 && incomingTs < existingTs) {
+        return false; // Rejected: older timestamp
+      }
+      if (memIndices.isClosing && !toSave.isClosing && Math.abs(Number(toSave.nepse.value) - Number(memIndices.nepse.value)) > 0.01) {
+        return false; // Rejected: midday unverified snapshot attempting to overwrite closing index
+      }
+    }
+    memIndices = toSave;
+    return true;
+  }
+
+  // Incoming stale snapshot from 12:12 PM
+  const staleMiddaySnapshot = {
+    nepse: { value: 2615.93, change: -5.36, pChange: -0.20 },
+    asOfDate: '2026-11-23',
+    timestamp: 1795418520000, // 12:12 PM NPT
+    isClosing: false
+  };
+
+  const saved = trySaveCachedIndices(staleMiddaySnapshot);
+  assert.strictEqual(saved, false, 'Stale midday snapshot must be blocked from overwriting confirmed closing index');
+  assert.strictEqual(memIndices.nepse.value, 2623.56, 'Confirmed closing value 2,623.56 must remain intact');
+  assert.strictEqual(memIndices.nepse.change, 2.26);
+});

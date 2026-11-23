@@ -429,12 +429,44 @@ export class UnifiedNepseClient {
   }
 
   /**
+   * Reconciles snapshot indices with disk intraday latest tick for today's session
+   */
+  reconcileWithIntradayDisk(indices) {
+    if (!Array.isArray(indices) || indices.length === 0) return indices;
+    try {
+      const diskPath = path.join(__dirname, 'data', 'nepse_intraday_latest.json');
+      if (fs.existsSync(diskPath)) {
+        const diskTicks = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
+        if (Array.isArray(diskTicks) && diskTicks.length > 0) {
+          const sample = diskTicks[0];
+          const sampleTs = sample?.timestamp;
+          const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+          const tickDate = sampleTs ? new Date(sampleTs * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' }) : null;
+          if (tickDate === todayIso) {
+            const lastTick = diskTicks[diskTicks.length - 1];
+            const lastClose = Number(lastTick?.close || 0);
+            const nepItem = indices.find(x => x.index === 'NEPSE Index' || x.id === 58);
+            if (nepItem && lastClose > 0 && Math.abs(Number(nepItem.currentValue || nepItem.close || 0) - lastClose) > 0.01) {
+              const prev = Number(nepItem.previousClose || (nepItem.currentValue ? nepItem.currentValue - nepItem.change : lastClose));
+              nepItem.currentValue = lastClose;
+              nepItem.close = lastClose;
+              nepItem.change = +(lastClose - prev).toFixed(2);
+              nepItem.perChange = prev > 0 ? +((nepItem.change / prev) * 100).toFixed(2) : 0;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return indices;
+  }
+
+  /**
    * Retrieves live NEPSE and sub-indices
    */
   async getNepseIndex() {
     if (this.circuitBreaker.isTripped()) {
       if (this.lastKnownSnapshot.indices?.length > 0) {
-        return this.lastKnownSnapshot.indices;
+        return this.reconcileWithIntradayDisk(this.lastKnownSnapshot.indices);
       }
       return [];
     }
@@ -465,7 +497,7 @@ export class UnifiedNepseClient {
 
     if (this.lastKnownSnapshot.indices?.length > 0) {
       console.warn('[nepse-manager] Returning last-known verified NEPSE indices snapshot.');
-      return this.lastKnownSnapshot.indices;
+      return this.reconcileWithIntradayDisk(this.lastKnownSnapshot.indices);
     }
     return [];
   }

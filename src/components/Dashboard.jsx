@@ -23,7 +23,7 @@ import { isPureNepseEquity } from '../utils/nepseEquityFilter.js';
 import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
 import { formatBS } from '../utils/nepaliDate';
 import * as servicesApi from '../utils/servicesApi';
-import { getProxyBase, fetchStockFundamentals, getCachedIndices, getCachedMarketSummary, getLastDataUpdateTime, getCachedRealBrokerAnalysis, getCachedRealPriceHistory, fetchPriceHistory, fetchDividendHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick, DEFAULT_OFFICIAL_INDICES } from '../utils/liveData';
+import { getProxyBase, fetchStockFundamentals, getCachedIndices, saveCachedIndices, getCachedMarketSummary, getLastDataUpdateTime, getCachedRealBrokerAnalysis, getCachedRealPriceHistory, fetchPriceHistory, fetchDividendHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick, DEFAULT_OFFICIAL_INDICES } from '../utils/liveData';
 import { getHydroSeasonality, runAmalgamatedBreakoutPipeline, evaluateMarketBreadthCashDefense, evaluatePreOpenExecutionGate, calculateOrderBookImbalanceRatio } from '../utils/quantEngine';
 import { selectMasterPrimePick, isActionableBuySignal } from '../utils/guruEngine';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
@@ -1751,6 +1751,9 @@ function Dashboard({
     if (activeHeroIndex?.isStock) return;
     if (indices && !indices.isPlaceholder) {
       if ((activeHeroIndex.key === 'nepse' || activeHeroIndex.name === 'NEPSE Index') && indices.nepse && indices.nepse.value > 0) {
+        if (activeHeroIndex.val?.reconciledWithIntraday && !indices.nepse.reconciledWithIntraday && !indices.isClosing && Math.abs(Number(indices.nepse.value) - Number(activeHeroIndex.val.value)) > 0.01) {
+          return;
+        }
         setActiveHeroIndex(prev => ({
           ...prev,
           name: "NEPSE Index",
@@ -1829,8 +1832,8 @@ function Dashboard({
             if (sym === 'NEPSE') {
               const officialVal = Number(indices?.nepse?.value || 0);
               const isMarketOpen = Boolean(marketStatus?.isOpen);
+              const lastPt = intraday[intraday.length - 1];
               if (officialVal > 0 && !indices?.isPlaceholder && isMarketOpen) {
-                const lastPt = intraday[intraday.length - 1];
                 const nowNpt = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' });
                 const updatedIntraday = [...intraday];
                 // Only push if drift is small (< 80 points) to prevent appending stale/divergent index values
@@ -1856,8 +1859,36 @@ function Dashboard({
                 setHeroHistory(intraday);
               }
 
-              // Always maintain authoritative live index values from exchange feed
-              if (indices?.nepse && Number(indices.nepse.value) > 0 && !indices?.isPlaceholder) {
+              // Consistency reconciliation guard: if intraday has a newer closing tick than cached indices.nepse on a closed session,
+              // reconcile activeHeroIndex and cache so headline index and 1D chart can never contradict each other.
+              const lastClose = Number(lastPt?.close || lastPt?.value || 0);
+              if (lastClose > 0 && (!isMarketOpen || Math.abs(officialVal - lastClose) > 0.01)) {
+                const prevClose = Number(indices?.nepse?.prevClose || (officialVal > 0 && indices?.nepse?.change ? officialVal - indices.nepse.change : (indices?.nepse?.prevClose || 2621.30)));
+                const change = +(lastClose - prevClose).toFixed(2);
+                const pChange = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+                const reconciledNepse = {
+                  ...(indices?.nepse || {}),
+                  value: lastClose,
+                  change,
+                  pChange,
+                  prevClose,
+                  high: Math.max(...intraday.map(p => Number(p.high || p.close || lastClose))),
+                  low: Math.min(...intraday.map(p => Number(p.low || p.close || lastClose))),
+                  turnover: Number(indices?.nepse?.turnover || 0),
+                  reconciledWithIntraday: true
+                };
+                setActiveHeroIndex(prev => ({
+                  ...prev,
+                  val: reconciledNepse
+                }));
+                saveCachedIndices({
+                  ...(indices || {}),
+                  nepse: reconciledNepse,
+                  asOfDate: ptDate || todayIso,
+                  timestamp: Date.now(),
+                  isClosing: !isMarketOpen
+                });
+              } else if (indices?.nepse && Number(indices.nepse.value) > 0 && !indices?.isPlaceholder) {
                 setActiveHeroIndex(prev => ({
                   ...prev,
                   val: indices.nepse
@@ -2775,11 +2806,35 @@ function Dashboard({
 
   const cachedNepseHero = getCachedIndices()?.nepse;
   const fallbackHero = (cachedNepseHero?.value > 0) ? cachedNepseHero : (DEFAULT_OFFICIAL_INDICES?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 });
-  const heroVal = activeHeroIndex?.isStock
+  let rawHeroVal = activeHeroIndex?.isStock
     ? (activeHeroIndex.val || { value: 0, change: 0, pChange: 0, turnover: 0 })
-    : (((activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && indices?.nepse && Number(indices.nepse.value) > 0)
-        ? indices.nepse
-        : (activeHeroIndex?.val || indices?.nepse || fallbackHero));
+    : (activeHeroIndex?.val?.reconciledWithIntraday
+        ? activeHeroIndex.val
+        : (((activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && indices?.nepse && Number(indices.nepse.value) > 0)
+            ? indices.nepse
+            : (activeHeroIndex?.val || indices?.nepse || fallbackHero)));
+
+  // Consistency reconciliation guard for headline index:
+  // If hero is NEPSE and heroHistory has intraday ticks for 1D timeframe ending at lastClose,
+  // ensure heroVal reflects the closing tick so headline index and 1D chart can never contradict each other.
+  if (!activeHeroIndex?.isStock && (activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && heroTimeframe === '1D' && heroHistory && heroHistory.length > 0) {
+    const lastTick = heroHistory[heroHistory.length - 1];
+    const lastTickClose = Number(lastTick?.close || lastTick?.value || 0);
+    if (lastTickClose > 0 && Math.abs(Number(rawHeroVal?.value || 0) - lastTickClose) > 0.01) {
+      const prevC = Number(rawHeroVal?.prevClose || (rawHeroVal?.value && rawHeroVal?.change ? rawHeroVal.value - rawHeroVal.change : lastTickClose));
+      const chg = +(lastTickClose - prevC).toFixed(2);
+      const pchg = prevC > 0 ? +((chg / prevC) * 100).toFixed(2) : 0;
+      rawHeroVal = {
+        ...rawHeroVal,
+        value: lastTickClose,
+        change: chg,
+        pChange: pchg,
+        prevClose: prevC,
+        reconciledWithIntraday: true
+      };
+    }
+  }
+  const heroVal = rawHeroVal;
   const isHeroBull = ((Number(heroVal.change) || 0) !== 0 ? Number(heroVal.change) : (Number(heroVal.pChange) || 0)) >= 0;
 
   // Slice history according to the active timeframe

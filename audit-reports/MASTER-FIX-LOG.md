@@ -486,3 +486,33 @@ The following legacy tests hardcoded obsolete `7.5%` Short-Term / `5.0%` Long-Te
 - `tests/unit/trailing-ratchet.test.ts`: 6/6 passed.
 - `tests/unit/wave49-live-market-fixes.test.ts`: 6/6 passed.
 - `npm run build`: 1,788 modules transformed, 0 errors, production bundle built cleanly in 36.45s.
+
+---
+
+## [Wave 4.10] Post-Close Index Freshness & ShareSansar Dividend Circuit Breaker (2026-11-23)
+
+### Executive Summary
+Wave 4.10 resolves two remaining issues identified during post-market verification (Mon 2026-11-23, 9:05 PM NPT) on branch `fix/drabyashree-3acc-audit-20261122`:
+1. **Frozen NEPSE Headline Index (`2,615.93` Midday -> Official Close `2,623.56` / `+2.26 pts`):**
+   - At 9:03 PM NPT, the Market Dashboard displayed midday 12:12 PM index `2,615.93 ▼ -5.36 pts (-0.20%)` while turnover (`3.83 Arba`) and 1D intraday chart (`High: 2,623.6`, `Low: 2,608.3`) already reflected the 3:00 PM close (`2,623.56`).
+   - Root cause: Closed-market early-return in `proxy/server.mjs` intercepted requests and returned stale `LAST_GOOD_INDICES` without refreshing closing values; `last_known_market.json` preserved an 11:24 AM snapshot; client-side `heroVal` lacked an intraday closing-tick consistency guard.
+   - Solution:
+     - In `proxy/server.mjs`, added `isStaleMiddayIndexSnapshot()` to detect and bypass pre-15:00 NPT index caches after market close.
+     - Added `reconcileNepseWithIntradayTicks()` in both proxy and frontend: if `/api/nepse/intraday-graph` for the same session date has a newer closing tick (`2,623.56`), headline index is reconciled and `change` / `pChange` are recomputed against `prevClose` (`2,621.30`) to `+2.26 pts (+0.09%)`.
+     - In `proxy/nepseClientManager.mjs`, added `reconcileWithIntradayDisk()` to prevent circuit-breaker-tripped NOTS from serving stale midday snapshots.
+     - In `src/utils/liveData.js`, enhanced `saveCachedIndices()` to prevent stale midday snapshots from overwriting confirmed closing index cache.
+     - In `src/components/Dashboard.jsx`, implemented consistency reconciliation guard in `loadHeroHistory()`, `heroVal`, and `activeHeroIndex` synchronization so headline index and 1D chart can never contradict each other.
+
+2. **ShareSansar Dividend Timeout Burst & Concurrent Request Burst (`timeout of 2500ms exceeded`):**
+   - During screener and audit sweeps, concurrent dividend requests for the same symbol (e.g. `BENH`) fired duplicate HTTP requests, and repeated timeouts/403s caused 2500ms request hangs and log noise.
+   - Solution:
+     - In `proxy/server.mjs`, added single-flight in-flight `Map<symbol, Promise>` (`inFlightDividendRequests`) per symbol.
+     - Implemented a 5-minute circuit breaker (`shareSansarDividendBreaker`) that trips after 3 consecutive timeouts or HTTP 403s, fast-bypassing ShareSansar scraping directly to verified local registry records (`verifiedDividends`) without 2500ms per-symbol hangs or log spam.
+
+### Verification Gate Summary (Wave 4.10)
+- `npx tsc --noEmit`: 0 errors.
+- `npm run audit:static`: 211 files scanned, 0 syntax errors, 0 missing imports, 0 undeclared identifiers.
+- `npm run audit:semantic`: 15/15 invariants passed, 0 violations.
+- `npx tsx tests/unit/intraday-freshness.test.ts`: 7/7 passed (including post-close freshness & reconciliation regression assertions).
+- `npx tsx --test tests/unit/nepse-math-invariants.test.ts tests/unit/auto-bot.test.ts tests/unit/trailing-ratchet.test.ts tests/unit/wave49-live-market-fixes.test.ts`: 29/29 passed (including dividend circuit breaker and single-flight deduplication).
+- `npm run build`: 1,788 modules transformed, 0 errors, production bundle built cleanly in 15.57s.
