@@ -1845,7 +1845,6 @@ export default function AiAnalyst({
       // If data is unavailable or quote is invalid, skip predictions and LLM overrides
       if (synthesizedReport.dataUnavailable || ltp <= 0) {
         if (activeStockReqIdRef.current !== reqId) return;
-        setAnalysis(synthesizedReport);
         setMessages(prev => prev.map(m =>
           m.id === loadingId ? {
             role: 'assistant',

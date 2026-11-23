@@ -9,10 +9,10 @@ import assert from 'node:assert/strict';
 import {
   evaluateTrailingRatchet,
   calculateRatchetLevels,
-  RatchetStage,
+  type RatchetStage,
   type PaperPosition,
   type RatchetEvaluationResult
-} from '../../src/utils/signals/trailingRatchetEngine';
+} from '../../src/utils/signals/trailingRatchetEngine.ts';
 
 describe('Trailing Stop-Loss Ratchet Engine', () => {
   const basePosition: PaperPosition = {

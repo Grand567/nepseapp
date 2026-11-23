@@ -1767,7 +1767,7 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10,
         if (match && match.companyShareId) {
           targetCompanyShareId = Number(match.companyShareId);
         } else {
-          throw new Error(`The requested issue "${targetCompany?.companyName || targetCompany?.scrip || 'selected issue'}" is not currently open for application in MeroShare.`);
+          throw new Error(`The requested issue "${companyObj?.companyName || companyObj?.name || companyObj?.scrip || 'selected issue'}" is not currently open for application in MeroShare.`);
         }
       }
     } catch (err) {
