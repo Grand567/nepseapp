@@ -179,31 +179,41 @@ export const PHASE_DEFINITIONS = {
  * Guard: Requires minimum volume of 1,000 shares to avoid illiquid micro-trade noise.
  */
 export function evaluateOrderFlowVeto(brokerData = {}, stockSummary = {}) {
-  const totalVol = Number(
-    brokerData?.totalVolume ||
+  // Always compute broker volume shares strictly against the matching broker dataset's totalVolume
+  // (never a different session's live volume) and clamp displayed percentages to [0, 100%].
+  const brokerVol = Number(brokerData?.totalVolume || 0);
+  const totalVol = brokerVol > 0 ? brokerVol : Number(
     stockSummary?.total_volume ||
     stockSummary?.totalTradedQuantity ||
     stockSummary?.volume ||
     0
   );
 
-  if (totalVol < 1000) {
+  const brokerDate = String(brokerData?.businessDate || brokerData?.date || '').slice(0, 10);
+  const stockDate = String(stockSummary?.businessDate || stockSummary?.date || stockSummary?.trade_date || stockSummary?.liveSessionDate || '').slice(0, 10);
+  const isCrossSession = Boolean(brokerDate && stockDate && brokerDate !== stockDate);
+  const isSynthetic = Boolean(brokerData?.isSyntheticVap || stockSummary?.isSyntheticVap);
+
+  if (totalVol < 1000 || isCrossSession || isSynthetic) {
     return {
       isVetoed: false,
-      reason: null,
+      reason: isCrossSession ? `Historical broker session (${brokerDate}) differs from live session (${stockDate})` : (isSynthetic ? 'Synthetic VAP Depth' : null),
       severity: 'NONE',
       scr3: 0,
       topSeller: null,
-      topSellerShare: 0
+      topSellerShare: 0,
+      topSellerNetDrainPct: 0,
+      isCrossSession,
+      isSynthetic
     };
   }
 
-  const scr3 = Number(
+  const scr3 = Math.min(100, Math.max(0, Number(
     brokerData?.scr3SellPct ??
     brokerData?.grossSellConcentrationPct ??
     brokerData?.bcr3SellPct ??
     0
-  );
+  )));
 
   const rawTopSellers = Array.isArray(brokerData?.topSellers)
     ? brokerData.topSellers
@@ -213,8 +223,8 @@ export function evaluateOrderFlowVeto(brokerData = {}, stockSummary = {}) {
   const topSellerSellQty = Number(topSeller?.sellQty ?? topSeller?.sellVol ?? 0);
   const topSellerBuyQty = Number(topSeller?.buyQty ?? topSeller?.buyVol ?? 0);
   const topSellerNetQty = Number(topSeller?.netQty ?? (topSellerBuyQty - topSellerSellQty));
-  const topSellerShare = totalVol > 0 ? Number(((topSellerSellQty / totalVol) * 100).toFixed(2)) : 0;
-  const topSellerNetDrainPct = totalVol > 0 ? Number(((Math.abs(Math.min(0, topSellerNetQty)) / totalVol) * 100).toFixed(2)) : 0;
+  const topSellerShare = totalVol > 0 ? Math.min(100, Math.max(0, Number(((topSellerSellQty / totalVol) * 100).toFixed(2)))) : 0;
+  const topSellerNetDrainPct = totalVol > 0 ? Math.min(100, Math.max(0, Number(((Math.abs(Math.min(0, topSellerNetQty)) / totalVol) * 100).toFixed(2)))) : 0;
 
   const netFlowPct = Number(
     brokerData?.smartMoneyNetFlowPct ??
@@ -256,6 +266,9 @@ export function evaluateOrderFlowVeto(brokerData = {}, stockSummary = {}) {
       severity: isWhaleMonopolyDump || isExtremeDumping ? 'CRITICAL' : 'HIGH',
       scr3,
       topSellerShare,
+      topSellerNetDrainPct,
+      isCrossSession: false,
+      isSynthetic: false,
       topSeller: {
         brokerId,
         brokerName,
@@ -272,7 +285,10 @@ export function evaluateOrderFlowVeto(brokerData = {}, stockSummary = {}) {
     severity: 'NONE',
     scr3,
     topSeller: null,
-    topSellerShare: 0
+    topSellerShare: 0,
+    topSellerNetDrainPct: 0,
+    isCrossSession: false,
+    isSynthetic: false
   };
 }
 

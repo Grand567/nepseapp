@@ -36,6 +36,7 @@ import { wrapper } from 'axios-cookiejar-support';
 import { Nepse as RumessNepse } from '@rumess/nepse-api';
 import { NepseClient as NepsemanClient } from 'nepseman-api';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
+import { db } from './db/ledgerStore.js';
 
 // OWASP Security Guard: Immediately purge the global NODE_TLS_REJECT_UNAUTHORIZED
 // setting injected by nepseman-api. Global certificate verification MUST remain active
@@ -154,6 +155,49 @@ export class UnifiedNepseClient {
         }
       }
     };
+
+    // 403 Circuit Breakers for external scrapers (ShareSansar & MeroLagani)
+    // When cloud IP is 403-blocked by WAF, fast-trip for 5 minutes after 2 consecutive 403s
+    this.externalScraperBreakers = {
+      sharesansar: {
+        consecutive403s: 0,
+        trippedUntil: 0,
+        record403: () => {
+          this.externalScraperBreakers.sharesansar.consecutive403s++;
+          if (this.externalScraperBreakers.sharesansar.consecutive403s >= 2 && !this.externalScraperBreakers.sharesansar.isTripped()) {
+            this.externalScraperBreakers.sharesansar.trippedUntil = Date.now() + 5 * 60 * 1000;
+            console.warn('[nepse-manager] ⚡ ShareSansar 403 Circuit Breaker ACTIVE: 2 consecutive HTTP 403 responses detected. Fast-bypassing ShareSansar scraper for 5 minutes.');
+          }
+        },
+        recordSuccess: () => {
+          if (this.externalScraperBreakers.sharesansar.consecutive403s > 0) {
+            this.externalScraperBreakers.sharesansar.consecutive403s = 0;
+            this.externalScraperBreakers.sharesansar.trippedUntil = 0;
+          }
+        },
+        isTripped: () => Date.now() < this.externalScraperBreakers.sharesansar.trippedUntil
+      },
+      merolagani: {
+        consecutive403s: 0,
+        trippedUntil: 0,
+        record403: () => {
+          this.externalScraperBreakers.merolagani.consecutive403s++;
+          if (this.externalScraperBreakers.merolagani.consecutive403s >= 2 && !this.externalScraperBreakers.merolagani.isTripped()) {
+            this.externalScraperBreakers.merolagani.trippedUntil = Date.now() + 5 * 60 * 1000;
+            console.warn('[nepse-manager] ⚡ MeroLagani 403 Circuit Breaker ACTIVE: 2 consecutive HTTP 403 responses detected. Fast-bypassing MeroLagani scraper for 5 minutes.');
+          }
+        },
+        recordSuccess: () => {
+          if (this.externalScraperBreakers.merolagani.consecutive403s > 0) {
+            this.externalScraperBreakers.merolagani.consecutive403s = 0;
+            this.externalScraperBreakers.merolagani.trippedUntil = 0;
+          }
+        },
+        isTripped: () => Date.now() < this.externalScraperBreakers.merolagani.trippedUntil
+      }
+    };
+
+    this.inFlightPriceHistory = new Map();
 
     this.memoryCache = new Map();
     this.cachedKeymap = null;
@@ -798,223 +842,334 @@ export class UnifiedNepseClient {
   }
 
   /**
-   * Retrieves security price history with multi-year range and ShareSansar fallback
+   * Retrieves security price history from local SQLite daily_stock_summary table
+   */
+  getLocalSqlitePriceHistory(symbol, length = 365, startDate = null, endDate = null) {
+    try {
+      if (!db) return [];
+      const sym = String(symbol || '').toUpperCase().trim();
+      let query = `
+        SELECT trade_date as date, open_price as open, high_price as high, low_price as low, 
+               close_price as close, total_volume as volume, total_turnover as turnover
+        FROM daily_stock_summary
+        WHERE UPPER(symbol) = ?
+      `;
+      const params = [sym];
+      if (startDate) {
+        query += ` AND trade_date >= ?`;
+        params.push(startDate);
+      }
+      if (endDate) {
+        query += ` AND trade_date <= ?`;
+        params.push(endDate);
+      }
+      query += ` ORDER BY trade_date DESC LIMIT ?`;
+      params.push(Math.min(Math.max(length, 1), 500));
+
+      const rows = db.prepare(query).all(...params);
+      if (Array.isArray(rows) && rows.length > 0) {
+        return rows.map(r => ({
+          date: r.date,
+          open: Number(r.open || r.close || 0),
+          high: Number(r.high || r.close || 0),
+          low: Number(r.low || r.close || 0),
+          close: Number(r.close || 0),
+          volume: Number(r.volume || 0),
+          turnover: Number(r.turnover || 0),
+          trades: 0,
+          source: 'NEPSE_SQLITE_LOCAL'
+        })).filter(r => r.close > 0).sort((a, b) => new Date(a.date) - new Date(b.date));
+      }
+    } catch (err) {
+      console.warn(`[nepse-manager] Local SQLite price history lookup failed for ${symbol}:`, err.message);
+    }
+    return [];
+  }
+
+  /**
+   * Retrieves security price history with multi-year range, shared in-flight deduplication,
+   * local SQLite fallback when circuit breaker is open, and 403-resilient external scrapers.
    */
   async getSecurityPriceHistory(symbol, options = {}) {
     const rawSymbol = String(symbol || '').toUpperCase().trim();
     const length = Math.min(Math.max(parseInt(options.length || 365, 10), 1), 3500);
     const startDate = options.startDate;
     const endDate = options.endDate;
+    const inFlightKey = `${rawSymbol}-${length}-${startDate || ''}-${endDate || ''}`;
 
-    const keymap = await this.getSecuritySymbolIdKeymap();
-    const rawKeyEntry = keymap.get(rawSymbol);
-    const securityId = typeof rawKeyEntry === 'object' && rawKeyEntry !== null
-      ? (rawKeyEntry.isFallback ? null : Number(rawKeyEntry.id))
-      : Number(rawKeyEntry) || null;
+    if (this.inFlightPriceHistory.has(inFlightKey)) {
+      return this.inFlightPriceHistory.get(inFlightKey);
+    }
 
-    let rows = [];
+    const task = (async () => {
+      let rows = [];
 
-    // Attempt 1: Direct NEPSE NOTS API via Nepseman WASM Session
+      // If NEPSE NOTS circuit breaker is tripped, fall back to local SQLite first
+      if (this.circuitBreaker.isTripped()) {
+        const localRows = this.getLocalSqlitePriceHistory(rawSymbol, length, startDate, endDate);
+        if (localRows.length > 0) {
+          rows = localRows;
+        }
+      }
+
+      // Attempt 1: Direct NEPSE NOTS API via Nepseman WASM Session (only if circuit breaker is not tripped)
+      if (rows.length === 0 && !this.circuitBreaker.isTripped()) {
+        try {
+          const nepsemanHist = await this.executeWithBackoff(
+            () => this.nepseman.priceHistory(rawSymbol, startDate, endDate, Math.min(length, 500)),
+            `NepsemanPriceHistory ${rawSymbol}`
+          );
+          if (Array.isArray(nepsemanHist) && nepsemanHist.length > 0) {
+            rows = nepsemanHist.map(h => ({
+              date: h.businessDate,
+              open: parseFloat(h.openPrice || h.closePrice || h.closingPrice || 0),
+              high: parseFloat(h.highPrice || h.closePrice || h.closingPrice || 0),
+              low: parseFloat(h.lowPrice || h.closePrice || h.closingPrice || 0),
+              close: parseFloat(h.closePrice || h.closingPrice || h.lastTradedPrice || 0),
+              volume: parseFloat(h.totalTradedQuantity || h.tradedQuantity || 0),
+              turnover: parseFloat(h.totalTradedValue || h.amount || 0),
+              trades: parseInt(h.totalTrades || 0, 10),
+              source: 'NEPSE_NOTS'
+            })).filter(r => r.close > 0);
+          }
+        } catch (nepErr) {
+          console.warn(`[nepse-manager] Nepseman price history failed for ${rawSymbol}:`, nepErr.message);
+        }
+      }
+
+      // Attempt 1B: Rumess NOTS keymap endpoint fallback (only if circuit breaker is not tripped)
+      if (rows.length === 0 && !this.circuitBreaker.isTripped()) {
+        const keymap = await this.getSecuritySymbolIdKeymap();
+        const rawKeyEntry = keymap.get(rawSymbol);
+        const securityId = typeof rawKeyEntry === 'object' && rawKeyEntry !== null
+          ? (rawKeyEntry.isFallback ? null : Number(rawKeyEntry.id))
+          : Number(rawKeyEntry) || null;
+
+        if (securityId) {
+          try {
+            const endpoint = `/api/nots/market/security/price/${securityId}?page=0&size=${Math.min(length, 500)}&sort=businessDate,desc`;
+            const res = await this.executeWithBackoff(() => this.rumess.requestGETAPI(endpoint), `RumessSecurityPriceHistory ${rawSymbol}`);
+            const content = res?.content || (Array.isArray(res) ? res : []);
+            if (Array.isArray(content) && content.length > 0) {
+              rows = content.map(h => ({
+                date: h.businessDate,
+                open: parseFloat(h.openPrice || 0),
+                high: parseFloat(h.highPrice || 0),
+                low: parseFloat(h.lowPrice || 0),
+                close: parseFloat(h.closePrice || h.lastTradedPrice || 0),
+                volume: parseFloat(h.totalTradedQuantity || 0),
+                turnover: parseFloat(h.totalTradedValue || 0),
+                trades: parseInt(h.totalTrades || 0, 10),
+                source: 'NEPSE_NOTS'
+              })).filter(r => r.close > 0);
+            }
+          } catch (err) {
+            console.warn(`[nepse-manager] NOTS price history failed for ${rawSymbol}:`, err.message);
+          }
+        }
+      }
+
+      // If NOTS attempts failed, fall back to local SQLite before external scrapers
+      if (rows.length === 0) {
+        const localRows = this.getLocalSqlitePriceHistory(rawSymbol, length, startDate, endDate);
+        if (localRows.length > 0) {
+          rows = localRows;
+        }
+      }
+
+      // Check if data covers the requested date range
+      let meetsDateRange = rows.length > 0;
+      if (startDate && rows.length > 0) {
+        const oldestDate = rows[0]?.date || rows[rows.length - 1]?.date;
+        if (startDate < oldestDate) {
+          meetsDateRange = false;
+        }
+      }
+
+      // Attempt 2: ShareSansar company-price-history (provides 3,500+ trading days back to 2012)
+      // Only invoke if date range isn't met or rows < length, NOTS circuit breaker allows or local data was insufficient,
+      // AND ShareSansar 403 breaker is not active!
+      if ((!meetsDateRange || rows.length < Math.min(length, 100)) && !this.externalScraperBreakers.sharesansar.isTripped()) {
+        try {
+          const ssRows = await this.fetchShareSansarPriceHistory(rawSymbol, length, startDate);
+          if (Array.isArray(ssRows) && ssRows.length > 0) {
+            rows = ssRows;
+          }
+        } catch (ssErr) {
+          if (!this.externalScraperBreakers.sharesansar.isTripped()) {
+            console.warn(`[nepse-manager] ShareSansar historical fallback failed for ${rawSymbol}:`, ssErr.message);
+          }
+        }
+      }
+
+      // Attempt 3: MeroLagani company graph fallback
+      // Only invoke if still empty AND MeroLagani 403 breaker is not active!
+      if (rows.length === 0 && !this.externalScraperBreakers.merolagani.isTripped()) {
+        try {
+          const mlRows = await this.fetchMeroLaganiPriceHistory(rawSymbol);
+          if (Array.isArray(mlRows) && mlRows.length > 0) {
+            rows = mlRows;
+          }
+        } catch (mlErr) {
+          if (!this.externalScraperBreakers.merolagani.isTripped()) {
+            console.warn(`[nepse-manager] MeroLagani historical fallback failed for ${rawSymbol}:`, mlErr.message);
+          }
+        }
+      }
+
+      // Filter by date range if provided
+      if (startDate && endDate) {
+        const filtered = rows.filter(r => r.date >= startDate && r.date <= endDate);
+        if (filtered.length > 0) rows = filtered;
+      }
+
+      rows.sort((a, b) => new Date(a.date) - new Date(b.date));
+      return rows;
+    })();
+
+    this.inFlightPriceHistory.set(inFlightKey, task);
     try {
-      const nepsemanHist = await this.executeWithBackoff(
-        () => this.nepseman.priceHistory(rawSymbol, startDate, endDate, Math.min(length, 500)),
-        `NepsemanPriceHistory ${rawSymbol}`
-      );
-      if (Array.isArray(nepsemanHist) && nepsemanHist.length > 0) {
-        rows = nepsemanHist.map(h => ({
-          date: h.businessDate,
-          open: parseFloat(h.openPrice || h.closePrice || h.closingPrice || 0),
-          high: parseFloat(h.highPrice || h.closePrice || h.closingPrice || 0),
-          low: parseFloat(h.lowPrice || h.closePrice || h.closingPrice || 0),
-          close: parseFloat(h.closePrice || h.closingPrice || h.lastTradedPrice || 0),
-          volume: parseFloat(h.totalTradedQuantity || h.tradedQuantity || 0),
-          turnover: parseFloat(h.totalTradedValue || h.amount || 0),
-          trades: parseInt(h.totalTrades || 0, 10),
-          source: 'NEPSE_NOTS'
-        })).filter(r => r.close > 0);
-      }
-    } catch (nepErr) {
-      console.warn(`[nepse-manager] Nepseman price history failed for ${rawSymbol}:`, nepErr.message);
+      return await task;
+    } finally {
+      this.inFlightPriceHistory.delete(inFlightKey);
     }
-
-    // Attempt 1B: Rumess NOTS keymap endpoint fallback
-    if (rows.length === 0 && securityId) {
-      try {
-        const endpoint = `/api/nots/market/security/price/${securityId}?page=0&size=${Math.min(length, 500)}&sort=businessDate,desc`;
-        const res = await this.executeWithBackoff(() => this.rumess.requestGETAPI(endpoint), `RumessSecurityPriceHistory ${rawSymbol}`);
-        const content = res?.content || (Array.isArray(res) ? res : []);
-        if (Array.isArray(content) && content.length > 0) {
-          rows = content.map(h => ({
-            date: h.businessDate,
-            open: parseFloat(h.openPrice || 0),
-            high: parseFloat(h.highPrice || 0),
-            low: parseFloat(h.lowPrice || 0),
-            close: parseFloat(h.closePrice || h.lastTradedPrice || 0),
-            volume: parseFloat(h.totalTradedQuantity || 0),
-            turnover: parseFloat(h.totalTradedValue || 0),
-            trades: parseInt(h.totalTrades || 0, 10),
-            source: 'NEPSE_NOTS'
-          })).filter(r => r.close > 0);
-        }
-      } catch (err) {
-        console.warn(`[nepse-manager] NOTS price history failed for ${rawSymbol}:`, err.message);
-      }
-    }
-
-    // Check if NOTS data covers the requested date range
-    let meetsDateRange = rows.length > 0;
-    if (startDate && rows.length > 0) {
-      const oldestDate = rows[rows.length - 1].date;
-      if (startDate < oldestDate) {
-        // Requested date range is older than NOTS 1-year window
-        meetsDateRange = false;
-      }
-    }
-
-    // Attempt 2: ShareSansar company-price-history (provides 3,500+ trading days back to 2012)
-    if (!meetsDateRange || rows.length < Math.min(length, 100)) {
-      try {
-        const ssRows = await this.fetchShareSansarPriceHistory(rawSymbol, length, startDate);
-        if (Array.isArray(ssRows) && ssRows.length > 0) {
-          rows = ssRows;
-        }
-      } catch (ssErr) {
-        console.warn(`[nepse-manager] ShareSansar historical fallback failed for ${rawSymbol}:`, ssErr.message);
-      }
-    }
-
-    // Attempt 3: MeroLagani company graph fallback
-    if (rows.length === 0) {
-      try {
-        const mlRows = await this.fetchMeroLaganiPriceHistory(rawSymbol);
-        if (Array.isArray(mlRows) && mlRows.length > 0) {
-          rows = mlRows;
-        }
-      } catch (mlErr) {
-        console.warn(`[nepse-manager] MeroLagani historical fallback failed for ${rawSymbol}:`, mlErr.message);
-      }
-    }
-
-    // Filter by date range if provided
-    if (startDate && endDate) {
-      const filtered = rows.filter(r => r.date >= startDate && r.date <= endDate);
-      if (filtered.length > 0) rows = filtered;
-    }
-
-    rows.sort((a, b) => new Date(a.date) - new Date(b.date));
-    return rows;
   }
 
   /**
    * Scrapes ShareSansar's authentic multi-year company price history with 50-row pagination
    */
   async fetchShareSansarPriceHistory(symbol, length = 365, targetStartDate = null) {
+    if (this.externalScraperBreakers.sharesansar.isTripped()) {
+      return [];
+    }
     const sym = symbol.toLowerCase();
     const jar = new CookieJar();
     const client = wrapper(axios.create({ jar, withCredentials: true }));
 
-    const pageRes = await client.get(`https://www.sharesansar.com/company/${sym}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-      },
-      timeout: 10000
-    });
-
-    const tokenMatch = pageRes.data.match(/name="_token"\s+value="([^"]+)"/) ||
-                       pageRes.data.match(/<meta\s+name="_token"\s+content="([^"]+)"/);
-    const companyIdMatch = pageRes.data.match(/id="companyid"[^>]*>(\d+)</);
-
-    const token = tokenMatch ? tokenMatch[1] : null;
-    const companyId = companyIdMatch ? companyIdMatch[1] : null;
-
-    if (!token || !companyId) return [];
-
-    let allRecords = [];
-    let start = 0;
-    const pageSize = 50;
-    const maxBatches = Math.min(Math.ceil(length / pageSize) + 2, 20); // up to 1000 trading days (~4 years)
-
-    for (let batch = 0; batch < maxBatches; batch++) {
-      const postData = new URLSearchParams();
-      postData.append('company', companyId);
-      postData.append('draw', String(batch + 1));
-      postData.append('start', String(start));
-      postData.append('length', '50');
-
-      const histRes = await client.post('https://www.sharesansar.com/company-price-history', postData.toString(), {
+    try {
+      const pageRes = await client.get(`https://www.sharesansar.com/company/${sym}`, {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-          'X-Requested-With': 'XMLHttpRequest',
-          'X-CSRF-TOKEN': token,
-          'Referer': `https://www.sharesansar.com/company/${sym}`,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         },
-        timeout: 12000
+        timeout: 10000
       });
 
-      const batchData = histRes.data?.data;
-      if (!Array.isArray(batchData) || batchData.length === 0) break;
+      const tokenMatch = pageRes.data.match(/name="_token"\s+value="([^"]+)"/) ||
+                         pageRes.data.match(/<meta\s+name="_token"\s+content="([^"]+)"/);
+      const companyIdMatch = pageRes.data.match(/id="companyid"[^>]*>(\d+)</);
 
-      allRecords.push(...batchData);
-      start += pageSize;
+      const token = tokenMatch ? tokenMatch[1] : null;
+      const companyId = companyIdMatch ? companyIdMatch[1] : null;
 
-      const oldestInBatch = batchData[batchData.length - 1].published_date;
-      if (targetStartDate && oldestInBatch <= targetStartDate) {
-        break;
+      if (!token || !companyId) return [];
+
+      let allRecords = [];
+      let start = 0;
+      const pageSize = 50;
+      const maxBatches = Math.min(Math.ceil(length / pageSize) + 2, 20); // up to 1000 trading days (~4 years)
+
+      for (let batch = 0; batch < maxBatches; batch++) {
+        const postData = new URLSearchParams();
+        postData.append('company', companyId);
+        postData.append('draw', String(batch + 1));
+        postData.append('start', String(start));
+        postData.append('length', '50');
+
+        const histRes = await client.post('https://www.sharesansar.com/company-price-history', postData.toString(), {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': token,
+            'Referer': `https://www.sharesansar.com/company/${sym}`,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+          },
+          timeout: 12000
+        });
+
+        const batchData = histRes.data?.data;
+        if (!Array.isArray(batchData) || batchData.length === 0) break;
+
+        allRecords.push(...batchData);
+        start += pageSize;
+
+        const oldestInBatch = batchData[batchData.length - 1].published_date;
+        if (targetStartDate && oldestInBatch <= targetStartDate) {
+          break;
+        }
+        if (allRecords.length >= length) {
+          break;
+        }
       }
-      if (allRecords.length >= length) {
-        break;
+
+      this.externalScraperBreakers.sharesansar.recordSuccess();
+
+      return allRecords.map(item => ({
+        date: item.published_date,
+        open: parseFloat(item.open) || 0,
+        high: parseFloat(item.high) || 0,
+        low: parseFloat(item.low) || 0,
+        close: parseFloat(item.close) || 0,
+        volume: parseFloat(item.traded_quantity) || 0,
+        turnover: parseFloat(item.traded_amount) || 0,
+        trades: 0,
+        source: 'SHARESANSAR_ARCHIVE'
+      })).filter(r => r.close > 0 && r.date);
+    } catch (err) {
+      const is403 = err?.response?.status === 403 || err?.status === 403 || String(err?.message || '').includes('403');
+      if (is403) {
+        this.externalScraperBreakers.sharesansar.record403();
       }
+      throw err;
     }
-
-    return allRecords.map(item => ({
-      date: item.published_date,
-      open: parseFloat(item.open) || 0,
-      high: parseFloat(item.high) || 0,
-      low: parseFloat(item.low) || 0,
-      close: parseFloat(item.close) || 0,
-      volume: parseFloat(item.traded_quantity) || 0,
-      turnover: parseFloat(item.traded_amount) || 0,
-      trades: 0,
-      source: 'SHARESANSAR_ARCHIVE'
-    })).filter(r => r.close > 0 && r.date);
   }
 
   /**
    * Scrapes MeroLagani's verified company graph
    */
   async fetchMeroLaganiPriceHistory(symbol) {
-    const url = `https://merolagani.com/handlers/webrequesthandler.ashx?type=get_company_graph&symbol=${encodeURIComponent(symbol)}`;
-    const res = await axios.get(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      httpsAgent: customHttpsAgent,
-      timeout: 10000
-    });
-
-    if (Array.isArray(res.data?.quotes)) {
-      return res.data.quotes.map(q => {
-        let dateIso = q.date;
-        if (q.date && q.date.includes('/')) {
-          const parts = q.date.split('/');
-          if (parts.length === 3) {
-            dateIso = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-          }
-        }
-        return {
-          date: dateIso,
-          open: parseFloat(q.open) || parseFloat(q.close) || 0,
-          high: parseFloat(q.high) || parseFloat(q.close) || 0,
-          low: parseFloat(q.low) || parseFloat(q.close) || 0,
-          close: parseFloat(q.close) || 0,
-          volume: parseFloat(q.volume) || 0,
-          turnover: 0,
-          trades: 0,
-          source: 'MEROLAGANI_GRAPH'
-        };
-      }).filter(r => r.close > 0 && r.date);
+    if (this.externalScraperBreakers.merolagani.isTripped()) {
+      return [];
     }
-    return [];
+    const url = `https://merolagani.com/handlers/webrequesthandler.ashx?type=get_company_graph&symbol=${encodeURIComponent(symbol)}`;
+    try {
+      const res = await axios.get(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        httpsAgent: customHttpsAgent,
+        timeout: 10000
+      });
+
+      if (Array.isArray(res.data?.quotes)) {
+        this.externalScraperBreakers.merolagani.recordSuccess();
+        return res.data.quotes.map(q => {
+          let dateIso = q.date;
+          if (q.date && q.date.includes('/')) {
+            const parts = q.date.split('/');
+            if (parts.length === 3) {
+              dateIso = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+            }
+          }
+          return {
+            date: dateIso,
+            open: parseFloat(q.open) || parseFloat(q.close) || 0,
+            high: parseFloat(q.high) || parseFloat(q.close) || 0,
+            low: parseFloat(q.low) || parseFloat(q.close) || 0,
+            close: parseFloat(q.close) || 0,
+            volume: parseFloat(q.volume) || 0,
+            turnover: 0,
+            trades: 0,
+            source: 'MEROLAGANI_GRAPH'
+          };
+        }).filter(r => r.close > 0 && r.date);
+      }
+      return [];
+    } catch (err) {
+      const is403 = err?.response?.status === 403 || err?.status === 403 || String(err?.message || '').includes('403');
+      if (is403) {
+        this.externalScraperBreakers.merolagani.record403();
+      }
+      throw err;
+    }
   }
 
   /**

@@ -838,6 +838,7 @@ function AppInner() {
     let isMounted = true;
     let timerId = null;
     let consecutiveErrors = 0;
+    let inFlight = false;
 
     const scheduleNext = (intervalMs) => {
       if (!isMounted) return;
@@ -846,6 +847,13 @@ function AppInner() {
     };
 
     const fetchMarket = async () => {
+      if (!isMounted || inFlight) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        // Paused while tab is backgrounded; re-check every 15s
+        scheduleNext(15000);
+        return;
+      }
+      inFlight = true;
       let isMarketOpen = false;
       let isPreOpen = false;
       let hadError = false;
@@ -993,20 +1001,23 @@ function AppInner() {
         hadError = true;
         consecutiveErrors++;
         console.warn('[Adaptive Poller] Sync error (attempt ' + consecutiveErrors + '):', err?.message);
+      } finally {
+        inFlight = false;
       }
 
       if (!isMounted) return;
 
-      // Ultra-responsive autonomous background self-refresh:
-      // - Active Live Trading (11:00 AM - 3:00 PM NPT): 2.5s
-      // - Pre-Open Session (10:30 - 11:00 AM NPT): 3.5s
-      // - Post-Close Reconciliation (3:00 - 3:30 PM NPT): 4.0s
-      // - Off-Hours / Evening / Weekend: 6.0s
-      const isRecon = !isMarketOpen && (currentCalStatus?.isPostCloseReconciling || (currentCalStatus?.nptTotalMinutes >= 15 * 60 && currentCalStatus?.nptTotalMinutes < 16 * 60));
-      const baseInterval = isMarketOpen ? 2500 : (isPreOpen ? 3500 : (isRecon ? 4000 : 6000));
+      // Enforce a minimum 15–30s live polling interval:
+      // - Active Live Trading (11:00 AM - 3:00 PM NPT): 15s
+      // - Pre-Open Session (10:30 - 11:00 AM NPT): 20s
+      // - Post-Close Reconciliation / Off-Hours: 30s
+      const baseInterval = isMarketOpen ? 15000 : (isPreOpen ? 20000 : 30000);
       let nextInterval = baseInterval;
       if (hadError || consecutiveErrors > 0) {
-        nextInterval = Math.min(baseInterval * Math.pow(1.2, Math.min(consecutiveErrors, 3)), 12000);
+        // Exponential backoff on errors: 5s -> 15s -> 30s -> 60s
+        const backoffTiers = [5000, 15000, 30000, 60000];
+        const tierIdx = Math.min(consecutiveErrors - 1, backoffTiers.length - 1);
+        nextInterval = Math.max(baseInterval, backoffTiers[Math.max(0, tierIdx)]);
       }
 
       scheduleNext(nextInterval);
@@ -1030,6 +1041,11 @@ function AppInner() {
 
     const tickFastIndex = async () => {
       if (!isMounted || inFlight) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        // Paused while tab is backgrounded
+        tickerTimer = setTimeout(tickFastIndex, 15000);
+        return;
+      }
       if (tickerTimer) { clearTimeout(tickerTimer); tickerTimer = null; }
       inFlight = true;
       const status = getDetailedMarketStatus();
@@ -1057,9 +1073,15 @@ function AppInner() {
       }
 
       if (!isMounted) return;
-      // High-speed 1.5s refresh during active market (1-2s response window), 3.0s pre-open, 5.0s off-market
-      const baseInterval = status.isOpen ? 1500 : (status.isPreOpen ? 3000 : 5000);
-      const interval = consecutiveErrors > 0 ? Math.min(baseInterval * Math.pow(1.2, Math.min(consecutiveErrors, 3)), 6000) : baseInterval;
+      // Minimum 15-30s polling interval during live market (15s live open, 20s pre-open, 30s off-market)
+      const baseInterval = status.isOpen ? 15000 : (status.isPreOpen ? 20000 : 30000);
+      let interval = baseInterval;
+      if (consecutiveErrors > 0) {
+        // Exponential backoff on errors: 5s -> 15s -> 30s -> 60s
+        const backoffTiers = [5000, 15000, 30000, 60000];
+        const tierIdx = Math.min(consecutiveErrors - 1, backoffTiers.length - 1);
+        interval = Math.max(baseInterval, backoffTiers[Math.max(0, tierIdx)]);
+      }
       tickerTimer = setTimeout(tickFastIndex, interval);
     };
 
@@ -1069,7 +1091,7 @@ function AppInner() {
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         const now = Date.now();
-        if (now - lastVisTick > 2000) {
+        if (now - lastVisTick > 15000) {
           lastVisTick = now;
           tickFastIndex();
         }

@@ -254,7 +254,7 @@ export function normalizeAndAggregateBrokerData(
       ? agg.sellTurnover / agg.sellVol
       : (agg.fallbackSellPx > 0 ? agg.fallbackSellPx : 0);
     const avgBuyTicketKitta =
-      agg.buyVol > 0 ? agg.buyVol / Math.max(1, agg.buyTrades) : 0;
+      agg.buyVol > 0 && agg.buyTrades > 0 ? agg.buyVol / agg.buyTrades : 0;
 
     // Positive accumulation share vs total stock volume
     const netAccumulationShare = Math.max(0, netVolume) / totalStockBuyVol;
@@ -263,7 +263,9 @@ export function normalizeAndAggregateBrokerData(
 
     // Weight by Ticket Size (Institutional >= 250 kitta vs Retail < 45 kitta)
     const ticketMultiplier =
-      avgBuyTicketKitta >= 300
+      agg.buyTrades <= 0
+        ? 1.0
+        : avgBuyTicketKitta >= 300
         ? 1.35
         : avgBuyTicketKitta >= 140
         ? 1.05
@@ -274,9 +276,9 @@ export function normalizeAndAggregateBrokerData(
     const anomalyScore = Number((rawAnomalyRatio * ticketMultiplier).toFixed(2));
 
     const footprintType: AuditedBrokerFlow['footprintType'] =
-      avgBuyTicketKitta >= 200 && anomalyScore >= 2.0
+      agg.buyTrades > 0 && avgBuyTicketKitta >= 200 && anomalyScore >= 2.0
         ? 'INSTITUTIONAL'
-        : avgBuyTicketKitta >= 90
+        : agg.buyTrades > 0 && avgBuyTicketKitta >= 90
         ? 'HNI_MIX'
         : 'RETAIL_HERD';
 
@@ -993,15 +995,17 @@ function BrokerSmartMoneyCardInner({
                       </span>
                       <span
                         className={`px-1.5 py-0.5 text-[10px] font-semibold rounded border ${
-                          b.footprintType === 'INSTITUTIONAL'
+                          b.buyTradesCount > 0 && b.footprintType === 'INSTITUTIONAL'
                             ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                            : b.footprintType === 'HNI_MIX'
+                            : b.buyTradesCount > 0 && b.footprintType === 'HNI_MIX'
                             ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
                             : 'bg-slate-800 text-slate-400 border-slate-700'
                         }`}
                       >
-                        {b.avgBuyTicketKitta} kitta/tx (
-                        {b.footprintType === 'INSTITUTIONAL'
+                        {b.buyTradesCount > 0 && b.avgBuyTicketKitta > 0 ? `${b.avgBuyTicketKitta} kitta/tx` : '—'} (
+                        {b.buyTradesCount <= 0
+                          ? '—'
+                          : b.footprintType === 'INSTITUTIONAL'
                           ? 'Inst.'
                           : b.footprintType === 'HNI_MIX'
                           ? 'HNI'
@@ -1048,9 +1052,11 @@ function BrokerSmartMoneyCardInner({
                       <span className="font-bold text-sm text-white">
                         Broker #{b.brokerId}
                       </span>
-                      <span className="text-[11px] text-slate-400">
-                        ({b.sellTradesCount} sell tickets)
-                      </span>
+                      {b.sellTradesCount > 0 && (
+                        <span className="text-[11px] text-slate-400">
+                          ({b.sellTradesCount} sell tickets)
+                        </span>
+                      )}
                     </div>
                     <div className="text-[11px] text-slate-400 font-mono">
                       Sell: {formatInt(b.sellVolume)} &bull; Buy: {formatInt(b.buyVolume)} &bull; Sell VWAP:{' '}

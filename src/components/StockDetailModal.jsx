@@ -212,10 +212,10 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
 
   const t1NetPct = entryExitPlan.levels?.target1?.netReturnPct != null
     ? entryExitPlan.levels.target1.netReturnPct
-    : (t1GrossPct != null && t1GrossPct > 0.73 ? +((t1GrossPct - 0.73) * 0.925).toFixed(1) : t1GrossPct);
+    : (t1GrossPct != null && t1GrossPct > 0.73 ? +((t1GrossPct - 0.73) * 0.95).toFixed(1) : t1GrossPct);
   const t2NetPct = entryExitPlan.levels?.target2?.netReturnPct != null
     ? entryExitPlan.levels.target2.netReturnPct
-    : (t2GrossPct != null && t2GrossPct > 0.73 ? +((t2GrossPct - 0.73) * 0.925).toFixed(1) : t2GrossPct);
+    : (t2GrossPct != null && t2GrossPct > 0.73 ? +((t2GrossPct - 0.73) * 0.95).toFixed(1) : t2GrossPct);
 
   const rrr1 = entryExitPlan.levels?.rrr1 != null
     ? entryExitPlan.levels.rrr1
@@ -449,7 +449,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
             {isAvoid ? (
               <span style={{ color: '#94a3b8', fontSize: 12 }}>Profit-Taking / Trim Resistance</span>
             ) : t1NetPct != null ? (
-              <>Net: {t1NetPct >= 0 ? '+' : ''}{t1NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span></>
+              <>Net: {t1NetPct >= 0 ? '+' : ''}{t1NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-5.0% ST CGT+fees)</span></>
             ) : (
               <span style={{ color: '#64748b', fontSize: 12 }}>—</span>
             )}
@@ -474,7 +474,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
             {isAvoid ? (
               <span style={{ color: '#64748b', fontSize: 12 }}>Heavy Overhead Supply</span>
             ) : t2NetPct != null ? (
-              <>Net: {t2NetPct >= 0 ? '+' : ''}{t2NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span></>
+              <>Net: {t2NetPct >= 0 ? '+' : ''}{t2NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-5.0% ST CGT+fees)</span></>
             ) : (
               <span style={{ color: '#64748b', fontSize: 12 }}>—</span>
             )}
@@ -862,6 +862,11 @@ function BeginnerConfidenceCard({
     realBrokerAnalysis?.phase ??
     multiDayDiag?.phase;
 
+  const cardBrokerDate = String(realBrokerAnalysis?.businessDate || realBrokerAnalysis?.date || '').slice(0, 10);
+  const cardLiveDate = String(d?.businessDate || d?.date || '').slice(0, 10);
+  const isCardBrokerCrossSession = Boolean(cardBrokerDate && cardLiveDate && cardBrokerDate !== cardLiveDate);
+  const isCardSyntheticVap = Boolean(realBrokerAnalysis?.isSyntheticVap || d?.isSyntheticVap);
+
   const hasBrokerData = Boolean(
     realBrokerAnalysis ||
     (dailyHistory && dailyHistory.length > 0) ||
@@ -1036,14 +1041,29 @@ function BeginnerConfidenceCard({
 
   // Check 4: Historical Win Rate & Setup Score
   const winRate = entryExitPlan?.analogResult?.stats?.winRate != null ? Math.round(Number(entryExitPlan.analogResult.stats.winRate)) : null;
-  const setupScore = Math.round(Number(entryExitPlan?.setupScore || 0));
+  const rawSetupScore = Math.round(Number(entryExitPlan?.setupScore || 0));
+
+  // Align with Operator Radar / Entry gate veto:
+  // Whenever the top Operator Radar or Entry gate vetoes a stock (AVOID ENTRY / _isAvoidVerdict / isInstitutionalDumping),
+  // cap Setup Score at 45 and badge it as Entry Vetoed so it NEVER simultaneously shows High Conviction with AVOID ENTRY.
+  const isSetupEntryVetoed = Boolean(
+    _isAvoidVerdict ||
+    Boolean(entryExitPlan?.riskGate?.isInstitutionalDumping) ||
+    String(entryExitPlan?.verdict || '').toUpperCase().includes('AVOID')
+  );
+  const setupScore = isSetupEntryVetoed ? Math.min(45, rawSetupScore) : rawSetupScore;
 
   let check4Badge = `⚪ Developing Setup (${setupScore}/100)`;
   let check4Color = '#94a3b8';
   let check4Bg = 'rgba(148, 163, 184, 0.06)';
   let check4Border = 'rgba(148, 163, 184, 0.2)';
 
-  if (setupScore >= 70) {
+  if (isSetupEntryVetoed) {
+    check4Badge = `🛑 Entry Vetoed (${setupScore}/100)`;
+    check4Color = '#f43f5e';
+    check4Bg = 'rgba(244, 63, 94, 0.08)';
+    check4Border = 'rgba(244, 63, 94, 0.25)';
+  } else if (setupScore >= 70) {
     check4Badge = `🟢 High Conviction (${setupScore}/100)`;
     check4Color = '#10b981';
     check4Bg = 'rgba(16, 185, 129, 0.08)';
@@ -1054,7 +1074,9 @@ function BeginnerConfidenceCard({
     check4Bg = 'rgba(245, 158, 11, 0.08)';
     check4Border = 'rgba(245, 158, 11, 0.25)';
   }
-  const check4Desc = `Setup Quality Score is ${setupScore}/100${winRate != null ? ` with a ${winRate}% historical win rate across similar past NEPSE setups.` : '.'}`;
+  const check4Desc = isSetupEntryVetoed
+    ? `Setup score capped at ${setupScore}/100 due to active Entry Gate / Operator Radar veto (${entryExitPlan?.verdict || 'AVOID ENTRY'}). Fresh entry is prohibited until risk conditions clear.`
+    : `Setup Quality Score is ${setupScore}/100${winRate != null ? ` with a ${winRate}% historical win rate across similar past NEPSE setups.` : '.'}`;
 
   // Rupee Investment Simulator calculations
   const hasLiveLtp = Number.isFinite(ltp) && ltp > 0;
@@ -1161,7 +1183,11 @@ function BeginnerConfidenceCard({
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', whiteSpace: 'nowrap' }}>
-                {brokerDays === 1 
+                {isCardSyntheticVap
+                  ? 'Synthetic VAP Depth'
+                  : isCardBrokerCrossSession
+                  ? `Prev Session (${cardBrokerDate})`
+                  : brokerDays === 1 
                   ? (realBrokerAnalysis ? '🟢 1D Live Intraday Tape' : 'Last 1 Day Floorsheet') 
                   : diag?.timeframeDays && diag.timeframeDays < brokerDays
                   ? `Showing ${diag.timeframeDays} Real Trading Days Loaded (${diag.timeframeDays}/${brokerDays}d)`
@@ -1307,7 +1333,7 @@ function BeginnerConfidenceCard({
               Target 2 (Rs. {t2Price}): <strong>+Rs. {profitT2.toLocaleString()}</strong> <span style={{ fontSize: 10.5 }}>(+{t2Pct}%)</span>
             </div>
             <div style={{ fontSize: 10, color: '#6ee7b7', marginTop: 3 }}>
-              Deducts 7.5% CGT & all exit fees
+              Deducts 5.0% ST CGT & all exit fees
             </div>
           </div>
 
@@ -3359,8 +3385,8 @@ export default function StockDetailModal({
       investor === 'INSTITUTIONAL'
         ? 0.10
         : horizon === 'LONG_TERM'
-          ? 0.05
-          : 0.075;
+          ? 0.0375
+          : 0.05;
 
     const cgtAmount = Number((taxableGain * cgtRate).toFixed(2));
     const netReceivable = Number((netSellBeforeTax - cgtAmount).toFixed(2));
@@ -5913,10 +5939,16 @@ export default function StockDetailModal({
             (Array.isArray(pure1DBa?.topSellers) && pure1DBa.topSellers.length > 0) ? pure1DBa.topSellers : []
           );
 
-          // Total session volume
-          const sessionTradedVol = Number(
+          // Cross-session check & matching broker session volume
+          const pure1DDate = String(pure1DBa?.businessDate || pure1DBa?.date || '').slice(0, 10);
+          const liveDate = String(todaySessionDate || d?.businessDate || d?.date || '').slice(0, 10);
+          const isCrossSessionPure1D = Boolean(pure1DDate && liveDate && pure1DDate !== liveDate);
+          const isSyntheticOrderFlow = Boolean(pure1DBa?.isSyntheticVap || d?.isSyntheticVap || marketDepth?.isSynthetic);
+
+          // Total session volume: compute strictly against matching broker dataset's totalVolume when available
+          const matchingBrokerVol = Number(pure1DBa?.totalVolume || 0);
+          const sessionTradedVol = matchingBrokerVol > 0 ? matchingBrokerVol : Number(
             d?.volume ||
-            pure1DBa?.totalVolume ||
             liveBc?.totalBuyVolume ||
             floorsheet.reduce((s, r) => s + (r.qty || 0), 0) ||
             0
@@ -5963,12 +5995,14 @@ export default function StockDetailModal({
 
           const topDist = liveDists[0] || null;
           const topDistNetShares = topDist ? Math.abs(Number(topDist.netQty !== undefined ? topDist.netQty : ((topDist.sellQty || topDist.volume || 0) - (topDist.buyQty || 0)))) : 0;
-          const topDistShareOfVol = sessionTradedVol > 0 ? +((topDistNetShares / sessionTradedVol) * 100).toFixed(1) : 0;
+          // Clamp displayed share to [0, 100%]
+          const topDistShareOfVol = sessionTradedVol > 0 ? Math.min(100, Math.max(0, +((topDistNetShares / sessionTradedVol) * 100).toFixed(1))) : 0;
 
-          // Rigorous institutional classifications
-          const isWhaleDump = orderFlowVeto.isVetoed || topDistShareOfVol >= 15.0 || (liveBcr3Sell >= 45 && liveBcr3Sell > liveBcr3Buy + 10);
-          const isLiveDist = !isWhaleDump && ((liveSellPct >= 55) || (pure1DBa?.adSignal === 'Distribution') || (liveBcr3Sell > liveBcr3Buy + 5));
-          const isLiveAccum = !isWhaleDump && !isLiveDist && ((liveBuyPct >= 55) || (pure1DBa?.adSignal === 'Accumulation') || (liveBcr3Buy > liveBcr3Sell + 5));
+          // Never fire real-time "Active Dumping Right Now" vetoes when cross-session or synthetic
+          const isRealTimeEligible = !isCrossSessionPure1D && !isSyntheticOrderFlow;
+          const isWhaleDump = isRealTimeEligible && (orderFlowVeto.isVetoed || topDistShareOfVol >= 15.0 || (liveBcr3Sell >= 45 && liveBcr3Sell > liveBcr3Buy + 10));
+          const isLiveDist = isRealTimeEligible && !isWhaleDump && ((liveSellPct >= 55) || (pure1DBa?.adSignal === 'Distribution') || (liveBcr3Sell > liveBcr3Buy + 5));
+          const isLiveAccum = isRealTimeEligible && !isWhaleDump && !isLiveDist && ((liveBuyPct >= 55) || (pure1DBa?.adSignal === 'Accumulation') || (liveBcr3Buy > liveBcr3Sell + 5));
 
           // Order Book (Level 2) Metrics
           const bookBuyQty = Number(marketDepth?.totalBuyQty || 0);
@@ -5992,7 +6026,35 @@ export default function StockDetailModal({
             tacticalTip: `Wait for price to establish decisive volume breakout above Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}) before allocating new capital.`
           };
 
-          if (isWhaleDump) {
+          if (isSyntheticOrderFlow) {
+            investVerdict = {
+              badge: '🔷 Synthetic VAP Depth',
+              badgeBg: 'rgba(56, 189, 248, 0.15)',
+              badgeColor: '#38bdf8',
+              badgeBorder: 'rgba(56, 189, 248, 0.35)',
+              cardBg: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8))',
+              cardBorder: 'rgba(56, 189, 248, 0.25)',
+              verdictTitle: 'SYNTHETIC DEPTH — VERIFYING LIVE TAPE',
+              verdictColor: '#bae6fd',
+              glow: '0 4px 18px rgba(0, 0, 0, 0.3)',
+              reason: `Volume at Price depth is calibrated synthetically until exchange live trade tape stream connects. Pending book depth is ${bookBuyPct}% bids vs ${bookSellPct}% asks.`,
+              tacticalTip: `Monitor live exchange ticks for authentic volume confirmation.`
+            };
+          } else if (isCrossSessionPure1D) {
+            investVerdict = {
+              badge: `📊 Prev Session (${pure1DDate})`,
+              badgeBg: 'rgba(148, 163, 184, 0.15)',
+              badgeColor: '#94a3b8',
+              badgeBorder: 'rgba(148, 163, 184, 0.3)',
+              cardBg: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8))',
+              cardBorder: 'rgba(148, 163, 184, 0.25)',
+              verdictTitle: `PREVIOUS SESSION TELEMETRY (${pure1DDate})`,
+              verdictColor: '#cbd5e1',
+              glow: '0 4px 18px rgba(0, 0, 0, 0.3)',
+              reason: `Displaying verified broker telemetry from previous trading session (${pure1DDate}). Live intraday tape (${liveDate}) has not yet completed full broker contract settlement.`,
+              tacticalTip: `Assess multi-day trend structure while awaiting live broker settlement confirmation.`
+            };
+          } else if (isWhaleDump) {
             const brokerId = topDist?.broker || topDist?.brokerId || topDist?.id || '?';
             const brokerName = topDist?.brokerName || topDist?.name || getBrokerName(brokerId);
             const dumpPct = topDistShareOfVol > 0 ? topDistShareOfVol : (liveBcr3Sell > 0 ? liveBcr3Sell : 30);
@@ -9466,7 +9528,7 @@ export default function StockDetailModal({
                           color: investorType === 'INDIVIDUAL' ? '#10B981' : 'var(--text-muted)',
                         }}
                       >
-                        Individual (7.5% / 5%)
+                        Individual (5% / 3.75%)
                       </button>
                       <button
                         type="button"
@@ -9502,7 +9564,7 @@ export default function StockDetailModal({
                             color: holdingPeriod === 'SHORT_TERM' ? '#F43F5E' : 'var(--text-muted)',
                           }}
                         >
-                          Short-Term (&lt;365d • 7.5%)
+                          Short-Term (&lt;365d • 5.0%)
                         </button>
                         <button
                           type="button"
@@ -9518,7 +9580,7 @@ export default function StockDetailModal({
                             color: holdingPeriod === 'LONG_TERM' ? '#10B981' : 'var(--text-muted)',
                           }}
                         >
-                          Long-Term (&ge;365d • 5.0%)
+                          Long-Term (&ge;365d • 3.75%)
                         </button>
                       </div>
                     )}

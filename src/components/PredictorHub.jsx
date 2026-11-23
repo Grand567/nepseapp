@@ -2208,13 +2208,13 @@ export default function PredictorHub({
                 ? primePlan.levels.target1.netReturnPct
                 : (primeDailyPick.levels?.target1?.netReturnPct != null
                   ? primeDailyPick.levels.target1.netReturnPct
-                  : (t1Pct > 0.73 ? +((t1Pct - 0.73) * 0.925).toFixed(1) : t1Pct));
+                  : (t1Pct > 0.73 ? +((t1Pct - 0.73) * 0.95).toFixed(1) : t1Pct));
 
               const t2NetPct = hasPlan && primePlan.levels?.target2?.netReturnPct != null
                 ? primePlan.levels.target2.netReturnPct
                 : (primeDailyPick.levels?.target2?.netReturnPct != null
                   ? primeDailyPick.levels.target2.netReturnPct
-                  : (t2Pct > 0.73 ? +((t2Pct - 0.73) * 0.925).toFixed(1) : t2Pct));
+                  : (t2Pct > 0.73 ? +((t2Pct - 0.73) * 0.95).toFixed(1) : t2Pct));
 
               // ── Data quality guards ─────────────────────────────────────────────
               const dataIsSimulated = Number(primeDailyPick.volume || primeDailyPick.totalTradedQuantity || 0) === 0 &&
@@ -2526,7 +2526,7 @@ export default function PredictorHub({
                       </div>
                       {t1NetPct != null && (
                         <div style={{ fontSize: 12, fontWeight: 700, color: '#34d399', marginTop: 2 }}>
-                          Net: +{t1NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
+                          Net: +{t1NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-5.0% ST CGT+fees)</span>
                         </div>
                       )}
                     </div>
@@ -2537,7 +2537,7 @@ export default function PredictorHub({
                       </div>
                       {t2NetPct != null && (
                         <div style={{ fontSize: 12, fontWeight: 700, color: '#c084fc', marginTop: 2 }}>
-                          Net: +{t2NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
+                          Net: +{t2NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-5.0% ST CGT+fees)</span>
                         </div>
                       )}
                     </div>
@@ -2653,7 +2653,7 @@ export default function PredictorHub({
                     💡 <strong style={{ color: '#c4b5fd' }}>Fully Synchronized:</strong> Prime Pick is now powered directly by the
                     <strong style={{ color: '#38bdf8' }}> Entry/Exit Analyzer Engine</strong>.
                     {hasPlan ? (
-                      <span> This score ({displayScore}/100) incorporates 500-day historical analogs and SEBON fees + 7.5% short-term CGT (5% long-term).</span>
+                      <span> This score ({displayScore}/100) incorporates 500-day historical analogs and SEBON fees + 5.0% short-term CGT (3.75% long-term).</span>
                     ) : (
                       <span> Screening all 350+ NEPSE scrips. Deep backtesting triggers automatically for the top pick.</span>
                     )}

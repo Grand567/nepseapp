@@ -270,6 +270,8 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
         brokerName: TOP_NEPSE_BROKERS[brokerId] || b.brokerName || b.name || `Broker #${brokerId}`,
         buyVol: 0,
         sellVol: 0,
+        buyTrades: 0,
+        sellTrades: 0,
         buyAmt: 0,
         sellAmt: 0,
         dailySeries: []
@@ -278,6 +280,8 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
       const bVol = Math.max(0, Number(b.buyVol || b.buyQty || b.shares || 0));
       const sVol = Math.max(0, Number(b.sellVol || b.sellQty || 0));
       const cVol = Math.max(0, Number(b.crossVol || b.cross_vol || 0));
+      const bTrades = Math.max(0, Number(b.buyTrades ?? b.buyTradesCount ?? b.buy_trades ?? 0));
+      const sTrades = Math.max(0, Number(b.sellTrades ?? b.sellTradesCount ?? b.sell_trades ?? 0));
       const bAmt = bVol > 0
         ? Number(b.buyAmt ?? b.buyAmount ?? ((sVol === 0 && b.amount) ? b.amount : null) ?? (bVol * Number(b.avgBuyPrice || b.rate || 0)))
         : 0;
@@ -288,6 +292,8 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
       prev.buyVol += bVol;
       prev.sellVol += sVol;
       prev.crossVol = (prev.crossVol || 0) + cVol;
+      prev.buyTrades += bTrades;
+      prev.sellTrades += sTrades;
       prev.buyAmt += bAmt;
       prev.sellAmt += sAmt;
 
@@ -376,6 +382,10 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {
       remainingQty: netVol,
       netVol,
       absNetVol: Math.abs(netVol),
+      buyTrades: b.buyTrades || 0,
+      sellTrades: b.sellTrades || 0,
+      buyTradesCount: b.buyTrades || 0,
+      sellTradesCount: b.sellTrades || 0,
       buyAmt: Number(b.buyAmt.toFixed(2)),
       sellAmt: Number(b.sellAmt.toFixed(2)),
       netAmt: Number(netAmt.toFixed(2)),

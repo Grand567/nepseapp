@@ -422,7 +422,8 @@ The following legacy tests hardcoded obsolete `7.5%` Short-Term / `5.0%` Long-Te
 | **Wave 4.5**| `55b51c0` | `fix(audit-w4.5): resolve zero-width chart canvas and 4-worker Playwright timeouts` | Zero-dim chart canvas, closed-market proxy caching, Vite preview test runner, NO_PROXY loopback |
 | **Wave 4.6**| `c2ca9d6` | `fix(audit-w4.6): fix 2 undeclared identifiers and trailing-ratchet test ESM import` | Fix undeclared identifiers in AiAnalyst and meroShareService, trailing-ratchet ESM test import |
 | **Wave 4.7**| Working tree | `fix(audit-w4.7): add session freshness badges and stock telemetry timestamp tracking` | SessionFreshnessBadge live/historical states, StockDetailModal PnL badges, useUnifiedStockTelemetry timestamp tracking, liveData lastUpdated |
-| **Wave 4.8**| Pending | `fix(audit-w4.8): prevent stale intraday curve serving and verify live session freshness` | Guard /api/nepse/intraday-graph and servicesApi/liveData against serving stale 2026-11-20 snapshots as 2026-11-23 live 1D curve, fix getCachedMarketStatus reference error |
+| **Wave 4.8**| `ba9ecfe` | `fix(audit-w4.8): prevent stale intraday curve serving and verify live session freshness` | Guard /api/nepse/intraday-graph and servicesApi/liveData against serving stale 2026-11-20 snapshots as 2026-11-23 live 1D curve, fix getCachedMarketStatus reference error |
+| **Wave 4.9**| Pending | `fix(audit-w4.9): fix 5% CGT labels, broker ticket counts, cross-session volume %, live turnover, 2s poll storm, and 403 circuit breakers` | Fix 5% CGT math/labels, broker ticket counts, cross-session volume %, live turnover, 2s poll storm, and 403 circuit breakers |
 
 ---
 
@@ -449,3 +450,39 @@ The following legacy tests hardcoded obsolete `7.5%` Short-Term / `5.0%` Long-Te
 ## 17. Blocked Bugs Log
 - **Total Blocked across All Waves:** **0**
 - All 240 audit findings across Accounts 1, 2, and 3, plus Wave 4.5 hotfix items, are 100% resolved and verified.
+
+---
+
+## 18. Wave 4.9: Live-Market Parity, Broker Ticket Counts, 5.0% CGT, and 403 Circuit Breakers
+
+### Overview of Issues Resolved
+1. **5.0% CGT Math & Label Parity:**
+   - Synchronized short-term individual CGT across `StockDetailModal.jsx`, `setupAnalyzer.js`, and `PredictorHub.jsx` to Nepal's statutory 5.0% individual short-term rate (effective 22 Sept 2026), updating calculation factors (`0.95`), and replacing all remaining `7.5%` / `0.075` references with `(-5.0% ST CGT+fees)` and `Deducts 5.0% ST CGT & all exit fees`.
+2. **Broker Ticket Counts & Division-by-Zero Guard:**
+   - In `proxy/db/ledgerStore.js`, enriched `daily_broker_ledger` schema and aggregation with authentic `buy_trades` and `sell_trades` from `floorsheet_contracts`.
+   - In `proxy/utils/microstructureEngine.js` and `proxy/server.mjs`, passed `buyTradesCount` and `sellTradesCount` through multi-day diagnostics.
+   - In `BrokerSmartMoneyCard.tsx`, guarded ticket size calculation against division by zero (renders `—` when count `<= 0`) and omitted `({b.sellTradesCount} sell tickets)` when `sellTradesCount <= 0`.
+3. **Cross-Session Denominator Corruption & Setup Score Alignment:**
+   - In `sharedBrokerAggregationEngine.js` and `StockDetailModal.jsx`, strictly calculated broker volume share against matching dataset `totalVolume` (clamped to `[0, 100%]`).
+   - Suppressed false real-time Whale Dump vetoes when session dates mismatch or data is synthetic VAP, badging honestly as `Prev Session (<date>)` or `Synthetic VAP Depth`.
+   - When Operator Radar or Entry Gate vetoes an asset (`AVOID ENTRY`), capped Setup Score at 45 (`🛑 Entry Vetoed`) to eliminate contradictory `High Conviction (71/100)` signals with `AVOID ENTRY`.
+4. **Live Turnover Dynamic Aggregation in Proxy:**
+   - In `proxy/server.mjs`, dynamically calculated NEPSE live market turnover from active equity turnovers (`today-prices`, `floorsheet_contracts`, and `daily_stock_summary`) whenever upstream payload omits or serves stale turnover (`8570096748.35`).
+5. **Frontend 2-Second Polling Storm Prevention:**
+   - In `src/App.jsx` and `src/utils/liveData.js`, enforced minimum 15–30s polling intervals during active trading sessions, coalesced overlapping in-flight promises, paused autonomous background polling when `document.hidden === true`, and added exponential backoff on errors (5s -> 15s -> 30s -> 60s).
+6. **Proxy Memory Heap & 403 Circuit Breakers:**
+   - In `proxy/package.json`, raised Node.js heap ceiling `--max-old-space-size=768`.
+   - In `proxy/nepseClientManager.mjs` and `proxy/server.mjs`, added shared in-flight deduplication `Map<string, Promise>` for concurrent `getPriceHistory` requests.
+   - Added fallback to local SQLite `daily_stock_summary` before attempting external ShareSansar/MeroLagani scrapes when NEPSE NOTS circuit breaker is tripped.
+   - Added 5-minute 403 circuit breaker for ShareSansar and MeroLagani after 2 consecutive HTTP 403 responses to prevent WAF log spam.
+
+### Verification Gate Summary (Wave 4.9)
+- `npx tsc --noEmit`: 0 errors.
+- `npm run audit:static`: 211 files scanned, 0 syntax errors, 0 missing imports, 0 undeclared identifiers.
+- `npm run audit:semantic`: 15/15 invariants passed, 0 violations.
+- `tests/unit/intraday-freshness.test.ts`: 4/4 passed.
+- `tests/unit/nepse-math-invariants.test.ts`: 8/8 passed.
+- `tests/unit/auto-bot.test.ts`: 5/5 passed.
+- `tests/unit/trailing-ratchet.test.ts`: 6/6 passed.
+- `tests/unit/wave49-live-market-fixes.test.ts`: 6/6 passed.
+- `npm run build`: 1,788 modules transformed, 0 errors, production bundle built cleanly in 36.45s.

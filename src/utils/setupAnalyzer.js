@@ -542,12 +542,12 @@ export function simulateForwardOutcome(candles, signalIdx, {
 
   const returnPct = +((exitPrice - entryPrice) / entryPrice * 100).toFixed(2);
 
-  // NEPSE friction: 0.36%-0.33% brokerage + 0.015% SEBON each way (~0.375%), plus 7.5% CGT on net profit (Standard Short-Term Individual)
+  // NEPSE friction: 0.36%-0.33% brokerage + 0.015% SEBON each way (~0.375%), plus 5.0% CGT on net profit (Standard Short-Term Individual)
   const feeRate = 0.00375;
   const buyCost = entryPrice * (1 + feeRate);
   const sellGross = exitPrice * (1 - feeRate);
   const grossDiff = sellGross - buyCost;
-  const cgt = grossDiff > 0 ? grossDiff * 0.075 : 0;
+  const cgt = grossDiff > 0 ? grossDiff * 0.05 : 0;
   const netSell = sellGross - cgt;
   const netReturnPct = +(((netSell - buyCost) / buyCost) * 100).toFixed(2);
 
@@ -1324,14 +1324,14 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const rrr1 = +((t1Cap.price - ltp) / finalRiskPerShare).toFixed(2);
   const rrr2 = +((t2Cap.price - ltp) / finalRiskPerShare).toFixed(2);
 
-  // Statutory Fee Friction & 7.5% Individual CGT (Finance Act 2083)
+  // Statutory Fee Friction & 5.0% Individual CGT (Finance Act 2083)
   const roundTripFeePct = 0.73; // 0.70% broker commission + 0.03% SEBON fee
   const computeNetRealReturn = (targetPrice) => {
     const grossUpsidePct = ltp > 0 ? ((targetPrice - ltp) / ltp) * 100 : 0;
     const preTaxNetPct = grossUpsidePct - roundTripFeePct;
-    const netReturnPct = preTaxNetPct > 0 ? +(preTaxNetPct * 0.925).toFixed(2) : +(preTaxNetPct).toFixed(2);
+    const netReturnPct = preTaxNetPct > 0 ? +(preTaxNetPct * 0.95).toFixed(2) : +(preTaxNetPct).toFixed(2);
     const netGainPerShare = +(ltp * (netReturnPct / 100)).toFixed(1);
-    return { grossUpsidePct: +grossUpsidePct.toFixed(2), netReturnPct, netGainPerShare, cgtTaxPct: 7.5 };
+    return { grossUpsidePct: +grossUpsidePct.toFixed(2), netReturnPct, netGainPerShare, cgtTaxPct: 5.0 };
   };
   const t1Net = computeNetRealReturn(t1Cap.price);
   const t2Net = computeNetRealReturn(t2Cap.price);

@@ -1144,8 +1144,49 @@ export async function getEnrichedStockUniverse() {
 // Initialize Telegram Playbook automated picker dependencies
 initTelegramPlaybookDependencies({ getEnrichedStockUniverse, scanUniverseForBroker58Ignitions });
 
+export function getLiveMarketTurnover(todayIso = '') {
+  // 1. Try today's cached live prices
+  try {
+    const liveStocks = getCache('today-prices');
+    if (Array.isArray(liveStocks) && liveStocks.length > 20) {
+      const sumTurnover = liveStocks.reduce((acc, s) => acc + (Number(s.turnover) || 0), 0);
+      if (sumTurnover > 0) return sumTurnover;
+    }
+  } catch (_) {}
+
+  const dateStr = todayIso || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+
+  // 2. Try floorsheet_contracts for today
+  try {
+    if (db && dateStr) {
+      const fsSum = db.prepare('SELECT SUM(amount) as total FROM floorsheet_contracts WHERE trade_date = ?').get(dateStr);
+      if (fsSum?.total > 0) return Number(fsSum.total);
+    }
+  } catch (_) {}
+
+  // 3. Try daily_stock_summary for today
+  try {
+    if (db && dateStr) {
+      const ssSum = db.prepare('SELECT SUM(total_turnover) as total FROM daily_stock_summary WHERE trade_date = ?').get(dateStr);
+      if (ssSum?.total > 0) return Number(ssSum.total);
+    }
+  } catch (_) {}
+
+  // 4. Try nepseManager live or lastKnownMarket
+  try {
+    const lkm = nepseManager?.getLastKnownMarket?.() || nepseManager?.lastKnownMarket;
+    const lkmData = Array.isArray(lkm?.data) ? lkm.data : (Array.isArray(lkm) ? lkm : null);
+    if (lkmData && lkmData.length > 20) {
+      const sum = lkmData.reduce((acc, s) => acc + (Number(s.turnover || s.totalTradeValue || s.totalTradedValue) || 0), 0);
+      if (sum > 0) return sum;
+    }
+  } catch (_) {}
+
+  return 0;
+}
+
 let LAST_GOOD_INDICES = {
-  nepse: { value: 2695.6, change: 31.54, pChange: 1.18, open: 2658.8, high: 2695.63, low: 2658.78, prevClose: 2664.06, turnover: 8570096748.35 },
+  nepse: { value: 2695.6, change: 31.54, pChange: 1.18, open: 2658.8, high: 2695.63, low: 2658.78, prevClose: 2664.06, turnover: 0 },
   sensitive: { value: 488.21, change: 6.41, pChange: 1.33, open: 480.39, high: 488.21, low: 480.39, prevClose: 481.80 },
   float: { value: 187.01, change: 2.27, pChange: 1.23, open: 184.31, high: 187.01, low: 184.31, prevClose: 184.74 },
   sensitiveFloat: { value: 165.34, change: 2.25, pChange: 1.38, open: 162.51, high: 165.34, low: 162.51, prevClose: 163.09 },
@@ -1170,7 +1211,7 @@ try {
           high: Number(nep.high || nep.currentValue),
           low: Number(nep.low || nep.close),
           prevClose: Number(nep.close || nep.previousClose || 0),
-          turnover: 8570096748.35
+          turnover: Number(lkmRaw.turnover || lkmRaw.totalTurnover || 0)
         };
       }
       if (sen) {
@@ -1571,10 +1612,13 @@ export async function getMarketIndicesInternal(targetDate = '') {
         else if (item.index === 'Sensitive Float Index') indices.sensitiveFloat = val;
       });
 
-      // Enrich turnover from marketSummaryData
-      const officialTurnover = Number(marketSummaryData?.['Total Turnover Rs:'] || marketSummaryData?.totalTurnover || 0);
+      // Enrich turnover from marketSummaryData or live feeds
+      const rawTurnover = Number(marketSummaryData?.['Total Turnover Rs:'] || marketSummaryData?.totalTurnover || marketSummaryData?.turnover || 0);
+      const isStaleTurnover = !rawTurnover || rawTurnover <= 0 || rawTurnover === 8570096748.35;
+      const liveTurnover = isStaleTurnover ? getLiveMarketTurnover(todayIso) : rawTurnover;
+      const officialTurnover = liveTurnover > 0 ? liveTurnover : (rawTurnover > 0 ? rawTurnover : (LAST_GOOD_INDICES?.nepse?.turnover || 0));
       if (indices.nepse) {
-        indices.nepse.turnover = officialTurnover > 0 ? officialTurnover : (LAST_GOOD_INDICES?.nepse?.turnover || 0);
+        indices.nepse.turnover = officialTurnover;
       }
 
       indices.subIndices = Array.isArray(subIndicesData) ? subIndicesData.map(item => ({
@@ -1637,6 +1681,10 @@ export async function getMarketIndicesInternal(targetDate = '') {
       if (nepseItem && nepseItem.value > 0) {
         const rawDate = pick(/^nepse$/i)?.asOfDate;
         const npDate = rawDate ? String(rawDate).slice(0, 10) : todayIso;
+        if (!nepseItem.turnover || nepseItem.turnover <= 0 || nepseItem.turnover === 8570096748.35) {
+          const liveTurnover = getLiveMarketTurnover(npDate);
+          if (liveTurnover > 0) nepseItem.turnover = liveTurnover;
+        }
         const npIndices = {
           nepse: nepseItem,
           float: build(pick(/^float$/i), 'Float Index'),
@@ -1775,6 +1823,12 @@ app.get(['/api/market-indices', '/api/indices'], async (req, res) => {
     const targetDate = String(req.query.date || '').trim();
     const indices = await getMarketIndicesInternal(targetDate);
     if (indices && Object.keys(indices).length > 0) {
+      if (indices.nepse && (!indices.nepse.turnover || indices.nepse.turnover <= 0 || indices.nepse.turnover === 8570096748.35)) {
+        const liveTurnover = getLiveMarketTurnover(indices.asOfDate || targetDate || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' }));
+        if (liveTurnover > 0) {
+          indices.nepse.turnover = liveTurnover;
+        }
+      }
       return res.json({ success: true, data: indices });
     }
     return res.status(500).json({ success: false, error: 'Failed to fetch indices' });
@@ -4017,7 +4071,9 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
   });
 });
 
-// Internal helper for Price History
+// Internal helper for Price History with in-flight deduplication
+const inFlightServerPriceHistory = new Map();
+
 export async function getPriceHistoryInternal(rawSymbol, length = 365) {
   rawSymbol = (rawSymbol || '').toUpperCase().trim();
   const symbol = rawSymbol;
@@ -4027,6 +4083,12 @@ export async function getPriceHistoryInternal(rawSymbol, length = 365) {
   if (cached && Array.isArray(cached) && cached.length > 0) {
     return cached;
   }
+
+  if (inFlightServerPriceHistory.has(cacheKey)) {
+    return inFlightServerPriceHistory.get(cacheKey);
+  }
+
+  const runTask = (async () => {
 
   const INDEX_MAP = {
     'NEPSE': 58,
@@ -4149,62 +4211,72 @@ export async function getPriceHistoryInternal(rawSymbol, length = 365) {
     console.warn(`[price-history] NEPSE API failed for ${symbol}:`, nepseErr.message);
   }
 
-  // Method 2: ShareSansar CSRF scrape fallback
-  try {
-    const jar = new CookieJar();
-    const client = wrapper(axios.create({ jar, withCredentials: true }));
+  // Method 2: ShareSansar CSRF scrape fallback (skipped if ShareSansar 403 breaker is active)
+  if (!nepseClient?.externalScraperBreakers?.sharesansar?.isTripped?.()) {
+    try {
+      const jar = new CookieJar();
+      const client = wrapper(axios.create({ jar, withCredentials: true }));
 
-    const pageRes = await client.get(`https://www.sharesansar.com/company/${symbol.toLowerCase()}`, {
-      headers: HEADERS, timeout: 10000
-    });
-    const $ = cheerio.load(pageRes.data);
-    const token = $('meta[name="_token"]').attr('content') || $('input[name="_token"]').val();
-    const companyId = $('#companyid').text().trim();
-
-    if (token && companyId) {
-      const postData = new URLSearchParams();
-      postData.append('company', companyId);
-      postData.append('draw', '1');
-      postData.append('start', '0');
-      postData.append('length', String(length));
-
-      const historyRes = await client.post('https://www.sharesansar.com/company-price-history', postData.toString(), {
-        headers: {
-          ...HEADERS,
-          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-          'X-CSRF-Token': token,
-          'X-Requested-With': 'XMLHttpRequest',
-          'Referer': `https://www.sharesansar.com/company/${symbol.toLowerCase()}`
-        },
-        timeout: 15000
+      const pageRes = await client.get(`https://www.sharesansar.com/company/${symbol.toLowerCase()}`, {
+        headers: HEADERS, timeout: 10000
       });
+      const $ = cheerio.load(pageRes.data);
+      const token = $('meta[name="_token"]').attr('content') || $('input[name="_token"]').val();
+      const companyId = $('#companyid').text().trim();
 
-      if (historyRes.data?.data && Array.isArray(historyRes.data.data)) {
-        const formatted = historyRes.data.data.map(item => ({
-          date: item.published_date,
-          open: parseFloat(item.open) || 0,
-          high: parseFloat(item.high) || 0,
-          low: parseFloat(item.low) || 0,
-          close: parseFloat(item.close) || 0,
-          volume: parseFloat(item.traded_quantity) || 0
-        })).filter(d => d.close > 0);
-        formatted.reverse();
-        if (formatted.length > 0) {
-          setCache(cacheKey, formatted, 2 * 60 * 60 * 1000);
-          return formatted;
+      if (token && companyId) {
+        const postData = new URLSearchParams();
+        postData.append('company', companyId);
+        postData.append('draw', '1');
+        postData.append('start', '0');
+        postData.append('length', String(length));
+
+        const historyRes = await client.post('https://www.sharesansar.com/company-price-history', postData.toString(), {
+          headers: {
+            ...HEADERS,
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-CSRF-Token': token,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': `https://www.sharesansar.com/company/${symbol.toLowerCase()}`
+          },
+          timeout: 15000
+        });
+
+        if (historyRes.data?.data && Array.isArray(historyRes.data.data)) {
+          nepseClient?.externalScraperBreakers?.sharesansar?.recordSuccess?.();
+          const formatted = historyRes.data.data.map(item => ({
+            date: item.published_date,
+            open: parseFloat(item.open) || 0,
+            high: parseFloat(item.high) || 0,
+            low: parseFloat(item.low) || 0,
+            close: parseFloat(item.close) || 0,
+            volume: parseFloat(item.traded_quantity) || 0
+          })).filter(d => d.close > 0);
+          formatted.reverse();
+          if (formatted.length > 0) {
+            setCache(cacheKey, formatted, 2 * 60 * 60 * 1000);
+            return formatted;
+          }
         }
       }
+    } catch (ssErr) {
+      const is403 = ssErr?.response?.status === 403 || ssErr?.status === 403 || String(ssErr?.message || '').includes('403');
+      if (is403 && nepseClient?.externalScraperBreakers?.sharesansar?.record403) {
+        nepseClient.externalScraperBreakers.sharesansar.record403();
+      }
+      if (!nepseClient?.externalScraperBreakers?.sharesansar?.isTripped?.()) {
+        console.warn(`[price-history] ShareSansar fallback failed for ${symbol}:`, ssErr.message);
+      }
     }
-  } catch (ssErr) {
-    console.warn(`[price-history] ShareSansar fallback failed for ${symbol}:`, ssErr.message);
   }
 
-  // Method 3: Direct MeroLagani company graph fallback (highly reliable for all equities)
-  if (!INDEX_MAP[rawSymbol]) {
+  // Method 3: Direct MeroLagani company graph fallback (skipped if MeroLagani 403 breaker is active)
+  if (!INDEX_MAP[rawSymbol] && !nepseClient?.externalScraperBreakers?.merolagani?.isTripped?.()) {
     try {
       const mlUrl = `https://merolagani.com/handlers/webrequesthandler.ashx?type=get_company_graph&symbol=${encodeURIComponent(rawSymbol)}`;
       const mlRes = await axios.get(mlUrl, { headers: HEADERS, timeout: 8000 });
       if (mlRes.data && Array.isArray(mlRes.data.quotes) && mlRes.data.quotes.length > 0) {
+        nepseClient?.externalScraperBreakers?.merolagani?.recordSuccess?.();
         const formatted = mlRes.data.quotes.map(q => {
           let dateIso = q.date;
           if (q.date && q.date.includes('/')) {
@@ -4232,11 +4304,25 @@ export async function getPriceHistoryInternal(rawSymbol, length = 365) {
         }
       }
     } catch (mlErr) {
-      console.warn(`[price-history] MeroLagani fallback failed for ${rawSymbol}:`, mlErr.message);
+      const is403 = mlErr?.response?.status === 403 || mlErr?.status === 403 || String(mlErr?.message || '').includes('403');
+      if (is403 && nepseClient?.externalScraperBreakers?.merolagani?.record403) {
+        nepseClient.externalScraperBreakers.merolagani.record403();
+      }
+      if (!nepseClient?.externalScraperBreakers?.merolagani?.isTripped?.()) {
+        console.warn(`[price-history] MeroLagani fallback failed for ${rawSymbol}:`, mlErr.message);
+      }
     }
   }
 
   return [];
+  })();
+
+  inFlightServerPriceHistory.set(cacheKey, runTask);
+  try {
+    return await runTask;
+  } finally {
+    inFlightServerPriceHistory.delete(cacheKey);
+  }
 }
 
 
@@ -8331,12 +8417,18 @@ app.get([
       const holdQty = Math.max(0, netQty);
       const avgBuyRate = bVol > 0 ? +(bAmt / bVol).toFixed(2) : 0;
       const avgSellRate = sVol > 0 ? +(sAmt / sVol).toFixed(2) : 0;
+      const buyTrades = Number(r.buyTradesCount ?? r.buyTrades ?? 0);
+      const sellTrades = Number(r.sellTradesCount ?? r.sellTrades ?? 0);
       return {
         ...r,
         id: String(r.brokerId || '').replace(/^0+/, ''),
         brokerId: String(r.brokerId || '').replace(/^0+/, ''),
         buyQty: bVol,
         sellQty: sVol,
+        buyTrades,
+        sellTrades,
+        buyTradesCount: buyTrades,
+        sellTradesCount: sellTrades,
         buyAmt: bAmt,
         sellAmt: sAmt,
         netQty,

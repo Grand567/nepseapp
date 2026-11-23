@@ -263,6 +263,8 @@ ensureColumns('daily_stock_summary', {
 ensureColumns('daily_broker_ledger', {
   buy_amt: 'REAL DEFAULT 0',
   sell_amt: 'REAL DEFAULT 0',
+  buy_trades: 'INTEGER DEFAULT 0',
+  sell_trades: 'INTEGER DEFAULT 0',
   cross_vol: 'INTEGER DEFAULT 0',
   is_quarantined: 'INTEGER DEFAULT 0',
   calendar_status: "TEXT DEFAULT 'VALID'",
@@ -1286,8 +1288,51 @@ export function getSymbolHistoryFromDb(symbol, days = 30) {
         buyAmt: row.buy_amt,
         sellAmt: row.sell_amt,
         crossVol: row.cross_vol || 0,
+        buyTrades: row.buy_trades || 0,
+        sellTrades: row.sell_trades || 0,
+        buyTradesCount: row.buy_trades || 0,
+        sellTradesCount: row.sell_trades || 0,
       });
     }
+
+    // Enrich real ticket counts from floorsheet_contracts when available
+    try {
+      const fsTrades = db.prepare(`
+        SELECT
+          trade_date,
+          buyer_broker,
+          seller_broker,
+          COUNT(*) as cnt
+        FROM floorsheet_contracts
+        WHERE symbol = ? AND trade_date >= ?
+        GROUP BY trade_date, buyer_broker, seller_broker
+      `).all(sym, oldestDate);
+
+      if (fsTrades && fsTrades.length > 0) {
+        const buyMap = new Map();
+        const sellMap = new Map();
+        for (const ft of fsTrades) {
+          const bKey = `${ft.trade_date}_${ft.buyer_broker}`;
+          buyMap.set(bKey, (buyMap.get(bKey) || 0) + ft.cnt);
+          const sKey = `${ft.trade_date}_${ft.seller_broker}`;
+          sellMap.set(sKey, (sellMap.get(sKey) || 0) + ft.cnt);
+        }
+        for (const [dt, arr] of brokerGroup.entries()) {
+          for (const b of arr) {
+            const bTrades = buyMap.get(`${dt}_${b.brokerId}`);
+            if (bTrades !== undefined && bTrades > 0) {
+              b.buyTrades = bTrades;
+              b.buyTradesCount = bTrades;
+            }
+            const sTrades = sellMap.get(`${dt}_${b.brokerId}`);
+            if (sTrades !== undefined && sTrades > 0) {
+              b.sellTrades = sTrades;
+              b.sellTradesCount = sTrades;
+            }
+          }
+        }
+      }
+    } catch (_) {}
 
     return summaries.map(s => ({
       date: s.trade_date,
@@ -1877,18 +1922,34 @@ export function getSmartMoneyAggregatedFlow(symbol, sessionLimit = 5) {
         WHERE symbol = @symbol
         ORDER BY trade_date DESC
         LIMIT @sessionLimit
+      ),
+      fs_buy AS (
+        SELECT buyer_broker AS broker_id, COUNT(*) AS buy_trades_cnt
+        FROM floorsheet_contracts
+        WHERE symbol = @symbol AND trade_date IN (SELECT trade_date FROM recent_dates)
+        GROUP BY buyer_broker
+      ),
+      fs_sell AS (
+        SELECT seller_broker AS broker_id, COUNT(*) AS sell_trades_cnt
+        FROM floorsheet_contracts
+        WHERE symbol = @symbol AND trade_date IN (SELECT trade_date FROM recent_dates)
+        GROUP BY seller_broker
       )
       SELECT
         b.broker_id AS brokerId,
         SUM(b.buy_vol) AS buyVolume,
         SUM(b.sell_vol) AS sellVolume,
-        COUNT(CASE WHEN b.buy_vol > 0 THEN 1 END) AS buyTrades,
-        COUNT(CASE WHEN b.sell_vol > 0 THEN 1 END) AS sellTrades,
+        COALESCE(MAX(fb.buy_trades_cnt), SUM(COALESCE(b.buy_trades, 0)), 0) AS buyTrades,
+        COALESCE(MAX(fs.sell_trades_cnt), SUM(COALESCE(b.sell_trades, 0)), 0) AS sellTrades,
+        COALESCE(MAX(fb.buy_trades_cnt), SUM(COALESCE(b.buy_trades, 0)), 0) AS buyTradesCount,
+        COALESCE(MAX(fs.sell_trades_cnt), SUM(COALESCE(b.sell_trades, 0)), 0) AS sellTradesCount,
         SUM(b.buy_amt) AS buyAmount,
         SUM(b.sell_amt) AS sellAmount,
         SUM(COALESCE(b.cross_vol, 0)) AS crossVolume
       FROM daily_broker_ledger b
       INNER JOIN recent_dates r ON b.trade_date = r.trade_date
+      LEFT JOIN fs_buy fb ON b.broker_id = fb.broker_id
+      LEFT JOIN fs_sell fs ON b.broker_id = fs.broker_id
       WHERE b.symbol = @symbol
       GROUP BY b.broker_id
       ORDER BY (SUM(b.buy_vol) - SUM(b.sell_vol)) DESC

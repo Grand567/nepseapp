@@ -2514,8 +2514,15 @@ export async function fetchMarketIndices(targetDate) {
   const isLive = !targetDate;
   const now = Date.now();
 
-  // Ultra-fast 1-second throttle during live market (allows rapid 1-2s ticker updates)
-  if (isLive && _lastIndicesFetchResult && (now - _lastIndicesFetchTime < 1000)) {
+  // Pause polling while document.hidden === true to prevent background resource storms
+  if (isLive && typeof document !== 'undefined' && document.hidden) {
+    if (_lastIndicesFetchResult) return _lastIndicesFetchResult;
+    const cached = getCachedIndices();
+    if (cached) return cached;
+  }
+
+  // Minimum 15-second throttle during live market (enforces 15-30s interval and stops polling storms)
+  if (isLive && _lastIndicesFetchResult && (now - _lastIndicesFetchTime < 15000)) {
     return _lastIndicesFetchResult;
   }
   if (isLive && _inFlightMarketIndicesPromise) {
