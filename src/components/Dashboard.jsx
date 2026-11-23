@@ -1813,9 +1813,19 @@ function Dashboard({
         if (heroTimeframe === '1D') {
           let intraday = await servicesApi.fetchNepseIntradayGraph(sym);
           if (intraday && Array.isArray(intraday) && intraday.length > 0) {
-            if (!active) return;
+            const firstPt = intraday[0];
+            const firstTs = firstPt?.timestamp;
+            const ptDate = firstTs
+              ? new Date(firstTs > 1e11 ? firstTs : firstTs * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })
+              : (firstPt?.date ? String(firstPt.date).slice(0, 10) : null);
+            const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+            const isMarketOpenNow = Boolean(marketStatus?.isOpen);
+            if (isMarketOpenNow && ptDate && ptDate !== todayIso) {
+              // Stale intraday data from older session (e.g. 2026-11-20 vs 2026-11-23); fall through to daily history
+            } else {
+              if (!active) return;
 
-            // Ensure the latest intraday candle reflects the real-time live price from NOTS only during open market hours
+              // Ensure the latest intraday candle reflects the real-time live price from NOTS only during open market hours
             if (sym === 'NEPSE') {
               const officialVal = Number(indices?.nepse?.value || 0);
               const isMarketOpen = Boolean(marketStatus?.isOpen);
@@ -1859,6 +1869,7 @@ function Dashboard({
             return;
           }
         }
+      }
 
         let data = await fetchPriceHistory(sym, 500);
         // Never fabricate stock or sector historical charts by scaling NEPSE index history

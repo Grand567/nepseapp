@@ -4347,8 +4347,12 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
       })).filter(p => p.close > 0);
 
       if (points.length > 0) {
-        setCache(cacheKey, points, 60000); // 1-min TTL during market hours
-        return res.json({ success: true, data: points, source: 'merolagani-intraday' });
+        const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+        const ptDate = points[0]?.date ? String(points[0].date).slice(0, 10) : null;
+        if (!ptDate || ptDate === todayIso) {
+          setCache(cacheKey, points, 60000); // 1-min TTL during market hours
+          return res.json({ success: true, data: points, source: 'merolagani-intraday' });
+        }
       }
     }
   } catch (e) {

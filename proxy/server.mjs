@@ -818,6 +818,10 @@ function getProxyMarketStatus() {
   return getDetailedMarketStatus();
 }
 
+function getCachedMarketStatus() {
+  return getProxyMarketStatus();
+}
+
 app.get(['/api/market-status', '/api/status'], async (req, res) => {
   await checkNotsLiveStatus();
   const status = getProxyMarketStatus();
@@ -3803,35 +3807,118 @@ app.get('/api/news/merolagani', async (req, res) => {
    GET /api/price-history/:symbol?length=365
    ═══════════════════════════════════════════════════ */
 let lastKnownIntradayGraph = [];
+let lastKnownIntradaySessionDate = null;
+
+function getIntradayTicksDate(ticks) {
+  if (!Array.isArray(ticks) || ticks.length === 0) return null;
+  const sample = ticks[0];
+  if (!sample) return null;
+  if (sample.timestamp) {
+    const tsMs = sample.timestamp > 1e11 ? sample.timestamp : sample.timestamp * 1000;
+    return formatNptDateIso(new Date(tsMs));
+  }
+  if (sample.date) {
+    return String(sample.date).slice(0, 10);
+  }
+  return null;
+}
 
 app.get('/api/nepse/intraday-graph', async (req, res) => {
-  const cacheKey = 'nepse-intraday-graph';
+  const reqDate = req.query.date || req.query.sessionDate;
+  const allowStale = req.query.allowStale === 'true' || req.query.stale === 'true';
+  const appNow = getAppNow();
+  const todayIso = formatNptDateIso(appNow);
+  const isExplicitHistorical = req.query.historical === 'true' || Boolean(reqDate && reqDate !== todayIso);
+
+  const currentStatus = getProxyMarketStatus();
+  const isMarketOpen = Boolean(currentStatus?.isOpen || currentStatus?.isPreOpen);
+  const targetSession = reqDate || (isMarketOpen ? todayIso : latestTradingSession(appNow, false));
+
+  const cacheKey = `nepse-intraday-graph-${targetSession || 'live'}`;
   const cached = getCache(cacheKey);
   if (cached && Array.isArray(cached) && cached.length > 0) {
-    return res.json({ success: true, data: cached, cached: true });
+    const cachedDate = getIntradayTicksDate(cached);
+    if (!isMarketOpen || cachedDate === todayIso || isExplicitHistorical) {
+      return res.json({ success: true, data: cached, cached: true, sessionDate: cachedDate, isLive: isMarketOpen && cachedDate === todayIso });
+    }
   }
 
-  const currentStatus = getCachedMarketStatus();
-  if (!currentStatus?.isOpen && !currentStatus?.isPreOpen) {
-    if (lastKnownIntradayGraph && lastKnownIntradayGraph.length > 0) {
+  // 1. Explicit historical request for past date (or when allowStale=true)
+  if (isExplicitHistorical || (reqDate && reqDate !== todayIso)) {
+    try {
+      const diskPath = path.resolve('proxy/data/nepse_intraday_latest.json');
+      if (fs.existsSync(diskPath)) {
+        const diskTicks = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
+        const diskDate = getIntradayTicksDate(diskTicks);
+        if (Array.isArray(diskTicks) && diskTicks.length > 0 && (!reqDate || diskDate === reqDate || allowStale)) {
+          return res.json({
+            success: true,
+            data: diskTicks,
+            count: diskTicks.length,
+            isLive: false,
+            isHistorical: true,
+            sessionDate: diskDate,
+            source: 'disk-historical-intraday'
+          });
+        }
+      }
+    } catch (_) {}
+    return res.json({
+      success: true,
+      data: [],
+      count: 0,
+      isLive: false,
+      isHistorical: true,
+      sessionDate: reqDate,
+      message: `No historical intraday snapshot for ${reqDate}`
+    });
+  }
+
+  // 2. Off-market / closed market handling (e.g. weekend, holiday, or post-close)
+  if (!isMarketOpen) {
+    const lastSession = latestTradingSession(appNow, true);
+    if (lastKnownIntradaySessionDate === lastSession && lastKnownIntradayGraph && lastKnownIntradayGraph.length > 0) {
       setCache(cacheKey, lastKnownIntradayGraph, 60000);
-      return res.json({ success: true, data: lastKnownIntradayGraph, count: lastKnownIntradayGraph.length, source: 'cached-nots-intraday' });
+      return res.json({
+        success: true,
+        data: lastKnownIntradayGraph,
+        count: lastKnownIntradayGraph.length,
+        isLive: false,
+        isHistorical: true,
+        sessionDate: lastSession,
+        source: 'cached-nots-intraday'
+      });
     }
     try {
       const diskPath = path.resolve('proxy/data/nepse_intraday_latest.json');
       if (fs.existsSync(diskPath)) {
         const diskTicks = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
-        if (Array.isArray(diskTicks) && diskTicks.length > 0) {
+        const diskDate = getIntradayTicksDate(diskTicks);
+        // During closed hours, only serve disk snapshot if it corresponds to the latest completed trading session
+        if (Array.isArray(diskTicks) && diskTicks.length > 0 && (diskDate === lastSession || allowStale)) {
           lastKnownIntradayGraph = diskTicks;
+          lastKnownIntradaySessionDate = diskDate;
           setCache(cacheKey, diskTicks, 60000);
-          return res.json({ success: true, data: diskTicks, count: diskTicks.length, source: 'disk-nots-intraday' });
+          return res.json({
+            success: true,
+            data: diskTicks,
+            count: diskTicks.length,
+            isLive: false,
+            isHistorical: true,
+            sessionDate: diskDate,
+            source: 'disk-nots-intraday'
+          });
         }
       }
     } catch (_) {}
   }
 
+  // 3. Live market hours: Fetch authentic NEPSE NOTS Intraday Graph for today
   try {
-    const rawGraph = await nepseClient.getNepseIndexDailyGraph();
+    const rawGraph = await Promise.race([
+      nepseClient.getNepseIndexDailyGraph(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('NOTS timeout')), 4000))
+    ]);
     if (Array.isArray(rawGraph) && rawGraph.length > 0) {
       const formatted = rawGraph.map(pt => ({
         time: new Date(pt[0] * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' }),
@@ -3843,34 +3930,91 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
         volume: 0
       }));
 
-      lastKnownIntradayGraph = formatted;
-      try {
-        fs.writeFileSync(path.resolve('proxy/data/nepse_intraday_latest.json'), JSON.stringify(formatted));
-      } catch (_) {}
-      setCache(cacheKey, formatted, 15 * 1000); // 15 sec cache
-      return res.json({ success: true, data: formatted, count: formatted.length, source: 'nepse-official-intraday' });
+      const notsDate = getIntradayTicksDate(formatted);
+      // Invariant: During live market, only accept ticks that actually belong to today!
+      if (notsDate === todayIso) {
+        lastKnownIntradayGraph = formatted;
+        lastKnownIntradaySessionDate = todayIso;
+        try {
+          fs.writeFileSync(path.resolve('proxy/data/nepse_intraday_latest.json'), JSON.stringify(formatted));
+        } catch (_) {}
+        setCache(cacheKey, formatted, 15 * 1000); // 15 sec cache
+        return res.json({
+          success: true,
+          data: formatted,
+          count: formatted.length,
+          isLive: true,
+          sessionDate: todayIso,
+          source: 'nepse-official-intraday'
+        });
+      } else {
+        console.warn(`[nepse/intraday-graph] NOTS returned unrefreshed ticks from ${notsDate} during live session ${todayIso}`);
+      }
     }
   } catch (err) {
-    console.warn('[nepse/intraday-graph] Failed:', err.message);
+    console.warn('[nepse/intraday-graph] Live fetch failed:', err.message);
   }
 
-  if (lastKnownIntradayGraph && lastKnownIntradayGraph.length > 0) {
-    return res.json({ success: true, data: lastKnownIntradayGraph, count: lastKnownIntradayGraph.length, source: 'cached-nots-intraday' });
+  // 4. In-memory live fallback: Only if it was recorded for TODAY
+  if (lastKnownIntradaySessionDate === todayIso && lastKnownIntradayGraph && lastKnownIntradayGraph.length > 0) {
+    return res.json({
+      success: true,
+      data: lastKnownIntradayGraph,
+      count: lastKnownIntradayGraph.length,
+      isLive: true,
+      sessionDate: todayIso,
+      source: 'cached-nots-intraday'
+    });
   }
 
-  // Fallback to disk-persisted latest completed trading session intraday series
+  // 5. Disk fallback check: Inspect date of disk ticks
   try {
     const diskPath = path.resolve('proxy/data/nepse_intraday_latest.json');
     if (fs.existsSync(diskPath)) {
       const diskTicks = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
+      const diskDate = getIntradayTicksDate(diskTicks);
       if (Array.isArray(diskTicks) && diskTicks.length > 0) {
-        lastKnownIntradayGraph = diskTicks;
-        return res.json({ success: true, data: diskTicks, count: diskTicks.length, source: 'disk-nots-intraday' });
+        // If disk ticks match today, serve as live
+        if (diskDate === todayIso) {
+          lastKnownIntradayGraph = diskTicks;
+          lastKnownIntradaySessionDate = todayIso;
+          return res.json({
+            success: true,
+            data: diskTicks,
+            count: diskTicks.length,
+            isLive: true,
+            sessionDate: todayIso,
+            source: 'disk-live-intraday'
+          });
+        }
+        // If caller explicitly allowed stale fallback
+        if (allowStale) {
+          return res.json({
+            success: true,
+            data: diskTicks,
+            count: diskTicks.length,
+            isLive: false,
+            isHistorical: true,
+            stale: true,
+            sessionDate: diskDate,
+            source: 'disk-stale-intraday'
+          });
+        }
       }
     }
   } catch (_) {}
 
-  return res.json({ success: false, data: [], message: 'No intraday graph data available' });
+  // 6. Default live response when no ticks recorded yet for today's session:
+  // Return empty data honest live indicator with HTTP 200 so UI and pipeline succeed
+  // without serving stale snapshots from prior days (e.g. 2026-11-20).
+  return res.json({
+    success: true,
+    data: [],
+    count: 0,
+    isLive: isMarketOpen,
+    sessionDate: todayIso,
+    message: `No live intraday ticks available yet for session ${todayIso}`
+  });
 });
 
 // Internal helper for Price History

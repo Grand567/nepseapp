@@ -76,12 +76,18 @@ export function useUnifiedStockTelemetry(rawSymbol?: string | null) {
     };
   }, [refresh]);
 
+  const parsedLastUpdatedMs = data?.asOfTimestamp ? new Date(data.asOfTimestamp).getTime() : null;
+  const isLive = Boolean(data?.quoteData && Number(data.quoteData.ltp || data.quoteData.close || 0) > 0);
+
   return {
     symbol: validSymbol,
     data,
     loading,
     error,
     refresh: () => refresh(),
+    asOfTimestamp: data?.asOfTimestamp || null,
+    lastUpdatedMs: Number.isFinite(parsedLastUpdatedMs) ? parsedLastUpdatedMs : null,
+    isLive,
   };
 }
 

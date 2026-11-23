@@ -19,7 +19,11 @@ export default function SessionFreshnessBadge({
   sessionDate = null,
   isWarmingUp = false,
   staleThresholdMs = 2 * 60 * 1000,
-  compact = false
+  compact = false,
+  isLive = false,
+  apiStatus = null,
+  hasLiveTrades = false,
+  isHistorical = false,
 }) {
   const [now, setNow] = useState(() => new Date());
 
@@ -30,7 +34,9 @@ export default function SessionFreshnessBadge({
 
   const mktStatus = getDetailedMarketStatus(now);
   const isOpen = Boolean(mktStatus?.isOpen && !mktStatus?.isEmergencyHalt);
-  const effectiveSessionDate = sessionDate || latestTradingSession(now, !isOpen);
+  const isMarketOpen = Boolean(isOpen || isLive || apiStatus === 'live');
+  const todayTradingDate = latestTradingSession(now, false);
+  const effectiveSessionDate = sessionDate || latestTradingSession(now, !isMarketOpen);
   const parsedLastMs = lastUpdatedMs != null ? Number(lastUpdatedMs) : null;
   const hasValidLastUpdate = Number.isFinite(parsedLastMs) && parsedLastMs > 0;
   const timeStr = hasValidLastUpdate
@@ -51,11 +57,25 @@ export default function SessionFreshnessBadge({
     );
   }
 
-  const lagMs = hasValidLastUpdate ? Math.max(0, now.getTime() - parsedLastMs) : Infinity;
-  const isStale = isOpen && hasValidLastUpdate && lagMs > staleThresholdMs;
+  // Explicit user-selected historical session: show neutral historical indicator
+  if (isHistorical || (sessionDate && sessionDate !== todayTradingDate && isHistorical)) {
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(148, 163, 184, 0.12)', border: '1px solid rgba(148, 163, 184, 0.25)', borderRadius: 8, padding: compact ? '2px 8px' : '4px 10px', fontSize: compact ? 10.5 : 12, fontWeight: 700, color: '#94a3b8' }}>
+        <Clock style={{ width: 12, height: 12 }} />
+        <span>Historical • Showing {effectiveSessionDate}</span>
+      </div>
+    );
+  }
 
-  if (isOpen) {
-    if (!hasValidLastUpdate) {
+  const lagMs = hasValidLastUpdate ? Math.max(0, now.getTime() - parsedLastMs) : Infinity;
+  const isStale = isMarketOpen && hasValidLastUpdate && lagMs > staleThresholdMs;
+
+  if (isMarketOpen) {
+    // Genuine stale/offline fallback when market is open but feed is showing older session
+    const isShowingOlderSession = Boolean(effectiveSessionDate && effectiveSessionDate !== todayTradingDate);
+    const isStaleOfflineFallback = apiStatus === 'yesterday' || (!hasLiveTrades && !isLive && isShowingOlderSession);
+
+    if (isShowingOlderSession && (!hasValidLastUpdate || isStaleOfflineFallback)) {
       return (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: 8, padding: compact ? '2px 8px' : '4px 10px', fontSize: compact ? 10.5 : 12, fontWeight: 700, color: '#fbbf24' }}>
           <AlertTriangle style={{ width: 12, height: 12 }} />
@@ -64,6 +84,7 @@ export default function SessionFreshnessBadge({
       );
     }
 
+    // Active market hours data lag (> 2 min lag)
     if (isStale) {
       return (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: 8, padding: compact ? '2px 8px' : '4px 10px', fontSize: compact ? 10.5 : 12, fontWeight: 700, color: '#fbbf24' }}>
@@ -73,10 +94,15 @@ export default function SessionFreshnessBadge({
       );
     }
 
+    // Live session active (green live indicator)
+    const liveText = compact
+      ? `LIVE • ${effectiveSessionDate}`
+      : `LIVE • As of ${effectiveSessionDate}${timeStr ? ` ${timeStr} NPT` : ''}`;
+
     return (
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: 8, padding: compact ? '2px 8px' : '4px 10px', fontSize: compact ? 10.5 : 12, fontWeight: 700, color: '#34d399' }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#34d399', boxShadow: '0 0 6px #10b981', display: 'inline-block' }} />
-        <span>LIVE • As of {effectiveSessionDate} {timeStr} NPT</span>
+        <span>{liveText}</span>
       </div>
     );
   }

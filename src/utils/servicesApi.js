@@ -4,6 +4,7 @@ import { bsToAd } from './bikramSambat.js';
 import { fetchMerolaganiNews } from '../services/merolaganiNewsService.js';
 import { sortNewsByNepseImpact, deduplicateNews, sortNews } from './newsImpactScorer.js';
 import { getProxyBase } from './proxyBase.js';
+import { formatNptDateIso, isMarketOpen, getAppNow } from './nepseCalendar.js';
 
 const getProxy = () => getProxyBase();
 
@@ -224,12 +225,27 @@ export const fetchNepseIntradayGraph = async (symbol, forceRefresh = false) => {
     ? 'NEPSE'
     : String(symbol).toUpperCase().trim();
 
+  const appNow = getAppNow();
+  const todayDate = formatNptDateIso(appNow);
+  const marketOpenNow = isMarketOpen(appNow);
+
   // Tier 1: Query proxy intraday route (supports NEPSE, sub-indices, and equities)
   const path = sym === 'NEPSE' ? '/api/nepse/intraday-graph' : `/api/nepse/intraday-graph/${encodeURIComponent(sym)}`;
   const res = await _proxyFetch(path, {}, 15000, forceRefresh);
   const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
   const hasTicks = Array.isArray(data) && data.length > 1 && data.some(d => d && (d.timestamp || d.time || Array.isArray(d)));
   if (hasTicks) {
+    if (sym === 'NEPSE') {
+      const sample = data[0];
+      const sampleTs = sample?.timestamp;
+      const sampleDate = sampleTs
+        ? formatNptDateIso(new Date(sampleTs > 1e11 ? sampleTs : sampleTs * 1000))
+        : (sample?.date ? String(sample.date).slice(0, 10) : null);
+      if (marketOpenNow && sampleDate && sampleDate !== todayDate && !res?.isHistorical) {
+        // Stale snapshot from an older session (e.g. 2026-11-20 vs today 2026-11-23)
+        return null;
+      }
+    }
     return data;
   }
 
@@ -275,7 +291,18 @@ export const fetchNepseIntradayGraph = async (symbol, forceRefresh = false) => {
       const staticRes = await fetch('/data/nepse_intraday_latest.json', { signal: AbortSignal.timeout(4000) });
       if (staticRes.ok) {
         const j = await staticRes.json();
-        if (Array.isArray(j) && j.length > 1) return j;
+        if (Array.isArray(j) && j.length > 1) {
+          const sample = j[0];
+          const sampleTs = sample?.timestamp;
+          const sampleDate = sampleTs
+            ? formatNptDateIso(new Date(sampleTs > 1e11 ? sampleTs : sampleTs * 1000))
+            : (sample?.date ? String(sample.date).slice(0, 10) : null);
+          // If market is open or live today, DO NOT serve stale static snapshot from prior sessions (e.g. 2026-11-20)
+          if (marketOpenNow && sampleDate && sampleDate !== todayDate) {
+            return null;
+          }
+          return j;
+        }
       }
     } catch (_) {}
   }

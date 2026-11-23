@@ -43,7 +43,8 @@ import {
   getCachedRealBrokerAnalysis,
   getCachedRealFloorsheet,
   getCachedStockFundamentals,
-  getProxyBase
+  getProxyBase,
+  getLastDataUpdateTime
 } from '../utils/liveData';
 import { fetchStockSnapshot, getSnapshotCache } from '../services/stockSnapshot';
 import { fetchNepseIntradayGraph, fetchCompanyQuarterlyReports, fetchMarketNews } from '../utils/servicesApi';
@@ -1944,6 +1945,8 @@ export default function StockDetailModal({
       turnover,
       trades: liveTrades,
       totalTransactions: liveTrades,
+      lastUpdatedMs: liveQuote?.lastUpdatedMs || s.lastUpdatedMs || (liveQuote?.ltp ? Date.now() : null),
+      lastUpdated: liveQuote?.lastUpdated || s.lastUpdated || (liveQuote?.ltp ? new Date().toISOString() : null),
       rvol,
       avgVolume20D,
       eps,
@@ -3691,8 +3694,6 @@ export default function StockDetailModal({
     }
   }, []);
 
-  const isBull = (d.pChange || 0) >= 0;
-
   // Strict Guard: Live intraday 1D broker analytics available globally across all modal tabs (respects selected date)
   const isStrict1DBa = (ba) => {
     if (!ba || typeof ba !== 'object') return false;
@@ -3704,6 +3705,30 @@ export default function StockDetailModal({
   const pure1DBa = (brokerDate && realBrokerAnalysis && (realBrokerAnalysis.businessDate === brokerDate || realBrokerAnalysis.date === brokerDate) && isStrict1DBa(realBrokerAnalysis))
     ? realBrokerAnalysis
     : (isStrict1DBa(broker1DData) ? broker1DData : (isStrict1DBa(realBrokerAnalysis) ? realBrokerAnalysis : (getCachedRealBrokerAnalysis(d?.symbol, 1) || null)));
+
+  const todaySessionDate = marketStatus?.targetSessionDate || marketStatus?.sessionDate || marketStatus?.businessDate || latestTradingSession(new Date(), false);
+  const isHistoricalDateSelected = Boolean(modalSessionDate && modalSessionDate !== todaySessionDate);
+  const modalBadgeSessionDate = isHistoricalDateSelected
+    ? modalSessionDate
+    : (marketStatus?.isOpen ? todaySessionDate : (marketStatus?.lastClosedSessionDate || modalSessionDate || todaySessionDate));
+  const hasLiveIntradayQuotes = Boolean(
+    liveQuote?.ltp > 0 ||
+    d?.trades > 0 ||
+    d?.volume > 0 ||
+    d?.turnover > 0 ||
+    d?.ltp > 0
+  );
+  const isModalLive = Boolean(marketStatus?.isOpen && !isHistoricalDateSelected && hasLiveIntradayQuotes);
+  const modalBadgeLastUpdatedMs = (
+    d?.lastUpdatedMs ||
+    liveQuote?.lastUpdatedMs ||
+    (isModalLive ? (liveQuote?.lastUpdated ? new Date(liveQuote.lastUpdated).getTime() : Date.now()) : null) ||
+    (() => {
+      const lu = getLastDataUpdateTime?.();
+      return lu?.iso ? new Date(lu.iso).getTime() : null;
+    })() ||
+    (d?.lastUpdated ? new Date(d.lastUpdated).getTime() : (d?.asOf ? new Date(d.asOf).getTime() : null))
+  );
 
   const modalContent = (
     <div
@@ -3754,8 +3779,11 @@ export default function StockDetailModal({
           </div>
           <SessionFreshnessBadge
             compact={true}
-            sessionDate={modalSessionDate || marketStatus?.lastClosedSessionDate}
-            lastUpdatedMs={d?.lastUpdatedMs || (d?.lastUpdated ? new Date(d.lastUpdated).getTime() : (d?.asOf ? new Date(d.asOf).getTime() : null))}
+            sessionDate={modalBadgeSessionDate}
+            lastUpdatedMs={modalBadgeLastUpdatedMs}
+            isLive={isModalLive}
+            isHistorical={isHistoricalDateSelected}
+            hasLiveTrades={hasLiveIntradayQuotes}
           />
         </div>
 
@@ -4133,21 +4161,53 @@ export default function StockDetailModal({
                       <span style={{ fontSize: 32, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', letterSpacing: '-0.03em' }}>
                         Rs. {fmt(d.ltp)}
                       </span>
-                      <span style={{
-                        background: isBull ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
-                        border: isBull ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(244, 63, 94, 0.35)',
-                        borderRadius: 8,
-                        padding: '4px 10px',
-                        fontSize: 13.5,
-                        fontWeight: 800,
-                        color: isBull ? '#10B981' : '#F43F5E',
-                        fontFamily: 'var(--font-mono)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4
-                      }}>
-                        {d.change > 0 ? '▲ +' : d.change < 0 ? '▼ -' : (d.pChange >= 0 ? '▲ +' : '▼ -')}{fmt(Math.abs(d.change || 0))} ({d.pChange > 0 ? '+' : d.pChange < 0 ? '-' : ''}{Math.abs(d.pChange || 0).toFixed(2)}%)
-                      </span>
+                      {(() => {
+                        const changeVal = Number(d.change || 0);
+                        const pChangeVal = Number(d.pChange || 0);
+                        const isPos = changeVal > 0 || (changeVal === 0 && pChangeVal > 0);
+                        const isNeg = changeVal < 0 || (changeVal === 0 && pChangeVal < 0);
+                        const isZero = !isPos && !isNeg;
+
+                        const badgeBg = isZero
+                          ? 'rgba(148, 163, 184, 0.12)'
+                          : isPos
+                          ? 'rgba(16, 185, 129, 0.15)'
+                          : 'rgba(244, 63, 94, 0.15)';
+                        const badgeBorder = isZero
+                          ? '1px solid rgba(148, 163, 184, 0.25)'
+                          : isPos
+                          ? '1px solid rgba(16, 185, 129, 0.35)'
+                          : '1px solid rgba(244, 63, 94, 0.35)';
+                        const badgeColor = isZero
+                          ? '#94a3b8'
+                          : isPos
+                          ? '#10B981'
+                          : '#F43F5E';
+
+                        const text = isZero
+                          ? `0.00 (0.00%)`
+                          : isPos
+                          ? `▲ +${fmt(Math.abs(changeVal))} (+${Math.abs(pChangeVal).toFixed(2)}%)`
+                          : `▼ -${fmt(Math.abs(changeVal))} (-${Math.abs(pChangeVal).toFixed(2)}%)`;
+
+                        return (
+                          <span style={{
+                            background: badgeBg,
+                            border: badgeBorder,
+                            borderRadius: 8,
+                            padding: '4px 10px',
+                            fontSize: 13.5,
+                            fontWeight: 800,
+                            color: badgeColor,
+                            fontFamily: 'var(--font-mono)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}>
+                            {text}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
                       {(() => {

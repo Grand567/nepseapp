@@ -420,6 +420,9 @@ The following legacy tests hardcoded obsolete `7.5%` Short-Term / `5.0%` Long-Te
 | **Wave 3** | `24839da` | `fix(audit-w3): resolve P0 UI state leaks, race conditions, and live display bugs` | P0 Frontend State Leaks, Cross-Ticker Races, Fabricated Fallbacks, Live-vs-EOD Accuracy |
 | **Wave 4** | `f8c8962` | `fix(audit-w4): resolve P1 bugs across backend, services, and UI` | All 75 Canonical P1 Bugs across Backend, Services, and UI Components |
 | **Wave 4.5**| `55b51c0` | `fix(audit-w4.5): resolve zero-width chart canvas and 4-worker Playwright timeouts` | Zero-dim chart canvas, closed-market proxy caching, Vite preview test runner, NO_PROXY loopback |
+| **Wave 4.6**| `c2ca9d6` | `fix(audit-w4.6): fix 2 undeclared identifiers and trailing-ratchet test ESM import` | Fix undeclared identifiers in AiAnalyst and meroShareService, trailing-ratchet ESM test import |
+| **Wave 4.7**| Working tree | `fix(audit-w4.7): add session freshness badges and stock telemetry timestamp tracking` | SessionFreshnessBadge live/historical states, StockDetailModal PnL badges, useUnifiedStockTelemetry timestamp tracking, liveData lastUpdated |
+| **Wave 4.8**| Pending | `fix(audit-w4.8): prevent stale intraday curve serving and verify live session freshness` | Guard /api/nepse/intraday-graph and servicesApi/liveData against serving stale 2026-11-20 snapshots as 2026-11-23 live 1D curve, fix getCachedMarketStatus reference error |
 
 ---
 

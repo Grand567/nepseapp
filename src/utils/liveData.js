@@ -2012,6 +2012,15 @@ export async function fetchPriceHistory(symbol, days = 365) {
       const intraRes = await fetchFromBackend('/api/nepse/intraday-graph', 8000);
       const ticks = intraRes?.data ?? (Array.isArray(intraRes) ? intraRes : null);
       if (Array.isArray(ticks) && ticks.length > 1) {
+        const first = ticks[0];
+        const firstTs = first?.timestamp;
+        const firstDate = firstTs
+          ? new Date(firstTs > 1e11 ? firstTs : firstTs * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })
+          : (first?.date ? String(first.date).slice(0, 10) : null);
+        if (firstDate && firstDate !== latestTradingDate) {
+          // Reject stale ticks from older session when building today's candle
+          return null;
+        }
         const closes = ticks.map(t => Number(t.close || 0)).filter(v => v > 0);
         const highs  = ticks.map(t => Number(t.high  || t.close || 0)).filter(v => v > 0);
         const lows   = ticks.map(t => Number(t.low   || t.close || 0)).filter(v => v > 0);
@@ -2600,8 +2609,16 @@ export async function fetchMarketIndices(targetDate) {
 
         const pts = intradayRes.status === 'fulfilled' && Array.isArray(intradayRes.value) ? intradayRes.value : [];
         if (pts.length > 0) {
-          const latest = pts[pts.length - 1];
           const first = pts[0];
+          const firstTs = first?.timestamp;
+          const firstDate = firstTs
+            ? new Date(firstTs > 1e11 ? firstTs : firstTs * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })
+            : (first?.date ? String(first.date).slice(0, 10) : null);
+          if (firstDate && firstDate !== todayIso) {
+            // Reject stale intraday snapshot from older session (e.g. 2026-11-20 vs 2026-11-23)
+            return null;
+          }
+          const latest = pts[pts.length - 1];
           const liveClose = Number(latest?.close || latest?.value || 0);
           if (liveClose > 0) {
             const sumData = summaryRes.status === 'fulfilled' ? summaryRes.value : null;
@@ -3987,7 +4004,9 @@ export async function fetchLiveStockQuote(symbol) {
         volume: Number(d.totalTradedQuantity || d.volume || 0),
         turnover: Number(d.totalTradedValue || d.turnover || 0),
         businessDate: d.businessDate || new Date().toISOString().split('T')[0],
-        source: res.source || 'live'
+        source: res.source || 'live',
+        lastUpdatedMs: Date.now(),
+        lastUpdated: new Date().toISOString()
       };
 
       if (MEM_STOCKS && quote.ltp > 0) {
