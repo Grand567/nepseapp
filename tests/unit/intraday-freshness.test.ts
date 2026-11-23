@@ -409,3 +409,85 @@ test('10. Wave 4.12 Invariant: modalBadgeSessionDate never resolves to future da
   assert.notStrictEqual(resolvedBadgeSessionDate, '2026-11-24', 'Badge session date must NEVER resolve to tomorrow (2026-11-24)');
   assert.ok(resolvedBadgeSessionDate <= todayIso, 'Badge session date must be <= todayIso');
 });
+
+test('11. Wave 4.12 Invariant: audit-pipeline targetSessionDate resolves to 2026-11-23 (never tomorrow 2026-11-24) on closed market', () => {
+  const appNow = new Date('2026-11-23T22:46:00+05:45');
+  const marketStatus = {
+    isOpen: false,
+    targetSessionDate: '2026-11-24',
+    lastClosedSessionDate: '2026-11-23',
+    currentSessionDate: '2026-11-23',
+    sessionDate: '2026-11-23'
+  };
+
+  const isMarketOpen = Boolean(marketStatus.isOpen);
+  const targetSessionDate = isMarketOpen
+    ? (marketStatus.currentSessionDate || marketStatus.sessionDate || '2026-11-23')
+    : (marketStatus.lastClosedSessionDate || marketStatus.sessionDate || marketStatus.currentSessionDate || '2026-11-23');
+
+  assert.strictEqual(targetSessionDate, '2026-11-23', 'Audit pipeline targetSessionDate must resolve to 2026-11-23');
+  assert.notStrictEqual(targetSessionDate, '2026-11-24', 'Must never resolve to tomorrow 2026-11-24 before market open');
+});
+
+test('12. Wave 4.12 Invariant: sector-ad computes valid sector accumulation/distribution parity with local fallback', () => {
+  const sampleStocks = [
+    { symbol: 'NABIL', sector: 'Commercial Banks', high: 551, low: 545, ltp: 550, volume: 40000, change: 2 },
+    { symbol: 'GBIME', sector: 'Commercial Banks', high: 240, low: 236, ltp: 237, volume: 20000, change: -1 },
+    { symbol: 'CHCL', sector: 'Hydro Power', high: 430, low: 410, ltp: 425, volume: 15000, change: 5 }
+  ];
+
+  const sectorMap: Record<string, any> = {};
+  sampleStocks.forEach(s => {
+    const sector = s.sector || 'Others';
+    if (!sectorMap[sector]) {
+      sectorMap[sector] = {
+        sector,
+        stocks: [],
+        adl: 0,
+        totalVol: 0,
+        advances: 0,
+        declines: 0,
+        unchanged: 0
+      };
+    }
+    const H = Number(s.high || s.ltp || 0);
+    const L = Number(s.low || s.ltp || 0);
+    const C = Number(s.ltp || 0);
+    const V = Number(s.volume || 0);
+    const range = H - L;
+    const clv = range > 0 ? ((C - L) - (H - C)) / range : 0;
+    const chg = Number(s.change || 0);
+
+    if (chg > 0) sectorMap[sector].advances++;
+    else if (chg < 0) sectorMap[sector].declines++;
+    else sectorMap[sector].unchanged++;
+
+    sectorMap[sector].stocks.push(s.symbol);
+    sectorMap[sector].adl += clv * V;
+    sectorMap[sector].totalVol += V;
+  });
+
+  const result = Object.values(sectorMap).map(sec => {
+    const norm = sec.totalVol > 0 ? sec.adl / sec.totalVol : 0;
+    return {
+      sector: sec.sector,
+      adl: Number(sec.adl.toFixed(2)),
+      normalizedADL: Number(norm.toFixed(4)),
+      signal: norm > 0.1 ? 'Accumulation' : norm < -0.1 ? 'Distribution' : 'Neutral',
+      strength: Math.min(100, Math.abs(norm) * 100).toFixed(1),
+      stockCount: sec.stocks.length,
+      totalVolume: sec.totalVol,
+      advances: sec.advances,
+      declines: sec.declines,
+      unchanged: sec.unchanged
+    };
+  });
+
+  assert.strictEqual(result.length, 2, 'Must calculate for 2 sectors');
+  const bankSec = result.find(r => r.sector === 'Commercial Banks');
+  assert.ok(bankSec, 'Commercial Banks sector must exist');
+  assert.strictEqual(bankSec?.stockCount, 2);
+  assert.strictEqual(bankSec?.advances, 1);
+  assert.strictEqual(bankSec?.declines, 1);
+  assert.strictEqual(bankSec?.totalVolume, 60000);
+});

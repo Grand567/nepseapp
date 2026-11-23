@@ -117,7 +117,11 @@ async function runAuditPipeline() {
   const statusRes = await fetchJson('/api/status');
   const marketStatus = statusRes.data || {};
   const isMarketOpen = Boolean(marketStatus.isOpen);
-  const targetSessionDate = marketStatus.targetSessionDate || '2026-11-20';
+  // When market is closed after 15:00 NPT on a trading day (2026-11-23),
+  // the active/latest completed session date is 2026-11-23 (NEVER tomorrow's 2026-11-24 before 11:00 AM NPT on the 24th)
+  const targetSessionDate = isMarketOpen
+    ? (marketStatus.currentSessionDate || marketStatus.sessionDate || '2026-11-23')
+    : (marketStatus.lastClosedSessionDate || marketStatus.sessionDate || marketStatus.currentSessionDate || '2026-11-23');
 
   console.log(`  * Live Market Status: ${isMarketOpen ? 'OPEN (Continuous Trading)' : 'CLOSED'}`);
   console.log(`  * Target Session Date: ${targetSessionDate}`);

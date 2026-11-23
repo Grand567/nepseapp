@@ -49,7 +49,7 @@ import {
 import { fetchStockSnapshot, getSnapshotCache } from '../services/stockSnapshot';
 import { fetchNepseIntradayGraph, fetchCompanyQuarterlyReports, fetchMarketNews } from '../utils/servicesApi';
 import { getCorporateAlertForSymbol } from '../services/merolaganiNewsService.js';
-import { getDetailedMarketStatus, formatNptDateIso, isMarketOpen, latestTradingSession } from '../utils/nepseCalendar';
+import { getDetailedMarketStatus, formatNptDateIso, isMarketOpen, latestTradingSession, getAppNow } from '../utils/nepseCalendar';
 import { triggerHaptic } from '../utils/haptics';
 import LoadingShimmerBar from './LoadingShimmerBar';
 import { exportStockFloorsheet, exportStockPriceHistory, BULK_DEAL_MIN_QTY, BULK_DEAL_MIN_AMOUNT } from '../utils/floorsheetExport';
@@ -1386,10 +1386,15 @@ export default function StockDetailModal({
   sessionDate: propSessionDate = '',
   date: propDate = '',
 }) {
-  const initialEffectiveDate = (typeof stock === 'object' && stock?.isHistoricalSession)
+  const appNow = getAppNow();
+  const todayIso = formatNptDateIso(appNow);
+  const marketStatus = useMemo(() => propMarketStatus || getDetailedMarketStatus(appNow), [propMarketStatus, appNow]);
+  const lastClosedSession = marketStatus?.lastClosedSessionDate || latestTradingSession(appNow, true);
+  const maxAllowedSessionDate = marketStatus?.isOpen ? todayIso : (lastClosedSession <= todayIso ? lastClosedSession : todayIso);
+  const rawPropDate = (typeof stock === 'object' && stock?.isHistoricalSession)
     ? (propSelectedDate || propSessionDate || propDate || stock?.sessionDate || stock?.businessDate || stock?.date || '')
     : (propSelectedDate && propSelectedDate !== getLatestTradingDateStr() && propSelectedDate !== 'latest' && propSelectedDate !== '' ? propSelectedDate : '');
-  const marketStatus = useMemo(() => propMarketStatus || getDetailedMarketStatus(), [propMarketStatus]);
+  const initialEffectiveDate = (rawPropDate && rawPropDate > maxAllowedSessionDate) ? '' : rawPropDate;
   const { setActiveTab: setGlobalActiveTab } = useNavigation();
   const normalizeModalTab = (tabName) => {
     if (!tabName) return '';
@@ -3732,20 +3737,23 @@ export default function StockDetailModal({
     ? realBrokerAnalysis
     : (isStrict1DBa(broker1DData) ? broker1DData : (isStrict1DBa(realBrokerAnalysis) ? realBrokerAnalysis : (getCachedRealBrokerAnalysis(d?.symbol, 1) || null)));
 
-  const appNow = new Date();
-  const todayIso = formatNptDateIso(appNow);
-  const activeSessionDate = marketStatus?.currentSessionDate || marketStatus?.sessionDate || marketStatus?.businessDate || latestTradingSession(appNow, false);
+  const activeSessionDate = marketStatus?.isOpen
+    ? (marketStatus?.currentSessionDate || marketStatus?.sessionDate || latestTradingSession(appNow, false))
+    : lastClosedSession;
   const todaySessionDate = activeSessionDate;
-  const lastClosedSession = marketStatus?.lastClosedSessionDate || latestTradingSession(appNow, true);
-  const displayedQuoteSessionDate = d?.businessDate || d?.date || stock?.businessDate || stock?.date || (marketStatus?.isOpen ? activeSessionDate : lastClosedSession);
-  const isHistoricalDateSelected = Boolean(modalSessionDate && modalSessionDate !== activeSessionDate && modalSessionDate <= todayIso);
+  // Under closed market after 15:00 on a trading day (2026-11-23), active/latest completed session is 2026-11-23 (never tomorrow's 2026-11-24)
+  const rawQuoteDate = d?.businessDate || d?.date || stock?.businessDate || stock?.date || '';
+  const displayedQuoteSessionDate = (rawQuoteDate && rawQuoteDate <= maxAllowedSessionDate)
+    ? rawQuoteDate
+    : (marketStatus?.isOpen ? activeSessionDate : lastClosedSession);
+  const isHistoricalDateSelected = Boolean(modalSessionDate && modalSessionDate !== activeSessionDate && modalSessionDate <= maxAllowedSessionDate);
   let resolvedBadgeSessionDate = isHistoricalDateSelected
     ? modalSessionDate
     : (marketStatus?.isOpen ? activeSessionDate : (displayedQuoteSessionDate || lastClosedSession || activeSessionDate));
-  if (!resolvedBadgeSessionDate || resolvedBadgeSessionDate > todayIso) {
-    resolvedBadgeSessionDate = displayedQuoteSessionDate && displayedQuoteSessionDate <= todayIso
+  if (!resolvedBadgeSessionDate || resolvedBadgeSessionDate > maxAllowedSessionDate) {
+    resolvedBadgeSessionDate = displayedQuoteSessionDate && displayedQuoteSessionDate <= maxAllowedSessionDate
       ? displayedQuoteSessionDate
-      : (activeSessionDate <= todayIso ? activeSessionDate : todayIso);
+      : (lastClosedSession <= maxAllowedSessionDate ? lastClosedSession : maxAllowedSessionDate);
   }
   const modalBadgeSessionDate = resolvedBadgeSessionDate;
   const hasLiveIntradayQuotes = Boolean(

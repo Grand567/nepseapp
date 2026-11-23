@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getDetailedMarketStatus, latestTradingSession, formatNptDateIso } from '../utils/nepseCalendar.js';
+import { getDetailedMarketStatus, latestTradingSession, formatNptDateIso, getAppNow } from '../utils/nepseCalendar.js';
 import { RefreshCw, AlertTriangle, Clock } from 'lucide-react';
 
 /**
@@ -25,10 +25,10 @@ export default function SessionFreshnessBadge({
   hasLiveTrades = false,
   isHistorical = false,
 }) {
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(() => getAppNow());
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 10000); // 10s tick
+    const timer = setInterval(() => setNow(getAppNow()), 10000); // 10s tick
     return () => clearInterval(timer);
   }, []);
 
@@ -36,9 +36,13 @@ export default function SessionFreshnessBadge({
   const isOpen = Boolean(mktStatus?.isOpen && !mktStatus?.isEmergencyHalt);
   const isMarketOpen = Boolean(isOpen || isLive || apiStatus === 'live');
   const todayTradingDate = latestTradingSession(now, false);
+  const lastClosedSession = latestTradingSession(now, true);
   const todayIso = formatNptDateIso(now);
+  const maxAllowedDate = isMarketOpen ? todayIso : (lastClosedSession <= todayIso ? lastClosedSession : todayIso);
   const rawSessionDate = sessionDate || latestTradingSession(now, !isMarketOpen);
-  const effectiveSessionDate = (rawSessionDate && rawSessionDate > todayIso) ? todayTradingDate : rawSessionDate;
+  const effectiveSessionDate = (rawSessionDate && rawSessionDate > maxAllowedDate)
+    ? (isMarketOpen ? todayTradingDate : lastClosedSession)
+    : rawSessionDate;
   const parsedLastMs = lastUpdatedMs != null ? Number(lastUpdatedMs) : null;
   const hasValidLastUpdate = Number.isFinite(parsedLastMs) && parsedLastMs > 0;
   const timeStr = hasValidLastUpdate

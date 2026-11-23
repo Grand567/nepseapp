@@ -961,6 +961,9 @@ export function getDetailedMarketStatus(now = getAppNow()) {
 
   const lastClosedSessionDate = latestTradingSession(now, true);
   const currentSessionDate = latestTradingSession(now, false);
+  const sessionDate = (isTradingDay && nptTotalMinutes >= 11 * 60 && nptTotalMinutes < 15 * 60)
+    ? currentSessionDate
+    : lastClosedSessionDate;
 
   // Common metadata
   const baseData = {
@@ -980,6 +983,7 @@ export function getDetailedMarketStatus(now = getAppNow()) {
     targetSessionDate,
     lastClosedSessionDate,
     currentSessionDate,
+    sessionDate,
     lastTradingDayIso: formatNptDateIso(now),
   };
 

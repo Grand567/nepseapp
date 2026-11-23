@@ -4111,14 +4111,26 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
   const isMarketOpen = Boolean(currentStatus?.isOpen || currentStatus?.isPreOpen);
   const targetSession = reqDate || (isMarketOpen ? todayIso : latestTradingSession(appNow, false));
 
-  const ensureSettledClose = (ticks, session) => {
+  const ensureSettledClose = async (ticks, session) => {
     if (!Array.isArray(ticks) || ticks.length === 0) return ticks;
     const nptMins = getNptMinutesFromDate(appNow);
     const isClosed = !isMarketOpen || nptMins >= 15 * 60;
     if (isClosed) {
-      const officialClose = Number(LAST_GOOD_INDICES?.nepse?.value || getCache('market-indices')?.nepse?.value || 0);
+      const tickDate = getIntradayTicksDate(ticks);
+      const targetSessionDate = session || tickDate || todayIso;
+      // Only reconcile official close if ticks actually belong to the target session date
+      if (tickDate && targetSessionDate && tickDate !== targetSessionDate) {
+        return ticks;
+      }
+      let officialIndices = getCache('market-indices');
+      if (!officialIndices?.nepse?.value || (targetSessionDate && officialIndices.asOfDate && officialIndices.asOfDate !== targetSessionDate)) {
+        try {
+          officialIndices = await getMarketIndicesInternal(targetSessionDate);
+        } catch (_) {}
+      }
+      const officialClose = Number(officialIndices?.nepse?.value || LAST_GOOD_INDICES?.nepse?.value || 0);
       if (officialClose > 0) {
-        return reconcileIntradayWithOfficialClose(ticks, officialClose, session);
+        return reconcileIntradayWithOfficialClose(ticks, officialClose, targetSessionDate);
       }
     }
     return ticks;
@@ -4129,7 +4141,7 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
   if (cached && Array.isArray(cached) && cached.length > 0) {
     const cachedDate = getIntradayTicksDate(cached);
     if (!isMarketOpen || cachedDate === todayIso || isExplicitHistorical) {
-      const settled = ensureSettledClose(cached, cachedDate || targetSession);
+      const settled = await ensureSettledClose(cached, cachedDate || targetSession);
       return res.json({ success: true, data: settled, cached: true, sessionDate: cachedDate, isLive: isMarketOpen && cachedDate === todayIso });
     }
   }
@@ -4142,10 +4154,11 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
         const diskTicks = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
         const diskDate = getIntradayTicksDate(diskTicks);
         if (Array.isArray(diskTicks) && diskTicks.length > 0 && (!reqDate || diskDate === reqDate || allowStale)) {
+          const settled = await ensureSettledClose(diskTicks, diskDate || reqDate);
           return res.json({
             success: true,
-            data: diskTicks,
-            count: diskTicks.length,
+            data: settled,
+            count: settled.length,
             isLive: false,
             isHistorical: true,
             sessionDate: diskDate,
@@ -4169,7 +4182,7 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
   if (!isMarketOpen) {
     const lastSession = latestTradingSession(appNow, true);
     if (lastKnownIntradaySessionDate === lastSession && lastKnownIntradayGraph && lastKnownIntradayGraph.length > 0) {
-      const settled = ensureSettledClose(lastKnownIntradayGraph, lastSession);
+      const settled = await ensureSettledClose(lastKnownIntradayGraph, lastSession);
       lastKnownIntradayGraph = settled;
       setCache(cacheKey, settled, 60000);
       return res.json({
@@ -4189,12 +4202,14 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
         const diskDate = getIntradayTicksDate(diskTicks);
         // During closed hours, only serve disk snapshot if it corresponds to the latest completed trading session
         if (Array.isArray(diskTicks) && diskTicks.length > 0 && (diskDate === lastSession || allowStale)) {
-          const settled = ensureSettledClose(diskTicks, diskDate || lastSession);
+          const settled = await ensureSettledClose(diskTicks, diskDate || lastSession);
           lastKnownIntradayGraph = settled;
           lastKnownIntradaySessionDate = diskDate;
-          try {
-            fs.writeFileSync(diskPath, JSON.stringify(settled));
-          } catch (_) {}
+          if (diskDate === todayIso) {
+            try {
+              fs.writeFileSync(diskPath, JSON.stringify(settled));
+            } catch (_) {}
+          }
           setCache(cacheKey, settled, 60000);
           return res.json({
             success: true,
@@ -4230,7 +4245,7 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
       const notsDate = getIntradayTicksDate(formatted);
       // Invariant: During live market, only accept ticks that actually belong to today!
       if (notsDate === todayIso) {
-        const settled = ensureSettledClose(formatted, todayIso);
+        const settled = await ensureSettledClose(formatted, todayIso);
         lastKnownIntradayGraph = settled;
         lastKnownIntradaySessionDate = todayIso;
         try {
@@ -8442,31 +8457,101 @@ app.get('/api/smart-money/sector-ad', async (req, res) => {
   if (cached) return res.json({ success: true, data: cached, cached: true });
 
   try {
-    const meroSummary = await fetchInternalMeroMarketSummary();
-    const allStocks = meroSummary?.stocks || [];
+    let allStocks = [];
 
+    // 1. First check memory-cached stock universes
+    const cachedTodayPrices = getCache('today-prices');
+    if (Array.isArray(cachedTodayPrices) && cachedTodayPrices.length > 50) {
+      allStocks = cachedTodayPrices;
+    } else {
+      const cachedMarketSummary = getCache('market-summary');
+      if (Array.isArray(cachedMarketSummary) && cachedMarketSummary.length > 50) {
+        allStocks = cachedMarketSummary;
+      }
+    }
+
+    const currentStatus = getCachedMarketStatus();
+    const isMarketOpen = Boolean(currentStatus?.isOpen || currentStatus?.isPreOpen);
+
+    // 2. If market is open and no cached universe, try internal MeroLagani with a tight 2s circuit breaker
+    if (allStocks.length === 0 && isMarketOpen) {
+      try {
+        const meroSummary = await Promise.race([
+          fetchInternalMeroMarketSummary(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('upstream timeout')), 2000))
+        ]);
+        if (meroSummary && Array.isArray(meroSummary.stocks) && meroSummary.stocks.length > 0) {
+          allStocks = meroSummary.stocks;
+        }
+      } catch (_) {}
+    }
+
+    // 3. Fallback: local SQLite daily_stock_summary / live_today_session
+    if (allStocks.length === 0) {
+      try {
+        const fallbackList = getFallbackTodayPrices();
+        if (Array.isArray(fallbackList) && fallbackList.length > 0) {
+          allStocks = fallbackList;
+        }
+      } catch (_) {}
+    }
+
+    // 4. Compute sector advance/decline accumulation/distribution
     const sectorMap = {};
     (Array.isArray(allStocks) ? allStocks : []).forEach(s => {
-      const sector = s.sector || 'Others';
-      if (!sectorMap[sector]) sectorMap[sector] = { sector, stocks: [], adl: 0, totalVol: 0 };
-      const H = Number(s.high||s.ltp||0), L = Number(s.low||s.ltp||0), C = Number(s.ltp||0), V = Number(s.volume||0);
+      const sym = s.symbol || s.scrip || '';
+      const sector = s.sector || stockMap[sym]?.sector || stockMap[sym?.toUpperCase()]?.sector || 'Others';
+      if (!sectorMap[sector]) {
+        sectorMap[sector] = {
+          sector,
+          stocks: [],
+          adl: 0,
+          totalVol: 0,
+          advances: 0,
+          declines: 0,
+          unchanged: 0
+        };
+      }
+      const H = Number(s.high || s.highPrice || s.ltp || 0);
+      const L = Number(s.low || s.lowPrice || s.ltp || 0);
+      const C = Number(s.ltp || s.closePrice || s.close || 0);
+      const V = Number(s.volume || s.totalTradedQuantity || 0);
       const range = H - L;
-      const clv = range > 0 ? ((C-L)-(H-C))/range : 0;
-      sectorMap[sector].stocks.push(s.symbol);
+      const clv = range > 0 ? ((C - L) - (H - C)) / range : 0;
+      const chg = Number(s.change != null ? s.change : (s.pointChange != null ? s.pointChange : 0));
+
+      if (chg > 0) sectorMap[sector].advances++;
+      else if (chg < 0) sectorMap[sector].declines++;
+      else sectorMap[sector].unchanged++;
+
+      if (sym) sectorMap[sector].stocks.push(sym);
       sectorMap[sector].adl += clv * V;
       sectorMap[sector].totalVol += V;
     });
 
     const result = Object.values(sectorMap).map(sec => {
       const norm = sec.totalVol > 0 ? sec.adl / sec.totalVol : 0;
-      return { sector: sec.sector, adl: Number(sec.adl.toFixed(2)), normalizedADL: Number(norm.toFixed(4)), signal: norm > 0.1 ? 'Accumulation' : norm < -0.1 ? 'Distribution' : 'Neutral', strength: Math.min(100, Math.abs(norm)*100).toFixed(1), stockCount: sec.stocks.length, totalVolume: sec.totalVol, stocks: sec.stocks.slice(0, 10) };
+      return {
+        sector: sec.sector,
+        adl: Number(sec.adl.toFixed(2)),
+        normalizedADL: Number(norm.toFixed(4)),
+        signal: norm > 0.1 ? 'Accumulation' : norm < -0.1 ? 'Distribution' : 'Neutral',
+        strength: Math.min(100, Math.abs(norm) * 100).toFixed(1),
+        stockCount: sec.stocks.length,
+        totalVolume: sec.totalVol,
+        advances: sec.advances,
+        declines: sec.declines,
+        unchanged: sec.unchanged,
+        stocks: sec.stocks.slice(0, 10)
+      };
     }).sort((a, b) => b.adl - a.adl);
 
-    setCache(cacheKey, result, 30 * 1000);
-    res.json({ success: true, data: result });
+    const ttl = isMarketOpen ? 30 * 1000 : 120 * 1000;
+    setCache(cacheKey, result, ttl);
+    return res.json({ success: true, data: result, count: result.length, isLive: isMarketOpen });
   } catch (err) {
-    console.error('[sector-ad] Error:', err.message);
-    res.status(500).json({ success: false, message: err.message });
+    console.error('[sector-ad] Fallback Error:', err.message);
+    return res.json({ success: true, data: [], count: 0, error: err.message });
   }
 });
 

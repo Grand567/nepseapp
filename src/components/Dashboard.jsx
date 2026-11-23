@@ -1830,7 +1830,10 @@ function Dashboard({
 
               // Ensure the latest intraday candle reflects the real-time live price from NOTS only during open market hours
             if (sym === 'NEPSE') {
-              const officialVal = Number(indices?.nepse?.value || 0);
+              const officialNepse = (indices?.nepse && Number(indices.nepse.value) > 0 && !indices?.isPlaceholder)
+                ? indices.nepse
+                : (getCachedIndices()?.nepse?.value > 0 ? getCachedIndices().nepse : null);
+              const officialVal = Number(officialNepse?.value || 0);
               const isMarketOpen = Boolean(marketStatus?.isOpen);
               const lastPt = intraday[intraday.length - 1];
               if (officialVal > 0 && !indices?.isPlaceholder && isMarketOpen) {
@@ -1855,10 +1858,10 @@ function Dashboard({
                   }
                 }
                 setHeroHistory(updatedIntraday);
-              } else if (!isMarketOpen && officialVal > 0 && !indices?.isPlaceholder) {
+              } else if (!isMarketOpen && officialVal > 0) {
                 // When market is closed and official closing value exists, reconcile intraday series to end at 03:00 PM settlement
                 let settledIntraday = intraday;
-                if (lastPt && Math.abs(Number(lastPt.close) - officialVal) > 0.01) {
+                if (lastPt && (Math.abs(Number(lastPt.close) - officialVal) > 0.01 || (lastPt.time !== '03:00 PM' && lastPt.time !== '3:00 PM'))) {
                   const updated = [...intraday];
                   if (lastPt.time === '03:00 PM' || lastPt.time === '3:00 PM') {
                     updated[updated.length - 1] = {
@@ -1888,10 +1891,15 @@ function Dashboard({
               }
 
               // Consistency reconciliation guard:
-              // When market is closed and indices.nepse already has an authoritative closing value,
+              // When market is closed and official closing value exists,
               // NEVER let a 02:59 PM intraday tick overwrite the official closing nepse.value or change!
               const lastClose = Number(lastPt?.close || lastPt?.value || 0);
-              if (officialVal > 0 && !indices?.isPlaceholder) {
+              if (officialNepse && !isMarketOpen) {
+                setActiveHeroIndex(prev => ({
+                  ...prev,
+                  val: officialNepse
+                }));
+              } else if (officialVal > 0 && !indices?.isPlaceholder) {
                 setActiveHeroIndex(prev => ({
                   ...prev,
                   val: indices.nepse
@@ -2840,19 +2848,25 @@ function Dashboard({
 
   const cachedNepseHero = getCachedIndices()?.nepse;
   const fallbackHero = (cachedNepseHero?.value > 0) ? cachedNepseHero : (DEFAULT_OFFICIAL_INDICES?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 });
+  const officialNepse = (indices?.nepse && Number(indices.nepse.value) > 0 && !indices?.isPlaceholder)
+    ? indices.nepse
+    : (cachedNepseHero?.value > 0 ? cachedNepseHero : null);
+
+  const isMarketOpenNow = Boolean(marketStatus?.isOpen);
+  const isClosedMarket = !isMarketOpenNow;
+
   let rawHeroVal = activeHeroIndex?.isStock
     ? (activeHeroIndex.val || { value: 0, change: 0, pChange: 0, turnover: 0 })
-    : (((activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && indices?.nepse && Number(indices.nepse.value) > 0 && !indices?.isPlaceholder)
-        ? indices.nepse
-        : (activeHeroIndex?.val?.reconciledWithIntraday && !indices?.nepse?.value
-            ? activeHeroIndex.val
-            : (activeHeroIndex?.val || indices?.nepse || fallbackHero)));
+    : ((activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index')
+        ? (isClosedMarket && officialNepse?.value > 0
+            ? officialNepse
+            : (officialNepse || activeHeroIndex?.val || fallbackHero))
+        : (activeHeroIndex?.val || fallbackHero));
 
   // Consistency reconciliation guard for headline index:
   // When market is closed (or indices.nepse already has an authoritative closing value and change),
   // NEVER let a 02:59 PM intraday tick overwrite the official closing nepse.value (2623.56) or change (+2.26 pts).
-  const isMarketOpenNow = Boolean(marketStatus?.isOpen);
-  const hasAuthoritativeClose = !isMarketOpenNow && Number(indices?.nepse?.value || rawHeroVal?.value || 0) > 0 && !indices?.isPlaceholder;
+  const hasAuthoritativeClose = isClosedMarket && Number(officialNepse?.value || 0) > 0;
 
   if (!hasAuthoritativeClose && !activeHeroIndex?.isStock && (activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && heroTimeframe === '1D' && heroHistory && heroHistory.length > 0) {
     const lastTick = heroHistory[heroHistory.length - 1];
@@ -2890,11 +2904,11 @@ function Dashboard({
       // Reconcile 1D chart's final point with indices.nepse.value when closed
       // so the chart's right-edge green pill reads 2623.56 (matching the headline).
       if (!activeHeroIndex?.isStock && (activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index')) {
-        const officialClose = Number(heroVal?.value || indices?.nepse?.value || 0);
-        if (!marketStatus?.isOpen && officialClose > 0 && baseSeries.length > 0) {
+        const officialClose = Number(officialNepse?.value || heroVal?.value || indices?.nepse?.value || 0);
+        if (isClosedMarket && officialClose > 0 && baseSeries.length > 0) {
           const lastPt = baseSeries[baseSeries.length - 1];
           const lastClose = Number(lastPt?.close || lastPt?.value || 0);
-          if (Math.abs(lastClose - officialClose) > 0.01) {
+          if (Math.abs(lastClose - officialClose) > 0.01 || (lastPt.time !== '03:00 PM' && lastPt.time !== '3:00 PM')) {
             const updated = [...baseSeries];
             if (lastPt.time === '03:00 PM' || lastPt.time === '3:00 PM') {
               updated[updated.length - 1] = {
