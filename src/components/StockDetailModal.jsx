@@ -3732,11 +3732,22 @@ export default function StockDetailModal({
     ? realBrokerAnalysis
     : (isStrict1DBa(broker1DData) ? broker1DData : (isStrict1DBa(realBrokerAnalysis) ? realBrokerAnalysis : (getCachedRealBrokerAnalysis(d?.symbol, 1) || null)));
 
-  const todaySessionDate = marketStatus?.targetSessionDate || marketStatus?.sessionDate || marketStatus?.businessDate || latestTradingSession(new Date(), false);
-  const isHistoricalDateSelected = Boolean(modalSessionDate && modalSessionDate !== todaySessionDate);
-  const modalBadgeSessionDate = isHistoricalDateSelected
+  const appNow = new Date();
+  const todayIso = formatNptDateIso(appNow);
+  const activeSessionDate = marketStatus?.currentSessionDate || marketStatus?.sessionDate || marketStatus?.businessDate || latestTradingSession(appNow, false);
+  const todaySessionDate = activeSessionDate;
+  const lastClosedSession = marketStatus?.lastClosedSessionDate || latestTradingSession(appNow, true);
+  const displayedQuoteSessionDate = d?.businessDate || d?.date || stock?.businessDate || stock?.date || (marketStatus?.isOpen ? activeSessionDate : lastClosedSession);
+  const isHistoricalDateSelected = Boolean(modalSessionDate && modalSessionDate !== activeSessionDate && modalSessionDate <= todayIso);
+  let resolvedBadgeSessionDate = isHistoricalDateSelected
     ? modalSessionDate
-    : (marketStatus?.isOpen ? todaySessionDate : (marketStatus?.lastClosedSessionDate || modalSessionDate || todaySessionDate));
+    : (marketStatus?.isOpen ? activeSessionDate : (displayedQuoteSessionDate || lastClosedSession || activeSessionDate));
+  if (!resolvedBadgeSessionDate || resolvedBadgeSessionDate > todayIso) {
+    resolvedBadgeSessionDate = displayedQuoteSessionDate && displayedQuoteSessionDate <= todayIso
+      ? displayedQuoteSessionDate
+      : (activeSessionDate <= todayIso ? activeSessionDate : todayIso);
+  }
+  const modalBadgeSessionDate = resolvedBadgeSessionDate;
   const hasLiveIntradayQuotes = Boolean(
     liveQuote?.ltp > 0 ||
     d?.trades > 0 ||

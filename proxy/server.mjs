@@ -1265,6 +1265,52 @@ export function getIntradayTicksForToday(sessionDate) {
   return [];
 }
 
+export function reconcileIntradayWithOfficialClose(ticks, officialCloseVal, sessionDate) {
+  if (!Array.isArray(ticks) || ticks.length === 0 || !(Number(officialCloseVal) > 0)) {
+    return ticks;
+  }
+  const lastTick = ticks[ticks.length - 1];
+  const lastClose = Number(lastTick?.close || lastTick?.value || 0);
+  const targetVal = Number(officialCloseVal);
+
+  const lastTime = String(lastTick?.time || '');
+  const isAt3PM = lastTime === '03:00 PM' || lastTime === '3:00 PM';
+
+  if (isAt3PM) {
+    if (Math.abs(lastClose - targetVal) > 0.01) {
+      const updated = [...ticks];
+      updated[updated.length - 1] = {
+        ...lastTick,
+        close: targetVal,
+        value: targetVal,
+        high: Math.max(Number(lastTick.high || targetVal), targetVal),
+        low: Math.min(Number(lastTick.low || targetVal), targetVal)
+      };
+      return updated;
+    }
+    return ticks;
+  }
+
+  // Not at 3:00 PM: append 03:00 PM official closing settlement point if value differs or if market closed
+  const closeTsSec = sessionDate
+    ? Math.floor(Date.parse(`${sessionDate}T09:15:00Z`) / 1000)
+    : (lastTick.timestamp ? (lastTick.timestamp > 1e11 ? Math.floor(lastTick.timestamp / 1000) + 60 : lastTick.timestamp + 60) : Math.floor(Date.now() / 1000));
+  const finalTs = (lastTick.timestamp && lastTick.timestamp > 1e11) ? closeTsSec * 1000 : closeTsSec;
+
+  const closingPt = {
+    time: '03:00 PM',
+    timestamp: finalTs,
+    open: Number(lastTick.close || targetVal),
+    high: Math.max(Number(lastTick.high || lastTick.close || targetVal), targetVal),
+    low: Math.min(Number(lastTick.low || lastTick.close || targetVal), targetVal),
+    close: targetVal,
+    value: targetVal,
+    volume: 0
+  };
+
+  return [...ticks, closingPt];
+}
+
 export function reconcileNepseWithIntradayTicks(indices, intradayTicks, sessionDate) {
   if (!indices || !indices.nepse || !Array.isArray(intradayTicks) || intradayTicks.length === 0) {
     return indices;
@@ -1283,6 +1329,20 @@ export function reconcileNepseWithIntradayTicks(indices, intradayTicks, sessionD
   const currentVal = Number(indices.nepse.value || 0);
   const lastTs = Number(lastTick.timestamp || 0) * (Number(lastTick.timestamp) < 1e11 ? 1000 : 1);
   const idxTs = Number(indices.timestamp || indices.nepse.timestamp || (indices.updatedAt ? new Date(indices.updatedAt).getTime() : 0));
+
+  const appNow = getAppNow();
+  const nptMinutes = getNptMinutesFromDate(appNow);
+  const currentStatus = getProxyMarketStatus();
+  const isClosedMarket = (!currentStatus?.isOpen && !currentStatus?.isPreOpen) || nptMinutes >= 15 * 60 || indices.isClosing;
+
+  // When market is closed and indices already has an authoritative closing value,
+  // NEVER let a 02:59 PM (pre-15:00) continuous trading tick overwrite the official closing index!
+  if (isClosedMarket && currentVal > 0) {
+    const lastTickMinutes = lastTs > 0 ? getNptMinutesFromDate(new Date(lastTs)) : 0;
+    if (lastTickMinutes < 15 * 60 && lastTick.time !== '03:00 PM' && lastTick.time !== '3:00 PM') {
+      return indices;
+    }
+  }
 
   const isDifferent = Math.abs(currentVal - lastClose) > 0.01;
   const isNewer = lastTs > 0 && idxTs > 0 && lastTs > idxTs;
@@ -2011,9 +2071,6 @@ app.get(['/api/market-indices', '/api/indices'], async (req, res) => {
     }
     return res.status(500).json({ success: false, error: 'Failed to fetch indices' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -4054,12 +4111,26 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
   const isMarketOpen = Boolean(currentStatus?.isOpen || currentStatus?.isPreOpen);
   const targetSession = reqDate || (isMarketOpen ? todayIso : latestTradingSession(appNow, false));
 
+  const ensureSettledClose = (ticks, session) => {
+    if (!Array.isArray(ticks) || ticks.length === 0) return ticks;
+    const nptMins = getNptMinutesFromDate(appNow);
+    const isClosed = !isMarketOpen || nptMins >= 15 * 60;
+    if (isClosed) {
+      const officialClose = Number(LAST_GOOD_INDICES?.nepse?.value || getCache('market-indices')?.nepse?.value || 0);
+      if (officialClose > 0) {
+        return reconcileIntradayWithOfficialClose(ticks, officialClose, session);
+      }
+    }
+    return ticks;
+  };
+
   const cacheKey = `nepse-intraday-graph-${targetSession || 'live'}`;
   const cached = getCache(cacheKey);
   if (cached && Array.isArray(cached) && cached.length > 0) {
     const cachedDate = getIntradayTicksDate(cached);
     if (!isMarketOpen || cachedDate === todayIso || isExplicitHistorical) {
-      return res.json({ success: true, data: cached, cached: true, sessionDate: cachedDate, isLive: isMarketOpen && cachedDate === todayIso });
+      const settled = ensureSettledClose(cached, cachedDate || targetSession);
+      return res.json({ success: true, data: settled, cached: true, sessionDate: cachedDate, isLive: isMarketOpen && cachedDate === todayIso });
     }
   }
 
@@ -4098,11 +4169,13 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
   if (!isMarketOpen) {
     const lastSession = latestTradingSession(appNow, true);
     if (lastKnownIntradaySessionDate === lastSession && lastKnownIntradayGraph && lastKnownIntradayGraph.length > 0) {
-      setCache(cacheKey, lastKnownIntradayGraph, 60000);
+      const settled = ensureSettledClose(lastKnownIntradayGraph, lastSession);
+      lastKnownIntradayGraph = settled;
+      setCache(cacheKey, settled, 60000);
       return res.json({
         success: true,
-        data: lastKnownIntradayGraph,
-        count: lastKnownIntradayGraph.length,
+        data: settled,
+        count: settled.length,
         isLive: false,
         isHistorical: true,
         sessionDate: lastSession,
@@ -4116,13 +4189,17 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
         const diskDate = getIntradayTicksDate(diskTicks);
         // During closed hours, only serve disk snapshot if it corresponds to the latest completed trading session
         if (Array.isArray(diskTicks) && diskTicks.length > 0 && (diskDate === lastSession || allowStale)) {
-          lastKnownIntradayGraph = diskTicks;
+          const settled = ensureSettledClose(diskTicks, diskDate || lastSession);
+          lastKnownIntradayGraph = settled;
           lastKnownIntradaySessionDate = diskDate;
-          setCache(cacheKey, diskTicks, 60000);
+          try {
+            fs.writeFileSync(diskPath, JSON.stringify(settled));
+          } catch (_) {}
+          setCache(cacheKey, settled, 60000);
           return res.json({
             success: true,
-            data: diskTicks,
-            count: diskTicks.length,
+            data: settled,
+            count: settled.length,
             isLive: false,
             isHistorical: true,
             sessionDate: diskDate,
@@ -4153,17 +4230,18 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
       const notsDate = getIntradayTicksDate(formatted);
       // Invariant: During live market, only accept ticks that actually belong to today!
       if (notsDate === todayIso) {
-        lastKnownIntradayGraph = formatted;
+        const settled = ensureSettledClose(formatted, todayIso);
+        lastKnownIntradayGraph = settled;
         lastKnownIntradaySessionDate = todayIso;
         try {
-          fs.writeFileSync(path.resolve('proxy/data/nepse_intraday_latest.json'), JSON.stringify(formatted));
+          fs.writeFileSync(path.resolve('proxy/data/nepse_intraday_latest.json'), JSON.stringify(settled));
         } catch (_) {}
-        setCache(cacheKey, formatted, 15 * 1000); // 15 sec cache
+        setCache(cacheKey, settled, 15 * 1000); // 15 sec cache
         return res.json({
           success: true,
-          data: formatted,
-          count: formatted.length,
-          isLive: true,
+          data: settled,
+          count: settled.length,
+          isLive: isMarketOpen,
           sessionDate: todayIso,
           source: 'nepse-official-intraday'
         });
@@ -4177,11 +4255,13 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
 
   // 4. In-memory live fallback: Only if it was recorded for TODAY
   if (lastKnownIntradaySessionDate === todayIso && lastKnownIntradayGraph && lastKnownIntradayGraph.length > 0) {
+    const settled = ensureSettledClose(lastKnownIntradayGraph, todayIso);
+    lastKnownIntradayGraph = settled;
     return res.json({
       success: true,
-      data: lastKnownIntradayGraph,
-      count: lastKnownIntradayGraph.length,
-      isLive: true,
+      data: settled,
+      count: settled.length,
+      isLive: isMarketOpen,
       sessionDate: todayIso,
       source: 'cached-nots-intraday'
     });
@@ -4196,13 +4276,17 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
       if (Array.isArray(diskTicks) && diskTicks.length > 0) {
         // If disk ticks match today, serve as live
         if (diskDate === todayIso) {
-          lastKnownIntradayGraph = diskTicks;
+          const settled = ensureSettledClose(diskTicks, todayIso);
+          lastKnownIntradayGraph = settled;
           lastKnownIntradaySessionDate = todayIso;
+          try {
+            fs.writeFileSync(diskPath, JSON.stringify(settled));
+          } catch (_) {}
           return res.json({
             success: true,
-            data: diskTicks,
-            count: diskTicks.length,
-            isLive: true,
+            data: settled,
+            count: settled.length,
+            isLive: isMarketOpen,
             sessionDate: todayIso,
             source: 'disk-live-intraday'
           });

@@ -959,6 +959,9 @@ export function getDetailedMarketStatus(now = getAppNow()) {
     }
   }
 
+  const lastClosedSessionDate = latestTradingSession(now, true);
+  const currentSessionDate = latestTradingSession(now, false);
+
   // Common metadata
   const baseData = {
     bsDate: nepaliDate,
@@ -975,6 +978,9 @@ export function getDetailedMarketStatus(now = getAppNow()) {
     isAmoWindow,
     isFirst15Min,
     targetSessionDate,
+    lastClosedSessionDate,
+    currentSessionDate,
+    lastTradingDayIso: formatNptDateIso(now),
   };
 
   // 0. Live Market Override (Direct from NOTS Exchange Broadcast)

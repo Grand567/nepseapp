@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getDetailedMarketStatus, latestTradingSession } from '../utils/nepseCalendar.js';
+import { getDetailedMarketStatus, latestTradingSession, formatNptDateIso } from '../utils/nepseCalendar.js';
 import { RefreshCw, AlertTriangle, Clock } from 'lucide-react';
 
 /**
@@ -36,7 +36,9 @@ export default function SessionFreshnessBadge({
   const isOpen = Boolean(mktStatus?.isOpen && !mktStatus?.isEmergencyHalt);
   const isMarketOpen = Boolean(isOpen || isLive || apiStatus === 'live');
   const todayTradingDate = latestTradingSession(now, false);
-  const effectiveSessionDate = sessionDate || latestTradingSession(now, !isMarketOpen);
+  const todayIso = formatNptDateIso(now);
+  const rawSessionDate = sessionDate || latestTradingSession(now, !isMarketOpen);
+  const effectiveSessionDate = (rawSessionDate && rawSessionDate > todayIso) ? todayTradingDate : rawSessionDate;
   const parsedLastMs = lastUpdatedMs != null ? Number(lastUpdatedMs) : null;
   const hasValidLastUpdate = Number.isFinite(parsedLastMs) && parsedLastMs > 0;
   const timeStr = hasValidLastUpdate

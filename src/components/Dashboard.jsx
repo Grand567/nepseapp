@@ -1855,14 +1855,48 @@ function Dashboard({
                   }
                 }
                 setHeroHistory(updatedIntraday);
+              } else if (!isMarketOpen && officialVal > 0 && !indices?.isPlaceholder) {
+                // When market is closed and official closing value exists, reconcile intraday series to end at 03:00 PM settlement
+                let settledIntraday = intraday;
+                if (lastPt && Math.abs(Number(lastPt.close) - officialVal) > 0.01) {
+                  const updated = [...intraday];
+                  if (lastPt.time === '03:00 PM' || lastPt.time === '3:00 PM') {
+                    updated[updated.length - 1] = {
+                      ...lastPt,
+                      close: officialVal,
+                      value: officialVal,
+                      high: Math.max(Number(lastPt.high || officialVal), officialVal),
+                      low: Math.min(Number(lastPt.low || officialVal), officialVal)
+                    };
+                  } else {
+                    updated.push({
+                      time: '03:00 PM',
+                      timestamp: lastPt.timestamp ? (lastPt.timestamp > 1e11 ? lastPt.timestamp + 60000 : lastPt.timestamp + 60) : Math.floor(Date.now() / 1000),
+                      open: Number(lastPt.close || officialVal),
+                      high: Math.max(Number(lastPt.high || lastPt.close || officialVal), officialVal),
+                      low: Math.min(Number(lastPt.low || lastPt.close || officialVal), officialVal),
+                      close: officialVal,
+                      value: officialVal,
+                      volume: 0
+                    });
+                  }
+                  settledIntraday = updated;
+                }
+                setHeroHistory(settledIntraday);
               } else {
                 setHeroHistory(intraday);
               }
 
-              // Consistency reconciliation guard: if intraday has a newer closing tick than cached indices.nepse on a closed session,
-              // reconcile activeHeroIndex and cache so headline index and 1D chart can never contradict each other.
+              // Consistency reconciliation guard:
+              // When market is closed and indices.nepse already has an authoritative closing value,
+              // NEVER let a 02:59 PM intraday tick overwrite the official closing nepse.value or change!
               const lastClose = Number(lastPt?.close || lastPt?.value || 0);
-              if (lastClose > 0 && (!isMarketOpen || Math.abs(officialVal - lastClose) > 0.01)) {
+              if (officialVal > 0 && !indices?.isPlaceholder) {
+                setActiveHeroIndex(prev => ({
+                  ...prev,
+                  val: indices.nepse
+                }));
+              } else if (lastClose > 0 && isMarketOpen) {
                 const prevClose = Number(indices?.nepse?.prevClose || (officialVal > 0 && indices?.nepse?.change ? officialVal - indices.nepse.change : (indices?.nepse?.prevClose || 2621.30)));
                 const change = +(lastClose - prevClose).toFixed(2);
                 const pChange = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
@@ -1886,7 +1920,7 @@ function Dashboard({
                   nepse: reconciledNepse,
                   asOfDate: ptDate || todayIso,
                   timestamp: Date.now(),
-                  isClosing: !isMarketOpen
+                  isClosing: false
                 });
               } else if (indices?.nepse && Number(indices.nepse.value) > 0 && !indices?.isPlaceholder) {
                 setActiveHeroIndex(prev => ({
@@ -2808,16 +2842,19 @@ function Dashboard({
   const fallbackHero = (cachedNepseHero?.value > 0) ? cachedNepseHero : (DEFAULT_OFFICIAL_INDICES?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 });
   let rawHeroVal = activeHeroIndex?.isStock
     ? (activeHeroIndex.val || { value: 0, change: 0, pChange: 0, turnover: 0 })
-    : (activeHeroIndex?.val?.reconciledWithIntraday
-        ? activeHeroIndex.val
-        : (((activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && indices?.nepse && Number(indices.nepse.value) > 0)
-            ? indices.nepse
+    : (((activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && indices?.nepse && Number(indices.nepse.value) > 0 && !indices?.isPlaceholder)
+        ? indices.nepse
+        : (activeHeroIndex?.val?.reconciledWithIntraday && !indices?.nepse?.value
+            ? activeHeroIndex.val
             : (activeHeroIndex?.val || indices?.nepse || fallbackHero)));
 
   // Consistency reconciliation guard for headline index:
-  // If hero is NEPSE and heroHistory has intraday ticks for 1D timeframe ending at lastClose,
-  // ensure heroVal reflects the closing tick so headline index and 1D chart can never contradict each other.
-  if (!activeHeroIndex?.isStock && (activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && heroTimeframe === '1D' && heroHistory && heroHistory.length > 0) {
+  // When market is closed (or indices.nepse already has an authoritative closing value and change),
+  // NEVER let a 02:59 PM intraday tick overwrite the official closing nepse.value (2623.56) or change (+2.26 pts).
+  const isMarketOpenNow = Boolean(marketStatus?.isOpen);
+  const hasAuthoritativeClose = !isMarketOpenNow && Number(indices?.nepse?.value || rawHeroVal?.value || 0) > 0 && !indices?.isPlaceholder;
+
+  if (!hasAuthoritativeClose && !activeHeroIndex?.isStock && (activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && heroTimeframe === '1D' && heroHistory && heroHistory.length > 0) {
     const lastTick = heroHistory[heroHistory.length - 1];
     const lastTickClose = Number(lastTick?.close || lastTick?.value || 0);
     if (lastTickClose > 0 && Math.abs(Number(rawHeroVal?.value || 0) - lastTickClose) > 0.01) {
@@ -2846,9 +2883,44 @@ function Dashboard({
         const timeStr = String(pt.time || pt.date || '');
         return /\d{1,2}:\d{2}/.test(timeStr);
       });
-      if (hasIntradayTicks && heroHistory.length > 1) return heroHistory;
-      // Guard against flat horizontal 1-point chart when intraday ticks are unavailable (e.g. weekend/offline)
-      return heroHistory.length >= 5 ? heroHistory.slice(-5) : heroHistory;
+      let baseSeries = heroHistory;
+      if (!hasIntradayTicks || heroHistory.length <= 1) {
+        baseSeries = heroHistory.length >= 5 ? heroHistory.slice(-5) : heroHistory;
+      }
+      // Reconcile 1D chart's final point with indices.nepse.value when closed
+      // so the chart's right-edge green pill reads 2623.56 (matching the headline).
+      if (!activeHeroIndex?.isStock && (activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index')) {
+        const officialClose = Number(heroVal?.value || indices?.nepse?.value || 0);
+        if (!marketStatus?.isOpen && officialClose > 0 && baseSeries.length > 0) {
+          const lastPt = baseSeries[baseSeries.length - 1];
+          const lastClose = Number(lastPt?.close || lastPt?.value || 0);
+          if (Math.abs(lastClose - officialClose) > 0.01) {
+            const updated = [...baseSeries];
+            if (lastPt.time === '03:00 PM' || lastPt.time === '3:00 PM') {
+              updated[updated.length - 1] = {
+                ...lastPt,
+                close: officialClose,
+                value: officialClose,
+                high: Math.max(Number(lastPt.high || officialClose), officialClose),
+                low: Math.min(Number(lastPt.low || officialClose), officialClose)
+              };
+            } else {
+              updated.push({
+                time: '03:00 PM',
+                timestamp: lastPt.timestamp ? (lastPt.timestamp > 1e11 ? lastPt.timestamp + 60000 : lastPt.timestamp + 60) : Math.floor(Date.now() / 1000),
+                open: Number(lastPt.close || officialClose),
+                high: Math.max(Number(lastPt.high || lastPt.close || officialClose), officialClose),
+                low: Math.min(Number(lastPt.low || lastPt.close || officialClose), officialClose),
+                close: officialClose,
+                value: officialClose,
+                volume: 0
+              });
+            }
+            return updated;
+          }
+        }
+      }
+      return baseSeries;
     }
     const tfCounts = {
       '1W': 5,
@@ -2860,7 +2932,7 @@ function Dashboard({
     };
     const count = tfCounts[heroTimeframe] || heroHistory.length;
     return heroHistory.slice(-count);
-  }, [heroHistory, heroTimeframe]);
+  }, [heroHistory, heroTimeframe, activeHeroIndex, heroVal?.value, indices?.nepse?.value, marketStatus?.isOpen]);
 
   const heroTfStats = useMemo(() => {
     if (heroTimeframe === '1D' || !slicedHeroHistory || slicedHeroHistory.length < 2) {

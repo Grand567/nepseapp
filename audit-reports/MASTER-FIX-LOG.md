@@ -424,6 +424,7 @@ The following legacy tests hardcoded obsolete `7.5%` Short-Term / `5.0%` Long-Te
 | **Wave 4.7**| Working tree | `fix(audit-w4.7): add session freshness badges and stock telemetry timestamp tracking` | SessionFreshnessBadge live/historical states, StockDetailModal PnL badges, useUnifiedStockTelemetry timestamp tracking, liveData lastUpdated |
 | **Wave 4.8**| `ba9ecfe` | `fix(audit-w4.8): prevent stale intraday curve serving and verify live session freshness` | Guard /api/nepse/intraday-graph and servicesApi/liveData against serving stale 2026-11-20 snapshots as 2026-11-23 live 1D curve, fix getCachedMarketStatus reference error |
 | **Wave 4.9**| Pending | `fix(audit-w4.9): fix 5% CGT labels, broker ticket counts, cross-session volume %, live turnover, 2s poll storm, and 403 circuit breakers` | Fix 5% CGT math/labels, broker ticket counts, cross-session volume %, live turnover, 2s poll storm, and 403 circuit breakers |
+| **Wave 4.12**| Pending | `fix(audit-w4.12): preserve official closing index over 2:59 PM tick and fix future modalBadgeSessionDate` | Reconcile 03:00 PM settlement onto intraday curve, protect official closing index against 02:59 PM ticks in Dashboard and proxy, fix modalBadgeSessionDate future date resolution |
 
 ---
 
@@ -516,3 +517,36 @@ Wave 4.10 resolves two remaining issues identified during post-market verificati
 - `npx tsx tests/unit/intraday-freshness.test.ts`: 7/7 passed (including post-close freshness & reconciliation regression assertions).
 - `npx tsx --test tests/unit/nepse-math-invariants.test.ts tests/unit/auto-bot.test.ts tests/unit/trailing-ratchet.test.ts tests/unit/wave49-live-market-fixes.test.ts`: 29/29 passed (including dividend circuit breaker and single-flight deduplication).
 - `npm run build`: 1,788 modules transformed, 0 errors, production bundle built cleanly in 15.57s.
+
+---
+
+## [Wave 4.12] Official Closing Index Preservation & modalBadgeSessionDate Resolution (2026-11-23)
+
+### Executive Summary
+Wave 4.12 resolves two runtime issues identified during late post-market verification (Mon 2026-11-23, 10:05 PM NPT) on branch `fix/drabyashree-3acc-audit-20261122`:
+
+1. **Official Closing Index Override (`2,623.56` vs `02:59 PM` Tick `2,624.21`):**
+   - At 10:05 PM NPT, `GET /api/market-indices` already returned today's official NEPSE close (`value: 2623.56, change: 2.26, pChange: 0.08, prevClose: 2621.30, turnover: 3827606590.77`), whereas `GET /api/nepse/intraday-graph` ended at `02:59 PM` with `close: 2624.21` (before NEPSE's 15:00 weighted closing settlement).
+   - In `src/components/Dashboard.jsx`, headline index logic in `loadHeroHistory()` and `heroVal` reconciliation was overwriting the official closing index (`2623.56`) with the `02:59 PM` pre-settlement tick (`2624.21`), displaying `2,624.21 ▲ +2.91 pts (+0.11%)`.
+   - **Resolution:**
+     - In `proxy/server.mjs`, added `reconcileIntradayWithOfficialClose(ticks, officialCloseVal, sessionDate)`. When the market is closed for `todayIso` (`>= 15:00 NPT`) and `/api/market-indices` has an authoritative closing `nepse.value` (`2623.56`), the `03:00 PM` official closing settlement point (`close: 2623.56`) is appended/reconciled onto the intraday series so the 1D curve ends at the true official close.
+     - In `proxy/server.mjs`, updated `reconcileNepseWithIntradayTicks()` so that pre-15:00 intraday ticks (such as `02:59 PM`) can NEVER overwrite an authoritative closing index on a closed session.
+     - In `src/components/Dashboard.jsx`, ensured that when the market is closed and `indices.nepse` has an authoritative closing value, headline index (`heroVal` and `activeHeroIndex`) strictly preserves the official close (`2623.56`, `+2.26 pts`).
+     - In `src/components/Dashboard.jsx`, reconciled `slicedHeroHistory`'s final point with `indices.nepse.value` (`2623.56`) when closed so that the 1D chart's right-edge green pill reads `2623.56`, matching the headline.
+
+2. **Fix `modalBadgeSessionDate` Future Date Resolution (`2026-11-24` on `2026-11-23`):**
+   - In `src/components/StockDetailModal.jsx:3808`, `SessionFreshnessBadge` received `modalBadgeSessionDate`, which resolved to `2026-11-24` (tomorrow's date) because it fell back to `marketStatus.targetSessionDate` (a predictive/AMO target session) when `marketStatus.lastClosedSessionDate` was undefined.
+   - **Resolution:**
+     - In `src/utils/nepseCalendar.js`, enhanced `getDetailedMarketStatus()` metadata to explicitly provide `lastClosedSessionDate` (`latestTradingSession(now, true)`), `currentSessionDate` (`latestTradingSession(now, false)`), and `lastTradingDayIso`.
+     - In `src/components/StockDetailModal.jsx`, refactored `modalBadgeSessionDate` computation to resolve against `currentSessionDate`, `lastClosedSessionDate`, or `d.businessDate`, and added an invariant clamp ensuring `modalBadgeSessionDate` never exceeds `todayIso` (`2026-11-23`).
+     - In `src/components/SessionFreshnessBadge.jsx`, added defensive future-date clamp so `effectiveSessionDate` never renders a future date.
+
+### Verification Gate Summary (Wave 4.12)
+- `node --check proxy/server.mjs`: Syntax valid.
+- `node --check api/index.mjs`: Syntax valid.
+- `npx tsc --noEmit`: 0 errors.
+- `npm run audit:static`: 211 files scanned, 0 syntax errors, 0 missing imports, 0 undeclared identifiers.
+- `npm run audit:semantic`: 15/15 invariants passed, 0 violations.
+- `npx tsx tests/unit/intraday-freshness.test.ts`: 10/10 passed (including 3 new Wave 4.12 invariants).
+- `npx tsx --test tests/unit/nepse-math-invariants.test.ts tests/unit/auto-bot.test.ts tests/unit/trailing-ratchet.test.ts tests/unit/wave49-live-market-fixes.test.ts`: 29/29 passed.
+- `npm run build`: 1,788 modules transformed, 0 errors, production bundle built cleanly in 17.07s.

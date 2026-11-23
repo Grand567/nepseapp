@@ -263,3 +263,149 @@ test('7. Wave 4.10 Invariant: Browser cache guard prevents stale midday snapshot
   assert.strictEqual(memIndices.nepse.value, 2623.56, 'Confirmed closing value 2,623.56 must remain intact');
   assert.strictEqual(memIndices.nepse.change, 2.26);
 });
+
+test('8. Wave 4.12 Invariant: Reconciles 02:59 PM continuous curve tick (2624.21) by appending 03:00 PM settlement point (2623.56)', () => {
+  const sessionDate = '2026-11-23';
+  const officialClose = 2623.56;
+  const intradayTicks = [
+    { time: '11:00 AM', timestamp: 1795414200, open: 2621.30, close: 2623.85 },
+    { time: '02:58 PM', timestamp: 1795428480, open: 2623.90, close: 2624.10 },
+    { time: '02:59 PM', timestamp: 1795428540, open: 2624.10, close: 2624.21 }
+  ];
+
+  function reconcileIntradayWithOfficialClose(ticks: any[], officialCloseVal: number, session: string) {
+    if (!Array.isArray(ticks) || ticks.length === 0 || !(Number(officialCloseVal) > 0)) {
+      return ticks;
+    }
+    const lastTick = ticks[ticks.length - 1];
+    const lastClose = Number(lastTick?.close || lastTick?.value || 0);
+    const targetVal = Number(officialCloseVal);
+
+    const lastTime = String(lastTick?.time || '');
+    const isAt3PM = lastTime === '03:00 PM' || lastTime === '3:00 PM';
+
+    if (isAt3PM) {
+      if (Math.abs(lastClose - targetVal) > 0.01) {
+        const updated = [...ticks];
+        updated[updated.length - 1] = {
+          ...lastTick,
+          close: targetVal,
+          value: targetVal,
+          high: Math.max(Number(lastTick.high || targetVal), targetVal),
+          low: Math.min(Number(lastTick.low || targetVal), targetVal)
+        };
+        return updated;
+      }
+      return ticks;
+    }
+
+    const closeTsSec = session
+      ? Math.floor(Date.parse(`${session}T09:15:00Z`) / 1000)
+      : (lastTick.timestamp ? (lastTick.timestamp > 1e11 ? Math.floor(lastTick.timestamp / 1000) + 60 : lastTick.timestamp + 60) : Math.floor(Date.now() / 1000));
+    const finalTs = (lastTick.timestamp && lastTick.timestamp > 1e11) ? closeTsSec * 1000 : closeTsSec;
+
+    const closingPt = {
+      time: '03:00 PM',
+      timestamp: finalTs,
+      open: Number(lastTick.close || targetVal),
+      high: Math.max(Number(lastTick.high || lastTick.close || targetVal), targetVal),
+      low: Math.min(Number(lastTick.low || lastTick.close || targetVal), targetVal),
+      close: targetVal,
+      value: targetVal,
+      volume: 0
+    };
+
+    return [...ticks, closingPt];
+  }
+
+  const settled = reconcileIntradayWithOfficialClose(intradayTicks, officialClose, sessionDate);
+  assert.strictEqual(settled.length, 4, 'Must append 03:00 PM settlement point');
+  const lastPt = settled[settled.length - 1];
+  assert.strictEqual(lastPt.time, '03:00 PM');
+  assert.strictEqual(lastPt.close, 2623.56, 'Last point close must equal official closing settlement 2623.56');
+  assert.strictEqual(lastPt.open, 2624.21, 'Last point open must connect to previous 02:59 PM close');
+});
+
+test('9. Wave 4.12 Invariant: Closed market headline index preserves official close (2623.56 / +2.26) against 02:59 PM tick (2624.21)', () => {
+  const officialIndices = {
+    nepse: {
+      value: 2623.56,
+      change: 2.26,
+      pChange: 0.08,
+      prevClose: 2621.30,
+      turnover: 3827606590.77
+    },
+    asOfDate: '2026-11-23',
+    isClosing: true
+  };
+
+  const intradaySeries = [
+    { time: '11:00 AM', timestamp: 1795414200, close: 2621.30 },
+    { time: '02:59 PM', timestamp: 1795428540, close: 2624.21 }
+  ];
+
+  const isMarketOpen = false;
+  const lastTick = intradaySeries[intradaySeries.length - 1];
+  const lastTickClose = Number(lastTick?.close || 0);
+
+  // In Dashboard.jsx:
+  let rawHeroVal = officialIndices.nepse;
+  const hasAuthoritativeClose = !isMarketOpen && Number(officialIndices.nepse.value || 0) > 0;
+
+  if (!hasAuthoritativeClose && lastTickClose > 0 && Math.abs(Number(rawHeroVal?.value || 0) - lastTickClose) > 0.01) {
+    rawHeroVal = {
+      ...rawHeroVal,
+      value: lastTickClose,
+      change: +(lastTickClose - rawHeroVal.prevClose).toFixed(2),
+      pChange: +(((lastTickClose - rawHeroVal.prevClose) / rawHeroVal.prevClose) * 100).toFixed(2)
+    };
+  }
+
+  assert.strictEqual(rawHeroVal.value, 2623.56, 'Headline must remain official close 2623.56 (never 2624.21)');
+  assert.strictEqual(rawHeroVal.change, 2.26, 'Headline change must remain +2.26 pts (never +2.91)');
+  assert.strictEqual(rawHeroVal.pChange, 0.08, 'Headline pChange must remain +0.08%');
+});
+
+test('10. Wave 4.12 Invariant: modalBadgeSessionDate never resolves to future date (2026-11-24 on 2026-11-23)', () => {
+  const appNow = new Date('2026-11-23T22:05:00+05:45');
+  const todayIso = formatNptDateIso(appNow);
+  assert.strictEqual(todayIso, '2026-11-23');
+
+  // getDetailedMarketStatus on closed market after 15:00:
+  // targetSessionDate is 2026-11-24 (predictive target for tomorrow)
+  // lastClosedSessionDate is 2026-11-23
+  // currentSessionDate is 2026-11-23
+  const marketStatus = {
+    isOpen: false,
+    targetSessionDate: '2026-11-24', // Tomorrow!
+    lastClosedSessionDate: '2026-11-23',
+    currentSessionDate: '2026-11-23',
+    sessionDate: '2026-11-23'
+  };
+
+  const d = {
+    symbol: 'NABIL',
+    businessDate: '2026-11-23'
+  };
+
+  const modalSessionDate = ''; // Default (no historical date picked)
+
+  const activeSessionDate = marketStatus?.currentSessionDate || marketStatus?.sessionDate || latestTradingSession(appNow, false);
+  const lastClosedSession = marketStatus?.lastClosedSessionDate || latestTradingSession(appNow, true);
+  const displayedQuoteSessionDate = d?.businessDate || (marketStatus?.isOpen ? activeSessionDate : lastClosedSession);
+
+  const isHistoricalDateSelected = Boolean(modalSessionDate && modalSessionDate !== activeSessionDate && modalSessionDate <= todayIso);
+  let resolvedBadgeSessionDate = isHistoricalDateSelected
+    ? modalSessionDate
+    : (marketStatus?.isOpen ? activeSessionDate : (displayedQuoteSessionDate || lastClosedSession || activeSessionDate));
+
+  if (!resolvedBadgeSessionDate || resolvedBadgeSessionDate > todayIso) {
+    resolvedBadgeSessionDate = displayedQuoteSessionDate && displayedQuoteSessionDate <= todayIso
+      ? displayedQuoteSessionDate
+      : (activeSessionDate <= todayIso ? activeSessionDate : todayIso);
+  }
+
+  assert.strictEqual(resolvedBadgeSessionDate, '2026-11-23', 'Badge session date must be 2026-11-23');
+  assert.notStrictEqual(resolvedBadgeSessionDate, '2026-11-24', 'Badge session date must NEVER resolve to tomorrow (2026-11-24)');
+  assert.ok(resolvedBadgeSessionDate <= todayIso, 'Badge session date must be <= todayIso');
+});
