@@ -122,24 +122,30 @@ function AppInner() {
   }, []);
 
   // ── Tab Keep-Alive for Instant 0ms Switching ──
+  const currentBaseTab = useMemo(() => {
+    if (activeTab === 'portfolio' || activeTab === 'bulk_ipo' || activeTab === 'simulator') return 'portfolio';
+    if (activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit') return 'predictor';
+    if (activeTab === 'services') return 'services';
+    if (activeTab === 'calculator') return 'calculator';
+    if (activeTab === 'ai') return 'ai';
+    if (activeTab === 'resources') return 'resources';
+    return 'dashboard';
+  }, [activeTab]);
+
   const [visitedTabs, setVisitedTabs] = useState(() => new Set(['dashboard']));
 
-  useEffect(() => {
-    let base = 'dashboard';
-    if (activeTab === 'portfolio' || activeTab === 'bulk_ipo' || activeTab === 'simulator') base = 'portfolio';
-    else if (activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit') base = 'predictor';
-    else if (activeTab === 'services') base = 'services';
-    else if (activeTab === 'calculator') base = 'calculator';
-    else if (activeTab === 'ai') base = 'ai';
-    else if (activeTab === 'resources') base = 'resources';
+  const hasVisited = useCallback((tabId) => {
+    return visitedTabs.has(tabId) || currentBaseTab === tabId;
+  }, [visitedTabs, currentBaseTab]);
 
+  useEffect(() => {
     setVisitedTabs(prev => {
-      if (prev.has(base)) return prev;
+      if (prev.has(currentBaseTab)) return prev;
       const next = new Set(prev);
-      next.add(base);
+      next.add(currentBaseTab);
       return next;
     });
-  }, [activeTab]);
+  }, [currentBaseTab]);
 
   // ── Auth state ──
   const [user,         setUser]         = useState(() => getLocalSession() || undefined); // undefined = checking, null = logged out, object = logged in
@@ -164,8 +170,8 @@ function AppInner() {
       initLocalLedger().catch(() => {});
     };
 
-    // If user navigates immediately to portfolio, bulk IPO, or risk simulator, warm up instantly
-    if (activeTab === 'portfolio' || activeTab === 'bulk_ipo' || activeTab === 'simulator') {
+    // If user navigates immediately to any non-dashboard tab or opens a stock, warm up instantly
+    if (activeTab !== 'dashboard' || selectedStock) {
       runDeferredBootstrap();
       return;
     }
@@ -2129,7 +2135,7 @@ function AppInner() {
           <ErrorBoundary activeTab={activeTab} moduleName="Core Workspace" onNavigateDashboard={() => setActiveTab('dashboard')}>
             <div style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               {/* Tab 1: Dashboard / Market */}
-              {visitedTabs.has('dashboard') && (
+              {hasVisited('dashboard') && (
                 <div style={{ display: activeTab === 'dashboard' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
                   <ErrorBoundary activeTab={activeTab} moduleName="Market Dashboard" onNavigateDashboard={() => setActiveTab('dashboard')}>
                     <React.Suspense fallback={<DashboardSkeleton />}>
@@ -2155,7 +2161,7 @@ function AppInner() {
               {/* Tab 2 to 8: Lazy-loaded modules with Suspense boundary */}
               <React.Suspense fallback={<div style={{ display: 'flex', minHeight: 320, width: '100%', alignItems: 'center', justifyContent: 'center' }}><div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', animation: 'spin 0.8s linear infinite' }} /></div>}>
                 {/* Tab 2: Portfolio & Bulk IPO */}
-                {visitedTabs.has('portfolio') && (
+                {hasVisited('portfolio') && (
                   <div style={{ display: (activeTab === 'portfolio' || activeTab === 'bulk_ipo' || activeTab === 'simulator') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
                     <ErrorBoundary activeTab={activeTab} moduleName="Portfolio & IPO Hub" onNavigateDashboard={() => setActiveTab('dashboard')}>
                       <PortfolioHub
@@ -2171,7 +2177,7 @@ function AppInner() {
                 )}
 
                 {/* Tab 3: Predictor Hub */}
-                {visitedTabs.has('predictor') && (
+                {hasVisited('predictor') && (
                   <div style={{ display: (activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
                     <ErrorBoundary activeTab={activeTab} moduleName="Predictor & Quant Hub" onNavigateDashboard={() => setActiveTab('dashboard')}>
                       <PredictorHub
@@ -2185,7 +2191,7 @@ function AppInner() {
                 )}
 
                 {/* Tab 4: Services */}
-                {visitedTabs.has('services') && (
+                {hasVisited('services') && (
                   <div style={{ display: activeTab === 'services' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
                     <ErrorBoundary activeTab={activeTab} moduleName="Services & Tools Hub" onNavigateDashboard={() => setActiveTab('dashboard')}>
                       <ServicesHub
@@ -2206,7 +2212,7 @@ function AppInner() {
                 )}
 
                 {/* Tab 5: Calculator */}
-                {visitedTabs.has('calculator') && (
+                {hasVisited('calculator') && (
                   <div style={{ display: activeTab === 'calculator' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
                     <ErrorBoundary activeTab={activeTab} moduleName="Calculator Hub" onNavigateDashboard={() => setActiveTab('dashboard')}>
                       <Calculator />
@@ -2215,7 +2221,7 @@ function AppInner() {
                 )}
 
                 {/* Tab 6: Guru AI */}
-                {visitedTabs.has('ai') && (
+                {hasVisited('ai') && (
                   <div style={{ display: activeTab === 'ai' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
                     <ErrorBoundary activeTab={activeTab} moduleName="Guru AI Analyst" onNavigateDashboard={() => setActiveTab('dashboard')}>
                       <AiAnalyst
@@ -2228,7 +2234,7 @@ function AppInner() {
                 )}
 
                 {/* Tab 7: Resources */}
-                {visitedTabs.has('resources') && (
+                {hasVisited('resources') && (
                   <div style={{ display: activeTab === 'resources' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
                     <ErrorBoundary activeTab={activeTab} moduleName="Resources & Education" onNavigateDashboard={() => setActiveTab('dashboard')}>
                       <Resources onNavigateTab={setActiveTab} />

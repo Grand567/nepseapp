@@ -1140,6 +1140,119 @@ export async function getEnrichedStockUniverse() {
 // Initialize Telegram Playbook automated picker dependencies
 initTelegramPlaybookDependencies({ getEnrichedStockUniverse, scanUniverseForBroker58Ignitions });
 
+let LAST_GOOD_INDICES = {
+  nepse: { value: 2695.6, change: 31.54, pChange: 1.18, open: 2658.8, high: 2695.63, low: 2658.78, prevClose: 2664.06, turnover: 8570096748.35 },
+  sensitive: { value: 488.21, change: 6.41, pChange: 1.33, open: 480.39, high: 488.21, low: 480.39, prevClose: 481.80 },
+  float: { value: 187.01, change: 2.27, pChange: 1.23, open: 184.31, high: 187.01, low: 184.31, prevClose: 184.74 },
+  sensitiveFloat: { value: 165.34, change: 2.25, pChange: 1.38, open: 162.51, high: 165.34, low: 162.51, prevClose: 163.09 },
+  subIndices: []
+};
+
+try {
+  const lkmPath = path.join(__dirname, 'data', 'last_known_market.json');
+  if (fs.existsSync(lkmPath)) {
+    const lkmRaw = JSON.parse(fs.readFileSync(lkmPath, 'utf8'));
+    if (Array.isArray(lkmRaw.indices)) {
+      const nep = lkmRaw.indices.find(x => x.index === 'NEPSE Index');
+      const sen = lkmRaw.indices.find(x => x.index === 'Sensitive Index');
+      const flt = lkmRaw.indices.find(x => x.index === 'Float Index');
+      const sfl = lkmRaw.indices.find(x => x.index === 'Sensitive Float Index');
+      if (nep) {
+        LAST_GOOD_INDICES.nepse = {
+          value: Number(nep.currentValue || nep.close),
+          change: Number(nep.change || 0),
+          pChange: Number(nep.perChange || 0),
+          open: Number(nep.low || nep.close),
+          high: Number(nep.high || nep.currentValue),
+          low: Number(nep.low || nep.close),
+          prevClose: Number(nep.close || nep.previousClose || 0),
+          turnover: 8570096748.35
+        };
+      }
+      if (sen) {
+        LAST_GOOD_INDICES.sensitive = {
+          value: Number(sen.currentValue || sen.close),
+          change: Number(sen.change || 0),
+          pChange: Number(sen.perChange || 0),
+          open: Number(sen.low || sen.close),
+          high: Number(sen.high || sen.currentValue),
+          low: Number(sen.low || sen.close),
+          prevClose: Number(sen.close || sen.previousClose || 0)
+        };
+      }
+    }
+  }
+} catch (_) {}
+
+export function getFallbackTodayPrices() {
+  if (db) {
+    try {
+      const latestDateRow = db.prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 1`).get();
+      if (latestDateRow?.trade_date) {
+        const rows = db.prepare(`
+          SELECT symbol, close_price as ltp, open_price, high_price, low_price, total_volume as volume, total_turnover as turnover
+          FROM daily_stock_summary
+          WHERE trade_date = ?
+        `).all(latestDateRow.trade_date);
+        if (rows && rows.length > 50) {
+          const prevDateRow = db.prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE trade_date < ? ORDER BY trade_date DESC LIMIT 1`).get(latestDateRow.trade_date);
+          const prevMap = new Map();
+          if (prevDateRow?.trade_date) {
+            const prevRows = db.prepare(`SELECT symbol, close_price FROM daily_stock_summary WHERE trade_date = ?`).all(prevDateRow.trade_date);
+            prevRows.forEach(r => prevMap.set(r.symbol, Number(r.close_price || 0)));
+          }
+          const list = rows.map(r => {
+            const ltp = Number(r.ltp || 0);
+            const prevClose = prevMap.get(r.symbol) || Number(r.open_price || ltp);
+            const change = +(ltp - prevClose).toFixed(2);
+            const pChange = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+            return {
+              symbol: r.symbol,
+              name: stockMap[r.symbol]?.name || r.symbol,
+              ltp,
+              change,
+              pChange,
+              open: Number(r.open_price || ltp),
+              high: Number(r.high_price || ltp),
+              low: Number(r.low_price || ltp),
+              prevClose,
+              volume: Number(r.volume || 0),
+              turnover: Number(r.turnover || 0),
+              sector: stockMap[r.symbol]?.sector || 'Unknown',
+              source: 'drabyashree_ledger_db'
+            };
+          });
+          return list;
+        }
+      }
+    } catch (_) {}
+  }
+
+  try {
+    const lkmPath = path.join(__dirname, 'data', 'last_known_market.json');
+    if (fs.existsSync(lkmPath)) {
+      const lkm = JSON.parse(fs.readFileSync(lkmPath, 'utf8'));
+      if (Array.isArray(lkm?.stocks) && lkm.stocks.length > 50) {
+        return lkm.stocks;
+      }
+    }
+  } catch (_) {}
+
+  return [];
+}
+
+// Warm memory caches immediately on module load for sub-millisecond cold start
+try {
+  if (LAST_GOOD_INDICES?.nepse?.value > 0) {
+    setCache('market-indices', LAST_GOOD_INDICES, 60000);
+  }
+  const bootPrices = getFallbackTodayPrices();
+  if (bootPrices.length > 0) {
+    setCache('today-prices', bootPrices, 60000);
+    setCache('market-summary', bootPrices, 60000);
+  }
+} catch (_) {}
+
 app.get('/api/market-summary', async (req, res) => {
   const reqDate = String(req.query.date || '').trim();
   const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
@@ -1206,6 +1319,15 @@ app.get('/api/market-summary', async (req, res) => {
   const cacheKey = 'market-summary';
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, source: 'live', cached: true });
+
+  const currentStatus = getProxyMarketStatus();
+  if (!currentStatus?.isOpen && !currentStatus?.isPreOpen) {
+    const fallbackList = getFallbackTodayPrices();
+    if (fallbackList.length > 0) {
+      setCache(cacheKey, fallbackList, 45000);
+      return res.json({ success: true, data: fallbackList, source: 'closing', count: fallbackList.length });
+    }
+  }
 
   // 1. Primary: Official NEPSE NOTS / Nepseman via nepseManager
   try {
@@ -1316,53 +1438,14 @@ app.get('/api/market-summary', async (req, res) => {
     } catch (meroErr) {
       console.error('[proxy] MeroLagani fallback error:', meroErr.message);
     }
+    const fallbackList = getFallbackTodayPrices();
+    if (fallbackList.length > 0) {
+      setCache(cacheKey, fallbackList, 45000);
+      return res.json({ success: true, data: fallbackList, source: 'closing', count: fallbackList.length });
+    }
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
-let LAST_GOOD_INDICES = {
-  nepse: { value: 2695.6, change: 31.54, pChange: 1.18, open: 2658.8, high: 2695.63, low: 2658.78, prevClose: 2664.06, turnover: 8570096748.35 },
-  sensitive: { value: 488.21, change: 6.41, pChange: 1.33, open: 480.39, high: 488.21, low: 480.39, prevClose: 481.80 },
-  float: { value: 187.01, change: 2.27, pChange: 1.23, open: 184.31, high: 187.01, low: 184.31, prevClose: 184.74 },
-  sensitiveFloat: { value: 165.34, change: 2.25, pChange: 1.38, open: 162.51, high: 165.34, low: 162.51, prevClose: 163.09 },
-  subIndices: []
-};
-
-try {
-  const lkmPath = path.join(__dirname, 'data', 'last_known_market.json');
-  if (fs.existsSync(lkmPath)) {
-    const lkmRaw = JSON.parse(fs.readFileSync(lkmPath, 'utf8'));
-    if (Array.isArray(lkmRaw.indices)) {
-      const nep = lkmRaw.indices.find(x => x.index === 'NEPSE Index');
-      const sen = lkmRaw.indices.find(x => x.index === 'Sensitive Index');
-      const flt = lkmRaw.indices.find(x => x.index === 'Float Index');
-      const sfl = lkmRaw.indices.find(x => x.index === 'Sensitive Float Index');
-      if (nep) {
-        LAST_GOOD_INDICES.nepse = {
-          value: Number(nep.currentValue || nep.close),
-          change: Number(nep.change || 0),
-          pChange: Number(nep.perChange || 0),
-          open: Number(nep.low || nep.close),
-          high: Number(nep.high || nep.currentValue),
-          low: Number(nep.low || nep.close),
-          prevClose: Number(nep.close || nep.previousClose || 0),
-          turnover: 8570096748.35
-        };
-      }
-      if (sen) {
-        LAST_GOOD_INDICES.sensitive = {
-          value: Number(sen.currentValue || sen.close),
-          change: Number(sen.change || 0),
-          pChange: Number(sen.perChange || 0),
-          open: Number(sen.low || sen.close),
-          high: Number(sen.high || sen.currentValue),
-          low: Number(sen.low || sen.close),
-          prevClose: Number(sen.close || sen.previousClose || 0)
-        };
-      }
-    }
-  }
-} catch (_) {}
 
 // Internal helper for Market Indices
 export async function getMarketIndicesInternal(targetDate = '') {
@@ -1435,6 +1518,11 @@ export async function getMarketIndicesInternal(targetDate = '') {
 
   const currentStatus = getProxyMarketStatus();
   const indexTtl = currentStatus?.isOpen ? 4000 : (currentStatus?.isPreOpen ? 6000 : 30000);
+
+  if (!currentStatus?.isOpen && !currentStatus?.isPreOpen && LAST_GOOD_INDICES?.nepse?.value > 0) {
+    setCache(cacheKey, LAST_GOOD_INDICES, indexTtl);
+    return LAST_GOOD_INDICES;
+  }
 
   // Helper to ensure NOTS calls don't hang serverless/cloud requests
   const quickNots = (p, ms = 4000) => Promise.race([
@@ -1790,6 +1878,15 @@ app.get(['/api/today-prices', '/api/live-market'], async (req, res) => {
     return res.json({ success: true, data: cached, source: cached[0]?.source || 'closing', count: cached.length, cached: true });
   }
 
+  const currentStatus = getProxyMarketStatus();
+  if (!currentStatus?.isOpen && !currentStatus?.isPreOpen) {
+    const fallbackList = getFallbackTodayPrices();
+    if (fallbackList.length > 0) {
+      setCache(cacheKey, fallbackList, 60000);
+      return res.json({ success: true, data: fallbackList, source: fallbackList[0]?.source || 'closing', count: fallbackList.length });
+    }
+  }
+
   // Tier 1: Query official SmartWealthPro MDP API if configured
   if (isMdpEnabled()) {
     try {
@@ -1923,6 +2020,11 @@ app.get(['/api/today-prices', '/api/live-market'], async (req, res) => {
 
     if (stocks.length === 0) {
       console.warn('[today-prices] Scraped 0 valid rows from ShareSansar today-share-price table');
+      const fallbackList = getFallbackTodayPrices();
+      if (fallbackList.length > 0) {
+        setCache(cacheKey, fallbackList, 60000);
+        return res.json({ success: true, data: fallbackList, source: 'closing', count: fallbackList.length });
+      }
       return res.status(200).json({ success: false, message: 'Could not parse today\'s price table.', stocks: [] });
     }
 
@@ -1933,6 +2035,11 @@ app.get(['/api/today-prices', '/api/live-market'], async (req, res) => {
     res.json({ success: true, data: enriched, source: 'closing', count: enriched.length });
   } catch (error) {
     console.error('[today-prices] Error:', error.message);
+    const fallbackList = getFallbackTodayPrices();
+    if (fallbackList.length > 0) {
+      setCache(cacheKey, fallbackList, 60000);
+      return res.json({ success: true, data: fallbackList, source: 'closing', count: fallbackList.length });
+    }
     res.status(500).json({ success: false, message: 'Failed to fetch today\'s prices.', error: error.message });
   }
 });
@@ -3381,6 +3488,29 @@ export async function fetchInternalMeroMarketSummary() {
     return cached;
   }
 
+  // When market is closed or offline, immediately return fallback prices from SQLite
+  const currentStatus = getCachedMarketStatus();
+  if (!currentStatus?.isOpen && !currentStatus?.isPreOpen) {
+    const fallbackList = getFallbackTodayPrices();
+    if (fallbackList && fallbackList.length > 0) {
+      const totalTurnover = fallbackList.reduce((sum, s) => sum + (s.turnover || 0), 0);
+      const totalVolume = fallbackList.reduce((sum, s) => sum + (s.volume || 0), 0);
+      const result = {
+        stocks: fallbackList,
+        turnover: totalTurnover,
+        totalTurnover,
+        totalTradedShares: totalVolume,
+        totalVolume,
+        totalTransactions: 0,
+        totalTrades: 0,
+        totalScrips: fallbackList.length,
+        date: new Date().toISOString()
+      };
+      setCache(cacheKey, result, 120000);
+      return result;
+    }
+  }
+
   // 1. Try ultra-fast JSON market_summary
   try {
     const jsonRes = await axios.get('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary', {
@@ -3494,6 +3624,14 @@ export async function fetchInternalMeroMarketSummary() {
     if (stocks.length > 0) setCache(cacheKey, result, 45000);
     return result;
   } catch (err) {
+    const fallbackList = getFallbackTodayPrices();
+    if (fallbackList && fallbackList.length > 0) {
+      return {
+        stocks: fallbackList,
+        turnover: fallbackList.reduce((sum, s) => sum + (s.turnover || 0), 0),
+        date: new Date().toISOString()
+      };
+    }
     return { stocks: [], turnover: 0, date: null };
   }
 }
@@ -3671,6 +3809,25 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
   const cached = getCache(cacheKey);
   if (cached && Array.isArray(cached) && cached.length > 0) {
     return res.json({ success: true, data: cached, cached: true });
+  }
+
+  const currentStatus = getCachedMarketStatus();
+  if (!currentStatus?.isOpen && !currentStatus?.isPreOpen) {
+    if (lastKnownIntradayGraph && lastKnownIntradayGraph.length > 0) {
+      setCache(cacheKey, lastKnownIntradayGraph, 60000);
+      return res.json({ success: true, data: lastKnownIntradayGraph, count: lastKnownIntradayGraph.length, source: 'cached-nots-intraday' });
+    }
+    try {
+      const diskPath = path.resolve('proxy/data/nepse_intraday_latest.json');
+      if (fs.existsSync(diskPath)) {
+        const diskTicks = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
+        if (Array.isArray(diskTicks) && diskTicks.length > 0) {
+          lastKnownIntradayGraph = diskTicks;
+          setCache(cacheKey, diskTicks, 60000);
+          return res.json({ success: true, data: diskTicks, count: diskTicks.length, source: 'disk-nots-intraday' });
+        }
+      }
+    } catch (_) {}
   }
 
   try {
@@ -8334,9 +8491,10 @@ app.get(['/health', '/api/health'], (req, res) => {
 // ============================================================
 app.get('/api/market/summary', async (req, res) => {
   try {
+    const isMarketOpen = Boolean(getCachedMarketStatus()?.isOpen || getCachedMarketStatus()?.isPreOpen);
     const [summary, indices, internalIndices, meroSummary] = await Promise.all([
-      nepseClient.getMarketSummary().catch(() => null),
-      nepseClient.getNepseIndex().catch(() => []),
+      isMarketOpen ? nepseClient.getMarketSummary().catch(() => null) : Promise.resolve(null),
+      isMarketOpen ? nepseClient.getNepseIndex().catch(() => []) : Promise.resolve([]),
       getMarketIndicesInternal().catch(() => ({})),
       fetchInternalMeroMarketSummary().catch(() => null)
     ]);
@@ -9077,10 +9235,13 @@ app.get('/api/nepalipaisa/index-live', async (req, res) => {
 
 app.get('/api/indices', async (req, res) => {
   try {
-    const list = await Promise.race([
-      nepseClient.getNepseIndex(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 7000))
-    ]).catch(() => null);
+    const isMarketOpen = Boolean(getCachedMarketStatus()?.isOpen || getCachedMarketStatus()?.isPreOpen);
+    const list = isMarketOpen
+      ? await Promise.race([
+          nepseClient.getNepseIndex(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+        ]).catch(() => null)
+      : null;
 
     if (Array.isArray(list) && list.length > 0) {
       return res.json({
@@ -9111,10 +9272,13 @@ app.get('/api/indices', async (req, res) => {
 
 app.get('/api/indices/sector', async (req, res) => {
   try {
-    const list = await Promise.race([
-      nepseClient.getNepseSubIndices(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 7000))
-    ]).catch(() => null);
+    const isMarketOpen = Boolean(getCachedMarketStatus()?.isOpen || getCachedMarketStatus()?.isPreOpen);
+    const list = isMarketOpen
+      ? await Promise.race([
+          nepseClient.getNepseSubIndices(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+        ]).catch(() => null)
+      : null;
 
     if (Array.isArray(list) && list.length > 0) {
       return res.json({

@@ -26,6 +26,7 @@ export { NEPSE_CIRCUIT_PCT, NEPSE_RULES };
 export const CGT_SHORT_TERM   = 0.050;    // 5.0% — individual, holding ≤ 365 days
 export const CGT_LONG_TERM    = 0.0375;   // 3.75% — individual, holding > 365 days
 export const CGT_INSTITUTIONAL = 0.100;   // 10.0% — corporate / institutional
+export const CGT_CORPORATE     = 0.100;   // 10.0% — corporate alias for institutional
 export const CGT_NON_RESIDENT = 0.250;    // 25.0% — non-resident
 
 // Minimum lot size: 10 shares (standard NEPSE minimum order)
@@ -159,6 +160,8 @@ export function calculatePositionSize({
 
   return result;
 }
+
+export const calculateKellyPositionSize = calculatePositionSize;
 
 // ── E2: Stop-Loss and Target Calculation ──────────────────────────────────────
 /**

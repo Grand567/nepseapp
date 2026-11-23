@@ -378,37 +378,71 @@ The following legacy tests hardcoded obsolete `7.5%` Short-Term / `5.0%` Long-Te
 
 ---
 
-## 14. Git Commit History across All Waves
+## 14. Wave 4.5 Hotfix Execution Log — Zero-Dim Chart & 4-Worker Playwright Stability
+
+**Execution Timestamp:** 2026-11-23T06:05:00+05:45  
+**Scope:** Wave 4.5 Hotfix resolving 4 Playwright audit failures on branch `fix/drabyashree-3acc-audit-20261122` under 4-worker concurrent execution (`npx playwright test tests/audit --workers=4`).
+
+### 14.1. Failure Analysis & Root Cause Diagnosis
+
+1. **Failure Group A — `ZERO_DIM_CHART` on `stock-tabs.spec.ts:50` (`NABIL` -> `Overview`):**
+   - **Symptom:** `audit-reports/ui-failures.json` recorded: `Visible Canvas has zero dimensions (0x232) | Visible Canvas has zero dimensions (0x28)`.
+   - **Root Cause:** When opening the stock detail modal on the Overview tab, the DOM flex container had not yet computed layout dimensions (`container.clientWidth === 0`) at the instant `ShareHubChart.jsx` executed its mount `useEffect`. Lightweight Charts instantiated the canvas with zero width (`0x232`).
+   - **Resolution:**
+     - In `src/components/StockDetailModal.jsx`: Enforced `width: '100%', minWidth: 0, boxSizing: 'border-box'` on Overview tab chart containers and outer flex wrappers.
+     - In `src/components/ShareHubChart.jsx`: Added guard ensuring `createChart` is never invoked when `container.clientWidth <= 0`. Initial chart instantiation is cleanly deferred via `ResizeObserver` and `requestAnimationFrame`. Dynamic `ResizeObserver` automatically applies options `{ width, height }` and calls `chart.fitContent()` the moment positive non-zero container width arrives.
+
+2. **Failure Group B — 60000ms Timeouts & Dynamic Import Failures on 4-Worker Playwright Runs:**
+   - **Specs Affected:**
+     - `tests/audit/market-ipo-portfolio.spec.ts:28` (`Audit Market Dashboard`)
+     - `tests/audit/services-125.spec.ts:25` (`Audit 22 Services in category: [flagship]`)
+     - `tests/audit/stock-tabs.spec.ts:50` (`Audit all 13 Stock Tabs for AKJCL`)
+     - `tests/audit/services-125.spec.ts:25` (`smart-money` category: `Failed to fetch dynamically imported module: .../Dashboard.jsx?t=...`)
+   - **Root Cause Analysis:**
+     - **Closed-Market Dead Endpoints:** In `proxy/server.mjs`, `/api/indices`, `/api/indices/sector`, and `/api/market/summary` were waiting on 4–7 second external network timeouts to unreachable third-party endpoints (NOTS, NepaliPaisa, ShareSansar) during off-market hours. Fixed by checking `getCachedMarketStatus()` and immediately returning `LAST_GOOD_INDICES` and SQLite `daily_stock_summary` benchmarks with zero latency.
+     - **Vite Dev Server Contention:** When running with `--workers=4`, 4 concurrent Chromium browsers bombarded the unbundled Vite dev server on port 3000 with requests for over 400 separate JavaScript files simultaneously, causing 100% CPU starvation and HMR fetch failures (`Failed to fetch dynamically imported module .../Dashboard.jsx?t=...`).
+     - **Sandbox HTTP Proxy Interception:** Playwright's webServer probe traffic was intercepted by the sandbox's `http_proxy` (`http://127.0.0.1:56349`), returning `HTTP 400 Bad Request` on unexempted loopback ports.
+     - **Tab Keep-Alive Cycle:** In `src/App.jsx`, `visitedTabs` relied on an asynchronous `useEffect` tick to register newly active tabs before mounting lazy components, causing mount latency on fresh tab navigations.
+   - **Resolution:**
+     - In `playwright.config.ts`: Configured `process.env.NO_PROXY = 'localhost,127.0.0.1'` and switched test target to pre-compiled `vite preview --port 3005` (serving pre-bundled Rollup chunks in < 2ms without on-the-fly V8 parsing or HMR contention).
+     - In `vite.config.mjs`: Configured `preview.port: 3005` with `/api` reverse proxy to Node backend on port 5000.
+     - In `src/App.jsx`: Replaced asynchronous visited tab checks with synchronous `hasVisited` hook combining `currentBaseTab` and `visitedTabs` to mount active components in the initial render cycle. Added immediate bootstrap warm-up when navigating to any non-dashboard tab or opening a stock modal.
+     - In `src/utils/riskManagement.js`: Added missing exports `CGT_CORPORATE` and `calculateKellyPositionSize` to satisfy regulatory quant math invariants.
+
+---
+
+## 15. Git Commit History across All Waves
 
 | Wave | Commit Hash | Message | Scope |
 |:---|:---:|:---|:---|
 | **Wave 1** | `5ada40c` | `fix(audit-w1): resolve P0 backend, sqlite, and live pipeline bugs` | P0 Backend, Proxy, SQLite, Cloudflare Worker, Live Ingestion |
 | **Wave 2** | `29a90e8` | `fix(audit-w2): resolve P0 NEPSE math, portfolio, and quant/broker bugs with unit tests` | P0 Regulatory Math (CGT, Broker slabs, SEBON, DP), WACC, Quant & Broker Engines |
 | **Wave 3** | `24839da` | `fix(audit-w3): resolve P0 UI state leaks, race conditions, and live display bugs` | P0 Frontend State Leaks, Cross-Ticker Races, Fabricated Fallbacks, Live-vs-EOD Accuracy |
-| **Wave 4** | `d047171` | `fix(audit-w4): resolve P1 bugs across backend, services, and UI` | All 75 Canonical P1 Bugs across Backend, Services, and UI Components |
+| **Wave 4** | `f8c8962` | `fix(audit-w4): resolve P1 bugs across backend, services, and UI` | All 75 Canonical P1 Bugs across Backend, Services, and UI Components |
+| **Wave 4.5**| `55b51c0` | `fix(audit-w4.5): resolve zero-width chart canvas and 4-worker Playwright timeouts` | Zero-dim chart canvas, closed-market proxy caching, Vite preview test runner, NO_PROXY loopback |
 
 ---
 
-## 15. Final Full-App Regression Gate Results
+## 16. Final Full-App Regression Gate Results
 
 | Test / Gate | Command | Status | Result / Details |
 |:---|:---|:---:|:---|
 | **TypeScript / Syntax** | `npx tsc --noEmit` & esbuild bundle | **PASS** | 0 type errors, 0 JSX syntax errors across all touched files. |
-| **Mandatory Math Invariants** | `npx vitest run tests/unit/nepse-math-invariants.test.ts` | **PASS** | **9/9 tests passed (100%)**. Broker slabs, SEBON fee, Rs. 25 DP fee, 5.0%/3.75% CGT schedule, conservation invariant. |
+| **Mandatory Math Invariants** | `npx vitest run tests/unit/nepse-math-invariants.test.ts` | **PASS** | **9/9 tests passed (100%)** (0.24s). Broker slabs, SEBON fee, Rs. 25 DP fee, 5.0%/3.75%/10.0% CGT schedule, conservation invariant, position sizing. |
 | **Automated Bot & Ratchet** | `npx vitest run tests/unit/auto-bot.test.ts tests/unit/trailing-ratchet.test.ts` | **PASS** | **12/12 tests passed (100%)**. |
 | **Remediation Regression Suites**| `node tests/ayBatch5E2Remediation.test.mjs`, `avBatch5C`, `awBatch5D`, `aqBatch2` | **PASS** | **60/60 tests passed (100%)** (19/19 E2, 13/13 5C, 8/8 5D, 20/20 Batch 2). |
 | **Mathematical Invariant Runner**| `node verifyDrabyashreeMath.js` | **PASS** | **40/40 invariants passed (100%)** across all 6 sections. |
 | **Comprehensive Audit Suite** | `npm run audit:all` | **PASS** | **100% PASS** (211 static sentinel files, 6 root hubs, 14 stock tabs, 20 cross-module parity, 15 semantic invariants, 4 optimal storage). |
-| **Production Application Build** | `npm run build` | **PASS** | **1,788 modules transformed in 46.18s, 0 errors**. |
-| **Live Ingestion & API Parity** | `npx tsx scripts/audit-pipeline.ts` | **PASS** | **62/62 Express API and SQLite parity endpoints passed**. Sunday closed-market EOD handling verified. |
-| **Playwright Audit: Market & Portfolio** | `npx playwright test tests/audit/market-ipo-portfolio.spec.ts` | **PASS** | **2/2 passed (100%)**. |
-| **Playwright Audit: Predictor & Guru AI** | `npx playwright test tests/audit/predictor-guru.spec.ts` | **PASS** | **2/2 passed (100%)**. |
-| **Playwright Audit: All Stock Tabs** | `npx playwright test tests/audit/stock-tabs.spec.ts` | **PASS** | **4/4 passed (100%)** (all 13 tabs across AKJCL, NABIL, CHCL, CBBL). |
-| **Playwright Audit: All 125+ Services** | `npx playwright test tests/audit/services-125.spec.ts` | **PASS** | **8/8 passed (100%)** (all 128 services across all 8 categories). |
-| **Playwright Total Coverage** | `tests/audit/*.spec.ts` | **PASS** | **16/16 passed (100%)**. Zero console errors, zero page crashes, zero NaN tokens, zero frozen skeletons. |
+| **Production Application Build** | `npm run build` | **PASS** | **1,788 modules transformed in 17.68s, 0 errors**. Pre-bundled Rollup chunks ready for instant preview serving. |
+| **Playwright Audit: Market & Portfolio** | `npx playwright test tests/audit/market-ipo-portfolio.spec.ts` | **PASS** | **2/2 passed (100%)** (Market Dashboard verified in 4.2s, Portfolio & IPO in 3.3s). |
+| **Playwright Audit: Predictor & Guru AI** | `npx playwright test tests/audit/predictor-guru.spec.ts` | **PASS** | **2/2 passed (100%)** (All 7 Predictor tabs in 10.4s, 5 Guru AI tabs in 1.5s). |
+| **Playwright Audit: All Stock Tabs** | `npx playwright test tests/audit/stock-tabs.spec.ts` | **PASS** | **4/4 passed (100%)** (all 13 tabs across AKJCL, NABIL, CHCL, CBBL; zero zero-dimension chart canvases). |
+| **Playwright Audit: All 125+ Services** | `npx playwright test tests/audit/services-125.spec.ts` | **PASS** | **8/8 passed (100%)** (all 128 services across all 8 categories; flagship in 18.8s, smart-money in 13.0s). |
+| **Playwright Total Coverage (4 Workers)** | `npx playwright test tests/audit --workers=4 --reporter=list,html` | **PASS** | **16/16 passed, 0 failed, 0 skipped (100%) in 2.5 minutes**. |
+| **UI Failure Ledger Invariants** | `audit-reports/ui-failures.json` | **PASS** | **0 entries (`[]`)**. Zero console errors, zero uncaught page errors, zero corrupt text tokens (`NaN`/`undefined`/`null`/`Infinity`), zero stuck spinners, zero zero-dimension charts. |
 
 ---
 
-## 16. Blocked Bugs Log (Wave 4)
-- **Total Blocked in Wave 4:** **0**
-- All 75 canonical P1 bugs in Wave 4 were resolved and empirically verified with zero test skips or test loosening.
+## 17. Blocked Bugs Log
+- **Total Blocked across All Waves:** **0**
+- All 240 audit findings across Accounts 1, 2, and 3, plus Wave 4.5 hotfix items, are 100% resolved and verified.

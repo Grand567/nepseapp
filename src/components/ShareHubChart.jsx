@@ -931,51 +931,89 @@ export default function ShareHubChart({
     if (!chartContainerRef.current) return;
     if (processedChartData.length === 0) return;
 
-    if (chartRef.current) {
-      try { chartRef.current.remove(); } catch (_) {}
-      chartRef.current = null;
-    }
+    let isDisposed = false;
+    let preObserver = null;
+    let postObserver = null;
+    let rafHandle = null;
 
-    const isCandle = activeMode === 'candle';
     const container = chartContainerRef.current;
 
-    // Safe scaleMargins helper: strictly ensures top >= 0, bottom >= 0, and (top + bottom) <= 0.88 (< 1.0)
-    const safeScaleMargins = (top, bottom) => {
-      let t = Math.max(0, Math.min(0.95, Number(top) || 0));
-      let b = Math.max(0, Math.min(0.95, Number(bottom) || 0));
-      if (t + b >= 0.95) {
-        const factor = 0.88 / (t + b);
-        t = Number((t * factor).toFixed(3));
-        b = Number((b * factor).toFixed(3));
+    const initChart = () => {
+      if (isDisposed || !chartContainerRef.current) return;
+
+      const currentWidth = container.clientWidth;
+      if (currentWidth <= 0) {
+        // Parent wrapper is not yet measured (e.g. initial tab mounting or animation)
+        if (!preObserver) {
+          preObserver = new ResizeObserver(entries => {
+            if (isDisposed) return;
+            const w = entries?.[0]?.contentRect?.width || container.clientWidth;
+            if (w > 0) {
+              if (preObserver) {
+                preObserver.disconnect();
+                preObserver = null;
+              }
+              initChart();
+            }
+          });
+          preObserver.observe(container);
+        }
+        rafHandle = requestAnimationFrame(() => {
+          if (!isDisposed && container.clientWidth > 0) {
+            if (preObserver) {
+              preObserver.disconnect();
+              preObserver = null;
+            }
+            initChart();
+          }
+        });
+        return;
       }
-      return { top: t, bottom: b };
-    };
 
-    // Dynamic Scale Margins for Sub-Panes (Strict invariant: top + bottom <= 0.88 < 1.0)
-    let mainBottom = 0.20;
-    let volTop = 0.80, volBottom = 0.02;
-    let rsiTop = 0, rsiBottom = 0;
-    let macdTop = 0, macdBottom = 0;
+      if (chartRef.current) {
+        try { chartRef.current.remove(); } catch (_) {}
+        chartRef.current = null;
+      }
 
-    if (effectiveSubPaneCount === 1 && effectiveShowRsi) {
-      mainBottom = 0.30;
-      volTop = 0.55; volBottom = 0.30;
-      rsiTop = 0.73; rsiBottom = 0.02;
-    } else if (effectiveSubPaneCount === 1 && effectiveShowMacd) {
-      mainBottom = 0.30;
-      volTop = 0.55; volBottom = 0.30;
-      macdTop = 0.73; macdBottom = 0.02;
-    } else if (effectiveSubPaneCount === 2) {
-      mainBottom = 0.46;
-      volTop = 0.40; volBottom = 0.46;
-      rsiTop = 0.56; rsiBottom = 0.24;
-      macdTop = 0.78; macdBottom = 0.02;
-    }
+      const isCandle = activeMode === 'candle';
 
-    try {
-      const chart = createChart(container, {
-        width: container.clientWidth || 600,
-        height: dynamicHeight,
+      // Safe scaleMargins helper: strictly ensures top >= 0, bottom >= 0, and (top + bottom) <= 0.88 (< 1.0)
+      const safeScaleMargins = (top, bottom) => {
+        let t = Math.max(0, Math.min(0.95, Number(top) || 0));
+        let b = Math.max(0, Math.min(0.95, Number(bottom) || 0));
+        if (t + b >= 0.95) {
+          const factor = 0.88 / (t + b);
+          t = Number((t * factor).toFixed(3));
+          b = Number((b * factor).toFixed(3));
+        }
+        return { top: t, bottom: b };
+      };
+
+      // Dynamic Scale Margins for Sub-Panes (Strict invariant: top + bottom <= 0.88 < 1.0)
+      let mainBottom = 0.20;
+      let volTop = 0.80, volBottom = 0.02;
+      let rsiTop = 0, rsiBottom = 0;
+      let macdTop = 0, macdBottom = 0;
+
+      if (effectiveSubPaneCount === 1 && effectiveShowRsi) {
+        mainBottom = 0.30;
+        volTop = 0.55; volBottom = 0.30;
+        rsiTop = 0.73; rsiBottom = 0.02;
+      } else if (effectiveSubPaneCount === 1 && effectiveShowMacd) {
+        mainBottom = 0.30;
+        volTop = 0.55; volBottom = 0.30;
+        macdTop = 0.73; macdBottom = 0.02;
+      } else if (effectiveSubPaneCount === 2) {
+        mainBottom = 0.46;
+        volTop = 0.40; volBottom = 0.46;
+        rsiTop = 0.56; rsiBottom = 0.24;
+        macdTop = 0.78; macdBottom = 0.02;
+      }
+
+      try {
+        const chart = createChart(container, {
+          width: currentWidth,
+          height: dynamicHeight,
         layout: {
           background: { type: ColorType.Solid, color: 'transparent' },
           textColor: '#94a3b8',
@@ -1418,28 +1456,43 @@ export default function ShareHubChart({
       });
       chartRef.current = chart;
 
-      const observer = new ResizeObserver(entries => {
-        if (!entries || entries.length === 0) return;
-        const { width } = entries[0].contentRect;
+      postObserver = new ResizeObserver(entries => {
+        if (!entries || entries.length === 0 || isDisposed) return;
+        const width = entries[0]?.contentRect?.width || container.clientWidth;
         if (chartRef.current && width > 0) {
           chartRef.current.applyOptions({ width, height: dynamicHeight });
           chartRef.current.timeScale().fitContent();
         }
       });
-      observer.observe(container);
-
-      return () => {
-        observer.disconnect();
-        if (chartRef.current) {
-          try { chartRef.current.remove(); } catch (_) {}
-          chartRef.current = null;
-        }
-      };
+      postObserver.observe(container);
     } catch (err) {
       console.warn('[ShareHubChart] Render failed:', err);
       setError('Unable to render chart: ' + (err.message || 'unknown error'));
     }
-  }, [
+  };
+
+  initChart();
+
+  return () => {
+    isDisposed = true;
+    if (rafHandle) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = null;
+    }
+    if (preObserver) {
+      preObserver.disconnect();
+      preObserver = null;
+    }
+    if (postObserver) {
+      postObserver.disconnect();
+      postObserver = null;
+    }
+    if (chartRef.current) {
+      try { chartRef.current.remove(); } catch (_) {}
+      chartRef.current = null;
+    }
+  };
+}, [
     processedChartData,
     activeMode,
     isTrulyIntraday,
@@ -1588,6 +1641,8 @@ export default function ShareHubChart({
   return (
     <div style={{
       width: '100%',
+      minWidth: 0,
+      boxSizing: 'border-box',
       height: activeIsFullscreen ? '100%' : 'auto',
       display: 'flex',
       flexDirection: 'column',
@@ -2094,6 +2149,8 @@ export default function ShareHubChart({
         ref={chartContainerRef}
         style={{
           width: '100%',
+          minWidth: 0,
+          boxSizing: 'border-box',
           height: String(dynamicHeight) + 'px',
           position: 'relative'
         }}

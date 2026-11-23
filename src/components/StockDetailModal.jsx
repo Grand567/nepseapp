@@ -4044,7 +4044,7 @@ export default function StockDetailModal({
             : 'Multi-Session Accumulators';
 
           return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
               {/* ── 1. Hero Quote & Key Badges Card ── */}
               <div style={{
                 background: '#111827',
@@ -4504,7 +4504,10 @@ export default function StockDetailModal({
                 border: '1px solid rgba(255, 255, 255, 0.08)',
                 borderRadius: 16,
                 padding: '16px 14px 12px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                width: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box'
               }}>
                 <ShareHubChart
                   history={history}

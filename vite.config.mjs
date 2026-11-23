@@ -19,7 +19,7 @@ export default defineConfig({
     }
   },
   preview: {
-    port: 4173,
+    port: 3005,
     host: true,
     proxy: {
       '/api': {
@@ -28,11 +28,25 @@ export default defineConfig({
       }
     }
   },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'lucide-react', 'lightweight-charts', 'axios']
+  },
   server: {
     port: 3000,
+    warmup: {
+      clientFiles: [
+        './src/main.jsx',
+        './src/App.jsx',
+        './src/components/Dashboard.jsx',
+        './src/components/ServicesHub.tsx',
+        './src/components/StockDetailModal.jsx',
+        './src/components/PredictorHub.jsx',
+        './src/components/PortfolioHub.jsx'
+      ]
+    },
     host: true,
     watch: {
-      ignored: ['**/dist-electron/**', '**/android/**', '**/dist/**', '**/.git/**', '**/qa/work/**', '**/*.db*', '**/proxy/data/*.db*']
+      ignored: ['**/dist-electron/**', '**/android/**', '**/dist/**', '**/.git/**', '**/qa/work/**', '**/*.db*', '**/proxy/**', '**/public/data/**', '**/audit-reports/**', '**/test-results/**', '**/*.log']
     },
     proxy: {
       '/api/meroShare': {

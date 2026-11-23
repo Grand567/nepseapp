@@ -80,9 +80,7 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
       sessionStorage.setItem('nepse_active_tab', tabId);
     } catch (_) {}
     setTabHistory(prev => (prev[prev.length - 1] === tabId ? prev : [...prev, tabId]));
-    React.startTransition(() => {
-      setActiveTabState(tabId);
-    });
+    setActiveTabState(tabId);
   }, []);
 
   // Expose QA test hooks for headless Playwright crawler

@@ -1,5 +1,8 @@
 import { defineConfig } from '@playwright/test';
 
+process.env.NO_PROXY = 'localhost,127.0.0.1';
+process.env.no_proxy = 'localhost,127.0.0.1';
+
 export default defineConfig({
   testDir: './tests/audit',
   timeout: 180_000,
@@ -14,7 +17,7 @@ export default defineConfig({
     ['list']
   ],
   use: {
-    baseURL: 'http://127.0.0.1:3000',
+    baseURL: 'http://127.0.0.1:3005',
     viewport: { width: 1440, height: 900 },
     actionTimeout: 60_000,
     navigationTimeout: 60_000,
@@ -27,8 +30,8 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
-      command: 'cmd /c npx vite --port 3000 --host 127.0.0.1',
-      url: 'http://127.0.0.1:3000',
+      command: 'npx vite preview --port 3005 --host 127.0.0.1',
+      url: 'http://127.0.0.1:3005',
       reuseExistingServer: true,
       timeout: 60_000,
     }
