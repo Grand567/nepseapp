@@ -28,7 +28,7 @@ import { getHydroSeasonality, runAmalgamatedBreakoutPipeline, evaluateMarketBrea
 import { selectMasterPrimePick, isActionableBuySignal } from '../utils/guruEngine';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { isLockInSupplyCliffTrap, selectPrimePickOfTheDay } from '../utils/scanners';
-import { getDetailedMarketStatus, formatNptDateIso } from '../utils/nepseCalendar';
+import { getDetailedMarketStatus, formatNptDateIso, latestTradingSession, isNepseTradingDay, getNptMinutesOfDay } from '../utils/nepseCalendar';
 import { triggerHaptic } from '../utils/haptics';
 import LoadingShimmerBar from './LoadingShimmerBar';
 import { runUnifiedFiveStepAlphaDesk } from '../utils/masterAlphaPipeline';
@@ -1817,33 +1817,53 @@ function Dashboard({
           ? (activeHeroIndex.symbol || activeHeroIndex.key)
           : ((activeHeroIndex.key === 'nepse' || activeHeroIndex.name === 'NEPSE Index') ? 'NEPSE' : (activeHeroIndex.key || 'NEPSE'));
         if (heroTimeframe === '1D') {
-          let intraday = await servicesApi.fetchNepseIntradayGraph(sym);
-          if (intraday && Array.isArray(intraday) && intraday.length > 0) {
-            const firstPt = intraday[0];
-            const firstTs = firstPt?.timestamp;
-            const ptDate = firstTs
-              ? new Date(firstTs > 1e11 ? firstTs : firstTs * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })
-              : (firstPt?.date ? String(firstPt.date).slice(0, 10) : null);
-            const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
-            const isMarketOpenNow = Boolean(marketStatus?.isOpen);
-            if (isMarketOpenNow && ptDate && ptDate !== todayIso) {
-              // Stale intraday data from older session (e.g. 2026-11-20 vs 2026-11-23); fall through to daily history
-            } else {
-              if (!active) return;
+          if (sym === 'NEPSE') {
+            const officialNepse = (indices?.nepse && Number(indices.nepse.value) > 0 && !indices?.isPlaceholder)
+              ? indices.nepse
+              : (getCachedIndices()?.nepse?.value > 0 ? getCachedIndices().nepse : null);
+            const officialVal = Number(officialNepse?.value || 0);
+            const officialDate = String(officialNepse?.date || officialNepse?.asOfDate || getCachedIndices()?.asOfDate || '').slice(0, 10);
+            const isMarketOpen = Boolean(marketStatus?.isOpen);
+            const now = new Date();
+            const todayIso = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+            const minsOfDay = getNptMinutesOfDay ? getNptMinutesOfDay(now) : (now.getHours() * 60 + now.getMinutes());
+            const isTradingDay = isNepseTradingDay ? isNepseTradingDay(now) : true;
+            const hasTradedToday = isTradingDay && (isMarketOpen || minsOfDay >= 15 * 60);
+            const activeSessionDate = hasTradedToday ? todayIso : (officialDate || latestTradingSession(now, true));
 
-              // Ensure the latest intraday candle reflects the real-time live price from NOTS only during open market hours
-            if (sym === 'NEPSE') {
-              const officialNepse = (indices?.nepse && Number(indices.nepse.value) > 0 && !indices?.isPlaceholder)
-                ? indices.nepse
-                : (getCachedIndices()?.nepse?.value > 0 ? getCachedIndices().nepse : null);
-              const officialVal = Number(officialNepse?.value || 0);
-              const isMarketOpen = Boolean(marketStatus?.isOpen);
+            let intraday = await servicesApi.fetchNepseIntradayGraph(sym);
+            let isValidIntraday = false;
+
+            if (intraday && Array.isArray(intraday) && intraday.length > 1) {
+              const firstPt = intraday[0];
+              const lastPt = intraday[intraday.length - 1];
+              const firstTs = firstPt?.timestamp;
+              const ptDate = firstTs
+                ? new Date(firstTs > 1e11 ? firstTs : firstTs * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })
+                : (firstPt?.date ? String(firstPt.date).slice(0, 10) : null);
+              const lastClose = Number(lastPt?.close || lastPt?.value || 0);
+
+              // Reject stale intraday series whenever ptDate does not match activeSessionDate
+              // OR when last close diverges by > 60 points from officialVal (prevents vertical cliffs)
+              const isDateMatch = !ptDate || ptDate === activeSessionDate;
+              const isCloseConsistent = officialVal <= 0 || !lastClose || Math.abs(lastClose - officialVal) <= 60;
+
+              if (isDateMatch && isCloseConsistent) {
+                isValidIntraday = true;
+              } else {
+                console.warn(`[Dashboard] Rejecting stale/divergent intraday ticks for NEPSE: ptDate=${ptDate} vs expected=${activeSessionDate}, lastClose=${lastClose} vs official=${officialVal}`);
+                intraday = null;
+              }
+            }
+
+            if (!active) return;
+
+            if (isValidIntraday && intraday) {
               const lastPt = intraday[intraday.length - 1];
               if (officialVal > 0 && !indices?.isPlaceholder && isMarketOpen) {
                 const nowNpt = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' });
                 const updatedIntraday = [...intraday];
-                // Only push if drift is small (< 80 points) to prevent appending stale/divergent index values
-                if (lastPt && Math.abs(Number(lastPt.close) - officialVal) > 0.01 && Math.abs(Number(lastPt.close) - officialVal) < 80) {
+                if (lastPt && Math.abs(Number(lastPt.close) - officialVal) > 0.01 && Math.abs(Number(lastPt.close) - officialVal) < 60) {
                   if (lastPt.time === nowNpt) {
                     lastPt.close = officialVal;
                     lastPt.high = Math.max(Number(lastPt.high || officialVal), officialVal);
@@ -1862,9 +1882,8 @@ function Dashboard({
                 }
                 setHeroHistory(updatedIntraday);
               } else if (!isMarketOpen && officialVal > 0) {
-                // When market is closed and official closing value exists, reconcile intraday series to end at 03:00 PM settlement
                 let settledIntraday = intraday;
-                if (lastPt && (Math.abs(Number(lastPt.close) - officialVal) > 0.01 || (lastPt.time !== '03:00 PM' && lastPt.time !== '3:00 PM'))) {
+                if (lastPt && Math.abs(Number(lastPt.close) - officialVal) <= 60 && (Math.abs(Number(lastPt.close) - officialVal) > 0.01 || (lastPt.time !== '03:00 PM' && lastPt.time !== '3:00 PM'))) {
                   const updated = [...intraday];
                   if (lastPt.time === '03:00 PM' || lastPt.time === '3:00 PM') {
                     updated[updated.length - 1] = {
@@ -1892,60 +1911,57 @@ function Dashboard({
               } else {
                 setHeroHistory(intraday);
               }
-
-              // Consistency reconciliation guard:
-              // When market is closed and official closing value exists,
-              // NEVER let a 02:59 PM intraday tick overwrite the official closing nepse.value or change!
-              const lastClose = Number(lastPt?.close || lastPt?.value || 0);
-              if (officialNepse && !isMarketOpen) {
-                setActiveHeroIndex(prev => ({
-                  ...prev,
-                  val: officialNepse
-                }));
-              } else if (officialVal > 0 && !indices?.isPlaceholder) {
-                setActiveHeroIndex(prev => ({
-                  ...prev,
-                  val: indices.nepse
-                }));
-              } else if (lastClose > 0 && isMarketOpen) {
-                const prevClose = Number(indices?.nepse?.prevClose || (officialVal > 0 && indices?.nepse?.change ? officialVal - indices.nepse.change : (indices?.nepse?.prevClose || 2621.30)));
-                const change = +(lastClose - prevClose).toFixed(2);
-                const pChange = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
-                const reconciledNepse = {
-                  ...(indices?.nepse || {}),
-                  value: lastClose,
-                  change,
-                  pChange,
-                  prevClose,
-                  high: Math.max(...intraday.map(p => Number(p.high || p.close || lastClose))),
-                  low: Math.min(...intraday.map(p => Number(p.low || p.close || lastClose))),
-                  turnover: Number(indices?.nepse?.turnover || 0),
-                  reconciledWithIntraday: true
-                };
-                setActiveHeroIndex(prev => ({
-                  ...prev,
-                  val: reconciledNepse
-                }));
-                saveCachedIndices({
-                  ...(indices || {}),
-                  nepse: reconciledNepse,
-                  asOfDate: ptDate || todayIso,
-                  timestamp: Date.now(),
-                  isClosing: false
-                });
-              } else if (indices?.nepse && Number(indices.nepse.value) > 0 && !indices?.isPlaceholder) {
-                setActiveHeroIndex(prev => ({
-                  ...prev,
-                  val: indices.nepse
-                }));
-              }
             } else {
-              setHeroHistory(intraday);
+              // Authentic intraday ticks unavailable off-market:
+              // Render clean 2-point session anchor (prevClose -> officialClose)
+              const change = Number(officialNepse?.change != null ? officialNepse.change : (indices?.nepse?.change || 0));
+              const prevClose = Number(officialNepse?.prevClose || (officialVal && change ? officialVal - change : (officialVal || 2623.56)));
+              const targetVal = officialVal > 0 ? officialVal : prevClose;
+
+              const anchorSeries = [
+                {
+                  time: '11:00 AM',
+                  timestamp: Math.floor(new Date(`${activeSessionDate}T11:00:00+05:45`).getTime() / 1000),
+                  open: prevClose,
+                  high: Math.max(prevClose, targetVal),
+                  low: Math.min(prevClose, targetVal),
+                  close: prevClose,
+                  value: prevClose,
+                  volume: 0,
+                  isSessionAnchor: true
+                },
+                {
+                  time: isMarketOpen ? new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' }) : '03:00 PM',
+                  timestamp: isMarketOpen ? Math.floor(Date.now() / 1000) : Math.floor(new Date(`${activeSessionDate}T15:00:00+05:45`).getTime() / 1000),
+                  open: prevClose,
+                  high: Math.max(prevClose, targetVal),
+                  low: Math.min(prevClose, targetVal),
+                  close: targetVal,
+                  value: targetVal,
+                  volume: Number(officialNepse?.turnover || 0),
+                  isSessionAnchor: true
+                }
+              ];
+              setHeroHistory(anchorSeries);
+            }
+
+            if (officialNepse) {
+              setActiveHeroIndex(prev => ({
+                ...prev,
+                val: officialNepse
+              }));
             }
             return;
+          } else {
+            // For sub-indices or single scrip 1D
+            let intraday = await servicesApi.fetchNepseIntradayGraph(sym);
+            if (intraday && Array.isArray(intraday) && intraday.length > 0) {
+              if (!active) return;
+              setHeroHistory(intraday);
+              return;
+            }
           }
         }
-      }
 
         let data = await fetchPriceHistory(sym, 500);
         // Never fabricate stock or sector historical charts by scaling NEPSE index history
@@ -2902,7 +2918,40 @@ function Dashboard({
       });
       let baseSeries = heroHistory;
       if (!hasIntradayTicks || heroHistory.length <= 1) {
-        baseSeries = heroHistory.length >= 5 ? heroHistory.slice(-5) : heroHistory;
+        // Authentic intraday ticks unavailable: construct clean 2-point session anchor
+        // NEVER slice 5 multi-day daily candles into the 1D chart!
+        const officialClose = Number(officialNepse?.value || heroVal?.value || indices?.nepse?.value || 0);
+        const change = Number(officialNepse?.change != null ? officialNepse.change : (heroVal?.change != null ? heroVal.change : (indices?.nepse?.change || 0)));
+        const prevClose = Number(officialNepse?.prevClose || (officialClose && change ? officialClose - change : (officialClose || 2623.56)));
+        const targetVal = officialClose > 0 ? officialClose : prevClose;
+        const now = new Date();
+        const isMarketOpen = Boolean(marketStatus?.isOpen);
+        const todayIso = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+
+        return [
+          {
+            time: '11:00 AM',
+            timestamp: Math.floor(new Date(`${todayIso}T11:00:00+05:45`).getTime() / 1000),
+            open: prevClose,
+            high: Math.max(prevClose, targetVal),
+            low: Math.min(prevClose, targetVal),
+            close: prevClose,
+            value: prevClose,
+            volume: 0,
+            isSessionAnchor: true
+          },
+          {
+            time: isMarketOpen ? now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' }) : '03:00 PM',
+            timestamp: isMarketOpen ? Math.floor(Date.now() / 1000) : Math.floor(new Date(`${todayIso}T15:00:00+05:45`).getTime() / 1000),
+            open: prevClose,
+            high: Math.max(prevClose, targetVal),
+            low: Math.min(prevClose, targetVal),
+            close: targetVal,
+            value: targetVal,
+            volume: Number(officialNepse?.turnover || 0),
+            isSessionAnchor: true
+          }
+        ];
       }
       // Reconcile 1D chart's final point with indices.nepse.value when closed
       // so the chart's right-edge green pill reads 2623.56 (matching the headline).
@@ -2911,7 +2960,7 @@ function Dashboard({
         if (isClosedMarket && officialClose > 0 && baseSeries.length > 0) {
           const lastPt = baseSeries[baseSeries.length - 1];
           const lastClose = Number(lastPt?.close || lastPt?.value || 0);
-          if (Math.abs(lastClose - officialClose) > 0.01 || (lastPt.time !== '03:00 PM' && lastPt.time !== '3:00 PM')) {
+          if (Math.abs(lastClose - officialClose) <= 60 && (Math.abs(lastClose - officialClose) > 0.01 || (lastPt.time !== '03:00 PM' && lastPt.time !== '3:00 PM'))) {
             const updated = [...baseSeries];
             if (lastPt.time === '03:00 PM' || lastPt.time === '3:00 PM') {
               updated[updated.length - 1] = {
@@ -2949,7 +2998,7 @@ function Dashboard({
     };
     const count = tfCounts[heroTimeframe] || heroHistory.length;
     return heroHistory.slice(-count);
-  }, [heroHistory, heroTimeframe, activeHeroIndex, heroVal?.value, indices?.nepse?.value, marketStatus?.isOpen]);
+  }, [heroHistory, heroTimeframe, activeHeroIndex, heroVal?.value, heroVal?.change, heroVal?.prevClose, indices?.nepse?.value, marketStatus?.isOpen, officialNepse]);
 
   const heroTfStats = useMemo(() => {
     if (heroTimeframe === '1D' || !slicedHeroHistory || slicedHeroHistory.length < 2) {

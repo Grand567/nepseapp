@@ -41,6 +41,7 @@ import {
   getScripVolumeProfile,
   reconstructMarketDepthFromFloorsheet,
   getSymbolHistoryFromDb,
+  ingestFloorsheetContracts,
   db,
 } from './db/ledgerStore.js';
 import { calculateMultiDayDiagnostics } from './utils/microstructureEngine.js';
@@ -4226,6 +4227,19 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
         }
       }
     } catch (_) {}
+
+    // When market is closed and neither in-memory nor disk snapshot matches lastSession,
+    // REJECT stale prior-day ticks honestly so UI anchors cleanly instead of serving multi-day old curves
+    return res.json({
+      success: true,
+      data: [],
+      count: 0,
+      isLive: false,
+      isHistorical: true,
+      staleRejected: true,
+      sessionDate: lastSession,
+      message: `No authentic intraday snapshot for session ${lastSession}`
+    });
   }
 
   // 3. Live market hours: Fetch authentic NEPSE NOTS Intraday Graph for today
@@ -4334,6 +4348,7 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
     data: [],
     count: 0,
     isLive: isMarketOpen,
+    staleRejected: true,
     sessionDate: todayIso,
     message: `No live intraday ticks available yet for session ${todayIso}`
   });
@@ -5954,6 +5969,15 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
               }));
             }
           } catch (_) {}
+        }
+
+        // Ingest newly fetched live contracts into SQLite floorsheet_contracts so 1D updates live without waiting for EOD
+        if (todayContracts && todayContracts.length > 0) {
+          try {
+            ingestFloorsheetContracts(todayContracts, todayIso);
+          } catch (ingestErr) {
+            console.warn(`[broker-analysis] Live contract ingestion error for ${symbol}:`, ingestErr.message);
+          }
         }
       }
 
@@ -8881,7 +8905,7 @@ app.get([
     const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
     if (isLiveTrading && (sessionLimit === 1 || tf === '1D') && (!queryDate || queryDate === todayIso)) {
       try {
-        const liveRows = db.prepare(`
+        let liveRows = db.prepare(`
           SELECT
             buyer_broker AS brokerId,
             SUM(kitta) AS buyVolume,
@@ -8898,7 +8922,7 @@ app.get([
           GROUP BY buyer_broker
         `).all(symbol, todayIso);
 
-        const liveSellRows = db.prepare(`
+        let liveSellRows = db.prepare(`
           SELECT
             seller_broker AS brokerId,
             0 AS buyVolume,
@@ -8914,6 +8938,28 @@ app.get([
           WHERE UPPER(symbol) = ? AND trade_date = ?
           GROUP BY seller_broker
         `).all(symbol, todayIso);
+
+        // If SQLite has no live contracts yet for today, attempt live fetch & ingest
+        if ((!liveRows || liveRows.length === 0) && (!liveSellRows || liveSellRows.length === 0)) {
+          try {
+            const fsRes = await Promise.race([
+              nepseClient.getFloorSheet({ symbol, page: 0, size: 200 }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Live floorsheet timeout')), 6000))
+            ]);
+            const rawFs = fsRes?.floorsheets?.content || fsRes?.content || [];
+            if (Array.isArray(rawFs) && rawFs.length > 0) {
+              ingestFloorsheetContracts(rawFs, todayIso);
+              liveRows = db.prepare(`
+                SELECT buyer_broker AS brokerId, SUM(kitta) AS buyVolume, 0 AS sellVolume, COUNT(*) AS buyTrades, COUNT(*) AS buyTradesCount, 0 AS sellTrades, 0 AS sellTradesCount, SUM(amount) AS buyAmount, 0 AS sellAmount, 0 AS crossVolume
+                FROM floorsheet_contracts WHERE UPPER(symbol) = ? AND trade_date = ? GROUP BY buyer_broker
+              `).all(symbol, todayIso);
+              liveSellRows = db.prepare(`
+                SELECT seller_broker AS brokerId, 0 AS buyVolume, SUM(kitta) AS sellVolume, 0 AS buyTrades, 0 AS buyTradesCount, COUNT(*) AS sellTrades, COUNT(*) AS sellTradesCount, 0 AS buyAmount, SUM(amount) AS sellAmount, 0 AS crossVolume
+                FROM floorsheet_contracts WHERE UPPER(symbol) = ? AND trade_date = ? GROUP BY seller_broker
+              `).all(symbol, todayIso);
+            }
+          } catch (_) {}
+        }
 
         if (liveRows.length > 0 || liveSellRows.length > 0) {
           const brokerMap = new Map();

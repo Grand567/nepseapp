@@ -4,7 +4,8 @@ import { bsToAd } from './bikramSambat.js';
 import { fetchMerolaganiNews } from '../services/merolaganiNewsService.js';
 import { sortNewsByNepseImpact, deduplicateNews, sortNews } from './newsImpactScorer.js';
 import { getProxyBase } from './proxyBase.js';
-import { formatNptDateIso, isMarketOpen, getAppNow } from './nepseCalendar.js';
+import { formatNptDateIso, isMarketOpen, getAppNow, latestTradingSession, getNptMinutesOfDay, isNepseTradingDay } from './nepseCalendar.js';
+import { getCachedIndices, getCachedMarketSummary } from './liveData.js';
 
 const getProxy = () => getProxyBase();
 
@@ -228,6 +229,51 @@ export const fetchNepseIntradayGraph = async (symbol, forceRefresh = false) => {
   const appNow = getAppNow();
   const todayDate = formatNptDateIso(appNow);
   const marketOpenNow = isMarketOpen(appNow);
+  const nptMins = getNptMinutesOfDay(appNow);
+  const isTradingToday = isNepseTradingDay(appNow);
+  const hasTradedToday = isTradingToday && (marketOpenNow || nptMins >= 15 * 60);
+
+  // Authoritative NEPSE close / live index value
+  const cachedIndices = typeof getCachedIndices === 'function' ? getCachedIndices() : null;
+  const cachedSummary = typeof getCachedMarketSummary === 'function' ? getCachedMarketSummary() : null;
+  const officialCloseVal = Number(cachedIndices?.nepse?.value || cachedSummary?.nepseIndex || 0);
+  const cachedSessionDate = String(cachedIndices?.asOfDate || cachedIndices?.nepse?.date || '').slice(0, 10);
+
+  // Determine expectedSessionDate: today's Kathmandu date if NEPSE is open or traded today, otherwise latest completed trading date
+  const expectedSessionDate = hasTradedToday
+    ? todayDate
+    : (cachedSessionDate || latestTradingSession(appNow, true));
+
+  const validateNepseTicks = (ticks) => {
+    if (!Array.isArray(ticks) || ticks.length <= 1) return false;
+    const sample = ticks[0];
+    const sampleTs = sample?.timestamp;
+    const sampleDate = sampleTs
+      ? formatNptDateIso(new Date(sampleTs > 1e11 ? sampleTs : sampleTs * 1000))
+      : (sample?.date ? String(sample.date).slice(0, 10) : null);
+
+    // 1. Session Date Check: Reject if tick date does not match expectedSessionDate (both live and off-market)
+    if (sampleDate && sampleDate !== expectedSessionDate) {
+      console.warn(`[servicesApi] Rejecting stale intraday ticks: date ${sampleDate} !== expected ${expectedSessionDate}`);
+      return false;
+    }
+
+    // 2. Point Range Divergence Check: Reject if ticks diverge by > 60 points from authoritative close/live index
+    if (officialCloseVal > 0) {
+      const lastPt = ticks[ticks.length - 1];
+      const lastClose = Number(lastPt?.close || lastPt?.value || lastPt?.rate || 0);
+      const firstClose = Number(sample?.close || sample?.value || sample?.rate || 0);
+      if (lastClose > 0 && Math.abs(lastClose - officialCloseVal) > 60) {
+        console.warn(`[servicesApi] Rejecting divergent intraday ticks: lastClose ${lastClose} vs official ${officialCloseVal} (diff ${Math.abs(lastClose - officialCloseVal).toFixed(2)} > 60)`);
+        return false;
+      }
+      if (firstClose > 0 && Math.abs(firstClose - officialCloseVal) > 90) {
+        console.warn(`[servicesApi] Rejecting divergent intraday ticks: firstClose ${firstClose} vs official ${officialCloseVal} (diff ${Math.abs(firstClose - officialCloseVal).toFixed(2)} > 90)`);
+        return false;
+      }
+    }
+    return true;
+  };
 
   // Tier 1: Query proxy intraday route (supports NEPSE, sub-indices, and equities)
   const path = sym === 'NEPSE' ? '/api/nepse/intraday-graph' : `/api/nepse/intraday-graph/${encodeURIComponent(sym)}`;
@@ -236,13 +282,7 @@ export const fetchNepseIntradayGraph = async (symbol, forceRefresh = false) => {
   const hasTicks = Array.isArray(data) && data.length > 1 && data.some(d => d && (d.timestamp || d.time || Array.isArray(d)));
   if (hasTicks) {
     if (sym === 'NEPSE') {
-      const sample = data[0];
-      const sampleTs = sample?.timestamp;
-      const sampleDate = sampleTs
-        ? formatNptDateIso(new Date(sampleTs > 1e11 ? sampleTs : sampleTs * 1000))
-        : (sample?.date ? String(sample.date).slice(0, 10) : null);
-      if (marketOpenNow && sampleDate && sampleDate !== todayDate && !res?.isHistorical) {
-        // Stale snapshot from an older session (e.g. 2026-11-20 vs today 2026-11-23)
+      if (!validateNepseTicks(data) || res?.staleRejected) {
         return null;
       }
     }
@@ -291,16 +331,7 @@ export const fetchNepseIntradayGraph = async (symbol, forceRefresh = false) => {
       const staticRes = await fetch('/data/nepse_intraday_latest.json', { signal: AbortSignal.timeout(4000) });
       if (staticRes.ok) {
         const j = await staticRes.json();
-        if (Array.isArray(j) && j.length > 1) {
-          const sample = j[0];
-          const sampleTs = sample?.timestamp;
-          const sampleDate = sampleTs
-            ? formatNptDateIso(new Date(sampleTs > 1e11 ? sampleTs : sampleTs * 1000))
-            : (sample?.date ? String(sample.date).slice(0, 10) : null);
-          // If market is open or live today, DO NOT serve stale static snapshot from prior sessions (e.g. 2026-11-20)
-          if (marketOpenNow && sampleDate && sampleDate !== todayDate) {
-            return null;
-          }
+        if (Array.isArray(j) && j.length > 1 && validateNepseTicks(j)) {
           return j;
         }
       }

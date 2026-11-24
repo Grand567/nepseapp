@@ -1062,6 +1062,19 @@ export const ingestFloorsheetContractsTransaction = db.transaction((tradeDate, r
 });
 
 /**
+ * Ingests a batch of live or historical floorsheet contracts into floorsheet_contracts
+ */
+export function ingestFloorsheetContracts(rawTrades, tradeDate) {
+  if (!tradeDate || !Array.isArray(rawTrades) || rawTrades.length === 0) return 0;
+  try {
+    return ingestFloorsheetContractsTransaction(tradeDate, rawTrades);
+  } catch (err) {
+    console.warn(`[ledgerStore] ingestFloorsheetContracts error for ${tradeDate}:`, err.message);
+    return 0;
+  }
+}
+
+/**
  * Retrieves 5D volume profile nodes and Point of Control (POC) scoped to the scrip's own last 5 trading dates
  */
 export function getScripVolumeProfile(symbol) {
