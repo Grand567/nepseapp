@@ -254,21 +254,6 @@ function seedPushTokensSync() {
     });
   }
 
-  // 5. Invariant fallback seed token so registeredPushTokensCount >= 1 immediately
-  if (map.size === 0) {
-    const defaultToken = {
-      token: "fQQID3KnSYOCLVM2Ottlds:APA91bF9uYijAX82axT2eoEtXTYC59bgR9oF5X8YWuBO_IiyIzuE7jRB2wtURjnZuxZeFoiu_321cPHcewQi_30IUvSIejTjQ66uHwK3qYUOL5ikCqFU-5I",
-      platform: "android",
-      appVersion: "1.0.6",
-      portfolioSymbols: ["SHEL", "NABIL", "CHCL"],
-      createdAt: new Date().toISOString(),
-      lastSeenAt: new Date().toISOString(),
-      registeredAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString()
-    };
-    map.set(defaultToken.token, defaultToken);
-  }
-
   return Array.from(map.values());
 }
 
@@ -724,22 +709,6 @@ export async function hydratePushTokensFromDb() {
     console.warn('[SmartAlertEngine] GITHUB_TOKEN not configured; skipping remote GitHub release vault token sync. Fallback layers (SQLite / STATE_FILE / env) active.');
   }
 
-  // 7. Invariant: Guarantee at least 1 registered token so registeredPushTokensCount >= 1 across boots
-  if (map.size === 0) {
-    const defaultToken = {
-      token: "fQQID3KnSYOCLVM2Ottlds:APA91bF9uYijAX82axT2eoEtXTYC59bgR9oF5X8YWuBO_IiyIzuE7jRB2wtURjnZuxZeFoiu_321cPHcewQi_30IUvSIejTjQ66uHwK3qYUOL5ikCqFU-5I",
-      platform: "android",
-      appVersion: "1.0.6",
-      portfolioSymbols: ["SHEL", "NABIL", "CHCL"],
-      createdAt: new Date().toISOString(),
-      lastSeenAt: new Date().toISOString(),
-      registeredAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString()
-    };
-    map.set(defaultToken.token, defaultToken);
-    console.log('[SmartAlertEngine] Injected durable mobile seed token into push registry.');
-  }
-
   pushTokens = Array.from(map.values());
   syncTrackedSymbolsFromTokens();
   saveJson(TOKENS_FILE, pushTokens);
@@ -775,7 +744,7 @@ export async function hydratePushTokensFromDb() {
     console.warn('[SmartAlertEngine] Error syncing push tokens to SQLite:', sqliteSyncErr.message);
   }
 }
-hydratePushTokensFromDb().catch(() => {});
+setTimeout(() => { hydratePushTokensFromDb().catch(() => {}); }, 500);
 
 /**
  * Backup push tokens to GitHub Releases durable vault (tag: v-vault-tokens).

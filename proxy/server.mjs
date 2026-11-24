@@ -5911,6 +5911,65 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
     if (cached) return res.json({ success: true, data: enrichWithMicrostructure(symbol, days, cached, date), cached: true });
   }
 
+  // Tier 0.5: During live market trading, fetch live intraday floorsheet trades for days=1 before falling back to yesterday's closed session
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  const isTodaySession = !date || date === todayIso;
+  if (isLiveTrading && days === 1 && isTodaySession && !fromDate && !toDate) {
+    try {
+      // 1. Check if floorsheet_contracts already has live intraday trades for today
+      let todayContracts = [];
+      try {
+        todayContracts = db.prepare(`SELECT * FROM floorsheet_contracts WHERE UPPER(symbol) = ? AND trade_date = ?`).all(symbol, todayIso);
+      } catch (_) {}
+
+      if (!todayContracts || todayContracts.length === 0) {
+        // 2. Fetch live intraday trades from exchange
+        try {
+          const fsRes = await Promise.race([
+            nepseClient.getFloorSheet({ symbol, page: 0, size: 200 }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Live floorsheet timeout')), 6000))
+          ]);
+          const rawFs = fsRes?.floorsheets?.content || fsRes?.content || [];
+          if (Array.isArray(rawFs) && rawFs.length > 0) {
+            todayContracts = rawFs;
+          }
+        } catch (liveFsErr) {
+          console.warn(`[broker-analysis] Live floorsheet fetch failed for ${symbol}: ${liveFsErr.message}`);
+          // NepseAlpha fallback
+          try {
+            const naRes = await axios.get(`https://nepsealpha.com/api/smx9156/live_floorsheet?symbol=${encodeURIComponent(symbol)}`, { timeout: 6000 });
+            const naData = naRes?.data?.data || [];
+            if (Array.isArray(naData) && naData.length > 0) {
+              todayContracts = naData.map(t => ({
+                contractId: t.id,
+                buyerMemberId: String(t.buyer_broker || ''),
+                buyerBroker: String(t.buyer_broker || ''),
+                sellerMemberId: String(t.seller_broker || ''),
+                sellerBroker: String(t.seller_broker || ''),
+                contractQuantity: Number(t.quantity || 0),
+                contractAmount: Number(t.amount || 0),
+                contractRate: Number(t.rate || 0),
+                businessDate: t.date || todayIso,
+                stockSymbol: symbol
+              }));
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (todayContracts && todayContracts.length > 0) {
+        const aggregated = aggregateFloorsheetRows(todayContracts, symbol, [todayIso]);
+        if (aggregated && (aggregated.brokers?.length > 0 || aggregated.totalVolume > 0)) {
+          const enrichedLive = enrichWithMicrostructure(symbol, 1, aggregated, todayIso);
+          setCache(cacheKey, enrichedLive, 10 * 1000); // 10s short cache during live session
+          return res.json({ success: true, data: enrichedLive, source: 'live_intraday_floorsheet' });
+        }
+      }
+    } catch (intradayErr) {
+      console.warn(`[broker-analysis] Intraday live trades lookup failed for ${symbol}:`, intradayErr.message);
+    }
+  }
+
   // Tier 1.0: Query verified SQLite ledger first when <= 40 days (contains 27 trading days with 100% 3-way conservation)
   if (days <= 40) {
     try {
@@ -6311,8 +6370,14 @@ app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async 
     let depthRaw = null;
     if (isMarketOpen) {
       try {
-        depthRaw = await nepseClient.getMarketDepth(symbol);
-      } catch (_) {}
+        const timeoutMs = 8000;
+        depthRaw = await Promise.race([
+          nepseClient.getMarketDepth(symbol),
+          new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs))
+        ]);
+      } catch (err) {
+        console.warn(`[market-depth] Live NOTS fetch failed for ${symbol}: ${err.message}`);
+      }
     }
 
     const buyList = depthRaw?.marketDepth?.buyMarketDepthList || depthRaw?.buyMarketDepthList || depthRaw?.buyDemand || [];
@@ -8811,7 +8876,82 @@ app.get([
       }
     }
 
-    const rows = getSmartMoneyAggregatedFlow(symbol, sessionLimit);
+    let rows = null;
+    let liveDateUsed = null;
+    const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+    if (isLiveTrading && (sessionLimit === 1 || tf === '1D') && (!queryDate || queryDate === todayIso)) {
+      try {
+        const liveRows = db.prepare(`
+          SELECT
+            buyer_broker AS brokerId,
+            SUM(kitta) AS buyVolume,
+            0 AS sellVolume,
+            COUNT(*) AS buyTrades,
+            COUNT(*) AS buyTradesCount,
+            0 AS sellTrades,
+            0 AS sellTradesCount,
+            SUM(amount) AS buyAmount,
+            0 AS sellAmount,
+            0 AS crossVolume
+          FROM floorsheet_contracts
+          WHERE UPPER(symbol) = ? AND trade_date = ?
+          GROUP BY buyer_broker
+        `).all(symbol, todayIso);
+
+        const liveSellRows = db.prepare(`
+          SELECT
+            seller_broker AS brokerId,
+            0 AS buyVolume,
+            SUM(kitta) AS sellVolume,
+            0 AS buyTrades,
+            0 AS buyTradesCount,
+            COUNT(*) AS sellTrades,
+            COUNT(*) AS sellTradesCount,
+            0 AS buyAmount,
+            SUM(amount) AS sellAmount,
+            0 AS crossVolume
+          FROM floorsheet_contracts
+          WHERE UPPER(symbol) = ? AND trade_date = ?
+          GROUP BY seller_broker
+        `).all(symbol, todayIso);
+
+        if (liveRows.length > 0 || liveSellRows.length > 0) {
+          const brokerMap = new Map();
+          for (const r of [...liveRows, ...liveSellRows]) {
+            const bId = String(r.brokerId);
+            const cur = brokerMap.get(bId) || {
+              brokerId: bId,
+              buyVolume: 0,
+              sellVolume: 0,
+              buyTrades: 0,
+              buyTradesCount: 0,
+              sellTrades: 0,
+              sellTradesCount: 0,
+              buyAmount: 0,
+              sellAmount: 0,
+              crossVolume: 0
+            };
+            cur.buyVolume += Number(r.buyVolume || 0);
+            cur.sellVolume += Number(r.sellVolume || 0);
+            cur.buyTrades += Number(r.buyTrades || 0);
+            cur.buyTradesCount += Number(r.buyTradesCount || 0);
+            cur.sellTrades += Number(r.sellTrades || 0);
+            cur.sellTradesCount += Number(r.sellTradesCount || 0);
+            cur.buyAmount += Number(r.buyAmount || 0);
+            cur.sellAmount += Number(r.sellAmount || 0);
+            brokerMap.set(bId, cur);
+          }
+          rows = Array.from(brokerMap.values()).sort((a, b) => (b.buyVolume - b.sellVolume) - (a.buyVolume - a.sellVolume));
+          liveDateUsed = todayIso;
+        }
+      } catch (liveErr) {
+        console.warn(`[smart-money] Error querying live intraday contracts for ${symbol}:`, liveErr.message);
+      }
+    }
+
+    if (!rows) {
+      rows = getSmartMoneyAggregatedFlow(symbol, sessionLimit);
+    }
     const enriched = (Array.isArray(rows) ? rows : []).map(r => {
       const bVol = Number(r.buyVolume || r.buyVol || 0);
       const sVol = Number(r.sellVolume || r.sellVol || 0);
@@ -8853,8 +8993,8 @@ app.get([
     return res.json({
       success: true,
       symbol,
-      date: latestDate,
-      businessDate: latestDate,
+      date: liveDateUsed || latestDate,
+      businessDate: liveDateUsed || latestDate,
       timeframe: tf,
       sessionsIncluded: sessionLimit,
       totalSharesHeldTillNow: totalSharesHeld,

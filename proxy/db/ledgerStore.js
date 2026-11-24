@@ -63,53 +63,74 @@ const candidateGzFiles = [
   path.join(__dirname, "data", "drabyashree_ledger.db.gz"),
 ];
 
-let existingDbMtime = 0;
-let existingDbSize = 0;
-if (fs.existsSync(dbPath)) {
+const appliedStampPath = `${dbPath}.gz.applied`;
+let appliedStamp = "";
+if (fs.existsSync(appliedStampPath)) {
   try {
-    const s = fs.statSync(dbPath);
-    existingDbMtime = s.mtimeMs || 0;
-    existingDbSize = s.size || 0;
+    appliedStamp = fs.readFileSync(appliedStampPath, "utf8").trim();
   } catch (_) {}
 }
 
-const needsRestore = existingDbSize < 100000 || candidateGzFiles.some(gz => {
-  if (fs.existsSync(gz)) {
+let existingDbSize = 0;
+if (fs.existsSync(dbPath)) {
+  try {
+    existingDbSize = fs.statSync(dbPath).size || 0;
+  } catch (_) {}
+}
+
+let primaryGzFile = null;
+let primaryGzStat = null;
+let targetGzSig = "";
+for (const gzFile of candidateGzFiles) {
+  if (fs.existsSync(gzFile)) {
     try {
-      return (fs.statSync(gz).mtimeMs || 0) > existingDbMtime;
+      const s = fs.statSync(gzFile);
+      if (s.size > 100000) {
+        primaryGzFile = gzFile;
+        primaryGzStat = s;
+        targetGzSig = `${s.size}:${Math.trunc(s.mtimeMs || 0)}`;
+        break;
+      }
     } catch (_) {}
   }
-  return false;
-});
+}
 
-if (needsRestore) {
-  for (const gzFile of candidateGzFiles) {
-    if (fs.existsSync(gzFile)) {
-      try {
-        const gzStat = fs.statSync(gzFile);
-        if (existingDbSize >= 100000 && (gzStat.mtimeMs || 0) <= existingDbMtime) {
-          continue;
-        }
-        // Delete stale WAL/SHM files before replacing the main DB
-        try { if (fs.existsSync(`${dbPath}-wal`)) fs.unlinkSync(`${dbPath}-wal`); } catch (_) {}
-        try { if (fs.existsSync(`${dbPath}-shm`)) fs.unlinkSync(`${dbPath}-shm`); } catch (_) {}
-        const t0 = Date.now();
-        await pipeline(
-          fs.createReadStream(gzFile),
-          zlib.createGunzip(),
-          fs.createWriteStream(dbPath)
-        );
-        const restoredStat = fs.statSync(dbPath);
-        console.log(`[Drabyashree Ledger] Fast streaming bootstrap restored ${dbPath} (${(restoredStat.size / 1024 / 1024).toFixed(2)} MB) from ${gzFile} in ${Date.now() - t0}ms`);
-        if (global.gc) {
-          try { global.gc(); } catch (_) {}
-        }
-        break;
-      } catch (err) {
-        console.warn(`[Drabyashree Ledger] Failed fast bootstrap from ${gzFile}:`, err.message);
-      }
+const needsRestore = Boolean(
+  primaryGzFile && (
+    existingDbSize < 100000 ||
+    !appliedStamp ||
+    appliedStamp !== targetGzSig
+  )
+);
+
+if (needsRestore && primaryGzFile) {
+  try {
+    // Delete stale WAL/SHM files before replacing the main DB
+    try { if (fs.existsSync(`${dbPath}-wal`)) fs.unlinkSync(`${dbPath}-wal`); } catch (_) {}
+    try { if (fs.existsSync(`${dbPath}-shm`)) fs.unlinkSync(`${dbPath}-shm`); } catch (_) {}
+    const t0 = Date.now();
+    await pipeline(
+      fs.createReadStream(primaryGzFile),
+      zlib.createGunzip(),
+      fs.createWriteStream(dbPath)
+    );
+    const restoredStat = fs.statSync(dbPath);
+    console.log(`[Drabyashree Ledger] Fast streaming bootstrap restored ${dbPath} (${(restoredStat.size / 1024 / 1024).toFixed(2)} MB) from ${primaryGzFile} in ${Date.now() - t0}ms`);
+    try {
+      fs.writeFileSync(appliedStampPath, targetGzSig, "utf8");
+    } catch (writeErr) {
+      console.warn(`[Drabyashree Ledger] Warning: Could not write stamp file ${appliedStampPath}:`, writeErr.message);
     }
+    if (global.gc) {
+      try { global.gc(); } catch (_) {}
+    }
+  } catch (err) {
+    console.warn(`[Drabyashree Ledger] Failed fast bootstrap from ${primaryGzFile}:`, err.message);
   }
+} else if (primaryGzFile && !appliedStamp && existingDbSize >= 100000) {
+  try {
+    fs.writeFileSync(appliedStampPath, targetGzSig, "utf8");
+  } catch (_) {}
 }
 
 export const db = new Database(dbPath, { timeout: 10000 });
@@ -159,6 +180,7 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_stock_date ON daily_stock_summary(symbol, trade_date DESC);
   CREATE INDEX IF NOT EXISTS idx_broker_symbol_date ON daily_broker_ledger(symbol, trade_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_daily_broker_ledger_sym_date ON daily_broker_ledger(symbol, trade_date);
   CREATE INDEX IF NOT EXISTS idx_broker_id_symbol ON daily_broker_ledger(broker_id, symbol);
   CREATE INDEX IF NOT EXISTS idx_stock_summary_date ON daily_stock_summary(trade_date DESC);
   CREATE INDEX IF NOT EXISTS idx_stock_summary_upper_symbol_date ON daily_stock_summary(UPPER(symbol), trade_date DESC);
@@ -2314,19 +2336,35 @@ export function reconstructMarketDepthFromFloorsheet(symbol, verifiedPrice = nul
   const cleanSym = String(symbol).toUpperCase().trim();
 
   try {
-    let refPrice = verifiedPrice;
-    if (!refPrice || refPrice <= 0) {
-      const summaryQuery = targetDate
-        ? db.prepare(`SELECT close_price FROM daily_stock_summary WHERE UPPER(symbol) = ? AND trade_date = ? LIMIT 1`).get(cleanSym, targetDate)
-        : db.prepare(`SELECT close_price FROM daily_stock_summary WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 1`).get(cleanSym);
-      refPrice = summaryQuery?.close_price || 0;
-    }
-
     const contracts = getScripFloorsheet(cleanSym, 200, targetDate ? { date: targetDate } : {});
     if (!contracts || contracts.length === 0) return null;
 
+    let minRate = Infinity;
+    let maxRate = -Infinity;
+    for (const c of contracts) {
+      if (c.rate > 0) {
+        if (c.rate < minRate) minRate = c.rate;
+        if (c.rate > maxRate) maxRate = c.rate;
+      }
+    }
+    const lastTradeRate = contracts[0]?.rate || 0;
+
+    const summaryQuery = targetDate
+      ? db.prepare(`SELECT close_price FROM daily_stock_summary WHERE UPPER(symbol) = ? AND trade_date = ? LIMIT 1`).get(cleanSym, targetDate)
+      : db.prepare(`SELECT close_price FROM daily_stock_summary WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 1`).get(cleanSym);
+    const summaryClose = Number(summaryQuery?.close_price || 0);
+
+    let refPrice = 0;
+    if (summaryClose >= minRate && summaryClose <= maxRate) {
+      refPrice = summaryClose;
+    } else if (verifiedPrice && Number(verifiedPrice) >= minRate && Number(verifiedPrice) <= maxRate) {
+      refPrice = Number(verifiedPrice);
+    } else {
+      refPrice = lastTradeRate;
+    }
+
     if (!refPrice || refPrice <= 0) {
-      refPrice = contracts[0]?.rate || 0;
+      refPrice = lastTradeRate || summaryClose || 0;
     }
 
     const levelMap = new Map();
@@ -2344,42 +2382,11 @@ export function reconstructMarketDepthFromFloorsheet(symbol, verifiedPrice = nul
       quantity: v.kitta,
       qty: v.kitta,
       kitta: v.kitta,
-      orders: v.orders,
-      isSyntheticVap: true,
+      orders: v.orders
     }));
 
     const bids = allLevels.filter(l => l.price <= refPrice).sort((a, b) => b.price - a.price).slice(0, 5);
     const asks = allLevels.filter(l => l.price > refPrice).sort((a, b) => a.price - b.price).slice(0, 5);
-
-    // If floorsheet trades were tightly clustered, fill remaining depth levels around refPrice to guarantee 5 bids & 5 asks
-    const tick = refPrice >= 1000 ? 1.0 : refPrice >= 500 ? 0.5 : 0.1;
-    const avgQty = Math.max(10, Math.round((contracts.reduce((acc, c) => acc + (c.kitta || 0), 0) / contracts.length) || 100));
-
-    while (bids.length < 5) {
-      const lastBidPrice = bids.length > 0 ? bids[bids.length - 1].price : refPrice;
-      const nextBidPrice = Number(Math.max(0.1, lastBidPrice - tick).toFixed(1));
-      bids.push({
-        price: nextBidPrice,
-        quantity: avgQty,
-        qty: avgQty,
-        kitta: avgQty,
-        orders: 1,
-        isSyntheticVap: true,
-      });
-    }
-
-    while (asks.length < 5) {
-      const lastAskPrice = asks.length > 0 ? asks[asks.length - 1].price : (bids[0]?.price ? bids[0].price + tick : refPrice + tick);
-      const nextAskPrice = Number((lastAskPrice + tick).toFixed(1));
-      asks.push({
-        price: nextAskPrice,
-        quantity: avgQty,
-        qty: avgQty,
-        kitta: avgQty,
-        orders: 1,
-        isSyntheticVap: true,
-      });
-    }
 
     const totalBidQty = bids.reduce((s, b) => s + b.quantity, 0);
     const totalAskQty = asks.reduce((s, a) => s + a.quantity, 0);

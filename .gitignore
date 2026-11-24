@@ -66,6 +66,7 @@ proxy/data/raw_floorsheet_backups/
 *.db
 *.db-shm
 *.db-wal
+*.applied
 proxy/data/*.db
 !proxy/data/ledger_seed_snapshot.json.gz
 !proxy/data/drabyashree_ledger.db.gz
