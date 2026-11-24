@@ -3763,19 +3763,12 @@ export default function StockDetailModal({
     ? (marketStatus?.currentSessionDate || marketStatus?.sessionDate || latestTradingSession(appNow, false))
     : lastClosedSession;
   const todaySessionDate = activeSessionDate;
-  // Under closed market after 15:00 on a trading day (2026-11-23), active/latest completed session is 2026-11-23 (never tomorrow's 2026-11-24)
-  const rawQuoteDate = d?.businessDate || d?.date || stock?.businessDate || stock?.date || '';
-  const displayedQuoteSessionDate = (rawQuoteDate && rawQuoteDate <= maxAllowedSessionDate)
-    ? rawQuoteDate
-    : (marketStatus?.isOpen ? activeSessionDate : lastClosedSession);
   const isHistoricalDateSelected = Boolean(modalSessionDate && modalSessionDate !== activeSessionDate && modalSessionDate <= maxAllowedSessionDate);
   let resolvedBadgeSessionDate = isHistoricalDateSelected
     ? modalSessionDate
-    : (marketStatus?.isOpen ? activeSessionDate : (displayedQuoteSessionDate || lastClosedSession || activeSessionDate));
+    : (marketStatus?.isOpen ? activeSessionDate : lastClosedSession);
   if (!resolvedBadgeSessionDate || resolvedBadgeSessionDate > maxAllowedSessionDate) {
-    resolvedBadgeSessionDate = displayedQuoteSessionDate && displayedQuoteSessionDate <= maxAllowedSessionDate
-      ? displayedQuoteSessionDate
-      : (lastClosedSession <= maxAllowedSessionDate ? lastClosedSession : maxAllowedSessionDate);
+    resolvedBadgeSessionDate = lastClosedSession <= maxAllowedSessionDate ? lastClosedSession : maxAllowedSessionDate;
   }
   const modalBadgeSessionDate = resolvedBadgeSessionDate;
   const hasLiveIntradayQuotes = Boolean(

@@ -1385,7 +1385,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
             </button>
 
             {[1, 2, 3, 4].map((offset) => {
-              const dateStr = subfileManifest?.days_quick_map?.[String(offset)];
+              const dateStr = subfileManifest?.days_quick_map?.[`${offset}D`] || subfileManifest?.days_quick_map?.[String(offset)] || subfileManifest?.subfiles?.[offset - 1]?.session_date;
               const isActive = sessionDayMode === offset;
               return (
                 <button
