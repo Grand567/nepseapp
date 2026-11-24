@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-11-24T05:45:48.089Z",
+  "stage": "Stage 2 — Live Market Audit (11:05 AM NPT)",
+  "marketOpenDetected": true,
+  "turnoverSamples": [
+    8.89,
+    8.89
+  ],
+  "brokerShareViolationsCount": 0,
+  "brokerShareViolations": [],
+  "consoleErrorsCount": 40,
+  "pageErrorsCount": 0,
+  "screenshotPath": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\audit-reports\\stage2_live_market.png"
+}

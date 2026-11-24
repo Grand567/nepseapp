@@ -1,0 +1,20 @@
+{
+  "timestamp": "2026-11-24T05:36:30.267Z",
+  "stage": "Stage 1 — Pre-Market Build, Android Sync & UI Verification",
+  "headerVerification": {
+    "expectedIndex": "2,623.56 ▲ +2.26 pts (+0.08%)",
+    "actualRenderedSnippet": "2,690.15 ▼ -5.45 pts (-0.20%)",
+    "headerMatchesPreMarket": false,
+    "headerMatchesLive": true,
+    "sessionTransition": "PRE_MARKET_TO_LIVE_MATCH"
+  },
+  "shelVerification": {
+    "expectedBadge": "Market Closed • Showing 2026-11-23",
+    "shelHasStatus": true,
+    "shelHasDate": true,
+    "modalTextSnippet": "SHEL\nLIVE • 2026-11-24\nWatch\nAlert\nTelemetry Hub\nAll Tabs (13)\n⚡ Trading & Flow (7)\n📑 Financials (4)\n🧠 Analytics & AI (2)\nOverview\nBroker Flow\n🔥 Smart Money\nAI Guru & Targets\n🧠 AI Alpha\nTechnicals\n⚡ Hot\nMarket Depth\n📊 Live\nFloorsheet\nVolume Profile (POC)\n📊 POC\nFundamentals\n📑 Reports\nDividends"
+  },
+  "consoleErrorsCount": 40,
+  "pageErrorsCount": 0,
+  "screenshotPath": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\audit-reports\\stage1_premarket.png"
+}
