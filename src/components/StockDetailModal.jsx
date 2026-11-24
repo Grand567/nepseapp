@@ -2709,7 +2709,18 @@ export default function StockDetailModal({
     }
     // Instant offline/in-memory cache fast-path (< 1ms)
     const localFast = await fetchRealBrokerAnalysis(sym, days, { refresh: false }).catch(() => null);
-    if (localFast && (localFast.brokers?.length > 0 || localFast.topBuyers?.length > 0 || localFast.topHoldings?.length > 0)) {
+    const localFastDays = Number(localFast?.tradingDays || localFast?.timeframeDays || 0);
+    const isLocalFastValid = Boolean(
+      localFast &&
+      (localFast.brokers?.length > 0 || localFast.topBuyers?.length > 0 || localFast.topHoldings?.length > 0) &&
+      (
+        (days === 1 && localFastDays <= 1) ||
+        (days === 5 && localFastDays <= 5) ||
+        (days === 30 && localFastDays >= 20) ||
+        (isAll && localFastDays >= 50)
+      )
+    );
+    if (isLocalFastValid) {
       return localFast;
     }
     try {
@@ -2726,7 +2737,7 @@ export default function StockDetailModal({
         if (res?.data && res.data.length > 0) return res;
       }
     } catch (_) {}
-    return localFast || null;
+    return isLocalFastValid ? localFast : null;
   }, [allTimeBrokerAnalysis]);
 
   const rawFundamentalsForHub = useMemo(() => {

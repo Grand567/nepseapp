@@ -15,7 +15,7 @@ import axios from 'axios';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse.js';
 import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
 import { calculateEMA, calculateMACD, calculateRSI } from './indicators.js';
-import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt, isNepseTradingDay, setLiveMarketOverride, clearLiveMarketOverride, generateTradingDaysSequence, latestTradingSession } from './nepseCalendar.js';
+import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt, isNepseTradingDay, setLiveMarketOverride, clearLiveMarketOverride, generateTradingDaysSequence, latestTradingSession, getNptMinutesOfDay } from './nepseCalendar.js';
 import { adjustPricesForCorporateActions, aggregateToWeeklyCandles, classifyLiquidity } from './priceAdjustment.js'; // C1 C2 C3
 import { idbGet, idbSet } from './indexedDb.js';
 import { getProxyBase, setLocalProxyState } from './proxyBase.js';
@@ -50,6 +50,23 @@ function todayKey() {
     const npt = new Date(Date.now() + (5 * 60 + 45) * 60000);
     return npt.toISOString().slice(0, 10);
   }
+}
+
+/**
+ * Returns today's ISO date string (YYYY-MM-DD) in Asia/Kathmandu time zone.
+ */
+export function getKathmanduDateIso(date = new Date()) {
+  return formatNptDateIso(date);
+}
+
+/**
+ * Checks whether NEPSE is currently in live market trading window (Mon–Fri 11:00–15:00 Asia/Kathmandu).
+ */
+export function isNepseLiveWindowNow(date = new Date()) {
+  const d = new Date(date);
+  if (!isNepseTradingDay(d)) return false;
+  const mins = getNptMinutesOfDay(d);
+  return mins >= 660 && mins < 900;
 }
 
 const isLocalBrowserEnv = () => typeof window !== 'undefined' && (
@@ -787,13 +804,24 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
   }
 
   // 0. 0ms Fast Path: Check local File B ledger / File A static analytics before waiting for network timeouts
-  if (!forceRefresh) {
+  // Live Hours & Newer Date Guard: During live trading (11:00-15:00 NPT) or on a newer trading day,
+  // do NOT short-circuit with stale offline quotes; fetch live exchange quotes first!
+  const isLiveWindow = isNepseLiveWindowNow();
+  const todayKtmIso = getKathmanduDateIso();
+  const isTradingToday = isNepseTradingDay(new Date());
+  const latestExpectedDate = latestTradingSession(new Date(), false);
+  const allowStaticQuoteFastPath = !forceRefresh && !isLiveWindow;
+
+  if (allowStaticQuoteFastPath) {
     try {
       const { getScripFromLedger, getTodayStaticAnalyticsDirect } = await getLocalLedger();
       const scripRecord = typeof getScripFromLedger === 'function' ? getScripFromLedger(sym) : null;
       const staticData = typeof getTodayStaticAnalyticsDirect === 'function' ? await getTodayStaticAnalyticsDirect(sym) : null;
-      const f = scripRecord?.fundamentals || staticData?.long_term_static?.audited_quarterly_fundamentals;
-      if (f && (f.eps !== undefined || f.book_value !== undefined || f.book_value_per_share !== undefined || f.paid_up_capital !== undefined)) {
+      const staticDate = String(staticData?.session_date || scripRecord?.date || '').slice(0, 10);
+      const isDateCurrent = !staticDate || (staticDate >= latestExpectedDate && (!isTradingToday || staticDate >= todayKtmIso));
+      if (isDateCurrent) {
+        const f = scripRecord?.fundamentals || staticData?.long_term_static?.audited_quarterly_fundamentals;
+        if (f && (f.eps !== undefined || f.book_value !== undefined || f.book_value_per_share !== undefined || f.paid_up_capital !== undefined)) {
         const toNullPos = (v) => { const n = Number(v); return (v != null && v !== '' && Number.isFinite(n) && n > 0) ? n : null; };
         const toNullFin = (v) => { const n = Number(v); return (v != null && v !== '' && Number.isFinite(n)) ? n : null; };
         const ltp = scripRecord?.ltp || Number(staticData?.card_1_quote?.ltp || 0);
@@ -822,6 +850,7 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
         fastDetail.data = fastDetail;
         setCachedStockFundamentals(sym, fastDetail);
         return fastDetail;
+      }
       }
     } catch (_) {}
   }
@@ -3644,6 +3673,11 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
   let localSubfileDate = '';
   const loadLocalSubfile = async () => {
     if (localSubfileBa !== null) return localSubfileBa;
+    // STRICT GUARD: Bundled local subfiles only hold 5 sessions. Never load for > 5 days!
+    if (numDays > 5 || isAllTime) {
+      localSubfileBa = false;
+      return null;
+    }
     try {
       const { getHistoricalSubfileBrokerAnalysis } = await getLocalLedger();
       localSubfileBa = await getHistoricalSubfileBrokerAnalysis(sym, { days: numDays, date });
@@ -3655,10 +3689,23 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
     }
   };
 
-  if (!isAllTime && !refresh && (date || numDays === 5 || numDays === 1)) {
+  // Restrict Tier 0 short-circuit:
+  // ONLY use Tier 0 bundled subfiles immediately when:
+  // 1. An explicit historical date <= localSubfileDate is requested, OR
+  // 2. NEPSE is closed (!isNepseLiveWindowNow()) AND localSubfileDate already matches or exceeds the latest expected trading date
+  const isLive = isNepseLiveWindowNow();
+  const todayKtm = getKathmanduDateIso();
+  const latestExpectedDate = latestTradingSession(new Date(), false);
+  const isTradingToday = isNepseTradingDay(new Date());
+
+  if (!isAllTime && !refresh && (numDays === 5 || numDays === 1 || date)) {
     try {
       const subfileBa = await loadLocalSubfile();
-      if (subfileBa && (subfileBa.brokers?.length > 0 || subfileBa.topBuyers?.length > 0 || subfileBa.topAccumulators?.length > 0)) {
+      const canShortCircuit = subfileBa && (subfileBa.brokers?.length > 0 || subfileBa.topBuyers?.length > 0 || subfileBa.topAccumulators?.length > 0) && (
+        (date && localSubfileDate && date <= localSubfileDate) ||
+        (!date && !isLive && localSubfileDate && localSubfileDate >= latestExpectedDate && (!isTradingToday || localSubfileDate >= todayKtm))
+      );
+      if (canShortCircuit) {
         setCachedRealBrokerAnalysis(sym, subfileBa, numDays, options);
         return subfileBa;
       }
@@ -3681,7 +3728,8 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
         await loadLocalSubfile();
 
         // Stale backend protection: If backend returns an older date than our local finalized subfiles (e.g. 2026-11-19 < 2026-11-24), reject stale payload
-        if (localSubfileDate && backendDate && backendDate < localSubfileDate && localSubfileBa && (localSubfileBa.brokers?.length > 0 || localSubfileBa.topBuyers?.length > 0 || localSubfileBa.topAccumulators?.length > 0)) {
+        // ONLY for 1D / 5D! NEVER for numDays > 5 (30D / 1M or ALL)!
+        if (numDays <= 5 && localSubfileDate && backendDate && backendDate < localSubfileDate && localSubfileBa && (localSubfileBa.brokers?.length > 0 || localSubfileBa.topBuyers?.length > 0 || localSubfileBa.topAccumulators?.length > 0)) {
           console.warn(`[liveData] Rejecting stale backend diagnostic date (${backendDate}) in favor of newer local subfile date (${localSubfileDate}) for ${sym}`);
           setCachedRealBrokerAnalysis(sym, localSubfileBa, numDays, options);
           return localSubfileBa;
@@ -3772,7 +3820,8 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
       await loadLocalSubfile();
 
       // Stale backend protection: If backend returns an older date than our local finalized subfiles (e.g. 2026-11-19 < 2026-11-24), reject stale payload
-      if (localSubfileDate && backendBaDate && backendBaDate < localSubfileDate && localSubfileBa && (localSubfileBa.brokers?.length > 0 || localSubfileBa.topBuyers?.length > 0 || localSubfileBa.topAccumulators?.length > 0)) {
+      // ONLY compare against localSubfileDate for 1D/5D! NEVER for numDays > 5 (30D/1M or ALL)!
+      if (numDays <= 5 && localSubfileDate && backendBaDate && backendBaDate < localSubfileDate && localSubfileBa && (localSubfileBa.brokers?.length > 0 || localSubfileBa.topBuyers?.length > 0 || localSubfileBa.topAccumulators?.length > 0)) {
         console.warn(`[liveData] Rejecting stale broker-analysis backend date (${backendBaDate}) in favor of newer local subfile date (${localSubfileDate}) for ${sym}`);
         setCachedRealBrokerAnalysis(sym, localSubfileBa, numDays, options);
         return localSubfileBa;
@@ -3819,27 +3868,31 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
   } catch (_) {}
 
   // 0ms Offline Fallback: Synthesize authentic broker analysis from bundled historical subfiles
-  try {
-    const { getHistoricalSubfileBrokerAnalysis } = await getLocalLedger();
-    const subfileBa = await getHistoricalSubfileBrokerAnalysis(sym, { days: numDays, date });
-    if (subfileBa && (subfileBa.brokers?.length > 0 || subfileBa.topBuyers?.length > 0 || subfileBa.topAccumulators?.length > 0)) {
-      setCachedRealBrokerAnalysis(sym, subfileBa, numDays, options);
-      return subfileBa;
-    }
-  } catch (_) {}
+  // STRICT GUARD: Bundled subfiles ONLY hold 5 days. NEVER synthesize or cache a 5-day subfile for numDays > 5 (30D / ALL)!
+  if (numDays <= 5 && !isAllTime) {
+    try {
+      const { getHistoricalSubfileBrokerAnalysis } = await getLocalLedger();
+      const subfileBa = await getHistoricalSubfileBrokerAnalysis(sym, { days: numDays, date });
+      if (subfileBa && (subfileBa.brokers?.length > 0 || subfileBa.topBuyers?.length > 0 || subfileBa.topAccumulators?.length > 0)) {
+        setCachedRealBrokerAnalysis(sym, subfileBa, numDays, options);
+        return subfileBa;
+      }
+    } catch (_) {}
+  }
 
   // If cached real broker analysis exists matching the requested timeframe, return it
   if (cached) {
     const cachedDays = Number(cached.tradingDays || 1);
-    if (numDays === 1 || cachedDays === numDays) {
+    if ((numDays === 1 && cachedDays === 1) || (numDays > 1 && cachedDays >= Math.min(numDays * 0.7, 20))) {
       return cached;
     }
   }
 
   // If backend broker aggregation timed out but we have real floorsheet records,
-  // compute authentic broker analysis directly from genuine NEPSE floorsheet records!
-  try {
-    const fs = await fetchRealFloorsheet(sym, date || '', 1, 500);
+  // compute authentic broker analysis directly from genuine NEPSE floorsheet records (ONLY for 1D)!
+  if (numDays === 1) {
+    try {
+      const fs = await fetchRealFloorsheet(sym, date || '', 1, 500);
     if (fs && fs.rows && fs.rows.length > 0) {
       const brokerMap = {};
       const dateMap = {};
@@ -3939,11 +3992,12 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
       return computedFromRealFloorsheet;
     }
   } catch (_) {}
+  }
 
   // If any previous cached broker analysis exists matching the requested timeframe, return it
   if (cached && !refresh) {
     const cachedDays = Number(cached.tradingDays || 1);
-    if (numDays === 1 || cachedDays >= Math.min(numDays, 3)) {
+    if ((numDays === 1 && cachedDays === 1) || (numDays <= 5 && cachedDays >= Math.min(numDays, 3)) || (numDays > 5 && cachedDays >= 20)) {
       return cached;
     }
   }

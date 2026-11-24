@@ -388,7 +388,8 @@ function BrokerSmartMoneyCardInner({
   onTimeframeChange,
 }: BrokerSmartMoneyCardProps) {
   const cleanSymbol = (symbol || '').trim().toUpperCase();
-  const [timeframe, setTimeframe] = useState<SmartMoneyTimeframe>(() => {
+
+  const initialTf: SmartMoneyTimeframe = (() => {
     if (selectedDays != null) {
       const sDays = String(selectedDays).toLowerCase();
       if (sDays === 'all' || Number(selectedDays) >= 300) return 'ALL';
@@ -396,12 +397,54 @@ function BrokerSmartMoneyCardInner({
       if (Number(selectedDays) >= 5) return '5D';
     }
     return '1D';
+  })();
+
+  const isInitialMultiDay = Boolean(
+    (initialData as any)?.tradingDays > 1 || 
+    (initialData as any)?.timeframeDays > 1 || 
+    (initialData as any)?.timeframe === '30D' || 
+    (initialData as any)?.timeframe === '15D' ||
+    (initialData as any)?.timeframe === '5D' ||
+    (initialData as any)?.timeframe === 'ALL'
+  );
+
+  const isInitialMatchingTf = (tf: SmartMoneyTimeframe, data: any) => {
+    if (!data || typeof data !== 'object') return false;
+    const days = Number(data.tradingDays || data.timeframeDays || 0);
+    const tfProp = String(data.timeframe || '').toUpperCase();
+    if (tf === '1D') {
+      return !isInitialMultiDay && (days === 1 || tfProp === '1D' || (!days && !tfProp));
+    }
+    if (tf === '5D') {
+      return tfProp === '5D' || days === 5;
+    }
+    if (tf === '1M') {
+      return tfProp === '30D' || (days >= 20 && days <= 40);
+    }
+    if (tf === 'ALL') {
+      return tfProp === 'ALL' || days > 100;
+    }
+    return false;
+  };
+
+  const [timeframe, setTimeframe] = useState<SmartMoneyTimeframe>(initialTf);
+  const [rawPayload, setRawPayload] = useState<any>(() => {
+    if (initialData && isInitialMatchingTf(initialTf, initialData)) {
+      return initialData;
+    }
+    return null;
   });
-  const [rawPayload, setRawPayload] = useState<any>(initialData ?? null);
-  const [cached1DPayload, setCached1DPayload] = useState<any>(initialData ?? null);
+  const [cached1DPayload, setCached1DPayload] = useState<any>(() => {
+    if (initialData && !isInitialMultiDay) {
+      return initialData;
+    }
+    return null;
+  });
   const [loading, setLoading] = useState<boolean>(false);
   const [showAllHolders, setShowAllHolders] = useState<boolean>(false);
   const [warningBanner, setWarningBanner] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState<number>(0);
 
   // Sync external timeframe change (e.g. from BeginnerConfidenceCard)
   useEffect(() => {
@@ -429,6 +472,8 @@ function BrokerSmartMoneyCardInner({
         navigator.vibrate(25);
       }
     } catch (_) {}
+    setLoadError(null);
+    setWarningBanner(null);
     setTimeframe(tf);
     const dVal = tf === 'ALL' ? 'all' : (tf === '5D' ? 5 : tf === '1M' ? 30 : 1);
     if (onTimeframeChange) {
@@ -439,25 +484,18 @@ function BrokerSmartMoneyCardInner({
   useEffect(() => {
     setCached1DPayload(null);
     setRawPayload(null);
+    setLoadError(null);
+    setWarningBanner(null);
   }, [cleanSymbol]);
 
   useEffect(() => {
-    const isMultiDay = Boolean(
-      (initialData as any)?.tradingDays > 1 || 
-      (initialData as any)?.timeframeDays > 1 || 
-      (initialData as any)?.timeframe === '30D' || 
-      (initialData as any)?.timeframe === '15D' ||
-      (initialData as any)?.timeframe === '5D' ||
-      (initialData as any)?.timeframe === 'ALL'
-    );
-
     if (initialData && !cached1DPayload && timeframe === '1D') {
-      if (!isMultiDay) {
+      if (!isInitialMultiDay) {
         setCached1DPayload(initialData);
       }
     }
     if (initialData && !rawPayload) {
-      if (!isMultiDay || timeframe !== '1D') {
+      if (isInitialMatchingTf(timeframe, initialData)) {
         setRawPayload(initialData);
       }
     }
@@ -469,6 +507,7 @@ function BrokerSmartMoneyCardInner({
     const abortController = new AbortController();
 
     async function loadTimeframeData() {
+      setLoadError(null);
       // If returning to 1D and we have cached authentic 1D data, immediately present it to prevent flickering/confusion
       if (timeframe === '1D' && cached1DPayload) {
         setRawPayload(cached1DPayload);
@@ -477,12 +516,7 @@ function BrokerSmartMoneyCardInner({
       // If initialData already contains the requested timeframe key or matches requested timeframe, use it immediately
       const tfUpper = timeframe.toUpperCase();
       const tfLower = timeframe.toLowerCase();
-      const matchesTimeframe = initialData && typeof initialData === 'object' && (
-        (timeframe === 'ALL' && ((initialData as any).timeframe === 'ALL' || (initialData as any).tradingDays > 100)) ||
-        (timeframe === '5D' && ((initialData as any).timeframe === '5D' || (initialData as any).timeframeDays === 5 || (initialData as any).tradingDays === 5)) ||
-        (timeframe === '1M' && ((initialData as any).timeframe === '30D' || (initialData as any).timeframeDays === 30 || ((initialData as any).tradingDays >= 20 && (initialData as any).tradingDays <= 35)))
-      );
-      if (matchesTimeframe) {
+      if (isInitialMatchingTf(timeframe, initialData)) {
         setRawPayload(initialData);
         setWarningBanner(null);
         setLoading(false);
@@ -536,19 +570,26 @@ function BrokerSmartMoneyCardInner({
           brokerBaselineShares
         );
 
-        if (normalizedCheck.length === 0) {
-          const isInitialMultiDay = Boolean(
-            (initialData as any)?.tradingDays > 1 || (initialData as any)?.timeframeDays > 1
-          );
-          const validInitial = (timeframe === '1D' && isInitialMultiDay) ? null : initialData;
-          const fallbackPayload = cached1DPayload || validInitial || null;
-          if (timeframe !== '1D') {
-            setWarningBanner(
-              `${timeframe} multi-day floor-sheet rollup is compiling for ${cleanSymbol}. Displaying verified session telemetry.`
-            );
-          }
-          if (fallbackPayload) {
-            setRawPayload(fallbackPayload);
+        const respDays = Number(responseData?.tradingDays || responseData?.timeframeDays || 0);
+        const isMultiDayResponse = respDays >= 6;
+
+        if (normalizedCheck.length === 0 || (timeframe === '1M' && !isMultiDayResponse && respDays > 0)) {
+          if (timeframe === '1M' || timeframe === 'ALL') {
+            setLoadError(`${timeframe === '1M' ? '1M (30D)' : 'All-time'} broker ledger unavailable offline — Tap Retry`);
+            setRawPayload(null);
+          } else {
+            const validInitial = (timeframe === '1D' && isInitialMultiDay) ? null : (isInitialMatchingTf(timeframe, initialData) ? initialData : null);
+            const fallbackPayload = (timeframe === '1D' ? cached1DPayload : null) || validInitial || null;
+            if (timeframe !== '1D') {
+              setWarningBanner(
+                `${timeframe} multi-day floor-sheet rollup is compiling for ${cleanSymbol}. Displaying verified session telemetry.`
+              );
+            }
+            if (fallbackPayload) {
+              setRawPayload(fallbackPayload);
+            } else {
+              setRawPayload(null);
+            }
           }
         } else {
           setRawPayload(responseData);
@@ -558,20 +599,22 @@ function BrokerSmartMoneyCardInner({
         }
       } catch (err: any) {
         if (!isMounted || abortController.signal.aborted || err?.name === 'AbortError') return;
-        const isInitialMultiDay = Boolean(
-          (initialData as any)?.tradingDays > 1 || (initialData as any)?.timeframeDays > 1
-        );
-        const validInitial = (timeframe === '1D' && isInitialMultiDay) ? null : initialData;
-        const fallbackPayload = cached1DPayload || validInitial || null;
-        if (fallbackPayload) {
-          if (timeframe !== '1D') {
-            setWarningBanner(
-              `Could not fetch live ${timeframe} floor-sheet rollup. Displaying verified session telemetry.`
-            );
-          }
-          setRawPayload(fallbackPayload);
-        } else {
+        if (timeframe === '1M' || timeframe === 'ALL') {
+          setLoadError(`${timeframe === '1M' ? '1M (30D)' : 'All-time'} broker ledger unavailable offline — Tap Retry`);
           setRawPayload(null);
+        } else {
+          const validInitial = (timeframe === '1D' && isInitialMultiDay) ? null : (isInitialMatchingTf(timeframe, initialData) ? initialData : null);
+          const fallbackPayload = (timeframe === '1D' ? cached1DPayload : null) || validInitial || null;
+          if (fallbackPayload) {
+            if (timeframe !== '1D') {
+              setWarningBanner(
+                `Could not fetch live ${timeframe} floor-sheet rollup. Displaying verified session telemetry.`
+              );
+            }
+            setRawPayload(fallbackPayload);
+          } else {
+            setRawPayload(null);
+          }
         }
       } finally {
         if (isMounted && !abortController.signal.aborted) setLoading(false);
@@ -583,7 +626,7 @@ function BrokerSmartMoneyCardInner({
       isMounted = false;
       abortController.abort();
     };
-  }, [cleanSymbol, timeframe, initialData, onFetchSmartMoney, brokerBaselineShares]);
+  }, [cleanSymbol, timeframe, onFetchSmartMoney, brokerBaselineShares, retryCount]);
 
   // Normalize and split into Top Accumulators vs Top Distributors
   const {
@@ -628,10 +671,11 @@ function BrokerSmartMoneyCardInner({
       [...accumulators].sort((a, b) => b.anomalyScore - a.anomalyScore)[0] || null;
 
     // Top Holding Broker & Total Shares Held scoped to timeframe
+    const matchingInitial = isInitialMatchingTf(timeframe, initialData) ? initialData : null;
     const rawAllTimeHeld = Number(
       (rawPayload as any)?.totalSharesHeldTillNow ||
       (rawPayload as any)?.data?.totalSharesHeldTillNow ||
-      (initialData as any)?.totalSharesHeldTillNow ||
+      (matchingInitial as any)?.totalSharesHeldTillNow ||
       0
     );
     const calculatedHeld = allBrokers
@@ -691,7 +735,7 @@ function BrokerSmartMoneyCardInner({
         totalActiveBrokers: allBrokers.length,
       },
     };
-  }, [rawPayload, timeframe, brokerBaselineShares, currentPrice]);
+  }, [rawPayload, timeframe, brokerBaselineShares, currentPrice, initialData]);
 
   return (
     <div className="bg-slate-950 border border-slate-800/90 rounded-2xl p-4 md:p-5 text-slate-100 shadow-xl space-y-4">
@@ -713,13 +757,14 @@ function BrokerSmartMoneyCardInner({
               const now = new Date();
               const latestDateStr = latestTradingSession(now, !isMarketOpen(now));
               const liveDateStr = latestTradingSession(now, false);
-              const pDate = (rawPayload as any)?.date || (rawPayload as any)?.businessDate || (rawPayload as any)?.toDate || (initialData as any)?.date || (initialData as any)?.businessDate || latestDateStr;
-              const fromDate = (rawPayload as any)?.fromDate || (rawPayload as any)?.startDate || '';
-              const toDate = (rawPayload as any)?.toDate || (rawPayload as any)?.endDate || pDate;
+              const matchingInitial = isInitialMatchingTf(timeframe, initialData) ? initialData : null;
+              const pDate = (rawPayload as any)?.date || (rawPayload as any)?.businessDate || (rawPayload as any)?.toDate || (matchingInitial as any)?.date || (matchingInitial as any)?.businessDate || latestDateStr;
+              const fromDate = (rawPayload as any)?.fromDate || (rawPayload as any)?.startDate || (matchingInitial as any)?.fromDate || (matchingInitial as any)?.startDate || '';
+              const toDate = (rawPayload as any)?.toDate || (rawPayload as any)?.endDate || (matchingInitial as any)?.toDate || (matchingInitial as any)?.endDate || pDate;
 
               let badgeText = `Session: ${pDate}`;
               if (timeframe === 'ALL') {
-                badgeText = `All-Time Ledger (Through ${toDate})`;
+                badgeText = fromDate && toDate ? `All-Time Ledger (${fromDate} → ${toDate})` : `All-Time Ledger (Through ${toDate})`;
               } else if ((timeframe === '5D' || timeframe === '1M') && fromDate && toDate && fromDate !== toDate) {
                 badgeText = `Window: ${fromDate} → ${toDate}`;
               } else if (timeframe !== '1D') {
@@ -787,6 +832,26 @@ function BrokerSmartMoneyCardInner({
             className="text-amber-200 hover:text-white text-xs font-bold"
           >
             ✕
+          </button>
+        </div>
+      )}
+
+      {/* 1M / ALL Offline or Unavailable Error Banner with Tap Retry */}
+      {loadError && (
+        <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">⚠️</span>
+            <span className="font-medium">{loadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLoadError(null);
+              setRetryCount((c) => c + 1);
+            }}
+            className="px-3 py-1 bg-rose-600/30 hover:bg-rose-600/50 text-rose-200 hover:text-white border border-rose-500/40 rounded-lg font-bold text-xs transition cursor-pointer flex-shrink-0"
+          >
+            🔄 Tap Retry
           </button>
         </div>
       )}
@@ -972,6 +1037,20 @@ function BrokerSmartMoneyCardInner({
         <div className="py-12 text-center text-xs text-slate-400 animate-pulse">
           Aggregating {timeframe} floor-sheet transactions &amp; broker anomaly scores for{' '}
           {cleanSymbol}...
+        </div>
+      ) : loadError ? (
+        <div className="py-12 text-center text-xs text-slate-400 border border-dashed border-rose-900/40 rounded-xl space-y-3">
+          <p className="text-rose-300 font-medium">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setLoadError(null);
+              setRetryCount((c) => c + 1);
+            }}
+            className="px-3.5 py-1.5 bg-rose-600/20 hover:bg-rose-600/40 text-rose-200 border border-rose-500/30 rounded-lg font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer transition"
+          >
+            🔄 Retry Loading {timeframe}
+          </button>
         </div>
       ) : topAccumulators.length === 0 && topDistributors.length === 0 ? (
         <div className="py-10 text-center text-xs text-slate-400 border border-dashed border-slate-800 rounded-xl">
