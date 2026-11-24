@@ -334,8 +334,10 @@ export class HotDiagnosticCache extends Map {
   }
 }
 
+let _hotCacheRef = null;
+
 export function createRadarProxy(raw = { 1: [], 3: [], 5: [], 15: [], 30: [] }) {
-  if (typeof HOT_CACHE !== 'undefined') HOT_CACHE._rawRadar = raw;
+  if (_hotCacheRef) _hotCacheRef._rawRadar = raw;
   return new Proxy(raw, {
     get(target, prop) {
       const days = parseInt(prop, 10);
@@ -362,6 +364,7 @@ export const HOT_CACHE = {
   earlyIgnition: [], // Precomputed 3D Early Ignition & Manipulation records sorted by ignitionScore
   signalTrackRecord: null, // Empirical walk-forward T+2 audit track record
 };
+_hotCacheRef = HOT_CACHE;
 
 /**
  * Checks if a specific trade_date already exists in SQLite

@@ -1,6 +1,6 @@
 {
-  "savedAt": "2026-11-21T11:24:14.730Z",
-  "timestamp": 1795260254730,
+  "savedAt": "2026-11-24T08:45:49.338Z",
+  "timestamp": 1795509949338,
   "count": 25,
   "data": [
     {
@@ -36,7 +36,7 @@
       "maxKitta": 10000000,
       "openDate": "2026-11-18",
       "closeDate": "2026-11-23",
-      "status": "Open",
+      "status": "Closed",
       "rating": "[CRANP-IRE-NP]D",
       "issueManager": "Citizens Capital Limited",
       "sector": "Mutual Fund",
@@ -135,7 +135,7 @@
       "minKitta": 10,
       "maxKitta": 10000,
       "openDate": "2026-09-07",
-      "closeDate": "2026-09-11",
+      "closeDate": "2026-09-10",
       "status": "Closed",
       "rating": "[ICRANP-IR] BB+",
       "issueManager": "NMB Capital Limited",

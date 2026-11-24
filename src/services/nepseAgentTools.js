@@ -48,7 +48,7 @@ export async function fetchAgentScripDossier(symbol) {
 
   // 1. Primary: Try backend /api/agent/stock/:symbol
   try {
-    const res = await fetchFromBackend(`/api/agent/stock/${encodeURIComponent(normSym)}`, 8000);
+    const res = await fetchFromBackend(`/api/agent/stock/${encodeURIComponent(normSym)}`, 35000);
     if (res && res.success && res.data && res.data.quote && res.data.quote.ltp > 0) {
       return res.data;
     }

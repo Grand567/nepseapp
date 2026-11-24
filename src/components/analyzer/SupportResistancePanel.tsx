@@ -123,7 +123,7 @@ export function SupportResistancePanel({
                   <div className="text-right">
                     <span className="text-xs font-bold text-rose-400 flex items-center justify-end gap-0.5">
                       <ArrowUpRight size={13} />
-                      {lvl.distancePct != null ? `+${lvl.distancePct}%` : 'Above LTP'}
+                      {lvl.distancePct != null ? `${Number(lvl.distancePct) > 0 ? '+' : ''}${lvl.distancePct}%` : 'Above LTP'}
                     </span>
                     <div className="text-[10px] text-slate-500">from current price</div>
                   </div>

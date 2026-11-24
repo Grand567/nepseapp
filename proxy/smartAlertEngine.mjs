@@ -541,30 +541,41 @@ export async function hydratePushTokensFromDb() {
   // 4. Hydrate from GitHub Releases Vault if configured
   const ghToken = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
   if (ghToken) {
-    try {
-      const repo = (process.env.GITHUB_REPO || 'Grand567/Drabyashree-Nepse-Hub').trim();
-      const headers = {
-        'Authorization': `Bearer ${ghToken}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'DrabyashreeNepseProxy/1.0'
-      };
-      const res = await axios.get(`https://api.github.com/repos/${repo}/releases/tags/v-vault-tokens`, { headers });
-      const asset = (res.data?.assets || []).find(a => a.name === 'push_tokens.json');
-      if (asset && asset.browser_download_url) {
-        const fileRes = await axios.get(asset.browser_download_url, {
-          headers: { 'Authorization': `Bearer ${ghToken}`, 'Accept': 'application/octet-stream' }
-        });
-        const cloudTokens = Array.isArray(fileRes.data) ? fileRes.data : (typeof fileRes.data === 'string' ? JSON.parse(fileRes.data) : []);
-        if (Array.isArray(cloudTokens) && cloudTokens.length > 0) {
-          cloudTokens.forEach(t => {
-            if (t?.token) map.set(t.token, t);
+    const primaryVaultRepo = (process.env.GITHUB_VAULT_REPO || process.env.GITHUB_REPO || 'Grand567/nepseapp').trim();
+    const fallbackVaultRepo = 'Grand567/Drabyashree-Nepse-Hub';
+    const vaultRepos = primaryVaultRepo === fallbackVaultRepo ? [primaryVaultRepo] : [primaryVaultRepo, fallbackVaultRepo];
+
+    const headers = {
+      'Authorization': `Bearer ${ghToken}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DrabyashreeNepseProxy/1.0'
+    };
+
+    for (const repo of vaultRepos) {
+      try {
+        console.log(`[SmartAlertEngine] Attempting GitHub vault hydration from repo: ${repo}...`);
+        const res = await axios.get(`https://api.github.com/repos/${repo}/releases/tags/v-vault-tokens`, { headers, timeout: 15000 });
+        console.log(`[SmartAlertEngine] GitHub release fetch HTTP ${res.status} for ${repo}`);
+        const asset = (res.data?.assets || []).find(a => a.name === 'push_tokens.json');
+        if (asset && asset.browser_download_url) {
+          const fileRes = await axios.get(asset.browser_download_url, {
+            headers: { 'Authorization': `Bearer ${ghToken}`, 'Accept': 'application/octet-stream' },
+            timeout: 15000
           });
-          console.log(`[SmartAlertEngine] Successfully restored ${cloudTokens.length} push token(s) from GitHub release vault.`);
+          const cloudTokens = Array.isArray(fileRes.data) ? fileRes.data : (typeof fileRes.data === 'string' ? JSON.parse(fileRes.data) : []);
+          if (Array.isArray(cloudTokens) && cloudTokens.length > 0) {
+            cloudTokens.forEach(t => {
+              if (t?.token) map.set(t.token, t);
+            });
+            console.log(`[SmartAlertEngine] ✅ Successfully restored ${cloudTokens.length} push token(s) from GitHub release vault (${repo}).`);
+            break;
+          }
         }
-      }
-    } catch (ghErr) {
-      if (ghErr.response?.status !== 404) {
-        console.warn('[SmartAlertEngine] GitHub release vault hydration notice:', ghErr.message);
+      } catch (ghErr) {
+        const status = ghErr.response?.status || 'NETWORK_ERR';
+        if (status !== 404) {
+          console.warn(`[SmartAlertEngine] GitHub release vault hydration notice for ${repo} [HTTP ${status}]:`, ghErr.message);
+        }
       }
     }
   }
@@ -628,20 +639,23 @@ hydratePushTokensFromDb().catch(() => {});
 export async function backupPushTokensToGitHubVault() {
   const token = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
   if (!token) return;
-  const repo = (process.env.GITHUB_REPO || 'Grand567/Drabyashree-Nepse-Hub').trim();
+  const repo = (process.env.GITHUB_VAULT_REPO || process.env.GITHUB_REPO || 'Grand567/nepseapp').trim();
   const headers = {
     'Authorization': `Bearer ${token}`,
     'Accept': 'application/vnd.github.v3+json',
-    'User-Agent': 'DrabyashreeNepseProxy/1.0'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DrabyashreeNepseProxy/1.0'
   };
   try {
     const tag = 'v-vault-tokens';
     let release = null;
     try {
-      const res = await axios.get(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers });
+      const res = await axios.get(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers, timeout: 15000 });
+      console.log(`[SmartAlertEngine] GitHub vault release check for ${repo}: HTTP ${res.status}`);
       if (res.data?.id) release = res.data;
     } catch (e) {
-      if (e.response?.status === 404) {
+      const status = e.response?.status;
+      if (status === 404) {
+        console.log(`[SmartAlertEngine] GitHub release ${tag} not found on ${repo}. Creating release...`);
         const createRes = await axios.post(`https://api.github.com/repos/${repo}/releases`, {
           tag_name: tag,
           target_commitish: 'main',
@@ -649,8 +663,11 @@ export async function backupPushTokensToGitHubVault() {
           body: 'Automated durable vault for registered push notification tokens.',
           draft: false,
           prerelease: true
-        }, { headers });
+        }, { headers, timeout: 15000 });
+        console.log(`[SmartAlertEngine] Created GitHub vault release on ${repo}: HTTP ${createRes.status}`);
         release = createRes.data;
+      } else {
+        console.warn(`[SmartAlertEngine] Warning checking GitHub release ${tag} on ${repo} [HTTP ${status || 'ERR'}]:`, e.message);
       }
     }
     if (!release) return;
@@ -659,23 +676,26 @@ export async function backupPushTokensToGitHubVault() {
     const existingAsset = (release.assets || []).find(a => a.name === fileName);
     if (existingAsset) {
       try {
-        await axios.delete(`https://api.github.com/repos/${repo}/releases/assets/${existingAsset.id}`, { headers });
+        const delRes = await axios.delete(`https://api.github.com/repos/${repo}/releases/assets/${existingAsset.id}`, { headers, timeout: 10000 });
+        console.log(`[SmartAlertEngine] Overwriting existing vault asset on ${repo}: HTTP ${delRes.status}`);
       } catch (_) {}
     }
 
     const payload = Buffer.from(JSON.stringify(pushTokens, null, 2), 'utf8');
     const uploadUrl = release.upload_url.replace('{?name,label}', '') + `?name=${encodeURIComponent(fileName)}`;
-    await axios.post(uploadUrl, payload, {
+    const uploadRes = await axios.post(uploadUrl, payload, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
         'Content-Length': payload.length,
-        'User-Agent': 'DrabyashreeNepseProxy/1.0'
-      }
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DrabyashreeNepseProxy/1.0'
+      },
+      timeout: 20000
     });
-    console.log(`[SmartAlertEngine] ☁️ Durable push tokens backup synced to GitHub release ${tag} on ${repo}`);
+    console.log(`[SmartAlertEngine] ☁️ Durable push tokens backup synced to GitHub release ${tag} on ${repo} [HTTP ${uploadRes.status}]`);
   } catch (err) {
-    console.warn('[SmartAlertEngine] GitHub push token backup notice:', err.message);
+    const status = err.response?.status || 'NETWORK_ERR';
+    console.warn(`[SmartAlertEngine] GitHub push token backup notice [HTTP ${status}]:`, err.message);
   }
 }
 

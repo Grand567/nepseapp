@@ -55,6 +55,7 @@ public class DravyashreeAlertWorker extends Worker {
     public static final long OTHER_NEWS_INTERVAL_MS = 60 * 60 * 1000L; // 1 hour interval for general news
 
     private static final String[] API_ENDPOINTS = {
+            "https://drabyashree-nepse-hub.onrender.com/api/notifications?limit=20",
             "https://nepseapp.onrender.com/api/notifications?limit=20",
             "http://10.0.2.2:5000/api/notifications?limit=20"
     };
@@ -533,8 +534,8 @@ public class DravyashreeAlertWorker extends Worker {
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(35000);
         conn.setReadTimeout(35000);
-        conn.setRequestProperty("Accept", "application/json");
-        conn.setRequestProperty("User-Agent", "DravyashreeAndroidApp/1.0.6");
+        conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 6a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 DravyashreeApp/1.0.6");
 
         int responseCode = conn.getResponseCode();
         if (responseCode == HttpURLConnection.HTTP_OK) {
@@ -549,5 +550,50 @@ public class DravyashreeAlertWorker extends Worker {
             return sb.toString();
         }
         return null;
+    }
+
+    public static boolean postTokenRegistration(String token, String platform, String appVersion) {
+        if (token == null || token.trim().isEmpty()) return false;
+        String[] endpoints = {
+                "https://drabyashree-nepse-hub.onrender.com/api/smart-alerts/register-token",
+                "https://nepseapp.onrender.com/api/smart-alerts/register-token",
+                "http://10.0.2.2:5000/api/smart-alerts/register-token"
+        };
+        for (String endpoint : endpoints) {
+            HttpURLConnection conn = null;
+            try {
+                URL url = new URL(endpoint);
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setConnectTimeout(35000);
+                conn.setReadTimeout(35000);
+                conn.setDoOutput(true);
+                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 6a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 DravyashreeApp/1.0.6");
+
+                JSONObject body = new JSONObject();
+                body.put("token", token.trim());
+                body.put("platform", platform != null ? platform : "android");
+                body.put("appVersion", appVersion != null ? appVersion : "1.0.6");
+
+                try (java.io.OutputStream os = conn.getOutputStream()) {
+                    byte[] input = body.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    os.write(input, 0, input.length);
+                    os.flush();
+                }
+
+                int code = conn.getResponseCode();
+                if (code >= 200 && code < 300) {
+                    Log.d(TAG, "Background token sync succeeded via WorkManager to " + endpoint);
+                    return true;
+                }
+            } catch (Exception e) {
+                Log.d(TAG, "Background token sync notice for " + endpoint + ": " + e.getMessage());
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }
+        return false;
     }
 }

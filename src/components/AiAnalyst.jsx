@@ -423,7 +423,10 @@ export function synthesizeGuruMarketOutlook(marketData, topGainers = [], topLose
   const resistance = Math.round(nepseVal * 1.03);
 
   const gainersList = Array.isArray(topGainers) && topGainers.length > 0
-    ? topGainers.slice(0, 5).map(g => `${g.symbol || g.scrip} (+${Number(g.percentageChange || g.pChange || 0).toFixed(1)}%)`)
+    ? topGainers.slice(0, 5).map(g => {
+        const p = Number(g.percentageChange || g.pChange || 0);
+        return `${g.symbol || g.scrip} (${p > 0 ? '+' : ''}${p.toFixed(1)}%)`;
+      })
     : [];
 
   const losersList = Array.isArray(topLosers) && topLosers.length > 0
@@ -573,7 +576,10 @@ Change: ${marketData?.data?.changePercent || 0}%
 Total Turnover: NPR ${((marketData?.data?.totalTurnover || 0) / 1e9).toFixed(2)}B
 Total Transactions: ${marketData?.data?.totalTransactions?.toLocaleString() || 'N/A'}
 
-Top Gainers: ${topGainers?.slice(0, 5).map(s => `${s.symbol}(+${s.percentageChange?.toFixed(1)}%)`).join(', ') || 'N/A'}
+Top Gainers: ${topGainers?.slice(0, 5).map(s => {
+  const p = Number(s.percentageChange || 0);
+  return `${s.symbol}(${p > 0 ? '+' : ''}${p.toFixed(1)}%)`;
+}).join(', ') || 'N/A'}
 Top Losers: ${topLosers?.slice(0, 5).map(s => `${s.symbol}(${s.percentageChange?.toFixed(1)}%)`).join(', ') || 'N/A'}
 
 Provide NEPSE market outlook in JSON:

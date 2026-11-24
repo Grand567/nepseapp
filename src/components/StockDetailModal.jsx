@@ -2775,7 +2775,7 @@ export default function StockDetailModal({
   useEffect(() => {
     let isCancelled = false;
     if ((activeTab === 'overview' || activeTab === 'market_depth' || activeTab === 'depth_broker') && d?.symbol) {
-      if ((activeTab === 'market_depth' || activeTab === 'depth_broker') && !realMarketDepth && !marketDepthLoading) {
+      if ((activeTab === 'market_depth' || activeTab === 'depth_broker') && (!realMarketDepth || realMarketDepth.isFallback) && !marketDepthLoading) {
         setMarketDepthLoading(true);
         fetchMarketDepth(d.symbol)
           .then(data => { if (!isCancelled && data) setRealMarketDepth(data); })
@@ -3733,9 +3733,20 @@ export default function StockDetailModal({
     if (ba.days && ba.days !== 1 && ba.days !== '1') return false;
     return true;
   };
-  const pure1DBa = (brokerDate && realBrokerAnalysis && (realBrokerAnalysis.businessDate === brokerDate || realBrokerAnalysis.date === brokerDate) && isStrict1DBa(realBrokerAnalysis))
-    ? realBrokerAnalysis
-    : (isStrict1DBa(broker1DData) ? broker1DData : (isStrict1DBa(realBrokerAnalysis) ? realBrokerAnalysis : (getCachedRealBrokerAnalysis(d?.symbol, 1) || null)));
+  const getBaDate = (ba) => String(ba?.businessDate || ba?.date || '').slice(0, 10);
+  const pure1DBa = (() => {
+    if (brokerDate && realBrokerAnalysis && getBaDate(realBrokerAnalysis) === brokerDate && isStrict1DBa(realBrokerAnalysis)) {
+      return realBrokerAnalysis;
+    }
+    const candidates = [
+      isStrict1DBa(broker1DData) ? broker1DData : null,
+      isStrict1DBa(realBrokerAnalysis) ? realBrokerAnalysis : null,
+      getCachedRealBrokerAnalysis(d?.symbol, 1)
+    ].filter(c => isStrict1DBa(c));
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => getBaDate(b).localeCompare(getBaDate(a)));
+    return candidates[0];
+  })();
 
   const activeSessionDate = marketStatus?.isOpen
     ? (marketStatus?.currentSessionDate || marketStatus?.sessionDate || latestTradingSession(appNow, false))
@@ -5118,6 +5129,29 @@ export default function StockDetailModal({
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, color: '#f8fafc', flexWrap: 'wrap' }}>
                     <Layers style={{ width: 17, height: 17, color: '#6366f1' }} />
                     Broker Footprint Ledger
+                    {overviewBrokerTapeMode === '1D_LIVE' && (() => {
+                      const liveDateStr = latestTradingSession(new Date(), false);
+                      const fsDate = String(pure1DBa?.businessDate || pure1DBa?.date || '').slice(0, 10);
+                      if (fsDate && fsDate < liveDateStr) {
+                        return (
+                          <span style={{
+                            fontSize: 9.5,
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: 6,
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            color: '#fcd34d',
+                            border: '1px solid rgba(245, 158, 11, 0.35)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}>
+                            Floorsheet EOD: {fsDate} • Live session syncs at 3:15 PM NPT
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                     <div style={{ display: 'inline-flex', gap: 3, background: 'rgba(0,0,0,0.4)', padding: 2, borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
                       <button
                         type="button"
@@ -6811,8 +6845,28 @@ export default function StockDetailModal({
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                     <span>Real-time NEPSE top 5 bid/ask price levels & order queue depth</span>
+                    {(() => {
+                      const fetched = marketDepth?.fetchedAt || realMarketDepth?.fetchedAt;
+                      if (!fetched) return null;
+                      try {
+                        const dt = new Date(fetched);
+                        const tStr = dt.toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+                        return (
+                          <span style={{ color: '#38bdf8', fontFamily: 'var(--font-mono)', fontSize: 11, background: 'rgba(56, 189, 248, 0.1)', padding: '1px 6px', borderRadius: 4, border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+                            ⏱ Sync: {tStr} NPT
+                          </span>
+                        );
+                      } catch (_) {
+                        return null;
+                      }
+                    })()}
+                    {(marketDepth?.isUnavailable || marketDepth?.isFallback) && (
+                      <span style={{ color: '#f59e0b', fontSize: 11, fontWeight: 700, background: 'rgba(245, 158, 11, 0.1)', padding: '1px 6px', borderRadius: 4, border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+                        ⚠️ Order Book Unavailable Outside Live Session
+                      </span>
+                    )}
                     {marketDepth?.spread > 0 && (
                       <span style={{ color: '#e2e8f0', fontWeight: 700 }}>
                         Spread: <strong style={{ color: '#38bdf8' }}>Rs. {marketDepth.spread.toFixed(1)}</strong> ({marketDepth.spreadPct}%)

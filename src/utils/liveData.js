@@ -15,7 +15,7 @@ import axios from 'axios';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse.js';
 import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
 import { calculateEMA, calculateMACD, calculateRSI } from './indicators.js';
-import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt, isNepseTradingDay, setLiveMarketOverride, clearLiveMarketOverride, generateTradingDaysSequence } from './nepseCalendar.js';
+import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt, isNepseTradingDay, setLiveMarketOverride, clearLiveMarketOverride, generateTradingDaysSequence, latestTradingSession } from './nepseCalendar.js';
 import { adjustPricesForCorporateActions, aggregateToWeeklyCandles, classifyLiquidity } from './priceAdjustment.js'; // C1 C2 C3
 import { idbGet, idbSet } from './indexedDb.js';
 import { getProxyBase, setLocalProxyState } from './proxyBase.js';
@@ -832,7 +832,7 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
 
   // 1. Fetch official stock details (market price, shares, high/low, etc.)
   try {
-    const res = await fetchFromBackend(`/api/stock-detail/${encodeURIComponent(sym)}${qs}`, 7000);
+    const res = await fetchFromBackend(`/api/stock-detail/${encodeURIComponent(sym)}${qs}`, 35000);
     if (res && res.success && res.data) {
       detail = { ...res.data };
     }
@@ -845,7 +845,7 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
   const epsIsMissing = (d) => d?.eps === undefined || d?.eps === null || d?.eps === 0;
   if (!detail || !detail.bookValue || detail.bookValue <= 0 || !detail.pe || detail.pe <= 0 || epsIsMissing(detail)) {
     try {
-      const res2 = await fetchFromBackend(`/api/mero/stock-details/${encodeURIComponent(sym)}${qs}`, 7000);
+      const res2 = await fetchFromBackend(`/api/mero/stock-details/${encodeURIComponent(sym)}${qs}`, 35000);
       if (res2 && res2.success && res2.data) {
         const m = res2.data;
         detail = {
@@ -868,7 +868,7 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
   // 3. Fallback to /api/company/:symbol if Book Value is still missing
   if (!detail || !detail.bookValue || detail.bookValue <= 0) {
     try {
-      const res3 = await fetchFromBackend(`/api/company/${encodeURIComponent(sym)}${qs}`, 7000);
+      const res3 = await fetchFromBackend(`/api/company/${encodeURIComponent(sym)}${qs}`, 35000);
       if (res3 && res3.success && res3.data) {
         const c = res3.data;
         detail = {
@@ -911,7 +911,7 @@ export const fetchLiveStockDetail = fetchStockFundamentals;
 
 // Multi-source backend proxy caller — automatically retries once on transient failure (Render cold-start)
 // then falls back to Render production backend so real exchange data is always reached.
-export async function fetchFromBackend(path, timeoutMs = 12000) {
+export async function fetchFromBackend(path, timeoutMs = 35000) {
   const base = getProxyBase();
 
   const isLocal = !base || base.includes('localhost') || base.includes('127.0.0.1');
@@ -1076,7 +1076,7 @@ async function attemptLiveMarket() {
 
   fallbackTasks.push((async () => {
     try {
-      const j = await fetchFromBackend('/api/mero/market-summary', 5000);
+      const j = await fetchFromBackend('/api/mero/market-summary', 35000);
       const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
       if (arr && arr.length > 20) {
         return processLive(arr, j?.turnover ? { t: j.turnover } : null);
@@ -1377,7 +1377,7 @@ function normalizeLiveArray(arr) {
       technicalScore, technicalRating, dpi,
       stealthAccumulation, _stealthTs: shouldRefreshStealth ? nowTs : lastStealthTs,
       floatTurnoverPct: (turnover && marketCap) ? +((turnover / Math.max(1, marketCap)) * 100).toFixed(3) : 0,
-      isBreakout: pCh >= 3 || (hi52 && ltp >= hi52 * 0.98),
+      isBreakout: (pCh > 0) && (pCh >= 3 || Boolean(hi52 && ltp >= hi52 * 0.98)),
       isVolumeShocker: volumeZScore && volumeZScore >= 1.5,
       candlestickPattern: prev?.candlestickPattern || null,
       promoterHolding: Number(cachedFund?.promoterHolding ?? prev?.promoterHolding ?? null),
@@ -1511,7 +1511,7 @@ export async function fetchLiveMarket(date = '') {
   const runTask = (async () => {
     if (reqDate && reqDate !== todayIso) {
       try {
-        const res = await fetchFromBackend(`/api/today-prices?date=${encodeURIComponent(reqDate)}`, 10000);
+        const res = await fetchFromBackend(`/api/today-prices?date=${encodeURIComponent(reqDate)}`, 35000);
         const arr = res?.data || (Array.isArray(res) ? res : []);
         if (Array.isArray(arr) && arr.length > 20) {
           return { data: arr, source: 'historical', marketStatus: getDetailedMarketStatus(), isFreshFeed: false, date: reqDate };
@@ -1664,7 +1664,7 @@ const rank = (fn, n = 25) => {
 export async function fetchTopGainers(date) {
   if (date) {
     try {
-      const res = await fetchFromBackend(`/api/market/top-gainers?date=${encodeURIComponent(date)}`, 4000);
+      const res = await fetchFromBackend(`/api/market/top-gainers?date=${encodeURIComponent(date)}`, 35000);
       if (res?.data && Array.isArray(res.data) && res.data.length > 0) return { data: res.data };
     } catch (_) {}
   }
@@ -1673,7 +1673,7 @@ export async function fetchTopGainers(date) {
 export async function fetchTopLosers(date) {
   if (date) {
     try {
-      const res = await fetchFromBackend(`/api/market/top-losers?date=${encodeURIComponent(date)}`, 4000);
+      const res = await fetchFromBackend(`/api/market/top-losers?date=${encodeURIComponent(date)}`, 35000);
       if (res?.data && Array.isArray(res.data) && res.data.length > 0) return { data: res.data };
     } catch (_) {}
   }
@@ -1682,7 +1682,7 @@ export async function fetchTopLosers(date) {
 export async function fetchTopVolume(date) {
   if (date) {
     try {
-      const res = await fetchFromBackend(`/api/market/top-volume?date=${encodeURIComponent(date)}`, 4000);
+      const res = await fetchFromBackend(`/api/market/top-volume?date=${encodeURIComponent(date)}`, 35000);
       if (res?.data && Array.isArray(res.data) && res.data.length > 0) return { data: res.data };
     } catch (_) {}
   }
@@ -1691,7 +1691,7 @@ export async function fetchTopVolume(date) {
 export async function fetchTopTurnover(date) {
   if (date) {
     try {
-      const res = await fetchFromBackend(`/api/market/top-turnover?date=${encodeURIComponent(date)}`, 4000);
+      const res = await fetchFromBackend(`/api/market/top-turnover?date=${encodeURIComponent(date)}`, 35000);
       if (res?.data && Array.isArray(res.data) && res.data.length > 0) return { data: res.data };
     } catch (_) {}
   }
@@ -1700,7 +1700,7 @@ export async function fetchTopTurnover(date) {
 export async function fetchTopTransactions(date) {
   if (date) {
     try {
-      const res = await fetchFromBackend(`/api/market/top-transactions?date=${encodeURIComponent(date)}`, 4000);
+      const res = await fetchFromBackend(`/api/market/top-transactions?date=${encodeURIComponent(date)}`, 35000);
       if (res?.data && Array.isArray(res.data) && res.data.length > 0) return { data: res.data };
     } catch (_) {}
   }
@@ -2311,14 +2311,14 @@ export const DEFAULT_OFFICIAL_INDICES = {
   status: 'complete',
   nepse: {
     index: 'NEPSE Index',
-    value: 2690.15,
-    change: -5.45,
-    pChange: -0.20,
-    prevClose: 2695.60,
-    open: 2693.55,
-    high: 2713.00,
-    low: 2681.58,
-    turnover: 8891595145.90
+    value: 2623.56,
+    change: 2.26,
+    pChange: 0.08,
+    prevClose: 2621.30,
+    open: 2621.80,
+    high: 2635.40,
+    low: 2618.10,
+    turnover: 6512390450.00
   },
   sensitive: {
     index: 'Sensitive Index',
@@ -3042,10 +3042,13 @@ export async function fetchAvailableTradingDates() {
   };
 
   // Authoritative NEPSE calendar sequence + verified recent exchange sessions
+  const latestCompleted = latestTradingSession(nowObj, true);
+  const latestAny = latestTradingSession(nowObj, !isTodaySessionStarted);
   const calendarDates = generateTradingDaysSequence(60).map(d => formatNptDateIso(d)).filter(d => d < todayIso || isTodaySessionStarted);
   const baseTradingDays = [
     ...(isTodaySessionStarted ? [todayIso] : []),
-    '2026-11-19',
+    latestCompleted,
+    latestAny,
     '2026-11-18',
     '2026-11-17',
     '2026-11-13',
@@ -3931,7 +3934,7 @@ export async function fetchMarketDepth(symbol, date) {
 
   try {
     const qDate = date ? `?date=${encodeURIComponent(date)}` : "";
-    const res = await fetchFromBackend(`/api/nepse/market-depth/${encodeURIComponent(sym)}${qDate}`, 4000) || await fetchFromBackend(`/api/market-depth/${encodeURIComponent(sym)}${qDate}`, 4000);
+    const res = await fetchFromBackend(`/api/nepse/market-depth/${encodeURIComponent(sym)}${qDate}`, 35000) || await fetchFromBackend(`/api/market-depth/${encodeURIComponent(sym)}${qDate}`, 35000);
     if (res && res.success && res.data) {
       const bids = Array.isArray(res.data.bids) ? res.data.bids : [];
       const asks = Array.isArray(res.data.asks) ? res.data.asks : [];
@@ -3953,7 +3956,10 @@ export async function fetchMarketDepth(symbol, date) {
         isOffMarket: Boolean(res.data.isOffMarket),
         sessionLabel: res.data.sessionLabel || (res.data.isOffMarket ? 'Closing Session Snapshot (3:00 PM NPT)' : 'Live NOTS Order Book'),
         demandStatus: res.data.demandStatus || ((bids.length > 0 || asks.length > 0) ? 'Balanced Flow' : 'No Active Live Orders'),
-        source: res.data.source || 'live'
+        source: res.data.source || 'live',
+        fetchedAt: res.data.fetchedAt || new Date().toISOString(),
+        date: res.data.date || (res.data.fetchedAt ? res.data.fetchedAt.slice(0, 10) : null),
+        isFallback: false
       };
     }
   } catch (_) {}
@@ -3986,7 +3992,10 @@ export async function fetchMarketDepth(symbol, date) {
       isUnavailable: true,
       sessionLabel: 'Order Book Unavailable Outside Live Trading Hours',
       demandStatus: 'No Active Live Orders (Market Closed)',
-      source: 'unavailable_off_market'
+      source: 'unavailable_off_market',
+      fetchedAt: new Date().toISOString(),
+      date: null,
+      isFallback: true
     };
   } catch (_) {
     return {
@@ -4001,7 +4010,10 @@ export async function fetchMarketDepth(symbol, date) {
       isUnavailable: true,
       sessionLabel: 'Order Book Unavailable Outside Live Trading Hours',
       demandStatus: 'No Active Live Orders (Market Closed)',
-      source: 'unavailable_off_market'
+      source: 'unavailable_off_market',
+      fetchedAt: new Date().toISOString(),
+      date: null,
+      isFallback: true
     };
   }
 }

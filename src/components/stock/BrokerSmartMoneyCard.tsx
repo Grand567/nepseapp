@@ -712,6 +712,7 @@ function BrokerSmartMoneyCardInner({
             {(() => {
               const now = new Date();
               const latestDateStr = latestTradingSession(now, !isMarketOpen(now));
+              const liveDateStr = latestTradingSession(now, false);
               const pDate = (rawPayload as any)?.date || (rawPayload as any)?.businessDate || (rawPayload as any)?.toDate || (initialData as any)?.date || (initialData as any)?.businessDate || latestDateStr;
               const fromDate = (rawPayload as any)?.fromDate || (rawPayload as any)?.startDate || '';
               const toDate = (rawPayload as any)?.toDate || (rawPayload as any)?.endDate || pDate;
@@ -725,11 +726,20 @@ function BrokerSmartMoneyCardInner({
                 badgeText = `${timeframe} Flow (Latest: ${toDate})`;
               }
 
+              const isPrecedingLive = timeframe === '1D' && pDate && pDate < liveDateStr;
+
               return (
-                <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-800/90 text-cyan-300 border border-cyan-800/40 flex items-center gap-1.5 shadow-inner">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-                  {badgeText}
-                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-800/90 text-cyan-300 border border-cyan-800/40 flex items-center gap-1.5 shadow-inner">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                    {badgeText}
+                  </span>
+                  {isPrecedingLive && (
+                    <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/35 flex items-center gap-1.5 shadow-inner">
+                      Floorsheet EOD: {pDate} • Live session syncs at 3:15 PM NPT
+                    </span>
+                  )}
+                </div>
               );
             })()}
           </div>

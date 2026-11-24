@@ -5146,11 +5146,11 @@ function Dashboard({
                 <div>
                   <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 1 (1.5R - 50% Lock)</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    Rs. {t1Price || '—'} {t1Pct ? `(+${t1Pct}%)` : ''}
+                    Rs. {t1Price || '—'} {t1Pct ? `(${Number(t1Pct) > 0 ? '+' : ''}${t1Pct}%)` : ''}
                   </div>
                   {t1NetPct != null && (
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#34d399', marginTop: 1 }}>
-                      Net: +{t1NetPct}% <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>(-5.0% CGT+fees)</span>
+                      Net: {Number(t1NetPct) > 0 ? '+' : ''}{t1NetPct}% <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>(-5.0% CGT+fees)</span>
                     </div>
                   )}
                 </div>
@@ -5158,11 +5158,11 @@ function Dashboard({
                 <div>
                   <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 2 (3.0R Runner)</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    Rs. {t2Price || '—'} {t2Pct ? `(+${t2Pct}%)` : ''}
+                    Rs. {t2Price || '—'} {t2Pct ? `(${Number(t2Pct) > 0 ? '+' : ''}${t2Pct}%)` : ''}
                   </div>
                   {t2NetPct != null && (
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#c084fc', marginTop: 1 }}>
-                      Net: +{t2NetPct}% <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>(-5.0% CGT+fees)</span>
+                      Net: {Number(t2NetPct) > 0 ? '+' : ''}{t2NetPct}% <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>(-5.0% CGT+fees)</span>
                     </div>
                   )}
                 </div>

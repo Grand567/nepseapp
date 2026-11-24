@@ -326,7 +326,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
           </div>
           <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
             <div className="text-[11px] font-bold text-emerald-300">
-              Net: {levels.target1?.netReturnPct != null ? `+${levels.target1.netReturnPct}%` : '—'} <span className="text-[9.5px] font-normal text-slate-400">(-5.0% CGT/fees)</span>
+              Net: {levels.target1?.netReturnPct != null ? `${Number(levels.target1.netReturnPct) > 0 ? '+' : ''}${levels.target1.netReturnPct}%` : '—'} <span className="text-[9.5px] font-normal text-slate-400">(-5.0% CGT/fees)</span>
             </div>
             <div className="text-[10.5px] text-slate-400">
               {levels.target1?.horizon || '1–2 Weeks Horizon'}
@@ -346,7 +346,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
           </div>
           <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
             <div className="text-[11px] font-bold text-teal-300">
-              Net: {levels.target2?.netReturnPct != null ? `+${levels.target2.netReturnPct}%` : '—'} <span className="text-[9.5px] font-normal text-slate-400">(-5.0% CGT/fees)</span>
+              Net: {levels.target2?.netReturnPct != null ? `${Number(levels.target2.netReturnPct) > 0 ? '+' : ''}${levels.target2.netReturnPct}%` : '—'} <span className="text-[9.5px] font-normal text-slate-400">(-5.0% CGT/fees)</span>
             </div>
             <div className="text-[10.5px] text-slate-400">
               {levels.target2?.horizon || '3–6 Weeks Horizon'}

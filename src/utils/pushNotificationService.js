@@ -839,7 +839,11 @@ export async function syncDevicePushToken(tokenParam = null, force = false, maxR
 
         const res = await fetch(`${apiBase}/api/smart-alerts/register-token`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/plain, */*',
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 6a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 DravyashreeApp/1.0.6'
+          },
           body: JSON.stringify({
             token,
             platform,
