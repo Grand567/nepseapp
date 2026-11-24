@@ -35,38 +35,38 @@
     "historyCount": 0
   },
   "SAHAS": {
-    "state": "PENDING",
-    "pendingScans": 4,
+    "state": "IDLE",
+    "pendingScans": 0,
     "lastTriggeredAt": 1792139694916,
-    "lastEvaluatedAt": 1794904480981,
+    "lastEvaluatedAt": 1795511814639,
     "historyCount": 1
   },
   "KBL": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": 1791788600680,
-    "lastEvaluatedAt": 1794903055143,
+    "lastEvaluatedAt": 1795511542771,
     "historyCount": 1
   },
   "GBIME": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": 1791788170030,
-    "lastEvaluatedAt": 1794903390324,
+    "lastEvaluatedAt": 1795511438048,
     "historyCount": 1
   },
   "PCBL": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": 1793090514002,
-    "lastEvaluatedAt": 1794903187984,
+    "lastEvaluatedAt": 1795511822298,
     "historyCount": 2
   },
   "LSL": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903702819,
+    "lastEvaluatedAt": 1795511472560,
     "historyCount": 0
   },
   "SONA": {
@@ -85,10 +85,10 @@
   },
   "HDL": {
     "state": "COOLDOWN",
-    "pendingScans": 1,
-    "lastTriggeredAt": 1794904511878,
-    "lastEvaluatedAt": 1794904511878,
-    "historyCount": 2
+    "pendingScans": 12,
+    "lastTriggeredAt": 1795506836363,
+    "lastEvaluatedAt": 1795511826688,
+    "historyCount": 3
   },
   "BHCL": {
     "state": "IDLE",
@@ -101,28 +101,28 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794904130560,
+    "lastEvaluatedAt": 1795511824586,
     "historyCount": 0
   },
   "API": {
-    "state": "PENDING",
-    "pendingScans": 5,
+    "state": "IDLE",
+    "pendingScans": 0,
     "lastTriggeredAt": 1791788233612,
-    "lastEvaluatedAt": 1794903930498,
+    "lastEvaluatedAt": 1795511762358,
     "historyCount": 1
   },
   "SBI": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794896083591,
+    "lastEvaluatedAt": 1795424325904,
     "historyCount": 0
   },
   "MBL": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1793090233529,
+    "lastEvaluatedAt": 1795511823410,
     "historyCount": 0
   },
   "PRVU": {
@@ -136,21 +136,21 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903037879,
+    "lastEvaluatedAt": 1795511811192,
     "historyCount": 0
   },
   "NIMB": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794904452475,
+    "lastEvaluatedAt": 1795511815851,
     "historyCount": 0
   },
   "MEN": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794904319271,
+    "lastEvaluatedAt": 1795511299401,
     "historyCount": 0
   },
   "SMH": {
@@ -164,7 +164,7 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": 1791788294713,
-    "lastEvaluatedAt": 1793090388359,
+    "lastEvaluatedAt": 1795511820138,
     "historyCount": 1
   },
   "NIMBPO": {
@@ -185,14 +185,14 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794897208539,
+    "lastEvaluatedAt": 1795511836391,
     "historyCount": 0
   },
   "BHL": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794896900907,
+    "lastEvaluatedAt": 1795511821219,
     "historyCount": 0
   },
   "NHPC": {
@@ -206,7 +206,7 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1793089865559,
+    "lastEvaluatedAt": 1795424326601,
     "historyCount": 0
   },
   "SNORL": {
@@ -217,11 +217,11 @@
     "historyCount": 0
   },
   "TAMOR": {
-    "state": "IDLE",
-    "pendingScans": 0,
-    "lastTriggeredAt": 1791788369596,
-    "lastEvaluatedAt": 1794903209564,
-    "historyCount": 1
+    "state": "COOLDOWN",
+    "pendingScans": 12,
+    "lastTriggeredAt": 1795511843479,
+    "lastEvaluatedAt": 1795511843479,
+    "historyCount": 2
   },
   "FMDBLP": {
     "state": "IDLE",
@@ -241,7 +241,7 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903424678,
+    "lastEvaluatedAt": 1795424326831,
     "historyCount": 0
   },
   "MBJC": {
@@ -254,22 +254,22 @@
   "HPPL": {
     "state": "IDLE",
     "pendingScans": 0,
-    "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903225962,
-    "historyCount": 0
+    "lastTriggeredAt": 1795424386117,
+    "lastEvaluatedAt": 1795511818177,
+    "historyCount": 2
   },
   "SANIMA": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903666927,
+    "lastEvaluatedAt": 1795511817135,
     "historyCount": 0
   },
   "PHCL": {
-    "state": "IDLE",
-    "pendingScans": 0,
+    "state": "PENDING",
+    "pendingScans": 3,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794904022803,
+    "lastEvaluatedAt": 1795511646025,
     "historyCount": 0
   },
   "SKBBL": {
@@ -283,7 +283,7 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": 1791788447690,
-    "lastEvaluatedAt": 1794903155598,
+    "lastEvaluatedAt": 1795511842807,
     "historyCount": 1
   },
   "SYPNL": {
@@ -297,7 +297,7 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": 1791788743416,
-    "lastEvaluatedAt": 1794903578180,
+    "lastEvaluatedAt": 1795511611689,
     "historyCount": 1
   },
   "HDHPC": {
@@ -308,17 +308,17 @@
     "historyCount": 0
   },
   "NRN": {
-    "state": "PENDING",
-    "pendingScans": 1,
+    "state": "IDLE",
+    "pendingScans": 0,
     "lastTriggeredAt": 1792141593431,
-    "lastEvaluatedAt": 1793006192686,
+    "lastEvaluatedAt": 1795511686737,
     "historyCount": 2
   },
   "AKJCL": {
-    "state": "IDLE",
-    "pendingScans": 0,
+    "state": "PENDING",
+    "pendingScans": 1,
     "lastTriggeredAt": 1792138385294,
-    "lastEvaluatedAt": 1794904057957,
+    "lastEvaluatedAt": 1795511833257,
     "historyCount": 2
   },
   "SBLD89": {
@@ -343,10 +343,10 @@
     "historyCount": 1
   },
   "RIDI": {
-    "state": "IDLE",
-    "pendingScans": 0,
+    "state": "PENDING",
+    "pendingScans": 1,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1793089788230,
+    "lastEvaluatedAt": 1795511827685,
     "historyCount": 0
   },
   "NABBC": {
@@ -364,10 +364,10 @@
     "historyCount": 0
   },
   "NGPL": {
-    "state": "PENDING",
-    "pendingScans": 3,
+    "state": "IDLE",
+    "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794897379287,
+    "lastEvaluatedAt": 1795511841052,
     "historyCount": 0
   },
   "CHCL": {
@@ -395,14 +395,14 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": 1792139163015,
-    "lastEvaluatedAt": 1794903369740,
+    "lastEvaluatedAt": 1795511830072,
     "historyCount": 2
   },
   "SMHL": {
     "state": "PENDING",
-    "pendingScans": 24,
+    "pendingScans": 1,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1792141511507,
+    "lastEvaluatedAt": 1795511818986,
     "historyCount": 0
   },
   "CHDC": {
@@ -430,7 +430,7 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903271176,
+    "lastEvaluatedAt": 1795424326363,
     "historyCount": 0
   },
   "NRIC": {
@@ -458,7 +458,7 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1793089894499,
+    "lastEvaluatedAt": 1795424326407,
     "historyCount": 0
   },
   "SMJC": {
@@ -472,7 +472,7 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903313399,
+    "lastEvaluatedAt": 1795424326759,
     "historyCount": 0
   },
   "MAKAR": {
@@ -493,28 +493,28 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903332866,
+    "lastEvaluatedAt": 1795511834407,
     "historyCount": 0
   },
   "SGHC": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903352681,
+    "lastEvaluatedAt": 1795511764074,
     "historyCount": 0
   },
   "BPCL": {
-    "state": "PENDING",
-    "pendingScans": 8,
+    "state": "IDLE",
+    "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903407178,
+    "lastEvaluatedAt": 1795511330431,
     "historyCount": 0
   },
   "CFCL": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903442036,
+    "lastEvaluatedAt": 1795511731003,
     "historyCount": 0
   },
   "BENH": {
@@ -528,28 +528,28 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903561055,
+    "lastEvaluatedAt": 1795511508137,
     "historyCount": 0
   },
   "LBBL": {
-    "state": "COOLDOWN",
-    "pendingScans": 3,
+    "state": "IDLE",
+    "pendingScans": 0,
     "lastTriggeredAt": 1794901920107,
-    "lastEvaluatedAt": 1794903962924,
+    "lastEvaluatedAt": 1795511835307,
     "historyCount": 1
   },
   "NTC": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794903087307,
+    "lastEvaluatedAt": 1795511839864,
     "historyCount": 0
   },
   "RFPL": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794895858538,
+    "lastEvaluatedAt": 1795511812537,
     "historyCount": 0
   },
   "MDBPO": {
@@ -584,14 +584,14 @@
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794897273264,
+    "lastEvaluatedAt": 1795511837312,
     "historyCount": 0
   },
   "RADHI": {
     "state": "IDLE",
     "pendingScans": 0,
     "lastTriggeredAt": null,
-    "lastEvaluatedAt": 1794897337994,
+    "lastEvaluatedAt": 1795511838364,
     "historyCount": 0
   },
   "SPHL": {
@@ -616,10 +616,77 @@
     "historyCount": 0
   },
   "GHL": {
-    "state": "COOLDOWN",
+    "state": "PENDING",
     "pendingScans": 1,
-    "lastTriggeredAt": 1795144605554,
-    "lastEvaluatedAt": 1795144605554,
+    "lastTriggeredAt": 1795351991106,
+    "lastEvaluatedAt": 1795511813625,
     "historyCount": 1
+  },
+  "NABILD2089": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1795424384452,
+    "historyCount": 0
+  },
+  "SHEL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1795424385281,
+    "historyCount": 0
+  },
+  "PMLI": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1795424385854,
+    "historyCount": 0
+  },
+  "DOLTI": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1795424385902,
+    "historyCount": 0
+  },
+  "BFC": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1795424385919,
+    "historyCount": 0
+  },
+  "MEHL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1795424326815,
+    "historyCount": 0
+  },
+  "VLUCL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1795511579707,
+    "historyCount": 0
+  },
+  "BUNGAL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1795511359525,
+    "historyCount": 0
+  },
+  "_lastActivePushToken": {
+    "token": "fQQID3KnSYOCLVM2Ottlds:APA91bF9uYijAX82axT2eoEtXTYC59bgR9oF5X8YWuBO_IiyIzuE7jRB2wtURjnZuxZeFoiu_321cPHcewQi_30IUvSIejTjQ66uHwK3qYUOL5ikCqFU-5I",
+    "platform": "android",
+    "appVersion": "1.0.6",
+    "portfolioSymbols": [
+      "SHEL",
+      "NABIL",
+      "CHCL"
+    ],
+    "lastSeenAt": "2026-11-24T10:11:18.541Z"
   }
 }

@@ -553,9 +553,9 @@ export async function hydratePushTokensFromDb() {
 
     for (const repo of vaultRepos) {
       try {
-        console.log(`[SmartAlertEngine] Attempting GitHub vault hydration from repo: ${repo}...`);
+        console.log(`[SmartAlertEngine] Attempting GitHub vault hydration (v-vault-tokens) from repo: ${repo}...`);
         const res = await axios.get(`https://api.github.com/repos/${repo}/releases/tags/v-vault-tokens`, { headers, timeout: 15000 });
-        console.log(`[SmartAlertEngine] GitHub release fetch HTTP ${res.status} for ${repo}`);
+        console.log(`[SmartAlertEngine] ✅ GitHub vault release (v-vault-tokens) reached on ${repo} [HTTP ${res.status}]`);
         const asset = (res.data?.assets || []).find(a => a.name === 'push_tokens.json');
         if (asset && asset.browser_download_url) {
           const fileRes = await axios.get(asset.browser_download_url, {
@@ -573,11 +573,56 @@ export async function hydratePushTokensFromDb() {
         }
       } catch (ghErr) {
         const status = ghErr.response?.status || 'NETWORK_ERR';
-        if (status !== 404) {
-          console.warn(`[SmartAlertEngine] GitHub release vault hydration notice for ${repo} [HTTP ${status}]:`, ghErr.message);
+        if (status === 404) {
+          console.warn(`[SmartAlertEngine] GitHub release vault (v-vault-tokens) not found on ${repo} [HTTP 404].`);
+        } else {
+          console.warn(`[SmartAlertEngine] Failed reading GitHub release vault (v-vault-tokens) on ${repo} [HTTP ${status}]:`, ghErr.message);
         }
       }
     }
+  } else {
+    console.warn('[SmartAlertEngine] GITHUB_TOKEN not configured; skipping remote GitHub release vault token sync. Fallback layers (SQLite / STATE_FILE / env) active.');
+  }
+
+  // 4b. Hydrate from process.env.FCM_REGISTERED_TOKENS if provided
+  const envTokens = (process.env.FCM_REGISTERED_TOKENS || '').trim();
+  if (envTokens) {
+    envTokens.split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
+      if (!map.has(tok)) {
+        map.set(tok, {
+          token: tok,
+          platform: 'android',
+          appVersion: '1.0.6',
+          portfolioSymbols: ["SHEL", "NABIL", "CHCL"],
+          createdAt: new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          registeredAt: new Date().toISOString(),
+          lastActiveAt: new Date().toISOString()
+        });
+      }
+    });
+    console.log(`[SmartAlertEngine] Hydrated fallback push token(s) from process.env.FCM_REGISTERED_TOKENS.`);
+  }
+
+  // 4c. Hydrate from persistent smart_alert_state.json
+  try {
+    const stateData = loadJson(STATE_FILE, {});
+    if (stateData._lastActivePushToken?.token && !map.has(stateData._lastActivePushToken.token)) {
+      const lt = stateData._lastActivePushToken;
+      map.set(lt.token, {
+        token: lt.token,
+        platform: lt.platform || 'android',
+        appVersion: lt.appVersion || '1.0.6',
+        portfolioSymbols: Array.isArray(lt.portfolioSymbols) ? lt.portfolioSymbols : ["SHEL", "NABIL", "CHCL"],
+        createdAt: lt.createdAt || new Date().toISOString(),
+        lastSeenAt: lt.lastSeenAt || new Date().toISOString(),
+        registeredAt: lt.registeredAt || new Date().toISOString(),
+        lastActiveAt: lt.lastActiveAt || new Date().toISOString()
+      });
+      console.log(`[SmartAlertEngine] Restored active push token from smart_alert_state.json.`);
+    }
+  } catch (stateErr) {
+    console.warn('[SmartAlertEngine] Error reading smart_alert_state.json active token:', stateErr.message);
   }
 
   // 5. Invariant: Guarantee at least 1 registered token so registeredPushTokensCount >= 1 across boots
@@ -638,7 +683,10 @@ hydratePushTokensFromDb().catch(() => {});
  */
 export async function backupPushTokensToGitHubVault() {
   const token = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
-  if (!token) return;
+  if (!token) {
+    console.warn('[SmartAlertEngine] GITHUB_TOKEN not configured. Skipping push tokens backup to GitHub release vault (local SQLite and smart_alert_state.json active).');
+    return;
+  }
   const repo = (process.env.GITHUB_VAULT_REPO || process.env.GITHUB_REPO || 'Grand567/nepseapp').trim();
   const headers = {
     'Authorization': `Bearer ${token}`,
@@ -831,6 +879,22 @@ export async function registerPushToken(token, platform = 'android', portfolioSy
   }
 
   console.log(`[SmartAlertEngine] Push token registered (${platform}, v${appVersion}). Tracked portfolio symbols: ${userTrackedSymbolsSet.size}. Total tokens: ${pushTokens.length}`);
+  
+  // Retain active token in git-tracked smart_alert_state.json
+  try {
+    const stateData = loadJson(STATE_FILE, {});
+    stateData._lastActivePushToken = {
+      token: cleanToken,
+      platform,
+      appVersion,
+      portfolioSymbols: portfolioSymbols || [],
+      lastSeenAt: now
+    };
+    saveJson(STATE_FILE, stateData);
+  } catch (stateErr) {
+    console.warn('[SmartAlertEngine] Failed persisting active token to smart_alert_state.json:', stateErr.message);
+  }
+
   backupPushTokensToGitHubVault().catch(() => {});
 
   // Subscribe token to 'institutional_alerts' and 'general_alerts' topics if FCM is active

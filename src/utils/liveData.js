@@ -3640,10 +3640,24 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
   }
 
   // Tier 0 Fast Path: 0ms Offline Subfile synthesis for 1D, 5D, or selected dates
-  if (!isAllTime && !refresh && (date || numDays === 5 || numDays === 1)) {
+  let localSubfileBa = null;
+  let localSubfileDate = '';
+  const loadLocalSubfile = async () => {
+    if (localSubfileBa !== null) return localSubfileBa;
     try {
       const { getHistoricalSubfileBrokerAnalysis } = await getLocalLedger();
-      const subfileBa = await getHistoricalSubfileBrokerAnalysis(sym, { days: numDays, date });
+      localSubfileBa = await getHistoricalSubfileBrokerAnalysis(sym, { days: numDays, date });
+      localSubfileDate = String(localSubfileBa?.businessDate || localSubfileBa?.toDate || localSubfileBa?.date || '').slice(0, 10);
+      return localSubfileBa;
+    } catch (_) {
+      localSubfileBa = false;
+      return null;
+    }
+  };
+
+  if (!isAllTime && !refresh && (date || numDays === 5 || numDays === 1)) {
+    try {
+      const subfileBa = await loadLocalSubfile();
       if (subfileBa && (subfileBa.brokers?.length > 0 || subfileBa.topBuyers?.length > 0 || subfileBa.topAccumulators?.length > 0)) {
         setCachedRealBrokerAnalysis(sym, subfileBa, numDays, options);
         return subfileBa;
@@ -3660,9 +3674,19 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
       if (date) diagParams.set('date', date);
       if (fromDate) diagParams.set('fromDate', fromDate);
       if (toDate) diagParams.set('toDate', toDate);
-      const fastDiag = await fetchFromBackend(`/api/diagnostics/${encodeURIComponent(sym)}?${diagParams.toString()}`, 5000);
+      const fastDiag = await fetchFromBackend(`/api/diagnostics/${encodeURIComponent(sym)}?${diagParams.toString()}`, 35000);
       if (fastDiag?.success && fastDiag.data) {
         const fd = fastDiag.data;
+        const backendDate = String(fd.businessDate || fd.toDate || fd.date || '').slice(0, 10);
+        await loadLocalSubfile();
+
+        // Stale backend protection: If backend returns an older date than our local finalized subfiles (e.g. 2026-11-19 < 2026-11-24), reject stale payload
+        if (localSubfileDate && backendDate && backendDate < localSubfileDate && localSubfileBa && (localSubfileBa.brokers?.length > 0 || localSubfileBa.topBuyers?.length > 0 || localSubfileBa.topAccumulators?.length > 0)) {
+          console.warn(`[liveData] Rejecting stale backend diagnostic date (${backendDate}) in favor of newer local subfile date (${localSubfileDate}) for ${sym}`);
+          setCachedRealBrokerAnalysis(sym, localSubfileBa, numDays, options);
+          return localSubfileBa;
+        }
+
         const topAcc = fd.leadAccumulator ? normalizeBrokerItem(fd.leadAccumulator) : (fd.topNetBuyers?.length > 0 ? normalizeBrokerItem(fd.topNetBuyers[0]) : null);
         const topDist = fd.leadDistributor ? normalizeBrokerItem(fd.leadDistributor) : (fd.topNetSellers?.length > 0 ? normalizeBrokerItem(fd.topNetSellers[0]) : null);
         const adRatioVal = fd.adRatio != null ? fd.adRatio : (fd.smartMoneyNetFlowPct != null 
@@ -3740,10 +3764,19 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
     if (toDate) params.set('toDate', toDate);
     if (refresh) params.set('refresh', 'true');
 
-    const res = await fetchFromBackend(`/api/broker-analysis/${encodeURIComponent(sym)}?${params.toString()}`, 20000);
+    const res = await fetchFromBackend(`/api/broker-analysis/${encodeURIComponent(sym)}?${params.toString()}`, 35000);
     const d = res?.data || res;
     const isSyntheticFallback = res?.source === 'trading-profile-fallback' || d?.source === 'trading-profile-fallback' || res?.source === 'empty_no_floorsheet_records';
     if (!isSyntheticFallback && d && (d.brokers?.length > 0 || d.topBuyers?.length > 0 || d.buyers?.length > 0 || d.dailyFlow?.length > 0 || d.topHoldings?.length > 0 || d.allHoldings?.length > 0 || d.totalSharesHeldTillNow > 0)) {
+      const backendBaDate = String(d.businessDate || d.toDate || d.date || '').slice(0, 10);
+      await loadLocalSubfile();
+
+      // Stale backend protection: If backend returns an older date than our local finalized subfiles (e.g. 2026-11-19 < 2026-11-24), reject stale payload
+      if (localSubfileDate && backendBaDate && backendBaDate < localSubfileDate && localSubfileBa && (localSubfileBa.brokers?.length > 0 || localSubfileBa.topBuyers?.length > 0 || localSubfileBa.topAccumulators?.length > 0)) {
+        console.warn(`[liveData] Rejecting stale broker-analysis backend date (${backendBaDate}) in favor of newer local subfile date (${localSubfileDate}) for ${sym}`);
+        setCachedRealBrokerAnalysis(sym, localSubfileBa, numDays, options);
+        return localSubfileBa;
+      }
       const normalizedBrokers = (d.brokers || d.allBrokers || []).map(normalizeBrokerItem).filter(Boolean);
       const normalizedBuyers = (d.topBuyers || d.buyers || d.topNetBuyers || []).map(normalizeBrokerItem).filter(Boolean);
       const normalizedSellers = (d.topSellers || d.sellers || d.topNetSellers || []).map(normalizeBrokerItem).filter(Boolean);

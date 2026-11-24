@@ -6,5 +6,29 @@
     "lastLtp": 576,
     "operatorVwap": 574.5,
     "isTest": false
+  },
+  "AKJCL": {
+    "symbol": "AKJCL",
+    "sessionDate": "2026-11-23",
+    "lastTriggeredAt": 1795413973432,
+    "lastLtp": 330.3,
+    "operatorVwap": 333.7,
+    "isTest": false
+  },
+  "NIMB": {
+    "symbol": "NIMB",
+    "sessionDate": "2026-11-24",
+    "lastTriggeredAt": 1795500069136,
+    "lastLtp": 209,
+    "operatorVwap": 207.7,
+    "isTest": false
+  },
+  "NMB": {
+    "symbol": "NMB",
+    "sessionDate": "2026-11-25",
+    "lastTriggeredAt": 1795511811195,
+    "lastLtp": 284,
+    "operatorVwap": 287.5,
+    "isTest": false
   }
 }
