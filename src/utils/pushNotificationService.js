@@ -790,9 +790,10 @@ let lastSyncedTimestamp = 0;
 
 /**
  * Standalone synchronization function: POSTs the FCM token and user's tracked
- * portfolio & watchlist symbols to the backend. Re-called on launch, resume, and refresh.
+ * portfolio & watchlist symbols to the backend with automatic exponential backoff retry.
+ * Re-called on launch, resume, online restoration, and refresh.
  */
-export async function syncDevicePushToken(tokenParam = null, force = false) {
+export async function syncDevicePushToken(tokenParam = null, force = false, maxRetries = 3) {
   try {
     const now = Date.now();
     if (!force && (now - lastSyncedTimestamp < 3000)) {
@@ -828,20 +829,50 @@ export async function syncDevicePushToken(tokenParam = null, force = false) {
       : 'android';
 
     const apiBase = getApiBase();
-    const res = await fetch(`${apiBase}/api/smart-alerts/register-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token,
-        platform,
-        appVersion: '1.0.6',
-        portfolioSymbols
-      })
-    });
-    if (res.ok) {
-      lastSyncedTimestamp = Date.now();
-      console.log('[PushService] ✅ Device push token & tracked symbols successfully registered with Dravyashree backend.');
-      return true;
+    let attempt = 0;
+    let delay = 1500;
+
+    while (attempt <= maxRetries) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 75000);
+
+        const res = await fetch(`${apiBase}/api/smart-alerts/register-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token,
+            platform,
+            appVersion: '1.0.6',
+            portfolioSymbols
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          lastSyncedTimestamp = Date.now();
+          console.log('[PushService] ✅ Device push token & tracked symbols successfully registered with Dravyashree backend.');
+          return true;
+        } else if (res.status >= 500 && attempt < maxRetries) {
+          attempt++;
+          console.log(`[PushService] Render cold-start/error HTTP ${res.status}. Retrying in ${delay}ms... (attempt ${attempt}/${maxRetries})`);
+          await new Promise(r => setTimeout(r, delay));
+          delay *= 2;
+          continue;
+        } else {
+          break;
+        }
+      } catch (err) {
+        if (attempt < maxRetries && err.name !== 'AbortError') {
+          attempt++;
+          console.log(`[PushService] Transient error syncing token (${err.message}). Retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          delay *= 2;
+        } else {
+          throw err;
+        }
+      }
     }
   } catch (syncErr) {
     console.warn('[PushService] Error saving token to backend:', syncErr.message);
@@ -849,10 +880,21 @@ export async function syncDevicePushToken(tokenParam = null, force = false) {
   return false;
 }
 
-// Lifecycle listener: automatically syncs token on visibility change or window focus
+// Lifecycle listeners: automatically syncs token on visibility change, focus, online, and app resume
 if (typeof window !== 'undefined') {
   window.addEventListener('focus', () => {
     syncDevicePushToken().catch(() => {});
+  });
+  window.addEventListener('online', () => {
+    console.log('[PushService] Network restored (online event). Re-registering push token...');
+    syncDevicePushToken(null, true).catch(() => {});
+  });
+  // Defensive guardrail: Ensure beforeunload, pagehide, and appStateChange (isActive: false) never unregister the FCM token
+  window.addEventListener('beforeunload', () => {
+    // Preserve push token; NEVER delete on page unload or app dismissal from Android Recents
+  });
+  window.addEventListener('pagehide', () => {
+    // Preserve push token; NEVER delete on pagehide
   });
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', () => {
@@ -861,6 +903,18 @@ if (typeof window !== 'undefined') {
       }
     });
   }
+  try {
+    import('@capacitor/app').then(({ App: CapApp }) => {
+      CapApp.addListener('appStateChange', ({ isActive }) => {
+        if (!isActive) {
+          // App backgrounded or dismissed from Android Recents tray. Token MUST remain persistent.
+          return;
+        }
+        console.log('[PushService] App resumed (appStateChange). Syncing push token...');
+        syncDevicePushToken(null, true).catch(() => {});
+      });
+    }).catch(() => {});
+  } catch (_) {}
 }
 
 /**

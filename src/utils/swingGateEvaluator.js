@@ -152,7 +152,7 @@ export function evaluateStockSwingGates(stock = {}, marketRegimeResult = { passe
   }
 
   const threeDayRunPct = Number(stock.threeDayRunPct ?? stock.pChange ?? 0);
-  const isBreakout = Boolean(stock.isBreakout || stock.breakout10d || (stock.high52wDist != null && stock.high52wDist > -3) || pChange >= 2.0);
+  const isBreakout = Boolean(((stock.isBreakout || stock.breakout10d || (stock.high52wDist != null && stock.high52wDist > -3)) && pChange > 0) || pChange >= 2.0);
 
   // Fundamentals & Corporate Actions (never fabricate passing 120 BVPS, 12 EPS, or 180 lock-in days)
   const rawBv = stock.bookValue ?? stock.bvps ?? stock.netWorth;

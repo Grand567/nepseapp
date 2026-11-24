@@ -76,8 +76,8 @@ export function resolveValidTimeframe(rawDays, defaultDays = 30) {
 // ── Self-healing cache initialization guard ──
 let cacheInitPromise = null;
 export async function ensureHotCacheReady() {
-  const stocks30 = HOT_CACHE.radarByTimeframe[30] || [];
-  if (stocks30.length > 0) return true;
+  const loadedCount = (HOT_CACHE.radarByTimeframe[1] || HOT_CACHE.radarByTimeframe[30] || []).length;
+  if (loadedCount > 0) return true;
 
   if (cacheInitPromise) {
     return cacheInitPromise;

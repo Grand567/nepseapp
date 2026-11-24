@@ -128,8 +128,8 @@ export function LiveMarketDashboard({
         enName: s.symbol,
         sector: s.sector || 'Others',
         ltp: Number(s.ltp || s.close || 0),
-        change: `+${Number(s.percentChange || s.pChange || 0).toFixed(2)}%`,
-        changeAmt: `+${Number(s.pointChange || s.change || 0).toFixed(2)}`,
+        change: `${Number(s.percentChange || s.pChange || 0) > 0 ? '+' : ''}${Number(s.percentChange || s.pChange || 0).toFixed(2)}%`,
+        changeAmt: `${Number(s.pointChange || s.change || 0) > 0 ? '+' : ''}${Number(s.pointChange || s.change || 0).toFixed(2)}`,
         tag: idx === 0 ? '⚡ TOP GAINER' : Math.abs(Number(s.percentChange || s.pChange || 0)) >= 14.5 ? 'Circuit ±15%' : '⚡ High Demand',
         color: idx % 2 === 0 ? 'sky' : 'emerald'
       }));

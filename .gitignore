@@ -85,5 +85,7 @@ proxy/data/daily_selection_guide_state.json
 # Secrets & temporary audit bundles
 proxy/data/.license_secret
 proxy/data/pro_licenses.json
+proxy/*firebase-adminsdk*.json
+proxy/data/.sync_token_secret
 audit-bundles/
 debug.log

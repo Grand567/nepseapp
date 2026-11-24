@@ -239,18 +239,9 @@ export const getCachedCloudData = () => _cachedCloudData;
 
 export const getCandidateSyncEndpoints = () => {
   const endpoints = [];
+  const isNative = Capacitor.isNativePlatform();
 
-  // 1. If running in Electron (file:) or browser, prioritize appropriate sync path
-  if (typeof window !== 'undefined') {
-    const isElectron = window.location.protocol === 'file:' || (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Electron'));
-    if (isElectron) {
-      endpoints.push('http://localhost:5000/api/sync');
-    } else {
-      endpoints.push('/api/sync');
-    }
-  }
-
-  // 2. Configured VITE_PROXY_URL
+  // 1. Configured VITE_PROXY_URL (Primary for production & Capacitor mobile)
   const configuredProxy = import.meta.env.VITE_PROXY_URL;
   if (configuredProxy) {
     const cleanConfigured = configuredProxy.replace(/\/$/, '') + '/api/sync';
@@ -259,16 +250,27 @@ export const getCandidateSyncEndpoints = () => {
     }
   }
 
-  // 3. Render cloud proxy
+  // 2. Render cloud proxy fallback
   const renderProxy = 'https://drabyashree-nepse-hub.onrender.com/api/sync';
   if (!endpoints.includes(renderProxy)) {
     endpoints.push(renderProxy);
   }
 
+  // 3. For Web browser or Electron desktop environments ONLY:
+  // NEVER use relative '/api/sync' or localhost on native Android/iOS Capacitor
+  if (!isNative && typeof window !== 'undefined') {
+    const isElectron = window.location.protocol === 'file:' || (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Electron'));
+    if (isElectron) {
+      endpoints.unshift('http://localhost:5000/api/sync');
+    } else {
+      endpoints.unshift('/api/sync');
+    }
+  }
+
   return endpoints;
 };
 
-export const callSyncProxy = async (endpointPath, options = {}, timeoutMs = 6500) => {
+export const callSyncProxy = async (endpointPath, options = {}, timeoutMs = 70000) => {
   const candidates = getCandidateSyncEndpoints();
   const orderedCandidates = _activeSyncEndpoint
     ? [_activeSyncEndpoint, ...candidates.filter(c => c !== _activeSyncEndpoint)]
@@ -277,26 +279,64 @@ export const callSyncProxy = async (endpointPath, options = {}, timeoutMs = 6500
   let lastError = null;
 
   for (const base of orderedCandidates) {
-    try {
-      const isLocal = base.includes('localhost') || base.includes('127.0.0.1');
-      const effTimeout = isLocal ? Math.min(timeoutMs, 3000) : Math.max(timeoutMs, 8500);
+    const isLocal = base.includes('localhost') || base.includes('127.0.0.1');
+    // Local development endpoints fail fast (3.5s). Remote cloud endpoints allow Render cold starts (up to 75s).
+    const effTimeout = isLocal ? Math.min(timeoutMs, 3500) : Math.max(timeoutMs, 75000);
+    const maxRetries = isLocal ? 0 : 2;
+    let attempt = 0;
+    let delay = 1500;
 
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), effTimeout);
-
-      const url = `${base}${endpointPath.startsWith('/') ? endpointPath : '/' + endpointPath}`;
-      const res = await fetch(url, {
-        ...options,
-        signal: controller.signal
-      });
-      clearTimeout(timer);
-
-      // If server responded with ANY valid HTTP status, this endpoint is alive!
-      _activeSyncEndpoint = base;
-      return res;
-    } catch (err) {
-      lastError = err;
+    let cleanPath = endpointPath.startsWith('/') ? endpointPath : '/' + endpointPath;
+    if (base.endsWith('/api/sync') && cleanPath.startsWith('/api/sync/')) {
+      cleanPath = cleanPath.slice('/api/sync'.length);
     }
+    const url = `${base}${cleanPath}`;
+
+    while (attempt <= maxRetries) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), effTimeout);
+
+        const res = await fetch(url, {
+          ...options,
+          headers: {
+            'Accept': 'application/json',
+            ...(options.headers || {})
+          },
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+
+        // Render cold start can return 502/503/504 while gateway or container boots
+        if (!isLocal && (res.status === 502 || res.status === 503 || res.status === 504) && attempt < maxRetries) {
+          attempt++;
+          console.log(`[CloudSync] Cold-start HTTP ${res.status} from ${base}. Retrying in ${delay}ms... (attempt ${attempt}/${maxRetries})`);
+          await new Promise(r => setTimeout(r, delay));
+          delay *= 2;
+          continue;
+        }
+
+        // If server responded with ANY valid HTTP status, this endpoint is alive!
+        _activeSyncEndpoint = base;
+        return res;
+      } catch (err) {
+        lastError = err;
+        if (!isLocal && attempt < maxRetries && err.name !== 'AbortError') {
+          attempt++;
+          console.log(`[CloudSync] Transient error on ${base} (${err.message}). Retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          delay *= 2;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  _activeSyncEndpoint = null;
+
+  if (lastError?.name === 'AbortError') {
+    throw new Error('Connection timed out while contacting sync server (Render cold start). Please check your internet connection or try again in a moment.');
   }
 
   throw lastError || new Error('Network error: unable to reach any Cloud Sync endpoint.');
@@ -307,7 +347,7 @@ export const getSyncProxyEndpoint = () => {
 };
 
 export const pingSyncServer = () => {
-  callSyncProxy('/health', { method: 'GET' }).catch(() => {});
+  callSyncProxy('/health', { method: 'GET' }, 75000).catch(() => {});
 };
 // Trigger non-blocking warm-up ping
 pingSyncServer();
@@ -496,7 +536,7 @@ export const registerLocal = async (displayName, email, password) => {
         name: displayName.trim(),
         initialData
       })
-    });
+    }, 75000);
 
     if (regRes.status === 409) {
       throw new Error('An account with this email already exists. Please switch to Sign In.');
@@ -510,9 +550,24 @@ export const registerLocal = async (displayName, email, password) => {
         _cachedCloudData = regJson.data;
         hydrateLocalDataFromCloud(uid, regJson.data);
       }
+    } else {
+      let errJson = null;
+      try {
+        errJson = await regRes.json();
+      } catch (_) {}
+      console.warn(`[CloudSync] Remote registration HTTP ${regRes.status}:`, errJson?.message);
+      if (regRes.status === 400) {
+        throw new Error(errJson?.message || 'Invalid registration details.');
+      } else if (regRes.status === 403) {
+        throw new Error(errJson?.message || 'Registration forbidden (HTTP 403).');
+      }
     }
   } catch (syncErr) {
-    if (syncErr.message.includes('already exists')) {
+    if (
+      syncErr.message.includes('already exists') ||
+      syncErr.message.includes('Invalid registration') ||
+      syncErr.message.includes('Registration forbidden')
+    ) {
       throw syncErr;
     }
     console.warn('[CloudSync] Remote registration warning:', syncErr.message);
@@ -549,7 +604,27 @@ export const signInLocal = async (email, password) => {
   let record = users[emailKey];
   let uid = record?.uid || ('usr_' + (await sha256Hex(emailKey)).slice(0, 12));
 
+  // Seamless offline sign-in when disconnected
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  if (isOffline && record) {
+    if (record.passwordHash && record.passwordHash !== hashedPw && record.passwordHash !== legacyPwHash) {
+      throw new Error('Incorrect password. Please verify your password and try again.');
+    }
+    const userObj = {
+      uid: record.uid,
+      displayName: record.displayName,
+      email: record.email,
+      photoURL: record.photoURL || null,
+      isLocal: true,
+      offlineAuthenticated: true
+    };
+    notifyLocalAuth(userObj);
+    return userObj;
+  }
+
   let serverAuthSuccess = false;
+  let serverErrorMessage = null;
+  let serverStatusCode = null;
 
   try {
     const res = await callSyncProxy('/login', {
@@ -561,7 +636,9 @@ export const signInLocal = async (email, password) => {
         passwordHash: hashedPw,
         legacyPasswordHash: legacyPwHash
       })
-    });
+    }, 75000);
+
+    serverStatusCode = res.status;
 
     if (res.ok) {
       const json = await res.json();
@@ -585,21 +662,47 @@ export const signInLocal = async (email, password) => {
         users[emailKey] = record;
         saveLocalUsers(users);
       }
-    } else if (res.status === 401) {
-      throw new Error('Incorrect password. Please verify your password and try again.');
-    } else if (res.status === 404 && !record) {
-      throw new Error('No account found with this email. Please check your email or click "Register" to create a new account.');
+    } else {
+      let errJson = null;
+      try {
+        errJson = await res.json();
+      } catch (_) {}
+
+      if (res.status === 401) {
+        throw new Error(errJson?.message || 'Incorrect password. Please verify your password and try again.');
+      } else if (res.status === 404) {
+        if (!record) {
+          throw new Error(errJson?.message || 'No account found with this email. Please check your email or click "Register" to create a new account.');
+        }
+      } else if (res.status === 400) {
+        throw new Error(errJson?.message || 'Invalid sign in request. Please check your email and password format.');
+      } else if (res.status === 403) {
+        throw new Error(errJson?.message || 'Access forbidden (HTTP 403). Identity verification failed.');
+      } else if (res.status >= 500) {
+        serverErrorMessage = `Sync server error (HTTP ${res.status}): ${errJson?.message || res.statusText || 'Internal Server Error'}.`;
+      } else {
+        serverErrorMessage = `Server returned HTTP ${res.status}: ${errJson?.message || res.statusText || 'Sign in request rejected'}.`;
+      }
     }
   } catch (err) {
-    if (err.message.includes('Incorrect password') || err.message.includes('No account found')) {
+    if (
+      err.message.includes('Incorrect password') ||
+      err.message.includes('No account found') ||
+      err.message.includes('Invalid sign in request') ||
+      err.message.includes('Access forbidden')
+    ) {
       throw err;
     }
+    serverErrorMessage = err.message;
     console.warn('[CloudSync] Remote sync login notice:', err.message);
   }
 
   if (!serverAuthSuccess) {
     if (!record) {
-      throw new Error('Unable to connect to sync server. Please verify your internet connection or click "Register" to create a new account.');
+      if (serverErrorMessage) {
+        throw new Error(serverErrorMessage);
+      }
+      throw new Error(`Unable to connect to sync server (HTTP ${serverStatusCode || 'unreachable'}). Please check your connection or click "Register" to create a new account.`);
     }
     if (record.passwordHash && record.passwordHash !== hashedPw && record.passwordHash !== legacyPwHash) {
       throw new Error('Incorrect password. Please try again.');
@@ -671,6 +774,53 @@ export const checkRedirectResult = async () => {
   }
 };
 
+// ─── Offline Queue & Auto-Recovery ───────────────────────────────────────────
+const PENDING_SYNC_QUEUE_KEY = 'nepse_pending_sync_queue';
+
+export const queuePendingSync = (userId, payload, userEmail) => {
+  try {
+    const raw = localStorage.getItem(PENDING_SYNC_QUEUE_KEY);
+    const queue = raw ? JSON.parse(raw) : [];
+    queue.push({ userId, payload, userEmail, queuedAt: Date.now() });
+    localStorage.setItem(PENDING_SYNC_QUEUE_KEY, JSON.stringify(queue.slice(-20)));
+  } catch (_) {}
+};
+
+export const flushPendingSyncQueue = async () => {
+  try {
+    const raw = localStorage.getItem(PENDING_SYNC_QUEUE_KEY);
+    if (!raw) return;
+    const queue = JSON.parse(raw);
+    if (!Array.isArray(queue) || queue.length === 0) return;
+    localStorage.removeItem(PENDING_SYNC_QUEUE_KEY);
+    for (const item of queue) {
+      try {
+        await syncUserDataToCloud(item.userId, item.payload, item.userEmail);
+      } catch (_) {
+        queuePendingSync(item.userId, item.payload, item.userEmail);
+      }
+    }
+  } catch (_) {}
+};
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    console.log('[AuthSync] Connection restored (online event). Flushing pending auth/ledger syncs...');
+    flushPendingSyncQueue().catch(() => {});
+  });
+
+  try {
+    import('@capacitor/app').then(({ App: CapApp }) => {
+      CapApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) {
+          console.log('[AuthSync] App resumed (appStateChange). Flushing pending auth/ledger syncs...');
+          flushPendingSyncQueue().catch(() => {});
+        }
+      });
+    }).catch(() => {});
+  } catch (_) {}
+}
+
 export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null) => {
   if (!userId) return;
 
@@ -724,9 +874,12 @@ export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null
       });
       if (res && res.ok) {
         console.log('[CloudSync] Successfully backed up user data to Cloud Sync API.');
+      } else {
+        queuePendingSync(userId, payload, userEmail);
       }
     } catch (err) {
       console.warn('[CloudSync] Proxy push warning:', err.message);
+      queuePendingSync(userId, payload, userEmail);
     }
   }
 

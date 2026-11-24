@@ -303,8 +303,10 @@ export function evaluateSupportResistanceSignal(candles = [], currentPrice = 0) 
   const priorCandles = candles.slice(Math.max(0, candles.length - 21), candles.length - 1);
   const high20 = priorCandles.length > 0 ? Math.max(...priorCandles.map(c => Number(c.high || c.h || 0))) : ltp;
   const low20 = priorCandles.length > 0 ? Math.min(...priorCandles.map(c => Number(c.low || c.l || ltp))) : ltp;
+  const prevClose = candles.length >= 2 ? Number(candles[candles.length - 2].close || candles[candles.length - 2].c || ltp) : ltp;
+  const pChange = prevClose > 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
 
-  const isBreakout = ltp >= high20 && high20 > 0;
+  const isBreakout = ltp >= high20 && high20 > 0 && pChange > 0;
   const isSupportBounce = ltp > pivots.S1 && (ltp - pivots.S1) / ltp <= 0.02;
 
   // Determine nearest support below LTP

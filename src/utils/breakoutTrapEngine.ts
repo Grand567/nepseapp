@@ -400,7 +400,7 @@ export function calculateBreakoutQuality(
   }
 
   // ── 2. ACTIVE RESISTANCE BREAKOUT ──
-  if (nearestR && (close >= nearestR.price || (high >= nearestR.price + clearanceBuffer && close >= nearestR.price * 0.996))) {
+  if (nearestR && pChange > 0 && (close >= nearestR.price || (high >= nearestR.price + clearanceBuffer && close >= nearestR.price * 0.996))) {
     const isDecisive = close >= (nearestR.price + clearanceBuffer * 0.5);
 
     if (isDecisive && rvol >= 1.25) {

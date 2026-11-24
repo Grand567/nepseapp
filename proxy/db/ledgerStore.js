@@ -74,6 +74,9 @@ if (!fs.existsSync(dbPath) || fs.statSync(dbPath).size < 100000) {
         );
         const restoredStat = fs.statSync(dbPath);
         console.log(`[Drabyashree Ledger] Fast streaming bootstrap restored ${dbPath} (${(restoredStat.size / 1024 / 1024).toFixed(2)} MB) from ${gzFile} in ${Date.now() - t0}ms`);
+        if (global.gc) {
+          try { global.gc(); } catch (_) {}
+        }
         break;
       } catch (err) {
         console.warn(`[Drabyashree Ledger] Failed fast bootstrap from ${gzFile}:`, err.message);
@@ -331,9 +334,30 @@ export class HotDiagnosticCache extends Map {
   }
 }
 
+export function createRadarProxy(raw = { 1: [], 3: [], 5: [], 15: [], 30: [] }) {
+  if (typeof HOT_CACHE !== 'undefined') HOT_CACHE._rawRadar = raw;
+  return new Proxy(raw, {
+    get(target, prop) {
+      const days = parseInt(prop, 10);
+      if ([1, 3, 5, 15, 30].includes(days)) {
+        if (!target[days] || target[days].length === 0) {
+          return computeRadarForTimeframe(days);
+        }
+        return target[days] || [];
+      }
+      return target[prop];
+    },
+    set(target, prop, value) {
+      target[prop] = value;
+      return true;
+    }
+  });
+}
+
 export const HOT_CACHE = {
   lastUpdatedDate: null,
-  radarByTimeframe: { 1: [], 3: [], 5: [], 15: [], 30: [] },
+  _rawRadar: { 1: [], 3: [], 5: [], 15: [], 30: [] },
+  radarByTimeframe: createRadarProxy({ 1: [], 3: [], 5: [], 15: [], 30: [] }),
   stockDiagnostics: new HotDiagnosticCache(), // Key: `${symbol}_${days}` -> Auto-fetching LRU diagnostic cache
   earlyIgnition: [], // Precomputed 3D Early Ignition & Manipulation records sorted by ignitionScore
   signalTrackRecord: null, // Empirical walk-forward T+2 audit track record
@@ -1178,6 +1202,9 @@ export function seedFromSnapshotGz(force = false) {
           try { fs.unlinkSync(tempDbPath); } catch (_) {}
         }
         console.log(`[Drabyashree Ledger] Ultra-fast ATTACH restore completed in ${Date.now() - t0}ms from ${foundGz}.`);
+        if (global.gc) {
+          try { global.gc(); } catch (_) {}
+        }
         return true;
       } catch (attachErr) {
         console.warn(`[Drabyashree Ledger] ATTACH restore notice: ${attachErr.message}. Falling back to snapshot JSON...`);
@@ -1491,7 +1518,8 @@ export async function rebuildHotCache() {
   // Free the raw 340k row array immediately to relieve memory
   allBrokers.length = 0;
 
-  const timeframes = [1, 3, 5, 15, 30];
+  const isRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID);
+  const timeframes = isRender ? [1, 3] : [1, 3, 5, 15, 30];
   const nextRadar = { 1: [], 3: [], 5: [], 15: [], 30: [] };
   const nextDiagnostics = new HotDiagnosticCache();
   const earlyIgnitionList = [];
@@ -1593,7 +1621,7 @@ export async function rebuildHotCache() {
   }
 
   HOT_CACHE.lastUpdatedDate = dates[0];
-  HOT_CACHE.radarByTimeframe = nextRadar;
+  HOT_CACHE.radarByTimeframe = createRadarProxy(nextRadar);
   HOT_CACHE.stockDiagnostics = nextDiagnostics;
   HOT_CACHE.earlyIgnition = earlyIgnitionList.sort((a, b) => b.ignitionScore - a.ignitionScore);
 
@@ -1626,6 +1654,163 @@ export async function rebuildHotCache() {
     activeRebuildPromise = null;
   });
   return activeRebuildPromise;
+}
+
+/**
+ * On-demand computation of 5D, 15D, or 30D timeframe for low-memory Render environments (<270MB RSS).
+ */
+export function computeRadarForTimeframe(days) {
+  const targetDays = parseInt(days, 10);
+  if (![1, 3, 5, 15, 30].includes(targetDays)) return [];
+  if (HOT_CACHE._rawRadar && HOT_CACHE._rawRadar[targetDays] && HOT_CACHE._rawRadar[targetDays].length > 0) {
+    return HOT_CACHE._rawRadar[targetDays];
+  }
+  const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
+  const todayNpt = nowNpt.toISOString().split('T')[0];
+  let dates = db
+    .prepare(`
+      SELECT DISTINCT s.trade_date 
+      FROM daily_stock_summary s
+      WHERE s.calendar_status != 'PARTIAL_SESSION' 
+        AND s.trade_date <= ?
+        AND EXISTS (SELECT 1 FROM daily_broker_ledger b WHERE b.trade_date = s.trade_date)
+      ORDER BY s.trade_date DESC 
+      LIMIT ?
+    `)
+    .all(todayNpt, targetDays)
+    .map((r) => r.trade_date);
+
+  if (dates.length === 0) {
+    dates = db
+      .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' AND trade_date <= ? ORDER BY trade_date DESC LIMIT ?`)
+      .all(todayNpt, targetDays)
+      .map((r) => r.trade_date);
+  }
+  if (dates.length === 0) return [];
+  const oldestDate = dates[dates.length - 1];
+
+  const symbols = db
+    .prepare(`
+      SELECT symbol, SUM(total_turnover) as turnover 
+      FROM daily_stock_summary 
+      WHERE trade_date >= ?
+      GROUP BY symbol 
+      ORDER BY turnover DESC
+    `)
+    .all(oldestDate)
+    .map((r) => r.symbol)
+    .filter((s) => !isNonEquityScrip(s));
+
+  const allSummaries = db
+    .prepare(`SELECT * FROM daily_stock_summary WHERE trade_date >= ? ORDER BY trade_date DESC`)
+    .all(oldestDate);
+  const summariesBySymbol = new Map();
+  for (const s of allSummaries) {
+    let arr = summariesBySymbol.get(s.symbol);
+    if (!arr) {
+      arr = [];
+      summariesBySymbol.set(s.symbol, arr);
+    }
+    arr.push(s);
+  }
+
+  const allBrokers = db
+    .prepare(`SELECT trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt, cross_vol FROM daily_broker_ledger WHERE trade_date >= ?`)
+    .all(oldestDate);
+  const brokersBySymDate = new Map();
+  for (let idx = 0; idx < allBrokers.length; idx++) {
+    const b = allBrokers[idx];
+    const key = `${b.symbol}_${b.trade_date}`;
+    let arr = brokersBySymDate.get(key);
+    if (!arr) {
+      arr = [];
+      brokersBySymDate.set(key, arr);
+    }
+    arr.push({
+      brokerId: b.broker_id,
+      buyVol: b.buy_vol,
+      sellVol: b.sell_vol,
+      buyAmt: b.buy_amt,
+      sellAmt: b.sell_amt,
+      crossVol: b.cross_vol || 0,
+    });
+  }
+  allBrokers.length = 0;
+
+  const resultList = [];
+  for (let i = 0; i < symbols.length; i++) {
+    const symbol = symbols[i];
+    const summs = summariesBySymbol.get(symbol) || [];
+    if (summs.length === 0) continue;
+
+    const dailyHistory = summs.map((s) => ({
+      date: s.trade_date,
+      openPrice: s.open_price,
+      highPrice: s.high_price,
+      lowPrice: s.low_price,
+      closePrice: s.close_price,
+      totalVolume: s.total_volume,
+      totalTurnover: s.total_turnover,
+      brokers: brokersBySymDate.get(`${symbol}_${s.trade_date}`) || [],
+    }));
+
+    const diag = calculateMultiDayDiagnostics(dailyHistory, targetDays, { lean: true });
+    if (diag) {
+      const smInfo = stockMap[symbol] || {};
+      resultList.push({
+        symbol,
+        companyName: smInfo.name || symbol,
+        sector: smInfo.sector || 'Others',
+        timeframeDays: diag.timeframeDays,
+        scopeLabel: diag.scopeLabel,
+        latestClose: diag.latestClose,
+        marketVWAP: diag.marketVWAP,
+        bigBrokerVWAP: diag.bigBrokerVWAP,
+        priceChangePct: diag.priceChangePct,
+        totalVolume: diag.totalVolume,
+        totalTurnover: diag.totalTurnover,
+        bcr5NetPct: diag.bcr5NetPct,
+        scr3NetPct: diag.scr3NetPct,
+        grossBuyConcentrationPct: diag.grossBuyConcentrationPct,
+        grossSellConcentrationPct: diag.grossSellConcentrationPct,
+        smartMoneyNetFlowPct: diag.smartMoneyNetFlowPct,
+        phase: diag.phase,
+        phaseLabel: diag.phaseLabel,
+        buyZoneMin: diag.buyZoneMin,
+        buyZoneMax: diag.buyZoneMax,
+        entryStatus: diag.entryStatus,
+        leadAccumulator: diag.leadAccumulator,
+        leadDistributor: diag.leadDistributor,
+        topAccumulators: diag.topAccumulators,
+        topDistributors: diag.topDistributors,
+        isSyndicateCoAccumulation: diag.isSyndicateCoAccumulation,
+        syndicateBrokers: diag.syndicateBrokers,
+        topBuyers: (diag.topGrossBuyers || []).slice(0, 3).map(b => ({
+          broker: b.brokerId,
+          brokerName: b.brokerName,
+          pct: b.pct,
+          volume: b.buyVol,
+          amount: b.buyAmt
+        })),
+        topSellers: (diag.topGrossSellers || []).slice(0, 3).map(s => ({
+          broker: s.brokerId,
+          brokerName: s.brokerName,
+          pct: s.pct,
+          volume: s.sellVol,
+          amount: s.sellAmt
+        }))
+      });
+    }
+  }
+
+  if (HOT_CACHE._rawRadar) {
+    HOT_CACHE._rawRadar[targetDays] = resultList;
+  }
+  if (global.gc) {
+    try { global.gc(); } catch (_) {}
+  }
+  console.log(`[Drabyashree Cache] On-demand computed ${resultList.length} stocks for ${targetDays}D horizon`);
+  return resultList;
 }
 
 /**

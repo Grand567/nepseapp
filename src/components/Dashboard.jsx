@@ -1561,7 +1561,7 @@ function Dashboard({
       
       const isAlertActive = Boolean(cfg?.triggeredToday) || (activeBreakoutToast?.symbol === sym);
       
-      if ((isPriceBreakout && isVolumeBreakout && pChange > 0) || isAlertActive) {
+      if ((isPriceBreakout && isVolumeBreakout && pChange > 0) || (isAlertActive && pChange > 0)) {
         seen.add(sym);
         breakouts.push({
           stock,
@@ -1581,16 +1581,19 @@ function Dashboard({
         ltp: activeBreakoutToast.ltp
       };
       const ltp = Number(activeBreakoutToast.ltp || st?.ltp || 0);
-      seen.add(activeBreakoutToast.symbol);
-      breakouts.unshift({
-        stock: st,
-        symbol: activeBreakoutToast.symbol,
-        name: activeBreakoutToast.stockName || activeBreakoutToast.symbol,
-        ltp,
-        pChange: Number(st?.pChange || 0),
-        rvol: Number(activeBreakoutToast.rvol || 1.5),
-        volume: Number(st?.volume || st?.totalTradedQuantity || 0)
-      });
+      const toastPChange = Number(activeBreakoutToast?.pChange ?? st?.pChange ?? 0);
+      if (toastPChange > 0) {
+        seen.add(activeBreakoutToast.symbol);
+        breakouts.unshift({
+          stock: st,
+          symbol: activeBreakoutToast.symbol,
+          name: activeBreakoutToast.stockName || activeBreakoutToast.symbol,
+          ltp,
+          pChange: toastPChange,
+          rvol: Number(activeBreakoutToast.rvol || 1.5),
+          volume: Number(st?.volume || st?.totalTradedQuantity || 0)
+        });
+      }
     }
 
     return breakouts;
@@ -3341,8 +3344,8 @@ function Dashboard({
                     <strong style={{ color: '#ffffff', fontSize: 12.5, fontFamily: 'var(--font-mono)', fontWeight: 900 }}>
                       {bo.symbol}
                     </strong>
-                    <span style={{ color: '#34d399', fontSize: 12, fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-                      Rs. {fmt(bo.ltp)} (+{(Number(bo.pChange) || 0).toFixed(2)}%)
+                    <span style={{ color: (Number(bo.pChange) || 0) >= 0 ? '#34d399' : '#f87171', fontSize: 12, fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
+                      Rs. {fmt(bo.ltp)} ({(Number(bo.pChange) || 0) > 0 ? '+' : ''}{(Number(bo.pChange) || 0).toFixed(2)}%)
                     </span>
                     <span style={{
                       color: '#fbbf24',

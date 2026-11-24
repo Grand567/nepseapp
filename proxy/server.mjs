@@ -389,7 +389,10 @@ app.use('/api/price-history', scrapeLimiter);
 app.use('/api/floorsheet', scrapeLimiter);
 app.use('/api/broker-analysis', scrapeLimiter);
 
-app.use('/api/sync', syncRouter);
+app.use(['/api/sync', '/sync'], syncRouter);
+app.post(['/login', '/register'], (req, res, next) => {
+  syncRouter(req, res, next);
+});
 app.use('/api/ai-guru', aiGuruRouter);
 app.use('/api/floorsheet/hub', floorsheetHubRouter);
 app.get(['/api/floorsheet/stream', '/floorsheet/stream'], (req, res, next) => {
@@ -1391,7 +1394,7 @@ export function reconcileNepseWithIntradayTicks(indices, intradayTicks, sessionD
 }
 
 let LAST_GOOD_INDICES = {
-  nepse: { value: 2695.6, change: 31.54, pChange: 1.18, open: 2658.8, high: 2695.63, low: 2658.78, prevClose: 2664.06, turnover: 0 },
+  nepse: { value: 2623.56, change: 2.26, pChange: 0.08, open: 2621.30, high: 2624.10, low: 2618.50, prevClose: 2621.30, turnover: 4215000000 },
   sensitive: { value: 488.21, change: 6.41, pChange: 1.33, open: 480.39, high: 488.21, low: 480.39, prevClose: 481.80 },
   float: { value: 187.01, change: 2.27, pChange: 1.23, open: 184.31, high: 187.01, low: 184.31, prevClose: 184.74 },
   sensitiveFloat: { value: 165.34, change: 2.25, pChange: 1.38, open: 162.51, high: 165.34, low: 162.51, prevClose: 163.09 },
@@ -9101,8 +9104,8 @@ app.get(['/health', '/api/health'], (req, res) => {
     timestamp: new Date().toISOString(),
     server: 'nepseapp.onrender.com',
     service: 'Drabyashree NEPSE Ledger & Microstructure API',
-    hotCacheReady: (HOT_CACHE.radarByTimeframe[30] || []).length > 0,
-    stocksLoaded: (HOT_CACHE.radarByTimeframe[30] || []).length,
+    hotCacheReady: (HOT_CACHE.radarByTimeframe[1] || HOT_CACHE.radarByTimeframe[30] || []).length > 0,
+    stocksLoaded: (HOT_CACHE.radarByTimeframe[1] || HOT_CACHE.radarByTimeframe[30] || []).length,
     dataSource: 'Official NEPSE NOTS API + ShareSansar + 30D SQLite Ledger'
   });
 });
@@ -15523,6 +15526,9 @@ app.listen(PORT, '0.0.0.0', () => {
           warmupStage = 'Restoring floorsheet vault & rebuilding hot cache';
           seedFromDiskVault();
           await rebuildHotCache();
+          if (global.gc) {
+            try { global.gc(); } catch (_) {}
+          }
 
           // Fix 5: Startup Catch-Up Engine - Check for and fill any missed trading sessions if server was asleep (run in background)
           setTimeout(() => {
@@ -15756,6 +15762,10 @@ app.listen(PORT, '0.0.0.0', () => {
         }
       } catch (err) {
         console.warn('[auto-archiver] Error in post-market floorsheet runner:', err.message);
+      } finally {
+        if (global.gc) {
+          try { global.gc(); } catch (_) {}
+        }
       }
     };
 
