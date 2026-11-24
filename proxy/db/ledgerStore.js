@@ -52,20 +52,47 @@ if (!fs.existsSync(RAW_BACKUP_DIR)) {
 
 const dbPath = path.join(DATA_DIR, "drabyashree_ledger.db");
 
-// Fast bootstrap: If SQLite DB doesn't exist or is empty (<100KB), attempt instant restore from drabyashree_ledger.db.gz
+// Fast bootstrap: If SQLite DB doesn't exist, is empty (<100KB), or drabyashree_ledger.db.gz is newer than drabyashree_ledger.db (mtimeMs)
 // Uses low-memory streaming decompression (<2MB RAM) so it never trips Render 512MB RAM limit
-if (!fs.existsSync(dbPath) || fs.statSync(dbPath).size < 100000) {
-  const candidateGzFiles = [
-    path.join(DATA_DIR, "drabyashree_ledger.db.gz"),
-    path.join(process.cwd(), "proxy", "data", "drabyashree_ledger.db.gz"),
-    path.join(process.cwd(), "data", "drabyashree_ledger.db.gz"),
-    path.join(__dirname, "..", "data", "drabyashree_ledger.db.gz"),
-    path.join(__dirname, "..", "proxy", "data", "drabyashree_ledger.db.gz"),
-    path.join(__dirname, "data", "drabyashree_ledger.db.gz"),
-  ];
+const candidateGzFiles = [
+  path.join(DATA_DIR, "drabyashree_ledger.db.gz"),
+  path.join(process.cwd(), "proxy", "data", "drabyashree_ledger.db.gz"),
+  path.join(process.cwd(), "data", "drabyashree_ledger.db.gz"),
+  path.join(__dirname, "..", "data", "drabyashree_ledger.db.gz"),
+  path.join(__dirname, "..", "proxy", "data", "drabyashree_ledger.db.gz"),
+  path.join(__dirname, "data", "drabyashree_ledger.db.gz"),
+];
+
+let existingDbMtime = 0;
+let existingDbSize = 0;
+if (fs.existsSync(dbPath)) {
+  try {
+    const s = fs.statSync(dbPath);
+    existingDbMtime = s.mtimeMs || 0;
+    existingDbSize = s.size || 0;
+  } catch (_) {}
+}
+
+const needsRestore = existingDbSize < 100000 || candidateGzFiles.some(gz => {
+  if (fs.existsSync(gz)) {
+    try {
+      return (fs.statSync(gz).mtimeMs || 0) > existingDbMtime;
+    } catch (_) {}
+  }
+  return false;
+});
+
+if (needsRestore) {
   for (const gzFile of candidateGzFiles) {
     if (fs.existsSync(gzFile)) {
       try {
+        const gzStat = fs.statSync(gzFile);
+        if (existingDbSize >= 100000 && (gzStat.mtimeMs || 0) <= existingDbMtime) {
+          continue;
+        }
+        // Delete stale WAL/SHM files before replacing the main DB
+        try { if (fs.existsSync(`${dbPath}-wal`)) fs.unlinkSync(`${dbPath}-wal`); } catch (_) {}
+        try { if (fs.existsSync(`${dbPath}-shm`)) fs.unlinkSync(`${dbPath}-shm`); } catch (_) {}
         const t0 = Date.now();
         await pipeline(
           fs.createReadStream(gzFile),
@@ -2323,6 +2350,36 @@ export function reconstructMarketDepthFromFloorsheet(symbol, verifiedPrice = nul
 
     const bids = allLevels.filter(l => l.price <= refPrice).sort((a, b) => b.price - a.price).slice(0, 5);
     const asks = allLevels.filter(l => l.price > refPrice).sort((a, b) => a.price - b.price).slice(0, 5);
+
+    // If floorsheet trades were tightly clustered, fill remaining depth levels around refPrice to guarantee 5 bids & 5 asks
+    const tick = refPrice >= 1000 ? 1.0 : refPrice >= 500 ? 0.5 : 0.1;
+    const avgQty = Math.max(10, Math.round((contracts.reduce((acc, c) => acc + (c.kitta || 0), 0) / contracts.length) || 100));
+
+    while (bids.length < 5) {
+      const lastBidPrice = bids.length > 0 ? bids[bids.length - 1].price : refPrice;
+      const nextBidPrice = Number(Math.max(0.1, lastBidPrice - tick).toFixed(1));
+      bids.push({
+        price: nextBidPrice,
+        quantity: avgQty,
+        qty: avgQty,
+        kitta: avgQty,
+        orders: 1,
+        isSyntheticVap: true,
+      });
+    }
+
+    while (asks.length < 5) {
+      const lastAskPrice = asks.length > 0 ? asks[asks.length - 1].price : (bids[0]?.price ? bids[0].price + tick : refPrice + tick);
+      const nextAskPrice = Number((lastAskPrice + tick).toFixed(1));
+      asks.push({
+        price: nextAskPrice,
+        quantity: avgQty,
+        qty: avgQty,
+        kitta: avgQty,
+        orders: 1,
+        isSyntheticVap: true,
+      });
+    }
 
     const totalBidQty = bids.reduce((s, b) => s + b.quantity, 0);
     const totalAskQty = asks.reduce((s, a) => s + a.quantity, 0);

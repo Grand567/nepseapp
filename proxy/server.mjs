@@ -6194,19 +6194,35 @@ function saveMarketDepthSnapshot(symbol, depthData) {
 }
 
 function reconstructClosingOrderBook(symbol, targetDate = '') {
-  if (!targetDate && marketDepthSnapshots[symbol] && marketDepthSnapshots[symbol].bids?.length > 0) {
-    return {
-      ...marketDepthSnapshots[symbol],
-      isOffMarket: true,
-      sessionLabel: 'Closing Session Snapshot (3:00 PM NPT)',
-      source: 'closing_snapshot'
-    };
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  let latestTradingDate = todayIso;
+  try {
+    const row = db.prepare('SELECT MAX(trade_date) as max_d FROM daily_stock_summary').get();
+    if (row?.max_d) latestTradingDate = row.max_d;
+  } catch (_) {}
+
+  const activeDate = targetDate || latestTradingDate;
+
+  if (marketDepthSnapshots[symbol] && marketDepthSnapshots[symbol].bids?.length > 0) {
+    const snapFetchedAt = marketDepthSnapshots[symbol].fetchedAt;
+    const snapDate = snapFetchedAt
+      ? new Date(snapFetchedAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })
+      : '';
+    if (snapDate === activeDate && (!targetDate || snapDate === targetDate)) {
+      return {
+        ...marketDepthSnapshots[symbol],
+        isOffMarket: true,
+        sessionLabel: 'Closing Session Snapshot (3:00 PM NPT)',
+        source: 'closing_snapshot'
+      };
+    }
   }
 
   let stock = null;
-  if (targetDate) {
+  const lookupDate = targetDate || activeDate;
+  if (lookupDate) {
     try {
-      const summary = db.prepare(`SELECT * FROM daily_stock_summary WHERE UPPER(symbol) = ? AND trade_date = ? LIMIT 1`).get(symbol, targetDate);
+      const summary = db.prepare(`SELECT * FROM daily_stock_summary WHERE UPPER(symbol) = ? AND trade_date = ? LIMIT 1`).get(symbol, lookupDate);
       if (summary) {
         stock = {
           symbol,
@@ -6235,7 +6251,7 @@ function reconstructClosingOrderBook(symbol, targetDate = '') {
 
   // Fallback: Reconstruct L2 depth from SQLite floorsheet VAP liquidity clusters
   try {
-    const vapDepth = reconstructMarketDepthFromFloorsheet(symbol, ltp, targetDate);
+    const vapDepth = reconstructMarketDepthFromFloorsheet(symbol, ltp, targetDate || activeDate);
     if (vapDepth && (vapDepth.bids?.length > 0 || vapDepth.asks?.length > 0)) {
       return {
         ...vapDepth,

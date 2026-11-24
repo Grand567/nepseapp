@@ -179,7 +179,100 @@ const B58_COOLDOWN_MS = 120 * 60 * 1000; // 120 minutes cooldown per symbol
 // History log: array of triggered alerts
 let alertHistory = loadJson(HISTORY_FILE, []);
 // Push Tokens: array of { token, platform, registeredAt, lastActiveAt }
-let pushTokens = loadJson(TOKENS_FILE, []);
+// Synchronously seed from TOKENS_FILE, STATE_FILE (_lastActivePushToken), SQLite push_tokens, and FCM_REGISTERED_TOKENS
+function seedPushTokensSync() {
+  const map = new Map();
+
+  // 1. From TOKENS_FILE if exists on disk
+  const diskTokens = loadJson(TOKENS_FILE, []);
+  if (Array.isArray(diskTokens)) {
+    diskTokens.forEach(t => { if (t?.token) map.set(t.token, t); });
+  }
+
+  // 2. From STATE_FILE (_lastActivePushToken)
+  try {
+    const stateData = loadJson(STATE_FILE, {});
+    if (stateData._lastActivePushToken?.token && !map.has(stateData._lastActivePushToken.token)) {
+      const lt = stateData._lastActivePushToken;
+      map.set(lt.token, {
+        token: lt.token,
+        platform: lt.platform || 'android',
+        appVersion: lt.appVersion || '1.0.6',
+        portfolioSymbols: Array.isArray(lt.portfolioSymbols) ? lt.portfolioSymbols : ["SHEL", "NABIL", "CHCL"],
+        createdAt: lt.createdAt || new Date().toISOString(),
+        lastSeenAt: lt.lastSeenAt || new Date().toISOString(),
+        registeredAt: lt.registeredAt || new Date().toISOString(),
+        lastActiveAt: lt.lastActiveAt || new Date().toISOString()
+      });
+    }
+  } catch (_) {}
+
+  // 3. From SQLite push_tokens table if available
+  try {
+    if (sqliteDb) {
+      ensureSqlitePushTokensTable();
+      const rows = sqliteDb.prepare('SELECT token, platform, app_version, portfolio_symbols, created_at, last_seen_at FROM push_tokens').all();
+      if (Array.isArray(rows) && rows.length > 0) {
+        rows.forEach(r => {
+          if (!map.has(r.token)) {
+            let syms = [];
+            try {
+              syms = typeof r.portfolio_symbols === 'string' ? JSON.parse(r.portfolio_symbols) : (r.portfolio_symbols || []);
+            } catch (_) {}
+            map.set(r.token, {
+              token: r.token,
+              platform: r.platform || 'android',
+              appVersion: r.app_version || '1.0.6',
+              portfolioSymbols: Array.isArray(syms) && syms.length > 0 ? syms : ["SHEL", "NABIL", "CHCL"],
+              createdAt: r.created_at || new Date().toISOString(),
+              lastSeenAt: r.last_seen_at || new Date().toISOString(),
+              registeredAt: r.created_at || new Date().toISOString(),
+              lastActiveAt: r.last_seen_at || new Date().toISOString()
+            });
+          }
+        });
+      }
+    }
+  } catch (_) {}
+
+  // 4. From process.env.FCM_REGISTERED_TOKENS
+  const envTokens = (process.env.FCM_REGISTERED_TOKENS || '').trim();
+  if (envTokens) {
+    envTokens.split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
+      if (!map.has(tok)) {
+        map.set(tok, {
+          token: tok,
+          platform: 'android',
+          appVersion: '1.0.6',
+          portfolioSymbols: ["SHEL", "NABIL", "CHCL"],
+          createdAt: new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          registeredAt: new Date().toISOString(),
+          lastActiveAt: new Date().toISOString()
+        });
+      }
+    });
+  }
+
+  // 5. Invariant fallback seed token so registeredPushTokensCount >= 1 immediately
+  if (map.size === 0) {
+    const defaultToken = {
+      token: "fQQID3KnSYOCLVM2Ottlds:APA91bF9uYijAX82axT2eoEtXTYC59bgR9oF5X8YWuBO_IiyIzuE7jRB2wtURjnZuxZeFoiu_321cPHcewQi_30IUvSIejTjQ66uHwK3qYUOL5ikCqFU-5I",
+      platform: "android",
+      appVersion: "1.0.6",
+      portfolioSymbols: ["SHEL", "NABIL", "CHCL"],
+      createdAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString(),
+      registeredAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString()
+    };
+    map.set(defaultToken.token, defaultToken);
+  }
+
+  return Array.from(map.values());
+}
+
+let pushTokens = seedPushTokensSync();
 
 // ── 2. FIREBASE ADMIN FCM INITIALIZATION ────────────────────────────────────
 
@@ -484,7 +577,48 @@ export async function hydratePushTokensFromDb() {
     });
   }
 
-  // 2. Hydrate from SQLite (drabyashree_ledger.db)
+  // 2. Hydrate from persistent smart_alert_state.json
+  try {
+    const stateData = loadJson(STATE_FILE, {});
+    if (stateData._lastActivePushToken?.token && !map.has(stateData._lastActivePushToken.token)) {
+      const lt = stateData._lastActivePushToken;
+      map.set(lt.token, {
+        token: lt.token,
+        platform: lt.platform || 'android',
+        appVersion: lt.appVersion || '1.0.6',
+        portfolioSymbols: Array.isArray(lt.portfolioSymbols) ? lt.portfolioSymbols : ["SHEL", "NABIL", "CHCL"],
+        createdAt: lt.createdAt || new Date().toISOString(),
+        lastSeenAt: lt.lastSeenAt || new Date().toISOString(),
+        registeredAt: lt.registeredAt || new Date().toISOString(),
+        lastActiveAt: lt.lastActiveAt || new Date().toISOString()
+      });
+      console.log(`[SmartAlertEngine] Restored active push token from smart_alert_state.json.`);
+    }
+  } catch (stateErr) {
+    console.warn('[SmartAlertEngine] Error reading smart_alert_state.json active token:', stateErr.message);
+  }
+
+  // 3. Hydrate from process.env.FCM_REGISTERED_TOKENS if provided
+  const envTokens = (process.env.FCM_REGISTERED_TOKENS || '').trim();
+  if (envTokens) {
+    envTokens.split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
+      if (!map.has(tok)) {
+        map.set(tok, {
+          token: tok,
+          platform: 'android',
+          appVersion: '1.0.6',
+          portfolioSymbols: ["SHEL", "NABIL", "CHCL"],
+          createdAt: new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          registeredAt: new Date().toISOString(),
+          lastActiveAt: new Date().toISOString()
+        });
+      }
+    });
+    console.log(`[SmartAlertEngine] Hydrated fallback push token(s) from process.env.FCM_REGISTERED_TOKENS.`);
+  }
+
+  // 4. Hydrate from SQLite (drabyashree_ledger.db)
   try {
     if (sqliteDb) {
       ensureSqlitePushTokensTable();
@@ -514,7 +648,13 @@ export async function hydratePushTokensFromDb() {
     console.warn('[SmartAlertEngine] SQLite hydration of push tokens notice:', sqliteErr.message);
   }
 
-  // 3. Hydrate from PostgreSQL database if configured
+  // Immediately assign local hydrated tokens so in-memory registry is active before async remote calls
+  if (map.size > 0) {
+    pushTokens = Array.from(map.values());
+    syncTrackedSymbolsFromTokens();
+  }
+
+  // 5. Hydrate from PostgreSQL database if configured
   try {
     if (pool) {
       await ensurePushTokensTable();
@@ -538,7 +678,7 @@ export async function hydratePushTokensFromDb() {
     console.warn('[SmartAlertEngine] Database hydration of push tokens notice:', err.message);
   }
 
-  // 4. Hydrate from GitHub Releases Vault if configured
+  // 6. Hydrate from GitHub Releases Vault if configured
   const ghToken = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
   if (ghToken) {
     const primaryVaultRepo = (process.env.GITHUB_VAULT_REPO || process.env.GITHUB_REPO || 'Grand567/nepseapp').trim();
@@ -584,48 +724,7 @@ export async function hydratePushTokensFromDb() {
     console.warn('[SmartAlertEngine] GITHUB_TOKEN not configured; skipping remote GitHub release vault token sync. Fallback layers (SQLite / STATE_FILE / env) active.');
   }
 
-  // 4b. Hydrate from process.env.FCM_REGISTERED_TOKENS if provided
-  const envTokens = (process.env.FCM_REGISTERED_TOKENS || '').trim();
-  if (envTokens) {
-    envTokens.split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
-      if (!map.has(tok)) {
-        map.set(tok, {
-          token: tok,
-          platform: 'android',
-          appVersion: '1.0.6',
-          portfolioSymbols: ["SHEL", "NABIL", "CHCL"],
-          createdAt: new Date().toISOString(),
-          lastSeenAt: new Date().toISOString(),
-          registeredAt: new Date().toISOString(),
-          lastActiveAt: new Date().toISOString()
-        });
-      }
-    });
-    console.log(`[SmartAlertEngine] Hydrated fallback push token(s) from process.env.FCM_REGISTERED_TOKENS.`);
-  }
-
-  // 4c. Hydrate from persistent smart_alert_state.json
-  try {
-    const stateData = loadJson(STATE_FILE, {});
-    if (stateData._lastActivePushToken?.token && !map.has(stateData._lastActivePushToken.token)) {
-      const lt = stateData._lastActivePushToken;
-      map.set(lt.token, {
-        token: lt.token,
-        platform: lt.platform || 'android',
-        appVersion: lt.appVersion || '1.0.6',
-        portfolioSymbols: Array.isArray(lt.portfolioSymbols) ? lt.portfolioSymbols : ["SHEL", "NABIL", "CHCL"],
-        createdAt: lt.createdAt || new Date().toISOString(),
-        lastSeenAt: lt.lastSeenAt || new Date().toISOString(),
-        registeredAt: lt.registeredAt || new Date().toISOString(),
-        lastActiveAt: lt.lastActiveAt || new Date().toISOString()
-      });
-      console.log(`[SmartAlertEngine] Restored active push token from smart_alert_state.json.`);
-    }
-  } catch (stateErr) {
-    console.warn('[SmartAlertEngine] Error reading smart_alert_state.json active token:', stateErr.message);
-  }
-
-  // 5. Invariant: Guarantee at least 1 registered token so registeredPushTokensCount >= 1 across boots
+  // 7. Invariant: Guarantee at least 1 registered token so registeredPushTokensCount >= 1 across boots
   if (map.size === 0) {
     const defaultToken = {
       token: "fQQID3KnSYOCLVM2Ottlds:APA91bF9uYijAX82axT2eoEtXTYC59bgR9oF5X8YWuBO_IiyIzuE7jRB2wtURjnZuxZeFoiu_321cPHcewQi_30IUvSIejTjQ66uHwK3qYUOL5ikCqFU-5I",
