@@ -4215,6 +4215,7 @@ export async function fetchLiveStockQuote(symbol) {
     const res = await fetchFromBackend(`/api/securities/${encodeURIComponent(sym)}/price`, 3500);
     if (res && res.success && res.data) {
       const d = res.data;
+      const tradesVal = Number(d.totalTrades ?? d.totalTransactions ?? d.trades ?? 0);
       const quote = {
         symbol: sym,
         ltp: Number(d.lastTradedPrice || d.closePrice || d.ltp || 0),
@@ -4227,6 +4228,7 @@ export async function fetchLiveStockQuote(symbol) {
         previousClose: Number(d.previousClose || d.prevClose || 0),
         volume: Number(d.totalTradedQuantity || d.volume || 0),
         turnover: Number(d.totalTradedValue || d.turnover || 0),
+        ...(tradesVal > 0 ? { trades: tradesVal, totalTrades: tradesVal, totalTransactions: tradesVal } : {}),
         businessDate: d.businessDate || new Date().toISOString().split('T')[0],
         source: res.source || 'live',
         lastUpdatedMs: Date.now(),

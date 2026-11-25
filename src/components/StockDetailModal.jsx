@@ -1745,7 +1745,7 @@ export default function StockDetailModal({
           }).catch(() => {});
 
           // Refresh live intraday broker execution data every 10 seconds ONLY when viewing 1D live session
-          if (marketStatus.isOpen && !brokerDateRef.current && brokerDaysRef.current === 1 && liveTickCount % 4 === 0) {
+          if (ms.isOpen && !brokerDateRef.current && brokerDaysRef.current === 1 && liveTickCount % 4 === 0) {
             fetchRealBrokerAnalysis(sym, 1, { refresh: true }).then(ba => {
               if (isMounted && ba && brokerDaysRef.current === 1 && !brokerDateRef.current) {
                 setRealBrokerAnalysis(ba);
@@ -1755,7 +1755,7 @@ export default function StockDetailModal({
           }
 
           // Refresh live intraday floorsheet tape every 5 seconds ONLY during live active session when no past date is selected
-          if (marketStatus.isOpen && !floorsheetDate && liveTickCount % 2 === 0 && (activeTab === 'floorsheet' || activeTab === 'market_depth' || activeTab === 'depth_broker' || showHubModal)) {
+          if (ms.isOpen && !floorsheetDate && liveTickCount % 2 === 0 && (activeTab === 'overview' || activeTab === 'floorsheet' || activeTab === 'market_depth' || activeTab === 'depth_broker' || showHubModal)) {
             const lastSeenId = floorsheetRef.current?.rows?.[0]?.contractId || floorsheetRef.current?.rows?.[0]?.contractNo || '';
             fetchRealFloorsheet(sym, '', 1, 500, { refresh: true, sinceContractId: lastSeenId }).then(fs => {
               if (isMounted && fs && Array.isArray(fs.rows) && fs.rows.length > 0) {
@@ -1767,11 +1767,22 @@ export default function StockDetailModal({
                     const seen = new Set(existing.map(r => String(r.contractId || r.contractNo)));
                     const fresh = fs.rows.filter(r => !seen.has(String(r.contractId || r.contractNo)));
                     if (fresh.length === 0) return prev;
+                    const freshQty = fresh.reduce((sum, r) => sum + Number(r.qty || r.quantity || 0), 0);
+                    const freshAmt = fresh.reduce((sum, r) => sum + Number(r.amount || (Number(r.qty || r.quantity || 0) * Number(r.rate || 0))), 0);
+                    const prevBulk = Array.isArray(prev?.bulkTransactions) ? prev.bulkTransactions : [];
+                    const freshBulk = fresh.filter(r => Number(r.qty || r.quantity || 0) >= 1000 || Number(r.amount || 0) >= 500000);
                     return {
                       ...prev,
                       ...fs,
                       rows: [...fresh, ...existing],
-                      totalElements: (prev?.totalElements || existing.length) + fresh.length
+                      trades: [...fresh, ...existing],
+                      totalElements: Number(prev?.totalElements || existing.length) + fresh.length,
+                      totalTrades: Number(prev?.totalTrades || prev?.totalElements || existing.length) + fresh.length,
+                      totalQty: Number(prev?.totalQty || prev?.totalQuantity || 0) + freshQty,
+                      totalQuantity: Number(prev?.totalQuantity || prev?.totalQty || 0) + freshQty,
+                      totalAmount: +(Number(prev?.totalAmount || 0) + freshAmt).toFixed(2),
+                      priceVolumeBreakdown: prev?.priceVolumeBreakdown || fs.priceVolumeBreakdown,
+                      bulkTransactions: [...freshBulk, ...prevBulk].slice(0, 100)
                     };
                   });
                 }
@@ -2816,7 +2827,14 @@ export default function StockDetailModal({
       }
     }
     if ((activeTab === 'broker_analysis' || activeTab === 'depth_broker') && d?.symbol) {
-      if (!realBrokerAnalysis || !realBrokerAnalysis.brokers || realBrokerAnalysis.brokers.length === 0) {
+      const hasBrokerOrMasked = Boolean(
+        realBrokerAnalysis && (
+          (Array.isArray(realBrokerAnalysis.brokers) && realBrokerAnalysis.brokers.length > 0) ||
+          realBrokerAnalysis.isBrokerMaskedIntraday ||
+          (Array.isArray(realBrokerAnalysis.dailyFlow) && realBrokerAnalysis.dailyFlow.length > 0)
+        )
+      );
+      if (!hasBrokerOrMasked) {
         fetchBrokerAnalysisData(brokerDays, brokerDate);
       }
     }
@@ -5136,6 +5154,28 @@ export default function StockDetailModal({
                     {overviewBrokerTapeMode === '1D_LIVE' && (() => {
                       const liveDateStr = latestTradingSession(new Date(), false);
                       const fsDate = String(pure1DBa?.businessDate || pure1DBa?.date || '').slice(0, 10);
+                      const isMaskedLive = Boolean(
+                        pure1DBa?.isBrokerMaskedIntraday ||
+                        (pure1DBa?.source === 'live_intraday_floorsheet' && Number(pure1DBa?.totalVolume || 0) > 0 && !(pure1DBa?.brokers?.length > 0))
+                      );
+                      if (isMaskedLive) {
+                        return (
+                          <span style={{
+                            fontSize: 9.5,
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: 6,
+                            background: 'rgba(56, 189, 248, 0.14)',
+                            color: '#7dd3fc',
+                            border: '1px solid rgba(56, 189, 248, 0.35)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}>
+                            Live Intraday ({fsDate || liveDateStr}) • Broker IDs disclosed at 3:15 PM NPT
+                          </span>
+                        );
+                      }
                       if (fsDate && fsDate < liveDateStr) {
                         return (
                           <span style={{
@@ -5232,6 +5272,10 @@ export default function StockDetailModal({
                       const allBuyTotal = (allTimeBrokerAnalysis?.topAccumulators || allTimeBrokerAnalysis?.allHoldings || []).reduce((s, b) => s + Math.max(0, Number(b.netQty ?? b.holdQty ?? 0)), 0);
                       const allSellTotal = (allTimeBrokerAnalysis?.topDistributors || allTimeBrokerAnalysis?.allDistributors || allTimeBrokerAnalysis?.topSellers || []).reduce((s, b) => s + Math.abs(Number(b.netQty ?? b.sellQty ?? 0)), 0);
                       const allTimeSignal = allTimeBrokerAnalysis?.adSignal || (allBuyTotal > allSellTotal * 1.15 ? 'Smart Money Accumulation' : allSellTotal > allBuyTotal * 1.15 ? 'Operator Offloading' : 'Balanced Cumulative Flow');
+                      const isMasked1D = overviewBrokerTapeMode === '1D_LIVE' && Boolean(
+                        pure1DBa?.isBrokerMaskedIntraday ||
+                        (pure1DBa?.source === 'live_intraday_floorsheet' && Number(pure1DBa?.totalVolume || 0) > 0 && !(pure1DBa?.brokers?.length > 0))
+                      );
                       const isAcc = overviewBrokerTapeMode === '1D_LIVE'
                         ? (pure1DBa?.adSignal === 'Accumulation')
                         : overviewBrokerTapeMode === '5D_SWING'
@@ -5243,7 +5287,7 @@ export default function StockDetailModal({
                           ? (broker5DData?.adSignal === 'Distribution')
                           : (allTimeSignal.includes('Distribution') || allTimeSignal.includes('Offloading'));
                       const label = overviewBrokerTapeMode === '1D_LIVE'
-                        ? (pure1DBa?.adSignal ? `Live: ${pure1DBa.adSignal}` : 'Live: Syncing...')
+                        ? (isMasked1D ? 'Live Intraday Tape' : (pure1DBa?.adSignal ? `Live: ${pure1DBa.adSignal}` : 'Live: Syncing...'))
                         : overviewBrokerTapeMode === '5D_SWING'
                           ? (broker5DData?.adSignal ? `5D: ${broker5DData.adSignal}` : '5D: Syncing...')
                           : allTimeSignal;
@@ -5293,7 +5337,11 @@ export default function StockDetailModal({
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 12, marginTop: 8 }}>
                   <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
                     <div style={{ fontSize: 10, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>
-                      {overviewBrokerTapeMode === '1D_LIVE' ? "Today's Top Buyer" : overviewBrokerTapeMode === '5D_SWING' ? "Top 5D Buyer" : "Top Holding Broker"}
+                      {overviewBrokerTapeMode === '1D_LIVE'
+                        ? ((pure1DBa?.isBrokerMaskedIntraday && !(pure1DBa?.brokers?.length > 0)) ? "Live Session Trades" : "Today's Top Buyer")
+                        : overviewBrokerTapeMode === '5D_SWING'
+                          ? "Top 5D Buyer"
+                          : "Top Holding Broker"}
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
                       {(() => {
@@ -5303,6 +5351,10 @@ export default function StockDetailModal({
                             const qty = Number(top1D.netQty ?? top1D.holdQty ?? top1D.buyVolume ?? top1D.netKitta ?? 0);
                             const bId = top1D.brokerId || top1D.broker || top1D.id;
                             return `#${bId} (${qty.toLocaleString()} sh)`;
+                          }
+                          if (pure1DBa?.isBrokerMaskedIntraday) {
+                            const txCount = Number(pure1DBa?.totalTrades || d?.trades || realFloorsheet?.totalElements || 0);
+                            return txCount > 0 ? `${txCount.toLocaleString()} tx` : 'Live Tape';
                           }
                           return '—';
                         } else if (overviewBrokerTapeMode === '5D_SWING') {
@@ -5435,7 +5487,42 @@ export default function StockDetailModal({
                   </div>
                 )}
 
-                {/* 2-column quick snapshot */}
+                {/* 2-column quick snapshot (or Live Intraday NEPSE masking banner when 1D broker IDs are hidden) */}
+                {(() => {
+                  const isMasked1DView = overviewBrokerTapeMode === '1D_LIVE' && Boolean(
+                    pure1DBa?.isBrokerMaskedIntraday ||
+                    (pure1DBa?.source === 'live_intraday_floorsheet' && Number(pure1DBa?.totalVolume || 0) > 0 && !(pure1DBa?.brokers?.length > 0))
+                  );
+                  if (isMasked1DView) {
+                    const liveDateStr = String(pure1DBa?.businessDate || pure1DBa?.toDate || latestTradingSession(new Date(), false)).slice(0, 10);
+                    const liveVol = Number(pure1DBa?.totalVolume || d?.volume || 0);
+                    const liveTurnover = Number(pure1DBa?.totalTurnover || pure1DBa?.totalAmount || d?.turnover || 0);
+                    const liveTrades = Number(pure1DBa?.totalTrades || d?.trades || realFloorsheet?.totalElements || 0);
+                    const liveVwapVal = Number(pure1DBa?.vwap || (liveVol > 0 && liveTurnover > 0 ? liveTurnover / liveVol : 0) || d?.ltp || 0);
+                    return (
+                      <div style={{
+                        background: 'rgba(56, 189, 248, 0.07)',
+                        border: '1px solid rgba(56, 189, 248, 0.25)',
+                        borderRadius: 12,
+                        padding: '12px 14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 6
+                      }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: '#7dd3fc' }}>
+                          Live Intraday ({liveDateStr}) &bull; {liveVol.toLocaleString()} sh across {liveTrades.toLocaleString()} trades
+                          {liveTurnover > 0 ? ` (${formatBrokerAmount(liveTurnover)})` : ''}
+                          {liveVwapVal > 0 ? ` • VWAP Rs. ${liveVwapVal.toFixed(1)}` : ''}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.5 }}>
+                          NEPSE masks buyer/seller broker IDs during open market hours (11:00 AM – 3:00 PM NPT) and discloses them after market close (~3:15 PM NPT). Switch to <strong>5D SWING</strong> or <strong>NET ACCUMULATION</strong> above to inspect active broker desks.
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+                {!(overviewBrokerTapeMode === '1D_LIVE' && (pure1DBa?.isBrokerMaskedIntraday || (pure1DBa?.source === 'live_intraday_floorsheet' && Number(pure1DBa?.totalVolume || 0) > 0 && !(pure1DBa?.brokers?.length > 0)))) && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
                   {/* Buyers */}
                   <div style={{ background: 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: 12, padding: '12px 14px' }}>
@@ -5541,6 +5628,7 @@ export default function StockDetailModal({
                     </div>
                   </div>
                 </div>
+                )}
               </div>
 
               {/* ── 8. Fundamentals & Valuation Indicators ── */}
@@ -6000,6 +6088,11 @@ export default function StockDetailModal({
           const pure1DDate = String(pure1DBa?.businessDate || pure1DBa?.date || '').slice(0, 10);
           const liveDate = String(todaySessionDate || d?.businessDate || d?.date || '').slice(0, 10);
           const isCrossSessionPure1D = Boolean(pure1DDate && liveDate && pure1DDate !== liveDate);
+          const isMasked1DBroker = Boolean(
+            !isCrossSessionPure1D &&
+            (pure1DBa?.isBrokerMaskedIntraday ||
+              (pure1DBa?.source === 'live_intraday_floorsheet' && liveAccums.length === 0 && liveDists.length === 0))
+          );
           const isSyntheticOrderFlow = Boolean(pure1DBa?.isSyntheticVap || d?.isSyntheticVap || marketDepth?.isSynthetic);
 
           // Total session volume: compute strictly against matching broker dataset's totalVolume when available
@@ -6110,6 +6203,21 @@ export default function StockDetailModal({
               glow: '0 4px 18px rgba(0, 0, 0, 0.3)',
               reason: `Displaying verified broker telemetry from previous trading session (${pure1DDate}). Live intraday tape (${liveDate}) has not yet completed full broker contract settlement.`,
               tacticalTip: `Assess multi-day trend structure while awaiting live broker settlement confirmation.`
+            };
+          } else if (isMasked1DBroker) {
+            const bookBiasLabel = bookBuyPct >= 58 ? 'Demand-Heavy Order Book' : bookBuyPct <= 42 ? 'Supply-Heavy Order Book' : 'Balanced Live Order Book';
+            investVerdict = {
+              badge: `⚡ Live Intraday Order Book (${pure1DDate || liveDate})`,
+              badgeBg: 'rgba(56, 189, 248, 0.16)',
+              badgeColor: '#7dd3fc',
+              badgeBorder: 'rgba(56, 189, 248, 0.4)',
+              cardBg: 'linear-gradient(135deg, rgba(12, 74, 110, 0.42), rgba(15, 23, 42, 0.92))',
+              cardBorder: 'rgba(56, 189, 248, 0.35)',
+              verdictTitle: `${bookBiasLabel.toUpperCase()} — LIVE TAPE (${sessionTradedVol.toLocaleString()} SH)`,
+              verdictColor: '#bae6fd',
+              glow: '0 4px 20px rgba(56, 189, 248, 0.2)',
+              reason: `Live NEPSE Level-2 depth shows ${bookBuyPct}% Bids vs ${bookSellPct}% Asks across ${sessionTradedVol.toLocaleString()} traded shares (VWAP Rs. ${liveWhaleVwap.toFixed(1)}). Individual buyer/seller broker IDs are masked by NEPSE during live trading hours (11:00 AM – 3:00 PM NPT).`,
+              tacticalTip: `Monitor real-time Level-2 bid/ask queue pressure and VWAP (Rs. ${liveWhaleVwap.toFixed(1)}), or check 5D / 1M Accumulation History below for disclosed broker desks.`
             };
           } else if (isWhaleDump) {
             const brokerId = topDist?.broker || topDist?.brokerId || topDist?.id || '?';

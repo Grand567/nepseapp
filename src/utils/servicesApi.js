@@ -276,7 +276,8 @@ export const fetchNepseIntradayGraph = async (symbol, forceRefresh = false) => {
   };
 
   // Tier 1: Query proxy intraday route (supports NEPSE, sub-indices, and equities)
-  const path = sym === 'NEPSE' ? '/api/nepse/intraday-graph' : `/api/nepse/intraday-graph/${encodeURIComponent(sym)}`;
+  const basePath = sym === 'NEPSE' ? '/api/nepse/intraday-graph' : `/api/nepse/intraday-graph/${encodeURIComponent(sym)}`;
+  const path = forceRefresh ? `${basePath}?refresh=true` : basePath;
   const res = await _proxyFetch(path, {}, 15000, forceRefresh);
   const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
   const hasTicks = Array.isArray(data) && data.length > 1 && data.some(d => d && (d.timestamp || d.time || Array.isArray(d)));

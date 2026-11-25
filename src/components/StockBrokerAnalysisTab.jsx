@@ -1835,6 +1835,69 @@ function StockBrokerAnalysisTabInner({
         </div>
       </div>
 
+      {/* Notice banner when NEPSE masks broker IDs during live 1D trading hours (11:00 AM - 3:00 PM NPT) */}
+      {(effectiveDays === 1 || Number(effectiveDays) === 1) && !effectiveDate && brokerRecords.length === 0 && !isTabLoading && (activeBrokerData?.isBrokerMaskedIntraday || (activeBrokerData?.source === 'live_intraday_floorsheet' && Number(activeBrokerData?.totalVolume || 0) > 0)) && (
+        <div style={{
+          marginBottom: 14,
+          padding: '12px 16px',
+          borderRadius: 12,
+          background: 'rgba(56, 189, 248, 0.08)',
+          border: '1px solid rgba(56, 189, 248, 0.3)',
+          color: '#bae6fd',
+          fontSize: 12,
+          lineHeight: 1.5,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 10
+        }}>
+          <div>
+            <strong style={{ color: '#38bdf8' }}>
+              Live Intraday ({String(activeBrokerData?.businessDate || activeBrokerData?.toDate || 'Today').slice(0, 10)}):
+            </strong>{' '}
+            {(Number(activeBrokerData?.totalVolume || 0)).toLocaleString()} shares traded
+            {Number(activeBrokerData?.totalTrades || 0) > 0 ? ` across ${Number(activeBrokerData.totalTrades).toLocaleString()} trades` : ''}
+            {Number(activeBrokerData?.vwap || 0) > 0 ? ` • Market VWAP Rs. ${Number(activeBrokerData.vwap).toFixed(2)}` : ''}.{' '}
+            NEPSE masks buyer/seller broker IDs until market close (3:00 PM NPT). Switch to <strong>5D</strong> or <strong>1M</strong> to inspect active broker desks.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => handleDaysSelect(5)}
+              style={{
+                padding: '4px 10px',
+                borderRadius: 7,
+                background: 'rgba(56, 189, 248, 0.2)',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                color: '#7dd3fc',
+                fontSize: 11,
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+            >
+              5D Window
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDaysSelect(30)}
+              style={{
+                padding: '4px 10px',
+                borderRadius: 7,
+                background: 'rgba(16, 185, 129, 0.2)',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                color: '#34d399',
+                fontSize: 11,
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+            >
+              1M (30D)
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Notice banner when user selects a date that has no floorsheet compiled yet */}
       {effectiveDate && brokerRecords.length === 0 && !isTabLoading && (
         <div style={{
@@ -2346,7 +2409,7 @@ function StockBrokerAnalysisTabInner({
             </div>
           </div>
 
-          {viewMode !== 'datewise' && (tableHoldingView === 'cumulative' ? sortedCumulativeBrokers.length === 0 : filteredBrokers.length === 0) && (
+          {viewMode !== 'datewise' && (tableHoldingView === 'cumulative' ? sortedCumulativeBrokers.length === 0 : filteredBrokers.length === 0) && !(activeBrokerData?.isBrokerMaskedIntraday && !effectiveDate && (effectiveDays === 1 || Number(effectiveDays) === 1)) && (
             <div style={{
               background: '#111827',
               border: '1px solid rgba(255, 255, 255, 0.08)',

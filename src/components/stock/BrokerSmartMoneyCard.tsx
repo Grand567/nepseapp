@@ -427,6 +427,15 @@ function BrokerSmartMoneyCardInner({
     return false;
   };
 
+  const isPayloadBrokerMaskedIntraday = (payload: any) => {
+    if (!payload || typeof payload !== 'object') return false;
+    const vol = Number(payload.totalVolume || payload.dailyFlow?.[0]?.totalVolume || 0);
+    const hasBrokers = Array.isArray(payload.brokers) && payload.brokers.length > 0;
+    const hasBuyers = Array.isArray(payload.topNetBuyers) && payload.topNetBuyers.length > 0;
+    if (payload.isBrokerMaskedIntraday === true) return true;
+    return payload.source === 'live_intraday_floorsheet' && vol > 0 && !hasBrokers && !hasBuyers;
+  };
+
   const [timeframe, setTimeframe] = useState<SmartMoneyTimeframe>(initialTf);
   const [rawPayload, setRawPayload] = useState<any>(() => {
     if (initialData && isInitialMatchingTf(initialTf, initialData)) {
@@ -489,12 +498,10 @@ function BrokerSmartMoneyCardInner({
   }, [cleanSymbol]);
 
   useEffect(() => {
-    if (initialData && !cached1DPayload && timeframe === '1D') {
-      if (!isInitialMultiDay) {
-        setCached1DPayload(initialData);
-      }
-    }
-    if (initialData && !rawPayload) {
+    if (initialData && timeframe === '1D' && !isInitialMultiDay) {
+      setCached1DPayload(initialData);
+      setRawPayload(initialData);
+    } else if (initialData && !rawPayload) {
       if (isInitialMatchingTf(timeframe, initialData)) {
         setRawPayload(initialData);
       }
@@ -572,8 +579,12 @@ function BrokerSmartMoneyCardInner({
 
         const respDays = Number(responseData?.tradingDays || responseData?.timeframeDays || 0);
         const isMultiDayResponse = respDays >= 6;
+        const isMasked1D = timeframe === '1D' && isPayloadBrokerMaskedIntraday(responseData);
 
-        if (normalizedCheck.length === 0 || (timeframe === '1M' && !isMultiDayResponse && respDays > 0)) {
+        if (isMasked1D) {
+          setRawPayload(responseData);
+          setCached1DPayload(responseData);
+        } else if (normalizedCheck.length === 0 || (timeframe === '1M' && !isMultiDayResponse && respDays > 0)) {
           if (timeframe === '1M' || timeframe === 'ALL') {
             setLoadError(`${timeframe === '1M' ? '1M (30D)' : 'All-time'} broker ledger unavailable offline — Tap Retry`);
             setRawPayload(null);
@@ -737,6 +748,30 @@ function BrokerSmartMoneyCardInner({
     };
   }, [rawPayload, timeframe, brokerBaselineShares, currentPrice, initialData]);
 
+  const isMaskedIntraday1D = timeframe === '1D' && isPayloadBrokerMaskedIntraday(rawPayload);
+  const maskedLiveStats = useMemo(() => {
+    if (!isMaskedIntraday1D || !rawPayload) return null;
+    const row = Array.isArray((rawPayload as any).dailyFlow) ? (rawPayload as any).dailyFlow[0] : null;
+    const totalVolume = Number((rawPayload as any).totalVolume || row?.totalVolume || 0);
+    const totalTurnover = Number((rawPayload as any).totalTurnover || (rawPayload as any).totalAmount || row?.totalAmount || 0);
+    const totalTrades = Number((rawPayload as any).totalTrades || row?.totalTrades || 0);
+    const marketVWAP = Number(
+      (rawPayload as any).vwap ||
+      row?.vwap ||
+      (totalVolume > 0 && totalTurnover > 0 ? (totalTurnover / totalVolume).toFixed(2) : 0) ||
+      currentPrice ||
+      0
+    );
+    const sessionDate = String(
+      (rawPayload as any).businessDate ||
+      (rawPayload as any).toDate ||
+      (rawPayload as any).date ||
+      row?.date ||
+      ''
+    ).slice(0, 10);
+    return { totalVolume, totalTurnover, totalTrades, marketVWAP, sessionDate };
+  }, [isMaskedIntraday1D, rawPayload, currentPrice]);
+
   return (
     <div className="bg-slate-950 border border-slate-800/90 rounded-2xl p-4 md:p-5 text-slate-100 shadow-xl space-y-4">
       {/* 1. HEADER & 1D / 5D / 1M TIMEFRAME SWITCHER */}
@@ -857,6 +892,84 @@ function BrokerSmartMoneyCardInner({
       )}
 
       {/* 2. SMART-MONEY SUMMARY TELEMETRY STRIP */}
+      {isMaskedIntraday1D && maskedLiveStats ? (
+        <div className="space-y-3">
+          <div className="bg-sky-500/10 border border-sky-500/30 text-sky-200 px-3.5 py-2.5 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span className="font-bold text-sky-300">Live Intraday ({maskedLiveStats.sessionDate || 'Today'}):</span>{' '}
+              NEPSE masks broker IDs until market close (3:00 PM NPT). Switch to <strong>5D</strong> or <strong>1M</strong> to inspect active broker desks.
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => handleSelectTimeframe('5D')}
+                className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/35 text-sky-200 border border-sky-400/30 font-bold text-[11px] cursor-pointer transition"
+              >
+                Switch to 5D
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectTimeframe('1M')}
+                className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/35 text-indigo-200 border border-indigo-400/30 font-bold text-[11px] cursor-pointer transition"
+              >
+                Switch to 1M
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-slate-900/80 border border-sky-500/30 rounded-xl p-3">
+              <div className="text-[11px] uppercase tracking-wider text-sky-400 font-semibold">
+                Live Session Date
+              </div>
+              <div className="text-base md:text-lg font-bold font-mono text-white mt-1">
+                {maskedLiveStats.sessionDate || 'Live'}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                {maskedLiveStats.totalTrades > 0 ? `${formatInt(maskedLiveStats.totalTrades)} live trades` : 'Intraday floorsheet stream'}
+              </div>
+            </div>
+
+            <div className="bg-slate-900/80 border border-emerald-500/30 rounded-xl p-3">
+              <div className="text-[11px] uppercase tracking-wider text-emerald-400 font-semibold">
+                Live Volume (1D)
+              </div>
+              <div className="text-base md:text-lg font-bold font-mono text-emerald-400 mt-1">
+                {formatInt(maskedLiveStats.totalVolume)} kitta
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                Matched live exchange shares
+              </div>
+            </div>
+
+            <div className="bg-slate-900/80 border border-slate-800/90 rounded-xl p-3">
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                Live Turnover (1D)
+              </div>
+              <div className="text-base md:text-lg font-bold font-mono text-white mt-1">
+                {formatLakhs(maskedLiveStats.totalTurnover)}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                Gross traded value today
+              </div>
+            </div>
+
+            <div className="bg-slate-900/80 border border-purple-500/30 rounded-xl p-3">
+              <div className="text-[11px] uppercase tracking-wider text-purple-300 font-semibold">
+                Market VWAP (1D)
+              </div>
+              <div className="text-base md:text-lg font-bold font-mono text-white mt-1">
+                {formatPrice(maskedLiveStats.marketVWAP)}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                {currentPrice > 0 && maskedLiveStats.marketVWAP > 0
+                  ? `LTP vs VWAP: ${(((currentPrice - maskedLiveStats.marketVWAP) / maskedLiveStats.marketVWAP) * 100 >= 0 ? '+' : '')}${(((currentPrice - maskedLiveStats.marketVWAP) / maskedLiveStats.marketVWAP) * 100).toFixed(2)}%`
+                  : 'Intraday volume-weighted avg'}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Top Holding Broker Till Now */}
         <div className="bg-slate-900/80 border border-sky-500/30 rounded-xl p-3 relative group">
@@ -939,6 +1052,7 @@ function BrokerSmartMoneyCardInner({
           </div>
         </div>
       </div>
+      )}
 
       {/* 2B. COMPREHENSIVE ALL BROKER HOLDINGS TILL NOW TABLE */}
       {showAllHolders && allHoldersList && allHoldersList.length > 0 && (
@@ -1052,7 +1166,7 @@ function BrokerSmartMoneyCardInner({
             🔄 Retry Loading {timeframe}
           </button>
         </div>
-      ) : topAccumulators.length === 0 && topDistributors.length === 0 ? (
+      ) : isMaskedIntraday1D ? null : topAccumulators.length === 0 && topDistributors.length === 0 ? (
         <div className="py-10 text-center text-xs text-slate-400 border border-dashed border-slate-800 rounded-xl">
           No floor-sheet broker records found for <strong>{cleanSymbol}</strong> in the{' '}
           {timeframe} window.

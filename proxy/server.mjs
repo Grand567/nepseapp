@@ -6696,9 +6696,10 @@ app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async 
       return res.json({ success: true, data });
     }
 
-    // Off-Market or NOTS depth returned empty: serve closing session order book snapshot
+    // Off-Market or NOTS depth returned empty: serve closing session order book snapshot.
+    // Keep fallback TTL brief during open market hours so transient NOTS glitches recover on the next 5s poll.
     const closingDepth = reconstructClosingOrderBook(symbol, targetDate);
-    setCache(cacheKey, closingDepth, 30 * 1000);
+    setCache(cacheKey, closingDepth, isMarketOpen ? 4 * 1000 : 30 * 1000);
     return res.json({ success: true, data: closingDepth });
   } catch (err) {
     console.error(`[market-depth] ${symbol}:`, err.message);
@@ -9804,6 +9805,10 @@ app.get('/api/market/live', async (req, res) => {
           data: withBroker
         };
         setCache(cacheKey, result, isMarketOpen ? 3000 : 15000);
+        for (const s of withBroker) {
+          if (s?.symbol) _symbolPriceMapCache.set(s.symbol, s);
+        }
+        _symbolPriceMapLastUpdate = Date.now();
         return result;
       }
 
@@ -9845,6 +9850,10 @@ app.get('/api/market/live', async (req, res) => {
           data: withBroker
         };
         setCache(cacheKey, result, isMarketOpen ? 3000 : 15000);
+        for (const s of withBroker) {
+          if (s?.symbol) _symbolPriceMapCache.set(s.symbol, s);
+        }
+        _symbolPriceMapLastUpdate = Date.now();
         return result;
       }
 
@@ -9967,6 +9976,39 @@ app.get('/api/audit/broker-verify/:symbol', async (req, res) => {
 const _symbolPriceMapCache = new Map();
 let _symbolPriceMapLastUpdate = 0;
 
+function buildSingleStockPriceResponse(rawSymbol, stock) {
+  const ltp = Number(stock.ltp ?? stock.lastTradedPrice ?? stock.closePrice ?? 0);
+  const volume = Number(stock.volume ?? stock.totalTradedQuantity ?? 0);
+  const turnover = Number(stock.turnover ?? stock.totalTradedValue ?? 0);
+  const tradesCount = Number(stock.totalTrades ?? stock.totalTransactions ?? stock.trades ?? 0);
+  return {
+    etag: `W/"${rawSymbol}-${ltp}-${volume}-${tradesCount}"`,
+    payload: {
+      success: true,
+      isMockData: false,
+      source: `REAL DATA - NEPSE (${rawSymbol})`,
+      symbol: rawSymbol,
+      data: {
+        symbol: rawSymbol,
+        openPrice: Number(stock.open ?? stock.openPrice ?? ltp),
+        highPrice: Number(stock.high ?? stock.highPrice ?? ltp),
+        lowPrice: Number(stock.low ?? stock.lowPrice ?? ltp),
+        closePrice: ltp,
+        lastTradedPrice: ltp,
+        previousClose: Number(stock.prevClose ?? stock.previousClose ?? ltp),
+        percentageChange: Number(stock.pChange ?? stock.percentageChange ?? 0),
+        pointChange: Number(stock.change ?? stock.pointChange ?? 0),
+        totalTradedQuantity: volume,
+        totalTradedValue: turnover,
+        totalTrades: tradesCount,
+        totalTransactions: tradesCount,
+        trades: tradesCount,
+        businessDate: formatNptDateIso(new Date())
+      }
+    }
+  };
+}
+
 app.get('/api/securities/:symbol/price', async (req, res) => {
   try {
     const rawSymbol = sanitizeSymbol(req.params.symbol);
@@ -9975,67 +10017,55 @@ app.get('/api/securities/:symbol/price', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=2, stale-while-revalidate=5');
 
     const now = Date.now();
-    if (_symbolPriceMapCache.has(rawSymbol) && (now - _symbolPriceMapLastUpdate < 5000)) {
-      const stock = _symbolPriceMapCache.get(rawSymbol);
-      const etag = `W/"${rawSymbol}-${stock.ltp}-${stock.volume}"`;
+    const fastMarket = getCache('market-live-fast');
+    const cachedMarketStock = Array.isArray(fastMarket?.data)
+      ? fastMarket.data.find(s => s?.symbol === rawSymbol)
+      : null;
+
+    const cachedSingleStock = cachedMarketStock ||
+      (_symbolPriceMapCache.has(rawSymbol) && (now - _symbolPriceMapLastUpdate < 5000) ? _symbolPriceMapCache.get(rawSymbol) : null);
+
+    if (cachedSingleStock) {
+      const { etag, payload } = buildSingleStockPriceResponse(rawSymbol, cachedSingleStock);
       if (req.headers['if-none-match'] === etag) {
         return res.status(304).end();
       }
       res.setHeader('ETag', etag);
-      return res.json({
-        success: true,
-        isMockData: false,
-        source: `REAL DATA - NEPSE (${rawSymbol})`,
-        symbol: rawSymbol,
-        data: {
-          symbol: rawSymbol,
-          openPrice: stock.open,
-          highPrice: stock.high,
-          lowPrice: stock.low,
-          closePrice: stock.ltp,
-          lastTradedPrice: stock.ltp,
-          previousClose: stock.prevClose,
-          percentageChange: stock.pChange,
-          pointChange: stock.change,
-          totalTradedQuantity: stock.volume,
-          totalTradedValue: stock.turnover,
-          businessDate: new Date().toISOString().split('T')[0]
-        }
-      });
+      return res.json(payload);
     }
 
-    const summary = await fetchInternalMeroMarketSummary();
-    if (summary?.stocks && Array.isArray(summary.stocks)) {
-      for (const s of summary.stocks) {
-        if (s.symbol) _symbolPriceMapCache.set(s.symbol, s);
-      }
-      _symbolPriceMapLastUpdate = Date.now();
+    let stock = null;
+    if (getProxyMarketStatus()?.isOpen) {
+      try {
+        const marketPayload = await Promise.race([
+          nepseManager.getLiveOrClosingMarket(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('NOTS live timeout')), 4000))
+        ]);
+        if (marketPayload?.isOpen && Array.isArray(marketPayload.data) && marketPayload.data.length > 0) {
+          for (const item of marketPayload.data) {
+            if (item?.symbol) _symbolPriceMapCache.set(item.symbol, item);
+          }
+          _symbolPriceMapLastUpdate = Date.now();
+          stock = marketPayload.data.find(s => s?.symbol === rawSymbol) || null;
+        }
+      } catch (_) {}
     }
-    const stock = summary?.stocks?.find(s => s.symbol === rawSymbol);
+
+    if (!stock) {
+      const summary = await fetchInternalMeroMarketSummary();
+      if (summary?.stocks && Array.isArray(summary.stocks)) {
+        for (const s of summary.stocks) {
+          if (s.symbol) _symbolPriceMapCache.set(s.symbol, s);
+        }
+        _symbolPriceMapLastUpdate = Date.now();
+      }
+      stock = summary?.stocks?.find(s => s.symbol === rawSymbol) || null;
+    }
 
     if (stock) {
-      const etag = `W/"${rawSymbol}-${stock.ltp}-${stock.volume}"`;
+      const { etag, payload } = buildSingleStockPriceResponse(rawSymbol, stock);
       res.setHeader('ETag', etag);
-      return res.json({
-        success: true,
-        isMockData: false,
-        source: `REAL DATA - NEPSE (${rawSymbol})`,
-        symbol: rawSymbol,
-        data: {
-          symbol: rawSymbol,
-          openPrice: stock.open,
-          highPrice: stock.high,
-          lowPrice: stock.low,
-          closePrice: stock.ltp,
-          lastTradedPrice: stock.ltp,
-          previousClose: stock.prevClose,
-          percentageChange: stock.pChange,
-          pointChange: stock.change,
-          totalTradedQuantity: stock.volume,
-          totalTradedValue: stock.turnover,
-          businessDate: new Date().toISOString().split('T')[0]
-        }
-      });
+      return res.json(payload);
     }
 
     const history = await getPriceHistoryInternal(rawSymbol, 1);
@@ -11970,10 +12000,14 @@ app.get('/api/nepse/intraday-graph/:symbol', async (req, res) => {
   const symbol = (req.params.symbol || '').toUpperCase().trim();
   if (!symbol) return res.json({ success: false, data: [] });
 
+  const refresh = req.query.refresh === 'true';
+  const liveMarketOpen = isMarketOpen();
   const cacheKey = `stock-intraday-${symbol}`;
-  const cached = getCache(cacheKey);
-  if (cached && Array.isArray(cached) && cached.length > 0) {
-    return res.json({ success: true, data: cached, cached: true });
+  if (!refresh) {
+    const cached = getCache(cacheKey);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      return res.json({ success: true, data: cached, cached: true });
+    }
   }
 
   // Tier 1: Authentic NEPSE NOTS Security Daily Graph
@@ -12001,7 +12035,7 @@ app.get('/api/nepse/intraday-graph/:symbol', async (req, res) => {
 
       if (formatted.length > 0) {
         lastKnownStockIntraday.set(symbol, formatted);
-        setCache(cacheKey, formatted, 60 * 1000);
+        setCache(cacheKey, formatted, liveMarketOpen ? 12 * 1000 : 60 * 1000);
         return res.json({ success: true, data: formatted, count: formatted.length, source: 'nepse-official-security-daily' });
       }
     }
@@ -12012,7 +12046,7 @@ app.get('/api/nepse/intraday-graph/:symbol', async (req, res) => {
   // Tier 2: FloorSheet transactions timeline fallback
   try {
     const fsResult = await Promise.race([
-      nepseClient.getFloorSheet({ symbol, page: 0, size: 100 }),
+      nepseClient.getSymbolLiveFloorsheet(symbol, { page: 0, size: 100 }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Floorsheet timeout')), 3500))
     ]);
     const rawTrades = fsResult?.floorsheets?.content || fsResult?.content || [];

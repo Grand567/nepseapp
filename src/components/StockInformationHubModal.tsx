@@ -496,7 +496,12 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
           setIsLiveBrokerUpdating(true);
           fetchRealBrokerAnalysis(sym, 1, { refresh: open })
             .then(fresh => {
-              if (isMounted && fresh && (fresh.brokers?.length > 0 || fresh.topNetBuyers?.length > 0)) {
+              const hasMaskedIntradayVol = Boolean(
+                fresh &&
+                fresh.isBrokerMaskedIntraday === true &&
+                (Number(fresh.totalVolume || 0) > 0 || (Array.isArray(fresh.dailyFlow) && fresh.dailyFlow.length > 0))
+              );
+              if (isMounted && fresh && (fresh.brokers?.length > 0 || fresh.topNetBuyers?.length > 0 || hasMaskedIntradayVol)) {
                 setLiveBrokerPayload(fresh);
               }
             })

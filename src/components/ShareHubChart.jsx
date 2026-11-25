@@ -11,6 +11,7 @@ import {
 } from 'lightweight-charts';
 import { fetchRealPriceHistory } from '../utils/liveData';
 import { fetchNepseIntradayGraph } from '../utils/servicesApi';
+import { isMarketOpen } from '../utils/nepseCalendar';
 import {
   Activity,
   Maximize2,
@@ -353,28 +354,36 @@ export default function ShareHubChart({
     const reqId = ++intradayReqRef.current;
     if (rawHistory.length === 0) setLoading(true);
 
-    async function loadIntraday() {
+    async function loadIntraday(forceRefresh = false) {
       try {
         const cleanSymbol = (symbol === 'NEPSE Index' || symbol === 'nepse' || !symbol) ? 'NEPSE' : symbol;
-        const res = await fetchNepseIntradayGraph(cleanSymbol);
+        const res = await fetchNepseIntradayGraph(cleanSymbol, forceRefresh);
         if (!isMounted || reqId !== intradayReqRef.current) return;
         if (res && Array.isArray(res) && res.length > 0) {
           setIntradayData(res);
           setError(null);
-        } else {
+        } else if (!forceRefresh) {
           setIntradayData([]);
         }
       } catch (err) {
         console.warn('[ShareHubChart] Intraday fetch error:', err);
-        if (isMounted && reqId === intradayReqRef.current) setIntradayData([]);
+        if (isMounted && reqId === intradayReqRef.current && !forceRefresh) setIntradayData([]);
       } finally {
         if (isMounted && reqId === intradayReqRef.current) setLoading(false);
       }
     }
 
-    loadIntraday();
+    loadIntraday(false);
+    const pollInterval = isMarketOpen()
+      ? setInterval(() => {
+          if (isMounted && isMarketOpen()) {
+            loadIntraday(true);
+          }
+        }, 15000)
+      : null;
     return () => {
       isMounted = false;
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, [activeTf, symbol, rawHistory]);
 
