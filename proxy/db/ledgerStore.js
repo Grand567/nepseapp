@@ -139,8 +139,8 @@ export const db = new Database(dbPath, { timeout: 10000 });
 db.pragma("journal_mode = WAL");
 db.pragma("synchronous = NORMAL");
 db.pragma("busy_timeout = 10000"); // Wait up to 10 seconds on concurrent locks before SQLITE_BUSY
-const sqliteCacheKb = parseInt(process.env.SQLITE_CACHE_KB || "-64000", 10);
-db.pragma(`cache_size = ${sqliteCacheKb}`); // 64MB SQLite in-memory page cache
+const sqliteCacheKb = parseInt(process.env.SQLITE_CACHE_KB || "-16000", 10);
+db.pragma(`cache_size = ${sqliteCacheKb}`); // 16MB SQLite in-memory page cache (optimized for 512MB RAM)
 db.pragma("temp_store = FILE");
 db.pragma("mmap_size = 0"); // Disable memory mapping to preserve container RAM
 

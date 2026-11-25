@@ -2,8 +2,8 @@ name: Render Keep-Alive Heartbeat
 
 on:
   schedule:
-    # Pings the backend every 10 minutes to prevent Render free-tier containers from spinning down
-    - cron: '*/10 * * * *'
+    # Pings the backend every 5 minutes to prevent Render free-tier containers from spinning down
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
