@@ -550,7 +550,7 @@ function BrokerSmartMoneyCardInner({
         let responseData: any;
 
         if (onFetchSmartMoney) {
-          responseData = await onFetchSmartMoney(cleanSymbol, timeframe, days);
+          responseData = await (onFetchSmartMoney as any)(cleanSymbol, timeframe, days, abortController.signal);
         } else {
           // Standard fetch with both timeframe=5D and days=5 query params for backend compatibility
           const res = await fetch(

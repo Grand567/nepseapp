@@ -5190,6 +5190,13 @@ app.get('/api/trading-dates', async (req, res) => {
    ═══════════════════════════════════════════════════ */
 const liveSymbolRefreshState = new Map();
 
+function isLiveOrPostCloseSettlementWindow(now = getAppNow()) {
+  if (isMarketOpen(now)) return true;
+  if (!isNepseTradingDay(now)) return false;
+  const nptMins = (now.getUTCHours() * 60 + now.getUTCMinutes() + 345) % 1440;
+  return nptMins >= (15 * 60) && nptMins < (15 * 60 + 45);
+}
+
 async function refreshAndReadLiveSymbolContracts(symbol, todayIso, {
   forceRefresh = false,
   maxPages = 10,
@@ -5333,7 +5340,7 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
   const refresh = req.query.refresh === 'true';
   const sinceContractId = String(req.query.sinceContractId || req.query.afterContractNo || '').trim();
   const todayIso = formatNptDateIso(new Date());
-  const isLiveTrading = isMarketOpen();
+  const isLiveTrading = isLiveOrPostCloseSettlementWindow();
   const isLiveToday1D = isLiveTrading && days === 1 && (!businessDate || businessDate === todayIso) && !fromDate && !toDate;
   const effectiveFsTtl = (ms) => (isLiveToday1D ? Math.min(ms, 15 * 1000) : ms);
 
@@ -6189,8 +6196,8 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
     } catch (_) {}
   }
 
-  const isLiveTrading = isMarketOpen();
-  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  const isLiveTrading = isLiveOrPostCloseSettlementWindow();
+  const todayIso = formatNptDateIso(new Date());
   const isTodaySession = !date || date === todayIso;
   const isLiveToday1D = isLiveTrading && days === 1 && isTodaySession && !fromDate && !toDate;
   const effectiveCacheTtl = (ms) => (isLiveToday1D ? Math.min(ms, 15 * 1000) : ms);
@@ -6592,6 +6599,7 @@ function reconstructClosingOrderBook(symbol, targetDate = '') {
         previousClose: Number(stock?.previousClose || stock?.previousDayClosePrice || ltp),
         volume: Number(stock?.totalTradedQuantity || 0),
         isOffMarket: true,
+        isSynthetic: true,
         source: 'floorsheet_vap_depth'
       };
     }
@@ -9114,7 +9122,7 @@ app.get([
   const isAll = req.query.days === 'all' || req.query.days === 'ALL' || tf === 'ALL' || parseInt(req.query.days, 10) >= 300;
   const sessionLimit = isAll ? 9999 : (req.query.days ? Math.max(1, parseInt(req.query.days, 10) || 1) : (tf === '5D' ? 5 : tf === '1M' ? 20 : 1));
   const queryDate = String(req.query.date || '').trim();
-  const isLiveTrading = isMarketOpen();
+  const isLiveTrading = isLiveOrPostCloseSettlementWindow();
   if (isLiveTrading && (sessionLimit === 1 || !queryDate)) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
@@ -9150,77 +9158,32 @@ app.get([
 
     let rows = null;
     let liveDateUsed = null;
-    const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
-    if (isLiveTrading && (sessionLimit === 1 || tf === '1D') && (!queryDate || queryDate === todayIso)) {
+    const todayIso = formatNptDateIso(new Date());
+    const isLiveOrSettlement1D = isLiveOrPostCloseSettlementWindow();
+    if (isLiveOrSettlement1D && (sessionLimit === 1 || tf === '1D') && (!queryDate || queryDate === todayIso)) {
       try {
-        await refreshAndReadLiveSymbolContracts(symbol, todayIso, {
+        const { contracts: todayContracts } = await refreshAndReadLiveSymbolContracts(symbol, todayIso, {
           forceRefresh: req.query.refresh === 'true',
           maxPages: 8,
           timeoutMs: 6500
         });
 
-        const liveRows = db.prepare(`
-          SELECT
-            buyer_broker AS brokerId,
-            SUM(kitta) AS buyVolume,
-            0 AS sellVolume,
-            COUNT(*) AS buyTrades,
-            COUNT(*) AS buyTradesCount,
-            0 AS sellTrades,
-            0 AS sellTradesCount,
-            SUM(amount) AS buyAmount,
-            0 AS sellAmount,
-            0 AS crossVolume
-          FROM floorsheet_contracts
-          WHERE UPPER(symbol) = ? AND trade_date = ? AND buyer_broker > 0
-          GROUP BY buyer_broker
-        `).all(symbol, todayIso);
-
-        const liveSellRows = db.prepare(`
-          SELECT
-            seller_broker AS brokerId,
-            0 AS buyVolume,
-            SUM(kitta) AS sellVolume,
-            0 AS buyTrades,
-            0 AS buyTradesCount,
-            COUNT(*) AS sellTrades,
-            COUNT(*) AS sellTradesCount,
-            0 AS buyAmount,
-            SUM(amount) AS sellAmount,
-            0 AS crossVolume
-          FROM floorsheet_contracts
-          WHERE UPPER(symbol) = ? AND trade_date = ? AND seller_broker > 0
-          GROUP BY seller_broker
-        `).all(symbol, todayIso);
-
-        if (liveRows.length > 0 || liveSellRows.length > 0) {
-          const brokerMap = new Map();
-          for (const r of [...liveRows, ...liveSellRows]) {
-            const bId = String(r.brokerId);
-            const cur = brokerMap.get(bId) || {
-              brokerId: bId,
-              buyVolume: 0,
-              sellVolume: 0,
-              buyTrades: 0,
-              buyTradesCount: 0,
-              sellTrades: 0,
-              sellTradesCount: 0,
-              buyAmount: 0,
-              sellAmount: 0,
-              crossVolume: 0
-            };
-            cur.buyVolume += Number(r.buyVolume || 0);
-            cur.sellVolume += Number(r.sellVolume || 0);
-            cur.buyTrades += Number(r.buyTrades || 0);
-            cur.buyTradesCount += Number(r.buyTradesCount || 0);
-            cur.sellTrades += Number(r.sellTrades || 0);
-            cur.sellTradesCount += Number(r.sellTradesCount || 0);
-            cur.buyAmount += Number(r.buyAmount || 0);
-            cur.sellAmount += Number(r.sellAmount || 0);
-            brokerMap.set(bId, cur);
+        if (Array.isArray(todayContracts) && todayContracts.length > 0) {
+          const aggregated1D = aggregateFloorsheetRows(todayContracts, symbol, [todayIso]);
+          if (aggregated1D && (aggregated1D.brokers?.length > 0 || aggregated1D.totalVolume > 0)) {
+            aggregated1D.toDate = todayIso;
+            aggregated1D.businessDate = todayIso;
+            const enriched1D = enrichWithMicrostructure(symbol, 1, aggregated1D, todayIso);
+            enriched1D.toDate = todayIso;
+            enriched1D.businessDate = todayIso;
+            enriched1D.marketVWAP = enriched1D.marketVWAP || enriched1D.vwap || 0;
+            return res.json({
+              success: true,
+              ...enriched1D,
+              data: enriched1D.brokers || [],
+              source: enriched1D.isBrokerMaskedIntraday ? 'live_intraday_floorsheet' : 'live_1d_settled_floorsheet'
+            });
           }
-          rows = Array.from(brokerMap.values()).sort((a, b) => (b.buyVolume - b.sellVolume) - (a.buyVolume - a.sellVolume));
-          liveDateUsed = todayIso;
         }
       } catch (liveErr) {
         console.warn(`[smart-money] Error querying live intraday contracts for ${symbol}:`, liveErr.message);

@@ -1612,6 +1612,7 @@ export default function StockDetailModal({
   const brokerDaysRef = useRef(brokerDays);
   const brokerDateRef = useRef(brokerDate);
   const floorsheetRef = useRef(realFloorsheet);
+  const activeSymbolRef = useRef(initialSym);
   useEffect(() => { brokerDaysRef.current = brokerDays; }, [brokerDays]);
   useEffect(() => { brokerDateRef.current = brokerDate; }, [brokerDate]);
   useEffect(() => { floorsheetRef.current = realFloorsheet; }, [realFloorsheet]);
@@ -1681,6 +1682,10 @@ export default function StockDetailModal({
   useEffect(() => {
     const sym = resolvedStock?.symbol;
     if (!sym) return;
+    activeSymbolRef.current = sym;
+    floorsheetSeqRef.current += 1;
+    brokerSeqRef.current += 1;
+    depthSeqRef.current += 1;
     setRealBrokerAnalysis(null);
     setBroker1DData(null);
     setBroker5DData(null);
@@ -1691,6 +1696,11 @@ export default function StockDetailModal({
     setMarketDepthLoading(false);
     setAiResult('');
     setLedgerTelemetry(null);
+    if (isMarketOpen()) {
+      setModalSessionDate('');
+      setFloorsheetDate('');
+      setBrokerDate('');
+    }
   }, [resolvedStock?.symbol]);
 
   // Preload verified available trading sessions on mount
@@ -1708,6 +1718,10 @@ export default function StockDetailModal({
     if (!sym) return;
 
     let isMounted = true;
+    let quoteInFlight = false;
+    let depthInFlight = false;
+    let brokerInFlight = false;
+    let fsInFlight = false;
 
     // Immediately fetch single-stock live quote on modal open
     fetchLiveStockQuote(sym).then(q => {
@@ -1725,37 +1739,44 @@ export default function StockDetailModal({
       setClockTime(ms.nptTime);
 
       if (ms.isOpen || ms.isPreOpen) {
-        fetchLiveStockQuote(sym).then(q => {
-          if (isMounted && q && q.ltp > 0) {
-            setLiveQuote(q);
-          }
-        }).catch(() => {});
+        if (!quoteInFlight) {
+          quoteInFlight = true;
+          fetchLiveStockQuote(sym).then(q => {
+            if (isMounted && q && q.ltp > 0) {
+              setLiveQuote(q);
+            }
+          }).catch(() => {}).finally(() => { quoteInFlight = false; });
+        }
 
-        // Proactively refresh market depth, broker flow, and live floorsheet if viewing relevant tabs or hub modal
-        if (
-          activeTab === 'depth_broker' || 
-          activeTab === 'market_depth' || 
-          activeTab === 'broker_analysis' || 
+        // Proactively refresh market depth, broker flow, and live floorsheet ONLY for the active visible tab (skip if shadowed by HubModal)
+        if (!showHubModal && (
+          activeTab === 'depth_broker' ||
+          activeTab === 'market_depth' ||
+          activeTab === 'broker_analysis' ||
           activeTab === 'floorsheet' ||
-          activeTab === 'overview' ||
-          showHubModal
-        ) {
-          fetchMarketDepth(sym, modalSessionDate).then(depth => {
-            if (isMounted && depth) setRealMarketDepth(depth);
-          }).catch(() => {});
+          activeTab === 'overview'
+        )) {
+          if (!depthInFlight && (activeTab === 'market_depth' || activeTab === 'depth_broker')) {
+            depthInFlight = true;
+            fetchMarketDepth(sym, ms.isOpen ? '' : modalSessionDate).then(depth => {
+              if (isMounted && depth) setRealMarketDepth(depth);
+            }).catch(() => {}).finally(() => { depthInFlight = false; });
+          }
 
           // Refresh live intraday broker execution data every 10 seconds ONLY when viewing 1D live session
-          if (ms.isOpen && !brokerDateRef.current && brokerDaysRef.current === 1 && liveTickCount % 4 === 0) {
+          if (!brokerInFlight && ms.isOpen && !brokerDateRef.current && brokerDaysRef.current === 1 && liveTickCount % 4 === 0) {
+            brokerInFlight = true;
             fetchRealBrokerAnalysis(sym, 1, { refresh: true }).then(ba => {
               if (isMounted && ba && brokerDaysRef.current === 1 && !brokerDateRef.current) {
                 setRealBrokerAnalysis(ba);
                 setBroker1DData(ba);
               }
-            }).catch(() => {});
+            }).catch(() => {}).finally(() => { brokerInFlight = false; });
           }
 
           // Refresh live intraday floorsheet tape every 5 seconds ONLY during live active session when no past date is selected
-          if (ms.isOpen && !floorsheetDate && liveTickCount % 2 === 0 && (activeTab === 'overview' || activeTab === 'floorsheet' || activeTab === 'market_depth' || activeTab === 'depth_broker' || showHubModal)) {
+          if (!fsInFlight && ms.isOpen && !floorsheetDate && liveTickCount % 2 === 0 && (activeTab === 'overview' || activeTab === 'floorsheet' || activeTab === 'market_depth' || activeTab === 'depth_broker')) {
+            fsInFlight = true;
             const lastSeenId = floorsheetRef.current?.rows?.[0]?.contractId || floorsheetRef.current?.rows?.[0]?.contractNo || '';
             fetchRealFloorsheet(sym, '', 1, 500, { refresh: true, sinceContractId: lastSeenId }).then(fs => {
               if (isMounted && fs && Array.isArray(fs.rows) && fs.rows.length > 0) {
@@ -1787,7 +1808,7 @@ export default function StockDetailModal({
                   });
                 }
               }
-            }).catch(() => {});
+            }).catch(() => {}).finally(() => { fsInFlight = false; });
           }
         }
       }
@@ -1797,7 +1818,7 @@ export default function StockDetailModal({
       isMounted = false;
       clearInterval(tickInterval);
     };
-  }, [resolvedStock?.symbol, activeTab, modalSessionDate]);
+  }, [resolvedStock?.symbol, activeTab, modalSessionDate, showHubModal]);
 
   // Derived stock merged with live fundamentals with complete null safety (Strictly NO mock data)
   const d = useMemo(() => {
@@ -2713,17 +2734,18 @@ export default function StockDetailModal({
     }
   }, [propEffectiveDate, handleModalSessionDateChange]);
 
-  const handleFetchSmartMoney = useCallback(async (sym, tf, days) => {
+  const handleFetchSmartMoney = useCallback(async (sym, tf, days, externalSignal) => {
     const isAll = tf === 'ALL' || days === 'all' || days === 'ALL';
     if (isAll && allTimeBrokerAnalysis && (allTimeBrokerAnalysis.topHoldings?.length > 0 || allTimeBrokerAnalysis.brokers?.length > 0)) {
       return allTimeBrokerAnalysis;
     }
     // Instant offline/in-memory cache fast-path (< 1ms)
     const localFast = await fetchRealBrokerAnalysis(sym, days, { refresh: false }).catch(() => null);
+    if (externalSignal?.aborted) return null;
     const localFastDays = Number(localFast?.tradingDays || localFast?.timeframeDays || 0);
     const isLocalFastValid = Boolean(
       localFast &&
-      (localFast.brokers?.length > 0 || localFast.topBuyers?.length > 0 || localFast.topHoldings?.length > 0) &&
+      (localFast.brokers?.length > 0 || localFast.topBuyers?.length > 0 || localFast.topHoldings?.length > 0 || localFast.isBrokerMaskedIntraday) &&
       (
         (days === 1 && localFastDays <= 1) ||
         (days === 5 && localFastDays <= 5) ||
@@ -2736,6 +2758,8 @@ export default function StockDetailModal({
     }
     try {
       const controller = new AbortController();
+      const onExternalAbort = () => controller.abort();
+      if (externalSignal) externalSignal.addEventListener('abort', onExternalAbort, { once: true });
       const timer = setTimeout(() => controller.abort(), 8000);
       const base = getProxyBase();
       const resp = await fetch(`${base}/api/stocks/${encodeURIComponent(sym)}/smart-money?timeframe=${tf}&days=${days}`, {
@@ -2743,9 +2767,12 @@ export default function StockDetailModal({
         signal: controller.signal
       });
       clearTimeout(timer);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
       if (resp.ok) {
         const res = await resp.json();
-        if (res?.data && res.data.length > 0) return res;
+        if (res && ((Array.isArray(res.data) && res.data.length > 0) || res.isBrokerMaskedIntraday || Number(res.totalVolume || 0) > 0)) {
+          return res;
+        }
       }
     } catch (_) {}
     return isLocalFastValid ? localFast : null;
@@ -3947,12 +3974,13 @@ export default function StockDetailModal({
             onClick={async () => {
               const sym = d.symbol;
               if (!sym) return;
+              const dSeq = ++depthSeqRef.current;
               try {
                 const q = await fetchLiveStockQuote(sym);
-                if (q && q.ltp > 0) setLiveQuote(q);
+                if (q && q.ltp > 0 && activeSymbolRef.current === sym) setLiveQuote(q);
                 if (activeTab === 'market_depth' || activeTab === 'depth_broker') {
-                  const depth = await fetchMarketDepth(sym);
-                  if (depth) setRealMarketDepth(depth);
+                  const depth = await fetchMarketDepth(sym, isMarketOpen() ? '' : modalSessionDate);
+                  if (depth && depthSeqRef.current === dSeq && activeSymbolRef.current === sym) setRealMarketDepth(depth);
                 }
                 if (activeTab === 'floorsheet') {
                   fetchFloorsheetData(floorsheetPage, { refresh: true });
@@ -6940,9 +6968,15 @@ export default function StockDetailModal({
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span>Level-2 Market Depth Order Book</span>
-                    <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 6, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-                      Live Point-in-Time Order Queue (Unfilled Limit Orders)
-                    </span>
+                    {!marketDepth?.isOffMarket && !marketDepth?.isSynthetic && marketDepth?.source !== 'floorsheet_vap_depth' ? (
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 6, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+                        Live Point-in-Time Order Queue (Unfilled Limit Orders)
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                        {marketDepth?.isSynthetic || marketDepth?.source === 'floorsheet_vap_depth' ? 'Synthetic VAP Liquidity Fallback' : 'Closing Session Depth'}
+                      </span>
+                    )}
                     {marketDepth?.isOffMarket ? (
                       <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
                         🌙 {marketDepth?.sessionLabel || 'Closing Session Snapshot (3:00 PM NPT)'}

@@ -478,10 +478,11 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     if (!sym || sym === 'UNSELECTED') return;
 
     let isMounted = true;
+    let brokerInFlight = false;
+    let fsInFlight = false;
 
     const isRelevantTab =
       activeTab === 'BROKER_FLOW' ||
-      activeTab === 'OVERVIEW' ||
       activeTab === 'MARKET_DEPTH' ||
       activeTab === 'FLOORSHEET' ||
       activeTab === 'VOLUME_PROFILE';
@@ -489,10 +490,13 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     if (isRelevantTab) {
       const pollLiveData = () => {
         if (!isMounted) return;
+        const todayIsoNow = formatNptDateIso ? formatNptDateIso(new Date()) : new Date().toISOString().slice(0, 10);
+        if (activeSubfileDate && activeSubfileDate !== 'ALL' && activeSubfileDate !== todayIsoNow) return;
         const open = isMarketOpen();
 
         // 1. Poll Broker Intelligence
-        if (open || !liveBrokerPayload) {
+        if ((open || !liveBrokerPayload) && !brokerInFlight) {
+          brokerInFlight = true;
           setIsLiveBrokerUpdating(true);
           fetchRealBrokerAnalysis(sym, 1, { refresh: open })
             .then(fresh => {
@@ -507,12 +511,14 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
             })
             .catch(() => {})
             .finally(() => {
+              brokerInFlight = false;
               if (isMounted) setIsLiveBrokerUpdating(false);
             });
         }
 
         // 2. Poll Floorsheet Tape with Incremental Delta (Active during session, on floorsheet/volume_profile tabs, or when buffer is empty)
-        if (open || activeTab === 'FLOORSHEET' || activeTab === 'VOLUME_PROFILE' || liveFloorsheetContracts.length === 0) {
+        if (!fsInFlight && (open || activeTab === 'FLOORSHEET' || activeTab === 'VOLUME_PROFILE' || liveFloorsheetContracts.length === 0)) {
+          fsInFlight = true;
           setIsLiveFloorsheetUpdating(true);
           const lastSeenId = liveFloorsheetRef.current.length > 0
             ? String(liveFloorsheetRef.current[0]?.contractNo || liveFloorsheetRef.current[0]?.contractId || '')
@@ -537,6 +543,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
             })
             .catch(() => {})
             .finally(() => {
+              fsInFlight = false;
               if (isMounted) setIsLiveFloorsheetUpdating(false);
             });
         }
@@ -568,7 +575,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
         if (typeof unsubscribeSse === 'function') unsubscribeSse();
       };
     }
-  }, [activeTab, resolvedSymbol]);
+  }, [activeTab, resolvedSymbol, activeSubfileDate]);
 
   const telemetry = useMemo(
     () =>
@@ -1173,7 +1180,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
       telemetry.floorsheetTape?.[0]?.tradeDate ||
       null;
 
-    const isLiveToday = (isLive && Boolean(liveBrokerPayload)) || (rawDate === todayIso && isLive);
+    const isLiveToday = Boolean(isLive && rawDate && rawDate === todayIso);
     const isTodayClosed = (rawDate === todayIso && !isLive) || (marketStatus?.isTradingDay && !isLive && rawDate === todayIso);
     const activeDateStr = (isLiveToday || isTodayClosed) ? todayIso : (rawDate || lastValidDay);
     const timeStr = marketStatus?.nptTimeStr || new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu', hour12: false });

@@ -4020,7 +4020,10 @@ export async function fetchMarketDepth(symbol, date) {
   if (!sym) return null;
 
   try {
-    const qDate = date ? `?date=${encodeURIComponent(date)}` : "";
+    const mktOpen = isNepseLiveWindowNow();
+    const todayKtm = getKathmanduDateIso();
+    const effectiveDate = mktOpen && (!date || date !== todayKtm) ? '' : date;
+    const qDate = effectiveDate ? `?date=${encodeURIComponent(effectiveDate)}` : "";
     const res = await fetchFromBackend(`/api/nepse/market-depth/${encodeURIComponent(sym)}${qDate}`, 35000) || await fetchFromBackend(`/api/market-depth/${encodeURIComponent(sym)}${qDate}`, 35000);
     if (res && res.success && res.data) {
       const bids = Array.isArray(res.data.bids) ? res.data.bids : [];
@@ -4041,6 +4044,7 @@ export async function fetchMarketDepth(symbol, date) {
         spread: res.data.spread || (asks[0]?.price && bids[0]?.price ? Number(Math.max(0, asks[0].price - bids[0].price).toFixed(2)) : 0),
         spreadPct: res.data.spreadPct || 0,
         isOffMarket: Boolean(res.data.isOffMarket),
+        isSynthetic: Boolean(res.data.isSynthetic || res.data.source === 'floorsheet_vap_depth'),
         sessionLabel: res.data.sessionLabel || (res.data.isOffMarket ? 'Closing Session Snapshot (3:00 PM NPT)' : 'Live NOTS Order Book'),
         demandStatus: res.data.demandStatus || ((bids.length > 0 || asks.length > 0) ? 'Balanced Flow' : 'No Active Live Orders'),
         source: res.data.source || 'live',
