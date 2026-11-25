@@ -4,5 +4,5 @@ main = "worker.js"
 compatibility_date = "2024-09-23"
 account_id = "4b656ef0d7219550c9efab59181f6f53"
 
-# [vars]
-# TARGET_ORIGIN = "https://drabyashree-nepse-hub.onrender.com"
+[vars]
+TARGET_ORIGIN = "https://drabyashree-nepse-hub.onrender.com"

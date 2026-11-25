@@ -12,12 +12,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Send Uptime Heartbeat to Render Proxy
+      - name: Send Uptime Heartbeat to Render Proxies and Cloudflare CDN
         run: |
-          echo "Pinging https://nepseapp.onrender.com/api/ping..."
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "https://nepseapp.onrender.com/api/ping" || echo "000")
-          echo "Render Ping Response HTTP Status: $HTTP_STATUS"
-          
-          echo "Pinging https://nepseapp.onrender.com/api/health..."
-          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "https://nepseapp.onrender.com/api/health" || echo "000")
-          echo "Render Health Response HTTP Status: $HEALTH_STATUS"
+          for HOST in "https://drabyashree-nepse-hub.onrender.com" "https://nepseapp.onrender.com"; do
+            echo "Pinging ${HOST}/api/ping..."
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 45 "${HOST}/api/ping" || echo "000")
+            echo "${HOST} Ping Response HTTP Status: $HTTP_STATUS"
+
+            echo "Pinging ${HOST}/api/health..."
+            HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 45 "${HOST}/api/health" || echo "000")
+            echo "${HOST} Health Response HTTP Status: $HEALTH_STATUS"
+          done
+
+          echo "Pinging https://drabyashree-nepse-cdn.shreeksuwal.workers.dev/health..."
+          CDN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "https://drabyashree-nepse-cdn.shreeksuwal.workers.dev/health" || echo "000")
+          echo "Cloudflare CDN Health Response HTTP Status: $CDN_STATUS"
