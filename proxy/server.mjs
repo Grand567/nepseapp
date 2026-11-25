@@ -1,3 +1,14 @@
+import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __serverDir = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config();
+if (fs.existsSync(path.join(__serverDir, '.env'))) {
+  dotenv.config({ path: path.join(__serverDir, '.env'), override: true });
+}
+
 import express from 'express';
 import compression from 'compression';
 import zlib from 'zlib';
@@ -12,8 +23,6 @@ import { CookieJar } from 'tough-cookie';
 import { wrapper } from 'axios-cookiejar-support';
 import { initDB, query } from './db.mjs';
 import { startWorkers, getVerifiedPostMarketPrimePick, setVerifiedPostMarketPrimePick, initWorkerDependencies } from './workers.mjs';
-import fs from 'fs';
-import path from 'path';
 import meroshareRouter from './meroshare.js';
 import { getLiveIpoListings } from './ipoHelper.js';
 import { predictIndexDirection, scoreAllStocks, getScoredNewsSentiment, predictMultiHorizonProbabilities } from './quant/predictorEngine.mjs';
@@ -181,7 +190,6 @@ import {
   getEvaluatedPromoterLockinList,
   getScripPromoterLockin
 } from './utils/promoterLockinEngine.mjs';
-import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -390,7 +398,8 @@ app.use('/api/price-history', scrapeLimiter);
 app.use('/api/floorsheet', scrapeLimiter);
 app.use('/api/broker-analysis', scrapeLimiter);
 
-app.use(['/api/sync', '/sync'], syncRouter);
+app.use('/api/sync', syncRouter);
+app.use('/sync', syncRouter);
 app.post(['/login', '/register'], (req, res, next) => {
   syncRouter(req, res, next);
 });
@@ -5177,6 +5186,133 @@ app.get('/api/trading-dates', async (req, res) => {
 });
 
 /* ═══════════════════════════════════════════════════
+   LIVE 1D INTRADAY FLOORSHEET HELPER (<= 8s BOUNDED, 15s REFRESH)
+   ═══════════════════════════════════════════════════ */
+const liveSymbolRefreshState = new Map();
+
+async function refreshAndReadLiveSymbolContracts(symbol, todayIso, {
+  forceRefresh = false,
+  maxPages = 10,
+  timeoutMs = 7500
+} = {}) {
+  const cleanSym = String(symbol || '').toUpperCase().trim();
+  if (!cleanSym || !todayIso) return { contracts: [], source: 'none' };
+
+  const stateKey = `${cleanSym}:${todayIso}`;
+  const existing = liveSymbolRefreshState.get(stateKey);
+  if (existing?.inFlight) {
+    try { await existing.inFlight; } catch (_) {}
+  } else {
+    const isStale = !existing || (Date.now() - existing.lastRefreshedAt >= 15 * 1000);
+    if (forceRefresh || isStale) {
+      const refreshTask = (async () => {
+        const deadline = Date.now() + Math.min(Math.max(Number(timeoutMs) || 7500, 1000), 8000);
+        let freshContracts = [];
+        try {
+          const fsRes = await nepseClient.getSymbolLiveFloorsheet(cleanSym, {
+            maxPages,
+            pageSize: 500,
+            timeoutMs: Math.max(1000, deadline - Date.now())
+          });
+          if (Array.isArray(fsRes?.rows) && fsRes.rows.length > 0) {
+            freshContracts = fsRes.rows;
+          }
+        } catch (liveFsErr) {
+          console.warn(`[live-floorsheet] NOTS fetch notice for ${cleanSym}: ${liveFsErr.message}`);
+        }
+
+        const remainingMs = deadline - Date.now();
+        if (freshContracts.length === 0 && remainingMs > 800) {
+          try {
+            const naRes = await axios.get(
+              `https://nepsealpha.com/api/smx9156/live_floorsheet?symbol=${encodeURIComponent(cleanSym)}`,
+              { timeout: Math.min(3500, remainingMs) }
+            );
+            const naData = naRes?.data?.data || [];
+            if (Array.isArray(naData) && naData.length > 0) {
+              freshContracts = naData.map(t => ({
+                contractId: t.id,
+                buyerMemberId: String(t.buyer_broker || ''),
+                buyerBroker: String(t.buyer_broker || ''),
+                sellerMemberId: String(t.seller_broker || ''),
+                sellerBroker: String(t.seller_broker || ''),
+                contractQuantity: Number(t.quantity || 0),
+                contractAmount: Number(t.amount || 0),
+                contractRate: Number(t.rate || 0),
+                businessDate: t.date || todayIso,
+                stockSymbol: cleanSym
+              }));
+            }
+          } catch (_) {}
+        }
+
+        const todayOnlyContracts = freshContracts
+          .filter(t => {
+            const rowSym = String(t.stockSymbol || t.symbol || cleanSym).toUpperCase().trim();
+            const rowDate = String(t.businessDate || t.tradeDate || '').slice(0, 10);
+            return rowSym === cleanSym && (!rowDate || rowDate === todayIso);
+          })
+          .map(t => ({ ...t, businessDate: todayIso, stockSymbol: cleanSym }));
+
+        if (todayOnlyContracts.length > 0) {
+          try {
+            ingestFloorsheetContracts(todayOnlyContracts, todayIso);
+          } catch (ingestErr) {
+            console.warn(`[live-floorsheet] SQLite upsert notice for ${cleanSym}:`, ingestErr.message);
+          }
+        }
+
+        if (liveSymbolRefreshState.size > 500) {
+          const oldestKey = liveSymbolRefreshState.keys().next().value;
+          if (oldestKey) liveSymbolRefreshState.delete(oldestKey);
+        }
+        liveSymbolRefreshState.set(stateKey, {
+          lastRefreshedAt: Date.now(),
+          inFlight: null,
+          lastFresh: todayOnlyContracts
+        });
+      })();
+
+      liveSymbolRefreshState.set(stateKey, {
+        lastRefreshedAt: existing?.lastRefreshedAt || 0,
+        inFlight: refreshTask,
+        lastFresh: existing?.lastFresh || []
+      });
+      try {
+        await refreshTask;
+      } catch (_) {
+        const cur = liveSymbolRefreshState.get(stateKey);
+        if (cur) cur.inFlight = null;
+      }
+    }
+  }
+
+  let dbContracts = [];
+  if (db) {
+    try {
+      dbContracts = db.prepare(`
+        SELECT contract_no as contractId, symbol as stockSymbol, symbol,
+               trade_date as businessDate, trade_time as tradeTime,
+               buyer_broker as buyerMemberId, buyer_broker as buyerBroker,
+               seller_broker as sellerMemberId, seller_broker as sellerBroker,
+               kitta as contractQuantity, kitta as quantity, kitta as qty,
+               rate as contractRate, rate,
+               amount as contractAmount, amount
+        FROM floorsheet_contracts
+        WHERE UPPER(symbol) = ? AND trade_date = ?
+        ORDER BY contract_no DESC
+      `).all(cleanSym, todayIso);
+    } catch (_) {}
+  }
+
+  const fallbackFresh = liveSymbolRefreshState.get(stateKey)?.lastFresh || [];
+  const contracts = (Array.isArray(dbContracts) && dbContracts.length > 0)
+    ? dbContracts
+    : fallbackFresh;
+  return { contracts, source: contracts.length > 0 ? 'live_intraday_floorsheet' : 'empty' };
+}
+
+/* ═══════════════════════════════════════════════════
    REAL DATA ENDPOINT B — Real Floorsheet (via @rumess/nepse-api)
    GET /api/floorsheet/:symbol? (optional symbol for market-wide or stock-specific)
    ═══════════════════════════════════════════════════ */
@@ -5196,17 +5332,146 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
   const selfMatchedOnly = req.query.selfMatchedOnly === 'true';
   const refresh = req.query.refresh === 'true';
   const sinceContractId = String(req.query.sinceContractId || req.query.afterContractNo || '').trim();
+  const todayIso = formatNptDateIso(new Date());
+  const isLiveTrading = isMarketOpen();
+  const isLiveToday1D = isLiveTrading && days === 1 && (!businessDate || businessDate === todayIso) && !fromDate && !toDate;
+  const effectiveFsTtl = (ms) => (isLiveToday1D ? Math.min(ms, 15 * 1000) : ms);
+
+  if (isLiveToday1D) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+  }
+
   const cacheKey = `floorsheet-${symbol || 'market'}-${businessDate}-d${days}-${fromDate}-${toDate}-b${buyer}-s${seller}-br${broker}-mq${minQty}-ma${minAmount}-sm${selfMatchedOnly}-p${page}-s${size}`;
   if (!refresh && !sinceContractId) {
     const cached = getCache(cacheKey);
-    if (cached) return res.json({ success: true, data: cached, cached: true });
+    if (cached) {
+      const cachedDate = String(cached.businessDate || '').slice(0, 10);
+      if (!isLiveToday1D || cachedDate === todayIso) {
+        return res.json({ success: true, data: cached, cached: true });
+      }
+      cache.delete(cacheKey);
+    }
   }
 
   try {
     const cleanSym = (symbol || '').toUpperCase().trim();
 
-    // 1. Primary for 1D Session (Market-wide or Symbol-specific): Serve directly from authentic full session floorsheet (NOTS exchange records)
-    if (days === 1 && !fromDate && !toDate) {
+    // 0. Live 1D Symbol Floorsheet Fast Path: fetch symbol-filtered NOTS trades (<= 8s), upsert/dedupe SQLite, never fall back to yesterday
+    if (isLiveToday1D && cleanSym) {
+      try {
+        const { contracts: liveContracts } = await refreshAndReadLiveSymbolContracts(cleanSym, todayIso, {
+          forceRefresh: refresh,
+          maxPages: 10,
+          timeoutMs: 7500
+        });
+        if (Array.isArray(liveContracts) && liveContracts.length > 0) {
+          let filtered = liveContracts;
+          if (buyer) filtered = filtered.filter(t => String(t.buyerMemberId || t.buyerBroker) === buyer);
+          if (seller) filtered = filtered.filter(t => String(t.sellerMemberId || t.sellerBroker) === seller);
+          if (broker) filtered = filtered.filter(t => String(t.buyerMemberId || t.buyerBroker) === broker || String(t.sellerMemberId || t.sellerBroker) === broker);
+          if (minQty > 0) filtered = filtered.filter(t => Number(t.contractQuantity || t.quantity || t.qty || 0) >= minQty);
+          if (minAmount > 0) filtered = filtered.filter(t => Number(t.contractAmount || t.amount || 0) >= minAmount);
+          if (selfMatchedOnly) filtered = filtered.filter(t => String(t.buyerMemberId || t.buyerBroker) === String(t.sellerMemberId || t.sellerBroker));
+          if (sinceContractId) {
+            filtered = filtered.filter(t => {
+              const cNo = String(t.contractId || t.contract_no || '');
+              const numA = Number(cNo.replace(/\D/g, '')) || 0;
+              const numB = Number(sinceContractId.replace(/\D/g, '')) || 0;
+              return (numA > 0 && numB > 0) ? numA > numB : cNo > sinceContractId;
+            });
+          }
+
+          const totalElements = filtered.length;
+          const totalPages = totalElements > 0 ? Math.max(1, Math.ceil(totalElements / size)) : 0;
+          const totalAmount = +filtered.reduce((s, item) => s + Number(item.contractAmount || item.amount || (Number(item.contractQuantity || 0) * Number(item.contractRate || 0))), 0).toFixed(2);
+          const totalQty = filtered.reduce((s, item) => s + Number(item.contractQuantity || item.quantity || item.qty || 0), 0);
+          const paged = filtered.slice(page * size, (page + 1) * size);
+
+          const rows = paged.map(item => ({
+            contractId: String(item.contractId || item.contract_no || ''),
+            stockSymbol: cleanSym,
+            symbol: cleanSym,
+            buyerBroker: String(item.buyerMemberId || item.buyerBroker || ''),
+            buyerBrokerName: item.buyerBrokerName || getBrokerName(item.buyerMemberId || item.buyerBroker),
+            sellerBroker: String(item.sellerMemberId || item.sellerBroker || ''),
+            sellerBrokerName: item.sellerBrokerName || getBrokerName(item.sellerMemberId || item.sellerBroker),
+            qty: Number(item.contractQuantity || item.quantity || item.qty || 0),
+            quantity: Number(item.contractQuantity || item.quantity || item.qty || 0),
+            rate: Number(item.contractRate || item.rate || 0),
+            amount: Number(item.contractAmount || item.amount || (Number(item.contractQuantity || 0) * Number(item.contractRate || 0))),
+            businessDate: todayIso,
+            tradeTime: item.tradeTime || ''
+          }));
+
+          const rateMap = {};
+          filtered.forEach(r => {
+            const rt = Number(r.contractRate || r.rate || 0);
+            const q = Number(r.contractQuantity || r.quantity || r.qty || 0);
+            const a = Number(r.contractAmount || r.amount || (q * rt) || 0);
+            const k = rt.toFixed(1);
+            if (!rateMap[k]) rateMap[k] = { rate: rt, qty: 0, amount: 0, trades: 0 };
+            rateMap[k].qty += q;
+            rateMap[k].amount += a;
+            rateMap[k].trades += 1;
+          });
+          const priceVolumeBreakdown = Object.values(rateMap)
+            .map(item => ({
+              rate: item.rate,
+              trades: item.trades,
+              qty: item.qty,
+              amount: +item.amount.toFixed(2),
+              pctQty: totalQty > 0 ? +((item.qty / totalQty) * 100).toFixed(2) : 0
+            }))
+            .sort((a, b) => b.rate - a.rate);
+
+          const bulkTransactions = filtered
+            .filter(r => Number(r.contractQuantity || r.quantity || r.qty || 0) >= 1000 || Number(r.contractAmount || r.amount || 0) >= 500000)
+            .slice(0, 100)
+            .map(r => ({
+              contractId: String(r.contractId || ''),
+              buyerBroker: String(r.buyerMemberId || r.buyerBroker || ''),
+              buyerBrokerName: r.buyerBrokerName || getBrokerName(r.buyerMemberId || r.buyerBroker),
+              sellerBroker: String(r.sellerMemberId || r.sellerBroker || ''),
+              sellerBrokerName: r.sellerBrokerName || getBrokerName(r.sellerMemberId || r.sellerBroker),
+              qty: Number(r.contractQuantity || r.quantity || r.qty || 0),
+              quantity: Number(r.contractQuantity || r.quantity || r.qty || 0),
+              rate: Number(r.contractRate || r.rate || 0),
+              amount: Number(r.contractAmount || r.amount || 0),
+              businessDate: todayIso
+            }));
+
+          let availableDates = [];
+          try { availableDates = await getMarketTradingDates(); } catch (_) {}
+          if (!availableDates || availableDates.length === 0) availableDates = [todayIso];
+          else if (!availableDates.includes(todayIso)) availableDates = [todayIso, ...availableDates];
+
+          const respData = {
+            rows,
+            trades: rows,
+            page: page + 1,
+            size,
+            totalPages,
+            totalElements,
+            totalAmount,
+            totalQty,
+            totalTrades: totalElements,
+            priceVolumeBreakdown,
+            bulkTransactions,
+            availableDates,
+            businessDate: todayIso,
+            isReal: true
+          };
+          setCache(cacheKey, respData, 15 * 1000);
+          return res.json({ success: true, data: respData, source: 'live_intraday_floorsheet' });
+        }
+      } catch (liveErr) {
+        console.warn(`[floorsheet] Live 1D symbol floorsheet notice for ${cleanSym}:`, liveErr.message);
+      }
+    }
+
+    // 1. Primary for 1D Session (Market-wide or Historical/Closed Symbol): Serve directly from authentic full session floorsheet (NOTS exchange records)
+    if (days === 1 && !fromDate && !toDate && !isLiveToday1D) {
       try {
         const fullTrades = await getFullSessionFloorsheet(businessDate);
         if (Array.isArray(fullTrades) && fullTrades.length > 0) {
@@ -5318,7 +5583,7 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
               businessDate: businessDate || filtered[0]?.businessDate,
               isReal: true
             };
-            const ttl = businessDate ? 30 * 60 * 1000 : 3 * 60 * 1000;
+            const ttl = effectiveFsTtl(businessDate ? 30 * 60 * 1000 : 3 * 60 * 1000);
             setCache(cacheKey, respData, ttl);
             return res.json({ success: true, data: respData, source: 'full_session_floorsheet_authentic' });
           }
@@ -5351,7 +5616,7 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
       });
     }
 
-    if (cleanSym) {
+    if (cleanSym && !isLiveToday1D) {
       try {
         const vaultFloorsheet = await getOrFetchSymbolFloorsheet(cleanSym, {
           date: businessDate,
@@ -5368,7 +5633,7 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
           size
         });
         if (vaultFloorsheet && (vaultFloorsheet.rows?.length > 0 || businessDate || fromDate || toDate || buyer || seller || broker)) {
-          const ttl = businessDate ? 30 * 60 * 1000 : 3 * 60 * 1000;
+          const ttl = effectiveFsTtl(businessDate ? 30 * 60 * 1000 : 3 * 60 * 1000);
           setCache(cacheKey, vaultFloorsheet, ttl);
           return res.json({ success: true, data: vaultFloorsheet, source: 'authentic_floorsheet_vault' });
         }
@@ -5382,7 +5647,6 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
     if (businessDate) options.date = businessDate;
 
     let result = null;
-    const todayIso = formatNptDateIso(new Date());
     // Only call live exchange scraper if NO historical businessDate was requested or if date is today
     if (!businessDate || businessDate === todayIso) {
       try {
@@ -5489,7 +5753,7 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
             isReal: true
           };
 
-          const ttl = 10 * 60 * 1000;
+          const ttl = effectiveFsTtl(10 * 60 * 1000);
           setCache(cacheKey, directData, ttl);
           return res.json({ success: true, data: directData, source: 'authentic_chukul_direct_floorsheet' });
         }
@@ -5515,7 +5779,8 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
     // Off-hours / Holiday Fallback: If live exchange scraper returned 0 rows, serve from SQLite tick-level contracts
     if (rows.length === 0 && cleanSym) {
       try {
-        const sqliteFs = getScripFloorsheet(cleanSym, size || 100, businessDate ? { date: businessDate } : {});
+        const sqliteDateOpt = isLiveToday1D ? { date: todayIso } : (businessDate ? { date: businessDate } : {});
+        const sqliteFs = getScripFloorsheet(cleanSym, size || 100, sqliteDateOpt);
         if (sqliteFs.length > 0) {
           const mappedRows = sqliteFs.map(c => ({
             contractNo: c.contractNo,
@@ -5555,7 +5820,7 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
             businessDate: mappedRows[0]?.businessDate || businessDate || '',
             isReal: true
           };
-          setCache(cacheKey, fallbackData, 10 * 60 * 1000);
+          setCache(cacheKey, fallbackData, effectiveFsTtl(10 * 60 * 1000));
           return res.json({ success: true, data: fallbackData, source: 'drabyashree_ledger_sqlite' });
         }
       } catch (sqlFsErr) {
@@ -5563,8 +5828,8 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
       }
     }
 
-    const ttl = businessDate ? 2 * 60 * 60 * 1000 : 5 * 60 * 1000;
-    if (rows.length > 0) {
+    const ttl = effectiveFsTtl(businessDate ? 2 * 60 * 60 * 1000 : 5 * 60 * 1000);
+    if (rows.length > 0 && (!isLiveToday1D || String(data.businessDate || '').slice(0, 10) === todayIso)) {
       setCache(cacheKey, data, ttl);
     }
     return res.json({ success: true, data, source: result ? 'nepse-api' : 'offline_safe_fallback' });
@@ -5696,7 +5961,18 @@ function enrichWithMicrostructure(symbol, days, vaultData, date = '') {
     vwap: vaultData.vwap || sessionVwap || closePrice,
   };
 
-  if (!diag) return enriched;
+  if (!diag || vaultData?.isBrokerMaskedIntraday) {
+    return {
+      ...enriched,
+      date: date || vaultData.date || vaultData.businessDate || '',
+      businessDate: date || vaultData.businessDate || vaultData.date || '',
+      timeframeDays: date ? 1 : d,
+      tradingDays: date ? 1 : d,
+      availableDates: (Array.isArray(vaultData?.availableDates) && vaultData.availableDates.length > 0)
+        ? vaultData.availableDates
+        : (_cachedTradingDates?.dates?.length > 0 ? _cachedTradingDates.dates : [])
+    };
+  }
 
   return {
     ...enriched,
@@ -5914,6 +6190,11 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
   }
 
   const isLiveTrading = isMarketOpen();
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  const isTodaySession = !date || date === todayIso;
+  const isLiveToday1D = isLiveTrading && days === 1 && isTodaySession && !fromDate && !toDate;
+  const effectiveCacheTtl = (ms) => (isLiveToday1D ? Math.min(ms, 15 * 1000) : ms);
+
   if (isLiveTrading && (days === 1 || !date)) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
@@ -5923,69 +6204,35 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
   const cacheKey = `broker-analysis-${symbol}-${days}-${date}-${fromDate}-${toDate}`;
   if (!refresh) {
     const cached = getCache(cacheKey);
-    if (cached) return res.json({ success: true, data: enrichWithMicrostructure(symbol, days, cached, date), cached: true });
+    if (cached) {
+      const cachedDate = String(cached.toDate || cached.businessDate || '').slice(0, 10);
+      if (!isLiveToday1D || cachedDate === todayIso) {
+        return res.json({ success: true, data: enrichWithMicrostructure(symbol, days, cached, date), cached: true });
+      }
+      // Prevent stale prior-session cache poisoning during live 1D trading
+      cache.delete(cacheKey);
+    }
   }
 
-  // Tier 0.5: During live market trading, fetch live intraday floorsheet trades for days=1 before falling back to yesterday's closed session
-  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
-  const isTodaySession = !date || date === todayIso;
-  if (isLiveTrading && days === 1 && isTodaySession && !fromDate && !toDate) {
+  // Tier 0.5: During live market trading, refresh live symbol-filtered intraday floorsheet trades (15s TTL / refresh=true),
+  // upsert/deduplicate into SQLite floorsheet_contracts for todayIso, and aggregate the full deduplicated todayIso set.
+  if (isLiveToday1D) {
     try {
-      // 1. Check if floorsheet_contracts already has live intraday trades for today
-      let todayContracts = [];
-      try {
-        todayContracts = db.prepare(`SELECT * FROM floorsheet_contracts WHERE UPPER(symbol) = ? AND trade_date = ?`).all(symbol, todayIso);
-      } catch (_) {}
-
-      if (!todayContracts || todayContracts.length === 0) {
-        // 2. Fetch live intraday trades from exchange
-        try {
-          const fsRes = await Promise.race([
-            nepseClient.getFloorSheet({ symbol, page: 0, size: 200 }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Live floorsheet timeout')), 6000))
-          ]);
-          const rawFs = fsRes?.floorsheets?.content || fsRes?.content || [];
-          if (Array.isArray(rawFs) && rawFs.length > 0) {
-            todayContracts = rawFs;
-          }
-        } catch (liveFsErr) {
-          console.warn(`[broker-analysis] Live floorsheet fetch failed for ${symbol}: ${liveFsErr.message}`);
-          // NepseAlpha fallback
-          try {
-            const naRes = await axios.get(`https://nepsealpha.com/api/smx9156/live_floorsheet?symbol=${encodeURIComponent(symbol)}`, { timeout: 6000 });
-            const naData = naRes?.data?.data || [];
-            if (Array.isArray(naData) && naData.length > 0) {
-              todayContracts = naData.map(t => ({
-                contractId: t.id,
-                buyerMemberId: String(t.buyer_broker || ''),
-                buyerBroker: String(t.buyer_broker || ''),
-                sellerMemberId: String(t.seller_broker || ''),
-                sellerBroker: String(t.seller_broker || ''),
-                contractQuantity: Number(t.quantity || 0),
-                contractAmount: Number(t.amount || 0),
-                contractRate: Number(t.rate || 0),
-                businessDate: t.date || todayIso,
-                stockSymbol: symbol
-              }));
-            }
-          } catch (_) {}
-        }
-
-        // Ingest newly fetched live contracts into SQLite floorsheet_contracts so 1D updates live without waiting for EOD
-        if (todayContracts && todayContracts.length > 0) {
-          try {
-            ingestFloorsheetContracts(todayContracts, todayIso);
-          } catch (ingestErr) {
-            console.warn(`[broker-analysis] Live contract ingestion error for ${symbol}:`, ingestErr.message);
-          }
-        }
-      }
+      const { contracts: todayContracts } = await refreshAndReadLiveSymbolContracts(symbol, todayIso, {
+        forceRefresh: refresh,
+        maxPages: 10,
+        timeoutMs: 7500
+      });
 
       if (todayContracts && todayContracts.length > 0) {
         const aggregated = aggregateFloorsheetRows(todayContracts, symbol, [todayIso]);
         if (aggregated && (aggregated.brokers?.length > 0 || aggregated.totalVolume > 0)) {
+          aggregated.toDate = todayIso;
+          aggregated.businessDate = todayIso;
           const enrichedLive = enrichWithMicrostructure(symbol, 1, aggregated, todayIso);
-          setCache(cacheKey, enrichedLive, 10 * 1000); // 10s short cache during live session
+          enrichedLive.toDate = todayIso;
+          enrichedLive.businessDate = todayIso;
+          setCache(cacheKey, enrichedLive, 15 * 1000); // 15s short cache during live session
           return res.json({ success: true, data: enrichedLive, source: 'live_intraday_floorsheet' });
         }
       }
@@ -6016,7 +6263,7 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
         const diag = calculateMultiDayDiagnostics(filteredHistory, diagDays);
         if (diag && (diag.brokers?.length > 0 || diag.allBrokers?.length > 0)) {
           const enrichedDb = enrichWithMicrostructure(symbol, days, diag, date);
-          setCache(cacheKey, enrichedDb, 10 * 60 * 1000);
+          setCache(cacheKey, enrichedDb, effectiveCacheTtl(10 * 60 * 1000));
           return res.json({ success: true, data: enrichedDb, source: 'sqlite_ledger_verified' });
         }
       }
@@ -6044,12 +6291,12 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
         if (fastSnapshot && (fastSnapshot.brokers?.length > 0 || fastSnapshot.totalVolume > 0)) {
           const enrichedFast = enrichWithMicrostructure(symbol, days, fastSnapshot, date);
           vaultData = enrichedFast;
-          setCache(cacheKey, enrichedFast, 2 * 60 * 1000);
+          setCache(cacheKey, enrichedFast, effectiveCacheTtl(2 * 60 * 1000));
           // Let the full sync complete in the background to update cache
           fullPromise.then(full => {
             if (full) {
               const enrichedFull = enrichWithMicrostructure(symbol, days, full, date);
-              setCache(cacheKey, enrichedFull, 10 * 60 * 1000);
+              setCache(cacheKey, enrichedFull, effectiveCacheTtl(10 * 60 * 1000));
             }
           }).catch(() => {});
           return res.json({ success: true, data: enrichedFast, source: 'broker_vault_fast_snapshot', isPartial: true });
@@ -6071,7 +6318,7 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
         }
       }
       const enrichedVault = enrichWithMicrostructure(symbol, days, vaultData, date);
-      setCache(cacheKey, enrichedVault, 10 * 60 * 1000);
+      setCache(cacheKey, enrichedVault, effectiveCacheTtl(10 * 60 * 1000));
       return res.json({ success: true, data: enrichedVault, source: 'broker_vault_authentic' });
     }
   } catch (vaultErr) {
@@ -6097,7 +6344,7 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
       const diag = calculateMultiDayDiagnostics(filteredHistory, diagDays);
       if (diag && (diag.brokers?.length > 0 || diag.allBrokers?.length > 0)) {
         const enrichedDb = enrichWithMicrostructure(symbol, days, diag, date);
-        setCache(cacheKey, enrichedDb, 10 * 60 * 1000);
+        setCache(cacheKey, enrichedDb, effectiveCacheTtl(10 * 60 * 1000));
         return res.json({ success: true, data: enrichedDb, source: 'sqlite_ledger_verified' });
       }
     }
@@ -6164,7 +6411,7 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
       };
 
       const enrichedEmpty = enrichWithMicrostructure(symbol, days, data);
-      setCache(cacheKey, enrichedEmpty, 5 * 60 * 1000);
+      setCache(cacheKey, enrichedEmpty, effectiveCacheTtl(5 * 60 * 1000));
       return res.json({ success: true, data: enrichedEmpty, source: 'empty_no_floorsheet_records' });
     }
 
@@ -6179,7 +6426,7 @@ app.get(['/api/broker-analysis/:symbol', '/api/diagnostics/:symbol'], async (req
     const aggregated = aggregateFloorsheetRows(filtered, symbol, sortedDates);
     if (aggregated) {
       const enrichedAgg = enrichWithMicrostructure(symbol, days, aggregated);
-      setCache(cacheKey, enrichedAgg, 10 * 60 * 1000);
+      setCache(cacheKey, enrichedAgg, effectiveCacheTtl(10 * 60 * 1000));
       return res.json({ success: true, data: enrichedAgg, source: 'floorsheet_aggregated' });
     }
 
@@ -8905,7 +9152,13 @@ app.get([
     const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
     if (isLiveTrading && (sessionLimit === 1 || tf === '1D') && (!queryDate || queryDate === todayIso)) {
       try {
-        let liveRows = db.prepare(`
+        await refreshAndReadLiveSymbolContracts(symbol, todayIso, {
+          forceRefresh: req.query.refresh === 'true',
+          maxPages: 8,
+          timeoutMs: 6500
+        });
+
+        const liveRows = db.prepare(`
           SELECT
             buyer_broker AS brokerId,
             SUM(kitta) AS buyVolume,
@@ -8918,11 +9171,11 @@ app.get([
             0 AS sellAmount,
             0 AS crossVolume
           FROM floorsheet_contracts
-          WHERE UPPER(symbol) = ? AND trade_date = ?
+          WHERE UPPER(symbol) = ? AND trade_date = ? AND buyer_broker > 0
           GROUP BY buyer_broker
         `).all(symbol, todayIso);
 
-        let liveSellRows = db.prepare(`
+        const liveSellRows = db.prepare(`
           SELECT
             seller_broker AS brokerId,
             0 AS buyVolume,
@@ -8935,31 +9188,9 @@ app.get([
             SUM(amount) AS sellAmount,
             0 AS crossVolume
           FROM floorsheet_contracts
-          WHERE UPPER(symbol) = ? AND trade_date = ?
+          WHERE UPPER(symbol) = ? AND trade_date = ? AND seller_broker > 0
           GROUP BY seller_broker
         `).all(symbol, todayIso);
-
-        // If SQLite has no live contracts yet for today, attempt live fetch & ingest
-        if ((!liveRows || liveRows.length === 0) && (!liveSellRows || liveSellRows.length === 0)) {
-          try {
-            const fsRes = await Promise.race([
-              nepseClient.getFloorSheet({ symbol, page: 0, size: 200 }),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Live floorsheet timeout')), 6000))
-            ]);
-            const rawFs = fsRes?.floorsheets?.content || fsRes?.content || [];
-            if (Array.isArray(rawFs) && rawFs.length > 0) {
-              ingestFloorsheetContracts(rawFs, todayIso);
-              liveRows = db.prepare(`
-                SELECT buyer_broker AS brokerId, SUM(kitta) AS buyVolume, 0 AS sellVolume, COUNT(*) AS buyTrades, COUNT(*) AS buyTradesCount, 0 AS sellTrades, 0 AS sellTradesCount, SUM(amount) AS buyAmount, 0 AS sellAmount, 0 AS crossVolume
-                FROM floorsheet_contracts WHERE UPPER(symbol) = ? AND trade_date = ? GROUP BY buyer_broker
-              `).all(symbol, todayIso);
-              liveSellRows = db.prepare(`
-                SELECT seller_broker AS brokerId, 0 AS buyVolume, SUM(kitta) AS sellVolume, 0 AS buyTrades, 0 AS buyTradesCount, COUNT(*) AS sellTrades, COUNT(*) AS sellTradesCount, 0 AS buyAmount, SUM(amount) AS sellAmount, 0 AS crossVolume
-                FROM floorsheet_contracts WHERE UPPER(symbol) = ? AND trade_date = ? GROUP BY seller_broker
-              `).all(symbol, todayIso);
-            }
-          } catch (_) {}
-        }
 
         if (liveRows.length > 0 || liveSellRows.length > 0) {
           const brokerMap = new Map();

@@ -20,8 +20,9 @@ import {
   auditMultiSessionTrapRisk
 } from './telegramNotifier.mjs';
 import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
-import { getOrFetchSymbolFloorsheet, getFullSessionFloorsheet, aggregateMarketFloorsheet } from './brokerVault.mjs';
-import { ingestDailyStockPrices, getDailyCompletenessStatus, db } from './db/ledgerStore.js';
+import { getOrFetchSymbolFloorsheet, getFullSessionFloorsheet, aggregateMarketFloorsheet, getBrokerName } from './brokerVault.mjs';
+import { ingestDailyStockPrices, ingestFloorsheetContracts, getDailyCompletenessStatus, db } from './db/ledgerStore.js';
+import nepseClient from './nepseClientManager.mjs';
 import { downloadAndArchiveDailyFloorsheet, exportCumulativeBrokerLedger, syncBrokerAllTimeAndVaultFiles } from './utils/dailyFloorsheetCollector.mjs';
 import { runCalendarGuardedDailyTransition } from './utils/rollingLedgerEngine.mjs';
 import { compileTodayStaticAnalytics, initTodayTickStream, tickEventEmitter } from './utils/todayDataEngine.mjs';
@@ -37,8 +38,61 @@ try {
   }
 } catch (_) {}
 
+// ── Render 512 MB Memory & Concurrency Guards ────────────────────────────────
+const MAX_LIVE_HEAP_MB = Number(process.env.MAX_LIVE_HEAP_MB || 205);
+const MAX_LIVE_RSS_MB = Number(process.env.MAX_LIVE_RSS_MB || 385);
+let activeHeavyWorker = null; // 'aggregateFloorsheetData' | 'smartAlertScan' | 'postMarketAnalysis' | 'morningDigest'
+let isAggregatingFloorsheet = false;
+let isSmartAlertScanRunning = false;
+let isMorningDigestRunning = false;
+const smartAlertLiveFetchTs = new Map();
+
+function isLiveMarketHoursNpt() {
+  try {
+    const status = getDetailedMarketStatus();
+    const nptMins = status.nptTotalMinutes;
+    return Boolean((status.isTradingDay || status.isOpen) && nptMins >= 660 && nptMins <= 900);
+  } catch (_) {
+    return false;
+  }
+}
+
+function checkRenderMemoryBudget(contextLabel = 'Worker') {
+  const mem = process.memoryUsage();
+  const heapMb = mem.heapUsed / (1024 * 1024);
+  const rssMb = mem.rss / (1024 * 1024);
+  if (heapMb > MAX_LIVE_HEAP_MB || rssMb > MAX_LIVE_RSS_MB) {
+    if (global.gc) {
+      try { global.gc(); } catch (_) {}
+    }
+    const postMem = process.memoryUsage();
+    const postHeapMb = postMem.heapUsed / (1024 * 1024);
+    const postRssMb = postMem.rss / (1024 * 1024);
+    if (postHeapMb > MAX_LIVE_HEAP_MB || postRssMb > MAX_LIVE_RSS_MB) {
+      console.warn(`[MemoryGuard] ⚠️ ${contextLabel} paused to stay within Render 512MB RAM (heap=${postHeapMb.toFixed(1)}MB/${MAX_LIVE_HEAP_MB}MB, rss=${postRssMb.toFixed(1)}MB/${MAX_LIVE_RSS_MB}MB).`);
+      return { ok: false, heapMb: postHeapMb, rssMb: postRssMb };
+    }
+  }
+  return { ok: true, heapMb, rssMb };
+}
+
 // Worker to aggregate daily floorsheet into broker accumulation table
-export async function aggregateFloorsheetData() {
+export async function aggregateFloorsheetData(options = {}) {
+  const { bypassLiveGuard = false, bypassLock = false } = options || {};
+  if (!bypassLiveGuard && isLiveMarketHoursNpt()) {
+    console.log('[Workers] Skipping scheduled aggregateFloorsheetData during live market hours (11:00 AM–3:00 PM NPT) until EOD settles.');
+    return;
+  }
+  if (isAggregatingFloorsheet || (!bypassLock && activeHeavyWorker)) {
+    console.log(`[Workers] Skipping aggregateFloorsheetData — concurrent heavy worker active (${activeHeavyWorker || 'aggregateFloorsheetData'}).`);
+    return;
+  }
+  if (!checkRenderMemoryBudget('aggregateFloorsheetData').ok) {
+    return;
+  }
+
+  isAggregatingFloorsheet = true;
+  if (!bypassLock) activeHeavyWorker = 'aggregateFloorsheetData';
   console.log('Running background worker: aggregateFloorsheetData...');
   try {
     const sql = `
@@ -97,6 +151,14 @@ export async function aggregateFloorsheetData() {
     console.log('Aggregation complete.');
   } catch (err) {
     console.error('Error in aggregateFloorsheetData:', err);
+  } finally {
+    isAggregatingFloorsheet = false;
+    if (!bypassLock && activeHeavyWorker === 'aggregateFloorsheetData') {
+      activeHeavyWorker = null;
+    }
+    if (global.gc) {
+      try { global.gc(); } catch (_) {}
+    }
   }
 }
 
@@ -218,9 +280,18 @@ export async function runFullUniversePrimePick() {
 
     // Step 3: Run generateEntryExitPlan on top liquid candidates with real history
     const qualifiedCandidates = [];
-    for (const cand of candidatesToScan) {
+    for (let candIdx = 0; candIdx < candidatesToScan.length; candIdx++) {
+      const cand = candidatesToScan[candIdx];
       const sym = String(cand.symbol || cand.scrip || '').toUpperCase().trim();
       if (!sym) continue;
+
+      if (candIdx > 0 && candIdx % 8 === 0) {
+        if (!checkRenderMemoryBudget('PrimePickWorker').ok) {
+          console.warn(`[PrimePickWorker] Stopping scan early at ${candIdx}/${candidatesToScan.length} to preserve Render 512MB RAM.`);
+          break;
+        }
+        await new Promise(r => setImmediate(r));
+      }
 
       try {
         const history = await _getPriceHistoryInternal(sym, 365).catch(() => []);
@@ -414,8 +485,8 @@ export async function runPostMarketCloseAnalysis(force = false) {
     return;
   }
 
-  if (isPostMarketAnalysisRunning) {
-    console.log(`[Post-Market Worker] Post-market scan already running — skipping concurrent trigger.`);
+  if (isPostMarketAnalysisRunning || (activeHeavyWorker && activeHeavyWorker !== 'postMarketAnalysis')) {
+    console.log(`[Post-Market Worker] Heavy worker (${activeHeavyWorker || 'postMarketAnalysis'}) already running — skipping concurrent trigger.`);
     return;
   }
 
@@ -427,6 +498,7 @@ export async function runPostMarketCloseAnalysis(force = false) {
   }
 
   isPostMarketAnalysisRunning = true;
+  activeHeavyWorker = 'postMarketAnalysis';
   console.log(`[Post-Market Worker] Running post-market floorsheet & prime pick analysis for target session: ${targetDate}...`);
   try {
     await syncDailyFloorsheetAndPrices(targetDate);
@@ -438,7 +510,7 @@ export async function runPostMarketCloseAnalysis(force = false) {
     } catch (syncErr) {
       console.warn('[Post-Market Worker] Vault & alltime sync notice:', syncErr.message);
     }
-    await aggregateFloorsheetData();
+    await aggregateFloorsheetData({ bypassLiveGuard: true, bypassLock: true });
 
     // Exchange-wide broker matrix aggregation & dual-write to proxy and src
     try {
@@ -547,6 +619,10 @@ export async function runPostMarketCloseAnalysis(force = false) {
     console.warn('[Post-Market Worker] Error in runPostMarketCloseAnalysis:', err?.message || err);
   } finally {
     isPostMarketAnalysisRunning = false;
+    if (activeHeavyWorker === 'postMarketAnalysis') activeHeavyWorker = null;
+    if (global.gc) {
+      try { global.gc(); } catch (_) {}
+    }
   }
 }
 
@@ -745,8 +821,12 @@ export function startWorkers() {
     return;
   }
   workersStarted = true;
-  // Run floorsheet aggregation every 1 hour (3600000 ms)
-  setInterval(aggregateFloorsheetData, 60 * 60 * 1000);
+  // Run floorsheet aggregation every 1 hour (3600000 ms), skipped automatically during live 11:00–15:00 NPT hours
+  setInterval(() => {
+    aggregateFloorsheetData().catch(err => {
+      console.warn('[Workers] Scheduled aggregateFloorsheetData notice:', err?.message || err);
+    });
+  }, 60 * 60 * 1000);
 
   // 0. Pre-Market Scan (10:15 AM NPT), Morning Digest (10:45 AM), Non-Holding Digest (11:00 AM & 6:00 PM NPT)
   setInterval(() => {
@@ -762,29 +842,42 @@ export function startWorkers() {
         // Phase 1: 10:15 AM - 10:30 AM Pre-Market Scan suppressed in Option 1 (Full analysis is delivered at 3:45 PM EOD)
         // Phase 2: 10:45 AM - 10:55 AM Pre-Open Preparation
         const latestClosedSession = latestTradingSession(undefined, true);
-        if (nptMins >= 645 && nptMins < 655 && lastMorningDigestDispatchedDate !== latestClosedSession) {
+        if (nptMins >= 645 && nptMins < 655 && lastMorningDigestDispatchedDate !== latestClosedSession && !isMorningDigestRunning && !activeHeavyWorker) {
+          if (!checkRenderMemoryBudget('PremarketWorker').ok) return;
           lastMorningDigestDispatchedDate = latestClosedSession;
-          // Pre-compile Today's Static Analytics & initialize Tick Stream for market open
-          try {
-            console.log(`[PremarketWorker] 🚀 Pre-compiling static analytics sub-file for ${status.targetSessionDate}...`);
-            compileTodayStaticAnalytics({ targetDate: status.targetSessionDate });
-            initTodayTickStream(status.targetSessionDate);
-          } catch (e) {
-            console.warn('[PremarketWorker] Static sub-file compilation notice:', e.message);
-          }
-          // Quantitative Morning Trading Digest Scan (10:45 AM NPT)
-          runMorningStockSelectionDigestWorker(latestClosedSession).catch(err => {
-            console.warn('[PremarketWorker] Morning digest dispatch notice:', err.message);
-          });
-          // Option 1: Full Flowchart v2.0 ticket was dispatched at 3:45 PM EOD for overnight study.
-          // Fallback to morning full ticket dispatch ONLY if server was restarted and no post-market pick is cached.
-          if (!cachedPostMarketPrimePick) {
-            run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).then(res => {
-              if (res?.topPick) cachedPostMarketPrimePick = res.topPick;
-            }).catch(err => {
-              console.warn('[PremarketWorker] Morning swing fallback dispatch notice:', err.message);
-            });
-          }
+          isMorningDigestRunning = true;
+          activeHeavyWorker = 'morningDigest';
+          (async () => {
+            try {
+              // Pre-compile Today's Static Analytics & initialize Tick Stream for market open
+              try {
+                console.log(`[PremarketWorker] 🚀 Pre-compiling static analytics sub-file for ${status.targetSessionDate}...`);
+                compileTodayStaticAnalytics({ targetDate: status.targetSessionDate });
+                initTodayTickStream(status.targetSessionDate);
+              } catch (e) {
+                console.warn('[PremarketWorker] Static sub-file compilation notice:', e.message);
+              }
+              // Quantitative Morning Trading Digest Scan (10:45 AM NPT)
+              await runMorningStockSelectionDigestWorker(latestClosedSession).catch(err => {
+                console.warn('[PremarketWorker] Morning digest dispatch notice:', err.message);
+              });
+              // Option 1: Full Flowchart v2.0 ticket was dispatched at 3:45 PM EOD for overnight study.
+              // Fallback to morning full ticket dispatch ONLY if server was restarted and no post-market pick is cached.
+              if (!cachedPostMarketPrimePick) {
+                const res = await run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(err => {
+                  console.warn('[PremarketWorker] Morning swing fallback dispatch notice:', err.message);
+                  return null;
+                });
+                if (res?.topPick) cachedPostMarketPrimePick = res.topPick;
+              }
+            } finally {
+              isMorningDigestRunning = false;
+              if (activeHeavyWorker === 'morningDigest') activeHeavyWorker = null;
+              if (global.gc) {
+                try { global.gc(); } catch (_) {}
+              }
+            }
+          })();
         }
         // Phase 3: 10:50 AM Pre-Open Gate suppressed (Chase Cap rule is included directly on the EOD Prime Ticket)
         // Phase 4: 11:00 AM Market Open Bell suppressed to eliminate notification clutter
@@ -796,11 +889,8 @@ export function startWorkers() {
 
   // 1. Dravyashree Smart Alert Pipeline:
   // Runs every 60 seconds during live NEPSE market hours (11:00 AM - 3:00 PM NPT, Monday to Friday).
-  // Automatically evaluates 3 simultaneous institutional criteria:
-  //   - Price in [VWAP Support, VWAP + 2%]
-  //   - Buyer Concentration (Top 3 Brokers) > 50%
-  //   - Seller Volume at Support < 20-Day Average
-  // Dispatches instant mobile lockscreen push notifications via FCM & Telegram.
+  // Uses bounded symbol-filtered live NOTS/SQLite slices (never full-session market floorsheets in RAM)
+  // and a strict concurrency + memory guard to keep Render well below 512 MB.
   setInterval(() => {
     try {
       const status = getDetailedMarketStatus();
@@ -808,25 +898,92 @@ export function startWorkers() {
       const isTradingDay = status.isTradingDay || status.isOpen;
 
       if (isTradingDay && nptMins >= 660 && nptMins <= 900) {
-        runMarketAlertScanCycle({
-          getMarketStocks: async () => {
-            if (_fetchTodayPricesInternal) return await _fetchTodayPricesInternal();
-            return [];
-          },
-          getFloorsheet: async (sym) => {
-            try {
-              const fsData = await getOrFetchSymbolFloorsheet(sym, { days: 1, page: 1, size: 50000 });
-              if (fsData?.rows && fsData.rows.length > 0) return fsData.rows;
-            } catch (_) {}
-            return [];
-          },
-          getPriceHistory: async (sym) => {
-            if (_getPriceHistoryInternal) return await _getPriceHistoryInternal(sym);
-            return [];
+        if (isSmartAlertScanRunning || activeHeavyWorker) {
+          return;
+        }
+        if (!checkRenderMemoryBudget('SmartAlertWorker').ok) {
+          return;
+        }
+        isSmartAlertScanRunning = true;
+        activeHeavyWorker = 'smartAlertScan';
+        const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+
+        (async () => {
+          try {
+            await runMarketAlertScanCycle({
+              getMarketStocks: async () => {
+                if (_fetchTodayPricesInternal) return await _fetchTodayPricesInternal();
+                return [];
+              },
+              getFloorsheet: async (sym) => {
+                if (!checkRenderMemoryBudget('SmartAlertWorker:getFloorsheet').ok) return [];
+                const cleanSym = String(sym || '').toUpperCase().trim();
+                if (!cleanSym) return [];
+                try {
+                  const lastFetched = smartAlertLiveFetchTs.get(cleanSym) || 0;
+                  if (Date.now() - lastFetched >= 90 * 1000) {
+                    const fsRes = await nepseClient.getFloorSheet({
+                      symbol: cleanSym,
+                      page: 0,
+                      size: 250,
+                      timeoutMs: 3500
+                    }).catch(() => null);
+                    const rawFs = fsRes?.floorsheets?.content || fsRes?.content || (Array.isArray(fsRes) ? fsRes : []);
+                    const todayOnly = Array.isArray(rawFs)
+                      ? rawFs.filter(t => {
+                          const s = String(t.stockSymbol || t.symbol || cleanSym).toUpperCase().trim();
+                          const dt = String(t.businessDate || '').slice(0, 10);
+                          return s === cleanSym && (!dt || dt === todayIso);
+                        })
+                      : [];
+                    if (todayOnly.length > 0) {
+                      try { ingestFloorsheetContracts(todayOnly, todayIso); } catch (_) {}
+                    }
+                    if (smartAlertLiveFetchTs.size > 400) smartAlertLiveFetchTs.clear();
+                    smartAlertLiveFetchTs.set(cleanSym, Date.now());
+                  }
+
+                  if (db) {
+                    const dbRows = db.prepare(`
+                      SELECT contract_no as contractId, symbol as stockSymbol, symbol,
+                             trade_date as businessDate, trade_time as tradeTime,
+                             buyer_broker as buyerBroker, seller_broker as sellerBroker,
+                             kitta as qty, kitta as quantity, rate, amount
+                      FROM floorsheet_contracts
+                      WHERE UPPER(symbol) = ? AND trade_date = ? AND buyer_broker > 0 AND seller_broker > 0
+                      ORDER BY contract_no DESC
+                      LIMIT 500
+                    `).all(cleanSym, todayIso);
+                    if (Array.isArray(dbRows) && dbRows.length > 0) {
+                      return dbRows.map(r => ({
+                        ...r,
+                        buyerBrokerName: getBrokerName(r.buyerBroker),
+                        sellerBrokerName: getBrokerName(r.sellerBroker)
+                      }));
+                    }
+                  }
+                } catch (_) {}
+                return [];
+              },
+              getPriceHistory: async (sym) => {
+                if (_getPriceHistoryInternal) return await _getPriceHistoryInternal(sym);
+                return [];
+              }
+            });
+          } catch (scanErr) {
+            console.warn('[SmartAlertWorker] Periodic scan cycle notice:', scanErr.message);
+          } finally {
+            isSmartAlertScanRunning = false;
+            if (activeHeavyWorker === 'smartAlertScan') activeHeavyWorker = null;
+            if (global.gc) {
+              try { global.gc(); } catch (_) {}
+            }
           }
-        });
+        })();
       }
     } catch (scanErr) {
+      isSmartAlertScanRunning = false;
+      if (activeHeavyWorker === 'smartAlertScan') activeHeavyWorker = null;
       console.warn('[SmartAlertWorker] Periodic scan cycle notice:', scanErr.message);
     }
   }, 60 * 1000);

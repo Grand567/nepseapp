@@ -98,20 +98,30 @@ function loadConfig() {
   const fileToken = cleanBotToken(fileConfig.botToken || '');
   const envToken = cleanBotToken(process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN || process.env.BOT_TOKEN || '');
 
-  // Prefer verified fileConfig if saved by user, otherwise fallback to env
-  const botToken = fileToken || envToken;
+  // Prioritize explicit Render env vars over fileConfig
+  const botToken = envToken || fileToken;
   const fileChatId = (fileConfig.chatId !== undefined && fileConfig.chatId !== null)
     ? String(fileConfig.chatId).trim()
     : '';
   const envChatId = String(process.env.TELEGRAM_CHAT_ID || process.env.CHAT_ID || '').trim();
-  const chatId = fileChatId || envChatId;
+  const chatId = envChatId || fileChatId;
 
-  const envIsTest = process.env.TELEGRAM_IS_TEST_SERVER === 'true' || process.env.TELEGRAM_TEST_SERVER === 'true';
-  const isTestServer = Boolean(fileConfig.isTestServer === true || envIsTest);
+  const rawEnvIsTest = process.env.TELEGRAM_IS_TEST_SERVER !== undefined
+    ? process.env.TELEGRAM_IS_TEST_SERVER
+    : process.env.TELEGRAM_TEST_SERVER;
+  let isTestServer;
+  if (rawEnvIsTest !== undefined && String(rawEnvIsTest).trim() !== '') {
+    isTestServer = String(rawEnvIsTest).trim().toLowerCase() === 'true';
+  } else {
+    isTestServer = Boolean(fileConfig.isTestServer === true);
+  }
 
-  const useWebhook = Boolean(fileConfig.useWebhook === true || process.env.TELEGRAM_USE_WEBHOOK === 'true');
-  const webhookUrl = fileConfig.webhookUrl || process.env.TELEGRAM_WEBHOOK_URL || '';
-  const webhookSecretToken = fileConfig.webhookSecretToken || process.env.TELEGRAM_WEBHOOK_SECRET || '';
+  const rawEnvWebhook = process.env.TELEGRAM_USE_WEBHOOK;
+  const useWebhook = (rawEnvWebhook !== undefined && String(rawEnvWebhook).trim() !== '')
+    ? String(rawEnvWebhook).trim().toLowerCase() === 'true'
+    : Boolean(fileConfig.useWebhook === true);
+  const webhookUrl = String(process.env.TELEGRAM_WEBHOOK_URL || '').trim() || fileConfig.webhookUrl || '';
+  const webhookSecretToken = String(process.env.TELEGRAM_WEBHOOK_SECRET || '').trim() || fileConfig.webhookSecretToken || '';
 
   return {
     botToken,
@@ -151,22 +161,51 @@ export function saveTelegramConfig({ botToken, chatId, enabled, isTestServer, us
 
 /**
  * Hydrates verified Telegram configuration from PostgreSQL database on server startup.
- * Prevents ephemeral Render container redeployments from wiping the bot token or falling back
- * to stale environment variables.
+ * Prioritizes explicit Render environment variables: if TELEGRAM_BOT_TOKEN is set and
+ * differs from PostgreSQL, syncs the env credentials into telegram_bot_config and resets auth error.
  */
 export async function hydrateTelegramConfigFromDb() {
   try {
     const dbCfg = await getTelegramConfigFromDb();
-    if (dbCfg && dbCfg.botToken) {
+    const envToken = cleanBotToken(process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN || process.env.BOT_TOKEN || '');
+    const envChatId = String(process.env.TELEGRAM_CHAT_ID || process.env.CHAT_ID || '').trim();
+    const rawEnvIsTest = process.env.TELEGRAM_IS_TEST_SERVER !== undefined
+      ? process.env.TELEGRAM_IS_TEST_SERVER
+      : process.env.TELEGRAM_TEST_SERVER;
+    const hasExplicitEnvTest = rawEnvIsTest !== undefined && String(rawEnvIsTest).trim() !== '';
+    const envIsTest = hasExplicitEnvTest ? String(rawEnvIsTest).trim().toLowerCase() === 'true' : undefined;
+
+    const dbToken = cleanBotToken(dbCfg?.botToken || '');
+
+    if (envToken && (!dbCfg || !dbToken || envToken !== dbToken)) {
       const current = loadConfig();
       const nextConfig = {
-        botToken: cleanBotToken(dbCfg.botToken),
-        chatId: dbCfg.chatId ? String(dbCfg.chatId).trim() : current.chatId,
+        botToken: envToken,
+        chatId: envChatId || (dbCfg?.chatId ? String(dbCfg.chatId).trim() : current.chatId),
+        enabled: dbCfg ? dbCfg.enabled !== false : current.enabled,
+        isTestServer: hasExplicitEnvTest ? envIsTest : (dbCfg ? Boolean(dbCfg.isTestServer) : current.isTestServer),
+        useWebhook: current.useWebhook,
+        webhookUrl: current.webhookUrl || dbCfg?.webhookUrl || '',
+        webhookSecretToken: current.webhookSecretToken || dbCfg?.webhookSecretToken || '',
+        updatedAt: new Date().toISOString()
+      };
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(nextConfig, null, 2), 'utf8');
+      await saveTelegramConfigToDb(nextConfig).catch(() => {});
+      resetTelegramAuthError();
+      console.log(`[TelegramNotifier] 🔄 Synced explicit environment Telegram credentials into PostgreSQL database (Bot: ${nextConfig.botToken.slice(0, 6)}...${nextConfig.botToken.slice(-4)}, Chat ID: ${nextConfig.chatId || 'pending'}).`);
+      return nextConfig;
+    }
+
+    if (dbCfg && dbToken) {
+      const current = loadConfig();
+      const nextConfig = {
+        botToken: envToken || dbToken,
+        chatId: envChatId || (dbCfg.chatId ? String(dbCfg.chatId).trim() : current.chatId),
         enabled: dbCfg.enabled !== false,
-        isTestServer: Boolean(dbCfg.isTestServer),
+        isTestServer: hasExplicitEnvTest ? envIsTest : Boolean(dbCfg.isTestServer),
         useWebhook: dbCfg.useWebhook !== undefined ? Boolean(dbCfg.useWebhook) : current.useWebhook,
-        webhookUrl: dbCfg.webhookUrl || current.webhookUrl || '',
-        webhookSecretToken: dbCfg.webhookSecretToken || current.webhookSecretToken || '',
+        webhookUrl: current.webhookUrl || dbCfg.webhookUrl || '',
+        webhookSecretToken: current.webhookSecretToken || dbCfg.webhookSecretToken || '',
         updatedAt: new Date().toISOString()
       };
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(nextConfig, null, 2), 'utf8');
@@ -335,6 +374,18 @@ async function callBotApi(token, method, payload = null, bypassGuard = false) {
 
   const endpoint = cfg.isTestServer ? `/bot${token}/test/${method}` : `/bot${token}/${method}`;
   let res = await callTelegramApi(endpoint, payload);
+
+  // If 401 Unauthorized, automatically attempt failover to alternate DC (Production vs Test DC)
+  if (!res.ok && (res.error_code === 401 || String(res.description || '').toLowerCase().includes('unauthorized'))) {
+    const altEndpoint = !cfg.isTestServer ? `/bot${token}/test/${method}` : `/bot${token}/${method}`;
+    const altRes = await callTelegramApi(altEndpoint, payload);
+    if (altRes.ok) {
+      const switchedIsTest = !cfg.isTestServer;
+      saveTelegramConfig({ isTestServer: switchedIsTest });
+      console.log(`[TelegramNotifier] 🔄 Auto-switched Telegram datacenter to ${switchedIsTest ? 'Test DC' : 'Production DC'} (verified 200 OK).`);
+      res = altRes;
+    }
+  }
 
   if (res.ok) {
     resetTelegramAuthError();
@@ -5903,7 +5954,15 @@ export async function pollIncomingTelegramCommands({
     const payload = lastUpdateId > 0 ? { offset: lastUpdateId + 1, timeout: 0 } : { timeout: 0 };
     const data = await callBotApi(cfg.botToken, 'getUpdates', payload);
 
-    if (!data.ok || !Array.isArray(data.result) || data.result.length === 0) {
+    if (!data.ok) {
+      if (data.error_code === 409 && String(data.description || '').toLowerCase().includes('webhook') && !cfg.useWebhook) {
+        console.log('[TelegramNotifier] ⚠️ 409 Conflict detected (lingering webhook active on Telegram). Auto-deleting obsolete webhook to restore polling mode...');
+        await deleteTelegramWebhook({ dropPendingUpdates: false });
+      }
+      return;
+    }
+
+    if (!Array.isArray(data.result) || data.result.length === 0) {
       return;
     }
 

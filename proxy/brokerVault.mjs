@@ -7,7 +7,7 @@ import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import nepseClient from './nepseClientManager.mjs';
-import { db, ingestDailyFloorsheetTransaction, rebuildHotCache, getStoredDates, getSymbolHistoryFromDb, recordDailyCompleteness, backupRawFloorsheet, hasTradeDate, setBrokerVaultProvider } from './db/ledgerStore.js';
+import { db, ingestDailyFloorsheetTransaction, ingestFloorsheetContracts, rebuildHotCache, getStoredDates, getSymbolHistoryFromDb, recordDailyCompleteness, backupRawFloorsheet, hasTradeDate, setBrokerVaultProvider } from './db/ledgerStore.js';
 import { fetchWithRetryBackoff } from './utils/retryHelper.mjs';
 import { deduplicateFloorsheetContracts } from './utils/floorsheetDeduplicator.mjs';
 import { recordScraperMetric } from './utils/monitoringService.mjs';
@@ -604,6 +604,9 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
 
   const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
   const nptDate = nowNpt.toISOString().split('T')[0];
+  const nptMinutesOfDay = nowNpt.getUTCHours() * 60 + nowNpt.getUTCMinutes();
+  const isIntradayWindow = isNepseTradingDay(new Date(nptDate + 'T12:00:00+05:45')) &&
+    nptMinutesOfDay >= 660 && nptMinutesOfDay <= 905;
   const candidateDirs = [
     path.join(__dirname, 'data'),
     path.join(process.cwd(), 'data'),
@@ -659,11 +662,42 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
   let didUpdate = false;
 
   // 1. Ingest from authentic full session floorsheet (100% NOTS trades)
-  // Strictly skip calling exchange live session API for old historical dates unless cached on disk or SQLite
+  // Strictly skip calling exchange live session API for old historical dates unless cached on disk or SQLite.
+  // During live trading hours (11:00-15:05 NPT), fetch only the symbol-filtered NOTS floorsheet for today instead of scanning the entire market!
   for (const dt of Array.from(datesToFetch)) {
     const isToday = (dt === nptDate || dt === latestTwoDates[0]);
     const fullFileExists = candidateDirs.some(d => fs.existsSync(path.join(d, `floorsheet-full-${dt}.json`)));
     const hasDbRecords = db ? Boolean(db.prepare('SELECT 1 FROM floorsheet_contracts WHERE trade_date = ? LIMIT 1').get(dt)) : false;
+
+    if (dt === nptDate && isIntradayWindow) {
+      try {
+        const liveRes = await nepseClient.getSymbolLiveFloorsheet(sym, { maxPages: 6, pageSize: 500, timeoutMs: 6500 });
+        const rawLive = Array.isArray(liveRes?.rows) ? liveRes.rows : [];
+        const todayOnly = rawLive.filter(t => !t.businessDate || String(t.businessDate).slice(0, 10) === dt);
+        if (todayOnly.length > 0) {
+          try { ingestFloorsheetContracts(todayOnly, dt); } catch (_) {}
+          vaultObj.rowsByDate[dt] = todayOnly.map(t => ({
+            contractId: String(t.contractId || ''),
+            buyerBroker: String(t.buyerMemberId || t.buyerBroker || ''),
+            buyerBrokerName: t.buyerBrokerName || getBrokerName(t.buyerMemberId || t.buyerBroker),
+            sellerBroker: String(t.sellerMemberId || t.sellerBroker || ''),
+            sellerBrokerName: t.sellerBrokerName || getBrokerName(t.sellerMemberId || t.sellerBroker),
+            qty: Number(t.contractQuantity || t.quantity || t.qty || 0),
+            rate: Number(t.contractRate || t.rate || 0),
+            amount: Number(t.contractAmount || t.amount || 0),
+            businessDate: dt,
+            tradeTime: t.tradeTime || '',
+            symbol: sym,
+            stockSymbol: sym
+          }));
+          didUpdate = true;
+          datesToFetch.delete(dt);
+          continue;
+        }
+      } catch (_) {}
+      continue;
+    }
+
     if (!isToday && !fullFileExists && !hasDbRecords) continue;
 
     try {
@@ -864,6 +898,9 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
   let sumSellQty = 0;
   let sumBuyAmt = 0;
   let sumSellAmt = 0;
+  let maskedQty = 0;
+  let maskedAmt = 0;
+  let maskedTradesCount = 0;
   let largeBlockTradedAmt = 0;
   let totalTradesCount = 0;
 
@@ -896,7 +933,32 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     const amt = Number(r.amount || r.contractAmount || (q * rate) || 0);
     const d = String(r.businessDate || r.date || r.date_ || '').trim();
 
-    if (q <= 0 || (!b && !s)) return;
+    if (q <= 0) return;
+    if (!b && !s) {
+      maskedQty += q;
+      maskedAmt += amt;
+      maskedTradesCount += 1;
+      totalTradesCount++;
+      if (q >= 1000) largeBlockTradedAmt += amt;
+      if (d) {
+        if (!dateMap[d]) {
+          dateMap[d] = {
+            date: d,
+            buyVol: 0,
+            sellVol: 0,
+            turnover: 0,
+            totalTrades: 0,
+            matchedVol: 0,
+            brokerMap: {}
+          };
+        }
+        dateMap[d].buyVol += q;
+        dateMap[d].sellVol += q;
+        dateMap[d].turnover += amt;
+        dateMap[d].totalTrades += 1;
+      }
+      return;
+    }
 
     if (b) {
       const bEntry = ensureBrokerEntry(brokerMap, b);
@@ -1002,8 +1064,9 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     }
   }
 
-  const totalTradedQty = sumBuyQty;
-  const totalTradedAmt = sumBuyAmt;
+  const isBrokerMaskedIntraday = sumBuyQty === 0 && sumSellQty === 0 && maskedQty > 0;
+  const totalTradedQty = sumBuyQty || maskedQty;
+  const totalTradedAmt = sumBuyAmt || maskedAmt;
   const safeTotalQty = totalTradedQty || 1;
 
   const brokers = Object.values(brokerMap).map(x => {
@@ -1210,6 +1273,9 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     scr5NetPct,
     scr3SellPct,
     concentrationPct: bcr3BuyPct || concentrationPct,
+    isBrokerMaskedIntraday,
+    isLiveIncomplete: isBrokerMaskedIntraday || undefined,
+    vwap: totalTradedQty > 0 ? +(totalTradedAmt / totalTradedQty).toFixed(2) : 0,
     isReal: true,
     source: 'authentic_multi_date_floorsheet',
     updatedAt: new Date().toISOString()
@@ -1726,6 +1792,81 @@ export async function getOrFetchSymbolFloorsheet(symbol, {
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const pageSize = Math.min(Math.max(1, parseInt(size, 10) || 50), 50000);
 
+  const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
+  const nptDate = nowNpt.toISOString().split('T')[0];
+  const nptMinutesOfDay = nowNpt.getUTCHours() * 60 + nowNpt.getUTCMinutes();
+  const isLiveToday1D = numDays === 1 && !cleanFrom && !cleanTo &&
+    isNepseTradingDay(new Date(nptDate + 'T12:00:00+05:45')) &&
+    nptMinutesOfDay >= 660 && nptMinutesOfDay <= 905 &&
+    (!cleanDate || cleanDate === nptDate);
+
+  let activeDates = [];
+  let dayRows = [];
+  let availableDates = [];
+
+  if (isLiveToday1D) {
+    const liveCacheKey = `live-sym-fs-${sym}-${nptDate}`;
+    const cachedLive = memoryCache.get(liveCacheKey);
+    if (cachedLive && (Date.now() - cachedLive.timestamp < 15 * 1000)) {
+      dayRows = cachedLive.rows;
+    } else {
+      try {
+        const liveRes = await nepseClient.getSymbolLiveFloorsheet(sym, { maxPages: 8, pageSize: 500, timeoutMs: 7000 });
+        const freshRows = (liveRes?.rows || []).filter(t => !t.businessDate || String(t.businessDate).slice(0, 10) === nptDate);
+        if (freshRows.length > 0) {
+          try { ingestFloorsheetContracts(freshRows, nptDate); } catch (_) {}
+        }
+        let dbRows = [];
+        if (db) {
+          try {
+            dbRows = db.prepare(`
+              SELECT contract_no as contractId, symbol as stockSymbol, symbol,
+                     trade_date as businessDate, trade_time as tradeTime,
+                     buyer_broker as buyerBroker, seller_broker as sellerBroker,
+                     kitta as qty, kitta as quantity, rate, amount
+              FROM floorsheet_contracts
+              WHERE UPPER(symbol) = ? AND trade_date = ?
+              ORDER BY contract_no DESC
+            `).all(sym, nptDate);
+          } catch (_) {}
+        }
+        const sourceRows = (dbRows && dbRows.length > 0) ? dbRows : freshRows;
+        dayRows = sourceRows.map(t => {
+          const bBroker = String(t.buyerBroker || t.buyerMemberId || '').trim();
+          const sBroker = String(t.sellerBroker || t.sellerMemberId || '').trim();
+          const qty = Number(t.qty || t.contractQuantity || t.quantity || 0);
+          const rate = Number(t.rate || t.contractRate || 0);
+          const amount = Number(t.amount || t.contractAmount || (qty * rate) || 0);
+          return {
+            contractId: String(t.contractId || ''),
+            buyerBroker: bBroker,
+            buyerBrokerName: t.buyerBrokerName || getBrokerName(bBroker),
+            sellerBroker: sBroker,
+            sellerBrokerName: t.sellerBrokerName || getBrokerName(sBroker),
+            qty,
+            quantity: qty,
+            rate,
+            amount,
+            businessDate: nptDate,
+            tradeTime: t.tradeTime || '',
+            symbol: sym,
+            stockSymbol: sym
+          };
+        });
+        if (dayRows.length > 0) {
+          memoryCache.set(liveCacheKey, { timestamp: Date.now(), rows: dayRows });
+        }
+      } catch (liveErr) {
+        console.warn(`[brokerVault] Live 1D symbol floorsheet fetch notice for ${sym}:`, liveErr.message);
+      }
+    }
+    if (dayRows.length > 0 || cleanDate === nptDate) {
+      activeDates = [nptDate];
+      availableDates = [nptDate];
+    }
+  }
+
+  if (dayRows.length === 0 && (!isLiveToday1D || cleanDate !== nptDate)) {
   const allTradingDates = await fetchSymbolTradingDates(sym);
   let candidateDates = [];
 
@@ -1744,10 +1885,9 @@ export async function getOrFetchSymbolFloorsheet(symbol, {
     candidateDates = allTradingDates.slice(0, 2);
   }
 
-  const { rowsByDate, availableDates } = await loadAndSyncSymbolVault(sym, candidateDates);
-
-  let activeDates = [];
-  let dayRows = [];
+  const vaultResult = await loadAndSyncSymbolVault(sym, candidateDates);
+  const rowsByDate = vaultResult.rowsByDate;
+  availableDates = vaultResult.availableDates;
 
   if (cleanDate) {
     activeDates = Array.isArray(rowsByDate[cleanDate]) && rowsByDate[cleanDate].length > 0 ? [cleanDate] : [cleanDate];
@@ -1780,6 +1920,7 @@ export async function getOrFetchSymbolFloorsheet(symbol, {
       activeDates = [activeDate];
       dayRows = rowsByDate[activeDate];
     }
+  }
   }
 
   // Filter by buyer, seller, any-side broker, minQty, minAmount, or selfMatchedOnly

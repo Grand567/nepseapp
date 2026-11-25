@@ -1751,15 +1751,33 @@ export async function runMarketAlertScanCycle({
       console.warn('[SmartAlertEngine] Active position exit check notice:', exitCheckErr.message);
     }
 
-    // Sort by turnover / volume to prioritize the most liquid 60 stocks
+    // Sort by turnover / volume to prioritize the most liquid stocks
+    const maxCandidates = Number(process.env.SMART_ALERT_MAX_CANDIDATES || 30);
     const candidatePool = [...stocks]
       .filter(s => Number(s.turnover || s.totalTradedValue || 0) > 1000000 || Number(s.volume || s.totalTradedQuantity || 0) > 10000)
       .sort((a, b) => (Number(b.turnover || 0) - Number(a.turnover || 0)))
-      .slice(0, 40);
+      .slice(0, maxCandidates);
 
-    for (const stock of candidatePool) {
+    const maxHeapBytes = Number(process.env.MAX_LIVE_HEAP_MB || 205) * 1024 * 1024;
+    const maxRssBytes = Number(process.env.MAX_LIVE_RSS_MB || 385) * 1024 * 1024;
+
+    for (let idx = 0; idx < candidatePool.length; idx++) {
+      const stock = candidatePool[idx];
       const sym = String(stock.symbol || stock.scrip || '').toUpperCase().trim();
       if (!sym) continue;
+
+      if (idx > 0 && idx % 5 === 0) {
+        const mem = process.memoryUsage();
+        if (mem.heapUsed > maxHeapBytes * 0.85 && global.gc) {
+          try { global.gc(); } catch (_) {}
+        }
+        const afterMem = process.memoryUsage();
+        if (afterMem.heapUsed > maxHeapBytes || afterMem.rss > maxRssBytes) {
+          console.warn(`[SmartAlertEngine] ⚠️ Aborting live scan cycle early at ${idx}/${candidatePool.length} to preserve Render 512MB RAM.`);
+          break;
+        }
+        await new Promise(r => setImmediate(r));
+      }
 
       try {
         let floorsheetTrades = [];

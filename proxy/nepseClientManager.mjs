@@ -1235,16 +1235,151 @@ export class UnifiedNepseClient {
     }
   }
 
-  async getFloorSheet(options) {
+  async resolveRealSecurityId(symbol) {
+    const sym = String(symbol || '').toUpperCase().trim();
+    if (!sym) return null;
+    let keymap = await this.getSecuritySymbolIdKeymap().catch(() => null);
+    let entry = keymap?.get(sym);
+    let id = typeof entry === 'object' && entry !== null ? (entry.isFallback ? null : Number(entry.id)) : Number(entry);
+    if (!id && !this.circuitBreaker.isTripped()) {
+      keymap = await this.getSecuritySymbolIdKeymap(true).catch(() => null);
+      entry = keymap?.get(sym);
+      id = typeof entry === 'object' && entry !== null ? (entry.isFallback ? null : Number(entry.id)) : Number(entry);
+    }
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }
+
+  async getFloorSheet(options = {}, legacySize) {
+    const opts = typeof options === 'number'
+      ? { page: options, size: legacySize ?? 500 }
+      : (options || {});
+    const page = Math.max(0, Number(opts.page || 0) || 0);
+    const size = Math.min(Math.max(Number(opts.size || 500) || 500, 1), 5000);
+    const symbol = opts.symbol ? String(opts.symbol).toUpperCase().trim() : '';
+    const buyerBroker = opts.buyerBroker;
+    const sellerBroker = opts.sellerBroker;
+    const perCallTimeoutMs = Math.min(Math.max(Number(opts.timeoutMs || 4500) || 4500, 1000), 15000);
+
+    const withTimeout = (promise, label) => {
+      let timer;
+      return Promise.race([
+        Promise.resolve(promise).finally(() => clearTimeout(timer)),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${label} timeout (${perCallTimeoutMs}ms)`)), perCallTimeoutMs);
+        })
+      ]);
+    };
+
     try {
-      return await this.executeWithBackoff(() => this.nepseman.floorSheet(options), 'getFloorSheet (Nepseman)');
+      const queryParams = {
+        size: String(size),
+        page: String(page),
+        sort: 'contractId,desc'
+      };
+      if (symbol) {
+        const securityId = await this.resolveRealSecurityId(symbol);
+        if (!securityId) {
+          throw new Error(`Security ID unavailable for ${symbol} in Nepseman keymap`);
+        }
+        queryParams.stockId = String(securityId);
+      }
+      if (buyerBroker) queryParams.buyerBroker = String(buyerBroker);
+      if (sellerBroker) queryParams.sellerBroker = String(sellerBroker);
+
+      if (this.nepseman?.session) {
+        return await this.executeWithBackoff(
+          () => withTimeout(
+            this.nepseman.session.post('/api/nots/nepse-data/floorsheet', 'floor', queryParams),
+            `getFloorSheet ${symbol || 'market'} (Nepseman)`
+          ),
+          `getFloorSheet ${symbol || 'market'} (Nepseman)`,
+          0
+        );
+      }
+      throw new Error('Nepseman session unavailable');
     } catch (e1) {
       try {
-        console.warn('[nepse-manager] Nepseman floorSheet failed. Trying Rumess engine...');
-        return await this.rumess.getFloorSheet(options);
+        console.warn(`[nepse-manager] Nepseman floorSheet failed (${e1.message}). Trying Rumess engine...`);
+        return await this.executeWithBackoff(
+          () => withTimeout(
+            this.rumess.getFloorSheet({
+              page,
+              size,
+              symbol: symbol || undefined,
+              buyerBroker,
+              sellerBroker
+            }),
+            `getFloorSheet ${symbol || 'market'} (Rumess)`
+          ),
+          `getFloorSheet ${symbol || 'market'} (Rumess)`,
+          0
+        );
       } catch (_) {}
       throw e1;
     }
+  }
+
+  /**
+   * Fetches live symbol-filtered NOTS floorsheet rows (using verified stockId parameter),
+   * paginating within a strict total deadline (<= 8s) so active stocks never stall.
+   */
+  async getSymbolLiveFloorsheet(symbol, { maxPages = 10, pageSize = 500, timeoutMs = 8000 } = {}) {
+    const cleanSym = String(symbol || '').toUpperCase().trim();
+    if (!cleanSym) return { rows: [], totalElements: 0, totalPages: 0, timedOut: false };
+
+    const boundedTimeoutMs = Math.min(Math.max(Number(timeoutMs) || 8000, 1000), 8000);
+    const deadline = Date.now() + boundedTimeoutMs;
+    const rows = [];
+    const seenIds = new Set();
+    let totalElements = 0;
+    let totalPages = 1;
+    let timedOut = false;
+
+    for (let page = 0; page < maxPages; page++) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 150) {
+        timedOut = true;
+        break;
+      }
+
+      try {
+        const res = await this.getFloorSheet({
+          symbol: cleanSym,
+          page,
+          size: pageSize,
+          timeoutMs: Math.min(remainingMs, 4500)
+        });
+        const content = res?.floorsheets?.content || res?.content || (Array.isArray(res) ? res : []);
+        if (page === 0) {
+          totalElements = Number(res?.floorsheets?.totalElements ?? res?.totalElements ?? content.length ?? 0);
+          totalPages = Number(res?.floorsheets?.totalPages ?? res?.totalPages ?? (content.length >= pageSize ? maxPages : 1));
+        }
+        if (!Array.isArray(content) || content.length === 0) break;
+
+        for (const item of content) {
+          const itemSym = String(item.stockSymbol || item.symbol || cleanSym).toUpperCase().trim();
+          if (itemSym !== cleanSym) continue;
+          const cid = String(item.contractId || item.contract_no || '');
+          if (cid && seenIds.has(cid)) continue;
+          if (cid) seenIds.add(cid);
+          rows.push(item);
+        }
+
+        if (page + 1 >= totalPages || content.length < pageSize) break;
+      } catch (err) {
+        if (String(err.message || '').toLowerCase().includes('timeout')) {
+          timedOut = true;
+        }
+        break;
+      }
+    }
+
+    return {
+      rows,
+      totalElements: Math.max(totalElements, rows.length),
+      totalPages,
+      timedOut
+    };
   }
 
   async getSecurityDetails(symbol, force) {

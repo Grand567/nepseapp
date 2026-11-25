@@ -965,6 +965,8 @@ export const ingestFloorsheetContractsTransaction = db.transaction((tradeDate, r
     (contract_no, symbol, trade_date, trade_time, buyer_broker, seller_broker, kitta, rate, amount, aggressor_side, is_internal_cross, is_whale_print)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(contract_no) DO UPDATE SET
+      buyer_broker = CASE WHEN excluded.buyer_broker > 0 THEN excluded.buyer_broker ELSE floorsheet_contracts.buyer_broker END,
+      seller_broker = CASE WHEN excluded.seller_broker > 0 THEN excluded.seller_broker ELSE floorsheet_contracts.seller_broker END,
       amount = excluded.amount,
       aggressor_side = excluded.aggressor_side,
       is_internal_cross = excluded.is_internal_cross,
@@ -1021,7 +1023,7 @@ export const ingestFloorsheetContractsTransaction = db.transaction((tradeDate, r
 
       if (
         !cid || !sym || !date ||
-        buyer <= 0 || seller <= 0 || qty <= 0 ||
+        buyer < 0 || seller < 0 || qty <= 0 ||
         isNaN(rate) || rate <= 0 || isNaN(amt) || amt <= 0
       ) {
         continue;
