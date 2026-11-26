@@ -153,7 +153,7 @@ async function main() {
     const body = st.data?.data || st.data || {};
     marketIsOpen = Boolean(body.isOpen);
     const session = body.session || body.status || body.statusLabel || (marketIsOpen ? 'LIVE' : 'CLOSED');
-    const asOfDate = body.asOfDate || body.targetSessionDate || body.sessionDate || 'unknown';
+    const asOfDate = body.asOfDate || body.sessionDate || body.lastClosedSessionDate || body.targetSessionDate || 'unknown';
     marketModeLabel = marketIsOpen ? 'LIVE' : 'PRE/POST-MARKET';
     const cacheCtrl = String(st.headers.get('cache-control') || '');
 

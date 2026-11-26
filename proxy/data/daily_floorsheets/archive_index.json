@@ -1,13 +1,24 @@
 [
   {
+    "date": "2026-11-26",
+    "tradeCount": 49806,
+    "ingestedCount": 49806,
+    "totalVolume": 14710298,
+    "totalTurnover": 5489584102,
+    "jsonFileSizeKb": 25554.5,
+    "gzFileSizeKb": 2954.5,
+    "savedAt": "2026-11-26T10:08:20.137Z",
+    "status": "COMPLETE"
+  },
+  {
     "date": "2026-11-25",
-    "tradeCount": 193,
-    "ingestedCount": 0,
-    "totalVolume": 72504,
-    "totalTurnover": 25125054,
-    "jsonFileSizeKb": 51.9,
-    "gzFileSizeKb": 3.6,
-    "savedAt": "2026-11-26T00:35:52.077Z",
+    "tradeCount": 50638,
+    "ingestedCount": 50638,
+    "totalVolume": 15573749,
+    "totalTurnover": 5966651628,
+    "jsonFileSizeKb": 15671.1,
+    "gzFileSizeKb": 1207,
+    "savedAt": "2026-11-26T10:06:52.893Z",
     "status": "COMPLETE"
   },
   {

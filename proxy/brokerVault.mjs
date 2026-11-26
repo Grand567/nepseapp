@@ -2843,37 +2843,99 @@ export async function getFullSessionFloorsheet(dateStr = '') {
     console.warn('[brokerVault] Full session floorsheet fetch failed:', err.message);
     recordScraperMetric('floorsheet_scraper', false, 0, err.message);
   }
+  } // End Tier 1: official NEPSE NOTS (today only)
 
-  // Tier 2: ShareSansar / Chukul Market-Wide Floorsheet Fallback
+  // Tier 2: ShareSansar / Chukul Market-Wide Floorsheet Fallback (works for both today and prior closed sessions)
   try {
     const ssRows = await fetchShareSansarFloorsheet('', 25000, cleanDate);
-      if (Array.isArray(ssRows) && ssRows.length > 0) {
-        const { deduplicatedTrades: deduplicated } = deduplicateFloorsheetContracts(ssRows, cleanDate || nptDate);
+    if (Array.isArray(ssRows) && ssRows.length > 0) {
+      const { deduplicatedTrades: deduplicated } = deduplicateFloorsheetContracts(ssRows, cleanDate || nptDate);
+      if (hasValidUnmaskedBrokers(deduplicated)) {
+        const recDate = deduplicated[0]?.businessDate || cleanDate || nptDate;
+
+        // Completeness Check & Raw Backup for fallback source
+        recordDailyCompleteness(recDate, {
+          source: 'SHARESANSAR',
+          exchangeReportedCount: ssRows.length,
+          storedRowCount: deduplicated.length
+        });
+        backupRawFloorsheet(recDate, deduplicated, {
+          source: 'SHARESANSAR',
+          exchangeReportedCount: ssRows.length
+        });
+
+        const saveFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${recDate}.json`);
+        try {
+          fs.writeFileSync(saveFile, JSON.stringify(deduplicated));
+          ingestDailyFloorsheetTransaction(recDate, deduplicated);
+          rebuildHotCache();
+        } catch (_) {}
+        return deduplicated;
+      }
+    }
+  } catch (e2) {
+    console.warn('[brokerVault] Tier 2 ShareSansar fallback error:', e2.message);
+  }
+
+  // Tier 2B: Chukul Per-Symbol Unmasked Floorsheet Recovery for prior closed sessions (when NOTS & ShareSansar unavailable)
+  if (cleanDate && (cleanDate < nptDate || !isIntradayWindow)) {
+    try {
+      let targetSymbols = [];
+      if (db) {
+        try {
+          targetSymbols = db.prepare(
+            'SELECT DISTINCT UPPER(symbol) as symbol FROM daily_stock_summary WHERE trade_date = ? AND symbol IS NOT NULL'
+          ).all(cleanDate).map(r => r.symbol).filter(Boolean);
+        } catch (_) {}
+      }
+      if (targetSymbols.length === 0) {
+        try {
+          const smPath = path.join(__dirname, 'stockmap.json');
+          if (fs.existsSync(smPath)) {
+            targetSymbols = Object.keys(JSON.parse(fs.readFileSync(smPath, 'utf8')) || {});
+          }
+        } catch (_) {}
+      }
+      if (targetSymbols.length > 0) {
+        const allChukul = [];
+        const concurrency = 12;
+        for (let i = 0; i < targetSymbols.length; i += concurrency) {
+          const batch = targetSymbols.slice(i, i + concurrency);
+          const batchResults = await Promise.all(
+            batch.map(sym => fetchChukulDateFloorsheet(sym, cleanDate).catch(() => []))
+          );
+          for (const rows of batchResults) {
+            if (Array.isArray(rows) && rows.length > 0) {
+              for (const r of rows) {
+                if (!r.businessDate || r.businessDate === cleanDate) {
+                  allChukul.push(r);
+                }
+              }
+            }
+          }
+        }
+        const { deduplicatedTrades: deduplicated } = deduplicateFloorsheetContracts(allChukul, cleanDate);
         if (hasValidUnmaskedBrokers(deduplicated)) {
-          const recDate = deduplicated[0]?.businessDate || cleanDate || nptDate;
-          
-          // Completeness Check & Raw Backup for fallback source
-          recordDailyCompleteness(recDate, {
-            source: 'SHARESANSAR',
-            exchangeReportedCount: ssRows.length,
+          recordDailyCompleteness(cleanDate, {
+            source: 'CHUKUL',
+            exchangeReportedCount: allChukul.length,
             storedRowCount: deduplicated.length
           });
-          backupRawFloorsheet(recDate, deduplicated, {
-            source: 'SHARESANSAR',
-            exchangeReportedCount: ssRows.length
+          backupRawFloorsheet(cleanDate, deduplicated, {
+            source: 'CHUKUL',
+            exchangeReportedCount: allChukul.length
           });
-
-          const saveFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${recDate}.json`);
-          try { 
-            fs.writeFileSync(saveFile, JSON.stringify(deduplicated)); 
-            ingestDailyFloorsheetTransaction(recDate, deduplicated);
+          const saveFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${cleanDate}.json`);
+          try {
+            fs.writeFileSync(saveFile, JSON.stringify(deduplicated));
+            ingestDailyFloorsheetTransaction(cleanDate, deduplicated);
             rebuildHotCache();
           } catch (_) {}
           return deduplicated;
         }
       }
-    } catch (e2) {
-      console.warn('[brokerVault] Tier 2 ShareSansar fallback error:', e2.message);
+    } catch (chErr) {
+      console.warn(`[brokerVault] Tier 2B Chukul recovery error for ${cleanDate}:`, chErr.message);
     }
   }
 
@@ -2909,21 +2971,21 @@ export async function getFullSessionFloorsheet(dateStr = '') {
     }
   }
 
-  // B) Aggregate authentic trading rows across proxy/data/broker_vault/*.json files for cleanDate
+  // B) Aggregate authentic trading rows across proxy/data/broker_vault/*.json files for cleanDate (never emit masked partial caches)
   try {
     if (fs.existsSync(VAULT_DIR)) {
       const vaultFiles = fs.readdirSync(VAULT_DIR).filter(f => f.endsWith('.json'));
       if (vaultFiles.length > 0) {
         let targetVaultDate = cleanDate;
         if (!targetVaultDate) {
-          // If no date requested, discover the latest available date across vault files
+          // If no date requested, discover the latest available unmasked date across vault files
           const dateCountMap = {};
           for (const vf of vaultFiles.slice(0, 50)) {
             try {
               const symData = JSON.parse(fs.readFileSync(path.join(VAULT_DIR, vf), 'utf8'));
               if (symData?.rowsByDate) {
                 for (const [dt, rows] of Object.entries(symData.rowsByDate)) {
-                  if (Array.isArray(rows) && rows.length > 0) {
+                  if (Array.isArray(rows) && rows.some(r => (parseInt(String(r?.buyerMemberId || r?.buyerBroker || 0), 10) || 0) > 0 && (parseInt(String(r?.sellerMemberId || r?.sellerBroker || 0), 10) || 0) > 0)) {
                     dateCountMap[dt] = (dateCountMap[dt] || 0) + rows.length;
                   }
                 }
@@ -2961,18 +3023,20 @@ export async function getFullSessionFloorsheet(dateStr = '') {
               });
             }
 
-            // Cache reconstructed session to disk so subsequent queries are instant
-            try {
-              const dailyDir = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), 'daily_floorsheets');
-              if (!fs.existsSync(dailyDir)) fs.mkdirSync(dailyDir, { recursive: true });
-              const dailyFile = path.join(dailyDir, `floorsheet-${targetVaultDate}.json`);
-              const fullFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${targetVaultDate}.json`);
-              fs.writeFileSync(dailyFile, JSON.stringify(deduplicated), 'utf8');
-              fs.writeFileSync(fullFile, JSON.stringify(deduplicated), 'utf8');
-              console.log(`[brokerVault] Reconstructed and cached ${deduplicated.length} authentic trades for ${targetVaultDate}`);
-            } catch (_) {}
+            if (hasValidUnmaskedBrokers(deduplicated)) {
+              // Cache reconstructed unmasked session to disk so subsequent queries are instant
+              try {
+                const dailyDir = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), 'daily_floorsheets');
+                if (!fs.existsSync(dailyDir)) fs.mkdirSync(dailyDir, { recursive: true });
+                const dailyFile = path.join(dailyDir, `floorsheet-${targetVaultDate}.json`);
+                const fullFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${targetVaultDate}.json`);
+                fs.writeFileSync(dailyFile, JSON.stringify(deduplicated), 'utf8');
+                fs.writeFileSync(fullFile, JSON.stringify(deduplicated), 'utf8');
+                console.log(`[brokerVault] Reconstructed and cached ${deduplicated.length} authentic trades for ${targetVaultDate}`);
+              } catch (_) {}
 
-            return deduplicated;
+              return deduplicated;
+            }
           }
         }
       }
