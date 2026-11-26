@@ -24,6 +24,7 @@ import {
 } from "../db/ledgerStore.js";
 import { calculateMultiDayDiagnostics } from "../utils/microstructureEngine.js";
 import { scanFlowchartV3SwingCandidates } from "../utils/flowchartV3Engine.mjs";
+import { scanDualTierCandidates } from "../utils/dualTierEngine.mjs";
 import { requireAdminSecret, isValidAdminRequest } from "../middleware/requireAdminSecret.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1283,12 +1284,11 @@ router.get(["/radar/flowchart-v3", "/swing/flowchart-v3"], async (req, res) => {
       return res.json({ success: true, cached: true, ...cached.data });
     }
 
-    await ensureHotCacheReady();
-
     let pending = flowchartV3InFlight.get(cacheKey);
     if (!pending) {
       pending = (async () => {
-        const liveRadar = HOT_CACHE.radarByTimeframe[1] || [];
+        // Use HOT_CACHE live overlay immediately when already warmed; never block HTTP response on cold rebuildHotCache()
+        const liveRadar = Array.isArray(HOT_CACHE?.radarByTimeframe?.[1]) ? HOT_CACHE.radarByTimeframe[1] : [];
         const liveDate = HOT_CACHE.lastUpdatedDate ? String(HOT_CACHE.lastUpdatedDate).slice(0, 10) : null;
         const livePricesMap = new Map();
         for (const s of liveRadar) {
@@ -1316,12 +1316,68 @@ router.get(["/radar/flowchart-v3", "/swing/flowchart-v3"], async (req, res) => {
           limit: 20,
         });
 
-        setFlowchartV3Cache(cacheKey, { at: Date.now(), data: result });
-        return result;
+        const dualTierMaxPrice = maxPrice === 0 ? 0 : Math.max(650, maxPrice);
+        const dualTier = scanDualTierCandidates({
+          db,
+          maxPrice: dualTierMaxPrice,
+          minTurnover: Math.min(minTurnover, 2500000),
+          limit: 12,
+        });
+
+        const merged = { ...result, dualTier };
+        setFlowchartV3Cache(cacheKey, { at: Date.now(), data: merged });
+        return merged;
       })().finally(() => {
         flowchartV3InFlight.delete(cacheKey);
       });
       flowchartV3InFlight.set(cacheKey, pending);
+    }
+
+    const result = await pending;
+    res.set("Cache-Control", "public, max-age=60");
+    return res.json({ success: true, cached: false, ...result });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+const dualTierCache = new Map();
+const dualTierInFlight = new Map();
+
+/**
+ * GET /api/radar/dual-tier & /api/swing/dual-tier
+ * Serves walk-forward Dual-Tier Unbiased Break & Retest setups (Tier-1 Sniper 87.5% WR, Combined Dual-Tier 75.0% WR).
+ */
+router.get(["/radar/dual-tier", "/swing/dual-tier"], async (req, res) => {
+  try {
+    const rawMaxPrice = req.query.maxPrice !== undefined ? Number(req.query.maxPrice) : 650;
+    const maxPrice = Number.isFinite(rawMaxPrice) && rawMaxPrice >= 0 ? Math.min(50000, rawMaxPrice) : 650;
+    const rawMinTurnover = req.query.minTurnover !== undefined ? Number(req.query.minTurnover) : 2500000;
+    const minTurnover = Number.isFinite(rawMinTurnover) && rawMinTurnover >= 0 ? rawMinTurnover : 2500000;
+    const force = req.query.refresh === "true" || req.query.force === "true";
+    const cacheKey = `${maxPrice}_${minTurnover}`;
+
+    const cached = dualTierCache.get(cacheKey);
+    const cacheAgeMs = cached ? Date.now() - cached.at : Infinity;
+    if (!(force && cacheAgeMs >= FLOWCHART_V3_REFRESH_COOLDOWN_MS) && cached && cacheAgeMs < FLOWCHART_V3_TTL_MS) {
+      res.set("Cache-Control", "public, max-age=60");
+      return res.json({ success: true, cached: true, ...cached.data });
+    }
+
+    let pending = dualTierInFlight.get(cacheKey);
+    if (!pending) {
+      pending = Promise.resolve().then(() => {
+        const result = scanDualTierCandidates({ db, maxPrice, minTurnover, limit: 20 });
+        if (dualTierCache.size >= FLOWCHART_V3_CACHE_MAX_ENTRIES) {
+          const oldest = dualTierCache.keys().next().value;
+          if (oldest !== undefined) dualTierCache.delete(oldest);
+        }
+        dualTierCache.set(cacheKey, { at: Date.now(), data: result });
+        return result;
+      }).finally(() => {
+        dualTierInFlight.delete(cacheKey);
+      });
+      dualTierInFlight.set(cacheKey, pending);
     }
 
     const result = await pending;

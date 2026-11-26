@@ -38,6 +38,7 @@ import StockDetailModal from './StockDetailModal';
 import AdvancedChartModal from './AdvancedChartModal';
 import BreakoutAlertDialog from './BreakoutAlertDialog';
 import { NRBMacroWidget } from './NRBMacroWidget';
+import DualTierSniperCard from './swing/DualTierSniperCard';
 import { useBackHandler, useNavigation } from '../context/NavigationContext';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { getWatchlist, toggleWatchlist, isWatched } from '../utils/watchlist';
@@ -1678,6 +1679,14 @@ function Dashboard({
       setSelectedStock(targetStock);
     }
   };
+
+  const handleOpenSwingScreener = useCallback(() => {
+    try {
+      localStorage.setItem('open_service_id', 'swing-trade-selector');
+      window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'swing-trade-selector' } }));
+    } catch (_) {}
+    setActiveTab('services');
+  }, [setActiveTab]);
 
   const handleToggleHeroFullscreen = () => {
     if (!isHeroFullscreen) {
@@ -4654,6 +4663,12 @@ function Dashboard({
         </div>
       )}
 
+      {/* ── 4A-ZERO. 🎯 EOD DUAL-TIER UNBIASED SNIPER DESK (87.5% / 75.0% WR) & 4-STEP PLAYBOOK ── */}
+      <DualTierSniperCard
+        onSelectStock={handleStockClick}
+        onOpenScreener={handleOpenSwingScreener}
+      />
+
       {/* ── 4A. 🏆 TODAY'S PRIME BREAKOUT & BUY-ZONE PICK / CASH DEFENSE BANNER ── */}
       {(!stocks || stocks.length === 0) ? (
         <div style={{
@@ -4743,13 +4758,7 @@ function Dashboard({
           <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 }}>
             <button
               type="button"
-              onClick={() => {
-                try {
-                  localStorage.setItem('open_service_id', 'swing-trade-selector');
-                  window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'swing-trade-selector' } }));
-                } catch (_) {}
-                setActiveTab('services');
-              }}
+              onClick={handleOpenSwingScreener}
               style={{
                 background: 'rgba(239, 68, 68, 0.15)',
                 border: '1px solid rgba(239, 68, 68, 0.4)',

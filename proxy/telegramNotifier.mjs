@@ -39,6 +39,13 @@ import {
   scanFlowchartV3SwingCandidates,
 } from './utils/flowchartV3Engine.mjs';
 import {
+  evaluateLoopholeProtectedSmcSetup,
+  evaluateUnbiasedMarketRegime,
+  evaluateDualTierCandidate,
+  scanDualTierCandidates,
+} from './utils/dualTierEngine.mjs';
+export { evaluateLoopholeProtectedSmcSetup };
+import {
   fetchLiveNepseIndexHistory,
   evaluateDailySelectionGuide,
   formatDailySelectionGuideHtml
@@ -484,7 +491,7 @@ export async function sendTelegramMessage(text, optionsOrParseMode = 'HTML') {
 
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
   if (isTestEnv && process.env.TEST_LIVE_TELEGRAM !== 'true') {
-    return { success: true, messageId: 999999, mocked: true };
+    return { success: true, messageId: 999999, mocked: true, text };
   }
 
   const cfg = loadConfig();
@@ -935,333 +942,7 @@ export function classifyDualTrackRally({
   return { isUpperWickRejected, rallyTrack, rallyHorizonLabel };
 }
 
-/**
- * Evaluates Loophole-Protected SMC & Multi-Day Break-and-Retest Confluences.
- * Guards against NEPSE phantom-tick wicks, momentum starvation, and tight intraday stop hunts.
- */
-export function evaluateLoopholeProtectedSmcSetup(histBars, context = {}) {
-  const fallbackLtp = Number(context.ltp || 0);
-  const defaultOut = {
-    isBreakAndRetest: false,
-    isSmcSweepMss: false,
-    hasBullishFvg: false,
-    isFvgMitigated: false,
-    isNr7: false,
-    isIdnr4: false,
-    isT2ClearedContinuation: false,
-    clv: 0.5,
-    upperWickRatio: 0,
-    rallyTrack: 'STANDARD_ACCUMULATION',
-    rallyHorizonLabel: 'Institutional Base Accumulation',
-    fvgLow: null,
-    fvgHigh: null,
-    retestLevel: null,
-    sweepLow: null,
-    smcStopLoss: fallbackLtp > 0 ? Number((fallbackLtp * 0.965).toFixed(1)) : 0,
-    smcTarget1: fallbackLtp > 0 ? Number((fallbackLtp * 1.08).toFixed(1)) : 0,
-    smcTarget2: fallbackLtp > 0 ? Number((fallbackLtp * 1.15).toFixed(1)) : 0,
-    smcConfluenceBonus: 0,
-    smcBadge: null,
-    smcNarrative: 'Orderly Floor Base Holding Above 20 EMA',
-    fvgNarrative: 'Balanced Auction Near Broker VWAP',
-  };
-
-  if (!Array.isArray(histBars) || histBars.length < 12) {
-    return defaultOut;
-  }
-
-  // Loophole 1 Guard: Normalize bars & clamp pathological phantom-wick drops (< 85% of close)
-  const validBars = histBars.map((b) => {
-    const c = Number(b?.close_price ?? b?.close ?? 0);
-    const o = Number(b?.open_price ?? b?.open ?? c) || c;
-    const rawHigh = Number(b?.high_price ?? b?.high ?? c) || c;
-    const rawLow = Number(b?.low_price ?? b?.low ?? c) || c;
-    const safeLow = rawLow > 0 && c > 0 && rawLow < c * 0.85 ? Number((Math.min(o, c) * 0.98).toFixed(2)) : rawLow;
-    const safeHigh = Math.max(rawHigh, o, c);
-    return {
-      date: String(b?.trade_date ?? b?.date ?? ''),
-      open: o,
-      high: safeHigh,
-      low: Math.min(safeLow, o, c),
-      close: c,
-      volume: Number(b?.total_volume ?? b?.volume ?? 0),
-    };
-  }).filter((b) => b.close > 0);
-
-  if (validBars.length < 12) return defaultOut;
-
-  const bLen = validBars.length - 1;
-  const curBar = validBars[bLen];
-  const prevBar = validBars[bLen - 1];
-  const ltp = Number(context.ltp || curBar.close || 0);
-  if (ltp <= 0) return defaultOut;
-
-  const prior20 = validBars.slice(Math.max(0, bLen - 20), bLen);
-  const avgVol20 = prior20.reduce((s, r) => s + r.volume, 0) / Math.max(1, prior20.length);
-  const ema20Val = Number(context.ema20 || 0) > 0
-    ? Number(context.ema20)
-    : prior20.reduce((s, r) => s + r.close, 0) / Math.max(1, prior20.length);
-
-  const curVol = curBar.volume;
-  const dayChgPct = prevBar.close > 0 ? ((curBar.close - prevBar.close) / prevBar.close) * 100 : 0;
-  const prior5 = validBars.slice(Math.max(0, bLen - 5), bLen);
-  const minVol5 = prior5.length > 0 ? Math.min(...prior5.map((r) => r.volume)) : avgVol20;
-  const vduRatio = minVol5 / Math.max(1, avgVol20);
-
-  const bcr3Buy = (context.bcr3Buy !== null && context.bcr3Buy !== undefined && Number.isFinite(Number(context.bcr3Buy))) ? Number(context.bcr3Buy) : null;
-  const bcr3Sell = (context.bcr3Sell !== null && context.bcr3Sell !== undefined && Number.isFinite(Number(context.bcr3Sell))) ? Number(context.bcr3Sell) : null;
-  const leadRetentionPct = (context.leadRetentionPct !== null && context.leadRetentionPct !== undefined && Number.isFinite(Number(context.leadRetentionPct))) ? Number(context.leadRetentionPct) : null;
-  const isTrap = Boolean(context.isTrap);
-
-  const hasRealLiquidity = curVol >= 0.40 * avgVol20 || curVol >= 4000;
-  const hasBrokerBacking = !isTrap && bcr3Buy !== null && bcr3Sell !== null && leadRetentionPct !== null && bcr3Buy >= bcr3Sell && bcr3Sell <= 45 && leadRetentionPct >= 55;
-
-  // Compute ATR(14) & Structural Low / Liquidity Pool Targets (Loophole 3 Guard)
-  const atrSlice = validBars.slice(Math.max(1, bLen - 14), bLen + 1);
-  let trSum = 0;
-  for (let idx = 1; idx < atrSlice.length; idx++) {
-    const b = atrSlice[idx];
-    const p = atrSlice[idx - 1];
-    trSum += Math.max(b.high - b.low, Math.abs(b.high - p.close), Math.abs(b.low - p.close));
-  }
-  const atr14 = atrSlice.length > 1 ? trSum / (atrSlice.length - 1) : ltp * 0.025;
-
-  const bars20 = validBars.slice(Math.max(0, validBars.length - 20));
-  const bars50 = validBars.slice(Math.max(0, validBars.length - 50));
-  const maxHigh20 = Math.max(...bars20.map((b) => b.high));
-  const maxHigh50 = Math.max(...bars50.map((b) => b.high));
-  const smcTarget1 = Number(Math.max(ltp * 1.075, Math.min(ltp * 1.095, maxHigh20 * 1.02)).toFixed(1));
-  const smcTarget2 = Number(Math.max(ltp * 1.145, Math.min(ltp * 1.180, maxHigh50 * 1.04)).toFixed(1));
-
-  let isBreakAndRetest = false;
-  let retestLevel = null;
-  let isSmcSweepMss = false;
-  let sweepLow = null;
-  let hasBullishFvg = false;
-  let isFvgMitigated = false;
-  let fvgLow = null;
-  let fvgHigh = null;
-
-  const curRange = curBar.high - curBar.low;
-  const clv = curRange > 0.001
-    ? Number(Math.max(0, Math.min(1, (curBar.close - curBar.low) / curRange)).toFixed(3))
-    : (dayChgPct > 0 ? 1.0 : dayChgPct < 0 ? 0.0 : 0.5);
-  const upperWickRatio = curRange > 0.001
-    ? Number(Math.max(0, (curBar.high - Math.max(curBar.open, curBar.close)) / curRange).toFixed(3))
-    : 0;
-
-  const prior6Bars = validBars.slice(Math.max(0, bLen - 6), bLen);
-  const prior6Ranges = prior6Bars.map((b) => b.high - b.low);
-  const isNr7 =
-    prior6Bars.length === 6 &&
-    prior6Ranges.every((r) => r > 0) &&
-    curRange > 0 &&
-    curRange <= Math.min(...prior6Ranges) + 1e-6;
-
-  const prior3Bars = validBars.slice(Math.max(0, bLen - 3), bLen);
-  const prior3Ranges = prior3Bars.map((b) => b.high - b.low);
-  const isInsideDay = curBar.high <= prevBar.high + 1e-6 && curBar.low >= prevBar.low - 1e-6;
-  const isIdnr4 =
-    isInsideDay &&
-    prior3Bars.length === 3 &&
-    prior3Ranges.every((r) => r > 0) &&
-    curRange > 0 &&
-    curRange <= Math.min(...prior3Ranges) + 1e-6;
-
-  let isT2ClearedContinuation = false;
-
-  if (hasRealLiquidity && hasBrokerBacking) {
-    // 1. Multi-Day Break & Retest (Breakout 2-8 sessions ago, low-vol pullback retest today)
-    const minBrkIdx = Math.max(5, bLen - 8);
-    const maxBrkIdx = bLen - 2;
-    for (let i = maxBrkIdx; i >= minBrkIdx; i--) {
-      const brkBar = validBars[i];
-      const beforeBrk = validBars.slice(Math.max(0, i - 10), i);
-      if (beforeBrk.length < 3) continue;
-      const priorRes = Math.max(...beforeBrk.map((b) => b.close));
-      const clearedResistance = brkBar.close > priorRes && validBars[i - 1].close <= priorRes * 1.006;
-      const clearedEma = ema20Val > 0 && brkBar.close > ema20Val * 1.005 && validBars[i - 1].close <= ema20Val * 1.003;
-      const breakoutVolOk = brkBar.volume >= 1.15 * avgVol20;
-
-      if ((clearedResistance || clearedEma) && breakoutVolOk) {
-        const pivot = clearedResistance ? priorRes : ema20Val;
-        const distRetest = pivot > 0 ? Math.abs(curBar.low - pivot) / pivot : 1;
-        const heldRetest = distRetest <= 0.020 && curBar.close >= pivot * 0.993 && dayChgPct >= -1.5 && dayChgPct <= 3.5;
-        const volCalm = curVol <= 0.95 * brkBar.volume || vduRatio <= 0.72;
-        if (heldRetest && volCalm && leadRetentionPct >= 65) {
-          isBreakAndRetest = true;
-          retestLevel = Number(pivot.toFixed(1));
-          break;
-        }
-      }
-    }
-
-    // 2. Liquidity Sweep + Market Structure Shift (MSS) within last 5 bars
-    let detectedSweep = null;
-    const minSweepIdx = Math.max(5, bLen - 4);
-    for (let s = bLen; s >= minSweepIdx; s--) {
-      const sBar = validBars[s];
-      const priorWindow = validBars.slice(Math.max(0, s - 10), s);
-      if (priorWindow.length < 3) continue;
-      const minPriorLow = Math.min(...priorWindow.map((b) => b.low));
-      const sweptSupport = sBar.low < minPriorLow || (ema20Val > 0 && sBar.low < ema20Val * 0.992);
-      const sweptAndAbsorbed = sweptSupport && sBar.close > sBar.low && sBar.close >= Math.min(minPriorLow, ema20Val) * 0.985;
-      if (sweptAndAbsorbed) {
-        detectedSweep = Number(sBar.low.toFixed(1));
-        break;
-      }
-    }
-    const prior3Highs = validBars.slice(Math.max(0, bLen - 3), bLen).map((b) => b.high);
-    const recentMinorHigh3 = prior3Highs.length > 0 ? Math.max(...prior3Highs) : prevBar.high;
-    const mssConfirmed =
-      curBar.close > prevBar.close &&
-      dayChgPct >= 0.25 &&
-      (curBar.close >= recentMinorHigh3 * 0.997 || (ema20Val > 0 && curBar.close >= ema20Val));
-
-    if (detectedSweep !== null && mssConfirmed && curBar.close > detectedSweep) {
-      isSmcSweepMss = true;
-      sweepLow = detectedSweep;
-    }
-
-    // 3. Bullish Fair Value Gap (FVG) + Mitigation Check across last 5 sessions
-    const minFvgIdx = Math.max(2, bLen - 4);
-    for (let k = bLen; k >= minFvgIdx; k--) {
-      const cPrev2 = validBars[k - 2];
-      const cMid = validBars[k - 1];
-      const cCurr = validBars[k];
-      const gap = cCurr.low - cPrev2.high;
-      const gapPct = cPrev2.high > 0 ? gap / cPrev2.high : 0;
-      if (gap >= 1.0 && gapPct >= 0.003 && cMid.volume >= 0.85 * avgVol20) {
-        hasBullishFvg = true;
-        fvgLow = Number(cPrev2.high.toFixed(1));
-        fvgHigh = Number(cCurr.low.toFixed(1));
-        isFvgMitigated = curBar.low <= fvgHigh * 1.018 && curBar.close >= fvgLow * 0.992;
-        break;
-      }
-    }
-
-    // 4. T+2 Settlement Survival & Day-3/4 Pullback Continuation (NEPSE Demat Lockup Cycle)
-    const minIgIdx = Math.max(1, bLen - 4);
-    const maxIgIdx = bLen - 2;
-    for (let k = maxIgIdx; k >= minIgIdx; k--) {
-      const igBar = validBars[k];
-      const beforeIg = validBars[k - 1];
-      const igChgPct = beforeIg.close > 0 ? ((igBar.close - beforeIg.close) / beforeIg.close) * 100 : 0;
-      const igRange = igBar.high - igBar.low;
-      const igClv = igRange > 0.001 ? (igBar.close - igBar.low) / igRange : (igChgPct > 0 ? 1 : 0.5);
-      const preIgBars = validBars.slice(Math.max(0, k - 10), k);
-      const preIgAvgVol = preIgBars.length > 0
-        ? preIgBars.reduce((s, r) => s + r.volume, 0) / preIgBars.length
-        : avgVol20;
-      const postBars = validBars.slice(k + 1, bLen + 1);
-      const minPostLow = Math.min(...postBars.map((b) => b.low));
-      const hasPullbackDryup = postBars.some((b) => b.volume <= igBar.volume * 0.72);
-      const structuralFloor = Math.min(igBar.open, (igBar.open + igBar.close) * 0.5);
-      if (
-        igChgPct >= 3.0 &&
-        igClv >= 0.55 &&
-        igBar.volume >= Math.min(avgVol20, preIgAvgVol > 0 ? preIgAvgVol : avgVol20) * 1.35 &&
-        minPostLow >= igBar.low * 0.992 &&
-        curBar.close >= structuralFloor * 0.992 &&
-        curBar.close >= ema20Val * 0.99 &&
-        hasPullbackDryup &&
-        upperWickRatio <= 0.42
-      ) {
-        isT2ClearedContinuation = true;
-        break;
-      }
-    }
-  }
-
-  // ATR-buffered End-of-Day Invalidation Stop-Loss (Loophole 3 Guard)
-  const last5Valid = validBars.slice(Math.max(0, bLen - 4), bLen + 1);
-  const minLow5 = Math.min(...last5Valid.map((b) => b.low));
-  const structuralInvalidationLow = fvgLow
-    ? Math.min(minLow5, fvgLow)
-    : (sweepLow !== null ? Math.min(minLow5, sweepLow) : minLow5);
-  const rawStop = structuralInvalidationLow - 0.35 * atr14;
-  const smcStopLoss = Number(Math.max(ltp * 0.955, Math.min(ltp * 0.965, rawStop)).toFixed(1));
-
-  // Additive Confluence Bonus (Loophole 4 Guard + NR7/IDNR4/T+2/CLV/Wick Guard)
-  const hasConfluenceBacking = hasRealLiquidity && hasBrokerBacking;
-  const upperWickPenalty = upperWickRatio > 0.45 && dayChgPct > 1.0 ? -6 : 0;
-  const rawConfluenceBonus = hasConfluenceBacking
-    ? (isBreakAndRetest ? 8 : 0) +
-      (isSmcSweepMss ? 7 : 0) +
-      (isFvgMitigated ? 5 : hasBullishFvg ? 3 : 0) +
-      (isNr7 || isIdnr4 ? 5 : 0) +
-      (isT2ClearedContinuation ? 6 : 0) +
-      (clv >= 0.65 && upperWickRatio <= 0.30 ? 3 : 0) +
-      upperWickPenalty
-    : 0;
-  const smcConfluenceBonus = Math.max(0, Math.min(20, rawConfluenceBonus));
-
-  let rallyTrack = 'STANDARD_ACCUMULATION';
-  let rallyHorizonLabel = 'Institutional Base Accumulation';
-  if (hasConfluenceBacking && (isT2ClearedContinuation || isBreakAndRetest)) {
-    rallyTrack = 'TRACK_B_T2_CLEARED_CONTINUATION';
-    rallyHorizonLabel = 'Track B: Post-T+2 Cleared Continuation';
-  } else if (hasConfluenceBacking && (isNr7 || isIdnr4 || isSmcSweepMss || isFvgMitigated)) {
-    rallyTrack = 'TRACK_A_COILED_2_3D_IGNITION';
-    rallyHorizonLabel = 'Track A: 2–3 Day Ignition Watch';
-  }
-
-  let smcBadge = null;
-  let smcNarrative = 'Orderly Floor Base Holding Above 20 EMA';
-  if (isBreakAndRetest && isSmcSweepMss) {
-    smcBadge = '🎯 SMC Break & Retest + Sweep MSS';
-    smcNarrative = `Break & Retest (Rs. ${retestLevel}) + Sweep (Rs. ${sweepLow}) & MSS`;
-  } else if (isBreakAndRetest) {
-    smcBadge = '🎯 SMC Break & Retest';
-    smcNarrative = `Confirmed Break & Retest at Rs. ${retestLevel} (Controlled Pullback)`;
-  } else if (isSmcSweepMss && isFvgMitigated) {
-    smcBadge = '⚡ SMC Sweep + MSS + FVG';
-    smcNarrative = `Liquidity Sweep (Rs. ${sweepLow}) + MSS + FVG Mitigation`;
-  } else if (isSmcSweepMss) {
-    smcBadge = '⚡ SMC Sweep + MSS';
-    smcNarrative = `Liquidity Sweep (Rs. ${sweepLow}) + Bullish MSS Above Structure`;
-  } else if (isFvgMitigated) {
-    smcBadge = '🟢 FVG Demand Mitigation';
-    smcNarrative = `Mitigating Bullish FVG Demand Shelf (Rs. ${fvgLow}–${fvgHigh})`;
-  } else if (isT2ClearedContinuation) {
-    smcBadge = '✅ T+2 Cleared Continuation';
-    smcNarrative = `Post-Ignition T+2 Settlement Survived on Volume Dry-Up (CLV ${(clv * 100).toFixed(0)}%)`;
-  } else if (isNr7 || isIdnr4) {
-    smcBadge = isIdnr4 ? '🌀 IDNR4 Coiled Ignition' : '🌀 NR7 Volatility Coil';
-    smcNarrative = `${isIdnr4 ? 'IDNR4' : 'NR7'} Tightest Daily Range Holding Above 20 EMA (2–3D Rally Spring)`;
-  }
-
-  const fvgNarrative = isFvgMitigated
-    ? `Mitigated Bullish FVG (Rs. ${fvgLow}–${fvgHigh}) at Demand`
-    : hasBullishFvg
-      ? `Active Demand FVG Shelf (Rs. ${fvgLow}–${fvgHigh})`
-      : 'Balanced Auction Near Broker VWAP';
-
-  return {
-    isBreakAndRetest,
-    isSmcSweepMss,
-    hasBullishFvg,
-    isFvgMitigated,
-    isNr7,
-    isIdnr4,
-    isT2ClearedContinuation,
-    clv,
-    upperWickRatio,
-    rallyTrack,
-    rallyHorizonLabel,
-    fvgLow,
-    fvgHigh,
-    retestLevel,
-    sweepLow,
-    smcStopLoss,
-    smcTarget1,
-    smcTarget2,
-    smcConfluenceBonus,
-    smcBadge,
-    smcNarrative,
-    fvgNarrative,
-  };
-}
+// Re-exported from ./utils/dualTierEngine.mjs above to avoid circular imports & logic duplication.
 
 export function enrichPayloadWithFlowchartV2RallyMetrics(
   rawPayload = {},
@@ -1567,6 +1248,11 @@ export async function sendTelegramSmartAlert(alertItem) {
       netKitta: alertItem.netKitta,
       pChange: alertItem.pChange,
       dayChgPct: alertItem.dayChgPct,
+      isDualTierSniper: Boolean(alertItem.isDualTierSniper),
+      isDualTierBalanced: Boolean(alertItem.isDualTierBalanced),
+      dualTierBadge: alertItem.dualTierBadge || null,
+      isIntradayEarlyWarning: Boolean(alertItem.isIntradayEarlyWarning),
+      intradayWarningBanner: alertItem.intradayWarningBanner || null,
     },
     { db: ledgerDb, trapAudit, flowMetrics, ltp }
   );
@@ -2576,16 +2262,7 @@ export async function runStockDeepAnalysisAndDispatch(rawSymbol, options = {}) {
     try {
       const { db } = await import('./db/ledgerStore.js');
       if (db) {
-        const mktRows = db.prepare(`
-          SELECT trade_date, AVG(close_price) as avg_close
-          FROM daily_stock_summary
-          WHERE close_price > 0 AND symbol NOT LIKE '%PO%' AND symbol NOT LIKE '%DEB%'
-          GROUP BY trade_date ORDER BY trade_date DESC LIMIT 20
-        `).all();
-        if (mktRows.length >= 20) {
-          const sma20 = mktRows.reduce((a, b) => a + b.avg_close, 0) / mktRows.length;
-          marketRegime = mktRows[0].avg_close >= sma20 ? 'BULL' : 'CHOP';
-        }
+        marketRegime = evaluateUnbiasedMarketRegime({ db }).regime;
       }
     } catch (_) {}
 
@@ -3830,6 +3507,30 @@ export async function select5StepSwingPicks(opts = {}) {
 
     const v3Scan = scanFlowchartV3SwingCandidates({ db, maxPrice: 0, minTurnover: 8000000, limit: 40 });
     const v3BySymbol = new Map((v3Scan?.candidates || []).map((c) => [c.symbol, c]));
+    const dualTierScan = scanDualTierCandidates({ db, maxPrice: 650, minTurnover: 2500000, limit: 30 });
+    const dualTierBySymbol = new Map((dualTierScan?.candidates || []).map((c) => [c.symbol, c]));
+
+    for (const dtCand of (dualTierScan?.candidates || [])) {
+      if (!existingSymbols.has(dtCand.symbol)) {
+        existingSymbols.add(dtCand.symbol);
+        openSignals.push({
+          symbol: dtCand.symbol,
+          signal_date: dtCand.asOfDate,
+          signal_type: dtCand.tier,
+          entry_price: dtCand.ltp,
+          current_ltp: dtCand.ltp,
+          broker_vwap: dtCand.vwap10D,
+          lead_broker_id: dtCand.leadBrokerId,
+          lead_broker_name: dtCand.leadBrokerName,
+          bcr5_net_pct: Math.max(20, dtCand.bcr3Buy10D - dtCand.bcr3Sell10D),
+          scr3_net_pct: dtCand.bcr3Sell10D,
+          broker_anomaly_score: dtCand.tier === 'TIER_1_SNIPER' ? 3.0 : 2.6,
+          avg_ticket_kitta: 250,
+          strategy: dtCand.tier,
+        });
+      }
+    }
+
     for (const v3 of (v3Scan?.candidates || []).slice(0, 15)) {
       if (!existingSymbols.has(v3.symbol)) {
         existingSymbols.add(v3.symbol);
@@ -3855,19 +3556,8 @@ export async function select5StepSwingPicks(opts = {}) {
     const secondaryMatches = [];
     const vetoedTraps = [];
 
-    let currentMarketRegime = opts?.marketRegime || opts?.regime || 'BULL';
-    try {
-      const mktRows = db.prepare(`
-        SELECT trade_date, AVG(close_price) as avg_close
-        FROM daily_stock_summary
-        WHERE close_price > 0 AND symbol NOT LIKE '%PO%' AND symbol NOT LIKE '%DEB%'
-        GROUP BY trade_date ORDER BY trade_date DESC LIMIT 20
-      `).all();
-      if (mktRows.length >= 20) {
-        const sma20 = mktRows.reduce((a, b) => a + b.avg_close, 0) / mktRows.length;
-        currentMarketRegime = mktRows[0].avg_close >= sma20 ? 'BULL' : 'CHOP';
-      }
-    } catch (_) {}
+    const regimeInfo = evaluateUnbiasedMarketRegime({ db });
+    const currentMarketRegime = opts?.marketRegime || opts?.regime || dualTierScan?.marketRegime || regimeInfo.regime || 'CHOP';
 
     const recentHistStmt = db.prepare(`
       SELECT trade_date, open_price, high_price, low_price, close_price, total_volume
@@ -4119,7 +3809,11 @@ export async function select5StepSwingPicks(opts = {}) {
       });
 
       const v3Eval = v3BySymbol.get(sym) || evaluateFlowchartV3Candidate(sym, { db, maxPrice: 0, minTurnover: 5000000 });
+      const dualTierEval = dualTierBySymbol.get(sym) || evaluateDualTierCandidate(sym, { db });
+      const isDualTierSniper = Boolean(dualTierEval?.qualified && dualTierEval.tier === 'TIER_1_SNIPER');
+      const isDualTierBalanced = Boolean(dualTierEval?.qualified && dualTierEval.tier === 'TIER_2_BALANCED');
       const isV3FloorTurn = Boolean(v3Eval?.qualified && v3Eval.mode === 'FLOWCHART_V3_FLOOR_TURN');
+      const dualTierBonus = isDualTierSniper ? 18 : (isDualTierBalanced ? 12 : 0);
       const v3FloorBonus = isV3FloorTurn ? 10 : (v3Eval?.qualified ? 5 : 0);
       const sub500Bonus = ltp >= 100 && ltp < 500 ? 4 : 0;
 
@@ -4137,6 +3831,7 @@ export async function select5StepSwingPicks(opts = {}) {
             coilBonus +
             smcConfluenceBonus +
             floatVelocityBonus +
+            dualTierBonus +
             v3FloorBonus +
             sub500Bonus
         )
@@ -4157,7 +3852,7 @@ export async function select5StepSwingPicks(opts = {}) {
       let confidenceLabel = '💎 STEALTH FLOOR ACCUMULATION (v2.0)';
       if (rallyTrack === 'TRACK_B_T2_CLEARED_CONTINUATION' || smc.isT2ClearedContinuation) {
         setupMode = 'SMC_BREAK_AND_RETEST';
-        confidenceLabel = '🎯 TRACK B: POST-T+2 CONTINUATION (v2.0)';
+        confidenceLabel = '🎯 SMC BREAK & RETEST — TRACK B POST-T+2 CONTINUATION (v2.0)';
       } else if (hasFoundationForSmc && smc.isBreakAndRetest && isCoilIgnitionBreakout) {
         setupMode = 'COIL_IGNITION_BREAKOUT';
         confidenceLabel = '🚀 COIL IGNITION + RETEST (v2.0)';
@@ -4222,6 +3917,10 @@ export async function select5StepSwingPicks(opts = {}) {
         vwapGap15Pct: v3Eval?.vwapGap15Pct ?? null,
         isFlowchartV3FloorTurn: isV3FloorTurn,
         flowchartV3Mode: v3Eval?.qualified ? v3Eval.modeBadge : null,
+        dualTier: dualTierEval?.qualified ? dualTierEval.tier : null,
+        dualTierBadge: dualTierEval?.qualified ? dualTierEval.tierBadge : null,
+        isDualTierSniper,
+        isDualTierBalanced,
         anomalyScore,
         avgTicket: Number(avgTicket.toFixed(1)),
         vdu: Number.isFinite(vduRatio) ? Number(vduRatio.toFixed(2)) : (Number.isFinite(v3Eval?.vdu) ? Number(v3Eval.vdu) : null),
@@ -4288,6 +3987,8 @@ export async function select5StepSwingPicks(opts = {}) {
 
     strictMatches.sort(
       (a, b) =>
+        ((b.isDualTierSniper ? 2 : b.isDualTierBalanced ? 1 : 0) -
+          (a.isDualTierSniper ? 2 : a.isDualTierBalanced ? 1 : 0)) ||
         (b.totalScore - a.totalScore) ||
         (getTrackPriority(b.rallyTrack) - getTrackPriority(a.rallyTrack)) ||
         ((b.leadRetentionPct || 0) - (a.leadRetentionPct || 0)) ||
@@ -4304,7 +4005,18 @@ export async function select5StepSwingPicks(opts = {}) {
         (a.vwapDiffPct - b.vwapDiffPct)
     );
 
-    const allRanked = [...strictMatches, ...secondaryMatches];
+    const allRanked = [...strictMatches, ...secondaryMatches].map((c) => {
+      const actionTier = c.isDualTierSniper
+        ? 'TIER_1_SNIPER'
+        : c.isDualTierBalanced
+          ? 'TIER_2_BALANCED'
+          : 'WATCHLIST_FALLBACK';
+      return {
+        ...c,
+        actionTier,
+        isPrimeBuy: actionTier === 'TIER_1_SNIPER' || actionTier === 'TIER_2_BALANCED',
+      };
+    });
     return {
       topPick: allRanked[0] || null,
       runnerUps: allRanked.slice(1, 5),
@@ -4319,10 +4031,11 @@ export async function select5StepSwingPicks(opts = {}) {
 
 /**
  * Formats and dispatches the 5-Step 10–15 Day Swing Stock Alert to Telegram
- * and automatically registers the top pick in the Exit Guard (trackCustomHolding).
+ * and automatically registers ONLY genuine Dual-Tier Prime Picks in Exit Guard.
  */
-export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId } = {}) {
-  const { topPick, runnerUps, allQualified, vetoedTraps } = await select5StepSwingPicks();
+export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId, precomputedSelection = null } = {}) {
+  const { topPick, runnerUps, allQualified, vetoedTraps } =
+    precomputedSelection || (await select5StepSwingPicks());
   const status = getDetailedMarketStatus();
   const sessionDate = status?.targetSessionDate || formatNptDateIso(new Date());
   let ltpStr = 'Unavailable';
@@ -4355,6 +4068,8 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId
     const telegramResult = await sendTelegramMessage(cashPreservationMsg, { chatId });
     return {
       success: false,
+      isPrimeBuy: false,
+      actionTier: 'CASH_PRESERVATION',
       reason: 'No stock currently passes all strict swing gates & 5-day trap veto. Hold cash!',
       html: cashPreservationMsg,
       telegramResult
@@ -4363,17 +4078,35 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId
 
   // Focus strictly on the #1 single curated winner (zero multi-stock clutter)
   const topWinner = topPick || allQualified[0];
+  const resolvedActionTier = topWinner?.actionTier || (
+    topWinner?.isDualTierSniper
+      ? 'TIER_1_SNIPER'
+      : topWinner?.isDualTierBalanced
+        ? 'TIER_2_BALANCED'
+        : 'WATCHLIST_FALLBACK'
+  );
+  const isPrimeBuy = Boolean(
+    topWinner?.isPrimeBuy === true ||
+    resolvedActionTier === 'TIER_1_SNIPER' ||
+    resolvedActionTier === 'TIER_2_BALANCED'
+  );
+  const normalizedWinner = {
+    ...topWinner,
+    actionTier: resolvedActionTier,
+    isPrimeBuy,
+  };
 
-  // Automatically arm the real-time Exit Guard ONLY for this single curated top pick
-  if (typeof onTrackHolding === 'function' && topWinner) {
+  // Automatically arm the real-time Exit Guard ONLY when Tier-1 Sniper or Tier-2 Balanced clears.
+  // Low-WR Flowchart fallback picks stay Watchlist Only so users are never auto-pushed into weak setups.
+  if (typeof onTrackHolding === 'function' && isPrimeBuy) {
     try {
       onTrackHolding({
-        symbol: topWinner.symbol,
-        buyPrice: topWinner.ltp,
-        stopLoss: topWinner.stopLoss,
-        target1: topWinner.target1,
-        target2: topWinner.target2,
-        kitta: topWinner.sharesPer1Lakh,
+        symbol: normalizedWinner.symbol,
+        buyPrice: normalizedWinner.ltp,
+        stopLoss: normalizedWinner.stopLoss,
+        target1: normalizedWinner.target1,
+        target2: normalizedWinner.target2,
+        kitta: normalizedWinner.sharesPer1Lakh,
       });
     } catch (_) {}
   }
@@ -4419,26 +4152,42 @@ export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId
         ].join('\n')
       : '';
 
+  const headerLines = isPrimeBuy
+    ? [
+        `👑 <b>DRAVYASHREE TACTICAL PRIME SELECTION (${resolvedActionTier === 'TIER_1_SNIPER' ? 'TIER-1 SNIPER • 87.5% WR' : 'DUAL-TIER BALANCED • 75.0% WR'})</b>`,
+        `📅 <b>Session: ${sessionDate} | Market Regime: NEPSE ${ltpStr} (${chgStr})</b>`,
+      ]
+    : [
+        `🛡️ <b>DRAVYASHREE WATCHLIST ONLY — CASH PRESERVATION MODE</b>`,
+        `📅 <b>Session: ${sessionDate} | Market Regime: NEPSE ${ltpStr} (${chgStr})</b>`,
+        `⚠️ <b>0 Tier-1/2 Sniper Buys Today</b> — <i>Fallback Flowchart WR ~44–56%. Hold cash or run <code>/sniper</code> &amp; <code>/analyze ${escapeHtml(normalizedWinner.symbol)}</code> before acting.</i>`,
+      ];
+
+  const footerLine = isPrimeBuy
+    ? `🔔 <i>Exit Guard auto-armed for <code>$${escapeHtml(normalizedWinner.symbol)}</code>! Send <code>/sniper</code>, <code>/analyze ${escapeHtml(normalizedWinner.symbol)}</code>, or <code>/list</code> anytime.</i>`
+    : `🛡️ <i>Exit Guard NOT auto-armed (Watchlist Only — 0 Sniper Buys today). Send <code>/sniper</code>, <code>/analyze ${escapeHtml(normalizedWinner.symbol)}</code>, or <code>/track SYMBOL</code> to monitor manually.</i>`;
+
   const fullMsg = [
-    `👑 <b>DRAVYASHREE TACTICAL PRIME SELECTION (v2.0)</b>`,
-    `📅 <b>Session: ${sessionDate} | Market Regime: NEPSE ${ltpStr} (${chgStr})</b>`,
+    ...headerLines,
     `──────────────────────────`,
     winnerHtml,
     runnerUpSection,
     trapVetoSection,
     `──────────────────────────`,
-    `🔔 <i>Exit Guard auto-armed for <code>$${escapeHtml(topWinner.symbol)}</code>! Send <code>/swing</code>, <code>/list</code>, or <code>/track SYMBOL</code> anytime.</i>`
+    footerLine,
   ].filter(Boolean).join('\n');
 
-  const invariantCheck = validateAlertInvariants(topWinner, winnerHtml);
+  const invariantCheck = validateAlertInvariants(normalizedWinner, winnerHtml);
   if (!invariantCheck.valid) {
-    console.error(`[TelegramNotifier] 🛑 CRITICAL INVARIANT VIOLATION in Prime Alert for ${topWinner?.symbol}:\n` + invariantCheck.errors.map(e => `  - ${e}`).join('\n'));
+    console.error(`[TelegramNotifier] 🛑 CRITICAL INVARIANT VIOLATION in Prime Alert for ${normalizedWinner?.symbol}:\n` + invariantCheck.errors.map(e => `  - ${e}`).join('\n'));
   }
 
   const telegramResult = await sendTelegramMessage(fullMsg, { chatId });
   return {
     success: Boolean(telegramResult?.success),
-    topPick: topWinner,
+    isPrimeBuy,
+    actionTier: resolvedActionTier,
+    topPick: normalizedWinner,
     runnerUps,
     html: fullMsg,
     telegramResult,
@@ -4602,21 +4351,29 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
   const deploy1L = (qty1L * basePrice).toLocaleString();
   const deploy5L = (qty5L * basePrice).toLocaleString();
 
+  const dualTierLine = winner.dualTierBadge
+    ? `• 🎯 <b>Unbiased Backtest Tier:</b> <b>${escapeHtml(winner.dualTierBadge)}</b>\n`
+    : '';
   const v3Line =
     winner.grossTop3Ret15D !== null && winner.grossTop3Ret15D !== undefined
-      ? `• 🛡️ <b>Flowchart v3.0 Audit:</b> 15D Gross Ret <b>${winner.grossTop3Ret15D}%</b> (Min Top-2: ${winner.minTop2GrossRet15D ?? 'N/A'}%)${winner.isFlowchartV3FloorTurn ? ' | 🎯 <b>88.7% Floor-Turn</b>' : ''}\n`
+      ? `• 🛡️ <b>Flowchart v3.0 Audit:</b> 15D Gross Ret <b>${winner.grossTop3Ret15D}%</b> (Min Top-2: ${winner.minTop2GrossRet15D ?? 'N/A'}%)${winner.isFlowchartV3FloorTurn ? ' | 🎯 <b>v3.0 Floor-Turn (15D Gross)</b>' : ''}\n`
       : '';
 
+  const earlyWarningLine = winner.isIntradayEarlyWarning
+    ? `⚠️ <b>INTRADAY EARLY WARNING (~36% standalone WR):</b> <i>${escapeHtml(winner.intradayWarningBanner || 'Unconfirmed intraday momentum — run /analyze and wait for EOD /sniper before buying.')}</i>`
+    : '';
+
   return [
-    `💎 <b>STEALTH ACCUMULATION ALERT (${winner.isFlowchartV3FloorTurn ? 'FLOWCHART v3.0 FLOOR-TURN' : 'UPGRADED FLOWCHART v2.0'})</b>`,
+    `💎 <b>STEALTH ACCUMULATION ALERT (${winner.isIntradayEarlyWarning ? 'INTRADAY EARLY WARNING' : winner.isDualTierSniper ? 'TIER-1 SNIPER 87.5% WR' : winner.isDualTierBalanced ? 'DUAL-TIER BALANCED 75.0% WR' : winner.isFlowchartV3FloorTurn ? 'FLOWCHART v3.0 FLOOR-TURN' : 'UPGRADED FLOWCHART v2.0'})</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    earlyWarningLine,
     `<b>Scrip:</b> <code>${sym}</code> (${name})`,
     `<b>Sector:</b> ${sector} | <b>LTP:</b> Rs. ${ltp.toFixed(1)}`,
     `<b>Setup Status:</b> <b>${confidenceLabel}</b>${score !== null ? ` (Score: ${score}/100)` : ''}`,
     `<b>Rally Track:</b> <b>${rallyHorizonLabel}</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🛡️ <b>LAYER 0 &amp; 1: ZERO-TRAP &amp; SQUEEZE VALIDATION</b>`,
-    `${v3Line}• Gate 0 Trap Immunity: <b>${gate0Text}</b>`,
+    `${dualTierLine}${v3Line}• Gate 0 Trap Immunity: <b>${gate0Text}</b>`,
     `• Volatility Contraction: BBW <b>${bbw}</b> (&lt;= 14.0%) | Narrow Range Bar`,
     `• Seller Dominance Ceiling: BCR3 Sell <b>${bcr3Sell}</b> (&lt; 45% Safe Ceiling)`,
     ``,
@@ -5228,7 +4985,7 @@ let isPollingInProgress = false;
 /**
  * Handles incoming chat commands sent by the user directly to the Telegram bot
  */
-async function handleTelegramCommand(text, {
+export async function handleTelegramCommand(text, {
   chatId,
   onTrackHolding,
   onUntrackHolding,
@@ -5248,8 +5005,9 @@ async function handleTelegramCommand(text, {
       `I monitor NEPSE institutional accumulation and send high-conviction max-profit setups directly to your lockscreen!`,
       ``,
       `<b>⚡ Quick Commands to Send:</b>`,
+      `• <code>/sniper</code> — Dual-Tier Unbiased Sniper Buys (87.5% Tier-1 / 75.0% Combined WR — Top Execution Channel)`,
       `• <code>/guide</code> or <code>/selection</code> — 4-Gate Daily Stock Selection Guide (Selected Pick or Cash Defense)`,
-      `• <code>/swing</code> or <code>/top5</code> — #1 Prime Stock Pick &amp; Top 5 Ranked Backup Slate`,
+      `• <code>/swing</code> or <code>/top5</code> — #1 Curated Setup (Auto-arms Exit Guard ONLY on Sniper Clears; Watchlist Otherwise)`,
       `• <code>/trackb</code> — Special Track B Syndicate Setup (&lt; Rs. 450, Float &le; 1.5 Cr, Ret &gt; 75%)`,
       `• <code>/analyze SHIVM</code> — Complete 7-Section Deep Stock Audit &amp; Profitability Verdict`,
       `• <code>/track SHIVM 510 484 100</code> — Track a stock for real-time Exit Guard alerts`,
@@ -5271,9 +5029,10 @@ async function handleTelegramCommand(text, {
       `──────────────────────────`,
       `I monitor NEPSE institutional accumulation and send high-conviction max-profit setups directly to your lockscreen!`,
       ``,
-      `👑 <b>Automated Daily Selection &amp; #1 Prime Pick:</b>`,
+      `👑 <b>Automated Daily Selection &amp; Dual-Tier Sniper:</b>`,
+      `• <code>/sniper</code> (<code>/dualtier</code>): Top EOD Execution Channel — Tier-1 Sniper (87.5% WR, 6.68x PF) &amp; Combined Dual-Tier (75.0% WR, 4.71x PF)`,
       `• <code>/guide</code> or <code>/selection</code>: Daily 4-Gate Stock Selection Guide (Regime + Score/10 + 5 Ignition Triggers + Cash Defense on 0-Match Days)`,
-      `• <code>/swing</code> or <code>/top5</code>: #1 Prime Stock Pick &amp; Top 5 Ranked Backup Slate (5-Day Trap-Vetoed Flowchart v2.0)`,
+      `• <code>/swing</code> or <code>/top5</code>: #1 Curated Setup &amp; Backup Watchlist Slate (Auto-arms Exit Guard ONLY on Dual-Tier Clears; Watchlist Only otherwise)`,
       `• <code>/trackb</code>: Special Track B Syndicate Setup (&lt; Rs. 450, Float &le; 1.5 Cr, Net Retention &gt; 75%, Dual Ignition, &plusmn;1.5% POC Shelf, 2–3D Surge)`,
       `• <code>/playbook</code>: Educational "Great Alert" Accumulation Matrix`,
       ``,
@@ -5325,6 +5084,37 @@ async function handleTelegramCommand(text, {
   ) {
     const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId });
     return swingRes.telegramResult;
+  }
+
+  // 2.2.5 DUAL-TIER UNBIASED SNIPER RADAR (/sniper, /dualtier, /tier1)
+  if (
+    lower === '/sniper' || lower === 'sniper' ||
+    lower === '/dualtier' || lower === 'dualtier' ||
+    lower === '/dual_tier' || lower === 'dual_tier' ||
+    lower === '/tier1' || lower === 'tier1'
+  ) {
+    const scan = scanDualTierCandidates({ db, maxPrice: 650, minTurnover: 2500000, limit: 10 });
+    const header = [
+      `🎯 <b>DUAL-TIER UNBIASED RADAR (NEPSE ${scan.marketRegime} • Breadth ${scan.breadthPct}%)</b>`,
+      `<i>NEPSE: ${scan.nepseClose} vs EMA20: ${scan.nepseEma20} | Tier-1: ${scan.tier1Sniper.length} | Tier-2: ${scan.tier2Balanced.length}</i>`,
+      `──────────────────────────`,
+    ];
+    if (scan.candidates.length === 0) {
+      return await sendTelegramMessage(
+        [
+          ...header,
+          `🛡️ <b>Capital Preservation Active:</b> Zero scrips cleared Tier-1 Sniper (87.5% WR • 6.68x PF) or Combined Dual-Tier (75.0% WR • 4.71x PF) Break &amp; Retest + 15D Gross-Mover gates today.`,
+        ].join('\n'),
+        { chatId }
+      );
+    }
+    const rows = scan.candidates.slice(0, 5).map(
+      (c, i) =>
+        `<b>#${i + 1} <code>$${escapeHtml(c.symbol)}</code></b> — ${escapeHtml(c.tierBadge)}\n` +
+        `  LTP: Rs. ${c.ltp} (${c.pChange >= 0 ? '+' : ''}${c.pChange}%) | 15D Gross: ${c.grossTop3Ret15D}% | 10D Ret: ${c.netRetention10D}%\n` +
+        `  Buy: ${c.entryLow}–${c.entryHigh} | SL: ${c.stopLoss} | T1/T2: ${c.target1}/${c.target2} (${c.riskRewardRatio}:1)`
+    );
+    return await sendTelegramMessage([...header, ...rows].join('\n'), { chatId });
   }
 
   // 2.2 SPECIAL TRACK B SYNDICATE DISPATCH (/trackb, /track-b, /syndicate, /track2)
@@ -5811,8 +5601,9 @@ async function handleTelegramCommand(text, {
     `❓ <b>Unrecognized Request:</b> <code>${escapeHtml(raw)}</code>`,
     `──────────────────────────`,
     `Here are popular commands you can send right now:`,
+    `• <code>/sniper</code> — Dual-Tier Unbiased Sniper Buys (87.5% Tier-1 / 75.0% Combined WR)`,
     `• <code>/guide</code> or <code>/selection</code> — Daily 4-Gate Stock Selection Guide (Pick or Cash Defense)`,
-    `• <code>/swing</code> or <code>/top5</code> — #1 Prime Stock Pick &amp; Top 5 Ranked Backup Slate`,
+    `• <code>/swing</code> or <code>/top5</code> — #1 Curated Setup (Sniper Prime or Watchlist Only)`,
     `• <code>/analyze SHIVM</code> — Complete 7-Section Deep Stock Audit`,
     `• <code>/track SHIVM 510 484 100</code> — Track a stock for exit alerts`,
     `• <code>/list</code> — View your actively guarded holdings`,

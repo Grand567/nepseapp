@@ -8217,6 +8217,529 @@ export function aggregateBrokerMatrixFromLedger({ targetDate = '', days = 1, fro
    ENDPOINT S5 — Broker Heatmap Matrix
    GET /api/smart-money/broker-heatmap
    ══════════════════════════════════════════════════════════════════════════════ */
+const brokerHeatmapInFlight = new Map();
+const BROKER_MATRIX_DIRS = [
+  path.join(__dirname, 'data'),
+  path.join(process.cwd(), 'data'),
+  path.join(process.cwd(), 'proxy', 'data'),
+  path.join(process.cwd(), 'src', 'data')
+];
+
+function getBrokerHeatmapTtlMs() {
+  return getDetailedMarketStatus()?.isOpen ? 5 * 60 * 1000 : 15 * 60 * 1000;
+}
+
+function cacheAndSerializeHeatmap(cacheKey, data, source) {
+  const ttlMs = getBrokerHeatmapTtlMs();
+  const payloadJson = JSON.stringify({ success: true, data, source });
+  // Cache the pre-serialized JSON string only to avoid retaining a duplicate 40MB+ V8 object graph on Render free tier
+  setCache(`${cacheKey}:json`, payloadJson, ttlMs);
+  return { json: payloadJson, data, source };
+}
+
+function enrichSnapshotLookups(parsed) {
+  if (!parsed || !Array.isArray(parsed.matrix) || parsed.matrix.length === 0) return parsed;
+
+  if (!parsed.topUniqueStockNetBuyers || parsed.topUniqueStockNetBuyers.length === 0) {
+    const netBuys = [];
+    const netSells = [];
+    parsed.matrix.forEach(b => {
+      const bId = String(b.broker || b.id || '').replace(/^0+/, '').trim();
+      const bName = b.brokerName || b.name || `Broker ${bId}`;
+      (b.scrips || b.topByNetQty || []).forEach(s => {
+        const netQty = Number(s.netQty !== undefined ? s.netQty : ((s.buyQty || 0) - (s.sellQty || 0)));
+        const netAmt = Number(s.netFlow !== undefined ? s.netFlow : (s.net !== undefined ? s.net : ((s.buyAmount || 0) - (s.sellAmount || 0))));
+        if (netQty > 0) {
+          netBuys.push({
+            symbol: s.symbol,
+            buyerBroker: bId,
+            brokerName: bName,
+            qty: netQty,
+            netQty,
+            buyQty: s.buyQty || netQty,
+            sellQty: s.sellQty || 0,
+            amount: Math.round(netAmt > 0 ? netAmt : (s.buyAmount || 0)),
+            amountCr: +(Math.abs(netAmt) / 1e7).toFixed(2),
+            avgRate: s.avgBuyRate || 0,
+            trades: s.trades || 0,
+            cumHoldQty: s.cumHoldQty,
+            cumAvgBuy: s.cumAvgBuy
+          });
+        } else if (netQty < 0) {
+          const absK = Math.abs(netQty);
+          const absA = Math.abs(netAmt);
+          netSells.push({
+            symbol: s.symbol,
+            sellerBroker: bId,
+            brokerName: bName,
+            qty: absK,
+            netQty,
+            buyQty: s.buyQty || 0,
+            sellQty: s.sellQty || absK,
+            amount: Math.round(absA > 0 ? absA : (s.sellAmount || 0)),
+            amountCr: +(absA / 1e7).toFixed(2),
+            avgRate: s.avgSellRate || 0,
+            trades: s.trades || 0,
+            cumHoldQty: s.cumHoldQty,
+            cumAvgBuy: s.cumAvgBuy
+          });
+        }
+      });
+    });
+    netBuys.sort((a, b) => b.qty - a.qty);
+    netSells.sort((a, b) => b.qty - a.qty);
+    const seenB = new Set();
+    parsed.topUniqueStockNetBuyers = [];
+    for (const it of netBuys) {
+      if (!seenB.has(it.symbol)) { seenB.add(it.symbol); parsed.topUniqueStockNetBuyers.push(it); }
+    }
+    const seenS = new Set();
+    parsed.topUniqueStockNetSellers = [];
+    for (const it of netSells) {
+      if (!seenS.has(it.symbol)) { seenS.add(it.symbol); parsed.topUniqueStockNetSellers.push(it); }
+    }
+    parsed.topCrossBrokerNetBuyers = netBuys.slice(0, 50);
+    parsed.topCrossBrokerNetSells = netSells.slice(0, 50);
+  }
+
+  if (!parsed.topNetBoughtScripsWholeDay || parsed.topNetBoughtScripsWholeDay.length === 0) {
+    const wholeDayMap = new Map();
+    parsed.matrix.forEach(b => {
+      (b.scrips || []).forEach(s => {
+        const sym = s.symbol;
+        if (!wholeDayMap.has(sym)) {
+          wholeDayMap.set(sym, {
+            symbol: sym,
+            totalBuyVol: 0,
+            totalNetKitta: 0,
+            totalNetInflow: 0,
+            totalBuyAmt: 0,
+            accumulators: []
+          });
+        }
+        const st = wholeDayMap.get(sym);
+        st.totalBuyVol += Number(s.buyQty || 0);
+        st.totalBuyAmt += Number(s.buyAmount || 0);
+        const sNetQty = Number(s.netQty !== undefined ? s.netQty : ((s.buyQty || 0) - (s.sellQty || 0)));
+        const sNetAmt = Number(s.netFlow !== undefined ? s.netFlow : ((s.buyAmount || 0) - (s.sellAmount || 0)));
+        if (sNetQty > 0) {
+          st.totalNetKitta += sNetQty;
+          st.totalNetInflow += sNetAmt;
+          st.accumulators.push({
+            broker: b.broker || b.id,
+            brokerName: b.brokerName || b.name,
+            netQty: sNetQty,
+            buyQty: s.buyQty || sNetQty,
+            sellQty: s.sellQty || 0,
+            avgBuyRate: s.avgBuyRate || 0,
+            cumHoldQty: s.cumHoldQty,
+            cumAvgBuy: s.cumAvgBuy
+          });
+        }
+      });
+    });
+    const wholeDayList = Array.from(wholeDayMap.values()).map(st => {
+      st.accumulators.sort((a, b) => b.netQty - a.netQty);
+      const topAcc = st.accumulators[0] || null;
+      const top3Acc = st.accumulators.slice(0, 3);
+      const top3AccKitta = top3Acc.reduce((acc, x) => acc + x.netQty, 0);
+      const effTradedVol = st.totalBuyVol || 1;
+      const lockPct = +((st.totalNetKitta / effTradedVol) * 100).toFixed(1);
+      const bcr3NetPct = +((top3AccKitta / effTradedVol) * 100).toFixed(1);
+      const avgPrice = st.totalBuyVol > 0 ? +(st.totalBuyAmt / st.totalBuyVol).toFixed(2) : (topAcc?.avgBuyRate || 0);
+      return {
+        symbol: st.symbol,
+        totalNetKitta: st.totalNetKitta,
+        totalTradedVol: st.totalBuyVol,
+        lockPct,
+        totalNetInflow: Math.round(st.totalNetInflow),
+        totalNetInflowCr: +(st.totalNetInflow / 1e7).toFixed(2),
+        avgPrice,
+        leadAccumulator: topAcc ? {
+          broker: topAcc.broker,
+          brokerName: topAcc.brokerName,
+          netQty: topAcc.netQty,
+          buyQty: topAcc.buyQty,
+          sellQty: topAcc.sellQty,
+          shareOfLockPct: +((topAcc.netQty / (st.totalNetKitta || 1)) * 100).toFixed(1),
+          cumHoldQty: topAcc.cumHoldQty,
+          cumAvgBuy: topAcc.cumAvgBuy
+        } : null,
+        top3Accumulators: top3Acc,
+        top3AccKitta,
+        bcr3NetPct,
+        smartMoneyBias: lockPct >= 65 || (bcr3NetPct >= 35 && st.totalNetKitta > 100000) ? 'Heavy Cornering' : (lockPct >= 45 ? 'Institutional Accumulation' : 'Mild Accumulation')
+      };
+    });
+    wholeDayList.sort((a, b) => b.totalNetKitta - a.totalNetKitta);
+    parsed.topNetBoughtScripsWholeDay = wholeDayList.slice(0, 20);
+  }
+
+  return parsed;
+}
+
+async function readValidBrokerMatrixSnapshot(businessDate = '') {
+  for (const mDir of BROKER_MATRIX_DIRS) {
+    const mFile = path.join(mDir, 'broker_matrix_latest.json');
+    if (!fs.existsSync(mFile)) continue;
+    try {
+      const raw = await fs.promises.readFile(mFile, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (businessDate && parsed?.businessDate && parsed.businessDate !== businessDate) {
+        continue;
+      }
+      if (parsed?.matrix?.length > 0) {
+        return parsed;
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+async function getHeatmapAvailableDates(fallbackSymbol = null) {
+  try {
+    const dbDates = await getMarketTradingDates();
+    if (Array.isArray(dbDates) && dbDates.length > 0) return dbDates.slice(0, 500);
+    if (fallbackSymbol) {
+      const dates = await fetchSymbolTradingDates(fallbackSymbol);
+      if (Array.isArray(dates) && dates.length > 0) return dates.slice(0, 500);
+    }
+  } catch (_) {}
+  return [];
+}
+
+async function warmBrokerHeatmapCacheFromSnapshot() {
+  const defaultCacheKey = 'broker-heatmap-today-1----';
+  if (typeof getCache(`${defaultCacheKey}:json`) === 'string') return false;
+  const parsed = await readValidBrokerMatrixSnapshot('');
+  if (!parsed) return false;
+  parsed.availableDates = await getHeatmapAvailableDates();
+  enrichSnapshotLookups(parsed);
+  cacheAndSerializeHeatmap(defaultCacheKey, parsed, 'broker_matrix_latest_snapshot');
+  return true;
+}
+
+async function computeBrokerHeatmapPayload({ businessDate, fromDate, toDate, sector, days, refresh, symbolsParam, cacheKey }) {
+  // 1. Primary for 1D Session: Fast SQLite/snapshot path during live hours or on Render to avoid OOM/502 timeouts; full floorsheet aggregation on off-market/explicit refresh
+  if (days === 1 && !fromDate && !toDate && !symbolsParam && (!sector || sector.toUpperCase() === 'ALL')) {
+    try {
+      const preferFastLedgerOrSnapshot = !businessDate && !refresh && (Boolean(process.env.RENDER) || Boolean(getDetailedMarketStatus()?.isOpen));
+      let fullTrades = preferFastLedgerOrSnapshot ? [] : await getFullSessionFloorsheet(businessDate);
+      if (!preferFastLedgerOrSnapshot && (!Array.isArray(fullTrades) || fullTrades.length === 0)) {
+        try {
+          console.log(`[broker-heatmap] ⚡ Triggering on-demand floorsheet fetch for ${businessDate || 'today'}...`);
+          const archiveRes = await downloadAndArchiveDailyFloorsheet(businessDate);
+          if (archiveRes?.tradeCount > 0) {
+            fullTrades = await getFullSessionFloorsheet(businessDate);
+          }
+        } catch (autoErr) {
+          console.warn(`[broker-heatmap] On-demand archive notice for ${businessDate}:`, autoErr.message);
+        }
+      }
+      if (!preferFastLedgerOrSnapshot && Array.isArray(fullTrades) && fullTrades.length > 0) {
+        const aggData = aggregateMarketFloorsheet(fullTrades, businessDate || fullTrades[0]?.businessDate);
+        aggData.availableDates = await getHeatmapAvailableDates();
+        const result = cacheAndSerializeHeatmap(cacheKey, aggData, 'full_session_floorsheet_authentic');
+        setImmediate(async () => {
+          try {
+            const compactMatrix = JSON.stringify(aggData);
+            const outPath = path.join(__dirname, 'data', 'broker_matrix_latest.json');
+            await fs.promises.writeFile(outPath, compactMatrix, 'utf8');
+            const srcPath = path.join(process.cwd(), 'src', 'data', 'broker_matrix_latest.json');
+            if (fs.existsSync(path.dirname(srcPath))) {
+              await fs.promises.writeFile(srcPath, compactMatrix, 'utf8');
+            }
+            const srcHistPath = path.join(process.cwd(), 'src', 'data', 'broker_matrices_historical.json');
+            if (fs.existsSync(srcHistPath) && aggData.businessDate) {
+              const histSeed = JSON.parse(await fs.promises.readFile(srcHistPath, 'utf8'));
+              const lightMatrix = (aggData.matrix || []).map(({ scrips, ...rest }) => rest);
+              histSeed[aggData.businessDate] = { ...aggData, matrix: lightMatrix };
+              const recentDates = Object.keys(histSeed).sort().reverse().slice(0, 5);
+              const prunedSeed = {};
+              for (const rd of recentDates) prunedSeed[rd] = histSeed[rd];
+              await fs.promises.writeFile(srcHistPath, JSON.stringify(prunedSeed), 'utf8');
+            }
+          } catch (_) {}
+        });
+        return result;
+      }
+
+      // 1.2. SQLite Daily Broker Ledger Check (skipped on Render / live fast path so pre-built snapshot responds in <50ms; #2 below still handles fallback if snapshot missing)
+      if (!preferFastLedgerOrSnapshot && db) {
+        const ledgerAgg = aggregateBrokerMatrixFromLedger({ targetDate: businessDate, days: 1 });
+        if (ledgerAgg && Array.isArray(ledgerAgg.matrix) && ledgerAgg.matrix.length > 0) {
+          ledgerAgg.availableDates = await getHeatmapAvailableDates();
+          return cacheAndSerializeHeatmap(cacheKey, ledgerAgg, 'sqlite_daily_broker_ledger');
+        }
+      }
+
+      // 1.5. Snapshot fallback ONLY if no specific historical date was requested or snapshot matches
+      const parsed = await readValidBrokerMatrixSnapshot(businessDate);
+      if (parsed) {
+        parsed.availableDates = await getHeatmapAvailableDates();
+
+        // Ensure snapshot fallback has authentic cumulative holding from SQLite ledger (skip heavy full-table scan during live/Render requests)
+        if (db && !preferFastLedgerOrSnapshot && !process.env.RENDER && (!parsed.matrix[0]?.topAccumulation?.[0]?.cumHoldQty || !parsed.matrix[0]?.scrips?.[0]?.cumHoldQty)) {
+          const cumLedgerMap = new Map();
+          try {
+            const rows = db.prepare(`
+              SELECT broker_id, UPPER(symbol) as symbol,
+                     SUM(buy_vol) as totalBuyVol,
+                     SUM(sell_vol) as totalSellVol,
+                     SUM(buy_vol) - SUM(sell_vol) as cumNetQty,
+                     SUM(buy_amt) as totalBuyAmt
+              FROM daily_broker_ledger
+              GROUP BY broker_id, UPPER(symbol)
+            `).all();
+            for (const r of rows) {
+              cumLedgerMap.set(`${String(r.broker_id).replace(/^0+/, '')}_${r.symbol}`, r);
+            }
+          } catch (_) {}
+
+          parsed.matrix.forEach(b => {
+            const bId = String(b.broker || b.id || '').replace(/^0+/, '').trim();
+            const enrich = (sc) => {
+              if (!sc || !sc.symbol) return sc;
+              const r = cumLedgerMap.get(`${bId}_${String(sc.symbol).toUpperCase().trim()}`);
+              if (r) {
+                const net = Number(r.cumNetQty || 0);
+                if (net > 0) {
+                  sc.cumHoldQty = net;
+                  const avg = Number(r.totalBuyVol || 0) > 0 ? +(r.totalBuyAmt / r.totalBuyVol).toFixed(2) : 0;
+                  if (avg > 0) sc.cumAvgBuy = avg;
+                }
+              }
+              return sc;
+            };
+            if (Array.isArray(b.topAccumulation)) b.topAccumulation = b.topAccumulation.map(enrich);
+            if (Array.isArray(b.topDistribution)) b.topDistribution = b.topDistribution.map(enrich);
+            if (Array.isArray(b.topByNetQty)) b.topByNetQty = b.topByNetQty.map(enrich);
+            if (Array.isArray(b.scrips)) b.scrips = b.scrips.map(enrich);
+          });
+        }
+
+        enrichSnapshotLookups(parsed);
+        return cacheAndSerializeHeatmap(cacheKey, parsed, 'broker_matrix_latest_snapshot');
+      }
+    } catch (fErr) {
+      console.warn('[broker-heatmap] getFullSessionFloorsheet error:', fErr.message);
+    }
+  }
+
+  // 2. Multi-day horizon or custom range: check SQLite ledger first!
+  if (db && (!sector || sector.toUpperCase() === 'ALL')) {
+    const ledgerMulti = aggregateBrokerMatrixFromLedger({
+      targetDate: businessDate,
+      days,
+      fromDate,
+      toDate,
+      symbols: symbolsParam ? symbolsParam.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : null
+    });
+    if (ledgerMulti && Array.isArray(ledgerMulti.matrix) && ledgerMulti.matrix.length > 0) {
+      ledgerMulti.availableDates = await getHeatmapAvailableDates();
+      return cacheAndSerializeHeatmap(cacheKey, ledgerMulti, 'sqlite_multi_day_ledger');
+    }
+  }
+
+  // 3. Multi-day horizon or fallback: Build authentic broker-by-scrip heatmap from genuine brokerVault records
+  let topScrips = [];
+  if (symbolsParam) {
+    topScrips = symbolsParam.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+  }
+
+  if (!topScrips.length) {
+    const meroSummary = await fetchInternalMeroMarketSummary().catch(() => ({ stocks: [] }));
+    let activeStocks = (meroSummary?.stocks || []).filter(s => Number(s.turnover || s.volume || 0) > 0);
+
+    if (sector && sector.toUpperCase() !== 'ALL') {
+      const cleanSector = sector.replace(/[\s\-_]/g, '').toLowerCase();
+      activeStocks = activeStocks.filter(s => {
+        const sec = (stockMap[s.symbol]?.sector || s.sector || '').replace(/[\s\-_]/g, '').toLowerCase();
+        return sec.includes(cleanSector) || cleanSector.includes(sec);
+      });
+    }
+
+    // Sort activeStocks by turnover descending across the entire market
+    activeStocks.sort((a, b) => {
+      const tA = Number(a.turnover || 0) || (Number(a.volume || 0) * Number(a.ltp || 0));
+      const tB = Number(b.turnover || 0) || (Number(b.volume || 0) * Number(b.ltp || 0));
+      return tB - tA;
+    });
+
+    topScrips = activeStocks.map(s => s.symbol).filter(Boolean);
+
+    const coreMarketLeaders = [
+      'GHL', 'NIMB', 'GVL', 'KBL', 'API', 'HDL', 'TAMOR', 'BHL', 'MEN', 'PHCL',
+      'NICA', 'SHIVM', 'GBIME', 'HRL', 'NRIC', 'NABIL', 'CIT', 'UPPER', 'SONA', 'HIDCL',
+      'UNL', 'NTC', 'SCB', 'EBL', 'PRVU', 'RADHI', 'AHPC', 'CBBL', 'RSML', 'SOHL',
+      'AKJCL', 'ALBSL', 'KKHC', 'LSL', 'SAHAS', 'PCBL', 'NMB', 'CZBIL', 'SBI', 'HATHY'
+    ];
+    for (const sym of coreMarketLeaders) {
+      if (!topScrips.includes(sym)) {
+        if (!sector || sector.toUpperCase() === 'ALL') {
+          topScrips.push(sym);
+        } else {
+          const cleanSector = sector.replace(/[\s\-_]/g, '').toLowerCase();
+          const sec = (stockMap[sym]?.sector || '').replace(/[\s\-_]/g, '').toLowerCase();
+          if (sec.includes(cleanSector) || cleanSector.includes(sec)) {
+            topScrips.push(sym);
+          }
+        }
+      }
+    }
+  }
+
+  const scripsToFetch = topScrips.slice(0, days > 1 ? 35 : 50);
+
+  // Use getFastVaultSnapshot first and enforce a hard 3.2s ceiling across ALL horizons so Render/Cloudflare never aborts at 20-25s
+  const heatmapStart = Date.now();
+  const vaultResults = await Promise.all(
+    scripsToFetch.map(async (sym) => {
+      const fast = getFastVaultSnapshot(sym, days);
+      if (fast && (fast.brokers?.length > 0 || fast.topBuyers?.length > 0)) return fast;
+      const remaining = Math.max(400, 3200 - (Date.now() - heatmapStart));
+      return Promise.race([
+        getOrFetchBrokerAnalysis(sym, days, { date: businessDate, fromDate, toDate, refresh }).catch(() => null),
+        new Promise((r) => setTimeout(() => r(null), remaining))
+      ]);
+    })
+  );
+
+  const brokerTotals = {}, scripTotals = {}, matrix = {}, brokerScripsMap = {};
+  let totalTradesCount = 0;
+
+  vaultResults.forEach((vaultData, idx) => {
+    const sym = scripsToFetch[idx];
+    if (!vaultData) return;
+
+    (vaultData.topBuyers || vaultData.buyers || []).forEach(b => {
+      const bId = String(b.brokerId || b.broker || '').replace(/^0+/, '').trim();
+      const bName = b.brokerName || b.name || getBrokerName(bId);
+      const buyAmt = Number(b.buyAmount || b.buyAmt || (Number(b.buyQty || 0) * Number(b.avgRate || b.avgBuyRate || 100)) || 0);
+      const buyQty = Number(b.buyQty || b.quantity || 0);
+      const avgBuyRate = Number(b.avgRate || b.avgBuyRate || (buyQty > 0 ? buyAmt / buyQty : 0));
+      if (!bId || buyAmt <= 0) return;
+
+      if (!brokerTotals[bId]) brokerTotals[bId] = { id: bId, name: bName, totalBuy: 0, totalSell: 0 };
+      brokerTotals[bId].totalBuy += buyAmt;
+      if (!scripTotals[sym]) scripTotals[sym] = { symbol: sym, totalAmt: 0 };
+      scripTotals[sym].totalAmt += buyAmt;
+
+      if (!brokerScripsMap[bId]) brokerScripsMap[bId] = {};
+      if (!brokerScripsMap[bId][sym]) brokerScripsMap[bId][sym] = { symbol: sym, buy: 0, sell: 0, buyQty: 0, sellQty: 0, avgBuyRate: 0, avgSellRate: 0 };
+      brokerScripsMap[bId][sym].buy += buyAmt;
+      brokerScripsMap[bId][sym].buyQty += buyQty;
+      brokerScripsMap[bId][sym].avgBuyRate = avgBuyRate;
+
+      const key = `${bId}_${sym}`;
+      if (!matrix[key]) matrix[key] = { broker: bId, symbol: sym, buy: 0, sell: 0 };
+      matrix[key].buy += buyAmt;
+    });
+
+    (vaultData.topSellers || vaultData.sellers || []).forEach(s => {
+      const sId = String(s.brokerId || s.broker || '').replace(/^0+/, '').trim();
+      const sName = s.brokerName || s.name || getBrokerName(sId);
+      const sellAmt = Number(s.sellAmount || s.sellAmt || (Number(s.sellQty || 0) * Number(s.avgRate || s.avgSellRate || 100)) || 0);
+      const sellQty = Number(s.sellQty || s.quantity || 0);
+      const avgSellRate = Number(s.avgRate || s.avgSellRate || (sellQty > 0 ? sellAmt / sellQty : 0));
+      if (!sId || sellAmt <= 0) return;
+
+      if (!brokerTotals[sId]) brokerTotals[sId] = { id: sId, name: sName, totalBuy: 0, totalSell: 0 };
+      brokerTotals[sId].totalSell += sellAmt;
+      if (!scripTotals[sym]) scripTotals[sym] = { symbol: sym, totalAmt: 0 };
+      scripTotals[sym].totalAmt += sellAmt;
+
+      if (!brokerScripsMap[sId]) brokerScripsMap[sId] = {};
+      if (!brokerScripsMap[sId][sym]) brokerScripsMap[sId][sym] = { symbol: sym, buy: 0, sell: 0, buyQty: 0, sellQty: 0, avgBuyRate: 0, avgSellRate: 0 };
+      brokerScripsMap[sId][sym].sell += sellAmt;
+      brokerScripsMap[sId][sym].sellQty += sellQty;
+      brokerScripsMap[sId][sym].avgSellRate = avgSellRate;
+
+      const key = `${sId}_${sym}`;
+      if (!matrix[key]) matrix[key] = { broker: sId, symbol: sym, buy: 0, sell: 0 };
+      matrix[key].sell += sellAmt;
+    });
+
+    totalTradesCount += Number(vaultData.totalTrades || 0);
+  });
+
+  const topBrokers = Object.values(brokerTotals)
+    .sort((a, b) => (b.totalBuy + b.totalSell) - (a.totalBuy + a.totalSell))
+    .slice(0, 100);
+
+  if (topBrokers.length === 0) {
+    const parsedFallback = await readValidBrokerMatrixSnapshot('');
+    if (parsedFallback) {
+      parsedFallback.timeframeDays = days;
+      parsedFallback.businessDate = businessDate || parsedFallback.businessDate || new Date().toISOString().split('T')[0];
+      return cacheAndSerializeHeatmap(cacheKey, parsedFallback, 'broker_matrix_latest_snapshot_fallback');
+    }
+  }
+
+  const heatmapMatrix = topBrokers.map(broker => {
+    const bScripsMap = brokerScripsMap[broker.id] || {};
+    const scripsArr = Object.values(bScripsMap).map(s => {
+      const netAmt = s.buy - s.sell;
+      const netQty = s.buyQty - s.sellQty;
+      return {
+        symbol: s.symbol,
+        buy: Math.round(s.buy),
+        sell: Math.round(s.sell),
+        net: Math.round(netAmt),
+        buyAmount: Math.round(s.buy),
+        sellAmount: Math.round(s.sell),
+        netFlow: Math.round(netAmt),
+        buyQty: s.buyQty,
+        sellQty: s.sellQty,
+        netQty,
+        avgBuyRate: s.avgBuyRate,
+        avgSellRate: s.avgSellRate,
+        bias: netAmt > 1000000 ? 'Accumulation' : netAmt < -1000000 ? 'Distribution' : 'Neutral'
+      };
+    });
+
+    const topAccumulation = [...scripsArr].filter(s => s.net > 0).sort((x, y) => y.net - x.net).slice(0, 10);
+    const topDistribution = [...scripsArr].filter(s => s.net < 0).sort((x, y) => x.net - y.net).slice(0, 10);
+
+    const netFlow = Math.round(broker.totalBuy - broker.totalSell);
+    let bias = 'Mild Accumulation';
+    if (netFlow > 8000000) bias = 'Aggressive Accumulation';
+    else if (netFlow < -8000000) bias = 'Heavy Selling';
+    else if (netFlow < 0) bias = 'Distribution';
+
+    return {
+      broker: broker.id,
+      brokerName: broker.name,
+      totalBuy: Math.round(broker.totalBuy),
+      totalSell: Math.round(broker.totalSell),
+      netFlow,
+      totalTrades: Math.round((broker.totalBuy + broker.totalSell) / 120000) || 10,
+      bias,
+      topStock: topAccumulation[0]?.symbol || scripsArr[0]?.symbol || '—',
+      topAccumulation,
+      topDistribution,
+      scrips: scripsArr.length > 0 ? scripsArr : scripsToFetch.map(sym => {
+        const cell = matrix[`${broker.id}_${sym}`] || { buy: 0, sell: 0 };
+        return { symbol: sym, buy: Math.round(cell.buy), sell: Math.round(cell.sell), net: Math.round(cell.buy - cell.sell) };
+      })
+    };
+  });
+
+  const availableDates = await getHeatmapAvailableDates(scripsToFetch[0] || 'NABIL');
+  const data = {
+    topBrokers: topBrokers.map(b => b.id),
+    topBrokerNames: topBrokers.map(b => b.name),
+    topScrips: scripsToFetch,
+    matrix: heatmapMatrix,
+    totalTrades: totalTradesCount || 1200,
+    timeframeDays: days,
+    businessDate: businessDate || new Date().toISOString().split('T')[0],
+    availableDates
+  };
+
+  return cacheAndSerializeHeatmap(cacheKey, data, 'broker-vault-authentic');
+}
+
 app.get('/api/smart-money/broker-heatmap', async (req, res) => {
   const businessDate = req.query.date || '';
   const fromDate = String(req.query.fromDate || '').trim();
@@ -8226,533 +8749,42 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
   const refresh = req.query.refresh === 'true';
   const symbolsParam = String(req.query.symbols || req.query.symbol || '').trim();
   const cacheKey = `broker-heatmap-${businessDate || 'today'}-${days}-${fromDate}-${toDate}-${sector}-${symbolsParam}`;
+
   if (!refresh) {
+    const cachedJson = getCache(`${cacheKey}:json`);
+    if (typeof cachedJson === 'string') {
+      res.setHeader('Content-Type', 'application/json');
+      return res.send(cachedJson);
+    }
     const cached = getCache(cacheKey);
     if (cached) return res.json({ success: true, data: cached, cached: true });
   }
 
   try {
-    // 1. Primary for 1D Session: Fast SQLite/snapshot path during live hours or on Render to avoid OOM/502 timeouts; full floorsheet aggregation on off-market/explicit refresh
-    if (days === 1 && !fromDate && !toDate && !symbolsParam && (!sector || sector.toUpperCase() === 'ALL')) {
-      try {
-        const preferFastLedgerOrSnapshot = !businessDate && !refresh && (Boolean(process.env.RENDER) || Boolean(getDetailedMarketStatus()?.isOpen));
-        let fullTrades = preferFastLedgerOrSnapshot ? [] : await getFullSessionFloorsheet(businessDate);
-        if (!preferFastLedgerOrSnapshot && (!Array.isArray(fullTrades) || fullTrades.length === 0)) {
-          try {
-            console.log(`[broker-heatmap] ⚡ Triggering on-demand floorsheet fetch for ${businessDate || 'today'}...`);
-            const archiveRes = await downloadAndArchiveDailyFloorsheet(businessDate);
-            if (archiveRes?.tradeCount > 0) {
-              fullTrades = await getFullSessionFloorsheet(businessDate);
-            }
-          } catch (autoErr) {
-            console.warn(`[broker-heatmap] On-demand archive notice for ${businessDate}:`, autoErr.message);
-          }
-        }
-        if (!preferFastLedgerOrSnapshot && Array.isArray(fullTrades) && fullTrades.length > 0) {
-          const aggData = aggregateMarketFloorsheet(fullTrades, businessDate || fullTrades[0]?.businessDate);
-          let availableDates = [];
-          try {
-            const dates = await getMarketTradingDates();
-            if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
-          } catch (_) {}
-          aggData.availableDates = availableDates;
-          setCache(cacheKey, aggData, 5 * 60 * 1000);
-          setImmediate(async () => {
-            try {
-              const outPath = path.join(__dirname, 'data', 'broker_matrix_latest.json');
-              await fs.promises.writeFile(outPath, JSON.stringify(aggData, null, 2), 'utf8');
-              const srcPath = path.join(process.cwd(), 'src', 'data', 'broker_matrix_latest.json');
-              if (fs.existsSync(path.dirname(srcPath))) {
-                await fs.promises.writeFile(srcPath, JSON.stringify(aggData, null, 2), 'utf8');
-              }
-              const srcHistPath = path.join(process.cwd(), 'src', 'data', 'broker_matrices_historical.json');
-              if (fs.existsSync(srcHistPath) && aggData.businessDate) {
-                const histSeed = JSON.parse(await fs.promises.readFile(srcHistPath, 'utf8'));
-                const lightMatrix = (aggData.matrix || []).map(({ scrips, ...rest }) => rest);
-                histSeed[aggData.businessDate] = { ...aggData, matrix: lightMatrix };
-                const recentDates = Object.keys(histSeed).sort().reverse().slice(0, 5);
-                const prunedSeed = {};
-                for (const rd of recentDates) prunedSeed[rd] = histSeed[rd];
-                await fs.promises.writeFile(srcHistPath, JSON.stringify(prunedSeed), 'utf8');
-              }
-            } catch (_) {}
-          });
-          return res.json({ success: true, data: aggData, source: 'full_session_floorsheet_authentic' });
-        }
-
-        // 1.2. SQLite Daily Broker Ledger Check (skipped on Render / live fast path so pre-built snapshot responds in <50ms; #2 below still handles fallback if snapshot missing)
-        if (!preferFastLedgerOrSnapshot && db) {
-          const ledgerAgg = aggregateBrokerMatrixFromLedger({ targetDate: businessDate, days: 1 });
-          if (ledgerAgg && Array.isArray(ledgerAgg.matrix) && ledgerAgg.matrix.length > 0) {
-            let availableDates = [];
-            try {
-              const dates = await getMarketTradingDates();
-              if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
-            } catch (_) {}
-            ledgerAgg.availableDates = availableDates;
-            setCache(cacheKey, ledgerAgg, 5 * 60 * 1000);
-            return res.json({ success: true, data: ledgerAgg, source: 'sqlite_daily_broker_ledger' });
-          }
-        }
-
-        // 1.5. Snapshot fallback ONLY if no specific historical date was requested or snapshot matches
-        const matrixDirs = [
-          path.join(__dirname, 'data'),
-          path.join(process.cwd(), 'data'),
-          path.join(process.cwd(), 'proxy', 'data'),
-          path.join(process.cwd(), 'src', 'data')
-        ];
-        for (const mDir of matrixDirs) {
-          const mFile = path.join(mDir, 'broker_matrix_latest.json');
-          if (fs.existsSync(mFile)) {
-            try {
-              const parsed = JSON.parse(fs.readFileSync(mFile, 'utf8'));
-              // If a specific historical date was requested that differs from the snapshot date, do NOT return stale/wrong snapshot!
-              if (businessDate && parsed?.businessDate && parsed.businessDate !== businessDate) {
-                continue;
-              }
-              if (parsed?.matrix?.length > 0) {
-                let availableDates = [];
-                try {
-                  const dates = await getMarketTradingDates();
-                  if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
-                } catch (_) {}
-                parsed.availableDates = availableDates;
-
-                // Ensure snapshot fallback has authentic cumulative holding from SQLite ledger (skip heavy full-table scan during live/Render requests)
-                if (db && !preferFastLedgerOrSnapshot && !process.env.RENDER && (!parsed.matrix[0]?.topAccumulation?.[0]?.cumHoldQty || !parsed.matrix[0]?.scrips?.[0]?.cumHoldQty)) {
-                  const cumLedgerMap = new Map();
-                  try {
-                    const rows = db.prepare(`
-                      SELECT broker_id, UPPER(symbol) as symbol,
-                             SUM(buy_vol) as totalBuyVol,
-                             SUM(sell_vol) as totalSellVol,
-                             SUM(buy_vol) - SUM(sell_vol) as cumNetQty,
-                             SUM(buy_amt) as totalBuyAmt
-                      FROM daily_broker_ledger
-                      GROUP BY broker_id, UPPER(symbol)
-                    `).all();
-                    for (const r of rows) {
-                      cumLedgerMap.set(`${String(r.broker_id).replace(/^0+/, '')}_${r.symbol}`, r);
-                    }
-                  } catch (_) {}
-
-                  parsed.matrix.forEach(b => {
-                    const bId = String(b.broker || b.id || '').replace(/^0+/, '').trim();
-                    const enrich = (sc) => {
-                      if (!sc || !sc.symbol) return sc;
-                      const r = cumLedgerMap.get(`${bId}_${String(sc.symbol).toUpperCase().trim()}`);
-                      if (r) {
-                        const net = Number(r.cumNetQty || 0);
-                        if (net > 0) {
-                          sc.cumHoldQty = net;
-                          const avg = Number(r.totalBuyVol || 0) > 0 ? +(r.totalBuyAmt / r.totalBuyVol).toFixed(2) : 0;
-                          if (avg > 0) sc.cumAvgBuy = avg;
-                        }
-                      }
-                      return sc;
-                    };
-                    if (Array.isArray(b.topAccumulation)) b.topAccumulation = b.topAccumulation.map(enrich);
-                    if (Array.isArray(b.topDistribution)) b.topDistribution = b.topDistribution.map(enrich);
-                    if (Array.isArray(b.topByNetQty)) b.topByNetQty = b.topByNetQty.map(enrich);
-                    if (Array.isArray(b.scrips)) b.scrips = b.scrips.map(enrich);
-                  });
-                }
-
-                // Ensure snapshot fallback has Top Net Buy Stock's Kitta broker-wise
-                if (!parsed.topUniqueStockNetBuyers || parsed.topUniqueStockNetBuyers.length === 0) {
-                  const netBuys = [];
-                  const netSells = [];
-                  parsed.matrix.forEach(b => {
-                    const bId = String(b.broker || b.id || '').replace(/^0+/, '').trim();
-                    const bName = b.brokerName || b.name || `Broker ${bId}`;
-                    (b.scrips || b.topByNetQty || []).forEach(s => {
-                      const netQty = Number(s.netQty !== undefined ? s.netQty : ((s.buyQty || 0) - (s.sellQty || 0)));
-                      const netAmt = Number(s.netFlow !== undefined ? s.netFlow : (s.net !== undefined ? s.net : ((s.buyAmount || 0) - (s.sellAmount || 0))));
-                      if (netQty > 0) {
-                        netBuys.push({
-                          symbol: s.symbol,
-                          buyerBroker: bId,
-                          brokerName: bName,
-                          qty: netQty,
-                          netQty,
-                          buyQty: s.buyQty || netQty,
-                          sellQty: s.sellQty || 0,
-                          amount: Math.round(netAmt > 0 ? netAmt : (s.buyAmount || 0)),
-                          amountCr: +(Math.abs(netAmt) / 1e7).toFixed(2),
-                          avgRate: s.avgBuyRate || 0,
-                          trades: s.trades || 0,
-                          cumHoldQty: s.cumHoldQty,
-                          cumAvgBuy: s.cumAvgBuy
-                        });
-                      } else if (netQty < 0) {
-                        const absK = Math.abs(netQty);
-                        const absA = Math.abs(netAmt);
-                        netSells.push({
-                          symbol: s.symbol,
-                          sellerBroker: bId,
-                          brokerName: bName,
-                          qty: absK,
-                          netQty,
-                          buyQty: s.buyQty || 0,
-                          sellQty: s.sellQty || absK,
-                          amount: Math.round(absA > 0 ? absA : (s.sellAmount || 0)),
-                          amountCr: +(absA / 1e7).toFixed(2),
-                          avgRate: s.avgSellRate || 0,
-                          trades: s.trades || 0,
-                          cumHoldQty: s.cumHoldQty,
-                          cumAvgBuy: s.cumAvgBuy
-                        });
-                      }
-                    });
-                  });
-                  netBuys.sort((a, b) => b.qty - a.qty);
-                  netSells.sort((a, b) => b.qty - a.qty);
-                  const seenB = new Set();
-                  parsed.topUniqueStockNetBuyers = [];
-                  for (const it of netBuys) {
-                    if (!seenB.has(it.symbol)) { seenB.add(it.symbol); parsed.topUniqueStockNetBuyers.push(it); }
-                  }
-                  const seenS = new Set();
-                  parsed.topUniqueStockNetSellers = [];
-                  for (const it of netSells) {
-                    if (!seenS.has(it.symbol)) { seenS.add(it.symbol); parsed.topUniqueStockNetSellers.push(it); }
-                  }
-                  parsed.topCrossBrokerNetBuyers = netBuys.slice(0, 50);
-                  parsed.topCrossBrokerNetSells = netSells.slice(0, 50);
-                }
-
-                // Ensure snapshot fallback has Top 10 Most Net Bought Kitta as a Whole
-                if (!parsed.topNetBoughtScripsWholeDay || parsed.topNetBoughtScripsWholeDay.length === 0) {
-                  const wholeDayMap = new Map();
-                  (parsed.matrix || []).forEach(b => {
-                    (b.scrips || []).forEach(s => {
-                      const sym = s.symbol;
-                      if (!wholeDayMap.has(sym)) {
-                        wholeDayMap.set(sym, {
-                          symbol: sym,
-                          totalBuyVol: 0,
-                          totalNetKitta: 0,
-                          totalNetInflow: 0,
-                          totalBuyAmt: 0,
-                          accumulators: []
-                        });
-                      }
-                      const st = wholeDayMap.get(sym);
-                      st.totalBuyVol += Number(s.buyQty || 0);
-                      st.totalBuyAmt += Number(s.buyAmount || 0);
-                      const sNetQty = Number(s.netQty !== undefined ? s.netQty : ((s.buyQty || 0) - (s.sellQty || 0)));
-                      const sNetAmt = Number(s.netFlow !== undefined ? s.netFlow : ((s.buyAmount || 0) - (s.sellAmount || 0)));
-                      if (sNetQty > 0) {
-                        st.totalNetKitta += sNetQty;
-                        st.totalNetInflow += sNetAmt;
-                        st.accumulators.push({
-                          broker: b.broker || b.id,
-                          brokerName: b.brokerName || b.name,
-                          netQty: sNetQty,
-                          buyQty: s.buyQty || sNetQty,
-                          sellQty: s.sellQty || 0,
-                          avgBuyRate: s.avgBuyRate || 0,
-                          cumHoldQty: s.cumHoldQty,
-                          cumAvgBuy: s.cumAvgBuy
-                        });
-                      }
-                    });
-                  });
-                  const wholeDayList = Array.from(wholeDayMap.values()).map(st => {
-                    st.accumulators.sort((a, b) => b.netQty - a.netQty);
-                    const topAcc = st.accumulators[0] || null;
-                    const top3Acc = st.accumulators.slice(0, 3);
-                    const top3AccKitta = top3Acc.reduce((acc, x) => acc + x.netQty, 0);
-                    const effTradedVol = st.totalBuyVol || 1;
-                    const lockPct = +((st.totalNetKitta / effTradedVol) * 100).toFixed(1);
-                    const bcr3NetPct = +((top3AccKitta / effTradedVol) * 100).toFixed(1);
-                    const avgPrice = st.totalBuyVol > 0 ? +(st.totalBuyAmt / st.totalBuyVol).toFixed(2) : (topAcc?.avgBuyRate || 0);
-                    return {
-                      symbol: st.symbol,
-                      totalNetKitta: st.totalNetKitta,
-                      totalTradedVol: st.totalBuyVol,
-                      lockPct,
-                      totalNetInflow: Math.round(st.totalNetInflow),
-                      totalNetInflowCr: +(st.totalNetInflow / 1e7).toFixed(2),
-                      avgPrice,
-                      leadAccumulator: topAcc ? {
-                        broker: topAcc.broker,
-                        brokerName: topAcc.brokerName,
-                        netQty: topAcc.netQty,
-                        buyQty: topAcc.buyQty,
-                        sellQty: topAcc.sellQty,
-                        shareOfLockPct: +((topAcc.netQty / (st.totalNetKitta || 1)) * 100).toFixed(1),
-                        cumHoldQty: topAcc.cumHoldQty,
-                        cumAvgBuy: topAcc.cumAvgBuy
-                      } : null,
-                      top3Accumulators: top3Acc,
-                      top3AccKitta,
-                      bcr3NetPct,
-                      smartMoneyBias: lockPct >= 65 || (bcr3NetPct >= 35 && st.totalNetKitta > 100000) ? 'Heavy Cornering' : (lockPct >= 45 ? 'Institutional Accumulation' : 'Mild Accumulation')
-                    };
-                  });
-                  wholeDayList.sort((a, b) => b.totalNetKitta - a.totalNetKitta);
-                  parsed.topNetBoughtScripsWholeDay = wholeDayList.slice(0, 20);
-                }
-
-                setCache(cacheKey, parsed, 5 * 60 * 1000);
-                return res.json({ success: true, data: parsed, source: 'broker_matrix_latest_snapshot' });
-              }
-            } catch (_) {}
-          }
-        }
-      } catch (fErr) {
-        console.warn('[broker-heatmap] getFullSessionFloorsheet error:', fErr.message);
-      }
-    }
-
-    // 2. Multi-day horizon or custom range: check SQLite ledger first!
-    if (db && (!sector || sector.toUpperCase() === 'ALL')) {
-      const ledgerMulti = aggregateBrokerMatrixFromLedger({
-        targetDate: businessDate,
-        days,
+    let pending = !refresh ? brokerHeatmapInFlight.get(cacheKey) : null;
+    if (!pending) {
+      pending = computeBrokerHeatmapPayload({
+        businessDate,
         fromDate,
         toDate,
-        symbols: symbolsParam ? symbolsParam.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : null
-      });
-      if (ledgerMulti && Array.isArray(ledgerMulti.matrix) && ledgerMulti.matrix.length > 0) {
-        let availableDates = [];
-        try {
-          const dates = await getMarketTradingDates();
-          if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
-        } catch (_) {}
-        ledgerMulti.availableDates = availableDates;
-        setCache(cacheKey, ledgerMulti, 5 * 60 * 1000);
-        return res.json({ success: true, data: ledgerMulti, source: 'sqlite_multi_day_ledger' });
-      }
-    }
-
-    // 2. Multi-day horizon or fallback: Build authentic broker-by-scrip heatmap from genuine brokerVault records
-    let topScrips = [];
-    if (symbolsParam) {
-      topScrips = symbolsParam.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-    }
-
-    if (!topScrips.length) {
-      const meroSummary = await fetchInternalMeroMarketSummary().catch(() => ({ stocks: [] }));
-      let activeStocks = (meroSummary?.stocks || []).filter(s => Number(s.turnover || s.volume || 0) > 0);
-
-      if (sector && sector.toUpperCase() !== 'ALL') {
-        const cleanSector = sector.replace(/[\s\-_]/g, '').toLowerCase();
-        activeStocks = activeStocks.filter(s => {
-          const sec = (stockMap[s.symbol]?.sector || s.sector || '').replace(/[\s\-_]/g, '').toLowerCase();
-          return sec.includes(cleanSector) || cleanSector.includes(sec);
-        });
-      }
-
-      // CRITICAL FIX: Sort activeStocks by turnover descending across the ENTIRE market!
-      // Previously, activeStocks was left in raw alphabetical order, which truncated only A & B stocks.
-      activeStocks.sort((a, b) => {
-        const tA = Number(a.turnover || 0) || (Number(a.volume || 0) * Number(a.ltp || 0));
-        const tB = Number(b.turnover || 0) || (Number(b.volume || 0) * Number(b.ltp || 0));
-        return tB - tA;
-      });
-
-      topScrips = activeStocks.map(s => s.symbol).filter(Boolean);
-
-      // Supplement with diversified cross-sector market leaders to guarantee wide coverage from A-Z
-      const coreMarketLeaders = [
-        'GHL', 'NIMB', 'GVL', 'KBL', 'API', 'HDL', 'TAMOR', 'BHL', 'MEN', 'PHCL',
-        'NICA', 'SHIVM', 'GBIME', 'HRL', 'NRIC', 'NABIL', 'CIT', 'UPPER', 'SONA', 'HIDCL',
-        'UNL', 'NTC', 'SCB', 'EBL', 'PRVU', 'RADHI', 'AHPC', 'CBBL', 'RSML', 'SOHL',
-        'AKJCL', 'ALBSL', 'KKHC', 'LSL', 'SAHAS', 'PCBL', 'NMB', 'CZBIL', 'SBI', 'HATHY'
-      ];
-      for (const sym of coreMarketLeaders) {
-        if (!topScrips.includes(sym)) {
-          if (!sector || sector.toUpperCase() === 'ALL') {
-            topScrips.push(sym);
-          } else {
-            const cleanSector = sector.replace(/[\s\-_]/g, '').toLowerCase();
-            const sec = (stockMap[sym]?.sector || '').replace(/[\s\-_]/g, '').toLowerCase();
-            if (sec.includes(cleanSector) || cleanSector.includes(sec)) {
-              topScrips.push(sym);
-            }
-          }
+        sector,
+        days,
+        refresh,
+        symbolsParam,
+        cacheKey
+      }).finally(() => {
+        if (brokerHeatmapInFlight.get(cacheKey) === pending) {
+          brokerHeatmapInFlight.delete(cacheKey);
         }
+      });
+      if (!refresh) {
+        brokerHeatmapInFlight.set(cacheKey, pending);
       }
     }
 
-    // Fetch top 35 scrips for multi-day (50 for single day) to maintain fast response while delivering complete market coverage
-    const scripsToFetch = topScrips.slice(0, days > 1 ? 35 : 50);
-
-    // Fetch authentic broker transactions for each top scrip from brokerVault in parallel
-    // Multi-day requests: use getFastVaultSnapshot first or race with 2800ms to guarantee response in <3s
-    const heatmapStart = Date.now();
-    const vaultResults = await Promise.all(
-      scripsToFetch.map(async (sym) => {
-        if (days > 1) {
-          const fast = getFastVaultSnapshot(sym, days);
-          if (fast && (fast.brokers?.length > 0 || fast.topBuyers?.length > 0)) return fast;
-          const remaining = Math.max(500, 2800 - (Date.now() - heatmapStart));
-          return Promise.race([
-            getOrFetchBrokerAnalysis(sym, days, { date: businessDate, fromDate, toDate, refresh }).catch(() => null),
-            new Promise((r) => setTimeout(() => r(null), remaining))
-          ]);
-        }
-        return getOrFetchBrokerAnalysis(sym, days, { date: businessDate, fromDate, toDate, refresh }).catch(() => null);
-      })
-    );
-
-    const brokerTotals = {}, scripTotals = {}, matrix = {}, brokerScripsMap = {};
-    let totalTradesCount = 0;
-
-    vaultResults.forEach((vaultData, idx) => {
-      const sym = scripsToFetch[idx];
-      if (!vaultData) return;
-
-      (vaultData.topBuyers || vaultData.buyers || []).forEach(b => {
-        const bId = String(b.brokerId || b.broker || '').replace(/^0+/, '').trim();
-        const bName = b.brokerName || b.name || getBrokerName(bId);
-        const buyAmt = Number(b.buyAmount || b.buyAmt || (Number(b.buyQty || 0) * Number(b.avgRate || b.avgBuyRate || 100)) || 0);
-        const buyQty = Number(b.buyQty || b.quantity || 0);
-        const avgBuyRate = Number(b.avgRate || b.avgBuyRate || (buyQty > 0 ? buyAmt / buyQty : 0));
-        if (!bId || buyAmt <= 0) return;
-
-        if (!brokerTotals[bId]) brokerTotals[bId] = { id: bId, name: bName, totalBuy: 0, totalSell: 0 };
-        brokerTotals[bId].totalBuy += buyAmt;
-        if (!scripTotals[sym]) scripTotals[sym] = { symbol: sym, totalAmt: 0 };
-        scripTotals[sym].totalAmt += buyAmt;
-
-        if (!brokerScripsMap[bId]) brokerScripsMap[bId] = {};
-        if (!brokerScripsMap[bId][sym]) brokerScripsMap[bId][sym] = { symbol: sym, buy: 0, sell: 0, buyQty: 0, sellQty: 0, avgBuyRate: 0, avgSellRate: 0 };
-        brokerScripsMap[bId][sym].buy += buyAmt;
-        brokerScripsMap[bId][sym].buyQty += buyQty;
-        brokerScripsMap[bId][sym].avgBuyRate = avgBuyRate;
-
-        const key = `${bId}_${sym}`;
-        if (!matrix[key]) matrix[key] = { broker: bId, symbol: sym, buy: 0, sell: 0 };
-        matrix[key].buy += buyAmt;
-      });
-
-      (vaultData.topSellers || vaultData.sellers || []).forEach(s => {
-        const sId = String(s.brokerId || s.broker || '').replace(/^0+/, '').trim();
-        const sName = s.brokerName || s.name || getBrokerName(sId);
-        const sellAmt = Number(s.sellAmount || s.sellAmt || (Number(s.sellQty || 0) * Number(s.avgRate || s.avgSellRate || 100)) || 0);
-        const sellQty = Number(s.sellQty || s.quantity || 0);
-        const avgSellRate = Number(s.avgRate || s.avgSellRate || (sellQty > 0 ? sellAmt / sellQty : 0));
-        if (!sId || sellAmt <= 0) return;
-
-        if (!brokerTotals[sId]) brokerTotals[sId] = { id: sId, name: sName, totalBuy: 0, totalSell: 0 };
-        brokerTotals[sId].totalSell += sellAmt;
-        if (!scripTotals[sym]) scripTotals[sym] = { symbol: sym, totalAmt: 0 };
-        scripTotals[sym].totalAmt += sellAmt;
-
-        if (!brokerScripsMap[sId]) brokerScripsMap[sId] = {};
-        if (!brokerScripsMap[sId][sym]) brokerScripsMap[sId][sym] = { symbol: sym, buy: 0, sell: 0, buyQty: 0, sellQty: 0, avgBuyRate: 0, avgSellRate: 0 };
-        brokerScripsMap[sId][sym].sell += sellAmt;
-        brokerScripsMap[sId][sym].sellQty += sellQty;
-        brokerScripsMap[sId][sym].avgSellRate = avgSellRate;
-
-        const key = `${sId}_${sym}`;
-        if (!matrix[key]) matrix[key] = { broker: sId, symbol: sym, buy: 0, sell: 0 };
-        matrix[key].sell += sellAmt;
-      });
-
-      totalTradesCount += Number(vaultData.totalTrades || 0);
-    });
-
-    // Expand broker coverage to all active broker desks (up to 100, encompassing all 90+ operating brokers)
-    let topBrokers = Object.values(brokerTotals)
-      .sort((a, b) => (b.totalBuy + b.totalSell) - (a.totalBuy + a.totalSell))
-      .slice(0, 100);
-
-    if (topBrokers.length === 0) {
-      const matrixDirs = [
-        path.join(__dirname, 'data'),
-        path.join(process.cwd(), 'data'),
-        path.join(process.cwd(), 'proxy', 'data'),
-        path.join(process.cwd(), 'src', 'data')
-      ];
-      for (const mDir of matrixDirs) {
-        const mFile = path.join(mDir, 'broker_matrix_latest.json');
-        if (fs.existsSync(mFile)) {
-          try {
-            const parsed = JSON.parse(fs.readFileSync(mFile, 'utf8'));
-            if (parsed?.matrix?.length > 0) {
-              parsed.timeframeDays = days;
-              parsed.businessDate = businessDate || parsed.businessDate || new Date().toISOString().split('T')[0];
-              setCache(cacheKey, parsed, 5 * 60 * 1000);
-              return res.json({ success: true, data: parsed, source: 'broker_matrix_latest_snapshot_fallback' });
-            }
-          } catch (_) {}
-        }
-      }
-    }
-
-    const heatmapMatrix = topBrokers.map(broker => {
-      const bScripsMap = brokerScripsMap[broker.id] || {};
-      const scripsArr = Object.values(bScripsMap).map(s => {
-        const netAmt = s.buy - s.sell;
-        const netQty = s.buyQty - s.sellQty;
-        return {
-          symbol: s.symbol,
-          buy: Math.round(s.buy),
-          sell: Math.round(s.sell),
-          net: Math.round(netAmt),
-          buyAmount: Math.round(s.buy),
-          sellAmount: Math.round(s.sell),
-          netFlow: Math.round(netAmt),
-          buyQty: s.buyQty,
-          sellQty: s.sellQty,
-          netQty,
-          avgBuyRate: s.avgBuyRate,
-          avgSellRate: s.avgSellRate,
-          bias: netAmt > 1000000 ? 'Accumulation' : netAmt < -1000000 ? 'Distribution' : 'Neutral'
-        };
-      });
-
-      const topAccumulation = [...scripsArr].filter(s => s.net > 0).sort((x, y) => y.net - x.net).slice(0, 10);
-      const topDistribution = [...scripsArr].filter(s => s.net < 0).sort((x, y) => x.net - y.net).slice(0, 10);
-
-      const netFlow = Math.round(broker.totalBuy - broker.totalSell);
-      let bias = 'Mild Accumulation';
-      if (netFlow > 8000000) bias = 'Aggressive Accumulation';
-      else if (netFlow < -8000000) bias = 'Heavy Selling';
-      else if (netFlow < 0) bias = 'Distribution';
-
-      return {
-        broker: broker.id,
-        brokerName: broker.name,
-        totalBuy: Math.round(broker.totalBuy),
-        totalSell: Math.round(broker.totalSell),
-        netFlow,
-        totalTrades: Math.round((broker.totalBuy + broker.totalSell) / 120000) || 10,
-        bias,
-        topStock: topAccumulation[0]?.symbol || scripsArr[0]?.symbol || '—',
-        topAccumulation,
-        topDistribution,
-        scrips: scripsArr.length > 0 ? scripsArr : scripsToFetch.map(sym => {
-          const cell = matrix[`${broker.id}_${sym}`] || { buy: 0, sell: 0 };
-          return { symbol: sym, buy: Math.round(cell.buy), sell: Math.round(cell.sell), net: Math.round(cell.buy - cell.sell) };
-        })
-      };
-    });
-
-    let availableDates = [];
-    try {
-      const dates = await fetchSymbolTradingDates(scripsToFetch[0] || 'NABIL');
-      if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
-    } catch (_) {}
-
-    const data = {
-      topBrokers: topBrokers.map(b => b.id),
-      topBrokerNames: topBrokers.map(b => b.name),
-      topScrips: scripsToFetch,
-      matrix: heatmapMatrix,
-      totalTrades: totalTradesCount || 1200,
-      timeframeDays: days,
-      businessDate: businessDate || new Date().toISOString().split('T')[0],
-      availableDates
-    };
-
-    setCache(cacheKey, data, 5 * 60 * 1000);
-    return res.json({ success: true, data, source: 'broker-vault-authentic' });
+    const result = await pending;
+    res.setHeader('Content-Type', 'application/json');
+    return res.send(result.json);
   } catch (err) {
     console.error('[broker-heatmap] Error:', err.message);
     res.status(500).json({ success: false, message: err.message });
@@ -14656,15 +14688,213 @@ app.post('/api/discord/test-alert', requireAdminSecret, async (req, res) => {
 });
 
 // 6. Verified Post-Market / Pre-Open Day Prime Pick
+let primePickDailyVerifiedInFlight = null;
+
+async function computeDailyVerifiedPrimePick(marketStatus, cacheKey) {
+  let stockData = getCache('today-prices') || getCache('market-summary');
+  let stocksList = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);
+  if (!stocksList || stocksList.length === 0) {
+    try {
+      const todayResp = await axios.get('https://www.sharesansar.com/today-share-price', { headers: HEADERS, timeout: 8000 });
+      const $td = cheerio.load(todayResp.data);
+      const fetched = [];
+      $td('table tbody tr').each((i, row) => {
+        const tds = $td(row).find('td');
+        if (tds.length >= 18) {
+          const sym = $td(tds[1]).text().trim();
+          const meta = stockMap[sym] || {};
+          const close = parseMoney($td(tds[6]).text());
+          const ltp = parseMoney($td(tds[7]).text()) || close;
+          const volume = parseMoney($td(tds[11]).text());
+          const prevClose = parseMoney($td(tds[12]).text());
+          const turnover = parseMoney($td(tds[13]).text());
+          const pChange = parseMoney($td(tds[17]).text());
+          if (sym && !isNaN(ltp) && ltp > 0) fetched.push({
+            symbol: sym,
+            name: meta.name || sym,
+            companyName: meta.name || sym,
+            sector: meta.sector || 'Others',
+            ltp,
+            prevClose: isNaN(prevClose) ? ltp : prevClose,
+            pChange: isNaN(pChange) ? 0 : pChange,
+            turnover: isNaN(turnover) ? (ltp * volume) : turnover,
+            volume: isNaN(volume) ? 0 : volume,
+            source: 'sharesansar'
+          });
+        }
+      });
+      if (fetched.length > 0) {
+        stocksList = fetched;
+        setCache('today-prices', fetched, 30000);
+      }
+    } catch (_fetchErr) {}
+  }
+
+  const allCandidates = (Array.isArray(stocksList) ? stocksList : [])
+    .filter(s => {
+      const ltp = Number(s.ltp || s.price || 0);
+      const turnover = Number(s.turnover || s.totalTradedValue || 0);
+      return ltp >= 30 && turnover >= 300000;
+    })
+    .sort((a, b) => {
+      const aBreakout = (a.isBreakout || (Number(a.rvol || 0) >= 1.4 && Number(a.pChange || 0) >= 0)) ? 1 : 0;
+      const bBreakout = (b.isBreakout || (Number(b.rvol || 0) >= 1.4 && Number(b.pChange || 0) >= 0)) ? 1 : 0;
+      if (bBreakout !== aBreakout) return bBreakout - aBreakout;
+      return Number(b.turnover || b.totalTradedValue || 0) - Number(a.turnover || a.totalTradedValue || 0);
+    });
+
+  let winner = null;
+  const qualifiedCandidates = [];
+
+  for (let i = 0; i < allCandidates.length; i++) {
+    const cand = allCandidates[i];
+    if (i > 0 && i % 5 === 0) {
+      await new Promise(r => setImmediate(r));
+    }
+    const sym = String(cand.symbol || cand.scrip || '').toUpperCase().trim();
+    if (!sym) continue;
+    const history = await getPriceHistoryInternal(sym, 365).catch(() => []);
+    if (!history || history.length < 20) continue;
+
+    const broker = await getOrFetchBrokerAnalysis(sym, 30).catch(() => null);
+    let plan = null;
+    try {
+      plan = generateEntryExitPlan(cand, history, [], { brokerAnalysis: broker });
+    } catch (_) {
+      continue;
+    }
+    if (!plan || !plan.supported) continue;
+
+    const vUpper = String(plan.verdict || '').toUpperCase();
+    const scoreVal = Number(plan.setupScore || 0);
+    const winRateVal = Number(plan.analogResult?.stats?.winRate ?? 50);
+
+    const isDisqualified =
+      vUpper.includes('NO TRADE') ||
+      vUpper.includes('AVOID') ||
+      vUpper.includes('REDUCE') ||
+      vUpper.includes('EXIT') ||
+      vUpper.includes('STAY OUT') ||
+      vUpper.includes('HOLD') ||
+      vUpper.includes('WAIT') ||
+      Boolean(plan.riskGate?.isInstitutionalDumping) ||
+      Boolean(plan.riskGate?.isCircuitTrap);
+
+    const hasBuyKeyword =
+      vUpper.includes('BUY') ||
+      vUpper.includes('ACCUMULATE') ||
+      vUpper.includes('STRONG') ||
+      vUpper.includes('COIL');
+
+    if (isDisqualified || !hasBuyKeyword || scoreVal < 55) {
+      continue;
+    }
+
+    const epsVal = Number(cand.eps || 0);
+    const passesAll5 =
+      !Boolean(plan.riskGate?.isCircuitTrap) &&
+      !Boolean(plan.riskGate?.isLossMaking) &&
+      epsVal >= 0 &&
+      Boolean(plan.levels?.entryZone?.min) &&
+      Number(plan.levels?.entryZone?.min) > 0;
+
+    qualifiedCandidates.push({
+      cand, plan, sym, history, broker, scoreVal, winRateVal, passesAll5
+    });
+  }
+
+  if (qualifiedCandidates.length > 0) {
+    const tier1 = qualifiedCandidates.filter(c => c.passesAll5);
+    const candidatesToRank = tier1.length > 0 ? tier1 : qualifiedCandidates;
+    candidatesToRank.sort((a, b) => b.scoreVal - a.scoreVal);
+    const chosen = candidatesToRank[0];
+    const isTier1 = tier1.length > 0;
+    const { cand, plan, sym, history, broker, scoreVal, winRateVal } = chosen;
+
+    const candLtp = Number(cand.ltp || plan.ltp || history[history.length - 1]?.close || 100);
+    const eLow = Number(plan.levels?.entryZone?.min || plan.levels?.entryZone?.low || +(candLtp * 0.985).toFixed(1));
+    const eHigh = Number(plan.levels?.entryZone?.max || plan.levels?.entryZone?.high || +(candLtp * 1.015).toFixed(1));
+    const cCap = Number(plan.levels?.chaseCap || +(eHigh * 1.025).toFixed(1));
+    const t1Price = Number(plan.levels?.target1?.price || +(candLtp * 1.08).toFixed(1));
+    const t2Price = Number(plan.levels?.target2?.price || +(candLtp * 1.15).toFixed(1));
+    const slPrice = Number(plan.levels?.stopLoss?.price || +(candLtp * 0.94).toFixed(1));
+
+    const meta = stockMap[sym] || {};
+    const chosenRvol = Number(plan.volume?.rvol || plan.technical?.volume?.rvol || cand.rvol || cand.volumeSurgeRatio || 1.25);
+    winner = {
+      ...cand,
+      ...plan,
+      symbol: sym,
+      name: cand.name || cand.companyName || meta.name || sym,
+      companyName: cand.companyName || cand.name || meta.name || sym,
+      sector: (cand.sector && cand.sector !== 'Unknown' && cand.sector !== 'NEPSE') ? cand.sector : (meta.sector || 'Others'),
+      ltp: candLtp,
+      rvol: chosenRvol,
+      volumeSurgeRatio: chosenRvol,
+      pChange: Number(cand.pChange || cand.percentageChange || 0),
+      turnover: Number(cand.turnover || cand.totalTradedValue || 0),
+      historyBars: history.length,
+      brokerAnalysis: broker,
+      isPlanVerified: true,
+      qualityTier: isTier1 ? 'PRIME_5_STAR' : 'BEST_AVAILABLE_SETUP',
+      setupScore: scoreVal,
+      score: scoreVal,
+      guruScore: scoreVal,
+      compositeScore: scoreVal,
+      winRate: winRateVal,
+      levels: {
+        ...plan.levels,
+        entryZone: { min: eLow, max: eHigh, low: eLow, high: eHigh },
+        target1: { ...(plan.levels?.target1 || {}), price: t1Price },
+        target2: { ...(plan.levels?.target2 || {}), price: t2Price },
+        stopLoss: { ...(plan.levels?.stopLoss || {}), price: slPrice },
+        chaseCap: cCap
+      },
+      entryLow: eLow,
+      entryHigh: eHigh,
+      chaseCap: cCap,
+      target1: t1Price,
+      target2: t2Price,
+      stopLoss: slPrice,
+      analogCount: plan.analogResult?.stats?.sampleSize || 6,
+      confidenceLevel: plan.confidence?.level || 'HIGH',
+      verdict: plan.verdict,
+      warnings: plan.warnings,
+      bullishFactors: plan.bullishFactors,
+      catalyst: "Post-3:15 institutional floorsheet accumulation & historical analog edge",
+      postMarketVerifiedAt: new Date().toISOString(),
+      sessionDate: marketStatus.targetSessionDate,
+      isLockedForSession: true,
+      sessionContext: marketStatus.session,
+      postMarketLabel: "Tomorrow's Prime Opportunity (Sealed Post-3:15 Floorsheet + 500-Day Analogs)",
+      riskGate: plan.riskGate
+    };
+  }
+
+  if (winner) {
+    const ttl24h = 24 * 60 * 60 * 1000;
+    setCache(cacheKey, winner, ttl24h);
+    setCache('prime-pick-daily-verified', winner, ttl24h);
+    setVerifiedPostMarketPrimePick(winner);
+  } else {
+    cache.delete(cacheKey);
+    setCache(`prime-pick-none-${marketStatus.targetSessionDate}`, { none: true }, 120000);
+    setVerifiedPostMarketPrimePick(null);
+  }
+  return winner;
+}
+
 app.get('/api/prime-pick/daily-verified', async (req, res) => {
   try {
     const marketStatus = getDetailedMarketStatus();
     const targetSessionDate = marketStatus.targetSessionDate;
     const cacheKey = `prime-pick-daily-verified-${targetSessionDate}`;
+    const force = req.query.force === 'true';
+    const isPostMarket = marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen;
     const cached = getCache(cacheKey) || getCache('prime-pick-daily-verified') || getVerifiedPostMarketPrimePick();
 
     // 1. Session-Lock Check: If we already have a sealed verified pick for targetSessionDate, SERVE IT IMMEDIATELY
-    if (cached && cached.symbol && (!req.query.force || req.query.force !== 'true')) {
+    if (cached && cached.symbol && !force) {
       const vUpper = String(cached.verdict || '').toUpperCase();
       const isBad = 
         vUpper.includes('NO TRADE') ||
@@ -14684,7 +14914,6 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         vUpper.includes('COIL');
 
       if (!isBad && hasBuyKeyword && Number(cached.setupScore || cached.score || 0) >= 55) {
-        // If cached pick is for targetSessionDate, return it
         if (!cached.sessionDate || cached.sessionDate === targetSessionDate) {
           return res.json({
             success: true,
@@ -14695,26 +14924,22 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
             },
             session: marketStatus.session,
             sessionDate: targetSessionDate,
-            isPostMarket: marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen,
+            isPostMarket,
             source: 'cache'
           });
         }
       } else {
-        // Stale or non-buy plan in cache — purge it
         cache.delete(cacheKey);
         setVerifiedPostMarketPrimePick(null);
       }
     }
 
-    // STRICT USER DIRECTIVE: Day Prime Pick must be picked AFTER market close with at least 5-10+ mins
-    // for collecting and analyzing all data present and past (floorsheet reconciliation 15:05-15:15 NPT).
     const nptMins = marketStatus.nptTotalMinutes;
     const isTradingDay = marketStatus.isTradingDay;
     const isDuringTrading = isTradingDay && nptMins >= 11 * 60 && nptMins < 15 * 60;
     const isClosingOrReconciling = isTradingDay && nptMins >= 15 * 60 && nptMins < (15 * 60 + 15);
 
-    // During active continuous trading (11:00 AM - 3:00 PM), do NOT generate tomorrow's pick on intraday noise
-    if (isDuringTrading && (!req.query.force || req.query.force !== 'true')) {
+    if (isDuringTrading && !force) {
       if (cached && cached.symbol) {
         return res.json({
           success: true,
@@ -14731,8 +14956,7 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
       }
     }
 
-    // During closing session & floorsheet reconciliation (3:00 PM - 3:15 PM NPT)
-    if (isClosingOrReconciling && (!req.query.force || req.query.force !== 'true')) {
+    if (isClosingOrReconciling && !force) {
       return res.json({
         success: true,
         reconciling: true,
@@ -14744,238 +14968,40 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
       });
     }
 
-    // Identify candidate from latest closing data
-    let stockData = getCache('today-prices') || getCache('market-summary');
-    let stocksList = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);
-    if (!stocksList || stocksList.length === 0) {
-      // Inline fetch from today-prices source (ShareSansar)
-      try {
-        const todayResp = await axios.get('https://www.sharesansar.com/today-share-price', { headers: HEADERS, timeout: 12000 });
-        const $td = cheerio.load(todayResp.data);
-        const fetched = [];
-        $td('table tbody tr').each((i, row) => {
-          const tds = $td(row).find('td');
-          if (tds.length >= 18) {
-            const sym = $td(tds[1]).text().trim();
-            const meta = stockMap[sym] || {};
-            const close = parseMoney($td(tds[6]).text());
-            const ltp = parseMoney($td(tds[7]).text()) || close;
-            const volume = parseMoney($td(tds[11]).text());
-            const prevClose = parseMoney($td(tds[12]).text());
-            const turnover = parseMoney($td(tds[13]).text());
-            const pChange = parseMoney($td(tds[17]).text());
-            if (sym && !isNaN(ltp) && ltp > 0) fetched.push({
-              symbol: sym,
-              name: meta.name || sym,
-              companyName: meta.name || sym,
-              sector: meta.sector || 'Others',
-              ltp,
-              prevClose: isNaN(prevClose) ? ltp : prevClose,
-              pChange: isNaN(pChange) ? 0 : pChange,
-              turnover: isNaN(turnover) ? (ltp * volume) : turnover,
-              volume: isNaN(volume) ? 0 : volume,
-              source: 'sharesansar'
-            });
-          }
-        });
-        if (fetched.length > 0) {
-          stocksList = fetched;
-          setCache('today-prices', fetched, 30000);
-        }
-      } catch (_fetchErr) {}
-    }
-    if (!stocksList || stocksList.length === 0) {
-      // Last resort: live-trading page
-      try {
-        const lmResp = await axios.get('https://www.sharesansar.com/live-trading', { headers: HEADERS, timeout: 10000 });
-        const $lm = cheerio.load(lmResp.data);
-        const lmStocks = [];
-        $lm('table tbody tr').each((i, row) => {
-          const tds = $lm(row).find('td');
-          if (tds.length >= 10) {
-            const sym = $lm(tds[1]).text().trim();
-            const meta = stockMap[sym] || {};
-            if (sym) lmStocks.push({
-              symbol: sym,
-              name: meta.name || sym,
-              companyName: meta.name || sym,
-              sector: meta.sector || 'Others',
-              ltp: parseMoney($lm(tds[2]).text()),
-              pChange: parseMoney($lm(tds[4]).text()),
-              turnover: parseMoney($lm(tds[9]).text()),
-              volume: parseMoney($lm(tds[6]).text()),
-              source: 'live-trading'
-            });
-          }
-        });
-        stocksList = lmStocks;
-      } catch (_lmErr) {}
-    }
-
-    // CRITICAL FIX: Scan ALL available stocks — not just top 45 by turnover.
-    // The best stock by Entry/Exit Analyzer score may not be in the top-45 by turnover.
-    // No early-break: every candidate runs through generateEntryExitPlan before picking the winner.
-    const allCandidates = (Array.isArray(stocksList) ? stocksList : [])
-      .filter(s => {
-        const ltp = Number(s.ltp || s.price || 0);
-        const turnover = Number(s.turnover || s.totalTradedValue || 0);
-        return ltp >= 30 && turnover >= 300000;
-      })
-      .sort((a, b) => {
-        const aBreakout = (a.isBreakout || (Number(a.rvol || 0) >= 1.4 && Number(a.pChange || 0) >= 0)) ? 1 : 0;
-        const bBreakout = (b.isBreakout || (Number(b.rvol || 0) >= 1.4 && Number(b.pChange || 0) >= 0)) ? 1 : 0;
-        if (bBreakout !== aBreakout) return bBreakout - aBreakout;
-        return Number(b.turnover || b.totalTradedValue || 0) - Number(a.turnover || a.totalTradedValue || 0);
+    if (!force && getCache(`prime-pick-none-${targetSessionDate}`)) {
+      return res.json({
+        success: true,
+        data: null,
+        session: marketStatus.session,
+        isPostMarket,
+        source: 'none-cached'
       });
+    }
 
-    let winner = null;
-    const qualifiedCandidates = [];
-
-    for (const cand of allCandidates) {
-      const sym = String(cand.symbol || cand.scrip || '').toUpperCase().trim();
-      if (!sym) continue;
-      const history = await getPriceHistoryInternal(sym, 365).catch(() => []);
-      if (!history || history.length < 20) continue;
-
-      const broker = await getOrFetchBrokerAnalysis(sym, 30).catch(() => null);
-      let plan = null;
-      try {
-        plan = generateEntryExitPlan(cand, history, [], { brokerAnalysis: broker });
-      } catch (_) {
-        continue;
-      }
-      if (!plan || !plan.supported) continue;
-
-      const vUpper = String(plan.verdict || '').toUpperCase();
-      const scoreVal = Number(plan.setupScore || 0);
-      const winRateVal = Number(plan.analogResult?.stats?.winRate ?? 50);
-
-      // STRICT USER DIRECTIVE: Day Prime Pick MUST be a genuine BUY or ACCUMULATE signal!
-      const isDisqualified =
-        vUpper.includes('NO TRADE') ||
-        vUpper.includes('AVOID') ||
-        vUpper.includes('REDUCE') ||
-        vUpper.includes('EXIT') ||
-        vUpper.includes('STAY OUT') ||
-        vUpper.includes('HOLD') ||
-        vUpper.includes('WAIT') ||
-        Boolean(plan.riskGate?.isInstitutionalDumping) ||
-        Boolean(plan.riskGate?.isCircuitTrap);
-
-      const hasBuyKeyword =
-        vUpper.includes('BUY') ||
-        vUpper.includes('ACCUMULATE') ||
-        vUpper.includes('STRONG') ||
-        vUpper.includes('COIL');
-
-      if (isDisqualified || !hasBuyKeyword || scoreVal < 55) {
-        continue; // Disqualified by Entry/Exit Analyzer — must be actionable BUY/ACCUMULATE
-      }
-
-      const epsVal = Number(cand.eps || 0);
-      const passesAll5 =
-        !Boolean(plan.riskGate?.isCircuitTrap) &&
-        !Boolean(plan.riskGate?.isLossMaking) &&
-        epsVal >= 0 &&
-        Boolean(plan.levels?.entryZone?.min) &&
-        Number(plan.levels?.entryZone?.min) > 0;
-
-      qualifiedCandidates.push({
-        cand, plan, sym, history, broker, scoreVal, winRateVal, passesAll5
+    // Deduplicate concurrent universe scans and avoid blocking cold Dashboard loads on a 350-stock loop
+    if (!primePickDailyVerifiedInFlight) {
+      primePickDailyVerifiedInFlight = computeDailyVerifiedPrimePick(marketStatus, cacheKey).finally(() => {
+        primePickDailyVerifiedInFlight = null;
       });
-      // NO early-break at score >= 55 — evaluate all candidates to find the TRUE best
     }
 
-    if (qualifiedCandidates.length > 0) {
-      // TIER 1: Check if any candidate passes ALL 5 criteria:
-      // 1. Clean verdict
-      // 2. No institutional dumping
-      // 3. No circuit trap
-      // 4. Not loss-making (positive EPS)
-      // 5. Valid entry levels
-      const tier1 = qualifiedCandidates.filter(c => c.passesAll5);
-      // TIER 2: If NO stock passes all 5 criteria, fallback to candidates passing the 2 strict rules!
-      const candidatesToRank = tier1.length > 0 ? tier1 : qualifiedCandidates;
-      candidatesToRank.sort((a, b) => b.scoreVal - a.scoreVal);
-      const chosen = candidatesToRank[0];
-      const isTier1 = tier1.length > 0;
-      const { cand, plan, sym, history, broker, scoreVal, winRateVal } = chosen;
-
-      const candLtp = Number(cand.ltp || plan.ltp || history[history.length - 1]?.close || 100);
-      const eLow = Number(plan.levels?.entryZone?.min || plan.levels?.entryZone?.low || +(candLtp * 0.985).toFixed(1));
-      const eHigh = Number(plan.levels?.entryZone?.max || plan.levels?.entryZone?.high || +(candLtp * 1.015).toFixed(1));
-      const cCap = Number(plan.levels?.chaseCap || +(eHigh * 1.025).toFixed(1));
-      const t1Price = Number(plan.levels?.target1?.price || +(candLtp * 1.08).toFixed(1));
-      const t2Price = Number(plan.levels?.target2?.price || +(candLtp * 1.15).toFixed(1));
-      const slPrice = Number(plan.levels?.stopLoss?.price || +(candLtp * 0.94).toFixed(1));
-
-      const meta = stockMap[sym] || {};
-      const chosenRvol = Number(plan.volume?.rvol || plan.technical?.volume?.rvol || cand.rvol || cand.volumeSurgeRatio || 1.25);
-      winner = {
-        ...cand,
-        ...plan,
-        symbol: sym,
-        name: cand.name || cand.companyName || meta.name || sym,
-        companyName: cand.companyName || cand.name || meta.name || sym,
-        sector: (cand.sector && cand.sector !== 'Unknown' && cand.sector !== 'NEPSE') ? cand.sector : (meta.sector || 'Others'),
-        ltp: candLtp,
-        rvol: chosenRvol,
-        volumeSurgeRatio: chosenRvol,
-        pChange: Number(cand.pChange || cand.percentageChange || 0),
-        turnover: Number(cand.turnover || cand.totalTradedValue || 0),
-        historyBars: history.length,
-        brokerAnalysis: broker,
-        isPlanVerified: true,
-        qualityTier: isTier1 ? 'PRIME_5_STAR' : 'BEST_AVAILABLE_SETUP',
-        setupScore: scoreVal,
-        score: scoreVal,
-        guruScore: scoreVal,
-        compositeScore: scoreVal,
-        winRate: winRateVal,
-        levels: {
-          ...plan.levels,
-          entryZone: { min: eLow, max: eHigh, low: eLow, high: eHigh },
-          target1: { ...(plan.levels?.target1 || {}), price: t1Price },
-          target2: { ...(plan.levels?.target2 || {}), price: t2Price },
-          stopLoss: { ...(plan.levels?.stopLoss || {}), price: slPrice },
-          chaseCap: cCap
-        },
-        entryLow: eLow,
-        entryHigh: eHigh,
-        chaseCap: cCap,
-        target1: t1Price,
-        target2: t2Price,
-        stopLoss: slPrice,
-        analogCount: plan.analogResult?.stats?.sampleSize || 6,
-        confidenceLevel: plan.confidence?.level || 'HIGH',
-        verdict: plan.verdict,
-        warnings: plan.warnings,
-        bullishFactors: plan.bullishFactors,
-        catalyst: "Post-3:15 institutional floorsheet accumulation & historical analog edge",
-        postMarketVerifiedAt: new Date().toISOString(),
-        sessionDate: marketStatus.targetSessionDate,
-        isLockedForSession: true,
-        sessionContext: marketStatus.session,
-        postMarketLabel: "Tomorrow's Prime Opportunity (Sealed Post-3:15 Floorsheet + 500-Day Analogs)",
-        riskGate: plan.riskGate
-      };
+    if (!force) {
+      return res.json({
+        success: true,
+        data: null,
+        warming: true,
+        session: marketStatus.session,
+        isPostMarket,
+        source: 'async-warming'
+      });
     }
 
-    if (winner) {
-      const ttl24h = 24 * 60 * 60 * 1000; // 24-hour cache covering until tomorrow's close
-      setCache(cacheKey, winner, ttl24h);
-      setCache('prime-pick-daily-verified', winner, ttl24h);
-      setVerifiedPostMarketPrimePick(winner);
-    } else {
-      cache.delete(cacheKey);
-      setVerifiedPostMarketPrimePick(null);
-    }
-
+    const winner = await primePickDailyVerifiedInFlight;
     res.json({
       success: true,
       data: winner,
       session: marketStatus.session,
-      isPostMarket: marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen,
+      isPostMarket,
       source: winner ? 'computed' : 'none'
     });
   } catch (err) {
@@ -16135,6 +16161,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
         isWarmingUp = false;
         warmupStage = 'Ready';
         console.log(`[Proxy] ⚡ Warmup complete in ${Math.round((Date.now() - warmupStartTime)/1000)}s! Server fully operational.`);
+        setImmediate(() => warmBrokerHeatmapCacheFromSnapshot().catch(() => {}));
         // Inject dependencies so workers can run full-universe Entry/Exit Analyzer scan and live News/IPO alerts
         initWorkerDependencies({
           getPriceHistoryInternal,

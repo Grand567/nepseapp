@@ -2236,11 +2236,13 @@ export async function processBroker58AlertTrigger(b58Eval) {
     category: 'pro',
     tier: 'pro',
     isPro: true,
+    isIntradayEarlyWarning: true,
+    intradayWarningBanner: '⚠️ EARLY WARNING (~36% standalone WR): Run /analyze SYMBOL and wait for EOD /sniper confirmation before buying.',
     isTest,
     title: b58Eval.isLockInThreat && b58Eval.promoterLockin?.daysRemaining <= 30
-      ? `⚠️ Operator Accumulation w/ Promoter Dump Risk: ${sym}`
-      : `🚨 Early Operator Ignition: ${sym}`,
-    body: `Broker #58 (Naasa) net bought +${b58Eval.netVol.toLocaleString()} kitta (${b58Eval.marketSharePct}% share) at Rs. ${b58Eval.operatorVwap} basis before breakout!${b58Eval.isLockInThreat ? `\n[चेतावनी: प्रमोटर लकिङ ${b58Eval.promoterLockin?.daysRemaining} दिनमा सकिँदैछ]` : ''}`,
+      ? `⚠️ Early Warning w/ Promoter Dump Risk: ${sym}`
+      : `⚡ Early Warning — Broker #58 Activity: ${sym}`,
+    body: `Broker #58 (Naasa) net bought +${b58Eval.netVol.toLocaleString()} kitta (${b58Eval.marketSharePct}% share) at Rs. ${b58Eval.operatorVwap} basis. Run /analyze ${sym} & wait for EOD /sniper before buying.${b58Eval.isLockInThreat ? `\n[चेतावनी: प्रमोटर लकिङ ${b58Eval.promoterLockin?.daysRemaining} दिनमा सकिँदैछ]` : ''}`,
     action: 'OPEN_STOCK_DETAIL',
     ltp: b58Eval.ltp,
     pChange: b58Eval.pChange,
@@ -2794,7 +2796,9 @@ export async function processBreakoutAlertTrigger(breakoutEval) {
     lastLtp: breakoutEval.ltp,
     resistance20D: breakoutEval.resistance20D
   };
-  saveJson(BREAKOUT_STATE_FILE, breakoutAlertStateMap);
+  if (!breakoutEval.isTest) {
+    saveJson(BREAKOUT_STATE_FILE, breakoutAlertStateMap);
+  }
 
   const alertItem = {
     id: `breakout_alert_${sym}_${now}`,
@@ -2804,8 +2808,11 @@ export async function processBreakoutAlertTrigger(breakoutEval) {
     category: 'pro',
     tier: 'pro',
     isPro: true,
-    title: `🚀 High-Volume Breakout: ${sym}`,
-    body: `Price Rs. ${breakoutEval.ltp} cleared 20-Day Resistance (Rs. ${breakoutEval.resistance20D}) with ${breakoutEval.rvol}x Volume Surge! Lead buyers: ${breakoutEval.dominantBuyerText}.`,
+    isIntradayEarlyWarning: true,
+    intradayWarningBanner: '⚠️ EARLY WARNING (~36% standalone WR): Run /analyze SYMBOL and wait for EOD /sniper confirmation before buying.',
+    isTest: Boolean(breakoutEval.isTest),
+    title: `⚡ Early Warning — 20D Volume Breakout: ${sym}`,
+    body: `Price Rs. ${breakoutEval.ltp} cleared 20-Day Resistance (Rs. ${breakoutEval.resistance20D}) with ${breakoutEval.rvol}x Volume Surge! Lead buyers: ${breakoutEval.dominantBuyerText}. Verify via /analyze ${sym} & EOD /sniper before entering.`,
     action: 'OPEN_STOCK_DETAIL',
     ltp: breakoutEval.ltp,
     pChange: breakoutEval.pChange,

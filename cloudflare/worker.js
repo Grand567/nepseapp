@@ -95,6 +95,71 @@ function isPrivateOrStreamRoute(pathname) {
   );
 }
 
+function isHealthOrPingRoute(pathname) {
+  return (
+    pathname === '/health' ||
+    pathname === '/api/health' ||
+    pathname === '/ping' ||
+    pathname === '/api/ping'
+  );
+}
+
+function buildOriginHeaders(request, url, targetOrigin, isPrivate) {
+  const originHeaders = new Headers();
+  const forwardAllowlist = [
+    'accept',
+    'accept-encoding',
+    'accept-language',
+    'cache-control',
+    'content-type',
+    'if-none-match',
+    'authorization',
+    'x-portfolio-key',
+    'x-admin-key',
+    'x-cron-secret',
+    'origin',
+    'referer',
+  ];
+  if (isPrivate) {
+    forwardAllowlist.push('cookie');
+  }
+  for (const h of forwardAllowlist) {
+    const val = request.headers.get(h);
+    if (val) originHeaders.set(h, val);
+  }
+  originHeaders.set(
+    'User-Agent',
+    request.headers.get('User-Agent') || 'Mozilla/5.0 (compatible; DrabyashreeNepseCDN/1.0)'
+  );
+  originHeaders.set('Host', new URL(targetOrigin).hostname);
+  originHeaders.set('X-Forwarded-Host', url.hostname);
+  originHeaders.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
+  const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || '';
+  if (clientIp) {
+    originHeaders.set('X-Forwarded-For', clientIp);
+  }
+  return originHeaders;
+}
+
+function prepareCacheHeaders(sourceHeaders, ttlSeconds) {
+  const h = new Headers(sourceHeaders);
+  // Strip Vary/Set-Cookie/Pragma/Expires from edge cache entries so Express cors() Vary: Origin never splits or breaks staleKey lookups
+  h.delete('Vary');
+  h.delete('Set-Cookie');
+  h.delete('Pragma');
+  h.delete('Expires');
+  h.set('Cache-Control', `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}`);
+  return h;
+}
+
+function applyClientResponseHeaders(headers, request, corsHeaders) {
+  Object.entries(corsHeaders).forEach(([k, v]) => headers.set(k, v));
+  if (isAllowedOrigin(request.headers.get('Origin') || '')) {
+    headers.set('Vary', 'Origin');
+  }
+  return headers;
+}
+
 function isLiveSingleSessionRequest(url) {
   const pathname = url.pathname;
   const sp = url.searchParams;
@@ -137,7 +202,7 @@ function isExplicitBypassRequest(url, request) {
   );
 }
 
-function getCacheTtlSeconds(url, request) {
+export function getCacheTtlSeconds(url, request) {
   const pathname = url.pathname;
 
   // 1. Authenticated, user-private, SSE stream, or explicit refresh routes: NEVER CACHE
@@ -155,6 +220,7 @@ function getCacheTtlSeconds(url, request) {
     pathname.includes('/market/live') ||
     pathname.includes('/market-summary') ||
     pathname.includes('/market/summary') ||
+    pathname.includes('/market-status') ||
     pathname.includes('/market/status') ||
     pathname.includes('/today-prices') ||
     pathname.includes('/live-index') ||
@@ -183,7 +249,7 @@ function getCacheTtlSeconds(url, request) {
   }
 
   // 4. Health checks & ping
-  if (pathname === '/health' || pathname === '/api/ping' || pathname === '/ping') {
+  if (isHealthOrPingRoute(pathname)) {
     return 10;
   }
 
@@ -199,6 +265,8 @@ function buildStaleBackupKey(url) {
   });
 }
 
+export { isHealthOrPingRoute, buildOriginHeaders, prepareCacheHeaders, applyClientResponseHeaders };
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -209,16 +277,17 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
-        headers: corsHeaders
+        headers: applyClientResponseHeaders(new Headers(), request, corsHeaders)
       });
     }
 
     const isSseStream = url.pathname.includes('/stream');
     const isPrivate = isPrivateOrStreamRoute(url.pathname);
+    const isHealthProbe = isHealthOrPingRoute(url.pathname);
     const isDeltaPoll = url.searchParams.has('sinceContractId') || url.searchParams.has('afterContractNo');
     const cacheTtl = getCacheTtlSeconds(url, request);
     const isCacheable = request.method === 'GET' && cacheTtl > 0;
-    const allowStaleShield = request.method === 'GET' && !isPrivate && !isDeltaPoll;
+    const allowStaleShield = request.method === 'GET' && !isPrivate && !isDeltaPoll && !isHealthProbe;
     const cache = caches.default;
     const cacheKey = new Request(url.toString(), { method: 'GET' });
     const staleKey = allowStaleShield ? buildStaleBackupKey(url) : null;
@@ -227,8 +296,7 @@ export default {
     if (isCacheable) {
       const cachedResponse = await cache.match(cacheKey);
       if (cachedResponse) {
-        const newHeaders = new Headers(cachedResponse.headers);
-        Object.entries(corsHeaders).forEach(([k, v]) => newHeaders.set(k, v));
+        const newHeaders = applyClientResponseHeaders(new Headers(cachedResponse.headers), request, corsHeaders);
         newHeaders.set('X-Edge-Cache', 'HIT');
         newHeaders.set('X-Edge-Node', 'Cloudflare-CDN');
         return new Response(cachedResponse.body, {
@@ -239,23 +307,15 @@ export default {
       }
     }
 
-    // ── Build Origin Request ──
+    // ── Build Clean Origin Request ──
     const originUrl = new URL(url.pathname + url.search, targetOrigin);
-    const originHeaders = new Headers(request.headers);
-    originHeaders.set('Host', new URL(targetOrigin).hostname);
-    originHeaders.set('X-Forwarded-Host', url.hostname);
-    originHeaders.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
-    const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || '';
-    if (clientIp) {
-      originHeaders.set('X-Forwarded-For', clientIp);
-    }
+    const originHeaders = buildOriginHeaders(request, url, targetOrigin, isPrivate);
 
     const serveStaleFallback = async (reason) => {
       if (staleKey) {
         const staleResp = await cache.match(staleKey);
         if (staleResp) {
-          const staleHeaders = new Headers(staleResp.headers);
-          Object.entries(corsHeaders).forEach(([k, v]) => staleHeaders.set(k, v));
+          const staleHeaders = applyClientResponseHeaders(new Headers(staleResp.headers), request, corsHeaders);
           staleHeaders.set('X-Edge-Cache', 'STALE');
           staleHeaders.set('X-Edge-Node', 'Cloudflare-CDN');
           staleHeaders.set('X-Origin-Status', String(reason));
@@ -293,11 +353,10 @@ export default {
         }),
         {
           status: 503,
-          headers: {
-            ...corsHeaders,
+          headers: applyClientResponseHeaders(new Headers({
             'Content-Type': 'application/json',
             'Retry-After': '15'
-          }
+          }), request, corsHeaders)
         }
       );
     }
@@ -308,37 +367,40 @@ export default {
       if (stale) return stale;
     }
 
-    // Prepare response headers
-    const responseHeaders = new Headers(originResponse.headers);
-    Object.entries(corsHeaders).forEach(([k, v]) => responseHeaders.set(k, v));
+    // Prepare client response headers
+    const responseHeaders = applyClientResponseHeaders(new Headers(originResponse.headers), request, corsHeaders);
     responseHeaders.set('X-Edge-Cache', isCacheable ? 'MISS' : 'BYPASS');
     responseHeaders.set('X-Edge-Node', 'Cloudflare-CDN');
     responseHeaders.set('X-Data-Cached-At', new Date().toISOString());
 
     if (originResponse.status === 200) {
       if (isCacheable) {
+        const edgeCacheHeaders = prepareCacheHeaders(responseHeaders, cacheTtl);
         responseHeaders.set('Cache-Control', `public, max-age=${cacheTtl}, s-maxage=${cacheTtl}`);
-        const responseToCache = new Response(originResponse.clone().body, {
+        const cacheClone = originResponse.clone();
+        const responseToCache = new Response(cacheClone.body, {
           status: originResponse.status,
           statusText: originResponse.statusText,
-          headers: responseHeaders
+          headers: edgeCacheHeaders
         });
         ctx.waitUntil(cache.put(cacheKey, responseToCache));
       } else if (isPrivate || isExplicitBypassRequest(url, request)) {
         responseHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
       }
 
-      // Persist long-lived stale fallback copy for public GET requests
+      // Persist long-lived stale fallback copy for public GET requests (Vary-stripped so staleKey always matches)
       if (staleKey) {
-        const staleHeaders = new Headers(responseHeaders);
-        staleHeaders.set('Cache-Control', 'public, max-age=86400, s-maxage=86400');
-        const staleToCache = new Response(originResponse.clone().body, {
+        const staleCacheHeaders = prepareCacheHeaders(responseHeaders, 86400);
+        const staleClone = originResponse.clone();
+        const staleToCache = new Response(staleClone.body, {
           status: originResponse.status,
           statusText: originResponse.statusText,
-          headers: staleHeaders
+          headers: staleCacheHeaders
         });
         ctx.waitUntil(cache.put(staleKey, staleToCache));
       }
+    } else if (originResponse.status === 429) {
+      responseHeaders.set('X-Origin-Status', 'http_429');
     }
 
     return new Response(originResponse.body, {

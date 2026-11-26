@@ -104,28 +104,70 @@ const needsRestore = Boolean(
 );
 
 if (needsRestore && primaryGzFile) {
+  const lockPath = `${dbPath}.restore.lock`;
+  const tmpPath = `${dbPath}.restore.${process.pid}.tmp`;
+  let lockFd = null;
   try {
-    // Delete stale WAL/SHM files before replacing the main DB
-    try { if (fs.existsSync(`${dbPath}-wal`)) fs.unlinkSync(`${dbPath}-wal`); } catch (_) {}
-    try { if (fs.existsSync(`${dbPath}-shm`)) fs.unlinkSync(`${dbPath}-shm`); } catch (_) {}
-    const t0 = Date.now();
-    await pipeline(
-      fs.createReadStream(primaryGzFile),
-      zlib.createGunzip(),
-      fs.createWriteStream(dbPath)
-    );
-    const restoredStat = fs.statSync(dbPath);
-    console.log(`[Drabyashree Ledger] Fast streaming bootstrap restored ${dbPath} (${(restoredStat.size / 1024 / 1024).toFixed(2)} MB) from ${primaryGzFile} in ${Date.now() - t0}ms`);
-    try {
-      fs.writeFileSync(appliedStampPath, targetGzSig, "utf8");
-    } catch (writeErr) {
-      console.warn(`[Drabyashree Ledger] Warning: Could not write stamp file ${appliedStampPath}:`, writeErr.message);
+    // Acquire cross-process restore lock so concurrent test runners never overwrite dbPath simultaneously
+    const waitDeadline = Date.now() + 45000;
+    while (Date.now() < waitDeadline) {
+      try {
+        lockFd = fs.openSync(lockPath, "wx");
+        break;
+      } catch (lockErr) {
+        if (lockErr?.code !== "EEXIST") throw lockErr;
+        try {
+          const st = fs.statSync(lockPath);
+          if (Date.now() - st.mtimeMs > 120000) {
+            fs.unlinkSync(lockPath);
+            continue;
+          }
+        } catch (_) {}
+        await new Promise((r) => setTimeout(r, 250));
+        const refreshedStamp = fs.existsSync(appliedStampPath)
+          ? fs.readFileSync(appliedStampPath, "utf8").trim()
+          : "";
+        if (refreshedStamp === targetGzSig && fs.existsSync(dbPath) && fs.statSync(dbPath).size >= 100000) {
+          break;
+        }
+      }
     }
-    if (global.gc) {
-      try { global.gc(); } catch (_) {}
+
+    const latestStamp = fs.existsSync(appliedStampPath)
+      ? fs.readFileSync(appliedStampPath, "utf8").trim()
+      : "";
+    const latestSize = fs.existsSync(dbPath) ? (fs.statSync(dbPath).size || 0) : 0;
+    const stillNeedsRestore = latestSize < 100000 || !latestStamp || latestStamp !== targetGzSig;
+
+    if (stillNeedsRestore && lockFd !== null) {
+      const t0 = Date.now();
+      await pipeline(
+        fs.createReadStream(primaryGzFile),
+        zlib.createGunzip(),
+        fs.createWriteStream(tmpPath)
+      );
+      try { if (fs.existsSync(`${dbPath}-wal`)) fs.unlinkSync(`${dbPath}-wal`); } catch (_) {}
+      try { if (fs.existsSync(`${dbPath}-shm`)) fs.unlinkSync(`${dbPath}-shm`); } catch (_) {}
+      fs.renameSync(tmpPath, dbPath);
+      const restoredStat = fs.statSync(dbPath);
+      console.log(`[Drabyashree Ledger] Fast streaming bootstrap restored ${dbPath} (${(restoredStat.size / 1024 / 1024).toFixed(2)} MB) from ${primaryGzFile} in ${Date.now() - t0}ms`);
+      try {
+        fs.writeFileSync(appliedStampPath, targetGzSig, "utf8");
+      } catch (writeErr) {
+        console.warn(`[Drabyashree Ledger] Warning: Could not write stamp file ${appliedStampPath}:`, writeErr.message);
+      }
+      if (global.gc) {
+        try { global.gc(); } catch (_) {}
+      }
     }
   } catch (err) {
+    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
     console.warn(`[Drabyashree Ledger] Failed fast bootstrap from ${primaryGzFile}:`, err.message);
+  } finally {
+    if (lockFd !== null) {
+      try { fs.closeSync(lockFd); } catch (_) {}
+      try { fs.unlinkSync(lockPath); } catch (_) {}
+    }
   }
 } else if (primaryGzFile && !appliedStamp && existingDbSize >= 100000) {
   try {
@@ -1217,11 +1259,12 @@ export function ingestFloorsheetContracts(rawTrades, tradeDate) {
 }
 
 /**
- * Retrieves 5D volume profile nodes and Point of Control (POC) scoped to the scrip's own last 5 trading dates
+ * Retrieves volume profile nodes and Point of Control (POC) scoped to the scrip's recent trading dates.
  */
-export function getScripVolumeProfile(symbol) {
+export function getScripVolumeProfile(symbol, lookbackSessions = 5) {
   if (!symbol) return { pocPrice: null, nodes: [] };
   const cleanSym = String(symbol).toUpperCase().trim();
+  const safeLimit = Math.min(60, Math.max(1, Number.isFinite(Number(lookbackSessions)) ? Math.trunc(Number(lookbackSessions)) : 5));
   try {
     const rows = db.prepare(`
       WITH scrip_dates AS (
@@ -1229,7 +1272,7 @@ export function getScripVolumeProfile(symbol) {
         FROM floorsheet_contracts
         WHERE UPPER(symbol) = @symbol
         ORDER BY trade_date DESC
-        LIMIT 5
+        LIMIT @limit
       )
       SELECT
         ROUND(f.rate, 0) AS priceBucket,
@@ -1243,7 +1286,7 @@ export function getScripVolumeProfile(symbol) {
       WHERE UPPER(f.symbol) = @symbol
       GROUP BY ROUND(f.rate, 0)
       ORDER BY priceBucket DESC
-    `).all({ symbol: cleanSym });
+    `).all({ symbol: cleanSym, limit: safeLimit });
 
     let maxKitta = 0;
     let pocPrice = null;

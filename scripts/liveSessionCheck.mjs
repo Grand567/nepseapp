@@ -44,7 +44,10 @@ async function fetchJsonWithTiming(endpoint, timeoutMs = 15000) {
   try {
     const res = await fetch(`${BASE_URL}${endpoint}`, {
       signal: controller.signal,
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'Drabyashree-SessionVerifier/1.0',
+      },
     });
     const text = await res.text();
     let json = null;
@@ -56,6 +59,9 @@ async function fetchJsonWithTiming(endpoint, timeoutMs = 15000) {
     return {
       status: res.status,
       headers: res.headers,
+      contentType: String(res.headers.get('content-type') || ''),
+      edgeCache: String(res.headers.get('x-edge-cache') || ''),
+      originStatus: String(res.headers.get('x-origin-status') || ''),
       data: json,
       rawLength: text.length,
       latencyMs: Date.now() - start,
@@ -65,6 +71,16 @@ async function fetchJsonWithTiming(endpoint, timeoutMs = 15000) {
   }
 }
 
+function formatHttpFailureDetail(resp, extra = '') {
+  const parts = [`HTTP ${resp.status}`];
+  if (resp.contentType) parts.push(`ct=${resp.contentType}`);
+  if (resp.edgeCache) parts.push(`edge=${resp.edgeCache}`);
+  if (resp.originStatus) parts.push(`origin=${resp.originStatus}`);
+  if (extra) parts.push(extra);
+  if (resp.latencyMs !== undefined) parts.push(`(${resp.latencyMs}ms)`);
+  return parts.join(', ');
+}
+
 async function probeSseStream(endpoint, timeoutMs = 4000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -72,7 +88,10 @@ async function probeSseStream(endpoint, timeoutMs = 4000) {
   try {
     const res = await fetch(`${BASE_URL}${endpoint}`, {
       signal: controller.signal,
-      headers: { Accept: 'text/event-stream' },
+      headers: {
+        Accept: 'text/event-stream',
+        'User-Agent': 'Drabyashree-SessionVerifier/1.0',
+      },
     });
     const contentType = String(res.headers.get('content-type') || '');
     let firstChunk = '';
@@ -133,15 +152,23 @@ async function main() {
   let marketIsOpen = false;
   let marketModeLabel = 'UNKNOWN';
 
+  let upstreamHtml429Detected = false;
+  const trackHtml429 = (resp) => {
+    if (resp?.status === 429 && String(resp.contentType || '').toLowerCase().includes('text/html')) {
+      upstreamHtml429Detected = true;
+    }
+  };
+
   // 1. Health check
   try {
     const h = await fetchJsonWithTiming('/health', 5000);
+    trackHtml429(h);
     if (h.status === 200 && h.latencyMs < 2000) {
       record('PASS', 'GET /health', `HTTP ${h.status} in ${h.latencyMs}ms`);
     } else if (h.status === 200) {
       record('WARN', 'GET /health', `HTTP ${h.status} slow (${h.latencyMs}ms >= 2000ms)`);
     } else {
-      record('FAIL', 'GET /health', `HTTP ${h.status} (${h.latencyMs}ms)`);
+      record('FAIL', 'GET /health', formatHttpFailureDetail(h));
     }
   } catch (err) {
     record('FAIL', 'GET /health', err?.message || String(err));
@@ -150,6 +177,7 @@ async function main() {
   // 2. Market status & cache discipline
   try {
     const st = await fetchJsonWithTiming('/api/market-status', 10000);
+    trackHtml429(st);
     const body = st.data?.data || st.data || {};
     marketIsOpen = Boolean(body.isOpen);
     const session = body.session || body.status || body.statusLabel || (marketIsOpen ? 'LIVE' : 'CLOSED');
@@ -163,7 +191,7 @@ async function main() {
         record('WARN', 'Live /api/market-status Cache-Control', `header="${cacheCtrl || 'none'}" (expected no-store during live hours)`);
       }
     } else {
-      record('FAIL', 'GET /api/market-status', `HTTP ${st.status} (${st.latencyMs}ms)`);
+      record('FAIL', 'GET /api/market-status', formatHttpFailureDetail(st));
     }
   } catch (err) {
     record('FAIL', 'GET /api/market-status', err?.message || String(err));
@@ -172,6 +200,7 @@ async function main() {
   // 3. Indices validity & finite NEPSE > 1000
   try {
     const idx = await fetchJsonWithTiming('/api/indices', 15000);
+    trackHtml429(idx);
     const payload = idx.data?.data || idx.data || {};
     const nepseObj = payload.nepse || payload.NEPSE || null;
     const nepseVal = Number(nepseObj?.value ?? nepseObj?.currentValue ?? nepseObj?.indexValue ?? nepseObj?.close ?? 0);
@@ -179,7 +208,7 @@ async function main() {
     if (idx.status === 200 && Number.isFinite(nepseVal) && nepseVal > 1000 && !nanDetected) {
       record('PASS', 'GET /api/indices', `NEPSE=${nepseVal}, zero NaN (${idx.latencyMs}ms)`);
     } else {
-      record('FAIL', 'GET /api/indices', `HTTP ${idx.status}, NEPSE=${nepseVal}, hasNaN=${nanDetected}`);
+      record('FAIL', 'GET /api/indices', formatHttpFailureDetail(idx, `NEPSE=${nepseVal}, hasNaN=${nanDetected}`));
     }
   } catch (err) {
     record('FAIL', 'GET /api/indices', err?.message || String(err));
@@ -188,6 +217,7 @@ async function main() {
   // 4. Today prices breadth & LTP validity
   try {
     const tp = await fetchJsonWithTiming('/api/today-prices', 20000);
+    trackHtml429(tp);
     const rows = Array.isArray(tp.data) ? tp.data : (Array.isArray(tp.data?.data) ? tp.data.data : (Array.isArray(tp.data?.stocks) ? tp.data.stocks : []));
     const validLtpCount = rows.filter((r) => {
       const ltp = Number(r?.ltp ?? r?.close ?? r?.lastTradedPrice ?? 0);
@@ -196,7 +226,7 @@ async function main() {
     if (tp.status === 200 && rows.length >= 200 && validLtpCount >= 200) {
       record('PASS', 'GET /api/today-prices', `${rows.length} securities, ${validLtpCount} finite positive LTPs (${tp.latencyMs}ms)`);
     } else {
-      record('FAIL', 'GET /api/today-prices', `HTTP ${tp.status}, rows=${rows.length}, validLtp=${validLtpCount}`);
+      record('FAIL', 'GET /api/today-prices', formatHttpFailureDetail(tp, `rows=${rows.length}, validLtp=${validLtpCount}`));
     }
   } catch (err) {
     record('FAIL', 'GET /api/today-prices', err?.message || String(err));
@@ -205,10 +235,11 @@ async function main() {
   // 5. Market depth endpoint responsiveness
   try {
     const md = await fetchJsonWithTiming(`/api/nepse/market-depth/${encodeURIComponent(SYMBOL)}`, 15000);
+    trackHtml429(md);
     if (md.status === 200 && md.data && typeof md.data === 'object') {
       record('PASS', `GET /api/nepse/market-depth/${SYMBOL}`, `HTTP 200 valid payload (${md.latencyMs}ms)`);
     } else {
-      record('FAIL', `GET /api/nepse/market-depth/${SYMBOL}`, `HTTP ${md.status}`);
+      record('FAIL', `GET /api/nepse/market-depth/${SYMBOL}`, formatHttpFailureDetail(md));
     }
   } catch (err) {
     record('FAIL', `GET /api/nepse/market-depth/${SYMBOL}`, err?.message || String(err));
@@ -217,6 +248,7 @@ async function main() {
   // 6. Broker heatmap / matrix latest non-empty unmasked guard
   try {
     const hm = await fetchJsonWithTiming('/api/smart-money/broker-heatmap', 20000);
+    trackHtml429(hm);
     const dataObj = hm.data?.data || hm.data || {};
     const matrix = Array.isArray(dataObj.matrix) ? dataObj.matrix : [];
     const matrixDate = dataObj.businessDate || dataObj.date || dataObj.asOfDate || null;
@@ -231,7 +263,7 @@ async function main() {
     if (hm.status === 200 && matrix.length > 0 && matrixDate && diskCount > 0) {
       record('PASS', 'GET /api/smart-money/broker-heatmap + broker_matrix_latest.json', `API matrix=${matrix.length} brokers (${matrixDate}), disk=${diskCount} (${diskDate}) (${hm.latencyMs}ms)`);
     } else {
-      record('FAIL', 'GET /api/smart-money/broker-heatmap + broker_matrix_latest.json', `HTTP ${hm.status}, apiMatrix=${matrix.length}, apiDate=${matrixDate}, diskMatrix=${diskCount}`);
+      record('FAIL', 'GET /api/smart-money/broker-heatmap + broker_matrix_latest.json', formatHttpFailureDetail(hm, `apiMatrix=${matrix.length}, apiDate=${matrixDate}, diskMatrix=${diskCount}`));
     }
   } catch (err) {
     record('FAIL', 'GET /api/smart-money/broker-heatmap', err?.message || String(err));
@@ -240,12 +272,13 @@ async function main() {
   // 7. Broker analysis endpoint
   try {
     const ba = await fetchJsonWithTiming(`/api/broker-analysis/${encodeURIComponent(SYMBOL)}`, 20000);
+    trackHtml429(ba);
     const payload = ba.data?.data || ba.data || null;
     if (ba.status === 200 && payload && typeof payload === 'object') {
       const brokersCount = Array.isArray(payload.brokers) ? payload.brokers.length : 0;
       record('PASS', `GET /api/broker-analysis/${SYMBOL}`, `HTTP 200, brokers=${brokersCount} (${ba.latencyMs}ms)`);
     } else {
-      record('FAIL', `GET /api/broker-analysis/${SYMBOL}`, `HTTP ${ba.status}`);
+      record('FAIL', `GET /api/broker-analysis/${SYMBOL}`, formatHttpFailureDetail(ba));
     }
   } catch (err) {
     record('FAIL', `GET /api/broker-analysis/${SYMBOL}`, err?.message || String(err));
@@ -257,6 +290,7 @@ async function main() {
     `/api/floorsheet/stream?symbol=${encodeURIComponent(SYMBOL)}`,
   ]) {
     const sse = await probeSseStream(streamPath, 4000);
+    trackHtml429(sse);
     if (sse.ok) {
       record('PASS', `SSE ${streamPath}`, `HTTP ${sse.status}, content-type=${sse.contentType}${sse.firstChunk ? `, event="${sse.firstChunk}"` : ''} (${sse.latencyMs}ms)`);
     } else {
@@ -284,7 +318,13 @@ async function main() {
 
   console.log('\n----------------------------------------------------------------------');
   console.log(`MODE: ${marketModeLabel} | PASSED: ${passed} | WARN: ${warned} | FAILED: ${failed}`);
-  console.log('----------------------------------------------------------------------\n');
+  console.log('----------------------------------------------------------------------');
+  if (upstreamHtml429Detected) {
+    console.log('[DIAGNOSIS] Upstream returned HTTP 429 text/html (Render/Cloudflare ingress challenge, NOT Express JSON limiter).');
+    console.log('            Ensure cloudflare/worker.js is deployed (`cd cloudflare && npx wrangler deploy`) and wait ~60s before re-probing,');
+    console.log('            or test Render origin directly: `node scripts/liveSessionCheck.mjs --url https://drabyashree-nepse-hub.onrender.com`');
+  }
+  console.log('');
 
   process.exit(failed > 0 ? 1 : 0);
 }

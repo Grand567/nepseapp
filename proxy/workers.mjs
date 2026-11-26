@@ -544,11 +544,13 @@ export async function runPostMarketCloseAnalysis(force = false) {
     }
     // Run the full Entry/Exit Analyzer scan across ALL 350+ stocks
     await runFullUniversePrimePick();
-    // Post-Market EOD (3:45 PM): Dispatch Flowchart v2.0 Tactical Prime Ticket + Top 5 Candidate Table (Overnight Prep)
+    // Post-Market EOD (3:45 PM): Dispatch Flowchart v2.0 + Dual-Tier Sniper Dispatch (Overnight Prep)
     const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(e =>
       console.warn('[Post-Market Worker] 5-Step Swing dispatch notice:', e.message)
     );
-    if (swingRes && swingRes.topPick) {
+    // Safety Gate: Only promote & broadcast Verified Prime Pick when Dual-Tier Sniper/Balanced clears (>=75-87.5% WR).
+    // Low-WR Flowchart fallback picks stay Watchlist Only and never auto-broadcast as Prime Buy.
+    if (swingRes && swingRes.topPick && swingRes.topPick.isPrimeBuy === true) {
       setVerifiedPostMarketPrimePick(swingRes.topPick);
       try {
         const tp = swingRes.topPick;
@@ -562,10 +564,12 @@ export async function runPostMarketCloseAnalysis(force = false) {
           skipTelegram: true,
           action: 'OPEN_STOCK_DETAIL',
           ltp: tp.ltp,
-          title: `👑 Flowchart v2.0 Prime Pick: ${tp.symbol}`,
-          body: `${tp.rallyHorizonLabel || 'Flowchart v2.0'} | Buy Zone: Rs. ${tp.entryLow}–${tp.entryHigh} | SL: Rs. ${tp.stopLoss} | T1: Rs. ${tp.target1}`,
+          title: `👑 Dual-Tier Prime Sniper: ${tp.symbol}`,
+          body: `${tp.dualTierBadge || tp.rallyHorizonLabel || 'Dual-Tier Sniper'} | Buy Zone: Rs. ${tp.entryLow}–${tp.entryHigh} | SL: Rs. ${tp.stopLoss} | T1: Rs. ${tp.target1}`,
           rallyTrack: tp.rallyTrack,
           rallyHorizonLabel: tp.rallyHorizonLabel,
+          isDualTierSniper: Boolean(tp.isDualTierSniper),
+          isDualTierBalanced: Boolean(tp.isDualTierBalanced),
           triggeredAt: new Date().toISOString(),
         });
       } catch (_) {}
@@ -1095,7 +1099,7 @@ export function startWorkers() {
   }, 12000);
 
   // Initial EOD catch-up check 25 seconds after startup (after DB Telegram config hydration)
-  if (process.env.NODE_ENV !== 'test') {
+  if (process.env.NODE_ENV !== 'test' && process.env.SUPPRESS_TEST_ALERTS !== 'true') {
     setTimeout(async () => {
       try {
         const kt = getKathmanduTradingStatus();

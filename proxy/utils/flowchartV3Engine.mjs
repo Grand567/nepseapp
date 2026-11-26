@@ -58,7 +58,7 @@ export function getPromoterLockinRegistryMap() {
   return cachedRegistryMap;
 }
 
-function getFundamentalsFallbackMap() {
+export function getFundamentalsFallbackMap() {
   if (cachedFundamentalsMap) return cachedFundamentalsMap;
   const raw = loadJsonFirst([
     path.join(ROOT_DIR, 'src', 'data', 'nepse_fundamentals_latest.json'),
@@ -74,7 +74,7 @@ function getFundamentalsFallbackMap() {
   return cachedFundamentalsMap;
 }
 
-function getStockMap() {
+export function getStockMap() {
   if (cachedStockMap) return cachedStockMap;
   cachedStockMap =
     loadJsonFirst([
@@ -92,17 +92,21 @@ const PURE_EQUITY_WHITELIST = new Set([
 
 const SCHEMA_FLAGS_CACHE = new WeakMap();
 
-function getSchemaFilterClauses(db) {
+export function getSchemaFilterClauses(db) {
   let cached = SCHEMA_FLAGS_CACHE.get(db);
   if (cached) return cached;
   let summaryFilter = '';
   let brokerFilter = '';
+  let settledSummaryFilter = '';
   try {
     const sumCols = new Set(db.prepare(`PRAGMA table_info(daily_stock_summary)`).all().map((c) => c.name));
     const parts = [];
     if (sumCols.has('calendar_status')) parts.push(`calendar_status != 'PARTIAL_SESSION'`);
     if (sumCols.has('is_quarantined')) parts.push(`COALESCE(is_quarantined, 0) = 0`);
     if (parts.length > 0) summaryFilter = ` AND ${parts.join(' AND ')}`;
+    const settledParts = [...parts];
+    if (sumCols.has('source')) settledParts.push(`COALESCE(source, '') != 'TODAY_PRICES'`);
+    if (settledParts.length > 0) settledSummaryFilter = ` AND ${settledParts.join(' AND ')}`;
   } catch (_) {}
   try {
     const brkCols = new Set(db.prepare(`PRAGMA table_info(daily_broker_ledger)`).all().map((c) => c.name));
@@ -111,9 +115,25 @@ function getSchemaFilterClauses(db) {
     if (brkCols.has('is_quarantined')) parts.push(`COALESCE(is_quarantined, 0) = 0`);
     if (parts.length > 0) brokerFilter = ` AND ${parts.join(' AND ')}`;
   } catch (_) {}
-  cached = { summaryFilter, brokerFilter };
+  cached = { summaryFilter, brokerFilter, settledSummaryFilter };
   SCHEMA_FLAGS_CACHE.set(db, cached);
   return cached;
+}
+
+/**
+ * Resolves canonical NEPSE sector prioritizing curated stockmap.json over stale DB sector strings
+ * (e.g., prevents SHINE from being misclassified as a Commercial Bank when stockmap lists Development Banks).
+ */
+export function resolveCanonicalSector(symbol, dbSector = '', fallbackSector = '') {
+  const sym = String(symbol || '').toUpperCase().trim();
+  const smSec = String(getStockMap()[sym]?.sector || '').trim();
+  const sfSec = String(fallbackSector || getFundamentalsFallbackMap().get(sym)?.sector || '').trim();
+  const dfSec = String(dbSector || '').trim();
+  const isSpecific = (s) => Boolean(s) && !/^(Equities|Others)$/i.test(s);
+  if (isSpecific(smSec)) return smSec;
+  if (isSpecific(sfSec)) return sfSec;
+  if (dfSec) return dfSec;
+  return smSec || sfSec || 'Equities';
 }
 
 function getTodayNptIsoDate() {
@@ -298,6 +318,7 @@ export function evaluateFlowchartV3Candidate(
     minTurnover = 8000000,
     liveOverlay = null,
     requireEps = true,
+    requireStrictVdu = false,
   } = {}
 ) {
   const sym = String(symbol || '').toUpperCase().trim();
@@ -311,7 +332,7 @@ export function evaluateFlowchartV3Candidate(
 
   const staticFund = getFundamentalsFallbackMap().get(sym) || {};
   const stockMeta = getStockMap()[sym] || {};
-  const sector = String(dbFund?.sector || staticFund.sector || stockMeta.sector || 'Equities').trim();
+  const sector = resolveCanonicalSector(sym, dbFund?.sector, staticFund.sector);
   const companyName = String(stockMeta.name || sym);
 
   if (isNonEquityTicker(sym, sector)) {
@@ -481,6 +502,14 @@ export function evaluateFlowchartV3Candidate(
   const prior5Vols = effectiveCandles.slice(-5).map((c) => Number(c.total_volume || 0));
   const minVol5 = prior5Vols.length > 0 ? Math.min(...prior5Vols) : avgVol20;
   const vdu = avgVol20 > 0 ? +(minVol5 / avgVol20).toFixed(2) : 1.0;
+  if (requireStrictVdu && vdu > 0.65) {
+    return {
+      qualified: false,
+      symbol: sym,
+      vetoCode: 'HIGH_VOLUME_NO_VDU',
+      failReason: `Wyckoff VDU ${vdu.toFixed(2)}x exceeds strict Floor-Turn threshold (<= 0.65x)`,
+    };
+  }
 
   let wicks10 = 0;
   for (const bar of effectiveCandles.slice(-10)) {
@@ -570,7 +599,7 @@ export function evaluateFlowchartV3Candidate(
     sector,
     asOfDate: effectiveDate,
     mode: isStrictFloorTurn ? 'FLOWCHART_V3_FLOOR_TURN' : 'FLOWCHART_V3_SWING_SETUP',
-    modeBadge: isStrictFloorTurn ? '🎯 v3.0 Floor Turn (88.7% Edge)' : '⚡ v3.0 Institutional Swing',
+    modeBadge: isStrictFloorTurn ? '🎯 v3.0 Floor Turn (15D Gross)' : '⚡ v3.0 Institutional Swing',
     score,
     ltp,
     pChange: dayChg,
