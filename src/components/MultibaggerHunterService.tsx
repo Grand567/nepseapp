@@ -162,7 +162,7 @@ export function MultibaggerHunterService({ stocks: rawStocks = [], indices, onSe
           <Target className="w-5 h-5 shrink-0" />
           <div className="text-sm">
             <span className="font-semibold">📅 Current Season:</span> {season.phase} | 
-            <span className="ml-2 font-semibold">Win Rate:</span> {season.historicalWinRate}% | 
+            <span className="ml-2 font-semibold">Win Rate:</span> {typeof season.historicalWinRate === 'number' ? `${season.historicalWinRate}%` : String(season.historicalWinRate || '—')} | 
             <span className="ml-2 font-semibold">Bias:</span> <span className="capitalize">{season.bias}</span>
           </div>
         </div>

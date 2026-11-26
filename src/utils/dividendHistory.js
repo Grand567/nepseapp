@@ -15,6 +15,34 @@
  */
 
 import { fetchDividendHistory as _fetchRaw } from './servicesApi.js';
+import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
+
+export function getVerifiedOfflineFallback(sym) {
+  const cleanSym = String(sym || '').trim().toUpperCase();
+  const records = VERIFIED_DIVIDEND_DATABASE?.[cleanSym];
+  if (!Array.isArray(records) || records.length === 0) return null;
+  const dividends = records
+    .filter(d => d && (d.cashDividend > 0 || d.bonusShare > 0 || d.rightShare > 0))
+    .map(d => ({
+      fiscalYear: String(d.fiscalYear || '').startsWith('FY ') ? d.fiscalYear : `FY ${d.fiscalYear}`,
+      cashDividend: Number(d.cashDividend || 0),
+      bonusShare: Number(d.bonusShare || 0),
+      rightShare: Number(d.rightShare || 0),
+      totalYield: Number(d.totalYield ?? (Number(d.cashDividend || 0) + Number(d.bonusShare || 0) + Number(d.rightShare || 0))),
+      bookClosure: d.bookClosure || null,
+      source: 'verified-nepse-registry',
+    }));
+  if (dividends.length === 0) return null;
+  return {
+    real: false,
+    source: 'verified-offline-cache',
+    dividends,
+    totalEntries: dividends.length,
+    fetchedAt: null,
+    sources: ['Verified NEPSE Registry (Offline Fallback)'],
+    error: null,
+  };
+}
 
 // ─────────────────────────── types ───────────────────────────────
 /**
@@ -76,7 +104,10 @@ export async function fetchRealDividendHistory(symbol) {
         };
       }
 
-      // Backend responded but found no records
+      // Backend responded but found no records — fall back to verified historical registry if available
+      const offlineFallback = getVerifiedOfflineFallback(sym);
+      if (offlineFallback) return offlineFallback;
+
       return {
         real:         false,
         source:       'empty',
@@ -89,6 +120,8 @@ export async function fetchRealDividendHistory(symbol) {
     }
   } catch (err) {
     console.warn(`[fetchRealDividendHistory] Live fetch failed for ${sym}:`, err?.message);
+    const offlineFallback = getVerifiedOfflineFallback(sym);
+    if (offlineFallback) return offlineFallback;
     return {
       real:         false,
       source:       'error',
@@ -98,6 +131,9 @@ export async function fetchRealDividendHistory(symbol) {
       error:        `Could not fetch live dividend data: ${err?.message || 'Network error'}`,
     };
   }
+
+  const offlineFallback = getVerifiedOfflineFallback(sym);
+  if (offlineFallback) return offlineFallback;
 
   return {
     real:         false,

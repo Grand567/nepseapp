@@ -438,7 +438,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'technical-ratings': TechnicalRatingsGaugeService as ComponentType,
   'players-choices': () => (
     <UniversalScreener
-      filterFn={(s) => s.turnover > 5000000 && s.pChange > 0 && (s.nbar || 1) >= 1.05 && (s.adRatio != null ? s.adRatio >= 0.05 : (s.bcr3BuyPct || 0) >= 30)}
+      filterFn={(s) => isPureNepseEquity(s) && Number(s.turnover || 0) >= 5000000 && Number(s.pChange || 0) > 0 && (Number(s.nbar || 0) >= 1.05 || Number(s.adRatio || 0) >= 0.05 || Number(s.bcr3BuyPct || 0) >= 30 || Number(s.stealthAccumulation || 0) >= 55)}
       sortFn={(a, b) => b.turnover - a.turnover}
       customCols={[
         { key: 'bcr3BuyPct', label: 'BCR3 Buy %', align: 'right', bold: true, format: (v) => (Number(v) > 0 ? `${v}%` : '—'), colorFn: (v) => (Number(v) >= 35 ? '#10b981' : '#38bdf8') },
@@ -818,7 +818,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'pe-ranking': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe > 0 && isPureNepseEquity(s)} sortFn={(a, b) => a.pe - b.pe}
       customCols={[
-        { key: 'pe', label: 'P/E', align: 'right', bold: true, format: (v) => v?.toFixed(2), colorFn: (v) => (v < 15 ? '#16a34a' : v > 30 ? '#dc2626' : '#d97706') },
+        { key: 'pe', label: 'P/E', align: 'right', bold: true, format: (v) => (v != null && Number.isFinite(Number(v)) ? Number(v).toFixed(2) : '—'), colorFn: (v) => (v < 15 ? '#16a34a' : v > 30 ? '#dc2626' : '#d97706') },
         { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
         { key: 'sector', label: 'Sector', align: 'left', format: (v) => (v || '—') },
       ]}
@@ -928,8 +928,9 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
         if (!isBank || !isPureNepseEquity(s)) return false;
         const nplValid = s.npl != null && Number.isFinite(Number(s.npl)) && Number(s.npl) <= 3.5;
         const carValid = s.car != null && Number.isFinite(Number(s.car)) && Number(s.car) >= 11.5;
-        const cdValid = s.cdRatio != null && Number.isFinite(Number(s.cdRatio)) && Number(s.cdRatio) <= 88.0;
-        const roeValid = s.roe != null && Number.isFinite(Number(s.roe)) && Number(s.roe) >= 10.0;
+        const cdValid = s.cdRatio == null || (Number.isFinite(Number(s.cdRatio)) && Number(s.cdRatio) <= 88.0);
+        const derivedRoe = s.roe != null ? Number(s.roe) : (s.eps > 0 && s.bookValue > 0 ? (Number(s.eps) / Number(s.bookValue)) * 100 : null);
+        const roeValid = derivedRoe != null && Number.isFinite(derivedRoe) && derivedRoe >= 10.0;
         return nplValid && carValid && cdValid && roeValid;
       }}
       sortFn={(a, b) => (b.roe || b.eps || 0) - (a.roe || a.eps || 0)}
@@ -938,7 +939,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
         { key: 'npl', label: 'NPL', align: 'right', format: (v) => (v != null ? `${Number(v).toFixed(1)}%` : '—'), colorFn: (v) => (v != null && Number(v) <= 3.5 ? '#10b981' : '#f43f5e') },
         { key: 'roe', label: 'ROE', align: 'right', bold: true, format: (v, s) => (v != null ? `${Number(v).toFixed(1)}%` : (s?.eps && s?.bookValue && Number(s.bookValue) > 0 ? `${((s.eps / s.bookValue) * 100).toFixed(1)}%` : '—')) },
       ]}
-      banner={{ type: 'success', text: 'NRB Regulatory Safety Shield — Screens for commercial banks & BFIs with CAR ≥ 11.5%, NPL ≤ 3.5%, and CD Ratio ≤ 88.0% to eliminate dividend freeze risks.' }}
+      banner={{ type: 'success', text: 'NRB Regulatory Safety Shield — Screens for commercial banks & BFIs with CAR ≥ 11.5%, NPL ≤ 3.5%, and ROE ≥ 10% (CD Ratio ≤ 88% when reported) to eliminate dividend freeze risks.' }}
       insight="Banks meeting all NRB capital buffer thresholds have the highest dividend distribution safety."
     />
   ),
@@ -946,16 +947,18 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
     <UniversalScreener
       hideTimeframe={true}
       filterFn={(s) => {
+        if (!isPureNepseEquity(s)) return false;
         const pe = Number(s.pe || 0);
         const eps = Number(s.eps || 0);
-        const g = Number(s.epsGrowth || s.profitGrowth || 0);
-        if (pe <= 0 || eps <= 10 || g <= 0) return false;
+        const roeGrowth = Number(s.roe || (eps > 0 && Number(s.bookValue || 0) > 0 ? (eps / Number(s.bookValue)) * 100 : 0));
+        const g = Number(s.epsGrowth || s.profitGrowth || roeGrowth || 0);
+        if (pe <= 0 || eps < 10 || g <= 0) return false;
         const peg = pe / g;
         return peg <= 1.2 && pe <= 30;
       }}
       sortFn={(a, b) => {
-        const gA = Number(a.epsGrowth || a.profitGrowth || 0);
-        const gB = Number(b.epsGrowth || b.profitGrowth || 0);
+        const gA = Number(a.epsGrowth || a.profitGrowth || a.roe || (a.eps > 0 && a.bookValue > 0 ? (a.eps / a.bookValue) * 100 : 0));
+        const gB = Number(b.epsGrowth || b.profitGrowth || b.roe || (b.eps > 0 && b.bookValue > 0 ? (b.eps / b.bookValue) * 100 : 0));
         const pegA = gA > 0 ? (Number(a.pe) / gA) : 99;
         const pegB = gB > 0 ? (Number(b.pe) / gB) : 99;
         return pegA - pegB;
@@ -965,30 +968,30 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
         { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
         {
           key: 'peg',
-          label: 'PEG Ratio',
+          label: 'PEG (P/E ÷ ROE)',
           align: 'right',
           bold: true,
           format: (_, s) => {
             const pe = Number(s.pe || 0);
-            const g = Number(s.epsGrowth || s.profitGrowth || 0);
+            const g = Number(s.epsGrowth || s.profitGrowth || s.roe || (s.eps > 0 && s.bookValue > 0 ? (s.eps / s.bookValue) * 100 : 0));
             return pe > 0 && g > 0 ? (pe / g).toFixed(2) : '—';
           },
           colorFn: (_, s) => {
             const pe = Number(s.pe || 0);
-            const g = Number(s.epsGrowth || s.profitGrowth || 0);
+            const g = Number(s.epsGrowth || s.profitGrowth || s.roe || (s.eps > 0 && s.bookValue > 0 ? (s.eps / s.bookValue) * 100 : 0));
             const peg = pe > 0 && g > 0 ? pe / g : 99;
             return peg <= 1.0 ? '#10b981' : peg <= 1.2 ? '#34d399' : '#d97706';
           }
         }
       ]}
-      banner={{ type: 'success', text: 'Peter Lynch Growth-At-A-Reasonable-Price (GARP) — Screens for companies with PEG ≤ 1.2 and solid earnings power.' }}
+      banner={{ type: 'success', text: 'Peter Lynch Growth-At-A-Reasonable-Price (GARP) — Screens for companies with PEG ≤ 1.2 (using EPS growth or ROE-implied compounding) and EPS ≥ Rs. 10.' }}
       insight="Lynch’s rule: PEG ≤ 1.0 identifies undervalued compounders without paying speculative bubble prices."
     />
   ),
   'equity-risk-premium': () => (
     <UniversalScreener
       hideTimeframe={true}
-      filterFn={(s) => s.eps && s.ltp && ((s.eps / s.ltp) * 100) > 8.0}
+      filterFn={(s) => isPureNepseEquity(s) && s.eps && s.ltp && ((s.eps / s.ltp) * 100) > 7.5}
       sortFn={(a, b) => ((b.eps / b.ltp) * 100) - ((a.eps / a.ltp) * 100)}
       customCols={[
         { key: 'eps', label: 'Earnings Yield', align: 'right', bold: true, format: (_, s) => s?.eps && s?.ltp ? `${((s.eps / s.ltp) * 100).toFixed(1)}%` : '—', colorFn: () => '#10b981' },

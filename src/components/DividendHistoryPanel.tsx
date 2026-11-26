@@ -14,7 +14,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { TrendingUp, Gift, RotateCcw, Info, Calendar, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { fetchRealDividendHistory, totalCashDividend, totalBonusShare, dividendPayingYears, latestDividendRecord } from '../utils/dividendHistory';
+import { fetchRealDividendHistory, getVerifiedOfflineFallback, totalCashDividend, totalBonusShare, dividendPayingYears, latestDividendRecord } from '../utils/dividendHistory';
 import { InfoBanner, NoData, Spinner, StockSearchSelect } from './ui';
 
 // ─────────────────────────── helpers ─────────────────────────────
@@ -60,7 +60,7 @@ export function DividendHistoryPanel({
   initialSymbol?: string;
   hideSearch?: boolean;
 }) {
-  const defaultSym = initialSymbol || propSymbol || (stocks && stocks.length > 0 ? stocks[0]?.symbol : '') || 'NABIL';
+  const defaultSym = initialSymbol || propSymbol || 'NABIL';
   const [symbol, setSymbol]   = useState(defaultSym);
   const [loading, setLoading] = useState(false);
   const [result, setResult]   = useState<any>(null);
@@ -86,7 +86,12 @@ export function DividendHistoryPanel({
       if (!res.real && res.error) setError(res.error);
     } catch (e: any) {
       if (reqId !== reqSeqRef.current) return;
-      setError(e.message || 'Failed to fetch dividend history');
+      const offline = getVerifiedOfflineFallback(sym);
+      if (offline) {
+        setResult(offline);
+      } else {
+        setError(e.message || 'Failed to fetch dividend history');
+      }
     } finally {
       if (timer) clearTimeout(timer);
       if (reqId === reqSeqRef.current) {

@@ -4417,9 +4417,18 @@ export function BrokerAnalysisService({
       ) : brokerData ? (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <StatCard label="Top 3 Concentration" value={`${brokerData.concentrationPct}%`} big color="#38bdf8" />
-            <StatCard label="Top Accumulator" value={`Broker #${brokerData.topAccumulator?.brokerId}`} subtitle={brokerData.topAccumulator?.brokerName?.split(' ')[0]} color="#10b981" />
-            <StatCard label="Top Distributor" value={`Broker #${brokerData.topDistributor?.brokerId}`} subtitle={brokerData.topDistributor?.brokerName?.split(' ')[0]} color="#f43f5e" />
+            {(() => {
+              const topAccId = brokerData.topAccumulator?.brokerId ?? brokerData.topAccumulator?.broker ?? brokerData.topAccumulator?.brokerNo;
+              const topDistId = brokerData.topDistributor?.brokerId ?? brokerData.topDistributor?.broker ?? brokerData.topDistributor?.brokerNo;
+              const concPct = Number.isFinite(Number(brokerData.concentrationPct)) ? Number(brokerData.concentrationPct) : 0;
+              return (
+                <>
+                  <StatCard label="Top 3 Concentration" value={`${concPct}%`} big color="#38bdf8" />
+                  <StatCard label="Top Accumulator" value={topAccId ? `Broker #${topAccId}` : '—'} subtitle={brokerData.topAccumulator?.brokerName?.split(' ')[0]} color="#10b981" />
+                  <StatCard label="Top Distributor" value={topDistId ? `Broker #${topDistId}` : '—'} subtitle={brokerData.topDistributor?.brokerName?.split(' ')[0]} color="#f43f5e" />
+                </>
+              );
+            })()}
             {(() => {
               const phase = brokerData.smartMoneyPhase || 'Neutral Hold';
               let shortTitle = 'Neutral Hold';
@@ -5039,27 +5048,65 @@ export function IPOPipelineService() {
   );
 }
 
-// ── Mutual Funds Service (Wired to /api/mutual-funds) ──
-export function MutualFundsService() {
+// ── Mutual Funds Service (Wired to /api/mutual-funds with real SQLite stocks fallback) ──
+export function MutualFundsService({ stocks = [] }: { stocks?: any[] } = {}) {
   const [funds, setFunds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState('1M');
   const [refreshing, setRefreshing] = useState(false);
+
+  const buildFallbackFromStocks = () => {
+    if (!Array.isArray(stocks) || stocks.length === 0) return [];
+    return stocks
+      .filter((s) => String(s?.sector || '').toLowerCase().includes('mutual fund') && Number(s?.ltp || 0) > 0)
+      .map((s) => {
+        const ltp = Number(s.ltp);
+        const nav = Number(s.nav || s.bookValue || s.bvps || 0) || null;
+        const premium = nav && nav > 0 ? Number((((ltp - nav) / nav) * 100).toFixed(2)) : null;
+        const premiumLabel = premium === null
+          ? 'NAV Pending'
+          : (premium > 0 ? `+${premium}% Premium` : premium < 0 ? `${premium}% Discount` : 'At NAV');
+        return {
+          symbol: s.symbol,
+          name: s.name || s.companyName || s.symbol,
+          nav,
+          ltp,
+          pChange: Number.isFinite(Number(s.pChange)) ? Number(s.pChange) : null,
+          premium,
+          premiumLabel,
+          source: 'nepse-market-snapshot',
+        };
+      })
+      .sort((a, b) => a.symbol.localeCompare(b.symbol));
+  };
 
   const loadData = async () => {
     setLoading(true);
     try {
       const res = await Promise.race([
         fetchMutualFunds(),
-        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
       ]);
       const list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
-      setFunds(list);
-    } catch (_) {}
+      if (list.length > 0) {
+        setFunds(list);
+      } else {
+        setFunds(buildFallbackFromStocks());
+      }
+    } catch (_) {
+      setFunds(buildFallbackFromStocks());
+    }
     setLoading(false);
   };
 
   useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    if (!loading && funds.length === 0 && stocks.length > 0) {
+      const fb = buildFallbackFromStocks();
+      if (fb.length > 0) setFunds(fb);
+    }
+  }, [stocks, loading, funds.length]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -5118,14 +5165,14 @@ export function MutualFundsService() {
             key: 'nav',
             label: 'Reported NAV',
             align: 'right',
-            format: (v) => `Rs. ${Number(v || 10).toFixed(2)}`,
+            format: (v) => (v != null && Number(v) > 0 ? `Rs. ${Number(v).toFixed(2)}` : '—'),
           },
           {
             key: 'ltp',
             label: 'Market LTP',
             align: 'right',
             bold: true,
-            format: (v) => `Rs. ${Number(v || 10).toFixed(2)}`,
+            format: (v) => (v != null && Number(v) > 0 ? `Rs. ${Number(v).toFixed(2)}` : '—'),
           },
           {
             key: 'premium',
@@ -5763,8 +5810,11 @@ export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { i
     setRefreshing(false);
   };
 
-  // Normalization
-  const ltp = depthData?.ltp || 0;
+  // Normalization — fall back to settled stock LTP when off-hours depth lacks LTP; never fabricate synthetic 50% buy demand on empty order book
+  const matchedStock = Array.isArray(stocks)
+    ? stocks.find((s: any) => String(s?.symbol || '').toUpperCase() === String(symbol || '').toUpperCase())
+    : null;
+  const ltp = Number(depthData?.ltp || matchedStock?.ltp || matchedStock?.close || 0);
   const rawBids = Array.isArray(depthData?.bids) ? depthData.bids : [];
   const rawAsks = Array.isArray(depthData?.asks) ? depthData.asks : [];
   const hasOrders = rawBids.length > 0 || rawAsks.length > 0;
@@ -5784,8 +5834,8 @@ export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { i
   const totalBuyQty = bids.reduce((sum: number, b: any) => sum + b.qty, 0);
   const totalSellQty = asks.reduce((sum: number, a: any) => sum + a.qty, 0);
   const totalOrderQty = totalBuyQty + totalSellQty || 1;
-  const buyPct = hasOrders ? Math.round((totalBuyQty / totalOrderQty) * 100) : 50;
-  const sellPct = 100 - buyPct;
+  const buyPct = hasOrders ? Math.round((totalBuyQty / totalOrderQty) * 100) : 0;
+  const sellPct = hasOrders ? (100 - buyPct) : 0;
 
   const topBid = bids[0]?.price || ltp;
   const topAsk = asks[0]?.price || ltp;

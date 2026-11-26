@@ -55,16 +55,43 @@ export function initWhaleArchiveWithSeeds() {
   return getStoredWhaleArchive();
 }
 
+function compactWhaleItem(item) {
+  if (!item || typeof item !== 'object') return item;
+  const { qaiResult, ...rest } = item;
+  return rest;
+}
+
+function compactWhaleSnapshot(snap) {
+  if (!snap || typeof snap !== 'object') return snap;
+  return {
+    ...snap,
+    topAccumulation: Array.isArray(snap.topAccumulation) ? snap.topAccumulation.slice(0, 5).map(compactWhaleItem) : [],
+    topDistribution: Array.isArray(snap.topDistribution) ? snap.topDistribution.slice(0, 5).map(compactWhaleItem) : [],
+  };
+}
+
 export function saveStoredWhaleArchive(archive) {
   if (typeof globalThis === 'undefined' || typeof globalThis.localStorage === 'undefined') {
     return;
   }
-  try {
-    const trimmed = (archive || []).slice(0, MAX_ARCHIVE_DAYS);
-    globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
-  } catch (e) {
-    console.error('[WhaleArchive] Failed to save archive:', e);
+  const compacted = (archive || []).slice(0, MAX_ARCHIVE_DAYS).map(compactWhaleSnapshot);
+  const attempts = [MAX_ARCHIVE_DAYS, 14, 7, 3, 1];
+  for (const maxDays of attempts) {
+    try {
+      const trimmed = compacted.slice(0, maxDays);
+      globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+      return;
+    } catch (e) {
+      const isQuota = e && (e.name === 'QuotaExceededError' || e.code === 22 || String(e.message || '').toLowerCase().includes('quota'));
+      if (!isQuota) {
+        console.warn('[WhaleArchive] Failed to save archive:', e?.message || e);
+        return;
+      }
+      // On quota pressure, try smaller retention window before giving up cleanly
+    }
   }
+  // Storage completely full — keep in-memory only without throwing console.error
+  console.warn('[WhaleArchive] localStorage quota full; archive retained in memory only.');
 }
 
 /**

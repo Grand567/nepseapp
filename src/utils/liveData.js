@@ -1259,8 +1259,9 @@ function normalizeLiveArray(arr) {
       ? r.macd
       : (prev?.macd || null));
 
-    const ema20 = realEma20 || (prev?.ema20 ? Number(prev.ema20) : null);
-    const ema50 = realEma50 || (prev?.ema50 ? Number(prev.ema50) : null);
+    const ema20 = realEma20 || (r.ema20 ? Number(r.ema20) : (prev?.ema20 ? Number(prev.ema20) : null));
+    const ema50 = realEma50 || (r.ema50 ? Number(r.ema50) : (prev?.ema50 ? Number(prev.ema50) : null));
+    const ema200 = (r.ema200 ? Number(r.ema200) : (prev?.ema200 ? Number(prev.ema200) : null));
     const sma20 = ema20;
     const sma50 = ema50;
     const bollinger = prev?.bollinger || null;
@@ -1315,10 +1316,15 @@ function normalizeLiveArray(arr) {
     const sharesM = prev?.sharesOut || uni?.sharesOut || null;
     const marketCap = prev?.marketCap || (sharesM ? Math.floor(ltp * sharesM * 1e6) : null);
     const cachedFund = getCachedStockFundamentals(sym);
-    const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (prev?.eps ?? null));
-    const bvps = Number(cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (prev?.bvps ?? prev?.bookValue ?? null));
-    const pe = Number(cachedFund?.pe !== undefined && cachedFund?.pe !== null ? cachedFund.pe : (eps && eps > 0 ? +(ltp / eps).toFixed(2) : null));
-    const pb = Number(cachedFund?.pbv !== undefined && cachedFund?.pbv !== null ? cachedFund.pbv : (bvps && bvps > 0 ? +(ltp / bvps).toFixed(2) : null));
+    const toNullNum = (v) => (v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
+    const eps = toNullNum(cachedFund?.eps ?? r.eps ?? prev?.eps);
+    const bvps = toNullNum(cachedFund?.bookValue ?? r.bookValue ?? r.bvps ?? prev?.bvps ?? prev?.bookValue);
+    const pe = toNullNum(cachedFund?.pe ?? r.pe) ?? (eps != null && eps > 0 && ltp > 0 ? +(ltp / eps).toFixed(2) : null);
+    const pb = toNullNum(cachedFund?.pbv ?? r.pb ?? r.pbv) ?? (bvps != null && bvps > 0 && ltp > 0 ? +(ltp / bvps).toFixed(2) : null);
+    const roe = toNullNum(cachedFund?.roe ?? r.roe ?? prev?.roe) ?? (eps != null && bvps != null && bvps > 0 ? +((eps / bvps) * 100).toFixed(2) : null);
+    const npl = toNullNum(cachedFund?.npl ?? r.npl ?? prev?.npl);
+    const car = toNullNum(cachedFund?.car ?? r.car ?? prev?.car);
+    const distributableEps = toNullNum(cachedFund?.distributableEps ?? r.distributableEps ?? prev?.distributableEps);
 
     // Mandatory 15% Daily Circuit Limits
     const circuitLimitPct = 15.0;
@@ -1402,8 +1408,8 @@ function normalizeLiveArray(arr) {
       high52w: hi52, low52w: lo52,
       week52HighDist: hi52 ? +(((ltp - hi52) / hi52) * 100).toFixed(2) : null,
       week52LowDist: lo52 ? +(((ltp - lo52) / lo52) * 100).toFixed(2) : null,
-      pe, eps, bvps, bookValue: bvps, pb, pbv: pb, marketCap, sharesOut: sharesM,
-      rsi, macd, ema20, ema50, sma20, sma50, bollinger,
+      pe, eps, bvps, bookValue: bvps, pb, pbv: pb, roe, npl, car, distributableEps, marketCap, sharesOut: sharesM,
+      rsi, macd, ema20, ema50, ema200, sma20, sma50, bollinger,
       volumeZScore, volumeSurgeRatio,
       technicalScore, technicalRating, dpi,
       stealthAccumulation, _stealthTs: shouldRefreshStealth ? nowTs : lastStealthTs,
@@ -1411,7 +1417,7 @@ function normalizeLiveArray(arr) {
       isBreakout: (pCh > 0) && (pCh >= 3 || Boolean(hi52 && ltp >= hi52 * 0.98)),
       isVolumeShocker: volumeZScore && volumeZScore >= 1.5,
       candlestickPattern: prev?.candlestickPattern || null,
-      promoterHolding: Number(cachedFund?.promoterHolding ?? prev?.promoterHolding ?? null),
+      promoterHolding: toNullNum(cachedFund?.promoterHolding ?? r.promoterHolding ?? prev?.promoterHolding),
       beta: Number(prev?.beta ?? null),
       dividendYield: Number(cachedFund?.dividendYield ?? prev?.dividendYield ?? 0),
       listedShares: sharesM ? sharesM * 1e6 : null,
