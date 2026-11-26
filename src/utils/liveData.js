@@ -4384,12 +4384,13 @@ export async function fetchPrecomputedRadar(days = 1) {
  * Fast Tier-1 Precomputed Single Stock Deep Diagnostic Endpoint
  * Returns deep diagnostic, Top 5 Net Buyers/Sellers, and Safe Buy Zone in < 5ms
  */
-export async function fetchPrecomputedDiagnostic(symbol, days = 1) {
+export async function fetchPrecomputedDiagnostic(symbol, days = 1, options = {}) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return null;
   const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const dateParam = options?.date ? `&date=${encodeURIComponent(options.date)}` : '';
   try {
-    const res = await fetchFromBackend(`/api/diagnostics/${encodeURIComponent(sym)}?days=${numDays}`, 6000);
+    const res = await fetchFromBackend(`/api/diagnostics/${encodeURIComponent(sym)}?days=${numDays}${dateParam}`, 6000);
     if (res?.success && res.data) {
       return {
         ...res.data,

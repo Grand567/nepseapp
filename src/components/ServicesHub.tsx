@@ -145,7 +145,7 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 export const getServiceCategory = (s: { id: string; cat: string }): string => {
-  if (['swing-trade-selector', 'master-100-profit', 'multibagger-hunter', 'minervini-leaderboard', 'daily-prime-pick', 'short-term-profit-plan', 'entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality', 'gdp-vs-nepse', 'strategy-lab', 'backtest-report', 'paper-trading-journal', 'stock-selection-screener', 'stock-screener', 'broker-accumulation-view', 'watchlist-entry-alerts', 'ai-agent-dossier', 'signals-track-record'].includes(s.id)) {
+  if (['swing-trade-selector', 'master-100-profit', 'multibagger-hunter', 'minervini-leaderboard', 'daily-prime-pick', 'short-term-profit-plan', 'entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality', 'gdp-vs-nepse', 'strategy-lab', 'backtest-report', 'paper-trading-journal', 'stock-selection-screener', 'stock-screener', 'broker-accumulation-view', 'watchlist-entry-alerts', 'ai-agent-dossier', 'signals-track-record', 'alpha-playbook'].includes(s.id)) {
     return 'flagship';
   }
   if (['regulatory-hub', 'nrb-safety-shield', 'nrb-forex', 'bullion-rates', 'regulatory-circulars', 'nrb-indicators'].includes(s.id)) {
@@ -204,7 +204,9 @@ export const HISTORICAL_SESSION_SERVICE_IDS = new Set([
   'top-gainers',
   'top-losers',
   'top-volume',
+  'volume-leaders',
   'top-turnover',
+  'turnover-leaders',
   'top-transactions',
   // Sector Dynamics
   'sector-rotation',
@@ -507,8 +509,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Volatility contraction leads to expansion — position size small until breakout." />
   ),
   'fresh-indicators': () => (
-    <UniversalScreener filterFn={(s) => (s.rsi < 35 || s.rsi > 65) && s.pChange > 0}
-      customCols={[{ key: 'rsi', label: 'RSI', align: 'right', format: (v, s) => (v != null ? v.toFixed(1) : (s.pChange > 0 ? '54.2' : '46.8')), colorFn: (v) => (v < 30 ? '#16a34a' : v > 70 ? '#dc2626' : '#d97706') }]}
+    <UniversalScreener filterFn={(s) => s.rsi != null && (s.rsi < 35 || s.rsi > 65) && s.pChange > 0}
+      customCols={[{ key: 'rsi', label: 'RSI', align: 'right', format: (v) => (v != null && Number.isFinite(Number(v)) ? Number(v).toFixed(1) : '—'), colorFn: (v) => (v == null ? '#94a3b8' : Number(v) < 30 ? '#16a34a' : Number(v) > 70 ? '#dc2626' : '#d97706') }]}
       banner={{ type: 'info', text: 'Fresh RSI/MACD inflections. Wired to /technical-signals.' }}
       insight="Buy when RSI crosses back above 30 from oversold; book partial near 70." />
   ),
@@ -541,17 +543,18 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="52W high/low are the strongest zones — trade rejections, not breaks, without volume." />
   ),
   'unusual-trades': () => (
-    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.turnover > 10000000} sortFn={(a, b) => b.turnover - a.turnover}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.turnover > 10000000} sortFn={(a, b) => (Number(b.turnover) || 0) - (Number(a.turnover) || 0)}
       customCols={[
-        { key: 'transactions', label: 'Trades', align: 'right', bold: true, format: (v, s) => (v ? Number(v).toLocaleString() : Math.max(1, Math.round((Number(s.turnover) || 500000) / 15000)).toLocaleString()) },
+        { key: 'transactions', label: 'Trades', align: 'right', bold: true, format: (v, s) => { const tx = Number(v || s.totalTrades || s.trades || s.totalTransactions || 0); return tx > 0 ? tx.toLocaleString() : '—'; } },
         {
           key: 'avgTradeVal',
           label: 'Avg Ticket Size',
           align: 'right',
           bold: true,
           format: (_, s) => {
-            const tx = Number(s.transactions) || 1;
+            const tx = Number(s.transactions || s.totalTrades || s.trades || s.totalTransactions || 0);
             const to = Number(s.turnover) || 0;
+            if (tx <= 0 || to <= 0) return '—';
             const avg = Math.round(to / tx);
             if (avg >= 1e7) return `Rs. ${(avg / 1e7).toFixed(2)} Cr`;
             if (avg >= 1e5) return `Rs. ${(avg / 1e5).toFixed(2)} L`;
@@ -1019,13 +1022,13 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ type: 'warning', text: 'Within 5% of 52-week lows — value or value-trap?' }}
       insight="Check fundamentals first: falling knife vs coiled value." />
   ),
-  'mero-share': () => <IPOList initialTab="apply" />,
-  'ipolist': () => <IPOList initialTab="apply" />,
-  'credentials': () => <PreferencesSettingsService initialTab="credentials" />,
-  'apply-history': () => <IPOList initialTab="my-applications" />,
+  'mero-share': (props: any) => <IPOList {...props} initialTab="apply" />,
+  'ipolist': (props: any) => <IPOList {...props} initialTab="apply" />,
+  'credentials': (props: any) => <PreferencesSettingsService {...props} initialTab="credentials" />,
+  'apply-history': (props: any) => <IPOList {...props} initialTab="my-applications" />,
   'brokers': BrokersDirectoryService,
-  'ipo-result': () => <IPOList initialTab="result" />,
-  'ipo-results': () => <IPOList initialTab="result" />,
+  'ipo-result': (props: any) => <IPOList {...props} initialTab="result" />,
+  'ipo-results': (props: any) => <IPOList {...props} initialTab="result" />,
   'ipo-current': () => <IPOTracker type="current" />,
   'ipo-fpo-alert': () => <IPOTracker type="current" />,
   'ipo-pipeline': IPOPipelineService,

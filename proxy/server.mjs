@@ -1500,6 +1500,51 @@ function computeEmaFromSeries(values, period) {
   return Number.isFinite(ema) ? +ema.toFixed(2) : null;
 }
 
+function computeWilderRsi14(values) {
+  if (!Array.isArray(values) || values.length < 15) return null;
+  let gainSum = 0;
+  let lossSum = 0;
+  for (let i = 1; i <= 14; i++) {
+    const d = values[i] - values[i - 1];
+    if (d > 0) gainSum += d;
+    else lossSum += Math.abs(d);
+  }
+  let avgGain = gainSum / 14;
+  let avgLoss = lossSum / 14;
+  for (let i = 15; i < values.length; i++) {
+    const d = values[i] - values[i - 1];
+    avgGain = (avgGain * 13 + (d > 0 ? d : 0)) / 14;
+    avgLoss = (avgLoss * 13 + (d < 0 ? Math.abs(d) : 0)) / 14;
+  }
+  if (avgLoss === 0) return avgGain > 0 ? 100 : 50;
+  const rs = avgGain / avgLoss;
+  const rsi = 100 - (100 / (1 + rs));
+  return Number.isFinite(rsi) ? +rsi.toFixed(1) : null;
+}
+
+function computeMacdFromSeries(values) {
+  if (!Array.isArray(values) || values.length < 35) return null;
+  const k12 = 2 / 13;
+  const k26 = 2 / 27;
+  const k9 = 2 / 10;
+  let e12 = values.slice(0, 12).reduce((a, b) => a + b, 0) / 12;
+  let e26 = values.slice(0, 26).reduce((a, b) => a + b, 0) / 26;
+  for (let i = 12; i < 26; i++) e12 = values[i] * k12 + e12 * (1 - k12);
+  const macdSeries = [e12 - e26];
+  for (let i = 26; i < values.length; i++) {
+    e12 = values[i] * k12 + e12 * (1 - k12);
+    e26 = values[i] * k26 + e26 * (1 - k26);
+    macdSeries.push(e12 - e26);
+  }
+  if (macdSeries.length < 9) return null;
+  let sig = macdSeries.slice(0, 9).reduce((a, b) => a + b, 0) / 9;
+  for (let i = 9; i < macdSeries.length; i++) sig = macdSeries[i] * k9 + sig * (1 - k9);
+  const line = macdSeries[macdSeries.length - 1];
+  const hist = line - sig;
+  if (!Number.isFinite(line) || !Number.isFinite(sig)) return null;
+  return { macdLine: +line.toFixed(2), signal: +sig.toFixed(2), histogram: +hist.toFixed(2) };
+}
+
 export function getFallbackTodayPrices() {
   if (db) {
     try {
@@ -1564,6 +1609,8 @@ export function getFallbackTodayPrices() {
                 ema20: computeEmaFromSeries(cSlice, 20),
                 ema50: computeEmaFromSeries(cSlice, 50),
                 ema200: computeEmaFromSeries(cSlice, 200),
+                rsi: computeWilderRsi14(cSlice),
+                macd: computeMacdFromSeries(cSlice),
                 volumeSurgeRatio,
               });
             };
@@ -1621,6 +1668,8 @@ export function getFallbackTodayPrices() {
               ema20: tech?.ema20 ?? null,
               ema50: tech?.ema50 ?? null,
               ema200: tech?.ema200 ?? null,
+              rsi: tech?.rsi ?? null,
+              macd: tech?.macd ?? null,
               volumeSurgeRatio: tech?.volumeSurgeRatio ?? null,
               eps,
               bookValue,

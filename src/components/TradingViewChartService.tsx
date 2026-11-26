@@ -7,7 +7,7 @@ import { StockSearchSelect, StatCard, Spinner } from './ui';
 import { openExternalUrl } from '../utils/externalLinks';
 
 export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSymbol?: string }) {
-  const [symbol, setSymbol] = useState(initialSymbol);
+  const [symbol, setSymbol] = useState(initialSymbol || 'NABIL');
   const [allSymbols, setAllSymbols] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

@@ -87,7 +87,11 @@ export function StockSelectionScreener({
       const isAtOperatorFloor = operatorPremiumPct !== null && operatorPremiumPct >= -3.0 && operatorPremiumPct <= 4.5;
       const isOverextended = operatorPremiumPct !== null && operatorPremiumPct > 12.0;
       const isUnderwater = operatorPremiumPct !== null && operatorPremiumPct < -3.0;
-      const leadAccumulator = cum?.topAccumulators?.[0]?.broker ? `Broker #${cum.topAccumulators[0].broker}` : (mapRow?.leadAccumulator || null);
+      const rawLead = cum?.topAccumulators?.[0]?.broker ?? mapRow?.leadAccumulator;
+      const leadId = typeof rawLead === 'object' && rawLead
+        ? (rawLead.broker || rawLead.brokerId || rawLead.brokerNo || rawLead.id)
+        : rawLead;
+      const leadAccumulator = leadId ? (String(leadId).startsWith('Broker #') ? String(leadId) : `Broker #${leadId}`) : null;
 
       const bcr3Buy = Number(mapRow?.bcr3BuyPct ?? mapRow?.bcr3Buy ?? stock.bcr3Buy ?? stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? stock.realBrokerAnalysis?.bcr3BuyPct ?? 0);
       const bcr5Buy = Number(mapRow?.bcr5BuyPct ?? mapRow?.bcr5Buy ?? stock.bcr5Buy ?? stock.bcr5BuyPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? stock.realBrokerAnalysis?.bcr5BuyPct ?? 0);
@@ -114,7 +118,9 @@ export function StockSelectionScreener({
           npl: stock.npl ?? null,
           car: stock.car ?? null,
           listedShares: stock.listedShares != null ? Number(stock.listedShares) : null,
-          publicPercentage: stock.publicPercentage != null ? Number(stock.publicPercentage) : null
+          publicPercentage: stock.publicPercentage != null
+            ? Number(stock.publicPercentage)
+            : (stock.promoterHolding != null ? +(100 - Number(stock.promoterHolding)).toFixed(2) : null)
         },
         brokerSignals: {
           compositeScore: dynamicBrokerScore

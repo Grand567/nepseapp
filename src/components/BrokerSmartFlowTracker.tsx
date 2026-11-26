@@ -951,7 +951,7 @@ export default function BrokerSmartFlowTracker({
                         {rot.accumulatedSymbol}
                       </div>
                       <div className="text-[10px] font-mono font-bold text-emerald-400 mt-0.5">
-                        +{formatNprAmt(rot.accumulatedNetAmt)}
+                        {formatNprAmt(rot.accumulatedNetAmt)}
                       </div>
                       <div className="text-[9px] text-slate-500 font-mono truncate">
                         +{rot.accumulatedQty.toLocaleString()} shs
@@ -1623,8 +1623,10 @@ export default function BrokerSmartFlowTracker({
           <span>T+2 Settlement Compliant</span>
         </div>
       </div>
+        </>
+      )}
 
-      {/* ── 30-DAY DAILY BROKER TAPE MODAL / DRAWER ── */}
+      {/* ── 30-DAY DAILY BROKER TAPE MODAL / DRAWER (accessible from all tabs) ── */}
       {inspectedStock && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md overflow-y-auto">
           <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
@@ -1868,8 +1870,6 @@ export default function BrokerSmartFlowTracker({
             </div>
           </div>
         </div>
-      )}
-        </>
       )}
     </div>
   );

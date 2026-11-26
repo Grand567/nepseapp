@@ -78,8 +78,9 @@ export function CapitalRiskSimulatorView({
 
   const totalOutlay = suggestedKitta * numPrice;
   const buyDetails = suggestedKitta > 0 ? calculateBuyDetails(suggestedKitta, numPrice, true) : null;
-  const slSellDetails = suggestedKitta > 0 ? calculateSellDetails(suggestedKitta, numStopLoss, numPrice, 'short') : null;
-  const targetSellDetails = suggestedKitta > 0 ? calculateSellDetails(suggestedKitta, numTarget, numPrice, 'short') : null;
+  const effectiveBuyWacc = buyDetails?.costPerShare || numPrice;
+  const slSellDetails = suggestedKitta > 0 ? calculateSellDetails(suggestedKitta, numStopLoss, effectiveBuyWacc, 'short') : null;
+  const targetSellDetails = suggestedKitta > 0 ? calculateSellDetails(suggestedKitta, numTarget, effectiveBuyWacc, 'short') : null;
 
   const actualRiskRs = buyDetails && slSellDetails ? Math.max(0, Math.round(buyDetails.totalAmount - slSellDetails.netReceivable)) : 0;
   const totalGainRs = buyDetails && targetSellDetails ? Math.max(0, Math.round(targetSellDetails.netReceivable - buyDetails.totalAmount)) : 0;

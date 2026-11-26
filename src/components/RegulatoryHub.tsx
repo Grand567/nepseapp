@@ -47,7 +47,7 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
 
   const isMountedRef = useRef(true);
 
-  const timeoutRace = <T,>(p: Promise<T>, ms = 5000): Promise<T> => {
+  const timeoutRace = <T,>(p: Promise<T>, ms = 15000): Promise<T> => {
     let timer: any;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error('timeout')), ms);

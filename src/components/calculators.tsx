@@ -31,6 +31,12 @@ export function GrahamValuation({
     const price = parseFloat(f.price) || 0;
     const bvps = parseFloat(f.bvps) || 100;
 
+    if (!Number.isFinite(eps)) {
+      setValidationError('Please enter a valid numeric EPS.');
+      setResult(null);
+      return;
+    }
+
     if (mType === 'classical') {
       if (!bvps || bvps <= 0) {
         setValidationError('Please enter a positive BVPS (Book Value Per Share) for classical Graham valuation.');
@@ -445,10 +451,13 @@ export function DividendCalculator() {
   const [result, setResult] = useState<any>(null);
 
   const runCalc = (f = form) => {
-    const s = parseFloat(f.shares), fv = parseFloat(f.fv) || 100;
-    const c = parseFloat(f.cash) || 0, b = parseFloat(f.bonus) || 0;
-    const pr = parseFloat(f.price) || 0;
-    if (!s || s <= 0) return;
+    const s = parseFloat(f.shares), fv = Math.max(1, parseFloat(f.fv) || 100);
+    const c = Math.max(0, parseFloat(f.cash) || 0), b = Math.max(0, parseFloat(f.bonus) || 0);
+    const pr = Math.max(0, parseFloat(f.price) || 0);
+    if (!Number.isFinite(s) || s <= 0) {
+      setResult(null);
+      return;
+    }
     const grossCash = (fv * c / 100) * s;
     const cashTax = grossCash * 0.05;
     const bonusShares = Math.floor((s * b) / 100);
@@ -777,26 +786,28 @@ export function RiskRewardCalculator({ stocks: rawStocks = [], initialSymbol = '
 // Helper to parse ratios like "1:2", "1/2", "10:3", "0.5", "50%"
 // Standard NEPSE ratio format: Existing:Right (e.g., 1:1 = 100%, 10:3 = 30%, 2:1 = 50%, 4:1 = 25%)
 function parseRatio(str: string): number {
-  if (!str) return 1;
+  if (!str) return NaN;
   const clean = str.trim();
   if (clean.includes(':')) {
     const parts = clean.split(':').map((p) => parseFloat(p.trim()));
-    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[1] !== 0 && parts[0] !== 0) {
+    if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1]) && parts[0] > 0 && parts[1] > 0) {
       return parts[1] / parts[0];
     }
+    return NaN;
   }
   if (clean.includes('/')) {
     const parts = clean.split('/').map((p) => parseFloat(p.trim()));
-    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[1] !== 0 && parts[0] !== 0) {
+    if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1]) && parts[0] > 0 && parts[1] > 0) {
       return parts[1] / parts[0];
     }
+    return NaN;
   }
   if (clean.endsWith('%')) {
     const val = parseFloat(clean.slice(0, -1));
-    return isNaN(val) ? 1 : val / 100;
+    return Number.isFinite(val) && val > 0 ? val / 100 : NaN;
   }
   const val = parseFloat(clean);
-  return isNaN(val) ? 1 : val;
+  return Number.isFinite(val) && val > 0 ? val : NaN;
 }
 
 // ── NEPSE Standard Bonus Share Price & WACC Adjustment Calculator ──
@@ -807,10 +818,14 @@ export function BonusAdjustmentCalculator() {
   const runCalc = (f = form) => {
     const pClose = parseFloat(f.closePrice);
     const bPct = parseFloat(f.bonusPct);
-    const s = parseFloat(f.shares) || 100;
-    const w = parseFloat(f.wacc) || pClose;
+    const s = parseFloat(f.shares);
+    const w = parseFloat(f.wacc);
 
-    if (!pClose || !bPct || pClose <= 0 || bPct <= 0) return;
+    if (!Number.isFinite(pClose) || !Number.isFinite(bPct) || pClose <= 0 || bPct <= 0 || !Number.isFinite(s) || s <= 0) {
+      setResult(null);
+      return;
+    }
+    const safeWacc = Number.isFinite(w) && w >= 0 ? w : pClose;
 
     // Formula: P_adj = P_close / (1 + bonus_ratio)
     const bonusRatio = bPct / 100;
@@ -818,7 +833,7 @@ export function BonusAdjustmentCalculator() {
     const bonusShares = Math.floor(s * bonusRatio);
     const totalShares = s + bonusShares;
     // Mandatory CDSC/IRD NEPSE WACC rule: bonus shares carry Rs. 100 face value cost basis
-    const adjustedWacc = ((s * w) + (bonusShares * 100)) / totalShares;
+    const adjustedWacc = ((s * safeWacc) + (bonusShares * 100)) / totalShares;
     const totalMarketValuePre = s * pClose;
     const totalMarketValuePost = totalShares * adjustedPrice;
 
@@ -963,7 +978,7 @@ export function RightAdjustmentCalculator() {
         />
         <input
           type="text"
-          placeholder="Ratio e.g. 1:1, 1:2 (50%), 0.5"
+          placeholder="Ratio (Existing:Right) e.g. 1:1, 2:1 (50%), 0.5"
           value={form.rightRatio}
           onChange={(e) => setForm((f) => ({ ...f, rightRatio: e.target.value }))}
           className={inputCls}

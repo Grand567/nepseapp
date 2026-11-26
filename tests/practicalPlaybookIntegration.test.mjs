@@ -402,4 +402,49 @@ test('Practical Playbook & App Integration (FR-1..FR-4)', async (t) => {
       'server.mjs must hydrate mutual funds from SQLite fallback prices and return cached 200 unavailable payloads for forex/bullion'
     );
   });
+
+  await t.test('FR-9: 6-Agent Parallel ServicesHub Deep Audit fixes (P0 security, crashes, math, RSI/MACD hydration)', async () => {
+    const serverSrc = fs.readFileSync(path.join(ROOT_DIR, 'proxy', 'server.mjs'), 'utf8');
+    assert.ok(
+      serverSrc.includes('computeWilderRsi14(cSlice)') && serverSrc.includes('computeMacdFromSeries(cSlice)'),
+      'server.mjs must hydrate Wilder 14D RSI and MACD from SQLite daily_stock_summary'
+    );
+
+    const prefSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'PreferencesSettingsService.tsx'), 'utf8');
+    assert.ok(
+      prefSrc.includes('stripSensitiveAccountFields') && prefSrc.includes("safeParseArray('nepse_portfolio_v1')"),
+      'PreferencesSettingsService must never leak plaintext MeroShare password/pin/crn in portfolio backup'
+    );
+
+    const fsTabSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'FloorsheetServiceTab.tsx'), 'utf8');
+    assert.ok(
+      fsTabSrc.includes('if (!signal?.aborted)'),
+      'FloorsheetServiceTab must guard signal?.aborted so Refresh Tape never crashes'
+    );
+
+    const screenerSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'StockSelectionScreener.tsx'), 'utf8');
+    assert.ok(
+      screenerSrc.includes("typeof rawLead === 'object'"),
+      'StockSelectionScreener must extract broker ID from leadAccumulator objects before JSX render'
+    );
+
+    const radarSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'AccumulationDistributionRadar.tsx'), 'utf8');
+    assert.ok(
+      radarSrc.includes("fetchRealFloorsheet('', dt || '')"),
+      'AccumulationDistributionRadar must pass symbol as arg 1 and date as arg 2 to fetchRealFloorsheet'
+    );
+
+    const calcSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'calculators.tsx'), 'utf8');
+    assert.ok(
+      calcSrc.includes('2:1 (50%)') && calcSrc.includes('!Number.isFinite(eps)'),
+      'calculators.tsx must align Existing:Right placeholder and guard Graham NaN EPS'
+    );
+
+    const smartFlowSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'BrokerSmartFlowTracker.tsx'), 'utf8');
+    assert.ok(
+      !smartFlowSrc.includes('+{formatNprAmt(rot.accumulatedNetAmt)}') &&
+      smartFlowSrc.includes('accessible from all tabs'),
+      'BrokerSmartFlowTracker must render inspectedStock modal across all tabs and avoid ++Rs.'
+    );
+  });
 });

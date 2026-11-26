@@ -2310,7 +2310,7 @@ export function SectorHeatmapService({ selectedDate: propSelectedDate, date: pro
     const seq = ++heatmapSeqRef.current;
     if (!sectors.length) setLoading(true);
     try {
-      const cached = getCachedStocks();
+      const cached = activeDate ? null : getCachedStocks();
       let rawStocks = cached && cached.length > 20 ? cached : null;
       if (!rawStocks) {
         const res = await Promise.race([
@@ -3798,7 +3798,7 @@ export function BrokerHeatmapService({ selectedDate: propSelectedDate, date: pro
                             {modalMetric === 'grossBuyAmt' ? (
                               <>
                                 <div className={`font-extrabold text-sm ${isAcc ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  Rs. {(Number(isAcc ? (s.grossBuyAmt || s.buyAmt || s.net) : (s.grossSellAmt || s.sellAmt || s.net)) / 1e5).toFixed(1)} Lakhs
+                                  Rs. {(Math.abs(Number(isAcc ? (s.grossBuyAmt ?? s.buyAmount ?? s.buy ?? s.buyAmt ?? 0) : (s.grossSellAmt ?? s.sellAmount ?? s.sell ?? s.sellAmt ?? 0))) / 1e5).toFixed(1)} Lakhs
                                 </div>
                                 <div className="text-[10px] text-slate-400">
                                   Turnover (ShareSansar)
@@ -4283,7 +4283,7 @@ export function BrokerAnalysisService({
           topAccumulator: d.topAccumulator || d.topNetBuyers?.[0] || buyers[0] || null,
           topDistributor: d.topDistributor || d.topNetSellers?.[0] || sellers[0] || null,
           concentrationPct: Number(d.concentrationPct ?? d.bcr3BuyPct ?? 0) || 0,
-          smartMoneyPhase: d.smartMoneyPhase || deriveSmartMoneyPhase(d.adSignal || '', Number(d.adStrength || 0), Number(d.adRatio || 0), Number(d.stealthAccumulation || 50))
+          smartMoneyPhase: d.smartMoneyPhase || deriveSmartMoneyPhase(d.adSignal || '', parseFloat(String(d.adStrength || 0)) || 0, Number(d.adRatio || 0), Number(d.stealthAccumulation || 50))
         };
         setCachedRealBrokerAnalysis(sym, d, days, { date: activeDate });
         setBrokerData(formatted);
@@ -4320,7 +4320,7 @@ export function BrokerAnalysisService({
           topAccumulator: cached.topAccumulator || cached.topNetBuyers?.[0] || buyers[0] || null,
           topDistributor: cached.topDistributor || cached.topNetSellers?.[0] || sellers[0] || null,
           concentrationPct: Number(cached.concentrationPct ?? cached.bcr3BuyPct ?? 0) || 0,
-          smartMoneyPhase: cached.smartMoneyPhase || deriveSmartMoneyPhase(cached.adSignal || '', Number(cached.adStrength || 0), Number(cached.adRatio || 0), Number(cached.stealthAccumulation || 50))
+          smartMoneyPhase: cached.smartMoneyPhase || deriveSmartMoneyPhase(cached.adSignal || '', parseFloat(String(cached.adStrength || 0)) || 0, Number(cached.adRatio || 0), Number(cached.stealthAccumulation || 50))
         });
         setLoading(false);
         return;
@@ -5304,11 +5304,15 @@ export function CompareStocks() {
     { m: 'P/E Ratio', a: sa.pe || '—', b: sb.pe || '—' },
     { m: 'EPS', a: sa.eps != null ? `Rs. ${sa.eps}` : '—', b: sb.eps != null ? `Rs. ${sb.eps}` : '—' },
     { m: 'Book Value (BVPS)', a: (sa.bvps ?? sa.bookValue) != null ? `Rs. ${sa.bvps ?? sa.bookValue}` : '—', b: (sb.bvps ?? sb.bookValue) != null ? `Rs. ${sb.bvps ?? sb.bookValue}` : '—' },
-    { m: 'RSI (14)', a: sa.rsi ?? tfa.rsi ?? '—', b: sb.rsi ?? tfb.rsi ?? '—' },
+    {
+      m: 'RSI (14)',
+      a: timeframe === '1D' ? (sa.rsi ?? tfa.rsi ?? '—') : (aPending ? '—' : (tfa.rsi ?? sa.rsi ?? '—')),
+      b: timeframe === '1D' ? (sb.rsi ?? tfb.rsi ?? '—') : (bPending ? '—' : (tfb.rsi ?? sb.rsi ?? '—'))
+    },
     {
       m: 'Technical Score',
-      a: (sa.technicalScore ?? tfa.technicalScore) != null ? `${sa.technicalScore ?? tfa.technicalScore}/100` : '—',
-      b: (sb.technicalScore ?? tfb.technicalScore) != null ? `${sb.technicalScore ?? tfb.technicalScore}/100` : '—'
+      a: (() => { const v = timeframe === '1D' ? (sa.technicalScore ?? tfa.technicalScore) : (aPending ? null : (tfa.technicalScore ?? sa.technicalScore)); return v != null ? `${v}/100` : '—'; })(),
+      b: (() => { const v = timeframe === '1D' ? (sb.technicalScore ?? tfb.technicalScore) : (bPending ? null : (tfb.technicalScore ?? sb.technicalScore)); return v != null ? `${v}/100` : '—'; })()
     },
     {
       m: 'DPI (Decision Index)',
@@ -6509,7 +6513,7 @@ export function AlertsTool() {
       <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-4 items-end">
         <div>
           <label className="mb-1 block text-[11px] font-semibold text-slate-400">Stock Symbol</label>
-          <StockSearchSelect value={f.symbol} onChange={(sym) => setF({ ...f, symbol: sym })} placeholder="Stock symbol…" />
+          <StockSearchSelect value={f.symbol} onChange={(sym) => setF({ ...f, symbol: sym })} placeholder="Stock symbol…" stocks={stocks} />
         </div>
         <div>
           <label className="mb-1 block text-[11px] font-semibold text-slate-400">Condition</label>
@@ -6522,7 +6526,7 @@ export function AlertsTool() {
           <label className="mb-1 block text-[11px] font-semibold text-slate-400">Price Level (Rs.)</label>
           <input type="number" placeholder="Price level" value={f.level} onChange={(e) => setF({ ...f, level: e.target.value })} className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500" />
         </div>
-        <button onClick={() => { if (f.level && f.symbol) { setAlerts([{ id: Date.now(), ...f, level: parseFloat(f.level) }, ...alerts]); setF({ ...f, level: '' }); } }} className="cursor-pointer rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700 h-[38px]">+ Alert</button>
+        <button onClick={() => { const lvl = parseFloat(f.level); if (f.symbol && Number.isFinite(lvl) && lvl > 0) { setAlerts([{ id: Date.now(), ...f, level: lvl }, ...alerts]); setF({ ...f, level: '' }); } }} className="cursor-pointer rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700 h-[38px]">+ Alert</button>
       </div>
       {alerts.length === 0 ? <NoData message="No alerts set." /> : (
         <div className="grid gap-2">

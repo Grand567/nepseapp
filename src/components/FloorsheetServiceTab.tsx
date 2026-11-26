@@ -57,6 +57,7 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
         signal,
         cache: "no-store",
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as FloorsheetHubApiResponse;
       setData(json);
     } catch (err) {
@@ -64,7 +65,7 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
         console.error("FloorsheetServiceTab fetch error:", err);
       }
     } finally {
-      if (!signal.aborted) {
+      if (!signal?.aborted) {
         setLoading(false);
       }
     }

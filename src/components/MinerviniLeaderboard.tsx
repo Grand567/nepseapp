@@ -114,7 +114,7 @@ function computeOAMI(s: any, rsScore: number): number {
   const rawZ    = Number(s.volumeZScore || 0);
   const normZ   = Math.min(100, Math.max(0, (rawZ + 2) * 25)); // map -2..+2 → 0..100
   const rawMom  = Number(s.pChange || 0);
-  const normMom = Math.min(100, Math.max(0, (rawMom + 10) * 5)); // map -10..+10 → 0..100
+  const normMom = Math.min(100, Math.max(0, ((rawMom + 15) / 30) * 100)); // map -15..+15 (SEBON 15% band) → 0..100
   // P5: incorporate multi-period RS score (15% weight) into OAMI
   return Math.round(0.35 * stealth + 0.30 * normZ + 0.20 * normMom + 0.15 * Math.min(100, rsScore));
 }
@@ -167,7 +167,7 @@ export function MinerviniLeaderboard({ stocks: rawStocks = [], indices, onSelect
         const sec = (s.sector || '').toLowerCase();
         if (sectorFilter === 'hydro')   return sec.includes('hydro');
         if (sectorFilter === 'bank')    return sec.includes('bank');
-        if (sectorFilter === 'finance') return sec.includes('finance');
+        if (sectorFilter === 'finance') return sec.includes('finance') && !sec.includes('micro');
         if (sectorFilter === 'micro')   return sec.includes('micro');
         return true;
       })

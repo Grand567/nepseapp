@@ -914,7 +914,7 @@ export default function IPOList({ initialTab = 'apply', userId = null }) {
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-muted)' }}>Closing Date:</span>
                         <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>
-                          {ipo.closeDate ? formatNptDateIso(ipo.closeDate) : 'Open / Ongoing'}
+                          {ipo.closeDate ? (() => { const d = new Date(ipo.closeDate); return !Number.isNaN(d.getTime()) ? formatNptDateIso(d) : String(ipo.closeDate); })() : 'Open / Ongoing'}
                         </span>
                       </div>
                       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 4 }}>

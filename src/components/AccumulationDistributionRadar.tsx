@@ -829,14 +829,15 @@ export function AccumulationDistributionRadar({
       const [liveRes, brokerMap, fsRes] = await Promise.all([
         loadNepseData(dt || '').catch(() => null),
         fetchMarketWideBrokerSummaryMap(radarDays, { date: dt || undefined, refresh: true }).catch(() => null),
-        fetchRealFloorsheet(dt || undefined).catch(() => [])
+        fetchRealFloorsheet('', dt || '').catch(() => [])
       ]);
       if (radarReqIdRef.current !== reqId) return;
       if (Array.isArray(liveRes?.stocks) && liveRes.stocks.length > 0) {
         setStocks(liveRes.stocks);
       }
-      if (Array.isArray(fsRes)) {
-        setFloorsheet(fsRes);
+      const fsRows = Array.isArray(fsRes) ? fsRes : (fsRes?.content || fsRes?.data || fsRes?.rows || []);
+      if (Array.isArray(fsRows) && fsRows.length > 0) {
+        setFloorsheet(fsRows);
       }
       if (brokerMap && typeof brokerMap === 'object') {
         const keyedMap: Record<string, any> = {};

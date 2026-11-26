@@ -373,7 +373,7 @@ export function StrategyLabService() {
             label={
               <div className="flex items-center gap-1.5 whitespace-nowrap">
                 <span>Historical Win Rate</span>
-                {displayResult?.dataQuality === 'ohlcv' ? (
+                {(displayResult?.dataQuality === 'ohlcv' || displayResult?.dataQuality === 'ohlcv_v3') ? (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">🟢 OHLCV Backtest (Realistic)</span>
                 ) : displayResult?.dataQuality === 'close_only' ? (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-800">🟡 Close-Price Only</span>
@@ -393,7 +393,7 @@ export function StrategyLabService() {
           />
           <StatCard
             label="Trade Expectancy"
-            value={`+${expectancy}%`}
+            value={`${Number(expectancy) >= 0 ? '+' : ''}${expectancy}%`}
             subtitle="Expected Value / Trade"
             color={Number(expectancy) > 0 ? '#10b981' : '#f43f5e'}
           />

@@ -175,13 +175,35 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
     }
   };
 
+  const stripSensitiveAccountFields = (item: any) => {
+    if (!item || typeof item !== 'object') return item;
+    const { password, pin, crn, ...safe } = item;
+    return safe;
+  };
+
   const readCanonicalPortfolio = (): any[] => {
-    if (Array.isArray(accounts) && accounts.length > 0) return accounts;
-    const { profiles } = readCanonicalPortfolioSymbolsSync(activeUserId);
-    if (profiles.length > 0) return profiles;
+    const deskPortfolio = safeParseArray('nepse_portfolio_v1');
+    if (deskPortfolio.length > 0) return deskPortfolio;
     const userTx = safeParseArray(`nepse_hub_${activeUserId}_transactions`);
     if (userTx.length > 0) return userTx;
+    if (Array.isArray(accounts) && accounts.length > 0) {
+      return accounts.map(stripSensitiveAccountFields);
+    }
+    const { profiles } = readCanonicalPortfolioSymbolsSync(activeUserId);
+    if (profiles.length > 0) return profiles.map(stripSensitiveAccountFields);
     return [];
+  };
+
+  const readNotes = (): any[] => {
+    const canonical = safeParseArray('nepse_trade_notes');
+    const legacy = safeParseArray('nepse_notes_v1');
+    return canonical.length > 0 ? canonical : legacy;
+  };
+
+  const readAlerts = (): any[] => {
+    const canonical = safeParseArray('nepse_stock_alerts');
+    const legacy = safeParseArray('nepse_alerts_v1');
+    return canonical.length > 0 ? canonical : legacy;
   };
 
   // Backup Export
@@ -191,8 +213,8 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
         exportedAt: new Date().toISOString(),
         watchlist: getWatchlist(),
         portfolio: readCanonicalPortfolio(),
-        notes: safeParseArray('nepse_trade_notes'),
-        alerts: safeParseArray('nepse_stock_alerts'),
+        notes: readNotes(),
+        alerts: readAlerts(),
         meroShareAccounts: accounts.map(a => ({
           ...a,
           password: '••••••••',
@@ -209,8 +231,8 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
 
   const watchlistCount = getWatchlist().length;
   const portfolioCount = readCanonicalPortfolio().length;
-  const notesCount = safeParseArray('nepse_trade_notes').length;
-  const alertsCount = safeParseArray('nepse_stock_alerts').length;
+  const notesCount = readNotes().length;
+  const alertsCount = readAlerts().length;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4">
