@@ -1443,6 +1443,41 @@ try {
           prevClose: Number(sen.close || sen.previousClose || 0)
         };
       }
+      if (flt) {
+        LAST_GOOD_INDICES.float = {
+          value: Number(flt.currentValue || flt.close),
+          change: Number(flt.change || 0),
+          pChange: Number(flt.perChange || 0),
+          open: Number(flt.low || flt.close),
+          high: Number(flt.high || flt.currentValue),
+          low: Number(flt.low || flt.close),
+          prevClose: Number(flt.close || flt.previousClose || 0)
+        };
+      }
+      if (sfl) {
+        LAST_GOOD_INDICES.sensitiveFloat = {
+          value: Number(sfl.currentValue || sfl.close),
+          change: Number(sfl.change || 0),
+          pChange: Number(sfl.perChange || 0),
+          open: Number(sfl.low || sfl.close),
+          high: Number(sfl.high || sfl.currentValue),
+          low: Number(sfl.low || sfl.close),
+          prevClose: Number(sfl.close || sfl.previousClose || 0)
+        };
+      }
+    }
+    if (Array.isArray(lkmRaw.subIndices) && lkmRaw.subIndices.length > 0) {
+      LAST_GOOD_INDICES.subIndices = lkmRaw.subIndices;
+    }
+  }
+  if (!Array.isArray(LAST_GOOD_INDICES.subIndices) || LAST_GOOD_INDICES.subIndices.length === 0) {
+    const subPath = path.join(__dirname, 'data', 'last_known_subindices.json');
+    if (fs.existsSync(subPath)) {
+      const subParsed = JSON.parse(fs.readFileSync(subPath, 'utf8'));
+      const subArr = Array.isArray(subParsed) ? subParsed : (Array.isArray(subParsed?.subIndices) ? subParsed.subIndices : []);
+      if (subArr.length > 0) {
+        LAST_GOOD_INDICES.subIndices = subArr;
+      }
     }
   }
 } catch (_) {}
@@ -1715,6 +1750,22 @@ app.get('/api/market-summary', async (req, res) => {
   }
 });
 
+function syncLastGoodIndicesCache(cacheKey, reconciled, indexTtl, mergeWithExisting = false) {
+  if (!reconciled || !(reconciled?.nepse?.value > 0)) return reconciled;
+  if ((!Array.isArray(reconciled.subIndices) || reconciled.subIndices.length === 0) && LAST_GOOD_INDICES?.subIndices?.length > 0) {
+    reconciled.subIndices = LAST_GOOD_INDICES.subIndices;
+  }
+  if (Array.isArray(reconciled.subIndices) && reconciled.subIndices.length > 0) {
+    try {
+      const subPath = path.join(__dirname, 'data', 'last_known_subindices.json');
+      fs.writeFileSync(subPath, JSON.stringify({ updatedAt: new Date().toISOString(), subIndices: reconciled.subIndices }), 'utf8');
+    } catch (_) {}
+  }
+  setCache(cacheKey, reconciled, indexTtl);
+  LAST_GOOD_INDICES = mergeWithExisting ? { ...LAST_GOOD_INDICES, ...reconciled } : reconciled;
+  return LAST_GOOD_INDICES;
+}
+
 // Internal helper for Market Indices
 export async function getMarketIndicesInternal(targetDate = '') {
   const reqDate = String(targetDate || '').trim();
@@ -1863,9 +1914,7 @@ export async function getMarketIndicesInternal(targetDate = '') {
         indices.timestamp = Date.now();
         indices.isClosing = !currentStatus?.isOpen && !currentStatus?.isPreOpen;
         const reconciled = reconcileNepseWithIntradayTicks(indices, getIntradayTicksForToday(todayIso), todayIso);
-        setCache(cacheKey, reconciled, indexTtl);
-        LAST_GOOD_INDICES = reconciled;
-        return reconciled;
+        return syncLastGoodIndicesCache(cacheKey, reconciled, indexTtl);
       }
     }
   } catch (err) {
@@ -1924,9 +1973,7 @@ export async function getMarketIndicesInternal(targetDate = '') {
         npIndices.timestamp = Date.now();
         npIndices.isClosing = !currentStatus?.isOpen && !currentStatus?.isPreOpen;
         const reconciled = reconcileNepseWithIntradayTicks(npIndices, getIntradayTicksForToday(todayIso), todayIso);
-        setCache(cacheKey, reconciled, indexTtl);
-        LAST_GOOD_INDICES = { ...LAST_GOOD_INDICES, ...reconciled };
-        return reconciled;
+        return syncLastGoodIndicesCache(cacheKey, reconciled, indexTtl, true);
       }
     }
   } catch (npErr) {
@@ -1979,9 +2026,7 @@ export async function getMarketIndicesInternal(targetDate = '') {
       indices.timestamp = Date.now();
       indices.isClosing = !currentStatus?.isOpen && !currentStatus?.isPreOpen;
       const reconciled = reconcileNepseWithIntradayTicks(indices, getIntradayTicksForToday(todayIso), todayIso);
-      setCache(cacheKey, reconciled, indexTtl);
-      LAST_GOOD_INDICES = reconciled;
-      return reconciled;
+      return syncLastGoodIndicesCache(cacheKey, reconciled, indexTtl);
     }
   } catch (err) {
     console.warn('[proxy] ShareSansar market table error:', err.message);
@@ -5508,8 +5553,180 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
       }
     }
 
-    // 1. Primary for 1D Session (Market-wide or Historical/Closed Symbol): Serve directly from authentic full session floorsheet (NOTS exchange records)
+    // 1. Primary for 1D Session (Market-wide or Historical/Closed Symbol): Serve from fast SQLite floorsheet path first, then full session archive
     if (days === 1 && !fromDate && !toDate && !isLiveToday1D) {
+      if (db && !sinceContractId) {
+        try {
+          let sqlDate = '';
+          if (businessDate) {
+            const hasDate = db.prepare(`
+              SELECT COUNT(*) as n
+              FROM floorsheet_contracts
+              WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0
+              LIMIT 1
+            `).get(businessDate);
+            if ((hasDate?.n || 0) > 0) sqlDate = businessDate;
+          }
+          if (!sqlDate) {
+            const maxRow = db.prepare(`
+              SELECT MAX(trade_date) as d
+              FROM floorsheet_contracts
+              WHERE COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0
+            `).get();
+            sqlDate = String(maxRow?.d || '').trim();
+          }
+
+          if (sqlDate) {
+            const clauses = [
+              'trade_date = ?',
+              'COALESCE(is_quarantined, 0) = 0',
+              'buyer_broker > 0',
+              'seller_broker > 0'
+            ];
+            const params = [sqlDate];
+            if (cleanSym) {
+              clauses.push('symbol = ?');
+              params.push(cleanSym);
+            }
+            if (buyer) {
+              clauses.push('buyer_broker = ?');
+              params.push(Number(buyer) || 0);
+            }
+            if (seller) {
+              clauses.push('seller_broker = ?');
+              params.push(Number(seller) || 0);
+            }
+            if (broker) {
+              const brNum = Number(broker) || 0;
+              clauses.push('(buyer_broker = ? OR seller_broker = ?)');
+              params.push(brNum, brNum);
+            }
+            if (minQty > 0) {
+              clauses.push('kitta >= ?');
+              params.push(minQty);
+            }
+            if (minAmount > 0) {
+              clauses.push('amount >= ?');
+              params.push(minAmount);
+            }
+            if (selfMatchedOnly) {
+              clauses.push('buyer_broker = seller_broker');
+            }
+
+            const whereSql = clauses.join(' AND ');
+            const stats = db.prepare(`
+              SELECT COUNT(*) as totalElements,
+                     COALESCE(SUM(amount), 0) as totalAmount,
+                     COALESCE(SUM(kitta), 0) as totalQty
+              FROM floorsheet_contracts
+              WHERE ${whereSql}
+            `).get(...params);
+
+            const totalElements = Number(stats?.totalElements || 0);
+            if (totalElements > 0) {
+              const totalPages = Math.max(1, Math.ceil(totalElements / size));
+              const totalAmount = +Number(stats?.totalAmount || 0).toFixed(2);
+              const totalQty = Number(stats?.totalQty || 0);
+
+              const pagedSqlRows = db.prepare(`
+                SELECT contract_no, symbol, buyer_broker, seller_broker, kitta, rate, amount, trade_date, trade_time
+                FROM floorsheet_contracts
+                WHERE ${whereSql}
+                ORDER BY contract_no DESC
+                LIMIT ? OFFSET ?
+              `).all(...params, size, page * size);
+
+              const rows = pagedSqlRows.map(item => ({
+                contractId: String(item.contract_no || ''),
+                stockSymbol: String(item.symbol || cleanSym || '').toUpperCase(),
+                symbol: String(item.symbol || cleanSym || '').toUpperCase(),
+                buyerBroker: String(item.buyer_broker || ''),
+                buyerBrokerName: getBrokerName(item.buyer_broker),
+                sellerBroker: String(item.seller_broker || ''),
+                sellerBrokerName: getBrokerName(item.seller_broker),
+                qty: Number(item.kitta || 0),
+                quantity: Number(item.kitta || 0),
+                rate: Number(item.rate || 0),
+                amount: Number(item.amount || 0),
+                businessDate: item.trade_date || sqlDate,
+                tradeTime: item.trade_time || ''
+              }));
+
+              const rateRows = db.prepare(`
+                SELECT ROUND(rate, 1) as rate,
+                       COUNT(*) as trades,
+                       COALESCE(SUM(kitta), 0) as qty,
+                       COALESCE(SUM(amount), 0) as amount
+                FROM floorsheet_contracts
+                WHERE ${whereSql}
+                GROUP BY ROUND(rate, 1)
+                ORDER BY rate DESC
+                LIMIT 200
+              `).all(...params);
+
+              const priceVolumeBreakdown = rateRows.map(item => ({
+                rate: Number(item.rate || 0),
+                trades: Number(item.trades || 0),
+                qty: Number(item.qty || 0),
+                amount: +Number(item.amount || 0).toFixed(2),
+                pctQty: totalQty > 0 ? +((Number(item.qty || 0) / totalQty) * 100).toFixed(2) : 0
+              }));
+
+              const bulkSqlRows = db.prepare(`
+                SELECT contract_no, symbol, buyer_broker, seller_broker, kitta, rate, amount, trade_date
+                FROM floorsheet_contracts
+                WHERE ${whereSql} AND (kitta >= 1000 OR amount >= 500000)
+                ORDER BY amount DESC
+                LIMIT 50
+              `).all(...params);
+
+              const bulkTransactions = bulkSqlRows.map(r => ({
+                contractId: String(r.contract_no || ''),
+                symbol: String(r.symbol || '').toUpperCase(),
+                buyerBroker: String(r.buyer_broker || ''),
+                buyerBrokerName: getBrokerName(r.buyer_broker),
+                sellerBroker: String(r.seller_broker || ''),
+                sellerBrokerName: getBrokerName(r.seller_broker),
+                qty: Number(r.kitta || 0),
+                quantity: Number(r.kitta || 0),
+                rate: Number(r.rate || 0),
+                amount: Number(r.amount || 0),
+                businessDate: r.trade_date || sqlDate
+              }));
+
+              let availableDates = [];
+              try {
+                availableDates = await getMarketTradingDates();
+              } catch (_) {}
+              if (!availableDates || availableDates.length === 0) {
+                availableDates = [sqlDate];
+              }
+
+              const respData = {
+                rows,
+                trades: rows,
+                page: page + 1,
+                size,
+                totalPages,
+                totalElements,
+                totalAmount,
+                totalQty,
+                priceVolumeBreakdown,
+                bulkTransactions,
+                availableDates,
+                businessDate: sqlDate,
+                isReal: true
+              };
+              const ttl = effectiveFsTtl(businessDate ? 30 * 60 * 1000 : 3 * 60 * 1000);
+              setCache(cacheKey, respData, ttl);
+              return res.json({ success: true, data: respData, source: 'sqlite_floorsheet_fast_path' });
+            }
+          }
+        } catch (sqlFsErr) {
+          console.warn('[floorsheet] SQLite fast path notice:', sqlFsErr.message);
+        }
+      }
+
       try {
         const fullTrades = await getFullSessionFloorsheet(businessDate);
         if (Array.isArray(fullTrades) && fullTrades.length > 0) {
@@ -10235,7 +10452,7 @@ app.get('/api/nepalipaisa/index-live', async (req, res) => {
     throw new Error('Invalid response from NepaliPaisa');
   } catch (err) {
     if (_npIndexCache.body && Date.now() - _npIndexCache.at < 60000) return res.json(_npIndexCache.body);
-    res.status(502).json({ success: false, error: err.message });
+    return res.status(200).json({ success: false, result: [], offline: true, error: err.message });
   }
 });
 

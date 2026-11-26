@@ -6,7 +6,7 @@
  * Tests the entire backend and frontend calculation engines against live NEPSE data.
  * Usage:
  *   node scripts/fullAppAudit.mjs          # Tests local server (http://localhost:5000)
- *   node scripts/fullAppAudit.mjs --prod   # Tests live Render production (https://nepseapp.onrender.com)
+ *   node scripts/fullAppAudit.mjs --prod   # Tests live production (https://drabyashree-nepse-cdn.shreeksuwal.workers.dev)
  */
 
 import fs from 'fs';
@@ -19,7 +19,7 @@ const projectRoot = path.resolve(__dirname, '..');
 
 // ── CLI Configuration ──
 const isProd = process.argv.includes('--prod') || process.argv.includes('-p');
-const defaultUrl = isProd ? 'https://nepseapp.onrender.com' : 'http://localhost:5000';
+const defaultUrl = isProd ? 'https://drabyashree-nepse-cdn.shreeksuwal.workers.dev' : 'http://localhost:5000';
 const BASE_URL = (process.env.AUDIT_URL || defaultUrl).replace(/\/+$/, '');
 
 // ── ANSI Color Helpers ──
@@ -505,9 +505,9 @@ async function auditCategoryD() {
     const sebonSellFee = sellDetails.sebonFee; // 60000 * 0.00015 = 9.0
     const dpBuy = buyDetails.dpFee; // Rs 25 depository participant demat fee on buy leg
     const dpSell = sellDetails.dpFee; // 25
-    const cgtRate = sellDetails.cgtRate; // 0.075
+    const cgtRate = sellDetails.cgtRate; // 0.05 (5% retail short-term CGT)
 
-    const calcPass = sebonBuyFee === 7.5 && sebonSellFee === 9.0 && (dpBuy === 25 || dpBuy === 0) && dpSell === 25 && cgtRate === 0.075;
+    const calcPass = sebonBuyFee === 7.5 && sebonSellFee === 9.0 && (dpBuy === 25 || dpBuy === 0) && dpSell === 25 && cgtRate === 0.05;
 
     recordCheck(
       'Category D',

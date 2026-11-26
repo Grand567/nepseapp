@@ -80,34 +80,34 @@ export const StockFundamentalsAndLockInTab: React.FC<
           <div className="text-slate-400">EPS (TTM) / Distributable</div>
           <div
             className={`text-base font-bold mt-1 ${
-              metrics.epsTtm > 0 ? "text-emerald-400" : "text-rose-400"
+              (metrics.epsTtm ?? 0) > 0 ? "text-emerald-400" : "text-rose-400"
             }`}
           >
-            Rs {metrics.epsTtm.toFixed(2)}
+            {metrics.epsTtm != null && Number.isFinite(metrics.epsTtm) ? `Rs ${metrics.epsTtm.toFixed(2)}` : "N/A"}
           </div>
           <div className="text-[11px] text-slate-400">
-            Distributable: Rs {metrics.distributableEps.toFixed(2)}
+            Distributable: {metrics.distributableEps != null && Number.isFinite(metrics.distributableEps) ? `Rs ${metrics.distributableEps.toFixed(2)}` : "N/A"}
           </div>
         </div>
 
         <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
           <div className="text-slate-400">P/E &amp; P/BV Multiples</div>
           <div className="text-base font-bold text-white mt-1">
-            {metrics.peRatio !== null ? `${metrics.peRatio}x P/E` : "N/A"}
+            {metrics.peRatio != null && Number.isFinite(metrics.peRatio) ? `${metrics.peRatio}x P/E` : "N/A"}
           </div>
           <div className="text-[11px] text-slate-400">
             P/BV:{" "}
             <strong className="text-slate-200">
-              {metrics.pbvRatio !== null ? `${metrics.pbvRatio}x` : "N/A"}
+              {metrics.pbvRatio != null && Number.isFinite(metrics.pbvRatio) ? `${metrics.pbvRatio}x` : "N/A"}
             </strong>{" "}
-            (BVPS Rs {metrics.bookValuePerShare})
+            (BVPS {metrics.bookValuePerShare != null && Number.isFinite(metrics.bookValuePerShare) ? `Rs ${metrics.bookValuePerShare}` : "N/A"})
           </div>
         </div>
 
         <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
           <div className="text-slate-400">Graham Intrinsic Value</div>
           <div className="text-base font-bold text-indigo-300 mt-1">
-            {metrics.grahamFairValue !== null ? `Rs ${metrics.grahamFairValue.toLocaleString()}` : "N/A (Loss-Maker)"}
+            {metrics.grahamFairValue != null && Number.isFinite(metrics.grahamFairValue) ? `Rs ${metrics.grahamFairValue.toLocaleString()}` : "N/A (Loss-Maker)"}
           </div>
           <div className="text-[11px] text-slate-400">
             Margin:{" "}
@@ -118,7 +118,7 @@ export const StockFundamentalsAndLockInTab: React.FC<
                   : "text-rose-400 font-semibold"
               }
             >
-              {metrics.valuationMarginPct !== null
+              {metrics.valuationMarginPct != null && Number.isFinite(metrics.valuationMarginPct)
                 ? `${metrics.valuationMarginPct >= 0 ? "+" : ""}${metrics.valuationMarginPct}%`
                 : "N/A"}
             </span>
@@ -128,10 +128,10 @@ export const StockFundamentalsAndLockInTab: React.FC<
         <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
           <div className="text-slate-400">ROE &amp; Paid-Up Capital</div>
           <div className="text-base font-bold text-white mt-1">
-            {metrics.roePct.toFixed(2)}% ROE
+            {metrics.roePct != null && Number.isFinite(metrics.roePct) ? `${metrics.roePct.toFixed(2)}% ROE` : "N/A"}
           </div>
           <div className="text-[11px] text-slate-400">
-            Paid-Up: Rs {metrics.paidUpCapitalCr.toLocaleString()} Cr
+            Paid-Up: {metrics.paidUpCapitalCr != null && Number.isFinite(metrics.paidUpCapitalCr) ? `Rs ${metrics.paidUpCapitalCr.toLocaleString()} Cr` : "N/A"}
           </div>
         </div>
       </div>
@@ -153,7 +153,7 @@ export const StockFundamentalsAndLockInTab: React.FC<
                     : "text-emerald-400"
                 }`}
               >
-                {metrics.nplPct !== null ? `${metrics.nplPct}%` : "N/A (Non-BFI)"}
+                {metrics.nplPct != null && Number.isFinite(metrics.nplPct) ? `${metrics.nplPct}%` : "N/A (Non-BFI)"}
               </div>
               <div className="text-[10px] text-slate-500">NRB Danger Threshold: &ge;5.0%</div>
             </div>
@@ -167,7 +167,7 @@ export const StockFundamentalsAndLockInTab: React.FC<
                     : "text-emerald-400"
                 }`}
               >
-                {metrics.carPct !== null ? `${metrics.carPct}%` : "N/A (Non-BFI)"}
+                {metrics.carPct != null && Number.isFinite(metrics.carPct) ? `${metrics.carPct}%` : "N/A (Non-BFI)"}
               </div>
               <div className="text-[10px] text-slate-500">NRB Minimum Floor: 11.0%</div>
             </div>
@@ -177,7 +177,7 @@ export const StockFundamentalsAndLockInTab: React.FC<
         {/* SEBON Promoter Lock-In & Shareholding Structure */}
         <div
           className={`rounded-lg border p-3 space-y-2 ${
-            promoterLockIn.isBlackoutDanger
+            promoterLockIn?.isBlackoutDanger
               ? "border-rose-500/40 bg-rose-950/20"
               : "border-slate-800 bg-slate-900/70"
           }`}
@@ -187,33 +187,33 @@ export const StockFundamentalsAndLockInTab: React.FC<
               🔒 SEBON Promoter Lock-In &amp; Float Structure
             </span>
             <span className="text-[11px] text-slate-400">
-              Promoter {metrics.promoterSharePct}% / Public {metrics.publicSharePct}%
+              Promoter {metrics.promoterSharePct != null ? `${metrics.promoterSharePct}%` : "N/A"} / Public {metrics.publicSharePct != null ? `${metrics.publicSharePct}%` : "N/A"}
             </span>
           </div>
 
           <div className="w-full h-2 rounded bg-slate-800 overflow-hidden flex">
             <div
-              style={{ width: `${metrics.promoterSharePct}%` }}
+              style={{ width: `${metrics.promoterSharePct ?? 0}%` }}
               className="bg-amber-500"
-              title={`Promoter: ${metrics.promoterSharePct}%`}
+              title={`Promoter: ${metrics.promoterSharePct ?? 0}%`}
             />
             <div
-              style={{ width: `${metrics.publicSharePct}%` }}
+              style={{ width: `${metrics.publicSharePct ?? 0}%` }}
               className="bg-indigo-500"
-              title={`Public Float: ${metrics.publicSharePct}%`}
+              title={`Public Float: ${metrics.publicSharePct ?? 0}%`}
             />
           </div>
 
           <div className="p-2 rounded bg-slate-950 border border-slate-800 flex items-center justify-between">
             <div>
-              <div className="text-slate-300 font-medium">{promoterLockIn.statusLabel}</div>
-              {promoterLockIn.lockedKitta > 0 && (
+              <div className="text-slate-300 font-medium">{promoterLockIn?.statusLabel || "No Lock-In Telemetry"}</div>
+              {Number(promoterLockIn?.lockedKitta || 0) > 0 && (
                 <div className="text-[11px] text-slate-400">
-                  Locked Supply: {promoterLockIn.lockedKitta.toLocaleString()} kitta
+                  Locked Supply: {Number(promoterLockIn.lockedKitta).toLocaleString()} kitta
                 </div>
               )}
             </div>
-            {promoterLockIn.isBlackoutDanger && (
+            {promoterLockIn?.isBlackoutDanger && (
               <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold text-[10px]">
                 120D CLIFF VETO
               </span>
@@ -249,13 +249,13 @@ export const StockFundamentalsAndLockInTab: React.FC<
                 <tr key={`${ca.fiscalYear}-${i}`} className="hover:bg-slate-900/40">
                   <td className="p-2.5 font-semibold text-white">{ca.fiscalYear}</td>
                   <td className="p-2.5 text-right text-emerald-400 font-semibold">
-                    {ca.bonusSharePct.toFixed(2)}%
+                    {Number(ca.bonusSharePct || 0).toFixed(2)}%
                   </td>
                   <td className="p-2.5 text-right text-indigo-300">
-                    {ca.cashDividendPct.toFixed(2)}%
+                    {Number(ca.cashDividendPct || 0).toFixed(2)}%
                   </td>
                   <td className="p-2.5 text-right font-bold text-white">
-                    {ca.totalDividendPct.toFixed(2)}%
+                    {Number(ca.totalDividendPct || 0).toFixed(2)}%
                   </td>
                   <td className="p-2.5 text-center text-amber-300">
                     {ca.rightShareRatio || "—"}

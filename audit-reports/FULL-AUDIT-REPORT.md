@@ -9,14 +9,16 @@
 
 | Verification Suite | Outcome | Observed Coverage & Result |
 | :--- | :--- | :--- |
-| **Playwright Full E2E Crawler (`tests/audit/*.spec.ts`)** | **17 / 17 Passed (`0` UI failures)** | Audited `flowchart-v3`, `Market Dashboard`, `Portfolio & Bulk IPO`, `Predictor Hub` (7 sub-tabs), `Guru AI` (5 sub-tabs), **all 128 services across 8 categories**, and **all 13 stock modal tabs across `AKJCL`, `NABIL`, `CHCL`, and `CBBL`** (`audit-reports/ui-failures.json` = `[]`, runtime `4.3m`). |
+| **Playwright Full E2E Crawler (`tests/audit/*.spec.ts`)** | **19 / 19 Passed (`0` UI failures)** | Core crawler (`17/17`: `flowchart-v3`, `Market Dashboard`, `Portfolio & Bulk IPO`, `Predictor Hub` 7 sub-tabs, `Guru AI` 5 sub-tabs, **128 services**, and **13 stock modal tabs** across `AKJCL`, `NABIL`, `CHCL`, `CBBL`) + `tests/audit/stitch-and-hub-modal.spec.ts` (`2/2`: **7 `StitchHub` views** + **14 `StockInformationHubModal` tabs** on `NABIL`); `audit-reports/ui-failures.json` = `[]`. |
+| **Live / Off-Hours Session Check (`scripts/liveSessionCheck.mjs`)** | **10 / 10 Passed (`0` warn, `0` fail)** | Verified `POST_MARKET` session (`asOf=2026-11-26`), `NEPSE=2638.95` zero `NaN`, `295/295` valid LTPs, `NABIL` market depth (`200`), `91` broker matrix, `90` brokers for `NABIL`, both SSE streams (`200`), and `GHL.json` (`latestDate=2026-11-24`). |
 | **Backend & SQLite Parity (`npx tsx scripts/audit-pipeline.ts`)** | **62 / 62 Endpoints + 8 / 8 Integrity Checks** | `0` duplicate keys/OHLCV/price/kitta/broker sign violations; exact rollup parity on latest unquarantined full-tape session `2026-11-24`; `1` expected off-market warning (`/api/ledger/live-today` session `2026-11-26`, `stocks: 0`); `3` holiday calendar continuity notes (`violations=3`). |
-| **Semantic Invariant Audit (`npm run audit:semantic`)** | **232,855 / 232,855 + 15 / 15 Passed** | `0` static pattern violations across `309` files (`src/` & `proxy/`); `15/15` dynamic mathematical & semantic invariants passed (`audit-reports/semantic-invariants-report.json`). |
+| **Semantic Invariant Audit (`npm run audit:semantic`)** | **233,072 / 233,072 + 15 / 15 Passed** | `0` static pattern violations across `src/` & `proxy/`; `15/15` dynamic mathematical & semantic invariants passed (`audit-reports/semantic-invariants-report.json`). |
 | **Static Sentinel Audit (`npm run audit:static`)** | **212 / 212 Clean** | `0` syntax errors, `0` missing import files, `0` undeclared identifier occurrences. |
 | **Cross-Module & Root Hub Verification** | **Passed (`0` Failures)** | `tests/audit5RootHubsVerification.test.mjs` (`6/6`), `tests/audit13TabsVerification.test.mjs` (`14/14`), and `tests/auditCrossModuleConsistency.test.mjs` (`20/20`) all exited `0`. |
-| **Phase 5 TDD Suite (`tests/phase5DashboardStockAndServices.test.mjs`)** | **7 / 7 Passed** | Verified `[P5-01]` through `[P5-07]` (including `brokerVault`, `dailyFloorsheetCollector`, and `historicalSubfilesEngine` guards). |
+| **Phase 2 & Phase 5 TDD Suites** | **15 / 15 Passed** | `tests/phase2RoutesAndTelegram.test.mjs` (`7/7`) and `tests/phase5DashboardStockAndServices.test.mjs` (`8/8`) verified against current edits. |
 | **Broker Floorsheet & Batch 2 Suites** | **Passed (`0` Failures)** | `tests/adBrokerFloorsheetAudit.test.mjs` (`17/17`, incl. Test 17 contract parity) and `tests/aqBatch2DataParityAndMicrostructure.test.mjs` (`20/20`, incl. `[BUG-005 & BUG-032]`). |
-| **Production Build (`npm run build`)** | **Passed (`16.36s`)** | Clean Vite + TypeScript production build (`dist/`, `1789` modules transformed), with browser-safe dynamic cumulative broker ledger loading and zero duplicate 10 MB `.json` raw asset emission. |
+| **Telegram Dispatch Suites** | **20 / 20 Passed** | `testTelegramCommandDispatch.test.mjs` (`11/11`) and `testTrackBSpecialTelegramDispatch.test.mjs` (`9/9`). |
+| **Production Build (`npm run build`)** | **Passed (`23.64s`)** | Clean Vite + TypeScript production build (`dist/`, `1789` modules transformed), with browser-safe dynamic cumulative broker ledger loading and zero duplicate 10 MB `.json` raw asset emission. |
 | **Full Node Unit Matrix (`npm run test`)** | **78 / 80 in Sandbox; 2 / 2 Passed Outside Sandbox (`80 / 80` Verified)** | `78` suites passed inside the sandbox (`phase1`–`phase5`, `adBrokerFloorsheetAudit` `17/17`, `aqBatch2DataParityAndMicrostructure` `20/20`, `arBatch3`, `asBatch4`, `lBatchShareHubParity`). The remaining `2` sandbox-blocked suites (`replayHarness.mjs` `35/35`, `ajBatchCdscTlsVerification.test.mjs` `5/5`) both passed outside the sandbox (details in Section 3). |
 
 ---
@@ -51,6 +53,11 @@
    - Updated `persistVaultObj()` inside `loadAndSyncSymbolVault()` (`proxy/brokerVault.mjs`) to preserve and update `latestDate` (`populatedDates[0] || obj.latestDate || null`) across `proxy/data/broker_vault/<SYM>.json`, filtered `getMarketWideBrokerSummaryMap()` queries with `COALESCE(is_quarantined, 0) = 0`, and re-synced `130` vault files (`latestDate: "2026-11-24"` preserved across live Playwright requests).
    - Updated `tests/adBrokerFloorsheetAudit.test.mjs` Test 17 to filter `COALESCE(is_quarantined, 0) = 0` (and `buyer_broker > 0 AND seller_broker > 0` for `distinctDates`), resolving the false variance failure from the `193` quarantined `2026-11-25` contracts.
 
+8. **Secondary Views, Floorsheet SQLite Fast Path & Sub-Indices Cache (`src/components/StockFundamentalsAndLockInTab.tsx`, `proxy/server.mjs`, `scripts/fullAppAudit.mjs`, `tests/audit/stitch-and-hub-modal.spec.ts`)**
+   - Guarded nullable `metrics`, `promoterLockIn`, and `corporateActions` percentages in `StockFundamentalsAndLockInTab.tsx` against `null`/`NaN`, eliminating the Tab 8 `TypeError` in `StockInformationHubModal.tsx`.
+   - Added parameterized `sqlite_floorsheet_fast_path` (`ORDER BY contract_no DESC` on unquarantined `floorsheet_contracts`), changed `/api/nepalipaisa/index-live` offline `catch` status from `502` to `200`, and added `syncLastGoodIndicesCache()` in `proxy/server.mjs` to hydrate and persist `LAST_GOOD_INDICES.float`, `.sensitiveFloat`, and `.subIndices` (`proxy/data/last_known_subindices.json`).
+   - Updated `scripts/fullAppAudit.mjs` `--prod` target to `https://drabyashree-nepse-cdn.shreeksuwal.workers.dev` and short-term CGT invariant to `0.05`; added `tests/audit/stitch-and-hub-modal.spec.ts` covering all `7` `StitchHub` screens and all `14` `StockInformationHubModal.tsx` tabs (`2/2` passed).
+
 ---
 
 ## 3. Sandbox-Blocked Suites & Environment Checks (`2 / 80` Verified Outside Sandbox)
@@ -58,3 +65,10 @@
 - `tests/replayHarness.mjs`: Failed inside the sandbox with Axios `HTTP 403` (`Port 54037 not allowed for HTTP`); **passed `35 / 35` assertions** across all 9 session scenarios when executed outside the sandbox (`BypassSandbox: true`).
 - `tests/ajBatchCdscTlsVerification.test.mjs`: Failed Test 1 (`2 passed, 3 failed`) inside the offline sandbox reaching `webbackend.cdsc.com.np`; **passed `5 / 5` assertions** (TLS connection, trusted CA/wildcard `*.cdsc.com.np`, and scoped agent isolation) when executed outside the sandbox (`BypassSandbox: true`).
 - Local CodeRabbit CLI pre-commit audit: Sandboxed `PATH` lookup for `coderabbit` / `cr` did not find an executable (`CODERABBIT_CLI_NOT_FOUND`), so CodeRabbit CLI availability on this host is unknown from `PATH` alone and no CodeRabbit CLI review could be executed automatically.
+
+---
+
+## 4. Production CDN, Render & Telegram Pre-Open Check
+
+- **Active CDN & Render Origin:** `https://drabyashree-nepse-cdn.shreeksuwal.workers.dev` (backed by `drabyashree-nepse-hub.onrender.com`; legacy `https://nepseapp.onrender.com` returned `HTTP 503` `Service Suspended`) returned `HTTP 200 HEALTHY`, `351/351` valid LTPs on `/api/today-prices`, `5/5` depth levels on `NABIL`, `90` brokers on `NABIL`, `5%` ST CGT, and `54/54` clean JS chunks (with cold Render free-tier / 25s Cloudflare Worker burst probes seeing intermittent `503`/`502`/`429` prior to the `proxy/server.mjs` sub-indices cache update).
+- **Telegram Notifier Status (`GET /api/telegram/status`):** `HTTP 200` — `isConfigured: true`, `enabled: true`, `hasToken: true`, `hasChatId: true`, `isTokenInvalid: false`, `useWebhook: false`, `isTestServer: true` (`/api/telegram/preview-trackb` `200`, while `/api/telegram/preview-guide` returned `503` while the Render backend was waking up). Note that `isTestServer: true` on the remote Render deployment should be noted before relying on unattended live push broadcasts.
