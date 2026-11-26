@@ -375,8 +375,31 @@ test('Practical Playbook & App Integration (FR-1..FR-4)', async (t) => {
     const divHistSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'utils', 'dividendHistory.js'), 'utf8');
     assert.ok(
       divHistSrc.includes('VERIFIED_DIVIDEND_DATABASE') &&
-      divHistSrc.includes('getVerifiedOfflineFallback'),
-      'dividendHistory.js must fall back to VERIFIED_DIVIDEND_DATABASE when live scrape is unavailable'
+      divHistSrc.includes('export function getVerifiedOfflineFallback'),
+      'dividendHistory.js must export and use VERIFIED_DIVIDEND_DATABASE offline fallback'
+    );
+
+    const divPanelSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'DividendHistoryPanel.tsx'), 'utf8');
+    assert.ok(
+      divPanelSrc.includes('const offline = getVerifiedOfflineFallback(sym)'),
+      'DividendHistoryPanel must fall back to verified offline registry on fetch timeout'
+    );
+
+    assert.ok(
+      servicesSrc.includes('const topAccId = brokerData.topAccumulator?.brokerId ?? brokerData.topAccumulator?.broker') &&
+      servicesSrc.includes('topAccId ? `Broker #${topAccId}` :'),
+      'BrokerAnalysisService must never render Broker #undefined when topAccumulator/topDistributor is missing or uses .broker'
+    );
+
+    assert.ok(
+      hubSrc.includes('Number(s.nbar || 0) >= 1.05 || Number(s.adRatio || 0) >= 0.05'),
+      'players-choices must not reject stocks when adRatio defaults to 0'
+    );
+
+    assert.ok(
+      serverSrc.includes('liveStocks = getFallbackTodayPrices() || []') &&
+      serverSrc.includes("setCache(`${cacheKey}:unavailable`, unavailablePayload, 5 * 60 * 1000)"),
+      'server.mjs must hydrate mutual funds from SQLite fallback prices and return cached 200 unavailable payloads for forex/bullion'
     );
   });
 });

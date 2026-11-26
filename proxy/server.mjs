@@ -9433,7 +9433,8 @@ app.get('/api/mutual-funds', async (req, res) => {
   try {
     const resp = await axios.get('https://www.sharesansar.com/mutual-fund', {
       headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      timeout: 3000
+      timeout: 1500,
+      signal: AbortSignal.timeout(1500)
     });
     const $ = cheerio.load(resp.data);
     $('table tbody tr').each((i, row) => {
@@ -9485,6 +9486,9 @@ app.get('/api/mutual-funds', async (req, res) => {
     ];
 
     let liveStocks = getCache('today-prices') || [];
+    if (!liveStocks || liveStocks.length === 0) {
+      liveStocks = getFallbackTodayPrices() || [];
+    }
     if (!liveStocks || liveStocks.length === 0) {
       try {
         const msRes = await axios.get('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary', { timeout: 2000 });
@@ -11808,6 +11812,8 @@ app.get(['/api/forex/rates', '/api/forex'], async (req, res) => {
   const cacheKey = 'nrb-forex-rates';
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
+  const cachedUnavailable = getCache(`${cacheKey}:unavailable`);
+  if (cachedUnavailable) return res.status(200).json(cachedUnavailable);
 
   try {
     const r = await axios.get('https://www.nrb.org.np/api/forex/v1/app-rate', {
@@ -11860,11 +11866,13 @@ app.get(['/api/forex/rates', '/api/forex'], async (req, res) => {
     console.warn('[forex/rates] Secondary NRB fetch failed:', err2.message);
   }
 
-  return res.status(503).json({
+  const unavailablePayload = {
     success: false,
     unavailable: true,
     error: 'Live NRB forex rates temporarily unavailable.'
-  });
+  };
+  setCache(`${cacheKey}:unavailable`, unavailablePayload, 5 * 60 * 1000);
+  return res.status(200).json(unavailablePayload);
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -12178,6 +12186,8 @@ app.get(['/api/commodities/bullion', '/api/bullion/rates'], async (req, res) => 
   const cacheKey = 'daily-bullion-rates';
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
+  const cachedUnavailable = getCache(`${cacheKey}:unavailable`);
+  if (cachedUnavailable) return res.status(200).json(cachedUnavailable);
 
   try {
     const r = await axios.get('https://www.sharesansar.com/', {
@@ -12211,11 +12221,13 @@ app.get(['/api/commodities/bullion', '/api/bullion/rates'], async (req, res) => 
     console.warn('[commodities/bullion] Live fetch error:', err.message);
   }
 
-  return res.status(503).json({
+  const unavailablePayload = {
     success: false,
     unavailable: true,
     error: 'Live FENEGOSIDA bullion rates temporarily unavailable.'
-  });
+  };
+  setCache(`${cacheKey}:unavailable`, unavailablePayload, 5 * 60 * 1000);
+  return res.status(200).json(unavailablePayload);
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════
