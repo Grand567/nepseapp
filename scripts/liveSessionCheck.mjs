@@ -152,6 +152,33 @@ async function main() {
   let marketIsOpen = false;
   let marketModeLabel = 'UNKNOWN';
 
+  // Pre-wake remote HTTPS Render/Worker deployments so Free-tier spin-down (50s+) doesn't cascade-abort Steps 1-4
+  const skipWake = process.argv.includes('--no-wake');
+  if (!skipWake && BASE_URL.startsWith('https://')) {
+    const wakeStart = Date.now();
+    let awake = false;
+    while (Date.now() - wakeStart < 70000) {
+      try {
+        const probe = await fetchJsonWithTiming('/api/ping', 8000);
+        if (probe.status === 200) {
+          awake = true;
+          if (Date.now() - wakeStart > 3000) {
+            console.log(`  [WAKE] Remote proxy awake in ${Math.round((Date.now() - wakeStart) / 1000)}s.\n`);
+          }
+          break;
+        }
+        if (probe.status === 429) {
+          await new Promise((r) => setTimeout(r, 5000));
+          continue;
+        }
+      } catch (_) {}
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    if (!awake) {
+      console.log('  [WAKE] Warning: /api/ping did not answer HTTP 200 within 70s; running timed probes anyway...\n');
+    }
+  }
+
   let upstreamHtml429Detected = false;
   const trackHtml429 = (resp) => {
     if (resp?.status === 429 && String(resp.contentType || '').toLowerCase().includes('text/html')) {
@@ -314,6 +341,21 @@ async function main() {
     }
   } catch (err) {
     record('FAIL', 'Local Vault GHL.json', err?.message || String(err));
+  }
+
+  // 10. Dual-Tier Radar & Unbiased Regime endpoint
+  try {
+    const dt = await fetchJsonWithTiming('/api/radar/dual-tier', 20000);
+    trackHtml429(dt);
+    if (dt.status === 200 && dt.data?.success && typeof dt.data?.marketRegime === 'string') {
+      const t1 = Array.isArray(dt.data?.tier1Sniper) ? dt.data.tier1Sniper.length : 0;
+      const t2 = Array.isArray(dt.data?.tier2Balanced) ? dt.data.tier2Balanced.length : 0;
+      record('PASS', 'GET /api/radar/dual-tier', `regime=${dt.data.marketRegime}, tier1=${t1}, tier2=${t2} (${dt.latencyMs}ms)`);
+    } else {
+      record('FAIL', 'GET /api/radar/dual-tier', formatHttpFailureDetail(dt));
+    }
+  } catch (err) {
+    record('FAIL', 'GET /api/radar/dual-tier', err?.message || String(err));
   }
 
   console.log('\n----------------------------------------------------------------------');

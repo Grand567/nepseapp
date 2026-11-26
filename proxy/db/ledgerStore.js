@@ -1653,7 +1653,8 @@ export function getLedgerStatusInfo(forceRefresh = false) {
       brokerLedgerRows: brokerLedgerCount,
       latestCompleteness,
       hotCacheDiagnosticCount: HOT_CACHE.stockDiagnostics.size,
-      hotCacheRadarCount30D: (HOT_CACHE.radarByTimeframe[30] || []).length,
+      hotCacheRadarCount30D: (HOT_CACHE._rawRadar?.[30] || []).length,
+      hotCacheRadarCount1D: (HOT_CACHE._rawRadar?.[1] || []).length,
       lastUpdatedDate: HOT_CACHE.lastUpdatedDate || null
     };
     _cachedLedgerStatusTime = now;
@@ -1736,7 +1737,13 @@ export async function rebuildHotCache() {
     .map((r) => r.symbol)
     .filter((s) => !isNonEquityScrip(s));
 
-  // Bulk load all summaries and broker ledgers in 2 batch queries instead of 500 N+1 roundtrips
+  const isRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID);
+  const timeframes = isRender ? [1, 3] : [1, 3, 5, 15, 30];
+  const maxBrokerDays = Math.max(...timeframes);
+  const brokerOldestDate = dates[Math.min(dates.length - 1, maxBrokerDays - 1)] || oldestDate;
+
+  // Bulk load summaries and broker ledgers in 2 batch queries instead of 500 N+1 roundtrips.
+  // On Render Free Tier (512MB RAM), scope daily_broker_ledger to maxBrokerDays (3D) instead of 30D (~340k rows -> ~34k rows).
   const allSummaries = db
     .prepare(`SELECT * FROM daily_stock_summary WHERE trade_date >= ? AND COALESCE(is_quarantined, 0) = 0 AND calendar_status != 'PARTIAL_SESSION' ORDER BY trade_date DESC`)
     .all(oldestDate);
@@ -1749,10 +1756,11 @@ export async function rebuildHotCache() {
     }
     arr.push(s);
   }
+  allSummaries.length = 0;
 
   const allBrokers = db
     .prepare(`SELECT trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt, cross_vol FROM daily_broker_ledger WHERE trade_date >= ? AND COALESCE(is_quarantined, 0) = 0`)
-    .all(oldestDate);
+    .all(brokerOldestDate);
   const brokersBySymDate = new Map();
   for (let idx = 0; idx < allBrokers.length; idx++) {
     const b = allBrokers[idx];
@@ -1771,11 +1779,9 @@ export async function rebuildHotCache() {
       crossVol: b.cross_vol || 0,
     });
   }
-  // Free the raw 340k row array immediately to relieve memory
+  // Free the raw row array immediately to relieve memory
   allBrokers.length = 0;
 
-  const isRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID);
-  const timeframes = isRender ? [1, 3] : [1, 3, 5, 15, 30];
   const nextRadar = { 1: [], 3: [], 5: [], 15: [], 30: [] };
   const nextDiagnostics = new HotDiagnosticCache();
   const earlyIgnitionList = [];
@@ -1880,6 +1886,9 @@ export async function rebuildHotCache() {
   HOT_CACHE.radarByTimeframe = createRadarProxy(nextRadar);
   HOT_CACHE.stockDiagnostics = nextDiagnostics;
   HOT_CACHE.earlyIgnition = earlyIgnitionList.sort((a, b) => b.ignitionScore - a.ignitionScore);
+
+  summariesBySymbol.clear();
+  brokersBySymDate.clear();
 
   if (global.gc) {
     try { global.gc(); } catch (_) {}

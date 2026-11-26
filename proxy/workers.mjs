@@ -1091,17 +1091,20 @@ export function startWorkers() {
     }
   }, 3 * 60 * 1000);
 
-  // Initial check 12 seconds after startup
+  // Initial check delayed to 60 seconds after startup to protect Render boot memory & latency
   setTimeout(async () => {
     try {
-      await runNewsAndIpoCheck();
+      if (checkRenderMemoryBudget('InitialNewsIpoCheck').ok) {
+        await runNewsAndIpoCheck();
+      }
     } catch (_) {}
-  }, 12000);
+  }, 60000);
 
-  // Initial EOD catch-up check 25 seconds after startup (after DB Telegram config hydration)
+  // Initial EOD catch-up check delayed to 90 seconds after startup so health/API probes settle first under Render 512MB limit
   if (process.env.NODE_ENV !== 'test' && process.env.SUPPRESS_TEST_ALERTS !== 'true') {
     setTimeout(async () => {
       try {
+        if (!checkRenderMemoryBudget('InitialEodCatchUp').ok) return;
         const kt = getKathmanduTradingStatus();
         const status = getDetailedMarketStatus();
         const sessionDate = kt.isTradingDay ? kt.dateIso : (status.lastClosedSessionDate || status.targetSessionDate || kt.dateIso);
@@ -1109,7 +1112,7 @@ export function startWorkers() {
           await runPostMarketCloseAnalysis();
         }
       } catch (_) {}
-    }, 25000);
+    }, 90000);
   }
 
   console.log('Background analytical workers started (Floorsheet + Smart Alert Pipeline + Prime Pick Scanner + Telegram Bot Command Poller + News/IPO Alerts).');

@@ -293,4 +293,27 @@ test('Practical Playbook & App Integration (FR-1..FR-4)', async (t) => {
     assert.strictEqual(getCacheTtlSeconds(new URL('https://example.com/api/today/ticks/stream'), incoming), 0);
     assert.ok(getCacheTtlSeconds(new URL('https://example.com/api/market-status'), incoming) > 0);
   });
+
+  await t.test('FR-7: Render startup RSS hardening scopes broker ledger query, bounds NOTS status timeout & delays heavy EOD boot worker', async () => {
+    const ledgerSrc = fs.readFileSync(path.join(ROOT_DIR, 'proxy', 'db', 'ledgerStore.js'), 'utf8');
+    assert.ok(
+      ledgerSrc.includes('const brokerOldestDate = dates[Math.min(dates.length - 1, maxBrokerDays - 1)]') &&
+      ledgerSrc.includes('brokersBySymDate.clear()'),
+      'rebuildHotCache must scope daily_broker_ledger query to maxBrokerDays and clear temporary maps'
+    );
+
+    const serverSrc = fs.readFileSync(path.join(ROOT_DIR, 'proxy', 'server.mjs'), 'utf8');
+    assert.ok(
+      serverSrc.includes("NOTS status timeout (2.5s)") &&
+      serverSrc.includes('process.memoryUsage().rss > 320 * 1024 * 1024'),
+      'server.mjs must bound checkNotsLiveStatus timeout and guard heatmap prewarm on Render RSS ceiling'
+    );
+
+    const workersSrc = fs.readFileSync(path.join(ROOT_DIR, 'proxy', 'workers.mjs'), 'utf8');
+    assert.ok(
+      workersSrc.includes("checkRenderMemoryBudget('InitialEodCatchUp').ok") &&
+      workersSrc.includes('}, 90000);'),
+      'workers.mjs must delay initial EOD catch-up to 90s and enforce Render memory ceiling'
+    );
+  });
 });

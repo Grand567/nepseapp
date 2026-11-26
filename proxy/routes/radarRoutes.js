@@ -79,8 +79,8 @@ export function resolveValidTimeframe(rawDays, defaultDays = 30) {
 let cacheInitPromise = null;
 let lastEmptyHotCacheAttemptAt = 0;
 export async function ensureHotCacheReady() {
-  const tf1 = HOT_CACHE.radarByTimeframe[1];
-  const tf30 = HOT_CACHE.radarByTimeframe[30];
+  const tf1 = HOT_CACHE._rawRadar?.[1] || HOT_CACHE.radarByTimeframe[1];
+  const tf30 = HOT_CACHE._rawRadar?.[30];
   const loadedCount = (Array.isArray(tf1) && tf1.length > 0 ? tf1 : (Array.isArray(tf30) && tf30.length > 0 ? tf30 : [])).length;
   if (loadedCount > 0) return true;
   if (Date.now() - lastEmptyHotCacheAttemptAt < 30000) {
@@ -96,9 +96,11 @@ export async function ensureHotCacheReady() {
       console.log("[RadarRoutes] HOT_CACHE is empty on request. Initializing disk vault / snapshot seed...");
       seedFromDiskVault();
       await rebuildHotCache();
-      const loaded = (Array.isArray(HOT_CACHE.radarByTimeframe[30]) && HOT_CACHE.radarByTimeframe[30].length > 0)
-        ? HOT_CACHE.radarByTimeframe[30].length
-        : (HOT_CACHE.radarByTimeframe[1] || []).length;
+      const raw30 = HOT_CACHE._rawRadar?.[30];
+      const raw1 = HOT_CACHE._rawRadar?.[1];
+      const loaded = (Array.isArray(raw30) && raw30.length > 0)
+        ? raw30.length
+        : (raw1 || []).length;
       if (loaded === 0) lastEmptyHotCacheAttemptAt = Date.now();
       console.log(`[RadarRoutes] HOT_CACHE initialization completed. Loaded ${loaded} stocks.`);
       return loaded > 0;

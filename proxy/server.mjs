@@ -806,15 +806,13 @@ async function checkNotsLiveStatus() {
     return LAST_NOTS_MARKET_OPEN;
   }
   try {
-    const raw = await nepseClient.getMarketStatus();
+    const raw = await Promise.race([
+      nepseClient.getMarketStatus(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('NOTS status timeout (2.5s)')), 2500))
+    ]);
     const isOpen = (raw?.isOpen === 'OPEN' || raw?.isOpen === true);
     LAST_NOTS_MARKET_OPEN = isOpen;
     LAST_NOTS_CHECK_TIME = Date.now();
-    if (isOpen) {
-      setLiveMarketOverride({ isOpen: true, status: 'OPEN' });
-    }
-    LAST_NOTS_MARKET_OPEN = isOpen;
-    LAST_NOTS_CHECK_TIME = now;
     if (isOpen) {
       setLiveMarketOverride({ isOpen: true, status: 'OPEN' });
     }
@@ -8411,11 +8409,17 @@ async function getHeatmapAvailableDates(fallbackSymbol = null) {
 async function warmBrokerHeatmapCacheFromSnapshot() {
   const defaultCacheKey = 'broker-heatmap-today-1----';
   if (typeof getCache(`${defaultCacheKey}:json`) === 'string') return false;
+  if ((process.env.RENDER || process.env.RENDER_SERVICE_ID) && process.memoryUsage().rss > 320 * 1024 * 1024) {
+    return false;
+  }
   const parsed = await readValidBrokerMatrixSnapshot('');
   if (!parsed) return false;
   parsed.availableDates = await getHeatmapAvailableDates();
   enrichSnapshotLookups(parsed);
   cacheAndSerializeHeatmap(defaultCacheKey, parsed, 'broker_matrix_latest_snapshot');
+  if (global.gc) {
+    try { global.gc(); } catch (_) {}
+  }
   return true;
 }
 
