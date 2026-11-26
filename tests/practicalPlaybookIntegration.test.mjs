@@ -316,4 +316,67 @@ test('Practical Playbook & App Integration (FR-1..FR-4)', async (t) => {
       'workers.mjs must delay initial EOD catch-up to 90s and enforce Render memory ceiling'
     );
   });
+
+  await t.test('FR-8: 4-Layer Investment Audit fixes (NRB Shield, Lynch GARP, ERP 7.5%, MarketDepth LTP/0%, 5day-history warmup bypass)', async () => {
+    const serverSrc = fs.readFileSync(path.join(ROOT_DIR, 'proxy', 'server.mjs'), 'utf8');
+    assert.ok(
+      serverSrc.includes("p === '/5day-history' || p === '/4day-history'") &&
+      serverSrc.includes('FROM scrip_fundamentals'),
+      'server.mjs must allow static 5day/4day history during warmup and hydrate scrip_fundamentals in getFallbackTodayPrices'
+    );
+
+    const liveDataSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'utils', 'liveData.js'), 'utf8');
+    assert.ok(
+      liveDataSrc.includes('roe, npl, car, distributableEps'),
+      'liveData.js must preserve SQLite-hydrated roe, npl, car, and distributableEps on EnrichedStock'
+    );
+
+    const hubSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'ServicesHub.tsx'), 'utf8');
+    assert.ok(
+      hubSrc.includes('s.cdRatio == null ||') &&
+      hubSrc.includes('PEG (P/E ÷ ROE)') &&
+      hubSrc.includes('((s.eps / s.ltp) * 100) > 7.5'),
+      'ServicesHub.tsx must fix NRB Safety Shield cdRatio null handling, Lynch GARP ROE fallback, and ERP > 7.5% threshold'
+    );
+
+    const servicesSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'services.tsx'), 'utf8');
+    assert.ok(
+      servicesSrc.includes('matchedStock?.ltp || matchedStock?.close') &&
+      servicesSrc.includes('hasOrders ? Math.round((totalBuyQty / totalOrderQty) * 100) : 0'),
+      'MarketDepthService must fall back to settled stock LTP and avoid synthetic 50% buyPct on empty book'
+    );
+
+    assert.ok(
+      serverSrc.includes('computeEmaFromSeries(cSlice, 50)') &&
+      serverSrc.includes('high52w: tech?.high52w ?? null'),
+      'server.mjs must hydrate real 52W High/Low and EMA20/50/200 from daily_stock_summary'
+    );
+    assert.ok(
+      liveDataSrc.includes('r.ema50 ? Number(r.ema50)') &&
+      liveDataSrc.includes('ema200'),
+      'liveData.js must preserve server-hydrated ema20/ema50/ema200'
+    );
+
+    const whaleSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'services', 'whaleDailyArchive.js'), 'utf8');
+    assert.ok(
+      whaleSrc.includes('compactWhaleSnapshot') &&
+      whaleSrc.includes('QuotaExceededError') &&
+      !whaleSrc.includes("console.error('[WhaleArchive] Failed to save archive:'"),
+      'whaleDailyArchive.js must compact snapshots and degrade gracefully on QuotaExceededError without console.error'
+    );
+
+    const multibaggerSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'MultibaggerHunterService.tsx'), 'utf8');
+    assert.ok(
+      multibaggerSrc.includes("typeof season.historicalWinRate === 'number'") &&
+      !multibaggerSrc.includes('Win Rate:</span> {season.historicalWinRate}%'),
+      'MultibaggerHunterService must not append a duplicate % to string historicalWinRate'
+    );
+
+    const divHistSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'utils', 'dividendHistory.js'), 'utf8');
+    assert.ok(
+      divHistSrc.includes('VERIFIED_DIVIDEND_DATABASE') &&
+      divHistSrc.includes('getVerifiedOfflineFallback'),
+      'dividendHistory.js must fall back to VERIFIED_DIVIDEND_DATABASE when live scrape is unavailable'
+    );
+  });
 });

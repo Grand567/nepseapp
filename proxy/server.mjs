@@ -625,6 +625,11 @@ export function setProxyWarmupState(warmingUp, stage = 'Ready') {
 // Middleware to guard data endpoints that cannot answer until DB/cache warm-up finishes
 export function warmupDataGuard(req, res, next) {
   if (isWarmingUp) {
+    // Allow pre-built static gzipped ledger snapshots (5day-history / 4day-history) to serve immediately from disk without 503
+    const p = req.path || '';
+    if (p === '/5day-history' || p === '/4day-history') {
+      if (typeof next === 'function') return next();
+    }
     const elapsedSec = Math.floor((Date.now() - warmupStartTime) / 1000);
     const retryAfter = Math.max(1, ESTIMATED_WARMUP_SEC - elapsedSec);
     res.setHeader('Retry-After', String(retryAfter));
@@ -1483,11 +1488,26 @@ try {
   }
 } catch (_) {}
 
+let _fallbackPricesCache = { tradeDate: null, list: null };
+
+function computeEmaFromSeries(values, period) {
+  if (!Array.isArray(values) || values.length < period) return null;
+  const k = 2 / (period + 1);
+  let ema = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < values.length; i++) {
+    ema = values[i] * k + ema * (1 - k);
+  }
+  return Number.isFinite(ema) ? +ema.toFixed(2) : null;
+}
+
 export function getFallbackTodayPrices() {
   if (db) {
     try {
       const latestDateRow = db.prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 1`).get();
       if (latestDateRow?.trade_date) {
+        if (_fallbackPricesCache.tradeDate === latestDateRow.trade_date && Array.isArray(_fallbackPricesCache.list) && _fallbackPricesCache.list.length > 50) {
+          return _fallbackPricesCache.list;
+        }
         const rows = db.prepare(`
           SELECT symbol, close_price as ltp, open_price, high_price, low_price, total_volume as volume, total_turnover as turnover
           FROM daily_stock_summary
@@ -1500,11 +1520,89 @@ export function getFallbackTodayPrices() {
             const prevRows = db.prepare(`SELECT symbol, close_price FROM daily_stock_summary WHERE trade_date = ?`).all(prevDateRow.trade_date);
             prevRows.forEach(r => prevMap.set(r.symbol, Number(r.close_price || 0)));
           }
+          let fundMap = new Map();
+          try {
+            const fRows = db.prepare(`SELECT symbol, eps_ttm, book_value_per_share, roe_pct, npl_pct, car_pct, distributable_eps, promoter_share_pct FROM scrip_fundamentals`).all();
+            for (const fr of fRows) {
+              if (fr?.symbol) fundMap.set(String(fr.symbol).toUpperCase().trim(), fr);
+            }
+          } catch (_) {}
+          // Compute verified 52W High/Low, EMA20/50/200, and 20D volume surge from real SQLite daily_stock_summary history
+          const techMap = new Map();
+          try {
+            const histRows = db.prepare(`
+              SELECT symbol, close_price, high_price, low_price, total_volume
+              FROM daily_stock_summary
+              WHERE trade_date <= ? AND COALESCE(is_quarantined, 0) = 0
+              ORDER BY symbol ASC, trade_date ASC
+            `).all(latestDateRow.trade_date);
+            let curSym = null;
+            let closes = [];
+            let highs = [];
+            let lows = [];
+            let vols = [];
+            const flushTech = () => {
+              if (!curSym || closes.length === 0) return;
+              const win = Math.min(closes.length, 250);
+              const cSlice = closes.slice(-win);
+              const hSlice = highs.slice(-win);
+              const lSlice = lows.slice(-win);
+              const vSlice = vols.slice(-21);
+              let high52w = 0;
+              let low52w = Infinity;
+              for (let i = 0; i < hSlice.length; i++) {
+                if (hSlice[i] > high52w) high52w = hSlice[i];
+                if (lSlice[i] > 0 && lSlice[i] < low52w) low52w = lSlice[i];
+              }
+              const priorVols = vSlice.slice(0, -1).filter(v => v > 0);
+              const avgVol20 = priorVols.length >= 5 ? priorVols.reduce((a, b) => a + b, 0) / priorVols.length : 0;
+              const latestVol = vSlice[vSlice.length - 1] || 0;
+              const volumeSurgeRatio = avgVol20 > 0 ? +(latestVol / avgVol20).toFixed(2) : null;
+              techMap.set(curSym, {
+                high52w: high52w > 0 ? +high52w.toFixed(2) : null,
+                low52w: Number.isFinite(low52w) ? +low52w.toFixed(2) : null,
+                ema20: computeEmaFromSeries(cSlice, 20),
+                ema50: computeEmaFromSeries(cSlice, 50),
+                ema200: computeEmaFromSeries(cSlice, 200),
+                volumeSurgeRatio,
+              });
+            };
+            for (const hr of histRows) {
+              const s = String(hr.symbol || '').toUpperCase().trim();
+              if (!s) continue;
+              if (s !== curSym) {
+                flushTech();
+                curSym = s;
+                closes = [];
+                highs = [];
+                lows = [];
+                vols = [];
+              }
+              const c = Number(hr.close_price || 0);
+              if (c > 0) {
+                closes.push(c);
+                highs.push(Number(hr.high_price || c));
+                lows.push(Number(hr.low_price || c));
+                vols.push(Number(hr.total_volume || 0));
+              }
+            }
+            flushTech();
+          } catch (_) {}
           const list = rows.map(r => {
+            const symKey = String(r.symbol || '').toUpperCase().trim();
             const ltp = Number(r.ltp || 0);
             const prevClose = prevMap.get(r.symbol) || Number(r.open_price || ltp);
             const change = +(ltp - prevClose).toFixed(2);
             const pChange = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+            const fund = fundMap.get(symKey) || null;
+            const tech = techMap.get(symKey) || null;
+            const eps = fund?.eps_ttm != null && Number.isFinite(Number(fund.eps_ttm)) ? Number(fund.eps_ttm) : null;
+            const bookValue = fund?.book_value_per_share != null && Number.isFinite(Number(fund.book_value_per_share)) ? Number(fund.book_value_per_share) : null;
+            const pe = eps != null && eps > 0 && ltp > 0 ? +(ltp / eps).toFixed(2) : null;
+            const pb = bookValue != null && bookValue > 0 && ltp > 0 ? +(ltp / bookValue).toFixed(2) : null;
+            const roe = fund?.roe_pct != null && Number.isFinite(Number(fund.roe_pct))
+              ? Number(fund.roe_pct)
+              : (eps != null && bookValue != null && bookValue > 0 ? +((eps / bookValue) * 100).toFixed(2) : null);
             return {
               symbol: r.symbol,
               name: stockMap[r.symbol]?.name || r.symbol,
@@ -1518,9 +1616,27 @@ export function getFallbackTodayPrices() {
               volume: Number(r.volume || 0),
               turnover: Number(r.turnover || 0),
               sector: stockMap[r.symbol]?.sector || 'Unknown',
+              high52w: tech?.high52w ?? null,
+              low52w: tech?.low52w ?? null,
+              ema20: tech?.ema20 ?? null,
+              ema50: tech?.ema50 ?? null,
+              ema200: tech?.ema200 ?? null,
+              volumeSurgeRatio: tech?.volumeSurgeRatio ?? null,
+              eps,
+              bookValue,
+              bvps: bookValue,
+              pe,
+              pb,
+              pbv: pb,
+              roe,
+              npl: fund?.npl_pct != null && Number.isFinite(Number(fund.npl_pct)) ? Number(fund.npl_pct) : null,
+              car: fund?.car_pct != null && Number.isFinite(Number(fund.car_pct)) ? Number(fund.car_pct) : null,
+              distributableEps: fund?.distributable_eps != null && Number.isFinite(Number(fund.distributable_eps)) ? Number(fund.distributable_eps) : null,
+              promoterHolding: fund?.promoter_share_pct != null && Number.isFinite(Number(fund.promoter_share_pct)) ? Number(fund.promoter_share_pct) : null,
               source: 'drabyashree_ledger_db'
             };
           });
+          _fallbackPricesCache = { tradeDate: latestDateRow.trade_date, list };
           return list;
         }
       }
