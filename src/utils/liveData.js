@@ -3707,8 +3707,8 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
   }
 
   // Tier 1 Fast Path: Query in-memory hot cache for single stock diagnostic (< 5ms response)
-  // ONLY for short/numeric days, NEVER for 'all' / all-time!
-  if (!isAllTime) {
+  // During open NEPSE trading hours for unpinned 1D live tape, query /api/broker-analysis first so today's live masked tape isn't eclipsed by prior-EOD hot cache!
+  if (!isAllTime && !(isLive && numDays === 1 && !date && !fromDate && !toDate)) {
     try {
       const diagParams = new URLSearchParams();
       diagParams.set('days', String(numDays));
@@ -3809,13 +3809,19 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
     const res = await fetchFromBackend(`/api/broker-analysis/${encodeURIComponent(sym)}?${params.toString()}`, 35000);
     const d = res?.data || res;
     const isSyntheticFallback = res?.source === 'trading-profile-fallback' || d?.source === 'trading-profile-fallback' || res?.source === 'empty_no_floorsheet_records';
-    if (!isSyntheticFallback && d && (d.brokers?.length > 0 || d.topBuyers?.length > 0 || d.buyers?.length > 0 || d.dailyFlow?.length > 0 || d.topHoldings?.length > 0 || d.allHoldings?.length > 0 || d.totalSharesHeldTillNow > 0)) {
+    const isMaskedLive1D = Boolean(
+      numDays === 1 && !date && (
+        d?.isBrokerMaskedIntraday === true ||
+        ((res?.source === 'live_intraday_floorsheet' || d?.source === 'live_intraday_floorsheet') && Number(d?.totalVolume || 0) > 0)
+      )
+    );
+    if (!isSyntheticFallback && d && (isMaskedLive1D || d.brokers?.length > 0 || d.topBuyers?.length > 0 || d.buyers?.length > 0 || d.dailyFlow?.length > 0 || d.topHoldings?.length > 0 || d.allHoldings?.length > 0 || d.totalSharesHeldTillNow > 0)) {
       const backendBaDate = String(d.businessDate || d.toDate || d.date || '').slice(0, 10);
       await loadLocalSubfile();
 
       // Stale backend protection: If backend returns an older date than our local finalized subfiles (e.g. 2026-11-19 < 2026-11-24), reject stale payload
-      // ONLY compare against localSubfileDate for 1D/5D! NEVER for numDays > 5 (30D/1M or ALL)!
-      if (numDays <= 5 && localSubfileDate && backendBaDate && backendBaDate < localSubfileDate && localSubfileBa && (localSubfileBa.brokers?.length > 0 || localSubfileBa.topBuyers?.length > 0 || localSubfileBa.topAccumulators?.length > 0)) {
+      // ONLY compare against localSubfileDate for 1D/5D (and never downgrade today's live masked intraday tape)! NEVER for numDays > 5 (30D/1M or ALL)!
+      if (!isMaskedLive1D && numDays <= 5 && localSubfileDate && backendBaDate && backendBaDate < localSubfileDate && localSubfileBa && (localSubfileBa.brokers?.length > 0 || localSubfileBa.topBuyers?.length > 0 || localSubfileBa.topAccumulators?.length > 0)) {
         console.warn(`[liveData] Rejecting stale broker-analysis backend date (${backendBaDate}) in favor of newer local subfile date (${localSubfileDate}) for ${sym}`);
         setCachedRealBrokerAnalysis(sym, localSubfileBa, numDays, options);
         return localSubfileBa;
@@ -3854,6 +3860,8 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
         totalSharesHeldTillNow: calcTotalHeld,
         topHoldingBroker: d.topHoldingBroker || (allHoldingsList[0] || null),
         concentrationPct: d.concentrationPct ?? d.bcr3BuyPct ?? 0,
+        isBrokerMaskedIntraday: Boolean(d.isBrokerMaskedIntraday || isMaskedLive1D),
+        source: res?.source || d?.source || 'broker-analysis',
         isReal: true
       };
       setCachedRealBrokerAnalysis(sym, enriched, numDays, options);

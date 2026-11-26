@@ -1124,8 +1124,18 @@ function BeginnerConfidenceCard({
   } else if (isHoldVerdict) {
     planBg = 'rgba(245, 158, 11, 0.08)';
     planBorder = 'rgba(245, 158, 11, 0.3)';
-    planTitle = '⏳ Step-by-Step Plan: Hold & Wait for Dip';
-    planText = `Hold off on buying at Rs. ${buyPrice}. Wait for a dip into the Rs. ${entryLow}–${entryHigh} Buy Zone or a high-volume breakout above Rs. ${entryHigh}.`;
+    const lowNum = Number(entryLow || 0);
+    const highNum = Number(entryHigh || 0);
+    if (buyPrice > 0 && lowNum > 0 && highNum >= lowNum && buyPrice >= lowNum && buyPrice <= highNum) {
+      planTitle = '⏳ Step-by-Step Plan: In Buy Zone — Await Confirmation';
+      planText = `Price (Rs. ${buyPrice}) is already inside the Rs. ${entryLow}–${entryHigh} Buy Zone, but trend/flow confirmation is still pending. Wait for strong volume confirmation or a decisive breakout above Rs. ${entryHigh} before entering.`;
+    } else if (buyPrice > 0 && lowNum > 0 && buyPrice < lowNum) {
+      planTitle = '⏳ Step-by-Step Plan: Below Support — Wait for Reclaim';
+      planText = `Price (Rs. ${buyPrice}) is currently below the Rs. ${entryLow}–${entryHigh} Buy Zone. Wait for buyers to reclaim Rs. ${entryLow} with volume before entering.`;
+    } else {
+      planTitle = '⏳ Step-by-Step Plan: Hold & Wait for Dip';
+      planText = `Hold off on buying at Rs. ${buyPrice}. Wait for a dip into the Rs. ${entryLow}–${entryHigh} Buy Zone or a high-volume breakout above Rs. ${entryHigh}.`;
+    }
   }
 
   const CAPITAL_PILLS = [10000, 25000, 50000, 100000];

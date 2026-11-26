@@ -8280,8 +8280,8 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
           return res.json({ success: true, data: aggData, source: 'full_session_floorsheet_authentic' });
         }
 
-        // 1.2. SQLite Daily Broker Ledger Check (100% authentic historical floorsheet ledger)
-        if (db) {
+        // 1.2. SQLite Daily Broker Ledger Check (skipped on Render / live fast path so pre-built snapshot responds in <50ms; #2 below still handles fallback if snapshot missing)
+        if (!preferFastLedgerOrSnapshot && db) {
           const ledgerAgg = aggregateBrokerMatrixFromLedger({ targetDate: businessDate, days: 1 });
           if (ledgerAgg && Array.isArray(ledgerAgg.matrix) && ledgerAgg.matrix.length > 0) {
             let availableDates = [];
@@ -8319,8 +8319,8 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
                 } catch (_) {}
                 parsed.availableDates = availableDates;
 
-                // Ensure snapshot fallback has authentic cumulative holding from SQLite ledger
-                if (db && (!parsed.matrix[0]?.topAccumulation?.[0]?.cumHoldQty || !parsed.matrix[0]?.scrips?.[0]?.cumHoldQty)) {
+                // Ensure snapshot fallback has authentic cumulative holding from SQLite ledger (skip heavy full-table scan during live/Render requests)
+                if (db && !preferFastLedgerOrSnapshot && !process.env.RENDER && (!parsed.matrix[0]?.topAccumulation?.[0]?.cumHoldQty || !parsed.matrix[0]?.scrips?.[0]?.cumHoldQty)) {
                   const cumLedgerMap = new Map();
                   try {
                     const rows = db.prepare(`
