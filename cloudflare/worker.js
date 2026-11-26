@@ -302,8 +302,8 @@ export default {
       );
     }
 
-    // Serve stale shield when origin returns transient 502/503/504 during cold starts or OOM restarts
-    if (originResponse.status >= 502 && originResponse.status <= 504) {
+    // Serve stale shield when origin returns transient 429 challenge or 502/503/504 during cold starts or OOM restarts
+    if (originResponse.status === 429 || (originResponse.status >= 502 && originResponse.status <= 504)) {
       const stale = await serveStaleFallback(`http_${originResponse.status}`);
       if (stale) return stale;
     }

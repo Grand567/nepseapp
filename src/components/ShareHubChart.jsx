@@ -1041,7 +1041,7 @@ export default function ShareHubChart({
         rightPriceScale: {
           borderColor: 'rgba(255, 255, 255, 0.07)',
           autoScale: true,
-          scaleMargins: safeScaleMargins(0.08, mainBottom),
+          scaleMargins: safeScaleMargins(0.16, mainBottom),
         },
         timeScale: {
           borderColor: 'rgba(255, 255, 255, 0.07)',

@@ -838,6 +838,9 @@ function getCachedMarketStatus() {
 app.get(['/api/market-status', '/api/status'], async (req, res) => {
   await checkNotsLiveStatus();
   const status = getProxyMarketStatus();
+  if (status?.isOpen || status?.isPreOpen) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  }
   res.json({ success: true, ...status, data: status });
 });
 
@@ -5016,7 +5019,7 @@ app.get('/api/today/ticks/stream', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
-  if (req.flushHeaders) req.flushHeaders();
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
   const filterSymbols = req.query.symbols
     ? req.query.symbols.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
@@ -5068,7 +5071,7 @@ app.get('/api/realtime/stream', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
-  if (req.flushHeaders) req.flushHeaders();
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
   // Send initial snapshot
   try {
@@ -8229,11 +8232,12 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
   }
 
   try {
-    // 1. Primary for 1D Session: Aggregate from 100% authentic market floorsheet transactions
+    // 1. Primary for 1D Session: Fast SQLite/snapshot path during live hours or on Render to avoid OOM/502 timeouts; full floorsheet aggregation on off-market/explicit refresh
     if (days === 1 && !fromDate && !toDate && !symbolsParam && (!sector || sector.toUpperCase() === 'ALL')) {
       try {
-        let fullTrades = await getFullSessionFloorsheet(businessDate);
-        if (!Array.isArray(fullTrades) || fullTrades.length === 0) {
+        const preferFastLedgerOrSnapshot = !businessDate && !refresh && (Boolean(process.env.RENDER) || Boolean(getDetailedMarketStatus()?.isOpen));
+        let fullTrades = preferFastLedgerOrSnapshot ? [] : await getFullSessionFloorsheet(businessDate);
+        if (!preferFastLedgerOrSnapshot && (!Array.isArray(fullTrades) || fullTrades.length === 0)) {
           try {
             console.log(`[broker-heatmap] ⚡ Triggering on-demand floorsheet fetch for ${businessDate || 'today'}...`);
             const archiveRes = await downloadAndArchiveDailyFloorsheet(businessDate);
@@ -8244,7 +8248,7 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
             console.warn(`[broker-heatmap] On-demand archive notice for ${businessDate}:`, autoErr.message);
           }
         }
-        if (Array.isArray(fullTrades) && fullTrades.length > 0) {
+        if (!preferFastLedgerOrSnapshot && Array.isArray(fullTrades) && fullTrades.length > 0) {
           const aggData = aggregateMarketFloorsheet(fullTrades, businessDate || fullTrades[0]?.businessDate);
           let availableDates = [];
           try {

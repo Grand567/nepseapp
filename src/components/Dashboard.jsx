@@ -1805,13 +1805,18 @@ function Dashboard({
 
   // Real-time Hero History fetched from verified exchange records
   const [heroHistory, setHeroHistory] = useState([]);
+  const heroQueryKeyRef = useRef('');
 
   useEffect(() => {
     let active = true;
-    // Clear prior symbol's chart immediately to prevent cross-ticker chart flash during load
-    setHeroHistory([]);
-    async function loadHeroHistory() {
-      if (active) setHeroChartLoading(true);
+    const queryKey = `${activeHeroIndex.key}:${activeHeroIndex.name}:${heroTimeframe}`;
+    if (heroQueryKeyRef.current !== queryKey) {
+      heroQueryKeyRef.current = queryKey;
+      // Clear prior symbol/timeframe chart immediately to prevent cross-ticker chart flash during load
+      setHeroHistory([]);
+    }
+    async function loadHeroHistory(forceRefresh = false) {
+      if (active && !forceRefresh) setHeroChartLoading(true);
       try {
         const sym = activeHeroIndex?.isStock
           ? (activeHeroIndex.symbol || activeHeroIndex.key)
@@ -1823,15 +1828,15 @@ function Dashboard({
               : (getCachedIndices()?.nepse?.value > 0 ? getCachedIndices().nepse : null);
             const officialVal = Number(officialNepse?.value || 0);
             const officialDate = String(officialNepse?.date || officialNepse?.asOfDate || getCachedIndices()?.asOfDate || '').slice(0, 10);
-            const isMarketOpen = Boolean(marketStatus?.isOpen);
+            const isMarketOpenNow = Boolean(marketStatus?.isOpen);
             const now = new Date();
             const todayIso = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
             const minsOfDay = getNptMinutesOfDay ? getNptMinutesOfDay(now) : (now.getHours() * 60 + now.getMinutes());
             const isTradingDay = isNepseTradingDay ? isNepseTradingDay(now) : true;
-            const hasTradedToday = isTradingDay && (isMarketOpen || minsOfDay >= 15 * 60);
+            const hasTradedToday = isTradingDay && (isMarketOpenNow || minsOfDay >= 15 * 60);
             const activeSessionDate = hasTradedToday ? todayIso : (officialDate || latestTradingSession(now, true));
 
-            let intraday = await servicesApi.fetchNepseIntradayGraph(sym);
+            let intraday = await servicesApi.fetchNepseIntradayGraph(sym, forceRefresh);
             let isValidIntraday = false;
 
             if (intraday && Array.isArray(intraday) && intraday.length > 1) {
@@ -1860,7 +1865,7 @@ function Dashboard({
 
             if (isValidIntraday && intraday) {
               const lastPt = intraday[intraday.length - 1];
-              if (officialVal > 0 && !indices?.isPlaceholder && isMarketOpen) {
+              if (officialVal > 0 && !indices?.isPlaceholder && isMarketOpenNow) {
                 const nowNpt = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' });
                 const updatedIntraday = [...intraday];
                 if (lastPt && Math.abs(Number(lastPt.close) - officialVal) > 0.01 && Math.abs(Number(lastPt.close) - officialVal) < 60) {
@@ -1881,7 +1886,7 @@ function Dashboard({
                   }
                 }
                 setHeroHistory(updatedIntraday);
-              } else if (!isMarketOpen && officialVal > 0) {
+              } else if (!isMarketOpenNow && officialVal > 0) {
                 let settledIntraday = intraday;
                 if (lastPt && Math.abs(Number(lastPt.close) - officialVal) <= 60 && (Math.abs(Number(lastPt.close) - officialVal) > 0.01 || (lastPt.time !== '03:00 PM' && lastPt.time !== '3:00 PM'))) {
                   const updated = [...intraday];
@@ -1911,7 +1916,7 @@ function Dashboard({
               } else {
                 setHeroHistory(intraday);
               }
-            } else {
+            } else if (!forceRefresh) {
               // Authentic 1D intraday ticks unavailable: fall back to real multi-session closes (never synthesize a 2-point straight line)
               let fallbackDaily = [];
               try {
@@ -1928,10 +1933,10 @@ function Dashboard({
                   }));
                 }
               } catch (_) {}
-              setHeroHistory(fallbackDaily);
+              if (active && fallbackDaily.length > 0) setHeroHistory(fallbackDaily);
             }
 
-            if (officialNepse) {
+            if (!forceRefresh && officialNepse) {
               setActiveHeroIndex(prev => ({
                 ...prev,
                 val: officialNepse
@@ -1940,15 +1945,17 @@ function Dashboard({
             return;
           } else {
             // For sub-indices or single scrip 1D
-            let intraday = await servicesApi.fetchNepseIntradayGraph(sym);
+            let intraday = await servicesApi.fetchNepseIntradayGraph(sym, forceRefresh);
             if (intraday && Array.isArray(intraday) && intraday.length > 0) {
               if (!active) return;
               setHeroHistory(intraday);
               return;
             }
+            if (forceRefresh) return;
           }
         }
 
+        if (forceRefresh) return;
         let data = await fetchPriceHistory(sym, 500);
         // Never fabricate stock or sector historical charts by scaling NEPSE index history
 
@@ -1970,28 +1977,48 @@ function Dashboard({
         }
       } catch (err) {
         console.warn('[Dashboard] Hero history fetch error:', err);
-        if (active) setHeroHistory([]);
+        if (active && !forceRefresh) setHeroHistory([]);
       } finally {
-        if (active) setHeroChartLoading(false);
+        if (active && !forceRefresh) setHeroChartLoading(false);
       }
     }
-    loadHeroHistory();
-    return () => { active = false; };
-  }, [activeHeroIndex.key, activeHeroIndex.name, heroTimeframe]);
+    loadHeroHistory(false);
+    const livePoll = (heroTimeframe === '1D' && marketStatus?.isOpen)
+      ? setInterval(() => {
+          if (active && (typeof document === 'undefined' || document.visibilityState !== 'hidden')) {
+            loadHeroHistory(true);
+          }
+        }, 15000)
+      : null;
+    return () => {
+      active = false;
+      if (livePoll) clearInterval(livePoll);
+    };
+  }, [activeHeroIndex.key, activeHeroIndex.name, heroTimeframe, marketStatus?.isOpen]);
 
   // Live 1D intraday tick appender so chart stays synced with live NOTS ticks during market hours
   useEffect(() => {
-    if (heroTimeframe !== '1D' || !marketStatus?.isOpen || apiStatus !== 'live') return;
+    if (heroTimeframe !== '1D' || !marketStatus?.isOpen || apiStatus === 'offline') return;
     const liveVal = activeHeroIndex?.isStock
       ? Number(activeHeroIndex?.val?.value || 0)
       : (activeHeroIndex.key === 'nepse' ? Number(indices?.nepse?.value || 0) : Number(activeHeroIndex?.val?.value || 0));
     if (!Number.isFinite(liveVal) || liveVal <= 0) return;
 
     setHeroHistory(prev => {
-      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      const nowNpt = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' });
+      if (!Array.isArray(prev) || prev.length === 0) {
+        return [{
+          time: nowNpt,
+          timestamp: Math.floor(Date.now() / 1000),
+          open: liveVal,
+          high: liveVal,
+          low: liveVal,
+          close: liveVal,
+          volume: 0,
+        }];
+      }
       const lastPt = prev[prev.length - 1];
       if (!lastPt || Math.abs(Number(lastPt.close) - liveVal) < 0.01) return prev;
-      const nowNpt = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' });
       const next = [...prev];
       if (lastPt.time === nowNpt) {
         next[next.length - 1] = {

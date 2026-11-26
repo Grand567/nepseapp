@@ -6244,6 +6244,9 @@ export default function StockDetailModal({
               tacticalTip: `Monitor live exchange ticks for authentic volume confirmation.`
             };
           } else if (isCrossSessionPure1D) {
+            const liveBookClause = (!marketDepth?.isOffMarket && !marketDepth?.isSynthetic && bookTot > 0)
+              ? ` Live Level-2 Book (${liveDate}): ${bookDepthSummary}.`
+              : '';
             investVerdict = {
               badge: `📊 Prev Session (${pure1DDate})`,
               badgeBg: 'rgba(148, 163, 184, 0.15)',
@@ -6254,8 +6257,8 @@ export default function StockDetailModal({
               verdictTitle: `PREVIOUS SESSION TELEMETRY (${pure1DDate})`,
               verdictColor: '#cbd5e1',
               glow: '0 4px 18px rgba(0, 0, 0, 0.3)',
-              reason: `Displaying verified broker telemetry from previous trading session (${pure1DDate}). Live intraday tape (${liveDate}) has not yet completed full broker contract settlement.`,
-              tacticalTip: `Assess multi-day trend structure while awaiting live broker settlement confirmation.`
+              reason: `Displaying verified broker telemetry from previous trading session (${pure1DDate}). Live intraday tape (${liveDate}) has not yet completed full broker contract settlement.${liveBookClause}`,
+              tacticalTip: `Assess live Level-2 order book demand alongside multi-day trend structure while awaiting post-close broker settlement confirmation.`
             };
           } else if (isMasked1DBroker) {
             const bookBiasLabel = bookBuyPct == null ? 'Live Intraday Tape' : (bookBuyPct >= 58 ? 'Demand-Heavy Order Book' : bookBuyPct <= 42 ? 'Supply-Heavy Order Book' : 'Balanced Live Order Book');
@@ -6998,7 +7001,7 @@ export default function StockDetailModal({
               })()}
 
               {/* ════ CARD 2: LEVEL-2 MARKET DEPTH ORDER BOOK ════ */}
-              <div style={{ background: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 16, padding: '16px 18px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
+              <div style={{ order: -1, background: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 16, padding: '16px 18px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

@@ -1639,12 +1639,19 @@ function StockBrokerAnalysisTabInner({
 
         {/* Date-Wise Picker & Custom Date Range */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <SessionDateDropdown
-            selectedSessionDate={effectiveDate || ''}
-            onSelectDate={dt => handleDateSelect(dt)}
-            availableDates={availableDates}
-            latestLabel={effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : `Latest Session (${availableDates[0] || '1D'})`}
-          />
+          {(() => {
+            const actualSessionDate = String(activeBrokerData?.businessDate || activeBrokerData?.toDate || activeBrokerData?.date || availableDates[0] || '1D').slice(0, 10);
+            const hasNewerMarketDate = Boolean(availableDates[0] && actualSessionDate && availableDates[0] > actualSessionDate);
+            const singleDayLabel = hasNewerMarketDate ? `Latest Disclosed (${actualSessionDate})` : `Latest Session (${actualSessionDate})`;
+            return (
+              <SessionDateDropdown
+                selectedSessionDate={effectiveDate || ''}
+                onSelectDate={dt => handleDateSelect(dt)}
+                availableDates={availableDates}
+                latestLabel={effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : singleDayLabel}
+              />
+            );
+          })()}
 
           {/* Custom Date Range Selector (From → To) */}
           <div style={{
@@ -2352,14 +2359,23 @@ function StockBrokerAnalysisTabInner({
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <SessionDateDropdown
-                selectedSessionDate={effectiveDate || ''}
-                onSelectDate={dt => handleDateSelect(dt)}
-                availableDates={availableDates}
-                label="Session:"
-                latestLabel={effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : (availableDates.length > 0 ? `Latest Session (${availableDates[0]})` : 'Latest Trading Session')}
-                compact={true}
-              />
+              {(() => {
+                const actualSessionDate = String(activeBrokerData?.businessDate || activeBrokerData?.toDate || activeBrokerData?.date || availableDates[0] || '').slice(0, 10);
+                const hasNewerMarketDate = Boolean(availableDates[0] && actualSessionDate && availableDates[0] > actualSessionDate);
+                const singleDayLabel = actualSessionDate
+                  ? (hasNewerMarketDate ? `Latest Disclosed (${actualSessionDate})` : `Latest Session (${actualSessionDate})`)
+                  : 'Latest Trading Session';
+                return (
+                  <SessionDateDropdown
+                    selectedSessionDate={effectiveDate || ''}
+                    onSelectDate={dt => handleDateSelect(dt)}
+                    availableDates={availableDates}
+                    label="Session:"
+                    latestLabel={effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : singleDayLabel}
+                    compact={true}
+                  />
+                );
+              })()}
             </div>
           </div>
 
