@@ -338,10 +338,10 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   const [brokerHoldingSort, setBrokerHoldingSort] = useState<"KITTA_DESC" | "VAL_DESC" | "BUY_PRICE_ASC" | "BUY_PRICE_DESC" | "RETENTION_DESC" | "BROKER_ASC">("KITTA_DESC");
   const [brokerViewMode, setBrokerViewMode] = useState<"HOLDINGS" | "DISTRIBUTORS">("HOLDINGS");
 
-  // Tab 1: Rupee Profit Simulator States (Supports 7.5% ST, 5.0% LT, and 10.0% Corporate CGT)
+  // Tab 1: Rupee Profit Simulator States (Supports 5.0% ST, 3.75% LT, and 10.0% Corporate CGT)
   const [simKitta, setSimKitta] = useState<number>(100);
   const [simTargetGainPct, setSimTargetGainPct] = useState<number>(8);
-  const [simCgtRate, setSimCgtRate] = useState<0.075 | 0.05 | 0.10>(0.075);
+  const [simCgtRate, setSimCgtRate] = useState<0.05 | 0.0375 | 0.10>(0.05);
 
   // Tab 8: Bonus & Right Price Adjustment States
   const [adjBonusPct, setAdjBonusPct] = useState<number>(15);
@@ -616,7 +616,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   // - 5 SEBON Commission Slabs (0.36%, 0.33%, 0.31%, 0.27%, 0.24% with Rs. 10 floor)
   // - SEBON Fee: 0.015% on both buy and sell legs
   // - DP Fee: Rs. 25 on both buy and sell legs (Rs. 50 round-trip)
-  // - CGT (7.5% ST / 5.0% LT / 10.0% Corporate) strictly on net gain AFTER deducting both buy & sell commissions
+  // - CGT (5.0% ST / 3.75% LT / 10.0% Corporate) strictly on net gain AFTER deducting both buy & sell commissions
   const profitSimulation = useMemo(() => {
     const safeKitta = Math.max(0, Math.floor(simKitta));
     const buyGross = Number((safeKitta * ltp).toFixed(2));
@@ -1756,11 +1756,11 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                   <label className="block text-slate-400 mb-1">Investor CGT Bracket</label>
                   <select
                     value={simCgtRate}
-                    onChange={(e) => setSimCgtRate(Number(e.target.value) as 0.075 | 0.05 | 0.10)}
+                    onChange={(e) => setSimCgtRate(Number(e.target.value) as 0.05 | 0.0375 | 0.10)}
                     className="w-full px-3 py-1.5 rounded bg-slate-950 border border-slate-700 text-white font-bold"
                   >
-                    <option value={0.075}>7.5% Individual (&lt; 365 Days)</option>
-                    <option value={0.05}>5.0% Individual (&ge; 365 Days)</option>
+                    <option value={0.05}>5.0% Individual (&le; 365 Days)</option>
+                    <option value={0.0375}>3.75% Individual (&gt; 365 Days)</option>
                     <option value={0.10}>10.0% Corporate / Institution</option>
                   </select>
                 </div>

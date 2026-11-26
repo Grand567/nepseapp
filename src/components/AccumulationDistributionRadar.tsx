@@ -7,7 +7,7 @@ import {
   Download, Upload, Crown, ChevronDown, ChevronUp, Users
 } from 'lucide-react';
 import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, fetchRealBrokerAnalysis, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchMarketWideBrokerSummaryMap, fetchPrecomputedRadar, fetchPrecomputedDiagnostic, fetchAvailableTradingDates, getCachedStocks } from '../utils/liveData';
-import { isNepseTradingDay } from '../utils/nepseCalendar';
+import { isNepseTradingDay, formatNptDateIso } from '../utils/nepseCalendar';
 import { BUNDLED_BROKER_DATE, bundledBrokerMap } from '../utils/historyCache.js';
 import { triggerFileDownload } from '../utils/fileExport';
 import {
@@ -1057,7 +1057,7 @@ export function AccumulationDistributionRadar({
   const handleExportBackup = () => {
     try {
       const jsonStr = exportWhaleArchiveJSON();
-      const filename = `drabyashree_whale_archive_${new Date().toISOString().split('T')[0]}.json`;
+      const filename = `drabyashree_whale_archive_${formatNptDateIso(new Date())}.json`;
       triggerFileDownload(jsonStr, filename, 'application/json;charset=utf-8;');
     } catch (e) {
       console.error('[WhaleArchive] Export failed:', e);

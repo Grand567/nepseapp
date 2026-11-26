@@ -34,9 +34,18 @@ export function SubscriptionProvider({ children }) {
 
     fetchServerLicenseStatus(deviceId).then((serverSub) => {
       if (!active || reqVersion !== mutationVersionRef.current || !serverSub || typeof serverSub !== 'object') return;
-      const norm = normalizeSubscription(serverSub);
-      saveStoredSubscription(norm);
-      setSubState(norm);
+      const localSub = getStoredSubscription();
+      // If server confirms active Pro, sync authoritative server state
+      if (serverSub.isPro) {
+        const norm = normalizeSubscription(serverSub);
+        saveStoredSubscription(norm);
+        setSubState(norm);
+      } else if (!localSub.isPro) {
+        // If neither server nor local has Pro, remain free
+        const norm = normalizeSubscription(serverSub);
+        setSubState(norm);
+      }
+      // If localSub is still an active, unexpired Pro license, preserve it against ephemeral server resets
     }).catch(() => {});
 
     const timer = setInterval(() => {

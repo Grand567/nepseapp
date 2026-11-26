@@ -81,9 +81,13 @@ test('Swing Trade Selector - UI Gating & Defense Integration', async (t) => {
     assert.equal(res.shortlist.length, 0);
   });
 
-  await t.test('verifies ServicesHub registration and import integrity', () => {
+  await t.test('verifies ServicesHub registration, FlowchartV3Panel wiring, and zero UI DB imports', () => {
     const hubContent = fs.readFileSync(path.join(process.cwd(), 'src', 'components', 'ServicesHub.tsx'), 'utf8');
     assert.ok(hubContent.includes('SwingTradeSelectorView'), 'ServicesHub must import SwingTradeSelectorView');
     assert.ok(hubContent.includes('swing-trade-selector'), 'ServicesHub must register swing-trade-selector service ID');
+
+    const panelContent = fs.readFileSync(path.join(process.cwd(), 'src', 'components', 'swing', 'FlowchartV3Panel.tsx'), 'utf8');
+    assert.ok(panelContent.includes('/api/radar/flowchart-v3'), 'FlowchartV3Panel must call backend radar endpoint');
+    assert.ok(!panelContent.includes('better-sqlite3'), 'UI component must never import DB directly');
   });
 });

@@ -201,6 +201,9 @@ async function getShareSansarSession() {
   if (cachedSession && now < cachedSessionExpires) {
     return cachedSession;
   }
+  if (getShareSansarSession._cooldownUntil && now < getShareSansarSession._cooldownUntil) {
+    return null;
+  }
   try {
     const jar = new CookieJar();
     const client = wrapper(axios.create({ jar, withCredentials: true }));
@@ -214,12 +217,14 @@ async function getShareSansarSession() {
     const $ = cheerio.load(page.data);
     const token = $('input[name="_token"]').val() || $('meta[name="_token"]').attr('content');
     if (token) {
+      getShareSansarSession._cooldownUntil = 0;
       cachedSession = { client, token };
       cachedSessionExpires = now + (15 * 60 * 1000); // 15 min TTL
       return cachedSession;
     }
     return { client, token: '' };
   } catch (err) {
+    getShareSansarSession._cooldownUntil = Date.now() + (5 * 60 * 1000); // 5 min 403/WAF circuit breaker
     console.warn('[brokerVault] Failed to initialize ShareSansar session:', err.message);
     return null;
   }
@@ -286,47 +291,50 @@ export async function fetchSymbolTradingDates(symbol) {
     }
   } catch (_) {}
 
-  // 1. Chukul UDF multi-year historydata API (discovers up to 1,800+ historical sessions back to 2018)
-  try {
-    const udfRes = await axios.get(`https://chukul.com/api/data/historydata/data/?symbol=${encodeURIComponent(sym)}&resolution=1D&from=1400000000&to=1900000000`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-      timeout: 8000,
-      validateStatus: () => true
-    });
-    if (udfRes.status === 200 && udfRes.data && Array.isArray(udfRes.data.t)) {
-      const nepalOffset = 5.75 * 3600 * 1000;
-      for (let i = 0; i < udfRes.data.t.length; i++) {
-        const ts = udfRes.data.t[i];
-        const vol = Number(udfRes.data.vol?.[i] ?? udfRes.data.v?.[i] ?? 0);
-        const close = Number(udfRes.data.c?.[i] ?? 0);
-        if (ts && (vol > 0 || close > 0)) {
-          const dStr = new Date(ts * 1000 + nepalOffset).toISOString().slice(0, 10);
-          if (dStr) dateSet.add(dStr);
-        }
-      }
-    }
-  } catch (eUdf) {
-    // Fallback to v2 historydata if UDF fails
+  // 1. Chukul UDF multi-year historydata API (only when local SQLite/vault history is missing or forced)
+  const forceExternalRefresh = false;
+  if (dateSet.size < 15 || forceExternalRefresh) {
     try {
-      const r = await axios.get(`https://chukul.com/api/data/v2/historydata/?symbol=${encodeURIComponent(sym)}`, {
+      const udfRes = await axios.get(`https://chukul.com/api/data/historydata/data/?symbol=${encodeURIComponent(sym)}&resolution=1D&from=1400000000&to=1900000000`, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-        timeout: 7000,
+        timeout: 3200,
         validateStatus: () => true
       });
-      if (r.status === 200 && Array.isArray(r.data) && r.data.length > 0) {
-        for (const item of r.data) {
-          if (item && item.date && Number(item.volume || 0) > 0) {
-            dateSet.add(String(item.date).trim());
+      if (udfRes.status === 200 && udfRes.data && Array.isArray(udfRes.data.t)) {
+        const nepalOffset = 5.75 * 3600 * 1000;
+        for (let i = 0; i < udfRes.data.t.length; i++) {
+          const ts = udfRes.data.t[i];
+          const vol = Number(udfRes.data.vol?.[i] ?? udfRes.data.v?.[i] ?? 0);
+          const close = Number(udfRes.data.c?.[i] ?? 0);
+          if (ts && (vol > 0 || close > 0)) {
+            const dStr = new Date(ts * 1000 + nepalOffset).toISOString().slice(0, 10);
+            if (dStr) dateSet.add(dStr);
           }
         }
       }
-    } catch (e) {
-      console.warn(`[brokerVault] Chukul historydata failed for ${sym}:`, e.message);
+    } catch (eUdf) {
+      // Fallback to v2 historydata if UDF fails
+      try {
+        const r = await axios.get(`https://chukul.com/api/data/v2/historydata/?symbol=${encodeURIComponent(sym)}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+          timeout: 3000,
+          validateStatus: () => true
+        });
+        if (r.status === 200 && Array.isArray(r.data) && r.data.length > 0) {
+          for (const item of r.data) {
+            if (item && item.date && Number(item.volume || 0) > 0) {
+              dateSet.add(String(item.date).trim());
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[brokerVault] Chukul historydata failed for ${sym}:`, e.message);
+      }
     }
   }
 
   // 2. Query authentic NEPSE NOTS price history (length 500) via nepseClient
-  if (dateSet.size < 500) {
+  if (dateSet.size < 15) {
     try {
       const historyRows = await nepseClient.getSecurityPriceHistory(sym, { length: 500 }).catch(() => []);
       if (Array.isArray(historyRows) && historyRows.length > 0) {
@@ -378,8 +386,8 @@ export async function fetchSymbolTradingDates(symbol) {
     }
   } catch (_) {}
 
-  // 4. Fallback 2: Query MeroLagani's company graph handler to extract up to 500 trading dates
-  if (dateSet.size < 500) {
+  // 4. Fallback 2: Query MeroLagani's company graph handler only when local/NOTS discovery found < 15 sessions
+  if (dateSet.size < 15) {
     try {
       const mlUrl = `https://merolagani.com/handlers/webrequesthandler.ashx?type=get_company_graph&symbol=${encodeURIComponent(sym)}`;
       const mlRes = await axios.get(mlUrl, {
@@ -387,7 +395,7 @@ export async function fetchSymbolTradingDates(symbol) {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
           'Accept': 'application/json'
         },
-        timeout: 9000,
+        timeout: 3200,
         validateStatus: () => true
       });
       if (mlRes.status === 200 && mlRes.data && Array.isArray(mlRes.data.quotes) && mlRes.data.quotes.length > 0) {
@@ -532,7 +540,7 @@ export async function fetchShareSansarFloorsheet(symbol, maxRecords = 50000, dat
             quantity: qty,
             rate,
             amount,
-            businessDate: r.date_ || new Date().toISOString().split('T')[0],
+            businessDate: r.date_ || formatNptDateIso(new Date()),
             symbol: rowSym,
             stockSymbol: rowSym
           };
@@ -573,12 +581,31 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
 
   const syncPromise = (async () => {
   const vaultPath = path.join(VAULT_DIR, `${sym}.json`);
-  let vaultObj = { symbol: sym, vaultVersion: 2, rowsByDate: {}, updatedAt: null, preAggregated: null, isCompleteHistory: false };
+  let vaultObj = { symbol: sym, vaultVersion: 2, latestDate: null, rowsByDate: {}, updatedAt: null, preAggregated: null, isCompleteHistory: false };
+
+  const persistVaultObj = (obj) => {
+    const sortedDates = Object.keys(obj.rowsByDate || {}).filter(Boolean).sort((a, b) => b.localeCompare(a));
+    const trimmedRowsByDate = {};
+    for (const dt of sortedDates.slice(0, 500)) {
+      if (Array.isArray(obj.rowsByDate[dt]) && obj.rowsByDate[dt].length > 0) {
+        trimmedRowsByDate[dt] = obj.rowsByDate[dt];
+      }
+    }
+    const populatedDates = Object.keys(trimmedRowsByDate).sort((a, b) => b.localeCompare(a));
+    obj.rowsByDate = trimmedRowsByDate;
+    obj.latestDate = populatedDates[0] || obj.latestDate || null;
+    obj.updatedAt = new Date().toISOString();
+    fs.writeFileSync(vaultPath, JSON.stringify(obj), 'utf8');
+    return populatedDates.length;
+  };
 
   if (fs.existsSync(vaultPath)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(vaultPath, 'utf8'));
       if (parsed && typeof parsed === 'object') {
+        if (parsed.latestDate) {
+          vaultObj.latestDate = parsed.latestDate;
+        }
         if (parsed.isCompleteHistory) {
           vaultObj.isCompleteHistory = true;
         }
@@ -631,6 +658,7 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
     ? requestedDates.filter(dt => allAvailableDates.includes(dt))
     : requestedDates;
 
+  const vaultTtlMs = isIntradayWindow ? (10 * 60 * 1000) : (12 * 60 * 60 * 1000);
   const datesToFetch = new Set();
   if (!vaultObj.isCompleteHistory) {
     for (const dt of candidateDates) {
@@ -638,7 +666,7 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
       const existing = vaultObj.rowsByDate[dt];
       const isRecent = latestTwoDates.includes(dt);
       const ageMs = vaultObj.updatedAt ? (Date.now() - new Date(vaultObj.updatedAt).getTime()) : Infinity;
-      if (!Array.isArray(existing) || existing.length === 0 || (isRecent && ageMs > 10 * 60 * 1000)) {
+      if (!Array.isArray(existing) || existing.length === 0 || (isRecent && ageMs > vaultTtlMs)) {
         datesToFetch.add(dt);
       }
     }
@@ -653,7 +681,7 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
       const latestDt = latestTwoDates[0];
       const existing = vaultObj.rowsByDate[latestDt];
       const ageMs = vaultObj.updatedAt ? (Date.now() - new Date(vaultObj.updatedAt).getTime()) : Infinity;
-      if (!Array.isArray(existing) || existing.length === 0 || ageMs > 10 * 60 * 1000) {
+      if (!Array.isArray(existing) || existing.length === 0 || (isIntradayWindow && ageMs > vaultTtlMs)) {
         datesToFetch.add(latestDt);
       }
     }
@@ -661,13 +689,45 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
 
   let didUpdate = false;
 
+  // 0. Instant SQLite Floorsheet Contracts Hydration (0ms network cost when local DB already holds valid unmasked rows)
+  if (db && datesToFetch.size > 0) {
+    try {
+      const stmt = db.prepare(`
+        SELECT contract_id, buyer_broker, seller_broker, kitta, rate, amount, trade_time
+        FROM floorsheet_contracts
+        WHERE UPPER(symbol) = ? AND trade_date = ? AND buyer_broker > 0 AND seller_broker > 0
+      `);
+      for (const dt of Array.from(datesToFetch)) {
+        const dbContracts = stmt.all(sym, dt);
+        if (Array.isArray(dbContracts) && dbContracts.length > 0) {
+          vaultObj.rowsByDate[dt] = dbContracts.map(c => ({
+            contractId: String(c.contract_id || ''),
+            buyerBroker: String(c.buyer_broker || ''),
+            buyerBrokerName: getBrokerName(c.buyer_broker),
+            sellerBroker: String(c.seller_broker || ''),
+            sellerBrokerName: getBrokerName(c.seller_broker),
+            qty: Number(c.kitta || 0),
+            rate: Number(c.rate || 0),
+            amount: Number(c.amount || 0),
+            businessDate: dt,
+            tradeTime: c.trade_time || '',
+            symbol: sym,
+            stockSymbol: sym
+          }));
+          didUpdate = true;
+          datesToFetch.delete(dt);
+        }
+      }
+    } catch (_) {}
+  }
+
   // 1. Ingest from authentic full session floorsheet (100% NOTS trades)
   // Strictly skip calling exchange live session API for old historical dates unless cached on disk or SQLite.
   // During live trading hours (11:00-15:05 NPT), fetch only the symbol-filtered NOTS floorsheet for today instead of scanning the entire market!
   for (const dt of Array.from(datesToFetch)) {
     const isToday = (dt === nptDate || dt === latestTwoDates[0]);
     const fullFileExists = candidateDirs.some(d => fs.existsSync(path.join(d, `floorsheet-full-${dt}.json`)));
-    const hasDbRecords = db ? Boolean(db.prepare('SELECT 1 FROM floorsheet_contracts WHERE trade_date = ? LIMIT 1').get(dt)) : false;
+    const hasDbRecords = db ? Boolean(db.prepare('SELECT 1 FROM floorsheet_contracts WHERE trade_date = ? AND buyer_broker > 0 AND seller_broker > 0 LIMIT 1').get(dt)) : false;
 
     if (dt === nptDate && isIntradayWindow) {
       try {
@@ -699,6 +759,10 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
     }
 
     if (!isToday && !fullFileExists && !hasDbRecords) continue;
+    // Skip slow external ShareSansar full-session fetch when offline or when cached vault already exists
+    if (!fullFileExists && !hasDbRecords && Array.isArray(vaultObj.rowsByDate[dt]) && vaultObj.rowsByDate[dt].length > 0) {
+      continue;
+    }
 
     try {
       const fullTrades = await getFullSessionFloorsheet(dt);
@@ -738,9 +802,9 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
     let inlineCompletedIdx = 0;
 
     for (let i = 0; i < fetchList.length; i += CONCURRENCY) {
-      // Check elapsed time and count limit to prevent HTTP timeouts
+      // Keep inline external sync bounded under 2.5s so UI tabs resolve rapidly while backfilling in background
       const elapsedMs = Date.now() - syncStartMs;
-      if (i >= 40 || elapsedMs > 6000) {
+      if (i >= 16 || elapsedMs > 2500) {
         inlineCompletedIdx = i;
         break;
       }
@@ -778,15 +842,8 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
             await new Promise(r => setTimeout(r, 50));
           }
           if (bgUpdated) {
-            vaultObj.updatedAt = new Date().toISOString();
-            const sortedDates = Object.keys(vaultObj.rowsByDate).sort((a, b) => b.localeCompare(a));
-            const trimmedRowsByDate = {};
-            for (const dt of sortedDates.slice(0, 500)) {
-              trimmedRowsByDate[dt] = vaultObj.rowsByDate[dt];
-            }
-            vaultObj.rowsByDate = trimmedRowsByDate;
-            fs.writeFileSync(vaultPath, JSON.stringify(vaultObj), 'utf8');
-            console.log(`[brokerVault] Background sync completed for ${sym}: saved ${Object.keys(trimmedRowsByDate).length} sessions`);
+            const savedCount = persistVaultObj(vaultObj);
+            console.log(`[brokerVault] Background sync completed for ${sym}: saved ${savedCount} sessions`);
           }
         } catch (bgErr) {
           console.warn(`[brokerVault] Background sync error for ${sym}:`, bgErr.message);
@@ -833,15 +890,8 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
   }
 
   if (didUpdate) {
-    vaultObj.updatedAt = new Date().toISOString();
     try {
-      const sortedDates = Object.keys(vaultObj.rowsByDate).sort((a, b) => b.localeCompare(a));
-      const trimmedRowsByDate = {};
-      for (const dt of sortedDates.slice(0, 500)) {
-        trimmedRowsByDate[dt] = vaultObj.rowsByDate[dt];
-      }
-      vaultObj.rowsByDate = trimmedRowsByDate;
-      fs.writeFileSync(vaultPath, JSON.stringify(vaultObj), 'utf8');
+      persistVaultObj(vaultObj);
     } catch (writeErr) {
       console.warn(`[brokerVault] Failed to write vault for ${sym}:`, writeErr.message);
     }
@@ -2508,7 +2558,7 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
   wholeDayStockList.sort((a, b) => b.totalNetKitta - a.totalNetKitta);
   const topNetBoughtScripsWholeDay = wholeDayStockList.slice(0, 20);
 
-  const sessionDt = dateStr || trades[0]?.businessDate || new Date().toISOString().split('T')[0];
+  const sessionDt = dateStr || trades[0]?.businessDate || formatNptDateIso(new Date());
 
   return {
     topBrokers: topBrokersList.map(b => b.id),
@@ -2536,12 +2586,29 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
  * Tier 2: ShareSansar / Chukul market-wide floorsheet fallback
  * Tier 3: Vault Reconstruction from symbol vaults or broker_matrix_latest
  */
+const hasValidUnmaskedBrokers = (rows) =>
+  Array.isArray(rows) &&
+  rows.length >= 1000 &&
+  rows.some((r) => {
+    const b = parseInt(String(r?.buyerMemberId || r?.buyerBroker || r?.buyer_broker || r?.buyer || 0).replace(/^0+/, ''), 10) || 0;
+    const s = parseInt(String(r?.sellerMemberId || r?.sellerBroker || r?.seller_broker || r?.seller || 0).replace(/^0+/, ''), 10) || 0;
+    return b > 0 && s > 0;
+  });
+
 export async function getFullSessionFloorsheet(dateStr = '') {
   const cleanDate = String(dateStr || '').trim();
   const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
   const nptDate = nowNpt.toISOString().split('T')[0];
   const nptMinutesOfDay = nowNpt.getUTCHours() * 60 + nowNpt.getUTCMinutes();
   const isIntradayWindow = nptMinutesOfDay >= 660 && nptMinutesOfDay <= 930;
+
+  if (cleanDate) {
+    if (!getFullSessionFloorsheet._missCache) getFullSessionFloorsheet._missCache = new Map();
+    const missUntil = getFullSessionFloorsheet._missCache.get(cleanDate) || 0;
+    if (Date.now() < missUntil && !isIntradayWindow) {
+      return null;
+    }
+  }
 
   const candidateDirs = [
     process.env.NEPSE_DATA_DIR,
@@ -2572,7 +2639,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
             } else {
               parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
             }
-            if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller))) {
+            if (hasValidUnmaskedBrokers(parsed)) {
               const recDate = cleanDate || parsed[0]?.businessDate;
               if (recDate && typeof hasTradeDate === 'function' && !hasTradeDate(recDate)) {
                 try {
@@ -2587,7 +2654,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
       }
     }
 
-    // Direct SQLite SSOT Query for requested historical date
+    // Direct SQLite SSOT Query for requested historical date (exclude quarantined & masked rows)
     if (db) {
       try {
         const dbContracts = db.prepare(`
@@ -2599,9 +2666,9 @@ export async function getFullSessionFloorsheet(dateStr = '') {
                  rate as contractRate, rate,
                  amount as contractAmount, amount
           FROM floorsheet_contracts
-          WHERE trade_date = ?
+          WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0
         `).all(cleanDate);
-        if (Array.isArray(dbContracts) && dbContracts.length > 0) {
+        if (Array.isArray(dbContracts) && dbContracts.length >= 1000) {
           return dbContracts;
         }
       } catch (dbErr) {
@@ -2612,7 +2679,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
     // Cloud Archive Query for requested historical date
     try {
       const cloudContracts = await fetchFloorsheetFromCloud(cleanDate);
-      if (Array.isArray(cloudContracts) && cloudContracts.length > 0) {
+      if (hasValidUnmaskedBrokers(cloudContracts)) {
         try {
           ingestDailyFloorsheetTransaction(cleanDate, cloudContracts);
           if (typeof _contractsIngestor === 'function') _contractsIngestor(cleanDate, cloudContracts);
@@ -2621,6 +2688,9 @@ export async function getFullSessionFloorsheet(dateStr = '') {
       }
     } catch (cErr) {
       console.warn(`[brokerVault] Cloud query notice for date ${cleanDate}:`, cErr.message);
+    }
+    if (!isIntradayWindow) {
+      getFullSessionFloorsheet._missCache.set(cleanDate, Date.now() + 5 * 60 * 1000);
     }
   } else {
     // If no specific date was requested, check for the most recent floorsheet-full-*.json on disk
@@ -2637,7 +2707,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
             const fileDate = files[0].replace('floorsheet-full-', '').replace('.json', '');
             if (!(fileDate === nptDate && isIntradayWindow && ageMs > 5 * 60 * 1000)) {
               const parsed = JSON.parse(fs.readFileSync(latestFile, 'utf8'));
-              if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller))) {
+              if (hasValidUnmaskedBrokers(parsed)) {
                 const recDate = fileDate || parsed[0]?.businessDate;
                 if (recDate && typeof hasTradeDate === 'function' && !hasTradeDate(recDate)) {
                   try {
@@ -2653,10 +2723,10 @@ export async function getFullSessionFloorsheet(dateStr = '') {
       }
     }
 
-    // Direct SQLite SSOT Query for latest date if no file found
+    // Direct SQLite SSOT Query for latest date if no file found (exclude quarantined & masked rows)
     if (db) {
       try {
-        const latestRow = db.prepare(`SELECT trade_date FROM floorsheet_contracts ORDER BY trade_date DESC LIMIT 1`).get();
+        const latestRow = db.prepare(`SELECT trade_date FROM floorsheet_contracts WHERE COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0 GROUP BY trade_date HAVING COUNT(*) >= 1000 ORDER BY trade_date DESC LIMIT 1`).get();
         if (latestRow?.trade_date) {
           const dbContracts = db.prepare(`
             SELECT contract_no as contractId, symbol as stockSymbol, symbol,
@@ -2667,7 +2737,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
                    rate as contractRate, rate,
                    amount as contractAmount, amount
             FROM floorsheet_contracts
-            WHERE trade_date = ?
+            WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0
           `).all(latestRow.trade_date);
           if (Array.isArray(dbContracts) && dbContracts.length > 0) {
             return dbContracts;
@@ -2737,8 +2807,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
         // Deduplicate trades by contract number
         const { deduplicatedTrades } = deduplicateFloorsheetContracts(allTrades, cleanDate || nptDate);
 
-        const hasBrokerIds = deduplicatedTrades.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller));
-        if (hasBrokerIds) {
+        if (hasValidUnmaskedBrokers(deduplicatedTrades)) {
           const recDate = deduplicatedTrades[0]?.businessDate || cleanDate || nptDate;
           
           // Completeness Check per Day: stored vs exchange reported count
@@ -2780,7 +2849,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
     const ssRows = await fetchShareSansarFloorsheet('', 25000, cleanDate);
       if (Array.isArray(ssRows) && ssRows.length > 0) {
         const { deduplicatedTrades: deduplicated } = deduplicateFloorsheetContracts(ssRows, cleanDate || nptDate);
-        if (deduplicated.length > 0) {
+        if (hasValidUnmaskedBrokers(deduplicated)) {
           const recDate = deduplicated[0]?.businessDate || cleanDate || nptDate;
           
           // Completeness Check & Raw Backup for fallback source
@@ -2827,7 +2896,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
         for (const filePath of candidateFiles) {
           if (fs.existsSync(filePath)) {
             const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-            if (Array.isArray(parsed) && parsed.length > 0) {
+            if (hasValidUnmaskedBrokers(parsed)) {
               const fileDate = (parsed[0]?.businessDate || '').slice(0, 10);
               // Strict date match: NEVER return a different date's trades when a specific date is requested!
               if (!cleanDate || fileDate === cleanDate) {
@@ -3029,8 +3098,8 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
   if (db) {
     try {
       const dateRows = targetDate 
-        ? db.prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT ?').all(targetDate, numDays)
-        : db.prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT ?').all(numDays);
+        ? db.prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE trade_date <= ? AND COALESCE(is_quarantined, 0) = 0 ORDER BY trade_date DESC LIMIT ?').all(targetDate, numDays)
+        : db.prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE COALESCE(is_quarantined, 0) = 0 ORDER BY trade_date DESC LIMIT ?').all(numDays);
       
       if (dateRows && dateRows.length > 0) {
         const dates = dateRows.map(r => r.trade_date);
@@ -3044,7 +3113,7 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
                  (SUM(buy_vol) - SUM(sell_vol)) as netQty,
                  (SUM(buy_amt) - SUM(sell_amt)) as netAmt
           FROM daily_broker_ledger
-          WHERE trade_date >= ? AND trade_date <= ?
+          WHERE trade_date >= ? AND trade_date <= ? AND COALESCE(is_quarantined, 0) = 0
           GROUP BY symbol, broker_id
         `;
         const rows = db.prepare(sql).all(oldest, newest);

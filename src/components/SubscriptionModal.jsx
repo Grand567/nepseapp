@@ -112,7 +112,15 @@ export default function SubscriptionModal() {
     setPromoMessage(null);
 
     try {
-      const result = await redeemCode(promoInput);
+      let cleanCode = promoInput.trim().toUpperCase().replace(/\s+/g, '');
+      const fourPartPattern = /^([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4,16})$/;
+      if (fourPartPattern.test(cleanCode)) {
+        cleanCode = `DS12M-${cleanCode}`;
+      } else if (/^DS-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4,16})$/.test(cleanCode)) {
+        cleanCode = cleanCode.replace(/^DS-/, 'DS12M-');
+      }
+
+      const result = await redeemCode(cleanCode);
       setPromoMessage(result);
       if (result.success) {
         setPromoInput('');

@@ -1356,7 +1356,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     rewardToTarget1: isFinite(t1Cap.price) ? +Math.max(0.5, t1Cap.price - ltp).toFixed(1) : +(ltp * 0.08).toFixed(1),
     rewardToTarget2: isFinite(t2Cap.price) ? +Math.max(0.5, t2Cap.price - ltp).toFixed(1) : +(ltp * 0.16).toFixed(1),
     feeFrictionPct: roundTripFeePct,
-    cgtTaxRatePct: 7.5,
+    cgtTaxRatePct: 5.0,
     breakoutPivot: +safeHigh20.toFixed(1),
     breakoutPrice: +(safeHigh20 + clearanceBuffer).toFixed(1),
     clearanceBuffer: +clearanceBuffer.toFixed(1),

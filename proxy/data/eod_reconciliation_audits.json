@@ -1,9 +1,42 @@
 [
   {
+    "tradeDate": "2026-11-25",
+    "reconciledAt": "2026-11-25T15:54:57.389Z",
+    "status": "NO_DATA",
+    "badge": "⚠️ RECONCILIATION DISCREPANCY",
+    "parityPercentage": 0,
+    "contractsCount": 0,
+    "firstContractNo": "N/A",
+    "lastContractNo": "N/A",
+    "ledgerMetrics": {
+      "totalVolume": 0,
+      "totalTurnover": 0,
+      "scripCount": 0
+    },
+    "bhavsaniMetrics": {
+      "totalVolume": 0,
+      "totalTurnover": 0,
+      "scripCount": 0
+    },
+    "variances": {
+      "volumeDiff": 0,
+      "turnoverDiff": 0,
+      "scripDiff": 0
+    },
+    "vaultSync": {
+      "archiveIndexSynced": true,
+      "vaultKitta": 72504,
+      "vaultTrades": 193
+    },
+    "topScripsAudit": [],
+    "certificationHash": "81e741c1a698e78019f1c698d5328ae13cd7a57fa47ffe19e6b218b75836640e",
+    "summaryNp": "मिति 2026-11-25 को डाटामा केही भिन्नता फेला परेको छ। volumeDiff: 0, turnoverDiff: Rs. 0।"
+  },
+  {
     "tradeDate": "2026-11-24",
-    "reconciledAt": "2026-11-24T09:30:29.656Z",
-    "status": "CERTIFIED_AUTHENTIC",
-    "badge": "🛡️ SEBON / NEPSE 100% PARITY CERTIFIED",
+    "reconciledAt": "2026-11-25T14:44:50.033Z",
+    "status": "DISCREPANCY_DETECTED",
+    "badge": "⚠️ RECONCILIATION DISCREPANCY",
     "parityPercentage": 100,
     "contractsCount": 50669,
     "firstContractNo": "2026112401000001",
@@ -14,14 +47,14 @@
       "scripCount": 350
     },
     "bhavsaniMetrics": {
-      "totalVolume": 14281950,
-      "totalTurnover": 5376971541,
-      "scripCount": 350
+      "totalVolume": 14281960,
+      "totalTurnover": 5377117541,
+      "scripCount": 351
     },
     "variances": {
-      "volumeDiff": 0,
-      "turnoverDiff": 0,
-      "scripDiff": 0
+      "volumeDiff": 10,
+      "turnoverDiff": 146000,
+      "scripDiff": 1
     },
     "vaultSync": {
       "archiveIndexSynced": true,
@@ -131,7 +164,7 @@
       }
     ],
     "certificationHash": "0316017b0e0938a3fa4c2dc2c19b99d45b7a4bc1216fc81f9d724ca2749b1b12",
-    "summaryNp": "मिति 2026-11-24 को नेप्से आधिकारिक भब्सानी र स्थानीय लेजर बीच १००% डाटा एकरूपता प्रमाणित गरियो। कुल 50,669 कारोबार, 14,281,950 कित्ता, र रु. 537.70 करोडको हिसाबमा शून्य त्रुटि पाइएको छ।"
+    "summaryNp": "मिति 2026-11-24 को डाटामा केही भिन्नता फेला परेको छ। volumeDiff: 10, turnoverDiff: Rs. 146000।"
   },
   {
     "tradeDate": "2026-11-17",

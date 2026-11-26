@@ -12,6 +12,11 @@
  */
 
 import { getBrokerName } from './brokerVault.mjs';
+import {
+  isNonEquityTicker,
+  isInPromoterLockinCliff,
+  computeMultiWindowGrossAndNetMetrics,
+} from './utils/flowchartV3Engine.mjs';
 
 function escapeHtml(str) {
   return String(str || '')
@@ -279,25 +284,29 @@ export function evaluateTrackB2to3DayIgnition(symbol, { db, targetDate = null, m
   const sym = String(symbol || '').toUpperCase().trim();
   if (!db || !sym) return { qualified: false, failReason: 'Invalid db or symbol' };
 
-  // 1. Fundamentals & Float Gate
+  // 1. Fundamentals, Live Schema Columns & Promoter Lock-In Expiry Gate
   let fundamentals = null;
   try {
-    fundamentals = db.prepare(`
-      SELECT symbol, company_name, sector, paid_up_capital, public_share_pct, promoter_share_pct, total_shares
-      FROM scrip_fundamentals
-      WHERE symbol = ?
-    `).get(sym);
+    fundamentals = db.prepare(`SELECT * FROM scrip_fundamentals WHERE symbol = ?`).get(sym);
   } catch (_) {}
 
   const sector = String(fundamentals?.sector || '').trim();
+  if (isNonEquityTicker(sym, sector)) {
+    return {
+      qualified: false,
+      symbol: sym,
+      failReason: `Excluded non-equity instrument (${sector || 'Bond/MF/Promoter'})`
+    };
+  }
   const isCommercialBank = sector.toLowerCase().includes('bank') && !sector.toLowerCase().includes('development');
 
-  let totalShares = Number(fundamentals?.total_shares || 0);
-  if (!totalShares && fundamentals?.paid_up_capital) {
-    totalShares = Number(fundamentals.paid_up_capital) / 100;
-  }
+  let publicFloatShares = Number(fundamentals?.public_float_kitta || 0);
   const publicSharePct = Number(fundamentals?.public_share_pct ?? 49.0);
-  const publicFloatShares = totalShares > 0 ? Math.round(totalShares * (publicSharePct / 100)) : 10000000;
+  const totalSharesFallback = Number(fundamentals?.total_shares || (fundamentals?.paid_up_capital ? Number(fundamentals.paid_up_capital) / 100 : 0));
+  if (!publicFloatShares && totalSharesFallback > 0) {
+    publicFloatShares = Math.round(totalSharesFallback * (publicSharePct / 100));
+  }
+  if (!publicFloatShares) publicFloatShares = 10000000;
 
   if (isCommercialBank || publicFloatShares > 15000000) {
     return {
@@ -307,7 +316,7 @@ export function evaluateTrackB2to3DayIgnition(symbol, { db, targetDate = null, m
     };
   }
 
-  // 2. Fetch Daily Stock Candles (at least 15 bars)
+  // 2. Fetch Daily Stock Candles (at least 5 bars)
   let candleQuery = `
     SELECT trade_date, open_price, high_price, low_price, close_price, total_volume, total_turnover
     FROM daily_stock_summary
@@ -329,6 +338,19 @@ export function evaluateTrackB2to3DayIgnition(symbol, { db, targetDate = null, m
   const candles = [...rawCandles].reverse();
   const nBars = candles.length;
   const curBar = candles[nBars - 1];
+
+  const lockinCheck = isInPromoterLockinCliff(sym, {
+    asOfDate: targetDate || curBar.trade_date,
+    unlockDate: fundamentals?.promoter_unlock_date,
+  });
+  if (lockinCheck.isCliff) {
+    return {
+      qualified: false,
+      symbol: sym,
+      failReason: lockinCheck.reason,
+    };
+  }
+
   const ltp = Number(mockLtp || curBar.close_price || 0);
 
   // Price Cap Gate: LTP must be < Rs. 450 and >= Rs. 100
@@ -408,6 +430,20 @@ export function evaluateTrackB2to3DayIgnition(symbol, { db, targetDate = null, m
 
   if (!antiDematDumpPass) {
     return { qualified: false, symbol: sym, failReason: dumpReason };
+  }
+
+  // Gross-Mover Anti-Wash Guard (Flowchart v3.0): ensure top 2 gross buyers aren't circular churners
+  const grossMetrics = computeMultiWindowGrossAndNetMetrics(sym, { db, targetDate: curBar.trade_date });
+  if (
+    grossMetrics?.w15 &&
+    grossMetrics.w15.sessions >= 10 &&
+    (grossMetrics.w15.grossTop3RetentionPct < 38 || grossMetrics.w15.minTop2GrossRetentionPct < 28)
+  ) {
+    return {
+      qualified: false,
+      symbol: sym,
+      failReason: `Gross-Mover wash churn detected (Top-3 15D ret ${grossMetrics.w15.grossTop3RetentionPct}%, min Top-2 ${grossMetrics.w15.minTop2GrossRetentionPct}%)`
+    };
   }
 
   // Net Retention Gate: > 75.0%
@@ -627,8 +663,7 @@ export function scanTrackBSyndicateCandidates({ db, maxPrice = 450, minRetention
 
   for (const r of rows) {
     const sym = String(r.symbol).toUpperCase().trim();
-    // Exclude mutual fund tickers
-    if (/^(KSY|C30MF|RMF|NBF|CMF|SBCF|SEF|SAEF|NICBF|NIBLPF|KDBY|LVF|PSF|RBBMF|H8020|MNMF|NSIF|SIGS|SFMF)/i.test(sym)) {
+    if (isNonEquityTicker(sym)) {
       continue;
     }
 

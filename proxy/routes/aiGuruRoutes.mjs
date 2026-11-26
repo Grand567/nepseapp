@@ -328,7 +328,7 @@ export function buildDeterministicInstitutionalAnalysis(assessment) {
     `### 🏛️ Institutional Quantitative Verdict: **${assessment.symbol}**`,
     `- **Verified Price Discovery:** **Rs ${m.verifiedPrice.toLocaleString()}** via *${assessment.priceAsOfLabel}* (${m.dayChangePct >= 0 ? '+' : ''}${m.dayChangePct}% session delta | 14D ATR: Rs ${m.atr14} / ${m.atrPct}%).`,
     `- **5D Smart Money & Broker Anomaly (${m.brokerAnomalyScore.toFixed(2)}x):** Regime classified as **${regimeLabel}** (${m.smartMoney5D.netAccumulationRatio.toFixed(1)}% buy pressure). ${ticketVerdict}. Top 5D accumulators: ${topAccList}.`,
-    `- **Walk-Forward Excursion & Fee Hurdle:** Historical MFE is **+${m.mfePct.toFixed(2)}%** vs. MAE of **${m.maePct.toFixed(2)}%** (NEPSE Alpha: **${m.nepseAlphaPct >= 0 ? '+' : ''}${m.nepseAlphaPct.toFixed(2)}%**). Round-trip NEPSE friction (brokerage, 0.015% SEBON, Rs 50 DP, and 7.5% CGT) requires clearing **+${m.roundTripFeePct}%** for net positive expectancy.`,
+    `- **Walk-Forward Excursion & Fee Hurdle:** Historical MFE is **+${m.mfePct.toFixed(2)}%** vs. MAE of **${m.maePct.toFixed(2)}%** (NEPSE Alpha: **${m.nepseAlphaPct >= 0 ? '+' : ''}${m.nepseAlphaPct.toFixed(2)}%**). Round-trip NEPSE friction (brokerage, 0.015% SEBON, Rs 50 DP, and 5.0% CGT) requires clearing **+${m.roundTripFeePct}%** for net positive expectancy.`,
     `- **T+2 Settlement & 1.2R Ratchet Shield:** Settlement status is **${m.t2UnlockStatus}**. ${
       ratchetCleared
         ? `Price excursion has cleared the +1.2R ratchet threshold; protective stop is locked at **Rs ${m.ratchetStopPrice}** (Entry + 1.2%).`
@@ -537,7 +537,7 @@ export async function runScripAssessment(params) {
 1. Price Discovery & Feed Status:
    - Verified Price: Rs ${price.toFixed(2)} (Source: ${asOfLabel})
    - Session Change: ${dayChangePct >= 0 ? '+' : ''}${dayChangePct}% | 14D ATR: Rs ${atr14} (${atrPct}%)
-   - Post-Fee Breakeven Floor: +${roundTripFeePct}% (includes Broker Comm, SEBON 0.015%, Rs 50 DP, 7.5% CGT rules)
+   - Post-Fee Breakeven Floor: +${roundTripFeePct}% (includes Broker Comm, SEBON 0.015%, Rs 50 DP, 5.0% CGT rules)
 
 2. Walk-Forward T+2 Signal Ledger (drabyashree_ledger.db):
    - Reference Entry VWAP: Rs ${entryRef.toFixed(2)}

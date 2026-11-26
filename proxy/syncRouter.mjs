@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import https from 'https';
 import { pool, query } from './db.mjs';
 import {
   hashPasswordServer,
@@ -13,6 +14,96 @@ import {
   issueSyncSessionToken,
   verifySyncSessionToken
 } from './utils/syncSessionToken.mjs';
+
+const GOOGLE_SECURETOKEN_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
+const DEFAULT_FIREBASE_PROJECT_IDS = [
+  process.env.FIREBASE_PROJECT_ID,
+  process.env.VITE_FIREBASE_PROJECT_ID,
+  'drabyashree-nepse-hub-11ef9'
+].filter(Boolean);
+
+let _certsCache = { certs: null, expiresAt: 0 };
+let _testFirebaseCerts = null;
+let _testExpectedProjectId = null;
+
+export function setFirebaseCertsForTest(certs, expectedProjectId = null) {
+  _testFirebaseCerts = certs && typeof certs === 'object' ? { ...certs } : null;
+  _testExpectedProjectId = expectedProjectId || null;
+}
+
+async function fetchGooglePublicCerts() {
+  if (_testFirebaseCerts) return _testFirebaseCerts;
+  const now = Date.now();
+  if (_certsCache.certs && now < _certsCache.expiresAt) {
+    return _certsCache.certs;
+  }
+  return new Promise((resolve, reject) => {
+    const req = https.get(GOOGLE_SECURETOKEN_CERTS_URL, { timeout: 5000 }, (resp) => {
+      let raw = '';
+      resp.on('data', (chunk) => { raw += chunk; });
+      resp.on('end', () => {
+        try {
+          const parsed = JSON.parse(raw);
+          const cc = String(resp.headers['cache-control'] || '');
+          const maxAgeMatch = cc.match(/max-age=(\d+)/i);
+          const ttlMs = maxAgeMatch ? Number(maxAgeMatch[1]) * 1000 : 300000;
+          _certsCache = { certs: parsed, expiresAt: Date.now() + Math.max(60000, ttlMs) };
+          resolve(parsed);
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy(new Error('Timeout fetching Google x509 certs'));
+    });
+  });
+}
+
+export async function verifyFirebaseIdToken(idToken) {
+  if (!idToken || typeof idToken !== 'string') return null;
+  const parts = idToken.trim().split('.');
+  if (parts.length !== 3) return null;
+
+  let header, payload;
+  try {
+    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+
+  if (header?.alg !== 'RS256' || !header?.kid) return null;
+  const allowedAudiences = new Set([
+    ...DEFAULT_FIREBASE_PROJECT_IDS,
+    ...(_testExpectedProjectId ? [_testExpectedProjectId] : [])
+  ]);
+  if (!payload?.aud || !allowedAudiences.has(String(payload.aud))) return null;
+  if (payload?.iss !== `https://securetoken.googleapis.com/${payload.aud}`) return null;
+  if (!payload?.sub || typeof payload.sub !== 'string') return null;
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp !== 'number' || payload.exp <= nowSec - 30) return null;
+  if (typeof payload.iat !== 'number' || payload.iat > nowSec + 300) return null;
+  if (typeof payload.auth_time === 'number' && payload.auth_time > nowSec + 300) return null;
+  if (!payload.email || payload.email_verified === false) return null;
+
+  const certs = await fetchGooglePublicCerts().catch(() => null);
+  const certPem = certs?.[header.kid];
+  if (!certPem) return null;
+
+  try {
+    const signingInput = `${parts[0]}.${parts[1]}`;
+    const sigBuf = Buffer.from(parts[2], 'base64url');
+    const verifier = crypto.createVerify('RSA-SHA256');
+    verifier.update(signingInput);
+    if (!verifier.verify(certPem, sigBuf)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -315,12 +406,101 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Login and pull remote vault
-router.post('/login', async (req, res) => {
+async function resolveBearerClaims(req, cleanEmail, cleanApp) {
+  const bearer = extractBearerToken(req);
+  if (!bearer) return { bearer: null, claims: null, invalid: false };
+  const hmacClaims = verifySyncSessionToken(bearer);
+  if (hmacClaims) return { bearer, claims: hmacClaims, invalid: false };
+  if (bearer.split('.').length === 3) {
+    const fbClaims = await verifyFirebaseIdToken(bearer);
+    if (fbClaims?.email) {
+      return {
+        bearer,
+        claims: {
+          uid: fbClaims.sub,
+          email: String(fbClaims.email).trim().toLowerCase(),
+          app: cleanApp
+        },
+        invalid: false
+      };
+    }
+  }
+  return { bearer, claims: null, invalid: true };
+}
+
+// Login and pull remote vault (supports salted password verifier OR cryptographically verified Firebase ID token)
+router.post(['/login', '/firebase-login'], async (req, res) => {
   try {
-    const { app = 'general', email, passwordHash, legacyPasswordHash } = req.body || {};
-    const cleanEmail = String(email || '').trim().toLowerCase();
+    const { app = 'general', email, passwordHash, legacyPasswordHash, firebaseIdToken, name, initialData } = req.body || {};
+    let cleanEmail = String(email || '').trim().toLowerCase();
     const cleanApp = String(app || 'general').trim().toLowerCase();
+
+    if (firebaseIdToken) {
+      const fbClaims = await verifyFirebaseIdToken(firebaseIdToken);
+      if (!fbClaims || !fbClaims.email) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_FIREBASE_TOKEN',
+          message: 'Firebase authentication token is invalid or expired.'
+        });
+      }
+      const tokenEmail = String(fbClaims.email).trim().toLowerCase();
+      if (cleanEmail && cleanEmail !== tokenEmail) {
+        return res.status(403).json({
+          success: false,
+          code: 'FORBIDDEN',
+          message: 'Verified Firebase account email does not match requested vault.'
+        });
+      }
+      cleanEmail = tokenEmail;
+
+      const key = getSafeKey(cleanApp, cleanEmail);
+      let vault = await getVault(key);
+      if (!vault) {
+        const now = new Date().toISOString();
+        vault = {
+          uid: fbClaims.sub || deriveServerUid(cleanEmail),
+          app: cleanApp,
+          email: cleanEmail,
+          name: (name || fbClaims.name || cleanEmail.split('@')[0]).trim(),
+          passwordHash: '',
+          data: stripSensitiveCredentials(initialData || {}),
+          createdAt: now,
+          updatedAt: now,
+          syncVersion: 1
+        };
+        await saveVault(key, vault);
+      } else if (vault.email && String(vault.email).toLowerCase() !== cleanEmail) {
+        return res.status(403).json({
+          success: false,
+          code: 'FORBIDDEN',
+          message: 'Vault identity mismatch.'
+        });
+      }
+
+      const uid = vault.uid || fbClaims.sub || deriveServerUid(cleanEmail);
+      if (!vault.uid) {
+        vault.uid = uid;
+        await saveVault(key, vault);
+      }
+
+      const token = issueSyncSessionToken({ uid, email: cleanEmail, app: cleanApp });
+      const safeData = stripSensitiveCredentials(vault.data || {});
+      return res.json({
+        success: true,
+        token,
+        authProvider: 'firebase',
+        message: 'Google/Firebase cloud sync authenticated.',
+        user: {
+          uid,
+          email: cleanEmail,
+          name: vault.name || fbClaims.name || cleanEmail.split('@')[0],
+          lastSyncedAt: vault.updatedAt
+        },
+        data: safeData,
+        updatedAt: vault.updatedAt
+      });
+    }
 
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return res.status(400).json({ success: false, message: 'Valid email address is required.' });
@@ -347,8 +527,8 @@ router.post('/login', async (req, res) => {
     if (!vault.passwordHash) {
       return res.status(401).json({
         success: false,
-        code: 'INVALID_CREDENTIALS',
-        message: 'Vault lacks valid password verifier.'
+        code: 'OAUTH_VAULT_PASSWORD_NOT_SET',
+        message: 'This cloud vault uses Google Sign-In. Please sign in with Google to restore your synced data.'
       });
     }
 
@@ -407,10 +587,9 @@ router.post('/push', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid email address is required.' });
     }
 
-    const bearer = extractBearerToken(req);
-    const claims = bearer ? verifySyncSessionToken(bearer) : null;
+    const { bearer, claims, invalid } = await resolveBearerClaims(req, cleanEmail, cleanApp);
 
-    if (bearer && !claims) {
+    if (bearer && invalid) {
       return res.status(401).json({ success: false, code: 'INVALID_TOKEN', message: 'Invalid or expired session token.' });
     }
 
@@ -512,10 +691,9 @@ router.post('/pull', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid email address is required.' });
     }
 
-    const bearer = extractBearerToken(req);
-    const claims = bearer ? verifySyncSessionToken(bearer) : null;
+    const { bearer, claims, invalid } = await resolveBearerClaims(req, cleanEmail, cleanApp);
 
-    if (bearer && !claims) {
+    if (bearer && invalid) {
       return res.status(401).json({ success: false, code: 'INVALID_TOKEN', message: 'Invalid or expired session token.' });
     }
 

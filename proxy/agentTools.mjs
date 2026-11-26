@@ -25,7 +25,7 @@ const STATUTORY_SEBON_SLABS = [
 
 /**
  * Computes exact statutory NEPSE round-trip fee friction % and net return % after 5-slab brokerage,
- * 0.015% SEBON fee, Rs. 25 DP fee per leg, and 7.5% short-term retail CGT on net gain.
+ * 0.015% SEBON fee, Rs. 25 DP fee per leg, and 5.0% short-term retail CGT (3.75% long-term) on net gain.
  */
 export function computeStatutoryNetReturnPct(entryPrice, exitPrice, kitta = 100, holdingDays = 15) {
   const ePx = Number(entryPrice) || 0;
@@ -47,7 +47,7 @@ export function computeStatutoryNetReturnPct(entryPrice, exitPrice, kitta = 100,
   const netBeforeTax = sellGross - sellFees;
 
   const taxableGain = Math.max(0, netBeforeTax - totalBuyCost);
-  const cgtRate = holdingDays >= 365 ? 0.05 : 0.075;
+  const cgtRate = holdingDays > 365 ? 0.0375 : 0.05;
   const cgtTax = taxableGain * cgtRate;
 
   const netReceivable = netBeforeTax - cgtTax;
@@ -353,7 +353,7 @@ export async function assembleScripDossier(symbol, helpers) {
         targets: [],
         halfKellySizing: { suggestedKitta: 0, halfKellyFractionPct: 0, isValidStop: false },
         feeFrictionPct: baseFeeInfo.feeFrictionPct,
-        cgtTaxRatePct: 7.5
+        cgtTaxRatePct: 5.0
       };
     }
 
@@ -417,7 +417,7 @@ export async function assembleScripDossier(symbol, helpers) {
       riskPerShare: +(ltp - safeSlPx).toFixed(2),
       rewardToTarget1: t1Obj ? +(t1Obj.price - ltp).toFixed(2) : null,
       feeFrictionPct: baseFeeInfo.feeFrictionPct,
-      cgtTaxRatePct: 7.5
+      cgtTaxRatePct: 5.0
     };
   })();
 

@@ -216,7 +216,7 @@ export function StrategyLabService() {
         const matched = stocks.find((s: any) => s.symbol === sym);
         if (matched) {
           hist = resolveDynamicStockCandles(matched, Math.min(days, 60));
-          isSyn = true;
+          isSyn = !Array.isArray(hist) || hist.length < 15;
         }
       }
       setIsSyntheticCandles(isSyn);
@@ -295,7 +295,7 @@ export function StrategyLabService() {
                 ? 'bg-amber-950/60 text-amber-300 border-amber-700/60'
                 : 'bg-emerald-950 text-emerald-300 border-emerald-700/60'
             }`}>
-              {isSyntheticCandles ? 'SYNTHETIC ESTIMATION' : 'VERIFIED HISTORICAL OHLCV'}
+              {isSyntheticCandles ? 'LIMITED HISTORY (<15D)' : 'VERIFIED HISTORICAL OHLCV'}
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">Empirical historical backtests, statistical win-rates, expectancy calculator, and live candidates.</p>

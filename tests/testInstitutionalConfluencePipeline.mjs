@@ -249,7 +249,7 @@ assert.ok(sizing.netRRR >= 2.5, `Net RRR must be >= 2.5 (got ${sizing.netRRR})`)
 assert.ok(sizing.qtyPer1Lakh > 0, `Qty per 1 Lakh must be positive (got ${sizing.qtyPer1Lakh})`);
 assert.strictEqual(sizing.turnoverLakhs, 82.0);
 assert.strictEqual(sizing.safeOrderLakhs, 4.1);
-console.log(`✅ Test 6 Passed: Net RRR = ${sizing.netRRR}:1 (after 7.5% CGT & broker fees). Qty per 1 Lakh: ${sizing.qtyPer1Lakh} Shares.\n`);
+console.log(`✅ Test 6 Passed: Net RRR = ${sizing.netRRR}:1 (after 5.0% CGT & broker fees). Qty per 1 Lakh: ${sizing.qtyPer1Lakh} Shares.\n`);
 
 // ── TEST 7: MACRO REGIME & SEASONAL MULTIPLIER ──────────────────────────────
 console.log('Test 7: Validating Macro & Seasonal Hydrology Tightening...');

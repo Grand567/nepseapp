@@ -162086,7 +162086,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 91
+      "holdSessions": 98,
+      "currentStopLoss": 263.1,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-NIMB-2026-10-26",
@@ -162106,7 +162108,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 91
+      "holdSessions": 98,
+      "currentStopLoss": 194,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-HHL-2026-10-26",
@@ -162126,7 +162130,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 91
+      "holdSessions": 98,
+      "currentStopLoss": 342,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SBI-2026-10-26",
@@ -162146,7 +162152,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 91
+      "holdSessions": 98,
+      "currentStopLoss": 414.9,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-GHL-2026-10-26",
@@ -162166,7 +162174,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 91
+      "holdSessions": 98,
+      "currentStopLoss": 294.3,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-GVL-2026-10-26",
@@ -162186,7 +162196,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 91
+      "holdSessions": 98,
+      "currentStopLoss": 539.7,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-RLFL-2026-10-26",
@@ -162206,7 +162218,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 91
+      "holdSessions": 98,
+      "currentStopLoss": 378.8,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-MBJC-2026-10-26",
@@ -162226,7 +162240,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 90
+      "holdSessions": 97,
+      "currentStopLoss": 316.7,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-NMB-2026-10-26",
@@ -162246,7 +162262,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 263.8,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-MANDU-2026-10-26",
@@ -162266,7 +162284,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 774.7,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-PCBL-2026-10-26",
@@ -162286,7 +162306,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 264.1,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-BHCL-2026-10-26",
@@ -162306,7 +162328,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 499.8,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-UMHL-2026-10-26",
@@ -162326,7 +162350,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 539.1,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-GLH-2026-10-26",
@@ -162345,7 +162371,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 260.5,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SJLIC-2026-10-26",
@@ -162365,7 +162393,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 407.5,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SONA-2026-10-26",
@@ -162385,7 +162415,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 441.1,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-CBBL-2026-10-26",
@@ -162405,7 +162437,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 960.2,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-NICA-2026-10-26",
@@ -162425,7 +162459,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 308.2,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-LICN-2026-10-26",
@@ -162444,7 +162480,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 780.4,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SGHL-2026-10-26",
@@ -162464,7 +162502,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 445.9,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SMJC-2026-10-26",
@@ -162483,7 +162523,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 428.6,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-GCIL-2026-10-26",
@@ -162503,7 +162545,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 388.7,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-EBL-2026-10-26",
@@ -162522,7 +162566,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 693.5,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-ADBL-2026-10-26",
@@ -162541,7 +162587,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 322.1,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-NABIL-2026-10-26",
@@ -162560,7 +162608,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 526.7,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-NLIC-2026-10-26",
@@ -162580,7 +162630,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 711,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SKBBL-2026-10-26",
@@ -162600,7 +162652,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 739.6,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-UPCL-2026-10-26",
@@ -162619,7 +162673,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 318.1,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-NTC-2026-10-26",
@@ -162638,7 +162694,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 884.6,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SPIL-2026-10-26",
@@ -162657,7 +162715,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 607.9,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-RNLI-2026-10-26",
@@ -162676,7 +162736,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 433.5,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-GBIME-2026-10-26",
@@ -162695,7 +162757,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 243.2,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SHEL-2026-10-26",
@@ -162714,7 +162778,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 298.5,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SNORL-2026-10-26",
@@ -162733,7 +162799,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 789.8,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-MEPDL-2026-10-26",
@@ -162752,7 +162820,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 545.9,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-KSBBL-2026-10-26",
@@ -162771,7 +162841,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 451.1,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-MPFL-2026-10-26",
@@ -162790,7 +162862,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 552,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SHL-2026-10-26",
@@ -162809,7 +162883,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 497.8,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SRLI-2026-10-26",
@@ -162828,7 +162904,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 360.3,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-NIMBPO-2026-10-26",
@@ -162846,7 +162924,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 148.5,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-ILI-2026-10-26",
@@ -162865,7 +162945,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 418.1,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-MHNL-2026-10-26",
@@ -162884,7 +162966,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 244.1,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-NGPL-2026-10-26",
@@ -162903,7 +162987,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 381.4,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-GBBL-2026-10-26",
@@ -162922,7 +163008,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 399.6,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-RFPL-2026-10-26",
@@ -162940,7 +163028,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 311.5,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-MLBL-2026-10-26",
@@ -162959,7 +163049,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 359.9,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SWBBL-2026-10-26",
@@ -162978,7 +163070,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 683.7,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-HEI-2026-10-26",
@@ -162997,7 +163091,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 422.6,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-NRN-2026-10-26",
@@ -163016,7 +163112,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 1274.3,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SPDL-2026-10-26",
@@ -163035,7 +163133,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 357.1,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-CLI-2026-10-26",
@@ -163054,7 +163154,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 425.7,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-PPCL-2026-10-26",
@@ -163073,7 +163175,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 317.3,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-SADBL-2026-10-26",
@@ -163091,7 +163195,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 396.9,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-ALICL-2026-10-26",
@@ -163109,7 +163215,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 413.6,
+      "ratchetStage": "INITIAL_RISK"
     },
     {
       "id": "POS-BARUN-2026-10-26",
@@ -163127,7 +163235,9 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 5
+      "holdSessions": 12,
+      "currentStopLoss": 312.7,
+      "ratchetStage": "INITIAL_RISK"
     }
   ],
   "closedJournal": [],

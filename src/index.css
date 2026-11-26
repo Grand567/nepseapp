@@ -1275,23 +1275,57 @@ button, a, input, select, .card, .nav-btn {
   touch-action: manipulation;
 }
 
+/* Header Responsive Actions & Mobile Ergonomics */
+@media (max-width: 768px) {
+  .header-stitch-btn {
+    display: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .header-alerts-label {
+    display: none !important;
+  }
+  .header-refresh-label {
+    display: none !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .header-resources-btn {
+    display: none !important;
+  }
+  .header-pro-days {
+    display: none !important;
+  }
+}
+
 /* Header Compact Bar for Narrow Mobile Devices */
 @media (max-width: 480px) {
   .header-bar {
     padding-left: 6px;
     padding-right: 6px;
+    overflow-x: hidden;
   }
   .header-actions {
-    gap: 4px;
+    gap: 3px;
+  }
+  .header-actions > div {
+    gap: 4px !important;
   }
   .header-title {
-    font-size: 17px;
+    font-size: 16px;
   }
   .header-sub {
-    font-size: 12px;
+    font-size: 11px;
   }
-  .header-refresh-label {
-    display: none !important;
+  .header-pro-btn {
+    padding: 0 6px !important;
+    font-size: 11px !important;
+  }
+  #btn-user-avatar {
+    flex-shrink: 0 !important;
+    display: flex !important;
   }
 }
 

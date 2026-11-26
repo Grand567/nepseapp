@@ -13,6 +13,7 @@
 
 import assert from 'assert';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import {
   runComprehensiveBacktest,
@@ -249,13 +250,14 @@ it('saveBacktestReport: generates and writes formal markdown report to backtest/
   assert.ok(markdown.includes('Statutory NEPSE Frictions & Transaction Costs Subtracted'));
   assert.ok(markdown.includes('Survivorship Bias'));
 
-  // Save to backtest/report.md
-  const targetFile = path.join(process.cwd(), 'backtest', 'report.md');
+  // Save to temporary report path so test runs never mutate repo working tree
+  const targetFile = path.join(os.tmpdir(), 'drabyashree-backtest-report.md');
   const savedPath = saveBacktestReport(markdown, targetFile);
 
   assert.strictEqual(fs.existsSync(savedPath), true);
   const readContent = fs.readFileSync(savedPath, 'utf8');
   assert.ok(readContent.length > 500);
+  try { fs.unlinkSync(savedPath); } catch (_) {}
 });
 
 console.log(`\n======================================================================`);

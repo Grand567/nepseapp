@@ -43,6 +43,7 @@ export function getReconciliationHistory() {
  * Save reconciliation audit to disk
  */
 function saveReconciliationAudit(auditRecord) {
+  if (process.env.NEPSE_SKIP_STATIC_EXPORTS === '1') return;
   try {
     const list = getReconciliationHistory();
     const existingIdx = list.findIndex(a => a.tradeDate === auditRecord.tradeDate);
@@ -69,7 +70,7 @@ export function runEodReconciliation(targetDate = null) {
   // Determine target date
   let date = targetDate;
   if (!date) {
-    const latestRow = db.prepare('SELECT MAX(trade_date) as maxDate FROM floorsheet_contracts').get();
+    const latestRow = db.prepare('SELECT MAX(trade_date) as maxDate FROM floorsheet_contracts WHERE COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0').get();
     date = latestRow?.maxDate || formatNptDateIso(new Date());
   }
 
@@ -77,13 +78,14 @@ export function runEodReconciliation(targetDate = null) {
   const fcAgg = db.prepare(`
     SELECT 
       COUNT(*) as contractCount,
+      SUM(CASE WHEN buyer_broker > 0 AND seller_broker > 0 THEN 1 ELSE 0 END) as validBrokerCount,
       COALESCE(SUM(kitta), 0) as totalKitta,
       COALESCE(SUM(amount), 0) as totalTurnover,
       COUNT(DISTINCT symbol) as scripCount,
       MIN(contract_no) as firstContract,
       MAX(contract_no) as lastContract
     FROM floorsheet_contracts
-    WHERE trade_date = ?
+    WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0
   `).get(date);
 
   // 2. Daily Stock Summary (Bhavsani Ledger) Aggregations
@@ -93,7 +95,7 @@ export function runEodReconciliation(targetDate = null) {
       COALESCE(SUM(total_volume), 0) as summaryKitta,
       COALESCE(SUM(total_turnover), 0) as summaryTurnover
     FROM daily_stock_summary
-    WHERE trade_date = ?
+    WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0
   `).get(date);
 
   // 3. Vault Archive Index Entry
@@ -102,6 +104,8 @@ export function runEodReconciliation(targetDate = null) {
 
   // 4. Parity Computations
   const contractsCount = Number(fcAgg?.contractCount || 0);
+  const validBrokerCount = Number(fcAgg?.validBrokerCount || 0);
+  const isCompleteValidSession = contractsCount >= 1000 && validBrokerCount > 0;
   const ledgerVolume = Number(fcAgg?.totalKitta || 0);
   const ledgerTurnover = Number(fcAgg?.totalTurnover || 0);
   const ledgerScrips = Number(fcAgg?.scripCount || 0);
@@ -114,10 +118,10 @@ export function runEodReconciliation(targetDate = null) {
   const turnoverDiff = Math.abs(ledgerTurnover - summaryTurnover);
   const scripDiff = Math.abs(ledgerScrips - summaryScrips);
 
-  // Exact match criteria: volume diff must be 0, turnover diff within 1 NPR due to roundings
-  const is100PercentMatch = (contractsCount > 0) && (volumeDiff === 0) && (turnoverDiff <= 1.0) && (scripDiff === 0);
-  const parityPercentage = (contractsCount === 0) 
-    ? 0.00 
+  // Exact match criteria: complete valid-broker EOD session AND exact 3-way volume/turnover/scrip match
+  const is100PercentMatch = isCompleteValidSession && (volumeDiff === 0) && (turnoverDiff <= 1.0) && (scripDiff === 0);
+  const parityPercentage = !isCompleteValidSession
+    ? 0.00
     : (is100PercentMatch ? 100.00 : +(((1 - (volumeDiff / Math.max(1, ledgerVolume))) * 100).toFixed(2)));
 
   // Top 5 Scrips Parity Breakdown
@@ -131,8 +135,8 @@ export function runEodReconciliation(targetDate = null) {
       dss.total_turnover as bhavsaniAmt,
       dss.close_price as closePrice
     FROM floorsheet_contracts fc
-    LEFT JOIN daily_stock_summary dss ON fc.symbol = dss.symbol AND fc.trade_date = dss.trade_date
-    WHERE fc.trade_date = ?
+    LEFT JOIN daily_stock_summary dss ON fc.symbol = dss.symbol AND fc.trade_date = dss.trade_date AND COALESCE(dss.is_quarantined, 0) = 0
+    WHERE fc.trade_date = ? AND COALESCE(fc.is_quarantined, 0) = 0
     GROUP BY fc.symbol
     ORDER BY ledgerAmt DESC
     LIMIT 10
@@ -153,8 +157,8 @@ export function runEodReconciliation(targetDate = null) {
 
   const nowIso = new Date().toISOString();
 
-  // Upsert into official_exchange_benchmarks table
-  if (contractsCount > 0) {
+  // Upsert into official_exchange_benchmarks table ONLY when complete valid-broker session is verified
+  if (isCompleteValidSession) {
     try {
       db.prepare(`
         INSERT INTO official_exchange_benchmarks 
@@ -182,7 +186,11 @@ export function runEodReconciliation(targetDate = null) {
   const auditRecord = {
     tradeDate: date,
     reconciledAt: nowIso,
-    status: is100PercentMatch ? 'CERTIFIED_AUTHENTIC' : (contractsCount === 0 ? 'NO_DATA' : 'DISCREPANCY_DETECTED'),
+    status: is100PercentMatch
+      ? 'CERTIFIED_AUTHENTIC'
+      : (contractsCount === 0
+          ? 'NO_DATA'
+          : (!isCompleteValidSession ? 'INCOMPLETE_OR_MASKED_SESSION' : 'DISCREPANCY_DETECTED')),
     badge: is100PercentMatch ? '🛡️ SEBON / NEPSE 100% PARITY CERTIFIED' : '⚠️ RECONCILIATION DISCREPANCY',
     parityPercentage,
     contractsCount,

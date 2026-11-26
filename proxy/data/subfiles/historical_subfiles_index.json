@@ -1,7 +1,7 @@
 {
   "file_type": "HISTORICAL_SUBFILES_INDEX",
   "version": "1.0",
-  "compiled_at": "2026-11-24T10:06:14.426Z",
+  "compiled_at": "2026-11-26T00:21:42.081Z",
   "total_subfiles": 5,
   "calendar_regime": "Monday–Friday Trading Week (Saturday & Sunday Closed)",
   "available_sessions": [
@@ -18,8 +18,8 @@
       "bs_date": "2083-08-08",
       "day_of_week": "Tuesday",
       "total_scrips": 351,
-      "file_raw_kb": 1323.7,
-      "file_gz_kb": 168.7,
+      "file_raw_kb": 1346.4,
+      "file_gz_kb": 173.5,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_1.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_1.json.gz"
     },
@@ -29,8 +29,8 @@
       "bs_date": "2083-08-07",
       "day_of_week": "Monday",
       "total_scrips": 360,
-      "file_raw_kb": 1356.3,
-      "file_gz_kb": 174.8,
+      "file_raw_kb": 1377.4,
+      "file_gz_kb": 176.1,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_2.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_2.json.gz"
     },
@@ -40,8 +40,8 @@
       "bs_date": "2083-08-04",
       "day_of_week": "Friday",
       "total_scrips": 337,
-      "file_raw_kb": 1268.4,
-      "file_gz_kb": 163.1,
+      "file_raw_kb": 1288.3,
+      "file_gz_kb": 164.2,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_3.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_3.json.gz"
     },
@@ -51,8 +51,8 @@
       "bs_date": "2083-08-03",
       "day_of_week": "Thursday",
       "total_scrips": 347,
-      "file_raw_kb": 1308.2,
-      "file_gz_kb": 168.9,
+      "file_raw_kb": 1328.6,
+      "file_gz_kb": 170.2,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_4.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_4.json.gz"
     },
@@ -62,8 +62,8 @@
       "bs_date": "2083-08-02",
       "day_of_week": "Wednesday",
       "total_scrips": 347,
-      "file_raw_kb": 1309.4,
-      "file_gz_kb": 169.8,
+      "file_raw_kb": 1329.8,
+      "file_gz_kb": 171.1,
       "file_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_5.json",
       "file_gz_path": "C:\\Users\\Hp\\Desktop\\Software\\nepse app\\proxy\\data\\subfiles\\historical_day_5.json.gz"
     }

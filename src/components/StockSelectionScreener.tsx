@@ -5,13 +5,14 @@ import {
   TrendingUp, Target, DollarSign
 } from 'lucide-react';
 import { StatCard, InfoBanner, Spinner, StockSearchSelect } from './ui';
+import { FlowchartV3Panel } from './swing/FlowchartV3Panel';
 import { evaluateStockSelection } from '../utils/signals/stockScoringEngine';
 import { SCORING_CONFIG } from '../utils/signals/scoringConfig';
-import { fetchFromBackend, loadNepseData } from '../utils/liveData';
-import { getCumulativeBrokerData } from '../utils/historyCache.js';
+import { loadNepseData, fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
+import { getCumulativeBrokerData, ensureCumulativeBrokerLoaded } from '../utils/historyCache.js';
 
 export function StockSelectionScreener({
-  stocks: propStocks = [],
+  stocks: propStocks,
   onSelectStock = null,
   onSelectSymbol = null
 }: {
@@ -21,6 +22,7 @@ export function StockSelectionScreener({
 }) {
   const safePropStocks = Array.isArray(propStocks) ? propStocks : [];
   const [stocks, setStocks] = useState<any[]>(safePropStocks);
+  const [brokerSummaryMap, setBrokerSummaryMap] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState<boolean>(safePropStocks.length === 0);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +57,11 @@ export function StockSelectionScreener({
   };
 
   useEffect(() => {
+    ensureCumulativeBrokerLoaded().catch(() => {});
+    fetchMarketWideBrokerSummaryMap(1).then(res => {
+      const m = res?.map || res;
+      if (m && typeof m === 'object') setBrokerSummaryMap(m);
+    }).catch(() => {});
     if (propStocks && propStocks.length > 0) {
       setStocks(propStocks);
       setLoading(false);
@@ -66,6 +73,8 @@ export function StockSelectionScreener({
   // Compute Selection Scores for each stock
   const scoredStocks = useMemo(() => {
     return stocks.map(stock => {
+      const symKey = String(stock.symbol || '').toUpperCase().trim();
+      const mapRow = brokerSummaryMap[symKey] || null;
       const ltp = Number(stock.ltp || stock.marketPrice || 0);
       const prevClose = Number(stock.prevClose || ltp);
       const pChange = Number(stock.pChange || (prevClose > 0 ? ((ltp - prevClose) / prevClose) * 100 : 0));
@@ -78,11 +87,18 @@ export function StockSelectionScreener({
       const isAtOperatorFloor = operatorPremiumPct !== null && operatorPremiumPct >= -3.0 && operatorPremiumPct <= 4.5;
       const isOverextended = operatorPremiumPct !== null && operatorPremiumPct > 12.0;
       const isUnderwater = operatorPremiumPct !== null && operatorPremiumPct < -3.0;
-      const leadAccumulator = cum?.topAccumulators?.[0]?.broker ? `Broker #${cum.topAccumulators[0].broker}` : null;
+      const leadAccumulator = cum?.topAccumulators?.[0]?.broker ? `Broker #${cum.topAccumulators[0].broker}` : (mapRow?.leadAccumulator || null);
 
-      const bcr3Buy = Number(stock.bcr3Buy ?? stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? stock.realBrokerAnalysis?.bcr3BuyPct ?? 0);
-      const bcr5Buy = Number(stock.bcr5Buy ?? stock.bcr5BuyPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? stock.realBrokerAnalysis?.bcr5BuyPct ?? 0);
-      const nbar = Number(stock.nbar ?? stock.brokerAnalysis?.nbar ?? 1.0);
+      const bcr3Buy = Number(mapRow?.bcr3BuyPct ?? mapRow?.bcr3Buy ?? stock.bcr3Buy ?? stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? stock.realBrokerAnalysis?.bcr3BuyPct ?? 0);
+      const bcr5Buy = Number(mapRow?.bcr5BuyPct ?? mapRow?.bcr5Buy ?? stock.bcr5Buy ?? stock.bcr5BuyPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? stock.realBrokerAnalysis?.bcr5BuyPct ?? 0);
+      const nbarRaw = mapRow?.nbar ?? stock.nbar ?? stock.brokerAnalysis?.nbar;
+      const nbar = nbarRaw != null ? Number(nbarRaw) : (bcr3Buy > 0 ? +(bcr3Buy / Math.max(10, 100 - bcr3Buy)).toFixed(2) : null);
+
+      const turnoverLiquidityScore = turnover >= 50000000 ? 70 : turnover >= 10000000 ? 60 : turnover > 0 ? 48 : 30;
+      const dynamicBrokerScore = bcr3Buy > 0
+        ? Math.min(100, Math.max(10, Math.round(bcr3Buy * 1.4 + (((nbar ?? 1) - 1.0) * 20))))
+        : (mapRow?.smartMoneyScore != null ? Number(mapRow.smartMoneyScore) : turnoverLiquidityScore);
+      const dynamicMarketScore = Math.min(95, Math.max(25, Math.round(50 + pChange * 3 + (volume > 50000 ? 10 : volume > 10000 ? 5 : -5))));
 
       // Build scoring payload
       const evalResult = evaluateStockSelection({
@@ -101,14 +117,14 @@ export function StockSelectionScreener({
           publicPercentage: stock.publicPercentage != null ? Number(stock.publicPercentage) : null
         },
         brokerSignals: {
-          compositeScore: bcr3Buy > 0 ? Math.min(100, Math.max(10, Math.round(bcr3Buy * 1.4 + (nbar - 1.0) * 20))) : 55
+          compositeScore: dynamicBrokerScore
         },
         technicalSignals: {
-          compositeScore: pChange > 0 && volume > 20000 ? 75 : 50,
+          compositeScore: pChange > 0 && volume > 20000 ? 75 : (volume > 0 ? 50 : 35),
           signals: { volatility: { atr14: ltp * 0.03 } }
         },
         fundamentalSignals: { compositeScore: (stock.eps != null && stock.eps > 0) ? 70 : 30 },
-        marketSignals: { compositeScore: 60 }
+        marketSignals: { compositeScore: dynamicMarketScore }
       });
 
       const isSwingLeader = isAtOperatorFloor && !['Commercial Banks', 'Mutual Fund', 'Promoter Share'].includes(stock.sector || '') && (evalResult.compositeScore >= 60 || Boolean(leadAccumulator));
@@ -129,7 +145,7 @@ export function StockSelectionScreener({
         leadAccumulator
       };
     });
-  }, [stocks]);
+  }, [stocks, brokerSummaryMap]);
 
   // Unique Sectors
   const sectors = useMemo(() => {
@@ -377,6 +393,8 @@ export function StockSelectionScreener({
         </InfoBanner>
       )}
 
+      <FlowchartV3Panel onSelectStock={onSelectStock} onSelectSymbol={onSelectSymbol} />
+
       {/* Results Table */}
       {loading ? (
         <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/40">
@@ -423,11 +441,11 @@ export function StockSelectionScreener({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-200">
-                {filteredStocks.map((item, idx) => {
+                {filteredStocks.map((item) => {
                   const res = item.evalResult;
                   const plan = res.executionPlan;
                   return (
-                    <tr key={idx} className="hover:bg-slate-800/30">
+                    <tr key={item.symbol} className="hover:bg-slate-800/30">
                       <td className="p-3">
                         <button
                           onClick={() => {

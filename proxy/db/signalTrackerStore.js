@@ -265,7 +265,7 @@ export function calculateNepseNetReturn(
   entryPrice,
   exitPrice,
   capitalNpr = 250000,
-  cgtRate = 0.075
+  cgtRate = 0.05
 ) {
   if (entryPrice <= 0 || exitPrice <= 0) {
     return { grossReturnPct: 0, netReturnPct: 0 };

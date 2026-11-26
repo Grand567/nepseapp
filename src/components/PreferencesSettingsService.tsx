@@ -14,7 +14,7 @@ import {
   getCapitalTierConfig 
 } from '../utils/dynamicCapitalEngine';
 import { formatNptDateIso } from '../utils/nepseCalendar';
-import { loadEncryptedUserProfiles, saveEncryptedUserProfiles, resolveActiveUserId } from '../utils/profileVaultStorage';
+import { loadEncryptedUserProfiles, saveEncryptedUserProfiles, resolveActiveUserId, readCanonicalPortfolioSymbolsSync } from '../utils/profileVaultStorage';
 import { triggerHaptic } from '../utils/haptics';
 import { triggerFileDownload } from '../utils/fileExport';
 
@@ -176,11 +176,12 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
   };
 
   const readCanonicalPortfolio = (): any[] => {
-    const profiles = safeParseArray('nepse_portfolio_profiles');
+    if (Array.isArray(accounts) && accounts.length > 0) return accounts;
+    const { profiles } = readCanonicalPortfolioSymbolsSync(activeUserId);
     if (profiles.length > 0) return profiles;
     const userTx = safeParseArray(`nepse_hub_${activeUserId}_transactions`);
     if (userTx.length > 0) return userTx;
-    return safeParseArray('nepse_portfolio_v1');
+    return [];
   };
 
   // Backup Export

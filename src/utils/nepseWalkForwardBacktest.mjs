@@ -7,7 +7,7 @@
  * Structural Microstructure Guarantees:
  * 1. T+2 Mandatory Settlement Lock: No exit permitted on Day T or Day T+1.
  * 2. Statutory Friction FY 2083/84: Tiered Broker Commission (0.36%–0.24%),
- *    SEBON Fee (0.015%), DP Charge (Rs. 25), and Short/Long-Term CGT (7.5% / 5.0%).
+ *    SEBON Fee (0.015%), DP Charge (Rs. 25), and Short/Long-Term CGT (5.0% / 3.75%).
  * 3. Thin-Liquidity Slippage Model & Participation Limits (<= 5% daily turnover).
  * 4. ±15% Daily Circuit Limit Bounding & Gap-Down Execution Traps.
  * 5. Rolling Walk-Forward Optimization (In-Sample / Out-of-Sample).
@@ -18,8 +18,8 @@ export const NEPSE_FEES = {
   sebonRate: 0.00015,       // 0.015% SEBON regulatory fee per leg
   dpCharge: 25.0,           // NPR 25 DP fee per sell leg
   minBrokerFee: 10.0,       // NPR 10 minimum broker commission floor
-  cgtShortTerm: 0.075,      // 7.5% CGT for holding <= 365 days
-  cgtLongTerm: 0.050,       // 5.0% CGT for holding > 365 days
+  cgtShortTerm: 0.05,       // 5.0% CGT for holding <= 365 days
+  cgtLongTerm: 0.0375,      // 3.75% CGT for holding > 365 days
   circuitBandPct: 15.0      // ±15% Daily Stock Circuit Limit
 };
 

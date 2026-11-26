@@ -43,7 +43,7 @@ export interface BrokerBaselineShare {
 
 export interface RebuildConfig {
   capitalPerTradeNpr?: number;  // Default: Rs 2,50,000 position size for exact fee tiering
-  shortTermCgtRate?: number;    // Default: 0.075 (7.5% individual short-term CGT)
+  shortTermCgtRate?: number;    // Default: 0.05 (5.0% individual short-term CGT)
   minTradableTurnoverNpr?: number; // Default: Rs 15,00,000 on entry day
   ratchetTriggerR?: number;     // Default: 1.2R (moves stop to fee-adjusted breakeven)
   ratchetLockGainPct?: number;  // Default: +1.2% above entry_vwap
@@ -58,7 +58,7 @@ export function calculateNepseNetReturn(
   entryPrice: number,
   exitPrice: number,
   capitalNpr = 250000,
-  cgtRate = 0.075
+  cgtRate = 0.05
 ): { grossReturnPct: number; netReturnPct: number } {
   if (entryPrice <= 0 || exitPrice <= 0) {
     return { grossReturnPct: 0, netReturnPct: 0 };

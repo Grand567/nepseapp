@@ -428,8 +428,8 @@ try {
   // ── 9. BUG-072, BUG-073, BUG-074, BUG-079: StockDetailModal & StockBrokerAnalysisTab ─
   await test('[BUG-072/073/074/079] StockDetailModal & StockBrokerAnalysisTab fix negative sign, ALL_TIME distributors, peer history & pollTimer cleanup', () => {
     const modalSrc = readRepoFile('src/components/StockDetailModal.jsx');
-    // BUG-072: losing session badge must emit '-' before Math.abs(d.pChange)
-    assert.ok(modalSrc.includes("d.pChange < 0 ? '-' : ''"), 'StockDetailModal pChange badge must display minus sign for negative % changes');
+    // BUG-072: losing session badge must emit '-' before changeVal/pChangeVal
+    assert.ok(modalSrc.includes("▼ -${fmt(Math.abs(changeVal))} (-${Math.abs(pChangeVal).toFixed(2)}%)"), 'StockDetailModal pChange badge must display minus sign for negative % changes');
     // BUG-073: ALL_TIME distList must read allTimeBrokerAnalysis distributors before brokerConcentration
     assert.ok(!modalSrc.includes("'NET ACCUMULATION (43S since 2026-08-27)'"), 'Remove hardcoded 43S session count literal');
     assert.ok(modalSrc.includes('allTimeBrokerAnalysis?.topDistributors'), 'ALL_TIME distributor column must read allTimeBrokerAnalysis distributors');

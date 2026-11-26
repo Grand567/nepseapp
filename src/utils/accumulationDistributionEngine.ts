@@ -172,7 +172,7 @@ export interface StockWyckoffAnalysis {
   actionableGuidanceEnglish: string;
   earlySignals?: EarlyDetectionSignals;
   isDataSynthetic?: boolean;
-  dataQuality?: 'REAL_HISTORY' | 'SYNTHETIC_GENERATED' | 'INTRADAY_ONLY';
+  dataQuality?: 'REAL_HISTORY' | 'INSUFFICIENT_HISTORY' | 'INTRADAY_ONLY';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1279,9 +1279,9 @@ export function classifyWyckoffStage(
   const usingRealCandles = Array.isArray(candles) && candles.length >= 10 && 
     candles.some(c => c.date && c.date.length > 4);
   const isDataSynthetic = !usingRealCandles;
-  const dataQuality: 'REAL_HISTORY' | 'SYNTHETIC_GENERATED' | 'INTRADAY_ONLY' = 
-    usingRealCandles ? 'REAL_HISTORY' : 
-    (candles && candles.length > 0 ? 'SYNTHETIC_GENERATED' : 'INTRADAY_ONLY');
+  const dataQuality: 'REAL_HISTORY' | 'INSUFFICIENT_HISTORY' | 'INTRADAY_ONLY' =
+    usingRealCandles ? 'REAL_HISTORY' :
+    (candles && candles.length > 0 ? 'INSUFFICIENT_HISTORY' : 'INTRADAY_ONLY');
 
   const effectiveCandles = (Array.isArray(candles) && candles.length >= 10)
     ? candles

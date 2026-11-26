@@ -740,6 +740,9 @@ export function syncSubfilesToPublicBundle() {
   }
 }
 
+let _lastColdCompileAt = 0;
+const COLD_COMPILE_COOLDOWN_MS = 5 * 60 * 1000;
+
 /**
  * Reads a specific historical sub-file (by dayOffset 1..4 or ISO date) with 0ms in-memory cache
  */
@@ -747,6 +750,8 @@ export function readHistoricalSubfile(dayOffsetOrDate = 1) {
   if (_subfilesCache.has(dayOffsetOrDate)) {
     return _subfilesCache.get(dayOffsetOrDate);
   }
+
+  const indexExistsOnDisk = fs.existsSync(SUBFILES_INDEX_GZ) || fs.existsSync(SUBFILES_INDEX_JSON);
 
   // Try loading from disk
   let targetPath = null;
@@ -762,6 +767,10 @@ export function readHistoricalSubfile(dayOffsetOrDate = 1) {
     if (entry) {
       targetPath = entry.file_path;
       targetGzPath = entry.file_gz_path;
+    } else if (index?.subfiles?.length > 0 || indexExistsOnDisk) {
+      // Index is already compiled; requested date is uncompiled (e.g. holiday or masked intraday session).
+      // Return null immediately instead of blocking the event loop ~10s recompiling existing subfiles.
+      return null;
     }
   }
 
@@ -786,7 +795,11 @@ export function readHistoricalSubfile(dayOffsetOrDate = 1) {
     } catch (_) {}
   }
 
-  // Cold boot: compile now
+  // Only compile synchronously on a true cold boot when the index has never been built
+  if (indexExistsOnDisk || (Date.now() - _lastColdCompileAt < COLD_COMPILE_COOLDOWN_MS)) {
+    return null;
+  }
+  _lastColdCompileAt = Date.now();
   compileHistoricalSubfiles();
   return _subfilesCache.get(dayOffsetOrDate) || null;
 }
@@ -814,6 +827,10 @@ export function readHistoricalSubfilesIndex() {
     } catch (_) {}
   }
 
+  if (Date.now() - _lastColdCompileAt < COLD_COMPILE_COOLDOWN_MS) {
+    return null;
+  }
+  _lastColdCompileAt = Date.now();
   return compileHistoricalSubfiles();
 }
 

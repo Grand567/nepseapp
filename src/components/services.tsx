@@ -13,7 +13,7 @@ import {
   fetchAllSecurities, fetchPriceHistory,
   loadNepseData, fetchIndices, fetchFloorSheet, ENDPOINT_REGISTRY, getCachedStocks, getCachedIndices,
   getCachedRealPriceHistory, getCachedRealBrokerAnalysis, setCachedRealBrokerAnalysis,
-  fetchRealBrokerAnalysis, fetchAvailableTradingDates, getProxyBase,
+  fetchRealBrokerAnalysis, fetchAvailableTradingDates, getProxyBase, mapWithConcurrency,
 } from '../utils/liveData';
 import { getWatchlist, addToWatchlist, removeFromWatchlist } from '../utils/watchlist';
 
@@ -326,14 +326,13 @@ export function UniversalScreener({
       const stocks = includeNonEquities ? (rawStocks || []) : (rawStocks || []).filter((s) => isPureNepseEquity(s));
       if (rawStocks?.length) setRawTotal(stocks.length);
 
-      // Pre-warm authentic price history for active securities non-blockingly to avoid socket starvation
+      // Pre-warm authentic price history for active securities non-blockingly with capped concurrency
       if (!hideTimeframe && activeTf !== '1D' && stocks?.length) {
         const topToWarm = stocks.slice(0, 10);
-        Promise.allSettled(
-          topToWarm.map(s => {
-            const sym = s.symbol;
-            return (sym && !getCachedRealPriceHistory(sym)) ? fetchPriceHistory(sym, 365) : Promise.resolve(null);
-          })
+        mapWithConcurrency(
+          topToWarm,
+          2,
+          (s) => (s?.symbol && !getCachedRealPriceHistory(s.symbol)) ? fetchPriceHistory(s.symbol, 365) : null
         ).catch(() => {});
       }
 
@@ -917,7 +916,7 @@ export function MarketSummaryService({ selectedDate, date }: { selectedDate?: st
     const cachedIdx = getCachedIndices();
     if (cachedIdx?.nepse) {
       return {
-        nepseIndex: cachedIdx.nepse.value || 2624.36,
+        nepseIndex: cachedIdx.nepse.value || 0,
         change: cachedIdx.nepse.change || 0,
         changePercent: cachedIdx.nepse.pChange || 0,
         totalTurnover: cachedIdx.nepse.turnover || 0,
@@ -934,12 +933,26 @@ export function MarketSummaryService({ selectedDate, date }: { selectedDate?: st
   const [indices, setIndices] = useState<any[]>(() => {
     const cachedIdx = getCachedIndices();
     if (cachedIdx?.nepse) {
-      return [
-        { name: 'NEPSE Index', value: cachedIdx.nepse.value, change: cachedIdx.nepse.change, changePercent: cachedIdx.nepse.pChange },
-        { name: 'Sensitive Index', value: cachedIdx.sensitive?.value, change: cachedIdx.sensitive?.change, changePercent: cachedIdx.sensitive?.pChange },
-        { name: 'Float Index', value: cachedIdx.float?.value, change: cachedIdx.float?.change, changePercent: cachedIdx.float?.pChange },
-        ...(cachedIdx.subIndices || []).map((s: any) => ({ name: s.index || s.name, value: s.value, change: s.change, changePercent: s.pChange }))
-      ];
+      const list: any[] = [];
+      const pushIfValid = (name: string, src: any) => {
+        const val = Number(src?.value);
+        if (!src || !Number.isFinite(val) || val <= 0) return;
+        const ch = Number(src.change);
+        const pch = Number(src.pChange);
+        list.push({
+          name,
+          value: val,
+          change: Number.isFinite(ch) ? ch : 0,
+          changePercent: Number.isFinite(pch) ? pch : 0,
+        });
+      };
+      pushIfValid('NEPSE Index', cachedIdx.nepse);
+      pushIfValid('Sensitive Index', cachedIdx.sensitive);
+      pushIfValid('Float Index', cachedIdx.float);
+      for (const s of (cachedIdx.subIndices || [])) {
+        pushIfValid(s?.index || s?.name, s);
+      }
+      return list;
     }
     return [];
   });
@@ -1037,11 +1050,11 @@ export function MarketSummaryService({ selectedDate, date }: { selectedDate?: st
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="NEPSE Index" value={Number(data.nepseIndex).toLocaleString()} big />
-        <StatCard label={`${timeframe} Change`} value={`${activeChg > 0 ? '+' : ''}${activeChg.toFixed(2)}%`} color={activeChg >= 0 ? '#16a34a' : '#dc2626'} big />
-        <StatCard label={`${timeframe} Turnover`} value={`Rs. ${(activeTurnover / 1e9).toFixed(2)}B`} />
-        <StatCard label={`${timeframe} Volume`} value={activeVolume.toLocaleString()} />
-        <StatCard label={`${timeframe} Trades`} value={activeTx.toLocaleString()} />
+        <StatCard label="NEPSE Index" value={(Number.isFinite(Number(data?.nepseIndex)) && Number(data.nepseIndex) > 0) ? Number(data.nepseIndex).toLocaleString() : '—'} big />
+        <StatCard label={`${timeframe} Change`} value={Number.isFinite(activeChg) ? `${activeChg > 0 ? '+' : ''}${activeChg.toFixed(2)}%` : '—'} color={activeChg >= 0 ? '#16a34a' : '#dc2626'} big />
+        <StatCard label={`${timeframe} Turnover`} value={Number.isFinite(activeTurnover) && activeTurnover > 0 ? `Rs. ${(activeTurnover / 1e9).toFixed(2)}B` : '—'} />
+        <StatCard label={`${timeframe} Volume`} value={Number.isFinite(activeVolume) && activeVolume > 0 ? activeVolume.toLocaleString() : '—'} />
+        <StatCard label={`${timeframe} Trades`} value={Number.isFinite(activeTx) && activeTx > 0 ? activeTx.toLocaleString() : '—'} />
         <StatCard label="Status" value={data.marketStatus || 'CLOSED'} color={data.marketStatus === 'OPEN' ? '#16a34a' : '#dc2626'} />
       </div>
       <div className="grid grid-cols-3 gap-3">
@@ -1054,8 +1067,8 @@ export function MarketSummaryService({ selectedDate, date }: { selectedDate?: st
           <h4 className="mb-2 mt-5 text-sm font-extrabold uppercase tracking-wide text-slate-500">Sector Sub-Indices</h4>
           <DataTable data={indices} cols={[
             { key: 'name', label: 'Index', bold: true },
-            { key: 'value', label: 'Value', align: 'right', format: (v) => Number(v).toLocaleString() },
-            { key: 'changePercent', label: '% Chg', align: 'right', format: (v) => `${v > 0 ? '+' : ''}${Number(v).toFixed(2)}%`, colorFn: (v) => (v >= 0 ? '#16a34a' : '#dc2626') },
+            { key: 'value', label: 'Value', align: 'right', format: (v) => (v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) && Number(v) > 0) ? Number(v).toLocaleString() : '—' },
+            { key: 'changePercent', label: '% Chg', align: 'right', format: (v) => (v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v))) ? `${Number(v) > 0 ? '+' : ''}${Number(v).toFixed(2)}%` : '—', colorFn: (v) => (Number(v) >= 0 ? '#16a34a' : '#dc2626') },
           ]} />
         </>
       )}
@@ -1088,14 +1101,13 @@ export function TopPerformersService({
         : await loadNepseData(activeDate);
       const stocks = (rawStocks || []).filter((s) => isPureNepseEquity(s));
 
-      // Pre-warm authentic price history for top active securities non-blockingly when multi-timeframe horizon is active
+      // Pre-warm authentic price history for top active securities non-blockingly with capped concurrency
       if (activeTf !== '1D' && stocks?.length) {
         const topPool = stocks.slice(0, 10);
-        Promise.allSettled(
-          topPool.map(s => {
-            const sym = s.symbol;
-            return sym && !getCachedRealPriceHistory(sym) ? fetchPriceHistory(sym, 365) : Promise.resolve(null);
-          })
+        mapWithConcurrency(
+          topPool,
+          2,
+          (s) => (s?.symbol && !getCachedRealPriceHistory(s.symbol)) ? fetchPriceHistory(s.symbol, 365) : null
         ).catch(() => {});
       }
 
@@ -2090,19 +2102,34 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
             <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ fontSize: 12, color: '#94a3b8' }}>Target 1 (First Resistance)</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#34d399', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {typeof topPick.target1 === 'object' ? (topPick.target1?.price ?? '—') : (topPick.target1 || '—')} (+7.5%)
+                {(() => {
+                  const t1 = typeof topPick.target1 === 'object' ? (topPick.target1?.price ?? null) : (Number(topPick.target1) || null);
+                  const ref = Number(topPick.ltp || (typeof topPick.entryLow === 'object' ? topPick.entryLow?.price : topPick.entryLow) || 0);
+                  const pct = (t1 && ref > 0) ? ` (+${(((t1 - ref) / ref) * 100).toFixed(1)}%)` : '';
+                  return `Rs. ${t1 ?? '—'}${pct}`;
+                })()}
               </div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ fontSize: 12, color: '#94a3b8' }}>Target 2 (Runner)</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#10B981', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {typeof topPick.target2 === 'object' ? (topPick.target2?.price ?? '—') : (topPick.target2 || '—')} (+15.5%)
+                {(() => {
+                  const t2 = typeof topPick.target2 === 'object' ? (topPick.target2?.price ?? null) : (Number(topPick.target2) || null);
+                  const ref = Number(topPick.ltp || (typeof topPick.entryLow === 'object' ? topPick.entryLow?.price : topPick.entryLow) || 0);
+                  const pct = (t2 && ref > 0) ? ` (+${(((t2 - ref) / ref) * 100).toFixed(1)}%)` : '';
+                  return `Rs. ${t2 ?? '—'}${pct}`;
+                })()}
               </div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ fontSize: 12, color: '#94a3b8' }}>Trailing Stop Loss</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {typeof topPick.stopLoss === 'object' ? (topPick.stopLoss?.price ?? '—') : (topPick.stopLoss || '—')} (-4.5%)
+                {(() => {
+                  const sl = typeof topPick.stopLoss === 'object' ? (topPick.stopLoss?.price ?? null) : (Number(topPick.stopLoss) || null);
+                  const ref = Number(topPick.ltp || (typeof topPick.entryLow === 'object' ? topPick.entryLow?.price : topPick.entryLow) || 0);
+                  const pct = (sl && ref > 0) ? ` (${(((sl - ref) / ref) * 100).toFixed(1)}%)` : '';
+                  return `Rs. ${sl ?? '—'}${pct}`;
+                })()}
               </div>
             </div>
           </div>
@@ -2314,7 +2341,11 @@ export function SectorHeatmapService({ selectedDate: propSelectedDate, date: pro
             });
         });
         if (warmSyms.length > 0) {
-          Promise.allSettled(warmSyms.slice(0, 10).map(sym => fetchPriceHistory(sym, 365))).catch(() => {});
+          mapWithConcurrency(
+            warmSyms.slice(0, 10),
+            2,
+            (sym) => fetchPriceHistory(sym, 365)
+          ).catch(() => {});
         }
       }
 
@@ -6601,8 +6632,8 @@ export function ApiStatusService() {
 
         const sellShort = calculateSellDetails(100, 200, 150, 'short');
         const sellLong = calculateSellDetails(100, 200, 150, 'long');
-        const sellOk = Math.abs(sellShort.cgt - 367.50) < 0.05 && Math.abs(sellLong.cgt - 245.00) < 0.05 && sellShort.dpFee === 25;
-        record('Category D: Statutory Math', 'Seller CGT (Individual Short-Term 7.5% vs Long-Term 5.0%)', sellOk, `Short CGT: Rs.${sellShort.cgt.toFixed(2)} • Long CGT: Rs.${sellLong.cgt.toFixed(2)} • DP: Rs.25`, Date.now() - t5);
+        const sellOk = Math.abs(sellShort.cgt - 245.00) < 0.05 && Math.abs(sellLong.cgt - 183.75) < 0.05 && sellShort.dpFee === 25;
+        record('Category D: Statutory Math', 'Seller CGT (Individual Short-Term 5.0% vs Long-Term 3.75%)', sellOk, `Short CGT: Rs.${sellShort.cgt.toFixed(2)} • Long CGT: Rs.${sellLong.cgt.toFixed(2)} • DP: Rs.25`, Date.now() - t5);
 
         const txs = [{ quantity: 100, price: 150 }, { quantity: 50, price: 200 }];
         const waccResult = calculateWacc(txs);

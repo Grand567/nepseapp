@@ -2,7 +2,7 @@
 import React, { Component, ErrorInfo, ReactNode, useEffect, useMemo, useState } from 'react';
 import { getProxyBase } from '../../utils/liveData';
 import { getBrokerName } from '../../utils/accumulationDistributionEngine';
-import { formatNptDateIso, isMarketOpen, latestTradingSession } from '../../utils/nepseCalendar';
+import { formatNptDateIso, isMarketOpen, latestTradingSession, getNptMinutesOfDay } from '../../utils/nepseCalendar';
 
 export type SmartMoneyTimeframe = '1D' | '5D' | '1M' | 'ALL';
 
@@ -584,7 +584,7 @@ function BrokerSmartMoneyCardInner({
         if (isMasked1D) {
           setRawPayload(responseData);
           setCached1DPayload(responseData);
-        } else if (normalizedCheck.length === 0 || (timeframe === '1M' && !isMultiDayResponse && respDays > 0)) {
+        } else if (normalizedCheck.length === 0) {
           if (timeframe === '1M' || timeframe === 'ALL') {
             setLoadError(`${timeframe === '1M' ? '1M (30D)' : 'All-time'} broker ledger unavailable offline — Tap Retry`);
             setRawPayload(null);
@@ -603,6 +603,9 @@ function BrokerSmartMoneyCardInner({
             }
           }
         } else {
+          if (timeframe === '1M' && respDays > 0 && respDays < 20) {
+            setWarningBanner(`1M Ledger synced ${respDays} trading session${respDays === 1 ? '' : 's'} (partial lookback available).`);
+          }
           setRawPayload(responseData);
           if (timeframe === '1D' && normalizedCheck.length > 0) {
             setCached1DPayload(responseData);
@@ -816,7 +819,9 @@ function BrokerSmartMoneyCardInner({
                   </span>
                   {isPrecedingLive && (
                     <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/35 flex items-center gap-1.5 shadow-inner">
-                      Floorsheet EOD: {pDate} • Live session syncs at 3:15 PM NPT
+                      {isMarketOpen(new Date()) || getNptMinutesOfDay(new Date()) < 915
+                      ? `Prior EOD: ${pDate} • Live session settles post-3:15 PM NPT`
+                      : `Reconciled EOD: ${pDate} • ${liveDateStr} Floorsheet Sync Pending`}
                     </span>
                   )}
                 </div>

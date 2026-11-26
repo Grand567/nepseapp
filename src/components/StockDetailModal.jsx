@@ -844,7 +844,8 @@ function BeginnerConfidenceCard({
       : (realBrokerAnalysis?.bcr3SellPct ?? realBrokerAnalysis?.scr3SellPct ?? bcr3Sell ?? 0)
   );
   const cohortLabel = hasMatchedGross ? 'Top institutional brokers' : 'Top 3 brokers';
-  const nbar = Number(realBrokerAnalysis?.nbar ?? (grossSellPct > 0 ? grossBuyPct / grossSellPct : 1.0));
+  const rawNbar = realBrokerAnalysis?.nbar ?? (grossSellPct > 0 ? grossBuyPct / grossSellPct : null);
+  const nbar = rawNbar !== null && Number.isFinite(Number(rawNbar)) ? Number(rawNbar) : null;
   const rawWhaleVwap = (isHistorySufficient ? multiDayDiag?.bigBrokerVWAP : null) ??
     realBrokerAnalysis?.bigBrokerVWAP ??
     multiDayDiag?.bigBrokerVWAP;
@@ -893,8 +894,8 @@ function BeginnerConfidenceCard({
       currentPhase === 'DISTRIBUTION_DANGER' ||
       currentPhase === 'BULL_TRAP' ||
       (realBrokerAnalysis?.adSignal === 'Distribution' && grossSellPct >= 35 && grossSellPct > grossBuyPct) ||
-      (grossSellPct >= 38 && grossSellPct > grossBuyPct && nbar <= 0.85) ||
-      (grossSellPct >= 35 && nbar <= 0.70)
+      (grossSellPct >= 38 && grossSellPct > grossBuyPct && nbar != null && nbar <= 0.85) ||
+      (grossSellPct >= 35 && nbar != null && nbar <= 0.70)
     );
 
     // Harmonize with BrokerSmartMoneyCard gauge: Accumulation requires >= 62% net dominance or strong buy-tilt
@@ -904,7 +905,7 @@ function BeginnerConfidenceCard({
     const isStrongAccumulation = Boolean(
       !isDistributionOrTrap && (
         accumulationPressurePct >= 62 ||
-        (grossBuyPct >= 42 && grossBuyPct > grossSellPct * 1.3 && nbar >= 1.2) ||
+        (grossBuyPct >= 42 && grossBuyPct > grossSellPct * 1.3 && nbar != null && nbar >= 1.2) ||
         currentPhase === 'ACTIVE_MARKUP'
       )
     );
@@ -912,7 +913,7 @@ function BeginnerConfidenceCard({
     const isStrongDistribution = Boolean(
       isDistributionOrTrap ||
       accumulationPressurePct <= 38 ||
-      (grossSellPct >= 42 && grossSellPct > grossBuyPct * 1.3 && nbar <= 0.8)
+      (grossSellPct >= 42 && grossSellPct > grossBuyPct * 1.3 && nbar != null && nbar <= 0.8)
     );
 
     if (isStrongDistribution) {
@@ -1759,7 +1760,9 @@ export default function StockDetailModal({
           if (!depthInFlight && (activeTab === 'market_depth' || activeTab === 'depth_broker')) {
             depthInFlight = true;
             fetchMarketDepth(sym, ms.isOpen ? '' : modalSessionDate).then(depth => {
-              if (isMounted && depth) setRealMarketDepth(depth);
+              if (isMounted && depth) {
+                setRealMarketDepth(prev => (prev && !prev.isFallback && depth.isFallback) ? prev : depth);
+              }
             }).catch(() => {}).finally(() => { depthInFlight = false; });
           }
 
@@ -2748,9 +2751,9 @@ export default function StockDetailModal({
       (localFast.brokers?.length > 0 || localFast.topBuyers?.length > 0 || localFast.topHoldings?.length > 0 || localFast.isBrokerMaskedIntraday) &&
       (
         (days === 1 && localFastDays <= 1) ||
-        (days === 5 && localFastDays <= 5) ||
-        (days === 30 && localFastDays >= 20) ||
-        (isAll && localFastDays >= 50)
+        (days === 5 && localFastDays >= 1 && localFastDays <= 5) ||
+        (days === 30 && localFastDays >= 2) ||
+        (isAll && localFastDays >= 20)
       )
     );
     if (isLocalFastValid) {
@@ -2826,8 +2829,12 @@ export default function StockDetailModal({
     if ((activeTab === 'overview' || activeTab === 'market_depth' || activeTab === 'depth_broker') && d?.symbol) {
       if ((activeTab === 'market_depth' || activeTab === 'depth_broker') && (!realMarketDepth || realMarketDepth.isFallback) && !marketDepthLoading) {
         setMarketDepthLoading(true);
-        fetchMarketDepth(d.symbol)
-          .then(data => { if (!isCancelled && data) setRealMarketDepth(data); })
+        fetchMarketDepth(d.symbol, isMarketOpen() ? '' : modalSessionDate)
+          .then(data => {
+            if (!isCancelled && data) {
+              setRealMarketDepth(prev => (prev && !prev.isFallback && data.isFallback) ? prev : data);
+            }
+          })
           .catch(() => {})
           .finally(() => { if (!isCancelled) setMarketDepthLoading(false); });
       }
@@ -4154,21 +4161,27 @@ export default function StockDetailModal({
           const cumLedger = realBrokerAnalysis?.cumulative || getCumulativeBrokerData(d.symbol);
           const operatorFloor = cumLedger?.institutionalCostBasis || Number(d.institutionalCostBasis || 0);
           const netCashBreakeven = Number(cumLedger?.netCashBreakeven || operatorFloor);
-          const operatorPremiumPct = operatorFloor > 0 ? (((Number(d.ltp || 0) - operatorFloor) / operatorFloor) * 100) : 0;
-          const overviewAtr = (d.atr && Number(d.atr) > 0) ? Number(d.atr) : (Math.max(2, (Number(d.ltp) || 100) * 0.035));
-          const horizonTargets = calculateMultiHorizonTargets(
-            Number(d.ltp) || 100,
-            Number(d.high52 || d.high52w || 0),
-            Number(d.low52 || d.low52w || 0),
-            overviewAtr,
-            Number(d.pChange || d.change || 0),
-            d.symbol
-          );
-          const overviewEntryZone = horizonTargets?.entryZone;
+          const validLtp = Number(d.ltp || 0);
+          const hasValidLtp = validLtp > 0;
+          const operatorPremiumPct = (operatorFloor > 0 && hasValidLtp) ? (((validLtp - operatorFloor) / operatorFloor) * 100) : 0;
+          const overviewAtr = hasValidLtp
+            ? ((d.atr && Number(d.atr) > 0) ? Number(d.atr) : Math.max(2, validLtp * 0.035))
+            : 0;
+          const horizonTargets = hasValidLtp
+            ? calculateMultiHorizonTargets(
+                validLtp,
+                Number(d.high52 || d.high52w || 0),
+                Number(d.low52 || d.low52w || 0),
+                overviewAtr,
+                Number(d.pChange || d.change || 0),
+                d.symbol
+              )
+            : null;
+          const overviewEntryZone = horizonTargets?.entryZone || null;
           const isVetoed = Boolean(overviewOrderFlowVeto?.isVetoed || modalIsAvoid);
           const isOverextended = overviewEntryZone?.isOverextended === true || operatorPremiumPct > 10.0;
-          const overviewStopLoss = entryExitPlan?.levels?.stopLoss || horizonTargets?.stopLoss;
-          const overviewTarget1 = entryExitPlan?.levels?.target1 || horizonTargets?.target1;
+          const overviewStopLoss = hasValidLtp ? (entryExitPlan?.levels?.stopLoss || horizonTargets?.stopLoss || null) : null;
+          const overviewTarget1 = hasValidLtp ? (entryExitPlan?.levels?.target1 || horizonTargets?.target1 || null) : null;
           const topAccumulators = cumLedger?.topAccumulators || [];
           const leadBrokerStr = topAccumulators.length > 0
             ? topAccumulators.slice(0, 2).map(a => {
@@ -4431,14 +4444,18 @@ export default function StockDetailModal({
                 <div style={{
                   background: isVetoed
                     ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.16), rgba(17, 24, 39, 0.95))'
-                    : (isOverextended
-                        ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(17, 24, 39, 0.95))'
-                        : 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(17, 24, 39, 0.95))'),
+                    : (!hasValidLtp
+                        ? 'linear-gradient(135deg, rgba(100, 116, 139, 0.12), rgba(17, 24, 39, 0.95))'
+                        : (isOverextended
+                            ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(17, 24, 39, 0.95))'
+                            : 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(17, 24, 39, 0.95))')),
                   border: isVetoed
                     ? '1.5px solid rgba(239, 68, 68, 0.65)'
-                    : (isOverextended
-                        ? '1.5px solid rgba(245, 158, 11, 0.45)'
-                        : '1.5px solid rgba(16, 185, 129, 0.45)'),
+                    : (!hasValidLtp
+                        ? '1.5px solid rgba(100, 116, 139, 0.4)'
+                        : (isOverextended
+                            ? '1.5px solid rgba(245, 158, 11, 0.45)'
+                            : '1.5px solid rgba(16, 185, 129, 0.45)')),
                   borderRadius: 16,
                   padding: '16px 18px',
                   boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
@@ -4449,8 +4466,8 @@ export default function StockDetailModal({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{
-                        background: isVetoed ? '#ef4444' : (isOverextended ? '#f59e0b' : '#10b981'),
-                        color: isVetoed ? '#ffffff' : '#0f172a',
+                        background: isVetoed ? '#ef4444' : (!hasValidLtp ? '#475569' : (isOverextended ? '#f59e0b' : '#10b981')),
+                        color: (isVetoed || !hasValidLtp) ? '#ffffff' : '#0f172a',
                         fontWeight: 900,
                         fontSize: 11,
                         padding: '3px 8px',
@@ -4460,7 +4477,9 @@ export default function StockDetailModal({
                       }}>
                         {isVetoed
                           ? '🚨 VETOED BY WHALE DUMP — DO NOT ACCUMULATE'
-                          : (isOverextended ? '⚠️ HIGH TRAP RISK / PULLBACK REQUIRED' : '🟢 SAFE OPERATOR ACCUMULATION ZONE')}
+                          : (!hasValidLtp
+                              ? '⏳ SYNCING MARKET QUOTE'
+                              : (isOverextended ? '⚠️ HIGH TRAP RISK / PULLBACK REQUIRED' : '🟢 SAFE OPERATOR ACCUMULATION ZONE'))}
                       </span>
                       <span style={{ fontSize: 13, fontWeight: 800, color: '#f8fafc' }}>
                         Institutional Operator Radar
@@ -4485,10 +4504,10 @@ export default function StockDetailModal({
                     <div>
                       <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Current LTP</div>
                       <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                        Rs. {fmt(d.ltp)}
+                        {hasValidLtp ? `Rs. ${fmt(validLtp)}` : '—'}
                       </div>
                       <div style={{ fontSize: 10.5, color: Number(d.pChange || 0) >= 0 ? '#10b981' : '#f43f5e', fontWeight: 700 }}>
-                        {Number(d.pChange || 0) >= 0 ? '+' : ''}{Number(d.pChange || 0).toFixed(2)}%
+                        {hasValidLtp ? `${Number(d.pChange || 0) >= 0 ? '+' : ''}${Number(d.pChange || 0).toFixed(2)}%` : 'Awaiting quote'}
                       </div>
                     </div>
 
@@ -4499,7 +4518,7 @@ export default function StockDetailModal({
                         {operatorFloor > 0 ? `Rs. ${fmt(operatorFloor)}` : 'Computing...'}
                       </div>
                       <div style={{ fontSize: 10.5, color: operatorPremiumPct > 10 ? '#f59e0b' : '#38bdf8', fontWeight: 600 }}>
-                        {operatorFloor > 0 ? `${operatorPremiumPct >= 0 ? '+' : ''}${operatorPremiumPct.toFixed(1)}% vs cost` : 'Multi-session VWAP'}
+                        {operatorFloor > 0 && hasValidLtp ? `${operatorPremiumPct >= 0 ? '+' : ''}${operatorPremiumPct.toFixed(1)}% vs cost` : 'Multi-session VWAP'}
                         {netCashBreakeven > 0 && Math.abs(netCashBreakeven - operatorFloor) >= 1 && (
                           <span style={{ color: '#94a3b8', marginLeft: 4 }}>• Net: Rs. {fmt(netCashBreakeven)}</span>
                         )}
@@ -4510,10 +4529,10 @@ export default function StockDetailModal({
                     <div>
                       <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Invalidation Stop-Loss</div>
                       <div style={{ fontSize: 16, fontWeight: 900, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                        Rs. {fmt(overviewStopLoss?.price || (Number(d.ltp || 100) * 0.95))}
+                        {hasValidLtp ? `Rs. ${fmt(overviewStopLoss?.price || (validLtp * 0.95))}` : '—'}
                       </div>
                       <div style={{ fontSize: 10.5, color: '#fca5a5', fontWeight: 600 }}>
-                        {overviewStopLoss?.pct ? `-${overviewStopLoss.pct}%` : '-5.0%'} (Exit floor breach)
+                        {hasValidLtp ? `${overviewStopLoss?.pct ? `-${overviewStopLoss.pct}%` : '-5.0%'} (Exit floor breach)` : 'Awaiting quote'}
                       </div>
                     </div>
 
@@ -4521,18 +4540,18 @@ export default function StockDetailModal({
                     <div>
                       <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Target 1 (Harvest)</div>
                       <div style={{ fontSize: 16, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                        Rs. {fmt(overviewTarget1?.price || (Number(d.ltp || 100) * 1.10))}
+                        {hasValidLtp ? `Rs. ${fmt(overviewTarget1?.price || (validLtp * 1.10))}` : '—'}
                       </div>
                       <div style={{ fontSize: 10.5, color: '#86efac', fontWeight: 600 }}>
-                        +{overviewTarget1?.pct || 10.0}% ({overviewTarget1?.horizon || '1-2 Weeks'})
+                        {hasValidLtp ? `+${overviewTarget1?.pct || 10.0}% (${overviewTarget1?.horizon || '1-2 Weeks'})` : 'Awaiting quote'}
                       </div>
                     </div>
                   </div>
 
                   {/* Action Banner */}
                   <div style={{
-                    background: isVetoed ? 'rgba(239, 68, 68, 0.20)' : (isOverextended ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)'),
-                    borderLeft: isVetoed ? '4px solid #ef4444' : (isOverextended ? '4px solid #f59e0b' : '4px solid #10b981'),
+                    background: isVetoed ? 'rgba(239, 68, 68, 0.20)' : (!hasValidLtp ? 'rgba(100, 116, 139, 0.14)' : (isOverextended ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)')),
+                    borderLeft: isVetoed ? '4px solid #ef4444' : (!hasValidLtp ? '4px solid #64748b' : (isOverextended ? '4px solid #f59e0b' : '4px solid #10b981')),
                     borderRadius: '4px 8px 8px 4px',
                     padding: '10px 14px',
                     display: 'flex',
@@ -4542,7 +4561,7 @@ export default function StockDetailModal({
                     gap: 8
                   }}>
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: isVetoed ? '#fca5a5' : (isOverextended ? '#fcd34d' : '#6ee7b7'), textTransform: 'uppercase' }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: isVetoed ? '#fca5a5' : (!hasValidLtp ? '#cbd5e1' : (isOverextended ? '#fcd34d' : '#6ee7b7')), textTransform: 'uppercase' }}>
                         Safe Entry Action
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', marginTop: 2 }}>
@@ -4550,24 +4569,27 @@ export default function StockDetailModal({
                           ? `Order Flow Veto Law Active: Heavy institutional distribution detected. All accumulation signals are strictly overridden. DO NOT BUY!`
                           : (isVetoed
                               ? `Avoid Entry: Unfavorable quantitative risk-reward or consolidation. Await confirmed setup.`
-                              : (isOverextended
-                                  ? `Pullback Required: Wait for dip between Rs. ${overviewEntryZone?.min || (d.ltp * 0.92).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 0.96).toFixed(1)}. Do NOT chase at Rs. ${fmt(d.ltp)}!`
-                                  : `Accumulate between Rs. ${overviewEntryZone?.min || (d.ltp * 0.98).toFixed(1)} – Rs. ${overviewEntryZone?.max || (d.ltp * 1.01).toFixed(1)} (Entry Window: 1:15–2:30 PM • Protected by Operator Floor)`
+                              : (!hasValidLtp
+                                  ? `Awaiting Live / EOD Quote for ${d.symbol}. Targets and entry zones will populate once market price hydrates.`
+                                  : (isOverextended
+                                      ? `Pullback Required: Wait for dip between Rs. ${overviewEntryZone?.min || (validLtp * 0.92).toFixed(1)} – Rs. ${overviewEntryZone?.max || (validLtp * 0.96).toFixed(1)}. Do NOT chase at Rs. ${fmt(validLtp)}!`
+                                      : `Accumulate between Rs. ${overviewEntryZone?.min || (validLtp * 0.98).toFixed(1)} – Rs. ${overviewEntryZone?.max || (validLtp * 1.01).toFixed(1)} (Entry Window: 1:15–2:30 PM • Protected by Operator Floor)`
+                                    )
                                 )
                             )
                         }
                       </div>
                     </div>
                     <div style={{
-                      background: isVetoed ? '#ef444422' : (isOverextended ? '#f59e0b22' : '#10b98122'),
-                      border: isVetoed ? '1px solid #ef444466' : (isOverextended ? '1px solid #f59e0b66' : '1px solid #10b98166'),
+                      background: isVetoed ? '#ef444422' : (!hasValidLtp ? '#64748b22' : (isOverextended ? '#f59e0b22' : '#10b98122')),
+                      border: isVetoed ? '1px solid #ef444466' : (!hasValidLtp ? '1px solid #64748b66' : (isOverextended ? '1px solid #f59e0b66' : '1px solid #10b98166')),
                       borderRadius: 8,
                       padding: '5px 10px',
                       fontSize: 12,
                       fontWeight: 800,
-                      color: isVetoed ? '#ef4444' : (isOverextended ? '#f59e0b' : '#10b981')
+                      color: isVetoed ? '#ef4444' : (!hasValidLtp ? '#cbd5e1' : (isOverextended ? '#f59e0b' : '#10b981'))
                     }}>
-                      {overviewOrderFlowVeto?.isVetoed ? '🚨 AVOID ENTRY (VETOED)' : (isVetoed ? '🛑 AVOID ENTRY' : (isOverextended ? '⚠️ DO NOT CHASE' : '🟢 SAFE TO ACCUMULATE'))}
+                      {overviewOrderFlowVeto?.isVetoed ? '🚨 AVOID ENTRY (VETOED)' : (isVetoed ? '🛑 AVOID ENTRY' : (!hasValidLtp ? '⏳ SYNCING' : (isOverextended ? '⚠️ DO NOT CHASE' : '🟢 SAFE TO ACCUMULATE')))}
                     </div>
                   </div>
                 </div>
@@ -5969,17 +5991,17 @@ export default function StockDetailModal({
                   fontSize: 12,
                   fontWeight: 800
                 }}>
-                  {ad12M?.status || 'Active Accumulation'}
+                  {ad12M?.status || 'Insufficient Multi-Session History'}
                 </span>
               </div>
 
               <div style={{ background: 'rgba(255,255,255,0.025)', borderRadius: 10, padding: 10, marginBottom: 10 }}>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Wyckoff Cycle Stage</div>
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
-                  {ad12M?.wyckoffPhase || 'Phase B (Institutional Absorption)'}
+                  {ad12M?.wyckoffPhase || 'Awaiting Multi-Session Broker Ledger'}
                 </div>
                 <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>
-                  {ad12M?.phaseDescription || 'Smart money absorbing float across weekly dips.'}
+                  {ad12M?.phaseDescription || 'Accumulation phase classification requires sufficient multi-session floorsheet history.'}
                 </div>
               </div>
 
@@ -6136,8 +6158,8 @@ export default function StockDetailModal({
           const liveNetBuyShares = liveAccums.reduce((s, b) => s + Math.max(0, Number(b.netQty !== undefined ? b.netQty : ((b.buyQty || b.volume || 0) - (b.sellQty || 0)))), 0);
           const liveNetSellShares = liveDists.reduce((s, b) => s + Math.abs(Math.min(0, Number(b.netQty !== undefined ? b.netQty : ((b.buyQty || 0) - (b.sellQty || b.volume || 0))))), 0);
           const liveTotFlow = liveNetBuyShares + liveNetSellShares;
-          const liveBuyPct = liveTotFlow > 0 ? Math.round((liveNetBuyShares / liveTotFlow) * 100) : (pure1DBa?.smartMoneyNetFlowPct != null ? Math.max(10, Math.min(90, Math.round(50 + (pure1DBa.smartMoneyNetFlowPct / 2)))) : 50);
-          const liveSellPct = 100 - liveBuyPct;
+          const liveBuyPct = liveTotFlow > 0 ? Math.round((liveNetBuyShares / liveTotFlow) * 100) : (pure1DBa?.smartMoneyNetFlowPct != null ? Math.max(10, Math.min(90, Math.round(50 + (pure1DBa.smartMoneyNetFlowPct / 2)))) : null);
+          const liveSellPct = liveBuyPct != null ? (100 - liveBuyPct) : null;
 
           // Institutional Whale VWAP: SUM(buyAmt) / SUM(buyQty) across top 5 net accumulating institutional brokers
           const liveWhaleVwap = (() => {
@@ -6179,28 +6201,31 @@ export default function StockDetailModal({
           // Never fire real-time "Active Dumping Right Now" vetoes when cross-session or synthetic
           const isRealTimeEligible = !isCrossSessionPure1D && !isSyntheticOrderFlow;
           const isWhaleDump = isRealTimeEligible && (orderFlowVeto.isVetoed || topDistShareOfVol >= 15.0 || (liveBcr3Sell >= 45 && liveBcr3Sell > liveBcr3Buy + 10));
-          const isLiveDist = isRealTimeEligible && !isWhaleDump && ((liveSellPct >= 55) || (pure1DBa?.adSignal === 'Distribution') || (liveBcr3Sell > liveBcr3Buy + 5));
-          const isLiveAccum = isRealTimeEligible && !isWhaleDump && !isLiveDist && ((liveBuyPct >= 55) || (pure1DBa?.adSignal === 'Accumulation') || (liveBcr3Buy > liveBcr3Sell + 5));
+          const isLiveDist = isRealTimeEligible && !isWhaleDump && ((liveSellPct != null && liveSellPct >= 55) || (pure1DBa?.adSignal === 'Distribution') || (liveBcr3Sell > liveBcr3Buy + 5));
+          const isLiveAccum = isRealTimeEligible && !isWhaleDump && !isLiveDist && ((liveBuyPct != null && liveBuyPct >= 55) || (pure1DBa?.adSignal === 'Accumulation') || (liveBcr3Buy > liveBcr3Sell + 5));
 
           // Order Book (Level 2) Metrics
           const bookBuyQty = Number(marketDepth?.totalBuyQty || 0);
           const bookSellQty = Number(marketDepth?.totalSellQty || 0);
           const bookTot = bookBuyQty + bookSellQty;
-          const bookBuyPct = bookTot > 0 ? Math.round((bookBuyQty / bookTot) * 100) : 50;
-          const bookSellPct = 100 - bookBuyPct;
+          const bookBuyPct = bookTot > 0 ? Math.round((bookBuyQty / bookTot) * 100) : null;
+          const bookSellPct = bookBuyPct != null ? (100 - bookBuyPct) : null;
+          const bookDepthSummary = bookBuyPct != null ? `${bookBuyPct}% bids vs ${bookSellPct}% asks` : 'order book depth unavailable';
 
           // Actionable Investment Verdict
           let investVerdict = {
-            badge: '⚪ Neutral Chop Flow',
+            badge: liveBuyPct == null && bookBuyPct == null ? '⚪ Order Flow Unavailable' : '⚪ Neutral Chop Flow',
             badgeBg: 'rgba(148, 163, 184, 0.15)',
             badgeColor: '#94a3b8',
             badgeBorder: 'rgba(148, 163, 184, 0.3)',
             cardBg: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8))',
             cardBorder: 'rgba(148, 163, 184, 0.25)',
-            verdictTitle: 'WAIT / NEUTRAL — AWAIT INSTITUTIONAL CONFLUENCE',
+            verdictTitle: liveBuyPct == null ? 'AWAITING EXECUTED ORDER FLOW DATA' : 'WAIT / NEUTRAL — AWAIT INSTITUTIONAL CONFLUENCE',
             verdictColor: '#cbd5e1',
             glow: '0 4px 18px rgba(0, 0, 0, 0.3)',
-            reason: `Order flow is evenly balanced (${liveBuyPct}% Bought vs ${liveSellPct}% Sold) with no single institutional broker taking directional control. Pending book depth is ${bookBuyPct}% bids vs ${bookSellPct}% asks.`,
+            reason: liveBuyPct != null
+              ? `Order flow is evenly balanced (${liveBuyPct}% Bought vs ${liveSellPct}% Sold) with no single institutional broker taking directional control. Pending book depth: ${bookDepthSummary}.`
+              : `No active institutional dominance detected for this session yet. Pending book depth: ${bookDepthSummary}.`,
             tacticalTip: `Wait for price to establish decisive volume breakout above Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}) before allocating new capital.`
           };
 
@@ -6215,7 +6240,7 @@ export default function StockDetailModal({
               verdictTitle: 'SYNTHETIC DEPTH — VERIFYING LIVE TAPE',
               verdictColor: '#bae6fd',
               glow: '0 4px 18px rgba(0, 0, 0, 0.3)',
-              reason: `Volume at Price depth is calibrated synthetically until exchange live trade tape stream connects. Pending book depth is ${bookBuyPct}% bids vs ${bookSellPct}% asks.`,
+              reason: `Volume at Price depth is calibrated synthetically until exchange live trade tape stream connects. Pending book depth: ${bookDepthSummary}.`,
               tacticalTip: `Monitor live exchange ticks for authentic volume confirmation.`
             };
           } else if (isCrossSessionPure1D) {
@@ -6233,7 +6258,7 @@ export default function StockDetailModal({
               tacticalTip: `Assess multi-day trend structure while awaiting live broker settlement confirmation.`
             };
           } else if (isMasked1DBroker) {
-            const bookBiasLabel = bookBuyPct >= 58 ? 'Demand-Heavy Order Book' : bookBuyPct <= 42 ? 'Supply-Heavy Order Book' : 'Balanced Live Order Book';
+            const bookBiasLabel = bookBuyPct == null ? 'Live Intraday Tape' : (bookBuyPct >= 58 ? 'Demand-Heavy Order Book' : bookBuyPct <= 42 ? 'Supply-Heavy Order Book' : 'Balanced Live Order Book');
             investVerdict = {
               badge: `⚡ Live Intraday Order Book (${pure1DDate || liveDate})`,
               badgeBg: 'rgba(56, 189, 248, 0.16)',
@@ -6244,7 +6269,7 @@ export default function StockDetailModal({
               verdictTitle: `${bookBiasLabel.toUpperCase()} — LIVE TAPE (${sessionTradedVol.toLocaleString()} SH)`,
               verdictColor: '#bae6fd',
               glow: '0 4px 20px rgba(56, 189, 248, 0.2)',
-              reason: `Live NEPSE Level-2 depth shows ${bookBuyPct}% Bids vs ${bookSellPct}% Asks across ${sessionTradedVol.toLocaleString()} traded shares (VWAP Rs. ${liveWhaleVwap.toFixed(1)}). Individual buyer/seller broker IDs are masked by NEPSE during live trading hours (11:00 AM – 3:00 PM NPT).`,
+              reason: `Live NEPSE Level-2 status (${bookDepthSummary}) across ${sessionTradedVol.toLocaleString()} traded shares (VWAP Rs. ${liveWhaleVwap.toFixed(1)}). Individual buyer/seller broker IDs are masked by NEPSE during live trading hours (11:00 AM – 3:00 PM NPT).`,
               tacticalTip: `Monitor real-time Level-2 bid/ask queue pressure and VWAP (Rs. ${liveWhaleVwap.toFixed(1)}), or check 5D / 1M Accumulation History below for disclosed broker desks.`
             };
           } else if (isWhaleDump) {
@@ -6261,7 +6286,7 @@ export default function StockDetailModal({
               verdictTitle: 'DO NOT BUY RIGHT NOW — ACTIVE INSTITUTIONAL DUMPING',
               verdictColor: '#fca5a5',
               glow: '0 4px 24px rgba(239, 68, 68, 0.35)',
-              reason: `CRITICAL SELLER OVERHANG: Dominant broker #${brokerId} (${brokerName}) is aggressively dumping inventory (${topDistNetShares.toLocaleString()} shares, ${dumpPct}% of total volume) with heavy net selling. Top sellers control ${liveBcr3Sell > 0 ? liveBcr3Sell : liveSellPct}% of order flow. Passive retail limit bids are being hit as exit liquidity.`,
+              reason: `CRITICAL SELLER OVERHANG: Dominant broker #${brokerId} (${brokerName}) is aggressively dumping inventory (${topDistNetShares.toLocaleString()} shares, ${dumpPct}% of total volume) with heavy net selling. Top sellers control ${liveBcr3Sell > 0 ? liveBcr3Sell : (liveSellPct ?? 0)}% of order flow. Passive retail limit bids are being hit as exit liquidity.`,
               tacticalTip: `STRICT DO NOT BUY: Stand completely aside. Do not attempt to catch falling knives or average down until dominant selling pressure subsides and institutional net absorption flips positive.`
             };
           } else if (isLiveDist) {
@@ -6275,7 +6300,7 @@ export default function StockDetailModal({
               verdictTitle: 'CAUTION / DO NOT BUY — SUPPLY EXCEEDS DEMAND',
               verdictColor: '#fb7185',
               glow: '0 4px 22px rgba(244, 63, 94, 0.25)',
-              reason: `Active selling pressure outweighs buying (${liveSellPct}% sell flow vs ${liveBuyPct}% buy flow). Top distributing brokers (${liveDists.slice(0, 2).map(s => '#' + (s.broker || s.brokerId)).join(', ') || 'Major Sellers'}) are liquidating inventory into the market. Downward momentum is prevalent.`,
+              reason: `Active selling pressure outweighs buying (${liveSellPct != null ? `${liveSellPct}% sell flow vs ${liveBuyPct}% buy flow` : `top 3 sell concentration ${liveBcr3Sell}%`}). Top distributing brokers (${liveDists.slice(0, 2).map(s => '#' + (s.broker || s.brokerId)).join(', ') || 'Major Sellers'}) are liquidating inventory into the market. Downward momentum is prevalent.`,
               tacticalTip: `Avoid fresh long positions. Wait for institutional selling volume to subside and an authentic consolidation base to form.`
             };
           } else if (isLiveAccum) {
@@ -6290,7 +6315,7 @@ export default function StockDetailModal({
                 verdictTitle: 'FAVORABLE ACCUMULATION ZONE — HIGH CONFLUENCE ENTRY',
                 verdictColor: '#34d399',
                 glow: '0 4px 22px rgba(16, 185, 129, 0.25)',
-                reason: `Smart money brokers (${liveAccums.slice(0, 2).map(b => '#' + (b.broker || b.brokerId)).join(', ') || 'Institutional Desks'}) are absorbing shares (${liveBuyPct}% live buy flow, BCR₃ ${liveBcr3Buy}%). Current market price (Rs. ${currentLtp}) is anchored at the institutional Whale VWAP base (Rs. ${liveWhaleVwap.toFixed(1)}) [${diffFromVwap >= 0 ? '+' : ''}${diffFromVwap}%], providing favorable risk-to-reward.`,
+                reason: `Smart money brokers (${liveAccums.slice(0, 2).map(b => '#' + (b.broker || b.brokerId)).join(', ') || 'Institutional Desks'}) are absorbing shares (${liveBuyPct != null ? `${liveBuyPct}% live buy flow, ` : ''}BCR₃ ${liveBcr3Buy}%). Current market price (Rs. ${currentLtp}) is anchored at the institutional Whale VWAP base (Rs. ${liveWhaleVwap.toFixed(1)}) [${diffFromVwap >= 0 ? '+' : ''}${diffFromVwap}%], providing favorable risk-to-reward.`,
                 tacticalTip: `Favorable accumulation zone. Suggested protective stop-loss below today's VWAP support (Rs. ${(liveWhaleVwap * 0.97).toFixed(1)}).`
               };
             } else if (diffFromVwap > 2.5) {
@@ -6304,7 +6329,7 @@ export default function StockDetailModal({
                 verdictTitle: 'ACCUMULATION PRESENT — WAIT FOR PULLBACK TO VWAP',
                 verdictColor: '#fbbf24',
                 glow: '0 4px 22px rgba(245, 158, 11, 0.25)',
-                reason: `Institutional buyers are accumulating (${liveBuyPct}% buy flow), BUT current market price (Rs. ${currentLtp}) is already extended +${diffFromVwap}% above the institutional Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}). Chasing carries short-term drawdown risk.`,
+                reason: `Institutional buyers are accumulating (${liveBuyPct != null ? `${liveBuyPct}% buy flow` : `BCR₃ ${liveBcr3Buy}%`}), BUT current market price (Rs. ${currentLtp}) is already extended +${diffFromVwap}% above the institutional Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}). Chasing carries short-term drawdown risk.`,
                 tacticalTip: `Do not chase market orders. Place limit orders on pullbacks closer to Whale VWAP (Rs. ${liveWhaleVwap.toFixed(1)}).`
               };
             } else {
@@ -6379,8 +6404,12 @@ export default function StockDetailModal({
                         triggerHaptic(25);
                         const dSeq = ++depthSeqRef.current;
                         setMarketDepthLoading(true);
-                        fetchMarketDepth(d.symbol, modalSessionDate)
-                          .then(depth => { if (depthSeqRef.current === dSeq && depth) setRealMarketDepth(depth); })
+                        fetchMarketDepth(d.symbol, isMarketOpen() ? '' : modalSessionDate)
+                          .then(depth => {
+                            if (depthSeqRef.current === dSeq && depth) {
+                              setRealMarketDepth(prev => (prev && !prev.isFallback && depth.isFallback) ? prev : depth);
+                            }
+                          })
                           .catch(() => {})
                           .finally(() => { if (depthSeqRef.current === dSeq) setMarketDepthLoading(false); });
                         fetchBrokerAnalysisData(1, '', { refresh: true });
@@ -6496,14 +6525,14 @@ export default function StockDetailModal({
                     <div style={{
                       fontSize: 16,
                       fontWeight: 900,
-                      color: liveBuyPct >= 55 ? '#10b981' : liveSellPct >= 55 ? '#f43f5e' : '#cbd5e1',
+                      color: liveBuyPct == null ? '#94a3b8' : (liveBuyPct >= 55 ? '#10b981' : (liveSellPct != null && liveSellPct >= 55) ? '#f43f5e' : '#cbd5e1'),
                       fontFamily: 'var(--font-mono)',
                       marginTop: 2
                     }}>
-                      {liveBuyPct}% Buy
+                      {liveBuyPct != null ? `${liveBuyPct}% Buy` : '—'}
                     </div>
                     <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 1 }}>
-                      {liveSellPct}% Sell Flow
+                      {liveSellPct != null ? `${liveSellPct}% Sell Flow` : 'Flow Unavailable'}
                     </div>
                   </div>
                 </div>
@@ -6512,15 +6541,21 @@ export default function StockDetailModal({
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
                     <span style={{ color: '#10b981' }}>
-                      🟢 Top Net Accumulators: {liveNetBuyShares > 0 ? `+${liveNetBuyShares.toLocaleString()}` : '0'} shs ({liveBuyPct}%)
+                      🟢 Top Net Accumulators: {liveNetBuyShares > 0 ? `+${liveNetBuyShares.toLocaleString()}` : '0'} shs ({liveBuyPct != null ? `${liveBuyPct}%` : '—'})
                     </span>
                     <span style={{ color: '#f43f5e' }}>
-                      🔴 Top Net Distributors: {liveNetSellShares > 0 ? `-${liveNetSellShares.toLocaleString()}` : '0'} shs ({liveSellPct}%)
+                      🔴 Top Net Distributors: {liveNetSellShares > 0 ? `-${liveNetSellShares.toLocaleString()}` : '0'} shs ({liveSellPct != null ? `${liveSellPct}%` : '—'})
                     </span>
                   </div>
                   <div style={{ display: 'flex', height: 10, borderRadius: 6, overflow: 'hidden', background: 'rgba(255,255,255,0.06)' }}>
-                    <div style={{ width: `${liveBuyPct}%`, background: '#10b981', transition: 'width 0.3s ease' }} />
-                    <div style={{ width: `${liveSellPct}%`, background: '#f43f5e', transition: 'width 0.3s ease' }} />
+                    {liveBuyPct != null ? (
+                      <>
+                        <div style={{ width: `${liveBuyPct}%`, background: '#10b981', transition: 'width 0.3s ease' }} />
+                        <div style={{ width: `${liveSellPct ?? (100 - liveBuyPct)}%`, background: '#f43f5e', transition: 'width 0.3s ease' }} />
+                      </>
+                    ) : (
+                      <div style={{ width: '100%', background: 'rgba(148, 163, 184, 0.25)' }} />
+                    )}
                   </div>
                 </div>
 
@@ -7211,15 +7246,15 @@ export default function StockDetailModal({
               const bookBuyQty = Number(marketDepth?.totalBuyQty || 0);
               const bookSellQty = Number(marketDepth?.totalSellQty || 0);
               const bookTot = bookBuyQty + bookSellQty;
-              const bookBuyPct = bookTot > 0 ? Math.round((bookBuyQty / bookTot) * 100) : 50;
+              const bookBuyPct = bookTot > 0 ? Math.round((bookBuyQty / bookTot) * 100) : null;
 
               const flowTot = totalBuyVol + totalSellVol;
-              const flowBuyPct = flowTot > 0 ? Math.round((totalBuyVol / flowTot) * 100) : 50;
-              const isFlowDist = ba?.adSignal === 'Distribution' || pure1DBa?.adSignal === 'Distribution' || ba?.isInstitutionalDumping || pure1DBa?.isInstitutionalDumping || bcr3Sell > bcr3Buy || flowBuyPct <= 45;
-              const isFlowAccum = !isFlowDist && (ba?.adSignal === 'Accumulation' || pure1DBa?.adSignal === 'Accumulation' || flowBuyPct >= 55);
+              const flowBuyPct = flowTot > 0 ? Math.round((totalBuyVol / flowTot) * 100) : null;
+              const isFlowDist = ba?.adSignal === 'Distribution' || pure1DBa?.adSignal === 'Distribution' || ba?.isInstitutionalDumping || pure1DBa?.isInstitutionalDumping || bcr3Sell > bcr3Buy || (flowBuyPct != null && flowBuyPct <= 45);
+              const isFlowAccum = !isFlowDist && (ba?.adSignal === 'Accumulation' || pure1DBa?.adSignal === 'Accumulation' || (flowBuyPct != null && flowBuyPct >= 55));
 
               let realityCheck = null;
-              if (bookTot > 0 && flowTot > 0) {
+              if (bookBuyPct != null && flowBuyPct != null) {
                 if (bookBuyPct >= 58 && (isFlowAccum || bcr3Buy > bcr3Sell)) {
                   realityCheck = {
                     badge: '🟢 Confirmed Institutional Demand',
@@ -8668,7 +8703,7 @@ export default function StockDetailModal({
               const latestHistCandle = (Array.isArray(realPriceHistory) && realPriceHistory.length > 0)
                 ? realPriceHistory[realPriceHistory.length - 1]
                 : null;
-              const hasNewerHist = latestHistCandle?.date && (!d.businessDate || String(latestHistCandle.date) >= String(d.businessDate).slice(0, 10));
+              const hasNewerHist = !isModalLive && latestHistCandle?.date && (!d.businessDate || String(latestHistCandle.date) > String(d.businessDate).slice(0, 10));
               const dispDate = hasNewerHist ? latestHistCandle.date : (d.businessDate || d.date || getLatestTradingDateStr());
               const dispLtp = hasNewerHist ? Number(latestHistCandle.close || d.ltp) : Number(d.ltp || 0);
               const dispChange = hasNewerHist ? Number(latestHistCandle.change !== undefined ? latestHistCandle.change : d.change) : Number(d.change || 0);

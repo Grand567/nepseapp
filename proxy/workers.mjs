@@ -39,8 +39,9 @@ try {
 } catch (_) {}
 
 // ── Render 512 MB Memory & Concurrency Guards ────────────────────────────────
-const MAX_LIVE_HEAP_MB = Number(process.env.MAX_LIVE_HEAP_MB || 205);
-const MAX_LIVE_RSS_MB = Number(process.env.MAX_LIVE_RSS_MB || 385);
+const IS_RENDER_CONSTRAINED = Boolean(process.env.RENDER || process.env.RENDER_EXTERNAL_URL || process.env.ENFORCE_RENDER_MEMORY_GUARD === '1');
+const MAX_LIVE_HEAP_MB = Number(process.env.MAX_LIVE_HEAP_MB || (IS_RENDER_CONSTRAINED ? 205 : 1400));
+const MAX_LIVE_RSS_MB = Number(process.env.MAX_LIVE_RSS_MB || (IS_RENDER_CONSTRAINED ? 385 : 1800));
 let activeHeavyWorker = null; // 'aggregateFloorsheetData' | 'smartAlertScan' | 'postMarketAnalysis' | 'morningDigest'
 let isAggregatingFloorsheet = false;
 let isSmartAlertScanRunning = false;
@@ -69,7 +70,7 @@ function checkRenderMemoryBudget(contextLabel = 'Worker') {
     const postHeapMb = postMem.heapUsed / (1024 * 1024);
     const postRssMb = postMem.rss / (1024 * 1024);
     if (postHeapMb > MAX_LIVE_HEAP_MB || postRssMb > MAX_LIVE_RSS_MB) {
-      console.warn(`[MemoryGuard] ⚠️ ${contextLabel} paused to stay within Render 512MB RAM (heap=${postHeapMb.toFixed(1)}MB/${MAX_LIVE_HEAP_MB}MB, rss=${postRssMb.toFixed(1)}MB/${MAX_LIVE_RSS_MB}MB).`);
+      console.warn(`[MemoryGuard] ⚠️ ${contextLabel} paused to stay within ${IS_RENDER_CONSTRAINED ? 'Render 512MB' : 'local'} RAM (heap=${postHeapMb.toFixed(1)}MB/${MAX_LIVE_HEAP_MB}MB, rss=${postRssMb.toFixed(1)}MB/${MAX_LIVE_RSS_MB}MB).`);
       return { ok: false, heapMb: postHeapMb, rssMb: postRssMb };
     }
   }
@@ -110,7 +111,7 @@ export async function aggregateFloorsheetData(options = {}) {
           COALESCE(SUM(quantity), 0) AS buy_quantity, 
           COALESCE(SUM(amount), 0) AS buy_amount
         FROM floorsheet_transactions
-        WHERE traded_date = CURRENT_DATE
+        WHERE traded_date = (NOW() AT TIME ZONE 'Asia/Kathmandu')::date
         GROUP BY traded_date, buyer_broker, security_id
       ),
       sells AS (
@@ -121,7 +122,7 @@ export async function aggregateFloorsheetData(options = {}) {
           COALESCE(SUM(quantity), 0) AS sell_quantity, 
           COALESCE(SUM(amount), 0) AS sell_amount
         FROM floorsheet_transactions
-        WHERE traded_date = CURRENT_DATE
+        WHERE traded_date = (NOW() AT TIME ZONE 'Asia/Kathmandu')::date
         GROUP BY traded_date, seller_broker, security_id
       )
       SELECT 
@@ -614,7 +615,19 @@ export async function runPostMarketCloseAnalysis(force = false) {
     } catch (e) {
       console.warn('[Post-Market Worker] Historical subfiles recompile notice:', e.message);
     }
-    lastPostMarketSessionAnalyzed = targetDate;
+    // Verify that SQLite daily_broker_ledger has valid complete EOD rows for targetDate before locking session
+    const brokerLedgerVerifiedCount = db
+      ? (db.prepare(`SELECT COUNT(*) as c FROM daily_broker_ledger WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0`).get(targetDate)?.c || 0)
+      : 0;
+    const validContractVerifiedCount = db
+      ? (db.prepare(`SELECT COUNT(*) as c FROM floorsheet_contracts WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0`).get(targetDate)?.c || 0)
+      : 0;
+
+    if (brokerLedgerVerifiedCount > 0 && validContractVerifiedCount >= 1000) {
+      lastPostMarketSessionAnalyzed = targetDate;
+    } else {
+      console.warn(`[Post-Market Worker] Deferring session lock for ${targetDate}: broker_ledger=${brokerLedgerVerifiedCount}, validContracts=${validContractVerifiedCount} — retry enabled.`);
+    }
   } catch (err) {
     console.warn('[Post-Market Worker] Error in runPostMarketCloseAnalysis:', err?.message || err);
   } finally {
@@ -844,7 +857,6 @@ export function startWorkers() {
         const latestClosedSession = latestTradingSession(undefined, true);
         if (nptMins >= 645 && nptMins < 655 && lastMorningDigestDispatchedDate !== latestClosedSession && !isMorningDigestRunning && !activeHeavyWorker) {
           if (!checkRenderMemoryBudget('PremarketWorker').ok) return;
-          lastMorningDigestDispatchedDate = latestClosedSession;
           isMorningDigestRunning = true;
           activeHeavyWorker = 'morningDigest';
           (async () => {
@@ -858,9 +870,13 @@ export function startWorkers() {
                 console.warn('[PremarketWorker] Static sub-file compilation notice:', e.message);
               }
               // Quantitative Morning Trading Digest Scan (10:45 AM NPT)
-              await runMorningStockSelectionDigestWorker(latestClosedSession).catch(err => {
+              const digestRes = await runMorningStockSelectionDigestWorker(latestClosedSession).catch(err => {
                 console.warn('[PremarketWorker] Morning digest dispatch notice:', err.message);
+                return false;
               });
+              if (digestRes !== false) {
+                lastMorningDigestDispatchedDate = latestClosedSession;
+              }
               // Option 1: Full Flowchart v2.0 ticket was dispatched at 3:45 PM EOD for overnight study.
               // Fallback to morning full ticket dispatch ONLY if server was restarted and no post-market pick is cached.
               if (!cachedPostMarketPrimePick) {

@@ -30,6 +30,7 @@ import { fetchBrokerAnalysis } from '../utils/servicesApi';
 import { runBacktest, quantMultiFactorStrategy } from '../utils/backtest';
 import { analyzePriceAction, analyzeCandlestickPattern, analyzeMarketStructure } from '../utils/priceActionEngine';
 import { generateNepseAiContent } from '../services/aiService';
+import { readCanonicalPortfolioSymbolsSync } from '../utils/profileVaultStorage';
 
 
 import {
@@ -1640,9 +1641,12 @@ export default function AiAnalyst({
       if (r.success) setMarketData(r);
     });
 
-    const saved = localStorage.getItem('nepse_portfolio');
-    if (saved) {
-      try { setPortfolio(JSON.parse(saved)); } catch { }
+    const { profiles: canonicalProfiles } = readCanonicalPortfolioSymbolsSync();
+    if (Array.isArray(canonicalProfiles) && canonicalProfiles.length > 0) {
+      const flattened = canonicalProfiles.flatMap(p => Array.isArray(p?.holdings) ? p.holdings : [p]);
+      if (flattened.length > 0) {
+        setPortfolio(flattened);
+      }
     }
   }, []);
 

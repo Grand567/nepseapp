@@ -11,7 +11,7 @@
  * 
  * Compliant with:
  * - Securities Trading Operations (Fourth Amendment) Bylaws, 2082 (±15% circuit)
- * - Finance Act 2083 (Short-Term CGT 10.0%, Long-Term CGT 7.5%)
+ * - Finance Act 2083 (Short-Term CGT 5.0%, Long-Term CGT 3.75%)
  * - Official NEPSE Tiered Broker Commission Schedule (0.36% down to 0.24%)
  * ═══════════════════════════════════════════════════════════════════════════
  */
@@ -21,8 +21,8 @@ export const DEFAULT_USER_CAPITAL = 100000;
 
 // ── REGULATORY FRICTION CONSTANTS (FY 2083/84) ─────────────────────────────
 export const NEPSE_FRICTION_FY2083 = {
-  cgtShortTerm: 0.075,       // Statutory 7.5% Short-term retail CGT (<= 365 days)
-  cgtLongTerm: 0.050,        // Statutory 5.0% Long-term retail CGT (> 365 days)
+  cgtShortTerm: 0.05,        // Statutory 5.0% Short-term retail CGT (<= 365 days)
+  cgtLongTerm: 0.0375,       // Statutory 3.75% Long-term retail CGT (> 365 days)
   cgtInstitutional: 0.100,   // 10.0% Corporate/Institutional CGT
   sebonFeeRate: 0.00015,     // 0.015% SEBON regulatory fee per leg
   dpCharge: 25,              // NPR 25 DP fee per leg
@@ -282,7 +282,7 @@ export function calculateDynamicPositionSizing({
   const actualRiskRupees = finalKitta > 0 ? evalRiskRupees : 0;
   const actualRiskPct = cap > 0 ? +((actualRiskRupees / cap) * 100).toFixed(2) : 0;
 
-  // Target 1 Net Profit (Statutory 7.5% Short-Term CGT, 5.0% Long-Term CGT)
+  // Target 1 Net Profit (Statutory 5.0% Short-Term CGT, 3.75% Long-Term CGT)
   const cgtRate = isLongTerm ? NEPSE_FRICTION_FY2083.cgtLongTerm : NEPSE_FRICTION_FY2083.cgtShortTerm;
   const t1GrossProfit = (t1 - entry) * evalKitta;
   const t1OrderAmount = evalKitta * t1;

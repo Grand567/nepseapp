@@ -149,6 +149,66 @@ const saveLocalSession = (user) => {
   }
 };
 
+export const exchangeFirebaseTokenForSync = async (fbUser) => {
+  if (!fbUser || typeof fbUser.getIdToken !== 'function' || !fbUser.email) return null;
+  if (_inFlightTokenExchange) return _inFlightTokenExchange;
+
+  _inFlightTokenExchange = (async () => {
+    try {
+      const idToken = await fbUser.getIdToken();
+      if (!idToken) return null;
+
+      const emailKey = String(fbUser.email).trim().toLowerCase();
+      const res = await callSyncProxy('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          app: 'nepse',
+          email: emailKey,
+          name: fbUser.displayName || '',
+          firebaseIdToken: idToken
+        })
+      }, 75000);
+
+      if (!res || !res.ok) return null;
+      const json = await res.json();
+      if (json?.success && json.token) {
+        setSyncSessionToken(json.token);
+        if (typeof localStorage !== 'undefined' && fbUser.uid) {
+          try {
+            localStorage.setItem(`nepse_hub_${fbUser.uid}_last_sync`, json.updatedAt || new Date().toISOString());
+          } catch (_) {}
+        }
+        if (json.data && typeof json.data === 'object' && Object.keys(json.data).length > 0) {
+          _cachedCloudData = json.data;
+          hydrateLocalDataFromCloud(fbUser.uid, json.data);
+        }
+        return json;
+      }
+      return null;
+    } catch (err) {
+      console.warn('[CloudSync] Firebase token exchange warning:', err.message);
+      return null;
+    } finally {
+      _inFlightTokenExchange = null;
+    }
+  })();
+
+  return _inFlightTokenExchange;
+};
+
+let _inFlightTokenExchange = null;
+
+export const ensureSyncSessionToken = async () => {
+  const existing = getSyncSessionToken();
+  if (existing) return existing;
+  if (isFirebaseConfigured && auth?.currentUser) {
+    const json = await exchangeFirebaseTokenForSync(auth.currentUser).catch(() => null);
+    if (json?.token) return json.token;
+  }
+  return getSyncSessionToken();
+};
+
 // ─── Auth State Listener ──────────────────────────────────────────────────────
 
 let _localAuthCallbacks = [];
@@ -165,8 +225,11 @@ export const onAuthChange = (callback) => {
 
   let unsubscribeFirebase = null;
   if (isFirebaseConfigured && auth) {
-    unsubscribeFirebase = onAuthStateChanged(auth, (fbUser) => {
+    unsubscribeFirebase = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
+        if (!getSyncSessionToken()) {
+          await exchangeFirebaseTokenForSync(fbUser).catch(() => null);
+        }
         callback(fbUser);
       } else {
         // Firebase not logged in — fall back to local session
@@ -200,6 +263,9 @@ export const signInWithGoogle = async () => {
       return null;
     }
     const result = await signInWithPopup(auth, googleProvider);
+    if (result?.user) {
+      await exchangeFirebaseTokenForSync(result.user).catch(() => null);
+    }
     return result.user;
   } catch (err) {
     if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request' || err.code === 'auth/operation-not-supported-in-this-environment') {
@@ -220,6 +286,9 @@ export const signInWithFacebook = async () => {
       return null;
     }
     const result = await signInWithPopup(auth, facebookProvider);
+    if (result?.user) {
+      await exchangeFirebaseTokenForSync(result.user).catch(() => null);
+    }
     return result.user;
   } catch (err) {
     if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request' || err.code === 'auth/operation-not-supported-in-this-environment') {
@@ -768,6 +837,9 @@ export const checkRedirectResult = async () => {
   if (!auth) return null;
   try {
     const result = await getRedirectResult(auth);
+    if (result?.user) {
+      await exchangeFirebaseTokenForSync(result.user).catch(() => null);
+    }
     return result?.user || null;
   } catch {
     return null;
@@ -856,8 +928,8 @@ export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null
   delete dataToSave.credentials;
   if (email) dataToSave.email = email;
 
-  // 1. Primary: Push to Cloud Sync Bridge with signed bearer token
-  const syncToken = getSyncSessionToken();
+  // 1. Primary: Push to Cloud Sync Bridge with signed bearer token (auto-restoring from Firebase if needed)
+  const syncToken = (await ensureSyncSessionToken()) || getSyncSessionToken();
   if (email && email.includes('@') && syncToken) {
     try {
       const res = await callSyncProxy('/push', {
@@ -873,6 +945,11 @@ export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null
         })
       });
       if (res && res.ok) {
+        if (typeof localStorage !== 'undefined' && userId) {
+          try {
+            localStorage.setItem(`nepse_hub_${userId}_last_sync`, new Date().toISOString());
+          } catch (_) {}
+        }
         console.log('[CloudSync] Successfully backed up user data to Cloud Sync API.');
       } else {
         queuePendingSync(userId, payload, userEmail);
@@ -903,7 +980,10 @@ export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null
 };
 
 export const fetchUserDataFromCloud = async (userId, userEmail = null) => {
-  // 0. Check instantaneous cloud data cached from login response if available
+  // 0. Ensure sync session token is hydrated when Firebase user is active across restarts
+  const syncToken = (await ensureSyncSessionToken()) || getSyncSessionToken();
+
+  // Check instantaneous cloud data cached from login / token exchange response if available
   if (_cachedCloudData && typeof _cachedCloudData === 'object' && Object.keys(_cachedCloudData).length > 0) {
     const data = _cachedCloudData;
     _cachedCloudData = null;
@@ -914,7 +994,6 @@ export const fetchUserDataFromCloud = async (userId, userEmail = null) => {
   const email = resolveUserEmail(userId, userEmail);
 
   // 1. Primary: Pull from Cloud Sync Bridge with signed bearer token
-  const syncToken = getSyncSessionToken();
   if (email && email.includes('@') && syncToken) {
     try {
       const res = await callSyncProxy('/pull', {
@@ -931,6 +1010,11 @@ export const fetchUserDataFromCloud = async (userId, userEmail = null) => {
       if (res && res.ok) {
         const json = await res.json();
         if (json.success && json.data && Object.keys(json.data).length > 0) {
+          if (typeof localStorage !== 'undefined' && userId) {
+            try {
+              localStorage.setItem(`nepse_hub_${userId}_last_sync`, json.updatedAt || new Date().toISOString());
+            } catch (_) {}
+          }
           console.log('[CloudSync] Successfully restored user data from Cloud Sync API.');
           return json.data;
         }

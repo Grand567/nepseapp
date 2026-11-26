@@ -457,10 +457,12 @@ export function evaluateMasterStock(
       // Parse Nepali fiscal year from source string e.g. "SEBON Official Gazette 2083/05/02"
       const bsMatch = String(sebonMatch.source).match(/(\d{4})\/(\d{2})\/(\d{2})/);
       if (bsMatch) {
-        const bsYear = parseInt(bsMatch[1]);
+        const bsYear = parseInt(bsMatch[1], 10);
+        const bsMonth = parseInt(bsMatch[2], 10);
+        const bsDay = parseInt(bsMatch[3], 10);
         if (bsYear >= 2050 && bsYear <= 2099) {
-          const filingDateStr = bsToAd(`${bsYear}-${bsMatch[2]}-${bsMatch[3]}`);
-          const filingDate = new Date(filingDateStr).getTime();
+          const filingDateObj = bsToAd(bsYear, bsMonth, bsDay);
+          const filingDate = filingDateObj ? new Date(filingDateObj).getTime() : NaN;
           if (!isNaN(filingDate)) {
             const unlockDate = filingDate + (3 * 365.25 * 24 * 60 * 60 * 1000);
             daysToLockin = Math.ceil((unlockDate - Date.now()) / (1000 * 60 * 60 * 24));

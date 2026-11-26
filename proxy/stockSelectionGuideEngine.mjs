@@ -17,6 +17,7 @@ import { fileURLToPath } from 'url';
 import { calculateMultiTimeframeBrokerMetrics } from './trackBSyndicateEngine.mjs';
 import { isExcludedInstrument } from './db/signalTrackerStore.js';
 import { getBrokerName } from './brokerVault.mjs';
+import { formatNptDateIso } from '../src/utils/nepseCalendar.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -909,7 +910,7 @@ export function evaluateDailySelectionGuide({
              ON b.trade_date = s.trade_date`
         )
         .get() || db.prepare('SELECT MAX(trade_date) AS d FROM daily_broker_ledger').get();
-  const sessionDate = latestRow?.d || new Date().toISOString().slice(0, 10);
+  const sessionDate = latestRow?.d || formatNptDateIso(new Date());
 
   const gate1 = evaluateMarketRegimeGate({
     indexSeries: nepseIndexHistory,

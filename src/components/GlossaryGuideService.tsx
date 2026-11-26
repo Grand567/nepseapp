@@ -123,7 +123,7 @@ const GLOSSARY_TERMS: TermItem[] = [
     term: 'Capital Gains Tax (CGT)',
     category: 'Regulatory',
     definition: 'Tax levied on capital profit when selling equity shares on NEPSE.',
-    nepseContext: 'Short-term retail (holding <= 365 days): 7.5%. Long-term retail (holding > 365 days): 5.0%. Institutional: 10.0%.',
+    nepseContext: 'Short-term retail (holding <= 365 days): 5.0%. Long-term retail (holding > 365 days): 3.75%. Institutional: 10.0%.',
   },
   {
     term: 'Promoter Share Lock-In (3 Years)',

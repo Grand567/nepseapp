@@ -2177,7 +2177,7 @@ export async function processBroker58AlertTrigger(b58Eval) {
   const sym = b58Eval.symbol;
   const now = Date.now();
   const status = getDetailedMarketStatus();
-  const sessionDate = status?.targetSessionDate || new Date().toISOString().slice(0, 10);
+  const sessionDate = status?.targetSessionDate || formatNptDateIso(new Date());
   const isTest = Boolean(b58Eval.isTest || process.env.NODE_ENV === 'test' || String(sym || '').startsWith('TEST_'));
 
   // 0. Morning Wash Period Gate: Suppress Early Ignition alerts during 11:00-11:45 AM
@@ -2339,17 +2339,20 @@ export async function scanUniverseForBroker58Ignitions({ limit = 5, sessionDate 
                 OR (l.buy_amt >= 5000000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.10)
                 OR (l.buy_amt >= 10000000 AND CAST(l.buy_vol AS REAL) / s.total_volume >= 0.08)
               )
+              AND COALESCE(l.is_quarantined, 0) = 0
+              AND COALESCE(s.is_quarantined, 0) = 0
               AND (l.buy_vol - l.sell_vol) >= 5000
               AND CAST(l.buy_vol AS REAL) / MAX(1, l.buy_vol + l.sell_vol) >= 0.70
               AND s.total_volume > 0
-              AND (s.close_price - s.open_price) / s.open_price BETWEEN -0.03 AND 0.045
+              AND s.open_price > 0
+              AND CAST(s.close_price - s.open_price AS REAL) / NULLIF(s.open_price, 0) BETWEEN -0.03 AND 0.045
             ORDER BY l.buy_amt DESC
             LIMIT ?
           `).all(targetDate, limit * 2);
 
           // Also scan 5-day multi-session stealth accumulators
           const fiveDates = db.prepare(`
-            SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT 5
+            SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE trade_date <= ? AND COALESCE(is_quarantined, 0) = 0 ORDER BY trade_date DESC LIMIT 5
           `).all(targetDate).map(d => d.trade_date);
           const min5Date = fiveDates[fiveDates.length - 1] || targetDate;
 
@@ -2360,7 +2363,7 @@ export async function scanUniverseForBroker58Ignitions({ limit = 5, sessionDate 
                    SUM(l.buy_amt) as multi_amt,
                    ROUND(CAST(SUM(l.buy_vol) AS REAL) / MAX(1, SUM(l.buy_vol + l.sell_vol)) * 100, 1) as multi_ratio
             FROM daily_broker_ledger l
-            WHERE l.broker_id = 58 AND l.trade_date >= ? AND l.trade_date <= ?
+            WHERE l.broker_id = 58 AND l.trade_date >= ? AND l.trade_date <= ? AND COALESCE(l.is_quarantined, 0) = 0
             GROUP BY l.symbol
             HAVING multi_net >= 25000 AND multi_ratio >= 65.0
             ORDER BY multi_net DESC
@@ -2380,7 +2383,7 @@ export async function scanUniverseForBroker58Ignitions({ limit = 5, sessionDate 
                        ROUND(l.buy_amt / MAX(1, l.buy_vol), 1) as operator_vwap
                 FROM daily_broker_ledger l
                 JOIN daily_stock_summary s ON l.trade_date = s.trade_date AND l.symbol = s.symbol
-                WHERE l.broker_id = 58 AND l.symbol = ? AND l.trade_date = ?
+                WHERE l.broker_id = 58 AND l.symbol = ? AND l.trade_date = ? AND COALESCE(l.is_quarantined, 0) = 0 AND COALESCE(s.is_quarantined, 0) = 0
               `).get(mCand.symbol, targetDate);
 
               if (todayRow && todayRow.total_volume > 0) {
@@ -3578,7 +3581,7 @@ export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListing
         const isRightShare = ['हकप्रद', 'right share', 'right issue', 'rights issue', 'right offering', 'हकप्रद सेयर'].some(kw => lowerTitle.includes(kw));
         const isBookClosure = ['बुक क्लोज', 'बुकक्लोज', 'साधारण सभा', 'book closure', 'book close', 'agm', 'annual general meeting', 'special general meeting', 'sgm'].some(kw => lowerTitle.includes(kw));
         const corpKind = isDividend ? 'DIVIDEND' : isRightShare ? 'RIGHT_SHARE' : isBookClosure ? 'BOOK_CLOSURE' : '';
-        const todayUtc = new Date().toISOString().slice(0, 10);
+        const todayUtc = formatNptDateIso(new Date());
         const corpDayKey = (corpKind && foundSym) ? `corp_${corpKind}_${foundSym}_${todayUtc}` : '';
         if (corpDayKey && seenNewsKeys.has(corpDayKey)) continue;
 

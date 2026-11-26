@@ -1,5 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowUpRight, ArrowDownRight, Bookmark, HelpCircle, Zap } from 'lucide-react';
+import { fetchPriceHistory } from '../utils/liveData';
+import { fetchNepseIntradayGraph } from '../utils/servicesApi';
+
+function buildScripSparkline(series = [], width = 300, height = 80, padY = 8) {
+  const vals = (Array.isArray(series) ? series : [])
+    .map(p => Number(p?.close ?? p?.value ?? p?.rate ?? p?.ltp ?? p ?? 0))
+    .filter(v => Number.isFinite(v) && v > 0);
+  if (vals.length < 2) return null;
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const span = Math.max(0.01, maxV - minV);
+  const coords = vals.map((v, i) => {
+    const x = +((i / (vals.length - 1)) * width).toFixed(1);
+    const y = +(padY + (1 - (v - minV) / span) * (height - padY * 2)).toFixed(1);
+    return `${x},${y}`;
+  });
+  const line = `M${coords.join(' L')}`;
+  const area = `${line} L${width},${height} L0,${height} Z`;
+  return { line, area };
+}
 
 export function StockDetails({
   symbol = 'NABIL',
@@ -15,6 +35,30 @@ export function StockDetails({
   const [subTab, setSubTab] = useState('fund'); // 'fund', 'depth', 'div'
   const [timeframe, setTimeframe] = useState('1D');
   const [isBookmarked, setIsBookmarked] = useState(false);
+  const [curvePts, setCurvePts] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    setCurvePts([]);
+    const load = async () => {
+      try {
+        if (timeframe === '1D') {
+          const intra = await fetchNepseIntradayGraph(symbol);
+          if (active && Array.isArray(intra) && intra.length > 1) {
+            setCurvePts(intra);
+            return;
+          }
+        }
+        const limitMap = { '1D': 15, '1W': 7, '1M': 22, '3M': 65, '1Y': 245, 'ALL': 500 };
+        const hist = await fetchPriceHistory(symbol, limitMap[timeframe] || 60);
+        if (active && Array.isArray(hist) && hist.length > 1) {
+          setCurvePts(hist);
+        }
+      } catch (_) {}
+    };
+    load();
+    return () => { active = false; };
+  }, [symbol, timeframe]);
 
   // Look up live data if available
   const liveStock = stocks.find(s => s.symbol?.toUpperCase() === symbol?.toUpperCase());
@@ -178,23 +222,29 @@ export function StockDetails({
                   <stop offset="100%" stopColor={ltp <= 0 ? "#64748B" : isPos ? "#10B981" : "#F43F5E"} stopOpacity="0.0" />
                 </linearGradient>
               </defs>
-              {ltp > 0 ? (
-                <>
-                  <path
-                    d={isPos ? "M0,70 Q40,65 80,68 T160,40 T240,25 L300,10 L300,80 L0,80 Z" : "M0,10 Q40,15 80,12 T160,40 T240,55 L300,70 L300,80 L0,80 Z"}
-                    fill="url(#scripGradLive)"
-                  />
-                  <path
-                    d={isPos ? "M0,70 Q40,65 80,68 T160,40 T240,25 L300,10" : "M0,10 Q40,15 80,12 T160,40 T240,55 L300,70"}
-                    fill="none"
-                    stroke={isPos ? "#10B981" : "#F43F5E"}
-                    strokeWidth="2.5"
-                  />
-                  <circle cx="300" cy={isPos ? 10 : 70} r="4" fill={isPos ? "#10B981" : "#F43F5E"} />
-                </>
-              ) : (
-                <path d="M0,40 L300,40" fill="none" stroke="#64748B" strokeWidth="1.5" strokeDasharray="4 4" />
-              )}
+              {(() => {
+                const g = buildScripSparkline(curvePts, 300, 80, 8);
+                if (ltp > 0 && g) {
+                  const pts = g.line.split(' ');
+                  const lastPt = pts[pts.length - 1] || '300,40';
+                  const [lx, ly] = lastPt.replace(/^M/, '').split(',').map(Number);
+                  return (
+                    <>
+                      <path d={g.area} fill="url(#scripGradLive)" />
+                      <path d={g.line} fill="none" stroke={isPos ? "#10B981" : "#F43F5E"} strokeWidth="2.5" strokeLinejoin="round" />
+                      <circle cx={lx || 300} cy={ly || 40} r="4" fill={isPos ? "#10B981" : "#F43F5E"} />
+                    </>
+                  );
+                }
+                return (
+                  <>
+                    <path d="M0,40 L300,40" fill="none" stroke="#64748B" strokeWidth="1.5" strokeDasharray="4 4" />
+                    <text x="150" y="32" textAnchor="middle" fill="#64748B" fontSize="10" fontFamily="monospace">
+                      {isNe ? 'मूल्य वक्र लोड हुँदै' : 'Awaiting price curve'}
+                    </text>
+                  </>
+                );
+              })()}
             </svg>
           </div>
         </div>

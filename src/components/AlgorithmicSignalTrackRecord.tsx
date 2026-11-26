@@ -805,7 +805,7 @@ export function AlgorithmicSignalTrackRecord({
           </span>
         </div>
         <p className="text-xs text-slate-400 mt-1">
-          Zero look-ahead walk-forward SQLite ledger deducting NEPSE broker tiers, 0.015% SEBON fee, Rs 50 round-trip DP, and 7.5% short-term CGT.
+          Zero look-ahead walk-forward SQLite ledger deducting NEPSE broker tiers, 0.015% SEBON fee, Rs 50 round-trip DP, and 5.0% short-term CGT.
         </p>
       </div>
 
@@ -925,7 +925,7 @@ export function AlgorithmicSignalTrackRecord({
             {computedPortfolioSummary.netExpectancy}%
           </div>
           <div className="text-[11px] text-slate-500 mt-0.5">
-            After Commission, DP &amp; 7.5% CGT
+            After Commission, DP &amp; 5.0% CGT
           </div>
         </div>
 

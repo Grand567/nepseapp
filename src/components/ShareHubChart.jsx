@@ -334,7 +334,7 @@ export default function ShareHubChart({
   useEffect(() => {
     if (activeTf !== '1D') return;
 
-    const hasIntradayInHistory = Array.isArray(rawHistory) && rawHistory.length > 1 && rawHistory.some(pt => {
+    const hasIntradayInHistory = Array.isArray(rawHistory) && rawHistory.length > 2 && !rawHistory.some(pt => pt?.isSessionAnchor) && rawHistory.some(pt => {
       const timeStr = String(pt.time || pt.date || '');
       if (/\d{1,2}:\d{2}/.test(timeStr)) return true;
       if (pt.timestamp && pt.timestamp > 1e8) {
@@ -462,7 +462,7 @@ export default function ShareHubChart({
   const processedChartData = useMemo(() => {
     if (activeTf === '1D') {
       let intradaySource = intradayData.length > 0 ? intradayData : [];
-      if (intradaySource.length === 0 && Array.isArray(rawHistory) && rawHistory.length > 1) {
+      if (intradaySource.length === 0 && Array.isArray(rawHistory) && rawHistory.length > 2 && !rawHistory.some(pt => pt?.isSessionAnchor)) {
         const hasIntraday = rawHistory.some(pt => /\d{1,2}:\d{2}/.test(String(pt.time || pt.date || '')));
         if (hasIntraday) intradaySource = rawHistory;
       }

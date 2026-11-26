@@ -7,7 +7,7 @@
  *    - 5-Tier SEBON Broker Commission (0.36%, 0.33%, 0.31%, 0.27%, 0.24%, min Rs. 10)
  *    - SEBON Regulatory Fee (0.015% per leg)
  *    - DP Fee (Rs. 25 per sell leg)
- *    - Capital Gains Tax (CGT): 7.5% short-term (<= 365 days), 5.0% long-term (> 365 days)
+ *    - Capital Gains Tax (CGT): 5.0% short-term (<= 365 days), 3.75% long-term (> 365 days)
  *    - Thin-Liquidity Slippage Model & Quadratic Market Impact
  *    - Mandatory T+2 Demat Settlement Lock (No selling on Day T or Day T+1)
  *    - ±15% Daily Circuit Band Clamps (Ceiling execution lock, floor gap-down trap)
@@ -23,14 +23,14 @@ import { SCORING_CONFIG } from './scoringConfig.js';
 import { evaluateStockSelection } from './stockScoringEngine.js';
 import { calculateBrokerCommission, calculateSebonFee, DP_CHARGE } from '../calculations.js';
 import { calculateLiquiditySlippage, classifyMarketRegime } from '../nepseWalkForwardBacktest.mjs';
-import { countNepseTradingSessionsBetween } from '../nepseCalendar.js';
+import { countNepseTradingSessionsBetween, formatNptDateIso } from '../nepseCalendar.js';
 
 export const STATUTORY_FEES = {
   sebonRate: 0.00015,
   dpCharge: DP_CHARGE || 25.0,
   minBrokerCommission: 10.0,
-  cgtShortTermRate: 0.075,
-  cgtLongTermRate: 0.050,
+  cgtShortTermRate: 0.05,
+  cgtLongTermRate: 0.0375,
   circuitBandPct: 15.0
 };
 
@@ -537,7 +537,7 @@ export function compileBacktestResults({
  * Generates the formal Markdown report string
  */
 export function generateBacktestMarkdownReport(result) {
-  const dateStr = new Date().toISOString().slice(0, 10);
+  const dateStr = formatNptDateIso(new Date());
   const warningSection = result.sampleSizeWarning
     ? `> [!CAUTION]\n> **STATISTICAL SAMPLE SIZE WARNING**\n> ${result.sampleSizeWarning}\n\n`
     : `> [!NOTE]\n> Sample size: ${result.totalTrades} closed trades across ${result.totalSessions} trading sessions.\n\n`;
@@ -587,7 +587,7 @@ ${warningSection}
 - **Broker Commission (5-Tier SEBON):** Total Rs. ${result.totalCommissionPaid?.toLocaleString()} deducted.
 - **SEBON Regulatory Fee:** 0.015% per transaction leg deducted.
 - **DP Charge:** Rs. 25 per sell Demat transfer deducted.
-- **Capital Gains Tax (CGT):** 7.5% short-term CGT deducted automatically on profitable sales (Total Rs. ${result.totalCgtPaid?.toLocaleString()}).
+- **Capital Gains Tax (CGT):** 5.0% short-term CGT deducted automatically on profitable sales (Total Rs. ${result.totalCgtPaid?.toLocaleString()}).
 - **Mandatory T+2 Settlement Lock:** All positions held for a minimum of 2 business sessions before exit eligibility.
 - **Thin Liquidity Slippage:** Execution price penalized based on order size vs daily turnover.
 

@@ -2,9 +2,9 @@
 import express from 'express';
 import { db, getScripVolumeProfile, auditAntiDematDumpGuard } from '../db/ledgerStore.js';
 import { safeNum, resolveValidNepseSymbol, resolveVerifiedPrice } from './aiGuruRoutes.mjs';
-import { getBrokerName, getOrFetchAllTimeBrokerHoldings } from '../brokerVault.mjs';
+import { getBrokerName, getOrFetchAllTimeBrokerHoldings, getOrFetchSymbolFloorsheet } from '../brokerVault.mjs';
 import { aggregateBrokerMicrostructure } from '../utils/sharedBrokerAggregationEngine.js';
-import { isNepseTradingDay, formatNptDateIso } from '../../src/utils/nepseCalendar.js';
+import { isNepseTradingDay, formatNptDateIso, isMarketOpen } from '../../src/utils/nepseCalendar.js';
 
 function sanitizeSymbol(raw) {
   if (!raw || typeof raw !== 'string') return '';
@@ -207,7 +207,7 @@ export function handleStockTelemetry(req, res) {
     if (availableFloorsheetDates.length === 0 && tableExists(db, 'daily_broker_ledger')) {
       try {
         availableFloorsheetDates = db
-          .prepare(`SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 40`)
+          .prepare(`SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE UPPER(symbol) = ? AND COALESCE(is_quarantined, 0) = 0 ORDER BY trade_date DESC LIMIT 40`)
           .all(validSymbol)
           .map(r => r.trade_date);
       } catch (_) {}
@@ -215,7 +215,7 @@ export function handleStockTelemetry(req, res) {
     if (availableFloorsheetDates.length === 0 && tableExists(db, 'daily_stock_summary')) {
       try {
         availableFloorsheetDates = db
-          .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 40`)
+          .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE UPPER(symbol) = ? AND COALESCE(is_quarantined, 0) = 0 AND calendar_status != 'PARTIAL_SESSION' ORDER BY trade_date DESC LIMIT 40`)
           .all(validSymbol)
           .map(r => r.trade_date);
       } catch (_) {}
@@ -286,6 +286,7 @@ export function handleStockTelemetry(req, res) {
                 ROUND((SUM(buy_vol) + SUM(sell_vol)) / NULLIF(COUNT(*), 0), 2) AS avgTicketKitta
               FROM daily_broker_ledger
               WHERE UPPER(symbol) = ?
+                AND COALESCE(is_quarantined, 0) = 0
                 ${targetDates.length > 0 ? `AND trade_date IN (${placeholders})` : ''}
               GROUP BY broker_id`
             )
@@ -401,23 +402,8 @@ export function handleStockTelemetry(req, res) {
               latestBrokerDate.latest_date
             );
 
-          rawFloorsheetContracts = summaryRows
-            .filter((r) => safeNum(r.buy_kitta, 0) > 0 || safeNum(r.sell_kitta, 0) > 0)
-            .map((r, idx) => {
-              const kitta = Math.max(safeNum(r.buy_kitta, 0), safeNum(r.sell_kitta, 0));
-              const rate = safeNum(r.rate, 500);
-              return {
-                contractNo: `${r.trade_date.replace(/-/g, '')}-${validSymbol}-${100 + idx}`,
-                symbol: validSymbol,
-                tradeDate: r.trade_date,
-                tradeTime: '14:58:00',
-                buyerBroker: safeNum(r.buy_kitta, 0) >= safeNum(r.sell_kitta, 0) ? r.broker_no : 58,
-                sellerBroker: safeNum(r.sell_kitta, 0) > safeNum(r.buy_kitta, 0) ? r.broker_no : 45,
-                kitta,
-                rate,
-                amount: Number((kitta * rate).toFixed(2)),
-              };
-            });
+          // Never synthesize bilateral Broker #58/#45 trades or fake 14:58:00 timestamps from aggregated summaries
+          rawFloorsheetContracts = [];
         }
       } catch {
         // Ignore fallback error
@@ -822,15 +808,82 @@ export async function handleStockSmartMoney(req, res) {
       }
     }
 
-    const rawDays = parseInt(req.query.days || (requestedTf === '5D' ? 5 : requestedTf === '1M' || requestedTf === '30D' ? 30 : 1), 10);
+    const rawDays = parseInt(
+      req.query.days || (requestedTf === '3D' ? 3 : requestedTf === '5D' ? 5 : requestedTf === '15D' ? 15 : (requestedTf === '1M' || requestedTf === '30D') ? 30 : 1),
+      10
+    );
     const requestedDays = Math.max(1, Math.min(60, rawDays || 1));
     const requestedDate = req.query.date ? String(req.query.date).trim() : null;
+    const todayIso = formatNptDateIso(new Date());
+    const liveSessionOpen = isMarketOpen();
+
+    // Live Intraday 1D Path (11:00 AM - 3:00 PM NPT): stream live floorsheet & masked tape instead of yesterday's EOD ledger
+    if (liveSessionOpen && requestedDays === 1 && !isAllTimeRequest && (!requestedDate || requestedDate === todayIso)) {
+      try {
+        const fsRes = await getOrFetchSymbolFloorsheet(validSymbol, todayIso, {
+          refresh: req.query.refresh === 'true',
+          maxPages: 6,
+          timeoutMs: 4500
+        }).catch(() => null);
+        const liveRows = Array.isArray(fsRes?.rows) ? fsRes.rows : (Array.isArray(fsRes) ? fsRes : []);
+        if (liveRows.length > 0) {
+          const hasRealBrokers = liveRows.some(r => {
+            const b = parseInt(String(r.buyerBroker || r.buyerMemberId || r.buyer || 0).replace(/\D/g, ''), 10) || 0;
+            const s = parseInt(String(r.sellerBroker || r.sellerMemberId || r.seller || 0).replace(/\D/g, ''), 10) || 0;
+            return b > 0 && s > 0;
+          });
+          const liveAgg = aggregateBrokerMicrostructure({ rawTrades: liveRows, symbol: validSymbol, days: 1, isLiveSession: true });
+          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+          return res.json({
+            success: true,
+            symbol: validSymbol,
+            date: todayIso,
+            businessDate: todayIso,
+            fromDate: todayIso,
+            toDate: todayIso,
+            timeframe: requestedTf,
+            days: 1,
+            isLiveSession: true,
+            isBrokerMaskedIntraday: !hasRealBrokers,
+            totalVolume: liveAgg.totalVolume,
+            totalTurnover: liveAgg.totalTurnover,
+            marketVWAP: liveAgg.marketVWAP,
+            bigBrokerVWAP: liveAgg.bigBrokerVWAP,
+            bcr3BuyPct: liveAgg.bcr3BuyPct,
+            bcr5BuyPct: liveAgg.bcr5BuyPct,
+            bcr3SellPct: liveAgg.bcr3SellPct,
+            bcr5SellPct: liveAgg.bcr5SellPct,
+            scr3SellPct: liveAgg.scr3SellPct,
+            netBuyPct: liveAgg.netBuyPct,
+            netSellPct: liveAgg.netSellPct,
+            nbar: liveAgg.nbar,
+            adRatio: liveAgg.adRatio,
+            adSignal: liveAgg.adSignal,
+            phase: liveAgg.phase,
+            phaseLabel: liveAgg.phaseLabel,
+            smartMoneyScore: liveAgg.smartMoneyScore,
+            data: liveAgg.allBrokers,
+            brokers: liveAgg.allBrokers,
+            allBrokers: liveAgg.allBrokers,
+            topAccumulators: liveAgg.topAccumulators,
+            topDistributors: liveAgg.topDistributors,
+            topBuyers: liveAgg.topBuyers,
+            topSellers: liveAgg.topSellers,
+            topNetBuyers: liveAgg.topNetBuyers,
+            topNetSellers: liveAgg.topNetSellers,
+            source: hasRealBrokers ? 'live_1d_floorsheet' : 'live_intraday_masked_tape',
+          });
+        }
+      } catch (liveErr) {
+        console.warn(`[stockTelemetry] Live 1D smart-money error for ${validSymbol}:`, liveErr.message);
+      }
+    }
 
     let availableDates = [];
     if (tableExists(ledgerDb, 'daily_broker_ledger')) {
       try {
         availableDates = ledgerDb
-          .prepare(`SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 40`)
+          .prepare(`SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE UPPER(symbol) = ? AND COALESCE(is_quarantined, 0) = 0 ORDER BY trade_date DESC LIMIT 40`)
           .all(validSymbol)
           .map(r => r.trade_date);
       } catch (_) {}
@@ -838,13 +891,12 @@ export async function handleStockSmartMoney(req, res) {
     if (availableDates.length === 0 && tableExists(ledgerDb, 'daily_stock_summary')) {
       try {
         availableDates = ledgerDb
-          .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 40`)
+          .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE UPPER(symbol) = ? AND COALESCE(is_quarantined, 0) = 0 AND calendar_status != 'PARTIAL_SESSION' ORDER BY trade_date DESC LIMIT 40`)
           .all(validSymbol)
           .map(r => r.trade_date);
       } catch (_) {}
     }
 
-    const todayIso = formatNptDateIso(new Date());
     availableDates = availableDates.filter(d => {
       if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
       if (d > todayIso) return false;
@@ -879,6 +931,7 @@ export async function handleStockSmartMoney(req, res) {
             COUNT(*) AS trades
           FROM daily_broker_ledger
           WHERE UPPER(symbol) = ?
+            AND COALESCE(is_quarantined, 0) = 0
             ${targetDates.length > 0 ? `AND trade_date IN (${placeholders})` : ''}
           GROUP BY broker_id`
         )
@@ -995,6 +1048,12 @@ export async function handleStockSmartMoney(req, res) {
       topHoldings: allHoldings,
       allHoldings,
       allDistributors: distributors,
+      topAccumulators: accumulators,
+      topDistributors: distributors,
+      topBuyers: agg.topBuyers || agg.topGrossBuyers || [],
+      topSellers: agg.topSellers || agg.topGrossSellers || [],
+      topNetBuyers: accumulators,
+      topNetSellers: distributors,
       totalSharesHeldTillNow,
       topHoldingBroker: topAcc,
       avgBuyingPrice,
@@ -1009,8 +1068,17 @@ export async function handleStockSmartMoney(req, res) {
       phaseLabel: agg.phaseLabel,
       smartMoneyScore: agg.smartMoneyScore,
       adSignal: agg.adSignal,
+      adRatio: agg.adRatio,
+      nbar: agg.nbar,
+      netBuyPct: agg.netBuyPct,
+      netSellPct: agg.netSellPct,
       bcr3BuyPct: agg.bcr3BuyPct,
+      bcr5BuyPct: agg.bcr5BuyPct,
+      bcr3SellPct: agg.bcr3SellPct,
+      bcr5SellPct: agg.bcr5SellPct,
       scr3SellPct: agg.scr3SellPct,
+      totalVolume: agg.totalVolume,
+      totalTurnover: agg.totalTurnover,
       marketVWAP: agg.marketVWAP,
       bigBrokerVWAP: agg.bigBrokerVWAP,
       coverage: {

@@ -4,7 +4,7 @@ import { calculateBrokerCommission, calculateSebonFee } from '../utils/calculati
 
 export function OrderExecution({
   symbol = 'NABIL',
-  defaultPrice = 585.00,
+  defaultPrice = 0,
   maxUnits = 1000,
   availableCash = 500000,
   isModal = false,

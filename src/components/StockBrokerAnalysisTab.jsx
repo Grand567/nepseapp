@@ -1559,7 +1559,9 @@ function StockBrokerAnalysisTabInner({
           fontWeight: 700
         }}>
           <RefreshCw className="animate-spin" style={{ width: 16, height: 16, flexShrink: 0 }} />
-          <span>Loading broker analysis for {effectiveDate || (effectiveDays > 1 ? `${effectiveDays}-Day window` : 'latest session')}...</span>
+          <span>
+            Loading broker analysis for {effectiveDate || (String(effectiveDays).toLowerCase() === 'all' ? 'All-Time Multi-Year window' : (Number(effectiveDays) > 1 ? `${effectiveDays}-Day window` : 'latest session'))}...
+          </span>
         </div>
       )}
 

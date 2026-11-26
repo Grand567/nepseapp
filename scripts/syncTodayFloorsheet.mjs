@@ -25,11 +25,13 @@ async function syncToday() {
   const res = await downloadAndArchiveDailyFloorsheet(targetDate, { force: true });
   console.log(`[SyncEngine] Ingested ${res?.tradeCount || 0} trade contracts into SQLite database.`);
 
-  // 2. Aggregate exchange-wide broker matrix
+  // 2. Aggregate exchange-wide broker matrix (strict unmasked/full-session guard)
   const trades = await getFullSessionFloorsheet(targetDate);
-  if (Array.isArray(trades) && trades.length > 0) {
-    const aggData = aggregateMarketFloorsheet(trades, targetDate);
+  const aggData = (Array.isArray(trades) && trades.length >= 1000)
+    ? aggregateMarketFloorsheet(trades, targetDate)
+    : null;
 
+  if (Array.isArray(trades) && trades.length >= 1000 && Array.isArray(aggData?.matrix) && aggData.matrix.length > 0) {
     // 3. Dual-write broker_matrix_latest.json
     const proxyPath = path.join(rootDir, 'proxy', 'data', 'broker_matrix_latest.json');
     const srcPath = path.join(rootDir, 'src', 'data', 'broker_matrix_latest.json');
@@ -62,6 +64,8 @@ async function syncToday() {
         console.warn(`[SyncEngine] Historical matrix seed notice:`, hErr.message);
       }
     }
+  } else {
+    console.warn(`[SyncEngine] ⚠️ Skipping broker_matrix_latest/historical overwrite for ${targetDate}: partial or masked batch (${trades?.length || 0} trades, ${aggData?.matrix?.length || 0} brokers)`);
   }
 
   let hasErrors = false;

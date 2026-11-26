@@ -14,6 +14,7 @@
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { playBreakoutChime, triggerBreakoutVibration } from './watchlistAlerts.js';
+import { readCanonicalPortfolioSymbolsSync } from './profileVaultStorage.js';
 
 const PUSH_REGISTERED_KEY = 'dravyashree_fcm_token_registered';
 const NOTIFICATIONS_CACHE_KEY = 'dravyashree_notifications_cache';
@@ -102,17 +103,8 @@ export const getUserHoldingSymbolsSet = (extraSymbols = null) => {
   }
   if (typeof localStorage === 'undefined') return symbols;
   try {
-    const rawProfs = localStorage.getItem('nepse_portfolio_profiles');
-    if (rawProfs) {
-      const profs = JSON.parse(rawProfs);
-      if (Array.isArray(profs)) {
-        profs.forEach(p => (p?.holdings || []).forEach(h => {
-          const kitta = Number(h?.kitta ?? h?.units ?? h?.qty ?? 1);
-          const sym = String(h?.symbol || h?.scrip || '').toUpperCase().trim();
-          if (sym && sym !== 'NEPSE' && kitta > 0) symbols.add(sym);
-        }));
-      }
-    }
+    const { symbols: canonicalSyms } = readCanonicalPortfolioSymbolsSync();
+    canonicalSyms.forEach((s) => symbols.add(s));
   } catch (_) {}
   try {
     const rawDirect = localStorage.getItem('nepse_portfolio_holdings');
@@ -805,14 +797,8 @@ export async function syncDevicePushToken(tokenParam = null, force = false, maxR
 
     let portfolioSymbols = [];
     try {
-      const rawProfs = localStorage.getItem('nepse_portfolio_profiles') || '[]';
-      const profs = JSON.parse(rawProfs);
-      if (Array.isArray(profs)) {
-        profs.forEach(p => (p.holdings || []).forEach(h => {
-          const s = h.symbol || h.scrip;
-          if (s) portfolioSymbols.push(String(s).toUpperCase().trim());
-        }));
-      }
+      const { symbols: canonicalSyms } = readCanonicalPortfolioSymbolsSync();
+      portfolioSymbols = Array.from(canonicalSyms);
       const rawWl = localStorage.getItem('nepse_user_watchlist') || '[]';
       const wl = JSON.parse(rawWl);
       if (Array.isArray(wl)) {

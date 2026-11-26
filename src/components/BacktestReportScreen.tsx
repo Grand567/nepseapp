@@ -368,7 +368,7 @@ export function BacktestReportScreen() {
                   <span className="font-mono text-slate-200">Rs. {totalTrades * 25}</span>
                 </div>
                 <div className="flex justify-between border-b border-slate-800/60 pb-1.5">
-                  <span className="text-slate-400">Capital Gains Tax (7.5% Short-Term)</span>
+                  <span className="text-slate-400">Capital Gains Tax (5.0% Short-Term)</span>
                   <span className="font-mono text-slate-200">Rs. {totalCgtPaid.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">

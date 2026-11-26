@@ -3,6 +3,7 @@ import express from 'express';
 import { db } from '../db/ledgerStore.js';
 import { calculateNepseNetReturn, isExcludedInstrument } from '../db/signalTrackerStore.js';
 import { safeNum, resolveValidNepseSymbol } from './aiGuruRoutes.mjs';
+import { formatNptDateIso } from '../../src/utils/nepseCalendar.js';
 
 const router = express.Router();
 
@@ -67,7 +68,7 @@ export function handleSignalTrackRecordEnriched(req, res) {
       distinctSessions = dateRows.map((d) => d.trade_date);
     }
 
-    const asOfDate = distinctSessions[0] || new Date().toISOString().slice(0, 10);
+    const asOfDate = distinctSessions[0] || formatNptDateIso(new Date());
 
     // 2. Build 5D Per-Scrip & Per-Broker Floorsheet Rollup Map
     const scripBrokerMap = new Map();
@@ -551,7 +552,7 @@ export function handleSignalTrackRecordEnriched(req, res) {
     return res.status(200).json({
       ok: false,
       success: false,
-      asOfDate: new Date().toISOString().slice(0, 10),
+      asOfDate: formatNptDateIso(new Date()),
       distinctSessionsJoined: [],
       error: err instanceof Error ? err.message : 'Failed to load Signal Track Record',
       summary: {

@@ -560,7 +560,7 @@ export const SignalTrackRecord = ({ symbol, livePrice = null, allStocks = [] }) 
 
       {/* Footer note */}
       <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center', marginTop: 4 }}>
-        Automated out-of-sample forward tracking • Net returns reflect 0.40% brokerage, 0.015% SEBON fee, and 7.5% retail CGT.
+        Automated out-of-sample forward tracking • Net returns reflect 0.36%–0.24% brokerage, 0.015% SEBON fee, and 5.0% retail CGT.
       </div>
 
       {showGlobalModal && (

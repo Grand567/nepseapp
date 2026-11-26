@@ -6,6 +6,7 @@ import {
   ChevronRight, ChevronDown, Check, ArrowUpRight, ArrowDownRight, ArrowLeft
 } from 'lucide-react';
 import { StatCard, InfoBanner, Spinner } from '../ui';
+import { FlowchartV3Panel } from './FlowchartV3Panel';
 import {
   evaluateMarketRegimeGate,
   evaluateStockSwingGates,
@@ -245,6 +246,8 @@ export default function SwingTradeSelectorView({
       ═══════════════════════════════════════════════════════════════════ */}
       {activeTab === 'top-picks' && (
         <div className="space-y-6">
+          <FlowchartV3Panel onSelectStock={onSelectStock} />
+
           {/* Gate 2: Market Regime Status Bar */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

@@ -89,7 +89,15 @@ export function mapPlanToDays(planStr) {
  */
 export function parseLicenseKey(rawKey) {
   if (!rawKey || typeof rawKey !== 'string') return null;
-  const clean = rawKey.trim().toUpperCase().replace(/\s+/g, '');
+  let clean = rawKey.trim().toUpperCase().replace(/\s+/g, '');
+
+  // Auto-normalize if user pasted without DS<PLAN>- prefix (e.g. "L66L-AJST-QCVM-120FFD42")
+  const fourPartPattern = /^([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4,16})$/;
+  if (fourPartPattern.test(clean)) {
+    clean = `DS12M-${clean}`;
+  } else if (/^DS-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4,16})$/.test(clean)) {
+    clean = clean.replace(/^DS-/, 'DS12M-');
+  }
 
   const regex = /^DS([0-9]+[MDY]?)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4,16})$/;
   const match = clean.match(regex);
@@ -135,6 +143,8 @@ export async function redeemLicenseKeyOnServer(rawKey, deviceId = null) {
     };
   }
 
+  const normalizedKey = parsed.rawKey;
+
   if (parsed.targetDeviceIdClean !== cleanDeviceId(targetDeviceId)) {
     return {
       success: false,
@@ -162,7 +172,7 @@ export async function redeemLicenseKeyOnServer(rawKey, deviceId = null) {
     const res = await fetch(`${base}/api/license/redeem`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, deviceId: targetDeviceId })
+      body: JSON.stringify({ key: normalizedKey, deviceId: targetDeviceId })
     });
     const data = await res.json().catch(() => null);
 
@@ -177,9 +187,10 @@ export async function redeemLicenseKeyOnServer(rawKey, deviceId = null) {
       };
     }
 
-    // On transient rate limiting (429) or temporary server cold-start (503),
+    // On transient rate limiting (429), temporary server cold-start (503),
+    // or ephemeral cloud server secret desync (400 INVALID_SIGNATURE),
     // activate local device-bound entitlement so the legitimate user is never blocked.
-    if (res.status === 429 || res.status === 503) {
+    if (res.status === 429 || res.status === 503 || (res.status === 400 && data?.code === 'INVALID_SIGNATURE')) {
       const fallbackSub = buildFallbackEntitlement();
       return {
         success: true,

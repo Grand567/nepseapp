@@ -23,6 +23,7 @@ import {
   rebuildSignalTrackRecord
 } from "../db/ledgerStore.js";
 import { calculateMultiDayDiagnostics } from "../utils/microstructureEngine.js";
+import { scanFlowchartV3SwingCandidates } from "../utils/flowchartV3Engine.mjs";
 import { requireAdminSecret, isValidAdminRequest } from "../middleware/requireAdminSecret.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -75,9 +76,15 @@ export function resolveValidTimeframe(rawDays, defaultDays = 30) {
 
 // ── Self-healing cache initialization guard ──
 let cacheInitPromise = null;
+let lastEmptyHotCacheAttemptAt = 0;
 export async function ensureHotCacheReady() {
-  const loadedCount = (HOT_CACHE.radarByTimeframe[1] || HOT_CACHE.radarByTimeframe[30] || []).length;
+  const tf1 = HOT_CACHE.radarByTimeframe[1];
+  const tf30 = HOT_CACHE.radarByTimeframe[30];
+  const loadedCount = (Array.isArray(tf1) && tf1.length > 0 ? tf1 : (Array.isArray(tf30) && tf30.length > 0 ? tf30 : [])).length;
   if (loadedCount > 0) return true;
+  if (Date.now() - lastEmptyHotCacheAttemptAt < 30000) {
+    return false;
+  }
 
   if (cacheInitPromise) {
     return cacheInitPromise;
@@ -88,10 +95,14 @@ export async function ensureHotCacheReady() {
       console.log("[RadarRoutes] HOT_CACHE is empty on request. Initializing disk vault / snapshot seed...");
       seedFromDiskVault();
       await rebuildHotCache();
-      const loaded = (HOT_CACHE.radarByTimeframe[30] || []).length;
-      console.log(`[RadarRoutes] HOT_CACHE initialization completed. Loaded ${loaded} stocks in 30D window.`);
+      const loaded = (Array.isArray(HOT_CACHE.radarByTimeframe[30]) && HOT_CACHE.radarByTimeframe[30].length > 0)
+        ? HOT_CACHE.radarByTimeframe[30].length
+        : (HOT_CACHE.radarByTimeframe[1] || []).length;
+      if (loaded === 0) lastEmptyHotCacheAttemptAt = Date.now();
+      console.log(`[RadarRoutes] HOT_CACHE initialization completed. Loaded ${loaded} stocks.`);
       return loaded > 0;
     } catch (err) {
+      lastEmptyHotCacheAttemptAt = Date.now();
       console.error("[RadarRoutes] Failed to ensure HOT_CACHE:", err);
       return false;
     } finally {
@@ -1232,6 +1243,92 @@ router.post("/radar/export-snapshot", requireAdminSecret, async (req, res) => {
       success: false,
       error: err.message,
     });
+  }
+});
+
+const flowchartV3Cache = new Map();
+const flowchartV3InFlight = new Map();
+const FLOWCHART_V3_TTL_MS = 60 * 1000;
+const FLOWCHART_V3_REFRESH_COOLDOWN_MS = 5 * 1000;
+const FLOWCHART_V3_CACHE_MAX_ENTRIES = 32;
+
+function setFlowchartV3Cache(key, entry) {
+  if (flowchartV3Cache.has(key)) {
+    flowchartV3Cache.delete(key);
+  } else if (flowchartV3Cache.size >= FLOWCHART_V3_CACHE_MAX_ENTRIES) {
+    const oldestKey = flowchartV3Cache.keys().next().value;
+    if (oldestKey !== undefined) flowchartV3Cache.delete(oldestKey);
+  }
+  flowchartV3Cache.set(key, entry);
+}
+
+/**
+ * GET /api/radar/flowchart-v3 & /api/swing/flowchart-v3
+ * Serves empirically calibrated 6-Gate Flowchart v3.0 7-10D swing candidates
+ */
+router.get(["/radar/flowchart-v3", "/swing/flowchart-v3"], async (req, res) => {
+  try {
+    const rawMaxPrice = req.query.maxPrice !== undefined ? Number(req.query.maxPrice) : 500;
+    const maxPrice = Number.isFinite(rawMaxPrice) && rawMaxPrice >= 0 ? Math.min(50000, rawMaxPrice) : 500;
+    const rawMinTurnover = req.query.minTurnover !== undefined ? Number(req.query.minTurnover) : 8000000;
+    const minTurnover = Number.isFinite(rawMinTurnover) && rawMinTurnover >= 0 ? rawMinTurnover : 8000000;
+    const force = req.query.refresh === "true" || req.query.force === "true";
+    const cacheKey = `${maxPrice}_${minTurnover}`;
+
+    const cached = flowchartV3Cache.get(cacheKey);
+    const cacheAgeMs = cached ? Date.now() - cached.at : Infinity;
+    const allowForceRefresh = force && cacheAgeMs >= FLOWCHART_V3_REFRESH_COOLDOWN_MS;
+    if (!allowForceRefresh && cached && cacheAgeMs < FLOWCHART_V3_TTL_MS) {
+      res.set("Cache-Control", "public, max-age=60");
+      return res.json({ success: true, cached: true, ...cached.data });
+    }
+
+    await ensureHotCacheReady();
+
+    let pending = flowchartV3InFlight.get(cacheKey);
+    if (!pending) {
+      pending = (async () => {
+        const liveRadar = HOT_CACHE.radarByTimeframe[1] || [];
+        const liveDate = HOT_CACHE.lastUpdatedDate ? String(HOT_CACHE.lastUpdatedDate).slice(0, 10) : null;
+        const livePricesMap = new Map();
+        for (const s of liveRadar) {
+          const ltp = Number(s?.latestClose || s?.ltp || 0);
+          const turnover = Number(s?.totalTurnover || s?.turnover || 0);
+          if (s?.symbol && ltp > 0) {
+            livePricesMap.set(String(s.symbol).toUpperCase().trim(), {
+              ltp,
+              pChange: Number(s.priceChangePct || 0),
+              turnover,
+              volume: Number(s.totalVolume || 0),
+              high: Number(s?.highPrice || s?.high || 0) || null,
+              low: Number(s?.lowPrice || s?.low || 0) || null,
+              prevClose: Number(s?.prevClose || 0) || null,
+              date: s?.tradeDate ? String(s.tradeDate).slice(0, 10) : liveDate,
+            });
+          }
+        }
+
+        const result = scanFlowchartV3SwingCandidates({
+          db,
+          maxPrice,
+          minTurnover,
+          livePricesMap: livePricesMap.size > 0 ? livePricesMap : null,
+          limit: 20,
+        });
+
+        setFlowchartV3Cache(cacheKey, { at: Date.now(), data: result });
+        return result;
+      })().finally(() => {
+        flowchartV3InFlight.delete(cacheKey);
+      });
+      flowchartV3InFlight.set(cacheKey, pending);
+    }
+
+    const result = await pending;
+    res.set("Cache-Control", "public, max-age=60");
+    return res.json({ success: true, cached: false, ...result });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

@@ -492,7 +492,7 @@ export function calculateStatutoryBreakevenPrice(quantity, buyPrice) {
 
 /**
  * Calculates Net Post-Tax & Post-Fee Risk-to-Reward Ratio (R:R) and Stop-to-Breakeven Runner Plan.
- * Enforces statutory 7.5% Short-Term CGT, tiered broker commissions, 0.015% SEBON fee, and Rs. 25 DP fee.
+ * Enforces statutory 5.0% Short-Term / 3.75% Long-Term CGT, tiered broker commissions, 0.015% SEBON fee, and Rs. 25 DP fee.
  * Blocks "BUY" qualification unless Net R:R at Target 1 >= requiredNetRRR (default 3.0 : 1).
  */
 export function calculateNetRiskRewardRatio({

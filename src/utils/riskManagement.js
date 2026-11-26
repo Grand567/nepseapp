@@ -7,7 +7,7 @@
  *       and target prices, clamped to ±15% NEPSE circuit limits.
  *   E3. calculateNetProfit() — Accurate net P&L including ALL NEPSE costs:
  *       broker commission (5-tier), SEBON fee (0.015%), DP charge (Rs.25),
- *       and CGT (7.5% short / 5% long / 10% institutional).
+ *       and CGT (5.0% short / 3.75% long / 10% institutional).
  *   E4. calculateRiskRewardRatio() — Clean R:R display helper.
  *
  * ─────────────────────────────────────────────────────────────────────────────
@@ -263,7 +263,7 @@ export function calculateStopLossTargets({
  * NEPSE/SEBON transaction costs:
  *   - Buy side: broker commission + SEBON fee (0.015%) + DP charge (Rs.25)
  *   - Sell side: broker commission + SEBON fee (0.015%) + DP charge (Rs.25)
- *   - Capital Gains Tax: 7.5% (short-term) / 5.0% (long-term) / 10% (institutional)
+ *   - Capital Gains Tax: 5.0% (short-term) / 3.75% (long-term) / 10% (institutional)
  *
  * NOTE: CGT is applied only on the profit portion, not the full sale value.
  * NOTE: Buy-side costs are included in the cost basis for CGT computation.

@@ -335,8 +335,9 @@ assert(!modalSrc.includes('setHistory(intraday)'), 'Zero setHistory(intraday) cl
 console.log('\n[S6] Broker Flow Sub-Tab Total Held Kitta & All-Time View Parity');
 
 const { getHistoricalSubfileBrokerAnalysis } = await import('../src/utils/localLedgerManager.ts');
-const { getCumulativeBrokerData } = await import('../src/utils/historyCache.js');
+const { getCumulativeBrokerData, ensureCumulativeBrokerLoaded } = await import('../src/utils/historyCache.js');
 
+await ensureCumulativeBrokerLoaded();
 const akjclCum = getCumulativeBrokerData('AKJCL');
 assert(akjclCum != null, 'getCumulativeBrokerData returns authentic cumulative ledger for AKJCL');
 const akjclTop4Held = (akjclCum.topAccumulators || []).reduce((s, b) => s + (Number(b.netQty || 0) > 0 ? Number(b.netQty || 0) : 0), 0);

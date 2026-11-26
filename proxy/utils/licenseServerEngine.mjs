@@ -31,31 +31,8 @@ function getLicenseSecret() {
     return String(envSecret).trim();
   }
 
-  const dataDir = resolveDataDir();
-  if (cachedSecretsByDir.has(dataDir)) {
-    return cachedSecretsByDir.get(dataDir);
-  }
-
-  const secretFile = path.join(dataDir, '.license_secret');
-  try {
-    if (fs.existsSync(secretFile)) {
-      const existing = fs.readFileSync(secretFile, 'utf8').trim();
-      if (existing.length >= 32) {
-        cachedSecretsByDir.set(dataDir, existing);
-        return existing;
-      }
-    }
-  } catch (_) {}
-
-  const generated = crypto.randomBytes(32).toString('hex');
-  try {
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-    fs.writeFileSync(secretFile, generated, { encoding: 'utf8', mode: 0o600 });
-  } catch (_) {}
-  cachedSecretsByDir.set(dataDir, generated);
-  return generated;
+  // Canonical deterministic secret across all instances (local, dev, Render cloud)
+  return 'd97850ef179282a4ccfac725947bef0dbf59ace1ab3628ca3e7112f90777cc3d';
 }
 
 function loadStore() {
@@ -119,7 +96,42 @@ export function mapPlanToDays(planStr) {
 
 export function parseLicenseKey(rawKey) {
   if (!rawKey || typeof rawKey !== 'string') return null;
-  const clean = rawKey.trim().toUpperCase().replace(/\s+/g, '');
+  let clean = rawKey.trim().toUpperCase().replace(/\s+/g, '');
+
+  // Auto-normalize if user omitted DS<PLAN>- prefix (e.g. "L66L-AJST-QCVM-120FFD42" -> "DS12M-...")
+  const fourPartPattern = /^([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4,16})$/;
+  if (fourPartPattern.test(clean)) {
+    // Check if matching with 12M or 1M signature
+    const parts = clean.match(fourPartPattern);
+    const targetClean = `${parts[1]}${parts[2]}`;
+    const nonce = parts[3];
+    const mac = parts[4];
+    const candidatePlans = ['12M', '1M', '3M', '6M', '2M', 'VIP'];
+    let matchedPlan = '12M';
+    for (const cp of candidatePlans) {
+      if (computeKeySignature(targetClean, cp, nonce) === mac) {
+        matchedPlan = cp;
+        break;
+      }
+    }
+    clean = `DS${matchedPlan}-${clean}`;
+  } else if (/^DS-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4,16})$/.test(clean)) {
+    const rawWithoutDs = clean.replace(/^DS-/, '');
+    const parts = rawWithoutDs.match(fourPartPattern);
+    const targetClean = `${parts[1]}${parts[2]}`;
+    const nonce = parts[3];
+    const mac = parts[4];
+    const candidatePlans = ['12M', '1M', '3M', '6M', '2M', 'VIP'];
+    let matchedPlan = '12M';
+    for (const cp of candidatePlans) {
+      if (computeKeySignature(targetClean, cp, nonce) === mac) {
+        matchedPlan = cp;
+        break;
+      }
+    }
+    clean = `DS${matchedPlan}-${rawWithoutDs}`;
+  }
+
   const regex = /^DS([0-9]+[MDY]?)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4,16})$/;
   const match = clean.match(regex);
   if (!match) return null;

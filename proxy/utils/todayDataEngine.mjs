@@ -20,6 +20,7 @@ import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
 import Database from 'better-sqlite3';
 import { getCircuitLimits, NEPSE_RULES } from './nepseRules.mjs';
+import { formatNptDateIso } from '../../src/utils/nepseCalendar.js';
 
 export const tickEventEmitter = new EventEmitter();
 tickEventEmitter.setMaxListeners(500);
@@ -83,13 +84,13 @@ export const STATUTORY_RULES = {
   dp_charge_description: 'Depository Participant (CDSC) fee: Rs. 25 flat per sold company per day',
   circuit_limit_pct: NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT,
   circuit_limit_description: `Exchange circuit breaker limit: ±${NEPSE_RULES.DAILY_CIRCUIT_LIMIT_PCT}% of previous session close (April 2026 regulation)`,
-  cgt_individual_short_term_pct: 7.5,
-  cgt_individual_long_term_pct: 5.0,
+  cgt_individual_short_term_pct: 5.0,
+  cgt_individual_long_term_pct: 3.75,
   cgt_corporate_pct: 10.0,
   broker_commission_tiers: [
     { maxNpr: 50000, ratePct: 0.36 },
     { maxNpr: 500000, ratePct: 0.33 },
-    { maxNpr: 2000000, ratePct: 0.30 },
+    { maxNpr: 2000000, ratePct: 0.31 },
     { maxNpr: 10000000, ratePct: 0.27 },
     { maxNpr: Infinity, ratePct: 0.24 },
   ]
@@ -126,6 +127,22 @@ export function compileTodayStaticAnalytics(options = {}) {
         const fundRows = db.prepare('SELECT * FROM scrip_fundamentals').all();
         for (const f of fundRows) {
           if (f?.symbol) fundMap.set(f.symbol.toUpperCase(), f);
+        }
+      }
+    } catch (_) {}
+
+    // Ingest real Corporate Actions / Dividends safely from SQLite (never synthesize 8.5%)
+    const caMap = new Map();
+    try {
+      const hasCaTable = db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='scrip_corporate_actions'`).get();
+      if (hasCaTable) {
+        const caRows = db.prepare('SELECT symbol, fiscal_year, bonus_share_pct, cash_dividend_pct FROM scrip_corporate_actions ORDER BY id DESC').all();
+        for (const row of caRows) {
+          const sym = String(row?.symbol || '').toUpperCase();
+          if (!sym) continue;
+          if (!caMap.has(sym)) caMap.set(sym, []);
+          const list = caMap.get(sym);
+          if (list.length < 5) list.push(row);
         }
       }
     } catch (_) {}
@@ -502,12 +519,29 @@ export function compileTodayStaticAnalytics(options = {}) {
           statistical_calculation: '10-year arithmetic monthly return distribution across Nepal fiscal calendar cycles',
           interpretation: 'Historical NEPSE macroeconomic liquidity peaks post-Monetary Policy in Shrawan and during AGM season in Mangsir.'
         },
-        dividend_track_record: {
-          avg_5y_bonus_pct: fund.distributable_eps ? Number((fund.distributable_eps * 0.8).toFixed(1)) : 8.5,
-          avg_5y_cash_pct: fund.distributable_eps ? Number((fund.distributable_eps * 0.2).toFixed(1)) : 2.0,
-          statistical_calculation: '5-year weighted mean of bonus share entitlements and cash dividend declarations',
-          interpretation: 'Management retains capitalization via consistent stock bonus distributions.'
-        },
+        dividend_track_record: (() => {
+          const symCas = caMap.get(symbol) || [];
+          if (symCas.length > 0) {
+            const avgBonus = Number((symCas.reduce((s, r) => s + Number(r.bonus_share_pct || 0), 0) / symCas.length).toFixed(1));
+            const avgCash = Number((symCas.reduce((s, r) => s + Number(r.cash_dividend_pct || 0), 0) / symCas.length).toFixed(1));
+            return {
+              avg_5y_bonus_pct: avgBonus,
+              avg_5y_cash_pct: avgCash,
+              sessions_sampled: symCas.length,
+              statistical_calculation: `Arithmetic mean across ${symCas.length} recorded SQLite corporate action entries`,
+              interpretation: avgBonus >= avgCash
+                ? 'Historical corporate distributions lean toward bonus shares to retain capitalization.'
+                : 'Historical corporate distributions favor direct cash dividend payouts.'
+            };
+          }
+          return {
+            avg_5y_bonus_pct: null,
+            avg_5y_cash_pct: null,
+            sessions_sampled: 0,
+            statistical_calculation: 'No recorded corporate dividend history available in SQLite scrip_corporate_actions',
+            interpretation: 'Dividend history unavailable in local SQLite archive.'
+          };
+        })(),
         statutory_regulatory_fees: STATUTORY_RULES
       }
     };
@@ -548,7 +582,7 @@ export function compileTodayStaticAnalytics(options = {}) {
  * ── 2. INITIALIZE & MAINTAIN LIVE TICK-BY-TICK STREAM SUB-FILE ───────────────
  */
 export function initTodayTickStream(targetDate = null) {
-  const sessionDate = targetDate || new Date().toISOString().slice(0, 10);
+  const sessionDate = targetDate || formatNptDateIso(new Date());
   const payload = {
     file_type: 'TODAY_TICK_BY_TICK_STREAM_SUBFILE',
     version: '2.0-today-tick-subfile',

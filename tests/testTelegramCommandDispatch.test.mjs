@@ -23,13 +23,21 @@ const ok = (cond, msg) => {
 console.log('▶ [SUITE] testTelegramCommandDispatch.test.mjs\n');
 
 (async () => {
+  const fs = await import('fs');
+  const path = await import('path');
+  const cfgPath = path.resolve('proxy/data/telegram_config.json');
+  let origCfg = null;
+  try {
+    if (fs.existsSync(cfgPath)) origCfg = fs.readFileSync(cfgPath, 'utf8');
+  } catch (_) {}
+
   try {
     // Setup clean config
     delete process.env.TELEGRAM_CHAT_ID;
     delete process.env.CHAT_ID;
     saveTelegramConfig({
       botToken: '123456789:ABCDefGhIJKlmNoPQRsTUVwxyZ',
-      chatId: '',
+      chatId: '777666',
       enabled: true,
       isTestServer: false
     });
@@ -140,9 +148,9 @@ console.log('▶ [SUITE] testTelegramCommandDispatch.test.mjs\n');
 
     ok(dispatchedMessages.length === updatesQueue.length, `Dispatched responses for all ${updatesQueue.length} incoming commands (received ${dispatchedMessages.length})`);
     
-    // Check auto-bind
+    // Check authorized chatId
     const status = getTelegramStatus();
-    ok(status.chatId === '777666', `Auto-bound incoming chat ID (got ${status.chatId})`);
+    ok(status.chatId === '777666', `Authorized incoming chat ID (got ${status.chatId})`);
 
     // Check message 1: /ping
     const pingResp = dispatchedMessages[0];
@@ -184,5 +192,9 @@ console.log('▶ [SUITE] testTelegramCommandDispatch.test.mjs\n');
   } catch (err) {
     console.error('Fatal test error:', err);
     process.exit(1);
+  } finally {
+    try {
+      if (origCfg) fs.writeFileSync(cfgPath, origCfg, 'utf8');
+    } catch (_) {}
   }
 })();

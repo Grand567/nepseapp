@@ -170,7 +170,7 @@ await test('[BUG-007] liveData.js fetchMarketDepth does not synthesize fake step
 // ── 8. BUG-010: Tihar Holiday Filtered Out of Radar Session Date Dropdown ────
 await test('[BUG-010] AccumulationDistributionRadar filters radarAvailableDates through isNepseTradingDay', () => {
   const radarSrc = fs.readFileSync(path.join(ROOT, 'src/components/AccumulationDistributionRadar.tsx'), 'utf8');
-  const block = radarSrc.slice(radarSrc.indexOf('const radarAvailableDates = useMemo'), radarSrc.indexOf('const radarAvailableDates = useMemo') + 1400);
+  const block = radarSrc.slice(radarSrc.indexOf('const radarAvailableDates = useMemo'), radarSrc.indexOf('const radarAvailableDates = useMemo') + 2800);
   assert.ok(block.includes('isNepseTradingDay'), 'radarAvailableDates must filter dates through isNepseTradingDay()');
 });
 

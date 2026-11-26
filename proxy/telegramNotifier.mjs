@@ -22,7 +22,7 @@ import crypto from 'crypto';
 import dns from 'dns';
 import dnsPromises from 'dns/promises';
 import { fileURLToPath } from 'url';
-import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
+import { getDetailedMarketStatus, formatNptDateIso } from '../src/utils/nepseCalendar.js';
 import { auditAntiDematDumpGuard, db } from './db/ledgerStore.js';
 import {
   getTelegramConfigFromDb,
@@ -32,6 +32,12 @@ import {
 } from './db.mjs';
 import { BROKER_NAMES } from './brokerVault.mjs';
 import { scanTrackBSyndicateCandidates, formatTrackBSyndicateHtml } from './trackBSyndicateEngine.mjs';
+import {
+  isInPromoterLockinCliff,
+  computeMultiWindowGrossAndNetMetrics,
+  evaluateFlowchartV3Candidate,
+  scanFlowchartV3SwingCandidates,
+} from './utils/flowchartV3Engine.mjs';
 import {
   fetchLiveNepseIndexHistory,
   evaluateDailySelectionGuide,
@@ -1728,7 +1734,7 @@ export function formatEarlyIgnitionAlertHtml(alert = {}) {
     `• 👉 <b>WHAT YOU DO IN TMS:</b>`,
     `  1. On Entry: Place initial Stop-Loss order at <b>Rs. ${sl}</b>.`,
     `  2. If price touches <b>Rs. ${ratchetTrigger}</b> (+5.5%): Open TMS ➔ Cancel old SL ➔ Move Stop-Loss to <b>Rs. ${ratchetLock}</b>.`,
-    `  <i>(Guarantees net cash profit after all SEBON, DP &amp; 7.5% CGT fees. Never let a +5.5% winner turn into a loss!)</i>`,
+    `  <i>(Guarantees net cash profit after all SEBON, DP &amp; 5.0% CGT fees. Never let a +5.5% winner turn into a loss!)</i>`,
     `• <b>Target 1 (50% Profit Take):</b> Rs. ${t1} (+${t1Pct}% | <i>Sell 50% &amp; SL to Breakeven</i>)`,
     `• <b>Target 2 (Circuit Runner):</b> Rs. ${t2} (+${t2Pct}% | ±15% Circuit Ceiling)`,
     `• <b>Net Risk / Reward:</b> <b>${netRRR} : 1</b>`,
@@ -3354,6 +3360,8 @@ export async function autoSelectAndDispatchPlaybookPick(customStocks = null, opt
  * 3. 5-day net negative or low retention (<50% wash churn, e.g. AKJCL).
  */
 export function auditMultiSessionTrapRisk(db, symbol, leadBrokerId = null) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!db || !sym) return { isTrap: false, verdict: 'PASS_NO_HISTORY' };
   try {
     const dates = db
       .prepare('SELECT DISTINCT trade_date FROM daily_broker_ledger ORDER BY trade_date DESC LIMIT 5')
@@ -3364,7 +3372,7 @@ export function auditMultiSessionTrapRisk(db, symbol, leadBrokerId = null) {
 
     // 0. Anti-Demat Dump Guard: Check if past accumulators are dumping settled shares today
     try {
-      const dumpCheck = auditAntiDematDumpGuard(symbol);
+      const dumpCheck = auditAntiDematDumpGuard(sym);
       if (dumpCheck && dumpCheck.isTrap) {
         return {
           isTrap: true,
@@ -3375,6 +3383,37 @@ export function auditMultiSessionTrapRisk(db, symbol, leadBrokerId = null) {
         };
       }
     } catch (_) {}
+
+    // 0.05 Promoter Lock-In Expiry Cliff Guard (-30d to +45d window)
+    let dbUnlockDate = null;
+    try {
+      dbUnlockDate = db.prepare('SELECT promoter_unlock_date FROM scrip_fundamentals WHERE symbol = ?').get(sym)?.promoter_unlock_date || null;
+    } catch (_) {}
+    const lockCheck = isInPromoterLockinCliff(sym, {
+      asOfDate: dates[0],
+      unlockDate: dbUnlockDate,
+    });
+    if (lockCheck.isCliff) {
+      return {
+        isTrap: true,
+        verdict: 'PROMOTER_LOCKIN_CLIFF_VETO',
+        reason: lockCheck.reason,
+      };
+    }
+
+    // 0.08 15D Gross-Mover No-Wash Audit (blocks AKJCL-style circular churners hidden by net sorting)
+    try {
+      const gm = computeMultiWindowGrossAndNetMetrics(sym, { db, targetDate: dates[0] });
+      if (gm?.w15 && gm.w15.sessions >= 10 && (gm.w15.grossTop3RetentionPct < 38 || gm.w15.minTop2GrossRetentionPct < 28)) {
+        return {
+          isTrap: true,
+          verdict: 'GROSS_MOVER_WASH_CHURN',
+          reason: `15D Gross-Mover Wash Churn: Top-3 gross buyers retain ${gm.w15.grossTop3RetentionPct}% (min Top-2 ${gm.w15.minTop2GrossRetentionPct}%). Circular churn risk.`,
+        };
+      }
+    } catch (washErr) {
+      console.warn(`[TrapAudit] 15D gross-mover audit error for ${sym}:`, washErr.message);
+    }
 
     // 0.1 The 2-Day Dip Invalidation Rule (3 Consecutive Red Days Veto)
     // Institutional runners (GVL, MBJC, LSL, AKJCL, ECL) never drop for 3 consecutive days.
@@ -3590,11 +3629,11 @@ export async function runDailyStockSelectionGuideAndDispatch({
     await ensureTodaySessionIngested();
   }
   const status = getDetailedMarketStatus();
-  const fallbackDate = status?.lastClosedSessionDate || status?.targetSessionDate || new Date().toISOString().slice(0, 10);
+  const fallbackDate = status?.lastClosedSessionDate || status?.targetSessionDate || formatNptDateIso(new Date());
 
   try {
     const { db: ledgerDb, rebuildHotCache } = await import('./db/ledgerStore.js');
-    rebuildHotCache();
+    await rebuildHotCache();
 
     const fetchedLiveHistory = Array.isArray(liveIndexHistory)
       ? liveIndexHistory
@@ -3651,7 +3690,7 @@ export async function dispatchScheduledDailySelectionGuide({
 } = {}) {
   const status = getDetailedMarketStatus();
   const effectiveDate = String(
-    targetDate || status?.lastClosedSessionDate || status?.targetSessionDate || new Date().toISOString().slice(0, 10)
+    targetDate || status?.lastClosedSessionDate || status?.targetSessionDate || formatNptDateIso(new Date())
   ).slice(0, 10);
 
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
@@ -3679,10 +3718,10 @@ export async function dispatchScheduledDailySelectionGuide({
     try {
       const { db: ledgerDb } = await import('./db/ledgerStore.js');
       const hasPrices = Boolean(
-        ledgerDb.prepare('SELECT 1 FROM daily_stock_summary WHERE trade_date = ? LIMIT 1').get(effectiveDate)
+        ledgerDb.prepare('SELECT 1 FROM daily_stock_summary WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 LIMIT 1').get(effectiveDate)
       );
       const hasBroker = Boolean(
-        ledgerDb.prepare('SELECT 1 FROM daily_broker_ledger WHERE trade_date = ? LIMIT 1').get(effectiveDate)
+        ledgerDb.prepare('SELECT 1 FROM daily_broker_ledger WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 LIMIT 1').get(effectiveDate)
       );
       if (!hasPrices || !hasBroker) {
         return { skipped: true, reason: 'awaiting_eod_data_ingestion', sessionDate: effectiveDate };
@@ -3734,7 +3773,7 @@ export async function select5StepSwingPicks(opts = {}) {
         import('./routes/radarRoutes.js'),
       ]);
 
-    rebuildHotCache();
+    await rebuildHotCache();
 
     const openSignals = db
       .prepare(`SELECT * FROM algorithmic_signal_ledger WHERE status = 'OPEN_ACTIVE' ORDER BY signal_date DESC`)
@@ -3785,6 +3824,29 @@ export async function select5StepSwingPicks(opts = {}) {
           broker_anomaly_score: 2.2,
           avg_ticket_kitta: 250,
           strategy: 'MULTI_SESSION_CORNERING',
+        });
+      }
+    }
+
+    const v3Scan = scanFlowchartV3SwingCandidates({ db, maxPrice: 0, minTurnover: 8000000, limit: 40 });
+    const v3BySymbol = new Map((v3Scan?.candidates || []).map((c) => [c.symbol, c]));
+    for (const v3 of (v3Scan?.candidates || []).slice(0, 15)) {
+      if (!existingSymbols.has(v3.symbol)) {
+        existingSymbols.add(v3.symbol);
+        openSignals.push({
+          symbol: v3.symbol,
+          signal_date: v3.asOfDate,
+          signal_type: v3.mode,
+          entry_price: v3.ltp,
+          current_ltp: v3.ltp,
+          broker_vwap: v3.vwap15D,
+          lead_broker_id: v3.leadBrokerId,
+          lead_broker_name: v3.leadBrokerName,
+          bcr5_net_pct: Math.max(20, v3.bcrSpread5D || 25),
+          scr3_net_pct: v3.bcr3Sell5D || 15,
+          broker_anomaly_score: 2.4,
+          avg_ticket_kitta: 250,
+          strategy: v3.mode,
         });
       }
     }
@@ -4000,7 +4062,7 @@ export async function select5StepSwingPicks(opts = {}) {
       const stopLoss = Number(
         (hasSmcStructure && smc.smcStopLoss > 0 ? smc.smcStopLoss : baseSl).toFixed(2)
       );
-      const ratchetFloor = Number((ltp * 1.032).toFixed(2)); // +3.2% covers commission + SEBON + DP + 7.5% CGT
+      const ratchetFloor = Number((ltp * 1.032).toFixed(2)); // +3.2% covers commission + SEBON + DP + 5.0% CGT
       const baseT1 = Number(sig.target1_price || ltp * 1.075);
       const baseT2 = Number(sig.target2_price || ltp * 1.15);
       const target1 = Number(
@@ -4056,6 +4118,11 @@ export async function select5StepSwingPicks(opts = {}) {
         marketRegime: currentMarketRegime,
       });
 
+      const v3Eval = v3BySymbol.get(sym) || evaluateFlowchartV3Candidate(sym, { db, maxPrice: 0, minTurnover: 5000000 });
+      const isV3FloorTurn = Boolean(v3Eval?.qualified && v3Eval.mode === 'FLOWCHART_V3_FLOOR_TURN');
+      const v3FloorBonus = isV3FloorTurn ? 10 : (v3Eval?.qualified ? 5 : 0);
+      const sub500Bonus = ltp >= 100 && ltp < 500 ? 4 : 0;
+
       const totalScore = Math.min(
         99,
         Math.round(
@@ -4069,12 +4136,16 @@ export async function select5StepSwingPicks(opts = {}) {
             consecutiveDaysBonus +
             coilBonus +
             smcConfluenceBonus +
-            floatVelocityBonus
+            floatVelocityBonus +
+            v3FloorBonus +
+            sub500Bonus
         )
       );
 
       const hasFoundationForSmc =
+        Number.isFinite(base10Pct) &&
         base10Pct <= 7.5 &&
+        Number.isFinite(vduRatio) &&
         vduRatio <= 0.65 &&
         realBcr3Buy >= 42.0 &&
         realBcr3Sell <= 35.0 &&
@@ -4145,12 +4216,18 @@ export async function select5StepSwingPicks(opts = {}) {
         leadBrokerId: resolvedLeadBrokerId,
         leadBrokerName: resolvedLeadBrokerName,
         leadRetentionPct,
+        grossTop3Ret15D: v3Eval?.grossTop3Ret15D ?? null,
+        minTop2GrossRet15D: v3Eval?.minTop2GrossRet15D ?? null,
+        vwap15D: v3Eval?.vwap15D ?? null,
+        vwapGap15Pct: v3Eval?.vwapGap15Pct ?? null,
+        isFlowchartV3FloorTurn: isV3FloorTurn,
+        flowchartV3Mode: v3Eval?.qualified ? v3Eval.modeBadge : null,
         anomalyScore,
         avgTicket: Number(avgTicket.toFixed(1)),
-        vdu: Number(vduRatio.toFixed(2)),
-        bbw: Number(base10Pct.toFixed(1)),
-        rvolToday: Number(rvolToday.toFixed(2)),
-        dayChgPct: Number(dayChgPct.toFixed(2)),
+        vdu: Number.isFinite(vduRatio) ? Number(vduRatio.toFixed(2)) : (Number.isFinite(v3Eval?.vdu) ? Number(v3Eval.vdu) : null),
+        bbw: Number.isFinite(base10Pct) ? Number(base10Pct.toFixed(1)) : null,
+        rvolToday: Number.isFinite(rvolToday) ? Number(rvolToday.toFixed(2)) : null,
+        dayChgPct: Number.isFinite(dayChgPct) ? Number(dayChgPct.toFixed(2)) : (Number.isFinite(v3Eval?.pChange) ? Number(v3Eval.pChange) : null),
         shieldVerdict,
         entryLow,
         entryHigh,
@@ -4247,9 +4324,9 @@ export async function select5StepSwingPicks(opts = {}) {
 export async function run5StepSwingSelectionAndDispatch({ onTrackHolding, chatId } = {}) {
   const { topPick, runnerUps, allQualified, vetoedTraps } = await select5StepSwingPicks();
   const status = getDetailedMarketStatus();
-  const sessionDate = status?.targetSessionDate || new Date().toISOString().slice(0, 10);
-  let ltpStr = '2,695.60';
-  let chgStr = '+31.54';
+  const sessionDate = status?.targetSessionDate || formatNptDateIso(new Date());
+  let ltpStr = 'Unavailable';
+  let chgStr = '—';
   try {
     const lkmPath = path.join(DATA_DIR, 'last_known_market.json');
     if (fs.existsSync(lkmPath)) {
@@ -4525,8 +4602,13 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
   const deploy1L = (qty1L * basePrice).toLocaleString();
   const deploy5L = (qty5L * basePrice).toLocaleString();
 
+  const v3Line =
+    winner.grossTop3Ret15D !== null && winner.grossTop3Ret15D !== undefined
+      ? `• 🛡️ <b>Flowchart v3.0 Audit:</b> 15D Gross Ret <b>${winner.grossTop3Ret15D}%</b> (Min Top-2: ${winner.minTop2GrossRet15D ?? 'N/A'}%)${winner.isFlowchartV3FloorTurn ? ' | 🎯 <b>88.7% Floor-Turn</b>' : ''}\n`
+      : '';
+
   return [
-    `💎 <b>STEALTH ACCUMULATION ALERT (UPGRADED FLOWCHART v2.0)</b>`,
+    `💎 <b>STEALTH ACCUMULATION ALERT (${winner.isFlowchartV3FloorTurn ? 'FLOWCHART v3.0 FLOOR-TURN' : 'UPGRADED FLOWCHART v2.0'})</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `<b>Scrip:</b> <code>${sym}</code> (${name})`,
     `<b>Sector:</b> ${sector} | <b>LTP:</b> Rs. ${ltp.toFixed(1)}`,
@@ -4534,7 +4616,7 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
     `<b>Rally Track:</b> <b>${rallyHorizonLabel}</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🛡️ <b>LAYER 0 &amp; 1: ZERO-TRAP &amp; SQUEEZE VALIDATION</b>`,
-    `• Gate 0 Trap Immunity: <b>${gate0Text}</b>`,
+    `${v3Line}• Gate 0 Trap Immunity: <b>${gate0Text}</b>`,
     `• Volatility Contraction: BBW <b>${bbw}</b> (&lt;= 14.0%) | Narrow Range Bar`,
     `• Seller Dominance Ceiling: BCR3 Sell <b>${bcr3Sell}</b> (&lt; 45% Safe Ceiling)`,
     ``,
@@ -4565,7 +4647,7 @@ export function formatUpgradedStealthAccumulationHtml(winner = {}) {
     `• 👉 <b>WHAT YOU DO IN TMS:</b>`,
     `  1. On Entry: Set initial Stop-Loss order at <b>Rs. ${sl}</b>.`,
     `  2. When price hits <b>Rs. ${ratchetTrigger}</b> (+5.5%): Open TMS ➔ Cancel old SL ➔ Move Stop-Loss to <b>Rs. ${ratchetLock}</b>.`,
-    `  <i>(Guarantees net cash profit after all SEBON, DP &amp; 7.5% CGT fees. Never let a +5.5% winner turn into a loss!)</i>`,
+    `  <i>(Guarantees net cash profit after all SEBON, DP &amp; 5.0% CGT fees. Never let a +5.5% winner turn into a loss!)</i>`,
     `• 🏁 <b>Target 1:</b> <code>Rs. ${t1}</code> (+${t1Pct}% | <i>Exit 50% &amp; Lock SL to +4.5%</i>)`,
     `• 🚀 <b>Target 2:</b> <code>Rs. ${t2}</code> (+${t2Pct}% | <i>Upper Circuit Runner</i>)`,
     `• ⏳ <b>Statutory Safeguards:</b> T+2 Demat Lock (No exits Day 0/1) | 15 Sessions Max Hold`,
@@ -4780,7 +4862,7 @@ export function formatInstantExecutionTicketHtml(d = {}) {
     `👉 <b>WHAT YOU DO IN TMS:</b>`,
     `   1. At Entry: Place initial Stop-Loss order at <b>Rs. ${sl}</b>.`,
     `   2. When Price touches <b>Rs. ${instantRatchetTrigger}</b> (+5.5%): Open TMS ➔ Cancel old SL ➔ Move Stop-Loss to <b>Rs. ${instantRatchetLock}</b>.`,
-    `   <i>(Locks in net profit after all SEBON, DP &amp; 7.5% CGT fees. Never let a +5.5% runner turn into a loss!)</i>`,
+    `   <i>(Locks in net profit after all SEBON, DP &amp; 5.0% CGT fees. Never let a +5.5% runner turn into a loss!)</i>`,
     `⚖️ <b>Net Expectancy:</b> ${netRRR} <i>(Post-CGT &amp; Broker Fees)</i>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🛡️ <b>ZERO-TRAP VERIFICATION:</b>`,
@@ -4839,7 +4921,7 @@ export async function sendTelegramPreMarketScan({
   nepseChange = '—',
   candidates = []
 } = {}) {
-  const dateStr = sessionDate || new Date().toISOString().slice(0, 10);
+  const dateStr = sessionDate || formatNptDateIso(new Date());
   const breadthEmoji = isCashDefense ? '🛡️' : '🟢';
   const breadthStatus = isCashDefense
     ? '⚠️ CASH DEFENSE ACTIVE (Hold 70–80% Cash)'
@@ -4932,7 +5014,7 @@ export async function sendTelegramPreOpenGate({
  * Formats the Morning Stock Selection & Quantitative Confluence Trading Digest for Telegram.
  */
 export function formatMorningDigestHtml(buyPicks = [], watchPicks = [], sessionDate = '', options = {}) {
-  const dateStr = sessionDate || new Date().toISOString().slice(0, 10);
+  const dateStr = sessionDate || formatNptDateIso(new Date());
   const normalizedBuy = (Array.isArray(buyPicks) ? buyPicks : []).map(p => p.result || p);
   const normalizedWatch = (Array.isArray(watchPicks) ? watchPicks : []).map(p => p.result || p);
 
@@ -5032,7 +5114,7 @@ export async function sendMorningStockSelectionDigest(buyPicks = [], watchPicks 
   return {
     ...res,
     messageLength: html.length,
-    sessionDate: sessionDate || new Date().toISOString().slice(0, 10),
+    sessionDate: sessionDate || formatNptDateIso(new Date()),
     buyCount: Array.isArray(buyPicks) ? buyPicks.length : 0,
     watchCount: Array.isArray(watchPicks) ? watchPicks.length : 0
   };

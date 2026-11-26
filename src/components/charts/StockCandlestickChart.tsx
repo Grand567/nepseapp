@@ -14,6 +14,7 @@ import { calculateEMA, calculatePivotPoints, calculateFibonacci } from '../../ut
 import { detectCandlestickPatternsFromHistory } from '../../utils/candlestickPatterns';
 import { fetchNepseIntradayGraph } from '../../utils/servicesApi';
 import { fetchPriceHistory } from '../../utils/liveData';
+import { formatNptDateIso } from '../../utils/nepseCalendar';
 import { Layers, Eye, EyeOff, Calendar, Maximize2 } from 'lucide-react';
 
 export interface CandleData {
@@ -331,14 +332,14 @@ export function StockCandlestickChart({
       let dateStr = '';
       if (typeof rawDate === 'number') {
         const ts = rawDate > 1e11 ? Math.floor(rawDate / 1000) : rawDate;
-        dateStr = new Date(ts * 1000).toISOString().slice(0, 10);
+        dateStr = formatNptDateIso(new Date(ts * 1000));
       } else if (typeof rawDate === 'string') {
         if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
           dateStr = rawDate;
         } else {
           const d = new Date(rawDate);
           if (isNaN(d.getTime())) continue;
-          dateStr = d.toISOString().slice(0, 10);
+          dateStr = formatNptDateIso(d);
         }
       } else {
         continue;
@@ -576,12 +577,12 @@ export function StockCandlestickChart({
         } else {
           if (typeof markerTime === 'number') {
             const ts = markerTime > 1e11 ? Math.floor(markerTime / 1000) : markerTime;
-            markerTime = new Date(ts * 1000).toISOString().slice(0, 10);
+            markerTime = formatNptDateIso(new Date(ts * 1000));
           } else if (typeof markerTime === 'string') {
             const trimmed = markerTime.trim();
             if (/^\d{9,12}$/.test(trimmed)) {
               const ts = parseInt(trimmed, 10);
-              markerTime = new Date(ts * 1000).toISOString().slice(0, 10);
+              markerTime = formatNptDateIso(new Date(ts * 1000));
             } else {
               markerTime = trimmed.slice(0, 10);
             }

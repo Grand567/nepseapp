@@ -615,13 +615,6 @@
     "lastEvaluatedAt": 1794897532081,
     "historyCount": 0
   },
-  "GHL": {
-    "state": "PENDING",
-    "pendingScans": 1,
-    "lastTriggeredAt": 1795351991106,
-    "lastEvaluatedAt": 1795511813625,
-    "historyCount": 1
-  },
   "NABILD2089": {
     "state": "IDLE",
     "pendingScans": 0,
@@ -679,14 +672,19 @@
     "historyCount": 0
   },
   "_lastActivePushToken": {
-    "token": "fQQID3KnSYOCLVM2Ottlds:APA91bF9uYijAX82axT2eoEtXTYC59bgR9oF5X8YWuBO_IiyIzuE7jRB2wtURjnZuxZeFoiu_321cPHcewQi_30IUvSIejTjQ66uHwK3qYUOL5ikCqFU-5I",
+    "token": "test_fcm_token_1795656623099_beta_dead",
     "platform": "android",
     "appVersion": "1.0.6",
     "portfolioSymbols": [
-      "SHEL",
-      "NABIL",
-      "CHCL"
+      "HDL"
     ],
-    "lastSeenAt": "2026-11-24T10:11:18.541Z"
+    "lastSeenAt": "2026-11-26T01:30:23.103Z"
+  },
+  "GHL": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1795656577644,
+    "lastEvaluatedAt": 1795656577644,
+    "historyCount": 1
   }
 }

@@ -48,13 +48,16 @@ export function recordFailure(failure: Omit<UiFailureRecord, 'timestamp'>) {
   };
   recordedFailures.push(record);
 
-  // Synchronously persist to disk
+  // Synchronously persist to disk with atomic per-worker tmp write to prevent parallel EBUSY/UNKNOWN locks
   try {
-    const existing: UiFailureRecord[] = fs.existsSync(UI_FAILURES_PATH)
-      ? JSON.parse(fs.readFileSync(UI_FAILURES_PATH, 'utf8'))
-      : [];
+    const raw = fs.existsSync(UI_FAILURES_PATH)
+      ? fs.readFileSync(UI_FAILURES_PATH, 'utf8').replace(/^\uFEFF/, '').trim()
+      : '';
+    const existing: UiFailureRecord[] = raw ? JSON.parse(raw) : [];
     existing.push(record);
-    fs.writeFileSync(UI_FAILURES_PATH, JSON.stringify(existing, null, 2), 'utf8');
+    const tmpPath = `${UI_FAILURES_PATH}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(existing, null, 2), 'utf8');
+    fs.renameSync(tmpPath, UI_FAILURES_PATH);
   } catch (err: any) {
     console.error('Failed to write ui-failures.json:', err.message);
   }

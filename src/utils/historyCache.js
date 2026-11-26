@@ -10,7 +10,44 @@
 import { idbGet, idbSet } from './indexedDb.js';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json' with { type: 'json' };
 import latestFundamentals from '../data/nepse_fundamentals_latest.json' with { type: 'json' };
-import cumulativeBrokerLedger from '../data/nepse_cumulative_broker_ledger.json' with { type: 'json' };
+let cumulativeBrokerLedger = null;
+let _cumLedgerPromise = null;
+
+/**
+ * Lazily hydrates the cumulative multi-session broker ledger without bloating the initial app bundle.
+ */
+export async function ensureCumulativeBrokerLoaded() {
+  if (cumulativeBrokerLedger) return cumulativeBrokerLedger;
+  if (!_cumLedgerPromise) {
+    const isNodeRuntime = typeof window === 'undefined' && typeof process !== 'undefined' && Boolean(process.versions?.node);
+    const getBuiltin = isNodeRuntime ? globalThis.process?.getBuiltinModule : null;
+    _cumLedgerPromise = (typeof getBuiltin === 'function'
+      ? (async () => {
+          const fsPromises = getBuiltin('fs/promises');
+          const pathMod = getBuiltin('path');
+          const urlMod = getBuiltin('url');
+          const filePath = pathMod.resolve(
+            pathMod.dirname(urlMod.fileURLToPath(import.meta.url)),
+            '..',
+            'data',
+            'nepse_cumulative_broker_ledger.json'
+          );
+          const raw = await fsPromises.readFile(filePath, 'utf8');
+          return { default: JSON.parse(raw) };
+        })()
+      : import('../data/nepse_cumulative_broker_ledger.json'))
+      .then((mod) => {
+        cumulativeBrokerLedger = mod?.default || mod || {};
+        populateCumulativeBrokerCache(cumulativeBrokerLedger);
+        return cumulativeBrokerLedger;
+      })
+      .catch(() => {
+        cumulativeBrokerLedger = {};
+        return cumulativeBrokerLedger;
+      });
+  }
+  return _cumLedgerPromise;
+}
 import nepseIndexBaseline from '../data/nepse_index_baseline.json' with { type: 'json' };
 import { isMarketOpen } from './nepseCalendar.js';
 
@@ -37,9 +74,9 @@ if (latestFundamentals && typeof latestFundamentals === 'object') {
   }
 }
 
-// Pre-seed in-memory cumulative multi-session broker ledger cache
-if (cumulativeBrokerLedger && typeof cumulativeBrokerLedger === 'object') {
-  for (const [sym, cData] of Object.entries(cumulativeBrokerLedger)) {
+function populateCumulativeBrokerCache(ledger) {
+  if (!ledger || typeof ledger !== 'object') return;
+  for (const [sym, cData] of Object.entries(ledger)) {
     if (sym && cData) {
       memCumulativeBrokerCache.set(sym.toUpperCase(), cData);
     }
@@ -53,6 +90,11 @@ if (cumulativeBrokerLedger && typeof cumulativeBrokerLedger === 'object') {
  */
 export function getCumulativeBrokerData(symbol) {
   if (!symbol) return null;
+  if (!cumulativeBrokerLedger) {
+    ensureCumulativeBrokerLoaded().then((loaded) => populateCumulativeBrokerCache(loaded)).catch(() => {});
+  } else if (memCumulativeBrokerCache.size === 0) {
+    populateCumulativeBrokerCache(cumulativeBrokerLedger);
+  }
   const key = String(symbol).toUpperCase().trim();
   return memCumulativeBrokerCache.get(key) || null;
 }

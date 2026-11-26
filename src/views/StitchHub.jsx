@@ -19,7 +19,7 @@ export function StitchHub({ onExit, stocks: rawStocks = [], indices = null, mark
   const [history, setHistory] = useState(['dashboard']);
   const [lang, setLang] = useState('ne'); // 'ne' or 'en'
   const [selectedSymbol, setSelectedSymbol] = useState('NABIL');
-  const [orderModal, setOrderModal] = useState({ isOpen: false, symbol: 'NABIL', price: 585.00 });
+  const [orderModal, setOrderModal] = useState({ isOpen: false, symbol: '', price: 0 });
 
   const isNe = lang === 'ne';
 
@@ -46,7 +46,7 @@ export function StitchHub({ onExit, stocks: rawStocks = [], indices = null, mark
     let resolvedPrice = price;
     if (!resolvedPrice) {
       const liveStock = stocks.find(s => s.symbol?.toUpperCase() === sym?.toUpperCase());
-      resolvedPrice = liveStock?.ltp || liveStock?.close || 585.00;
+      resolvedPrice = liveStock?.ltp || liveStock?.close || 0;
     }
     setOrderModal({ isOpen: true, symbol: sym, price: resolvedPrice });
   };

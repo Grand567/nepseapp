@@ -275,9 +275,9 @@ export function getStageFailureReason(dossier) {
 
 /**
  * Exact Statutory NEPSE Net Trade & Breakeven Calculator with Dynamic CGT Rate
- * Supports 5.0% (2083 Gazette Revised Short-Term), 7.5% (Standard Short-Term), or 10.0% (Institutional)
+ * Supports 5.0% (Short-Term <= 365d), 3.75% (Long-Term > 365d), or 10.0% (Institutional)
  */
-export function calculateExactStatutoryTrade(entryPrice, targetPrice, kitta, cgtRate = 0.075) {
+export function calculateExactStatutoryTrade(entryPrice, targetPrice, kitta, cgtRate = 0.05) {
   const qty = Math.max(10, Number(kitta) || 10);
   const buyRate = Math.max(1, Number(entryPrice) || 100);
   const sellRate = Math.max(1, Number(targetPrice) || buyRate);
@@ -411,7 +411,7 @@ export function runUnifiedFiveStepAlphaDesk({
   userCapital = getUserConfiguredCapital(),
   riskTolerancePct = 1.5,
   requiredNetRRR = 2.5,
-  cgtRate = 0.075
+  cgtRate = 0.05
 }) {
   const marketStatus = getDetailedMarketStatus();
   const nptMins = Number(marketStatus?.nptTotalMinutes || 690);

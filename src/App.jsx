@@ -38,7 +38,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { fetchHolidays, fetchNepseIntradayGraph } from './utils/servicesApi.js';
 import { getUpcomingHolidays, toNepaliDigits } from './utils/bikramSambat.js';
-import { loadEncryptedUserProfiles, saveEncryptedUserProfiles, clearSensitiveStorageOnSignOut } from './utils/profileVaultStorage.js';
+import { loadEncryptedUserProfiles, saveEncryptedUserProfiles, clearSensitiveStorageOnSignOut, readCanonicalPortfolioSymbolsSync } from './utils/profileVaultStorage.js';
 
 import { initLocalLedger } from './utils/localLedgerManager';
 import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices, warmUpServer, getServerWarmupInfo, subscribeServerWarmup } from './utils/liveData';
@@ -101,6 +101,9 @@ function AppInner() {
   // ── Core Market data state (declared early to prevent TDZ in event handlers) ──
   const [stocks,       setStocks]       = useState(initialStocks);
   const [indices,      setIndices]      = useState(defaultIndices);
+  const [coldBootSettled, setColdBootSettled] = useState(() =>
+    Boolean(initialStocks && initialStocks.length > 0 && defaultIndices?.nepse?.value > 1000)
+  );
   // 'live' | 'closing' | 'yesterday' | 'offline'
   const [apiStatus,    setApiStatus]    = useState(() => {
     const s = getDetailedMarketStatus();
@@ -548,22 +551,12 @@ function AppInner() {
   // Memoized user portfolio and watchlist symbols for notification filtering
   const userPortfolioSymbols = useMemo(() => {
     try {
-      const raw = localStorage.getItem('nepse_portfolio_profiles') || '[]';
-      const profs = JSON.parse(raw);
-      const syms = [];
-      if (Array.isArray(profs)) {
-        profs.forEach(p => {
-          (p.holdings || []).forEach(h => {
-            const s = h.symbol || h.scrip;
-            if (s) syms.push(s);
-          });
-        });
-      }
-      return syms;
+      const { symbols } = readCanonicalPortfolioSymbolsSync(user?.uid || null);
+      return Array.from(symbols);
     } catch (_) {
       return [];
     }
-  }, [showNotificationCenter]);
+  }, [showNotificationCenter, user?.uid]);
 
   const userWatchlistSymbols = useMemo(() => {
     try {
@@ -1003,6 +996,7 @@ function AppInner() {
         console.warn('[Adaptive Poller] Sync error (attempt ' + consecutiveErrors + '):', err?.message);
       } finally {
         inFlight = false;
+        if (isMounted) setColdBootSettled(true);
       }
 
       if (!isMounted) return;
@@ -1023,7 +1017,7 @@ function AppInner() {
       scheduleNext(nextInterval);
     };
 
-    timerId = setTimeout(fetchMarket, 350);
+    fetchMarket();
 
     return () => {
       isMounted = false;
@@ -1070,6 +1064,7 @@ function AppInner() {
         consecutiveErrors++;
       } finally {
         inFlight = false;
+        if (isMounted) setColdBootSettled(true);
       }
 
       if (!isMounted) return;
@@ -1590,7 +1585,7 @@ function AppInner() {
 
             {/* Resources button */}
             <button
-              className={`icon-btn ${activeTab === 'resources' ? 'active' : ''}`}
+              className={`icon-btn header-resources-btn ${activeTab === 'resources' ? 'active' : ''}`}
               onClick={() => setActiveTab('resources')}
               title="Resources & Guides"
               style={{ height: 30, width: 30 }}
@@ -1623,14 +1618,14 @@ function AppInner() {
             </button>
 
             {/* User avatar + menu */}
-            <div style={{ position: 'relative' }}>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
               <button
                 id="btn-user-avatar"
                 ref={avatarBtnRef}
                 onClick={() => setShowUserMenu(v => !v)}
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
-                  padding: 0, display: 'flex', alignItems: 'center',
+                  padding: 0, display: 'flex', alignItems: 'center', flexShrink: 0
                 }}
                 title={user.displayName || user.email || 'Guest'}
               >
@@ -1869,6 +1864,29 @@ function AppInner() {
                     <span style={{ fontSize: 12, padding: '2px 6px', background: 'rgba(16,185,129,0.2)', color: 'var(--bull)', borderRadius: 4, fontWeight: 800 }}>
                       SYNC NOW
                     </span>
+                  </button>
+
+                  {/* Jump directly to Synced Accounts Tab */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setActiveTab('portfolio');
+                      setTimeout(() => {
+                        window.dispatchEvent(new CustomEvent('open_portfolio_subtab', { detail: { subTab: 'synced' } }));
+                      }, 50);
+                    }}
+                    style={{
+                      width: '100%', padding: '9px 16px',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      color: '#34d399', fontSize: 12.5, fontWeight: 700,
+                      textAlign: 'left',
+                      borderBottom: '1px solid var(--border)'
+                    }}
+                  >
+                    <span>✅ Synced Accounts Tab</span>
+                    <span style={{ fontSize: 11, opacity: 0.85 }}>VIEW</span>
                   </button>
 
                   {/* Font Size Accessibility Setting */}
@@ -2161,20 +2179,24 @@ function AppInner() {
                 <div style={{ display: activeTab === 'dashboard' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
                   <ErrorBoundary activeTab={activeTab} moduleName="Market Dashboard" onNavigateDashboard={() => setActiveTab('dashboard')}>
                     <React.Suspense fallback={<DashboardSkeleton />}>
-                    <PullToRefresh onRefresh={triggerTick} isRefreshing={isRefreshing}>
-                      <Dashboard
-                        stocks={stocks}
-                        indices={indices}
-                        onRefresh={triggerTick}
-                        isRefreshing={isRefreshing}
-                        triggerTick={triggerTick}
-                        apiStatus={apiStatus}
-                        marketStatus={marketStatus}
-                        lastSyncTime={lastSyncTime}
-                        onSelectStock={openStockDetail}
-                        onOpenCalendar={() => setShowCalendarModal(true)}
-                      />
-                    </PullToRefresh>
+                    {(!coldBootSettled && (!stocks || stocks.length === 0 || !(indices?.nepse?.value > 1000))) ? (
+                      <DashboardSkeleton />
+                    ) : (
+                      <PullToRefresh onRefresh={triggerTick} isRefreshing={isRefreshing}>
+                        <Dashboard
+                          stocks={stocks}
+                          indices={indices}
+                          onRefresh={triggerTick}
+                          isRefreshing={isRefreshing}
+                          triggerTick={triggerTick}
+                          apiStatus={apiStatus}
+                          marketStatus={marketStatus}
+                          lastSyncTime={lastSyncTime}
+                          onSelectStock={openStockDetail}
+                          onOpenCalendar={() => setShowCalendarModal(true)}
+                        />
+                      </PullToRefresh>
+                    )}
                     </React.Suspense>
                   </ErrorBoundary>
                 </div>

@@ -1,5 +1,24 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowUpRight, ArrowDownRight, Activity, Zap } from 'lucide-react';
+import { fetchNepseIntradayGraph } from '../utils/servicesApi';
+
+function buildSparklineGeometry(series = [], width = 300, height = 70, padY = 6) {
+  const vals = (Array.isArray(series) ? series : [])
+    .map(p => Number(p?.close ?? p?.value ?? p?.ltp ?? p ?? 0))
+    .filter(v => Number.isFinite(v) && v > 0);
+  if (vals.length < 2) return null;
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const span = Math.max(0.01, maxV - minV);
+  const coords = vals.map((v, i) => {
+    const x = +((i / (vals.length - 1)) * width).toFixed(1);
+    const y = +(padY + (1 - (v - minV) / span) * (height - padY * 2)).toFixed(1);
+    return `${x},${y}`;
+  });
+  const line = `M${coords.join(' L')}`;
+  const area = `${line} L${width},${height} L0,${height} Z`;
+  return { line, area };
+}
 
 export function LiveMarketDashboard({
   onSelectScrip,
@@ -11,6 +30,14 @@ export function LiveMarketDashboard({
   marketStatus = null,
   apiStatus = 'offline',
 }) {
+  const [heroCurve, setHeroCurve] = useState([]);
+  useEffect(() => {
+    let active = true;
+    fetchNepseIntradayGraph('NEPSE').then(pts => {
+      if (active && Array.isArray(pts) && pts.length > 1) setHeroCurve(pts);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   const stocks = Array.isArray(rawStocks) ? rawStocks : [];
   const isNe = lang === 'ne';
 
@@ -220,23 +247,29 @@ export function LiveMarketDashboard({
                 <stop offset="100%" stopColor={!hasLiveIndex ? "#64748B" : isNepseUp ? "#10B981" : "#F43F5E"} stopOpacity="0.0" />
               </linearGradient>
             </defs>
-            {hasLiveIndex ? (
-              <>
-                <path
-                  d={isNepseUp ? "M0,60 Q40,58 90,48 T180,30 T260,14 L300,6 L300,70 L0,70 Z" : "M0,10 Q40,14 90,24 T180,44 T260,58 L300,64 L300,70 L0,70 Z"}
-                  fill="url(#gradNepseLive)"
-                />
-                <path
-                  d={isNepseUp ? "M0,60 Q40,58 90,48 T180,30 T260,14 L300,6" : "M0,10 Q40,14 90,24 T180,44 T260,58 L300,64"}
-                  fill="none"
-                  stroke={isNepseUp ? "#10B981" : "#F43F5E"}
-                  strokeWidth="2.5"
-                />
-                <circle cx="300" cy={isNepseUp ? 6 : 64} r="4" fill={isNepseUp ? "#10B981" : "#F43F5E"} />
-              </>
-            ) : (
-              <path d="M0,35 L300,35" fill="none" stroke="#64748B" strokeWidth="1.5" strokeDasharray="4 4" />
-            )}
+            {(() => {
+              const geom = buildSparklineGeometry(heroCurve, 300, 70, 6);
+              if (hasLiveIndex && geom) {
+                const pts = geom.line.split(' ');
+                const lastPt = pts[pts.length - 1] || '300,35';
+                const [lx, ly] = lastPt.replace(/^M/, '').split(',').map(Number);
+                return (
+                  <>
+                    <path d={geom.area} fill="url(#gradNepseLive)" />
+                    <path d={geom.line} fill="none" stroke={isNepseUp ? "#10B981" : "#F43F5E"} strokeWidth="2.5" strokeLinejoin="round" />
+                    <circle cx={lx || 300} cy={ly || 35} r="4" fill={isNepseUp ? "#10B981" : "#F43F5E"} />
+                  </>
+                );
+              }
+              return (
+                <>
+                  <path d="M0,35 L300,35" fill="none" stroke="#64748B" strokeWidth="1.5" strokeDasharray="4 4" />
+                  <text x="150" y="28" textAnchor="middle" fill="#64748B" fontSize="10" fontFamily="monospace">
+                    {isNe ? 'इन्ट्राडे वक्र प्रतीक्षा गर्दै' : 'Awaiting intraday curve'}
+                  </text>
+                </>
+              );
+            })()}
           </svg>
         </div>
 
@@ -371,7 +404,7 @@ export function LiveMarketDashboard({
           <span>{isNe ? 'फ्लोरशिट (Live Tape)' : 'Floor Sheet (Live Tape)'}</span>
         </button>
         <button
-          onClick={() => onOpenOrder && onOpenOrder(topGainers[0]?.symbol || 'NABIL', topGainers[0]?.ltp || 585.00)}
+          onClick={() => onOpenOrder && onOpenOrder(topGainers[0]?.symbol || 'NABIL', topGainers[0]?.ltp || 0)}
           className="tap-active py-3.5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-xs font-bold font-mono text-white shadow-lg shadow-sky-500/25 transition-all flex items-center justify-center gap-1.5"
         >
           <Zap size={16} className="text-white" />

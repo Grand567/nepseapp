@@ -289,7 +289,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       } else {
         setSelectedProfileId('');
         if (userId && !userId.startsWith('guest')) {
-          fetchUserDataFromCloud(userId).then(async cloudData => {
+          fetchUserDataFromCloud(userId, userEmail).then(async cloudData => {
             if (cancelled) return;
             if (cloudData && (Array.isArray(cloudData.profiles) || Array.isArray(cloudData.bulkAccounts))) {
               const cloudAccs = cloudData.profiles || cloudData.bulkAccounts || [];
@@ -1433,6 +1433,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
           <div className="segmented-bar">
             {[
               { id: 'accounts', label: 'Demat Accounts', icon: User, count: profiles.length, color: 'var(--primary-light)' },
+              { id: 'synced', label: 'Synced', icon: CheckCircle2, count: syncedProfileIds.length, color: '#10b981' },
               { id: 'ipo', label: 'Bulk IPO Portal', icon: Sparkles, count: Array.isArray(ipoCompanies) ? ipoCompanies.filter(i => i && i.status === 'Open').length : 0, color: '#f59e0b' },
               { id: 'portfolio', label: 'Demat Portfolio', icon: Wallet, count: profiles.filter(p => p && p.holdings?.length > 0).length, color: 'var(--bull)' }
             ].map(t => {
@@ -1468,6 +1469,169 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* ── Sub Tab: SYNCED CLOUD & DEMAT STATUS ── */}
+      {activeSubTab === 'synced' && (
+        <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {(() => {
+            const isGuest = !userId || String(userId).startsWith('guest');
+            const lastCloudRaw = typeof localStorage !== 'undefined' ? localStorage.getItem(`nepse_hub_${userId}_last_sync`) : null;
+            const lastCloudLabel = lastCloudRaw
+              ? `${new Date(lastCloudRaw).toLocaleString('en-US', { timeZone: 'Asia/Kathmandu', dateStyle: 'medium', timeStyle: 'short' })} NPT`
+              : 'Not yet pulled from cloud in this browser session';
+            let watchlistCount = 0;
+            let txCount = 0;
+            let notesCount = 0;
+            let alertsCount = 0;
+            try {
+              watchlistCount = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]').length || 0;
+              txCount = JSON.parse(localStorage.getItem(`nepse_hub_${userId}_transactions`) || '[]').length || 0;
+              notesCount = JSON.parse(localStorage.getItem('nepse_trade_notes') || '[]').length || 0;
+              alertsCount = JSON.parse(localStorage.getItem('nepse_stock_alerts') || '[]').length || 0;
+            } catch (_) {}
+
+            return (
+              <>
+                <div className="card" style={{ padding: '14px 16px', background: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(56,189,248,0.06))', border: '1px solid rgba(16,185,129,0.28)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <CheckCircle2 style={{ width: 16, height: 16, color: '#10b981' }} />
+                        Cloud Sync & Synced Demat Profiles
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                        Account: <span style={{ color: '#e2e8f0', fontWeight: 700 }}>{userEmail || (isGuest ? 'Guest Mode (Local Only)' : userId)}</span> · Last Sync: {lastCloudLabel}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isGuest}
+                      onClick={async () => {
+                        try {
+                          const cloudData = await fetchUserDataFromCloud(userId, userEmail);
+                          const remoteProfiles = Array.isArray(cloudData?.profiles)
+                            ? cloudData.profiles
+                            : (Array.isArray(cloudData?.bulkAccounts) ? cloudData.bulkAccounts : []);
+                          if (remoteProfiles.length > 0) {
+                            const merged = [...profiles];
+                            remoteProfiles.forEach((cp) => {
+                              const idx = merged.findIndex(mp => (cp.boid && mp.boid === cp.boid) || (cp.id && mp.id === cp.id));
+                              if (idx === -1) merged.push({ ...cp, holdings: sanitizeMeroShareHoldings(cp.holdings, userId, cp.id || cp.boid) });
+                              else if (cp.holdings?.length > 0 && (!merged[idx].holdings || merged[idx].holdings.length === 0)) {
+                                merged[idx] = { ...cp, password: merged[idx].password || '', crn: merged[idx].crn || '', pin: merged[idx].pin || '' };
+                              }
+                            });
+                            await saveEncryptedUserProfiles(merged, userId);
+                            setProfiles(merged);
+                            showToast(`Synced ${merged.length} profile(s) from cloud vault.`, 'success');
+                          } else {
+                            await syncUserDataToCloud(userId, { profiles }, userEmail);
+                            showToast('Cloud backup verified & updated.', 'success');
+                          }
+                        } catch (err) {
+                          showToast(`Cloud sync error: ${err?.message || 'Unable to reach sync server'}`, 'error');
+                        }
+                      }}
+                      className="btn-primary"
+                      style={{ padding: '8px 14px', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <RefreshCw style={{ width: 13, height: 13 }} />
+                      {isGuest ? 'Sign in to Sync' : 'Sync Cloud Now'}
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: 8, marginTop: 12 }}>
+                    <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(15,23,42,0.55)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Profiles Synced</div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: '#10b981' }}>{profiles.length}</div>
+                    </div>
+                    <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(15,23,42,0.55)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>With Holdings</div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: '#38bdf8' }}>{profiles.filter(p => (p?.holdings?.length || 0) > 0).length}</div>
+                    </div>
+                    <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(15,23,42,0.55)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Transactions</div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc' }}>{txCount}</div>
+                    </div>
+                    <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(15,23,42,0.55)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Watchlist / Alerts</div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: '#f59e0b' }}>{watchlistCount} / {alertsCount + notesCount}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {profiles.length > 0 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
+                    {profiles.map((p) => {
+                      const holdingsCount = Array.isArray(p?.holdings) ? p.holdings.length : 0;
+                      const isSynced = syncedProfileIds.includes(p.id) || holdingsCount > 0 || Boolean(p?.lastSyncedAt);
+                      const syncTimeText = p?.lastSyncedAt
+                        ? new Date(p.lastSyncedAt).toLocaleString('en-US', { timeZone: 'Asia/Kathmandu', dateStyle: 'short', timeStyle: 'short' }) + ' NPT'
+                        : 'Restored via Cloud Vault';
+                      return (
+                        <div key={p.id || p.boid} className="card" style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 14, fontWeight: 800, color: '#ffffff' }}>{p.name || 'Demat Account'}</span>
+                              <span style={{
+                                fontSize: 11,
+                                fontWeight: 800,
+                                padding: '2px 7px',
+                                borderRadius: 999,
+                                background: isSynced ? 'rgba(16,185,129,0.16)' : 'rgba(245,158,11,0.16)',
+                                color: isSynced ? '#34d399' : '#fbbf24'
+                              }}>
+                                {isSynced ? `Synced (${holdingsCount} scrips)` : 'Metadata Only'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
+                              {p.dpName || 'Capital DP'} • BOID: ...{p.boid ? String(p.boid).slice(-4) : '****'} • {syncTimeText}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedProfileId(p.id);
+                                if (onSwitchToPortfolio) onSwitchToPortfolio();
+                                else setActiveSubTab('portfolio');
+                              }}
+                              className="btn-secondary"
+                              style={{ padding: '6px 10px', fontSize: 12 }}
+                            >
+                              Portfolio
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedProfileId(p.id);
+                                handleRetrievePortfolio(p.id);
+                              }}
+                              disabled={isRetrieving}
+                              className="btn-primary"
+                              style={{ padding: '6px 10px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <RefreshCw style={{ width: 12, height: 12 }} className={isRetrieving && selectedProfileId === p.id ? 'animate-spin' : ''} />
+                              Re-Sync
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="card" style={{ padding: '24px 16px', textAlign: 'center', border: '1px dashed var(--border)' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#ffffff' }}>No Synced Profiles Found Yet</div>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                      Add your Demat account or sign in with your account email to automatically pull previously synced profiles and holdings.
+                    </p>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 

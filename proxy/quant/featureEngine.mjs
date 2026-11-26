@@ -11,6 +11,7 @@ import { pool } from '../db.mjs';
 import { db } from '../db/ledgerStore.js';
 import { getMacroCache, hasMacroCache } from './macroCache.mjs';
 import { getNewsCache, hasNewsCache } from './newsCache.mjs';
+import { formatNptDateIso } from '../../src/utils/nepseCalendar.js';
 
 const EPSILON = 1e-8;
 
@@ -620,7 +621,7 @@ export async function getMacroFeatures() {
 /**
  * Manually-flagged political/event days
  */
-export async function getPoliticalEventFlag(date = new Date().toISOString().slice(0, 10)) {
+export async function getPoliticalEventFlag(date = formatNptDateIso(new Date())) {
   const defaultEvent = {
     flagged: false,
     severity: 0,
@@ -645,7 +646,7 @@ export async function getPoliticalEventFlag(date = new Date().toISOString().slic
  * for a given trading date.
  */
 export async function computeIndexFeatures(options = {}) {
-  const date = options.date || new Date().toISOString().slice(0, 10);
+  const date = options.date || formatNptDateIso(new Date());
   const memoryHistory = options.memoryHistory || null;
   let memoryCloses = options.memoryCloses || null;
   if (!memoryCloses && Array.isArray(memoryHistory) && memoryHistory.length >= 10) {

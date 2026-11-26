@@ -23,7 +23,7 @@ export function getProxyBase() {
   const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
   if (isNative) {
     if (typeof localStorage !== 'undefined') {
-      const stored = localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base');
+      const stored = localStorage.getItem('custom_proxy_base') || localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base');
       if (stored && stored.startsWith('http')) return stored.replace(/\/$/, '');
     }
     return 'https://drabyashree-nepse-cdn.shreeksuwal.workers.dev';
@@ -31,10 +31,14 @@ export function getProxyBase() {
 
   // 1. Electron environment (protocol file: or Electron in userAgent)
   if (typeof window !== 'undefined') {
+    const customStored = typeof localStorage !== 'undefined'
+      ? (localStorage.getItem('custom_proxy_base') || localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base'))
+      : null;
     const isElectron = window.location.protocol === 'file:' || 
                        (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Electron')) ||
                        typeof window.electron !== 'undefined';
     if (isElectron) {
+      if (customStored && customStored.startsWith('http')) return customStored.replace(/\/$/, '');
       if (_localProxyState === 'dead') return 'https://drabyashree-nepse-cdn.shreeksuwal.workers.dev';
       return 'http://localhost:5000';
     }
@@ -42,6 +46,7 @@ export function getProxyBase() {
     // 2. Desktop browser on localhost / 127.0.0.1
     const h = window.location.hostname || '';
     if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0') {
+      if (customStored && customStored.startsWith('http')) return customStored.replace(/\/$/, '');
       return '';
     }
 
@@ -54,7 +59,7 @@ export function getProxyBase() {
 
   // 4. If explicitly configured in localStorage, respect it
   if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-    const stored = localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base');
+    const stored = localStorage.getItem('custom_proxy_base') || localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base');
     if (stored && stored.startsWith('http')) return stored.replace(/\/$/, '');
   }
 

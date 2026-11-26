@@ -236,7 +236,9 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
           <span className="font-semibold text-white">
             {isNe ? 'लक्षित बिक्री मूल्य (Target Selling Price NPR)' : 'Target Selling Price (NPR)'}
           </span>
-          <span className="text-slate-400 font-mono text-[11px]">Current Market: NPR 585.00</span>
+          <span className="text-slate-400 font-mono text-[11px]">
+            {isNe ? `औसत WACC: NPR ${waccRate.toFixed(2)}` : `Blended WACC: NPR ${waccRate.toFixed(2)}`}
+          </span>
         </div>
 
         <div className="flex items-center gap-3">
@@ -247,7 +249,12 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
             className="w-32 rounded-xl border border-white/[0.08] bg-[#0B0F17] px-3 py-2 text-base font-bold font-mono text-white focus:border-sky-500 focus:outline-none"
           />
           <div className="flex gap-1.5 flex-1 overflow-x-auto">
-            {[550, 585, 620, 650].map((pr) => (
+            {Array.from(new Set([
+              Math.max(100, Math.round((waccRate || 300) * 1.1)),
+              Math.max(100, Math.round((waccRate || 300) * 1.25)),
+              Math.max(100, Math.round((waccRate || 300) * 1.5)),
+              Math.max(100, Math.round((waccRate || 300) * 2.0)),
+            ])).map((pr) => (
               <button
                 key={pr}
                 onClick={() => setSellingPrice(pr)}
@@ -396,7 +403,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
 
 /**
  * Computes both True Economic WACC (Bonus @ Rs. 0) and CDSC MeroShare Statutory WACC (Bonus @ Rs. 100 Par),
- * plus strict FIFO lot segregation for Short-Term (<= 365 days, 7.5% CGT) vs Long-Term (> 365 days, 5.0% CGT).
+ * plus strict FIFO lot segregation for Short-Term (<= 365 days, 5.0% CGT) vs Long-Term (> 365 days, 3.75% CGT).
  *
  * @param {Array<{qty:number, price:number, date:string, type?:'BUY'|'IPO'|'FPO'|'BONUS'|'RIGHT'}>} lots
  * @param {Object} sellOrder - { sellQty: number, sellPrice: number, sellDate: string, investorType: 'individual'|'institutional', waccMode: 'economic'|'cdsc' }

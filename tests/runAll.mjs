@@ -79,7 +79,12 @@ const testFiles = [
   'researchBasis.test.mjs',
   'swingEngine.test.mjs',
   'swingGateEvaluator.test.mjs',
-  'swingTradeSelectorView.test.mjs'
+  'swingTradeSelectorView.test.mjs',
+  'phase1BackendEodParity.test.mjs',
+  'phase2RoutesAndTelegram.test.mjs',
+  'phase3CloudSyncAndStorage.test.mjs',
+  'phase4Standardization.test.mjs',
+  'phase5DashboardStockAndServices.test.mjs'
 ];
 
 console.log('====================================================');

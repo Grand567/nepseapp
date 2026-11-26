@@ -9,7 +9,8 @@
 //    market-summary, top-volume/turnover/transactions, sector-rotation, api-status…
 // 4. Detail view + hub view use Tailwind (no inline-style fragility).
 import './servicesHub.css';
-import { useMemo, useState, useEffect, useRef, type ComponentType } from 'react';
+import { useMemo, useState, useEffect, useRef, Suspense, type ComponentType } from 'react';
+import { retryableLazy } from '../utils/retryableLazy';
 import {
   Search, ChevronLeft, ChevronDown, Check, Activity, TrendingUp, TrendingDown,
   Zap, Flame, Award, Users, Radio, Compass, Layers, Shield,
@@ -21,8 +22,8 @@ import {
   GitBranch, BellRing, ScanLine, LayoutDashboard, ShieldCheck, Bot, BarChart3,
   ExternalLink, AlertTriangle,
 } from 'lucide-react';
-import NepseAgentDashboard from './NepseAgentDashboard';
-import { AlgorithmicSignalTrackRecord } from './AlgorithmicSignalTrackRecord';
+const NepseAgentDashboard = retryableLazy(() => import('./NepseAgentDashboard')) as unknown as ComponentType<any>;
+const AlgorithmicSignalTrackRecord = retryableLazy(() => import('./AlgorithmicSignalTrackRecord').then(m => ({ default: m.AlgorithmicSignalTrackRecord }))) as unknown as ComponentType<any>;
 import { FloorsheetServiceTab } from './FloorsheetServiceTab';
 import type { LucideIcon } from 'lucide-react';
 import { triggerHaptic } from '../utils/haptics';
@@ -38,35 +39,35 @@ import IPOList from './IPOList';
 import { useBackHandler } from '../context/NavigationContext';
 import { GrahamValuation, BrokerageCalculator, DividendCalculator, SIPCalculator, RiskRewardCalculator, BonusAdjustmentCalculator, RightAdjustmentCalculator, MarginLoanCalculator, StockSplitCalculator, WaccAveragingCalculator } from './calculators';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
-import { EntryExitAnalyzer } from './EntryExitAnalyzer';
-import ShortTermProfitPlan from './ShortTermProfitPlan';
-import { DividendHistoryPanel } from './DividendHistoryPanel';
-import { RegulatoryHub } from './RegulatoryHub';
-import { TradingViewChartService } from './TradingViewChartService';
+const EntryExitAnalyzer = retryableLazy(() => import('./EntryExitAnalyzer').then(m => ({ default: m.EntryExitAnalyzer }))) as unknown as ComponentType<any>;
+const ShortTermProfitPlan = retryableLazy(() => import('./ShortTermProfitPlan')) as unknown as ComponentType<any>;
+const DividendHistoryPanel = retryableLazy(() => import('./DividendHistoryPanel').then(m => ({ default: m.DividendHistoryPanel }))) as unknown as ComponentType<any>;
+const RegulatoryHub = retryableLazy(() => import('./RegulatoryHub').then(m => ({ default: m.RegulatoryHub }))) as unknown as ComponentType<any>;
+const TradingViewChartService = retryableLazy(() => import('./TradingViewChartService').then(m => ({ default: m.TradingViewChartService }))) as unknown as ComponentType<any>;
 import { isPureNepseEquity } from '../utils/nepseEquityFilter.js';
-import { FibonacciCalculatorService } from './FibonacciCalculatorService';
-import { SeasonalityAnalyticsService } from './SeasonalityAnalyticsService';
-import { PromoterSharesService } from './PromoterSharesService';
-import { StrategyLabService } from './StrategyLabService';
-import { BacktestReportScreen } from './BacktestReportScreen';
-import { PaperTradingJournalScreen } from './PaperTradingJournalScreen';
-import SwingTradeSelectorView from './swing/SwingTradeSelectorView';
+const FibonacciCalculatorService = retryableLazy(() => import('./FibonacciCalculatorService').then(m => ({ default: m.FibonacciCalculatorService }))) as unknown as ComponentType<any>;
+const SeasonalityAnalyticsService = retryableLazy(() => import('./SeasonalityAnalyticsService').then(m => ({ default: m.SeasonalityAnalyticsService }))) as unknown as ComponentType<any>;
+const PromoterSharesService = retryableLazy(() => import('./PromoterSharesService').then(m => ({ default: m.PromoterSharesService }))) as unknown as ComponentType<any>;
+const StrategyLabService = retryableLazy(() => import('./StrategyLabService').then(m => ({ default: m.StrategyLabService }))) as unknown as ComponentType<any>;
+const BacktestReportScreen = retryableLazy(() => import('./BacktestReportScreen').then(m => ({ default: m.BacktestReportScreen }))) as unknown as ComponentType<any>;
+const PaperTradingJournalScreen = retryableLazy(() => import('./PaperTradingJournalScreen').then(m => ({ default: m.PaperTradingJournalScreen }))) as unknown as ComponentType<any>;
+const SwingTradeSelectorView = retryableLazy(() => import('./swing/SwingTradeSelectorView')) as unknown as ComponentType<any>;
 import { ErrorBoundary } from './ErrorBoundary';
-import { StockSelectionScreener } from './StockSelectionScreener';
-import { BrokerAccumulationView } from './BrokerAccumulationView';
+const StockSelectionScreener = retryableLazy(() => import('./StockSelectionScreener').then(m => ({ default: m.StockSelectionScreener }))) as unknown as ComponentType<any>;
+const BrokerAccumulationView = retryableLazy(() => import('./BrokerAccumulationView').then(m => ({ default: m.BrokerAccumulationView }))) as unknown as ComponentType<any>;
 import { WatchlistEntryAlertModal } from './WatchlistEntryAlertModal';
 import { getProxyBase } from '../utils/proxyBase.js';
 import { getHistoricalSubfileDirect } from '../utils/localLedgerManager';
 import { PreferencesSettingsService } from './PreferencesSettingsService';
 import { GlossaryGuideService } from './GlossaryGuideService';
-import { BrokerFlowDominanceService } from './BrokerFlowDominanceService';
+const BrokerFlowDominanceService = retryableLazy(() => import('./BrokerFlowDominanceService').then(m => ({ default: m.BrokerFlowDominanceService }))) as unknown as ComponentType<any>;
 import { AlphaPlaybookService } from './AlphaPlaybookService';
-import { AccumulationDistributionRadar } from './AccumulationDistributionRadar';
+const AccumulationDistributionRadar = retryableLazy(() => import('./AccumulationDistributionRadar').then(m => ({ default: m.AccumulationDistributionRadar }))) as unknown as ComponentType<any>;
 import BrokerSmartFlowTracker from './BrokerSmartFlowTracker';
-import { BreakoutTrapRadar } from './BreakoutTrapRadar';
+const BreakoutTrapRadar = retryableLazy(() => import('./BreakoutTrapRadar').then(m => ({ default: m.BreakoutTrapRadar }))) as unknown as ComponentType<any>;
 import { MultibaggerHunterService } from './MultibaggerHunterService';
 import { MinerviniLeaderboard } from './MinerviniLeaderboard';
-import { Master100ProfitWorkstation } from './Master100ProfitWorkstation';
+const Master100ProfitWorkstation = retryableLazy(() => import('./Master100ProfitWorkstation').then(m => ({ default: m.Master100ProfitWorkstation }))) as unknown as ComponentType<any>;
 import {
   CandlestickPatternScannerService,
   TechnicalRatingsGaugeService,
@@ -1709,6 +1710,7 @@ export default function ServicesHub({
 
               return (
                 <ErrorBoundary moduleName={s.name} resetKey={s.id}>
+                  <Suspense fallback={<div className="p-8 text-center text-sm text-slate-400">Loading {s.name}...</div>}>
                   {PRO_SERVICE_IDS.has(s.id) ? (
                     <ProGate
                       featureName={s.name}
@@ -1753,6 +1755,7 @@ export default function ServicesHub({
                       } as any)}
                     />
                   )}
+                  </Suspense>
                 </ErrorBoundary>
               );
             })() : (

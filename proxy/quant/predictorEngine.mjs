@@ -18,6 +18,7 @@ import { pool } from '../db.mjs';
 import { getNewsCache, hasNewsCache } from './newsCache.mjs';
 import { isExcludedInstrument } from '../db/signalTrackerStore.js';
 import { getCircuitLimits, NEPSE_RULES } from '../utils/nepseRules.mjs';
+import { formatNptDateIso } from '../../src/utils/nepseCalendar.js';
 
 export const ROUND_TRIP_FRICTION_HURDLE = 0.0085; // 0.85% statutory round-trip hurdle
 
@@ -867,7 +868,7 @@ export async function scoreAllStocks(stocksList = []) {
       corporate_action_flag: feat.corporate_action_flag,
       composite_score: compositeScore,
       reasoning,
-      score_date: new Date().toISOString().slice(0, 10),
+      score_date: formatNptDateIso(new Date()),
     });
   }
 

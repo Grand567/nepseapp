@@ -72,8 +72,8 @@ export function runOHLCVBacktest(candles, strategyFn, options = {}) {
     // F1: Full NEPSE cost model options
     includeSebonFee = true,    // SEBON 0.015% regulatory fee (both legs)
     includeDpCharge = true,    // DP charge Rs.25 per sell transaction
-    cgtRateShort = 0.075,      // 7.5% CGT for holdings ≤ 365 days
-    cgtRateLong  = 0.050,      // 5.0% CGT for holdings > 365 days
+    cgtRateShort = 0.05,       // 5.0% CGT for holdings ≤ 365 days
+    cgtRateLong  = 0.0375,     // 3.75% CGT for holdings > 365 days
     // F2: Sharpe ratio
     riskFreeRate = 0.065,      // ~6.5% Nepal treasury / savings rate annualised
     // F3: Benchmark comparison

@@ -396,11 +396,29 @@ export function getNepaliDate(date = new Date()) {
  * Convert Bikram Sambat date back to Gregorian (AD) Date object
  */
 export function bsToAd(bsYear, bsMonth, bsDay) {
-  const yIdx = bsYear - 2000;
-  if (yIdx < 0 || yIdx >= YEAR_DAYS_MAP.length) return null;
-  const pastYearDays = YEAR_DAYS_MAP[yIdx].passed;
-  const pastMonthDays = MONTH_DAYS_MAP[yIdx][bsMonth - 1]?.passed || 0;
-  const daysPassed = pastYearDays + pastMonthDays + (bsDay - 1);
+  let y = bsYear;
+  let m = bsMonth;
+  let d = bsDay;
+  if (typeof bsYear === 'string' && bsMonth === undefined && bsDay === undefined) {
+    const match = bsYear.trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (!match) return null;
+    y = parseInt(match[1], 10);
+    m = parseInt(match[2], 10);
+    d = parseInt(match[3], 10);
+  } else {
+    y = Number(y);
+    m = Number(m);
+    d = Number(d);
+  }
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+  const yIdx = y - 2000;
+  if (yIdx < 0 || yIdx >= YEAR_DAYS_MAP.length || m < 1 || m > 12 || d < 1 || d > 32) return null;
+  const yearEntry = YEAR_DAYS_MAP[yIdx];
+  const monthEntry = MONTH_DAYS_MAP[yIdx]?.[m - 1];
+  if (!yearEntry || !monthEntry) return null;
+  const pastYearDays = yearEntry.passed;
+  const pastMonthDays = monthEntry.passed || 0;
+  const daysPassed = pastYearDays + pastMonthDays + (d - 1);
   const epoch = Date.UTC(1943, 3, 14); // 2000-01-01 BS = 1943-04-14 AD
   return new Date(epoch + (daysPassed * 86400000));
 }
@@ -409,9 +427,11 @@ export function bsToAd(bsYear, bsMonth, bsDay) {
  * Get the number of days in a specific BS month
  */
 export function getDaysInBsMonth(bsYear, bsMonth) {
-  const yIdx = bsYear - 2000;
-  if (yIdx < 0 || yIdx >= BS_MONTH_DAYS.length) return 30;
-  return BS_MONTH_DAYS[yIdx][bsMonth - 1] || 30;
+  const y = Number(bsYear);
+  const m = Number(bsMonth);
+  const yIdx = y - 2000;
+  if (!Number.isInteger(yIdx) || yIdx < 0 || yIdx >= BS_MONTH_DAYS.length || !Number.isInteger(m) || m < 1 || m > 12) return 30;
+  return BS_MONTH_DAYS[yIdx][m - 1] || 30;
 }
 
 /**

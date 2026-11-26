@@ -3,7 +3,7 @@
 // Merges Portfolio management and Bulk MeroShare IPO operations into a single tab.
 
 import React, { useState, useEffect } from 'react';
-import { Wallet, Layers, Sparkles, TrendingUp, Sliders } from 'lucide-react';
+import { Wallet, Layers, Sparkles, TrendingUp, Sliders, CheckCircle2 } from 'lucide-react';
 import Portfolio from './Portfolio';
 import MeroShareHub from './MeroShareHub';
 import CapitalRiskSimulatorView from './CapitalRiskSimulatorView';
@@ -20,15 +20,27 @@ export default function PortfolioHub({
   const [subTab, setSubTab] = useState(() => {
     if (initialSubTab === 'bulk_ipo') return 'bulk_ipo';
     if (initialSubTab === 'accounts') return 'accounts';
+    if (initialSubTab === 'synced') return 'synced';
     if (initialSubTab === 'simulator') return 'simulator';
     return 'portfolio';
   });
 
   useEffect(() => {
-    if (initialSubTab === 'bulk_ipo' || initialSubTab === 'portfolio' || initialSubTab === 'accounts' || initialSubTab === 'simulator') {
+    if (initialSubTab === 'bulk_ipo' || initialSubTab === 'portfolio' || initialSubTab === 'accounts' || initialSubTab === 'synced' || initialSubTab === 'simulator') {
       setSubTab(initialSubTab);
     }
   }, [initialSubTab]);
+
+  useEffect(() => {
+    const handleSubtabNav = (e) => {
+      const target = e?.detail?.subTab;
+      if (target === 'bulk_ipo' || target === 'portfolio' || target === 'accounts' || target === 'synced' || target === 'simulator') {
+        setSubTab(target);
+      }
+    };
+    window.addEventListener('open_portfolio_subtab', handleSubtabNav);
+    return () => window.removeEventListener('open_portfolio_subtab', handleSubtabNav);
+  }, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', flex: 1 }}>
@@ -85,6 +97,18 @@ export default function PortfolioHub({
           <button
             onClick={() => {
               triggerHaptic(25);
+              setSubTab('synced');
+            }}
+            className={`segmented-pill ${subTab === 'synced' ? 'active' : ''}`}
+            title="Cloud Synced Accounts & Portfolio Backup Status"
+          >
+            <CheckCircle2 style={{ width: 15, height: 15 }} />
+            <span>Synced</span>
+          </button>
+
+          <button
+            onClick={() => {
+              triggerHaptic(25);
               setSubTab('simulator');
             }}
             className={`segmented-pill ${subTab === 'simulator' ? 'active' : ''}`}
@@ -118,9 +142,10 @@ export default function PortfolioHub({
             userEmail={userEmail}
             marketStocks={marketStocks}
             apiStatus={apiStatus}
-            initialTab={subTab === 'bulk_ipo' ? 'ipo' : 'accounts'}
+            initialTab={subTab === 'bulk_ipo' ? 'ipo' : subTab === 'synced' ? 'synced' : 'accounts'}
             hideTopNav={true}
             onSwitchToPortfolio={() => setSubTab('portfolio')}
+            onSwitchToSynced={() => setSubTab('synced')}
           />
         )}
       </div>

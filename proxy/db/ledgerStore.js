@@ -416,12 +416,137 @@ export const HOT_CACHE = {
 _hotCacheRef = HOT_CACHE;
 
 /**
- * Checks if a specific trade_date already exists in SQLite
+ * Checks if a specific valid, unquarantined trade_date already exists in SQLite
  */
 export function hasTradeDate(tradeDate) {
   if (!tradeDate) return false;
-  const row = db.prepare(`SELECT 1 FROM daily_stock_summary WHERE trade_date = ? LIMIT 1`).get(tradeDate);
+  const row = db.prepare(`SELECT 1 FROM daily_stock_summary WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 AND calendar_status != 'PARTIAL_SESSION' LIMIT 1`).get(tradeDate);
   return Boolean(row);
+}
+
+/**
+ * Self-heals poisoned partial/masked intraday rows and reconciles any corrupted
+ * daily_stock_summary volumes against verified valid-broker floorsheet_contracts.
+ */
+export function reconcileLedgerSessionsFromContracts(targetDb = db) {
+  if (!targetDb) return { quarantinedDates: [], reconciledDates: [] };
+  const quarantinedDates = [];
+  const reconciledDates = [];
+
+  try {
+    const recentDates = targetDb
+      .prepare(`SELECT DISTINCT trade_date FROM floorsheet_contracts ORDER BY trade_date DESC LIMIT 10`)
+      .all()
+      .map(r => r.trade_date);
+
+    for (const dt of recentDates) {
+      const stats = targetDb.prepare(`
+        SELECT COUNT(*) as totalCnt,
+               SUM(CASE WHEN buyer_broker > 0 AND seller_broker > 0 THEN 1 ELSE 0 END) as validBrokerCnt,
+               COUNT(DISTINCT symbol) as symCnt,
+               COALESCE(SUM(kitta), 0) as totalVol
+        FROM floorsheet_contracts
+        WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0
+      `).get(dt);
+
+      if (!stats || stats.totalCnt === 0) continue;
+
+      // Case A: Partial masked intraday capture (< 1000 contracts and 0 valid broker IDs)
+      if (stats.validBrokerCnt === 0 && stats.totalCnt < 1000) {
+        targetDb.transaction(() => {
+          targetDb.prepare(`
+            UPDATE floorsheet_contracts
+            SET is_quarantined = 1, calendar_status = 'PARTIAL_SESSION'
+            WHERE trade_date = ? AND (buyer_broker <= 0 OR seller_broker <= 0)
+          `).run(dt);
+          targetDb.prepare(`
+            UPDATE daily_stock_summary
+            SET is_quarantined = 1, calendar_status = 'PARTIAL_SESSION'
+            WHERE trade_date = ?
+          `).run(dt);
+          targetDb.prepare(`
+            DELETE FROM official_exchange_benchmarks
+            WHERE trade_date = ? AND total_transactions < 1000
+          `).run(dt);
+        })();
+        quarantinedDates.push(dt);
+        continue;
+      }
+
+      // Case B: Full valid-broker floorsheet exists (>= 1000 contracts) but daily_stock_summary diverged (> 1%)
+      if (stats.validBrokerCnt >= 1000) {
+        const dssStats = targetDb.prepare(`
+          SELECT COALESCE(SUM(total_volume), 0) as dssVol,
+                 COUNT(*) as dssCnt
+          FROM daily_stock_summary
+          WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0
+        `).get(dt);
+        const fcVol = Number(stats.totalVol || 0);
+        const dssVol = Number(dssStats?.dssVol || 0);
+        const diffRatio = fcVol > 0 ? Math.abs(fcVol - dssVol) / fcVol : 0;
+
+        if (diffRatio > 0.01 || (dssStats?.dssCnt || 0) === 0) {
+          const contracts = targetDb.prepare(`
+            SELECT symbol, kitta, rate, amount, trade_time, contract_no
+            FROM floorsheet_contracts
+            WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0
+            ORDER BY COALESCE(trade_time, ''), contract_no ASC
+          `).all(dt);
+
+          const bySym = new Map();
+          for (const c of contracts) {
+            const sym = String(c.symbol || '').toUpperCase().trim();
+            if (!sym) continue;
+            const rate = Number(c.rate || 0);
+            const kitta = Math.round(Number(c.kitta || 0));
+            const amt = Number(c.amount || 0);
+            let agg = bySym.get(sym);
+            if (!agg) {
+              agg = { open: rate, high: rate, low: rate, close: rate, volume: 0, turnover: 0 };
+              bySym.set(sym, agg);
+            }
+            if (rate > 0) {
+              agg.high = Math.max(agg.high, rate);
+              agg.low = agg.low > 0 ? Math.min(agg.low, rate) : rate;
+              agg.close = rate;
+            }
+            agg.volume += kitta;
+            agg.turnover += amt;
+          }
+
+          if (bySym.size > 0) {
+            const upsertSym = targetDb.prepare(`
+              INSERT INTO daily_stock_summary (
+                trade_date, symbol, open_price, high_price, low_price, close_price, total_volume, total_turnover,
+                is_quarantined, calendar_status, tape_scope, source
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'VALID', 'FULL_TAPE', 'FULL_TAPE')
+              ON CONFLICT(trade_date, symbol) DO UPDATE SET
+                open_price = excluded.open_price,
+                high_price = excluded.high_price,
+                low_price = excluded.low_price,
+                close_price = excluded.close_price,
+                total_volume = excluded.total_volume,
+                total_turnover = excluded.total_turnover,
+                is_quarantined = 0,
+                calendar_status = 'VALID',
+                tape_scope = 'FULL_TAPE',
+                source = 'FULL_TAPE'
+            `);
+            targetDb.transaction(() => {
+              for (const [sym, a] of bySym.entries()) {
+                upsertSym.run(dt, sym, a.open, a.high, a.low, a.close, a.volume, Number(a.turnover.toFixed(2)));
+              }
+            })();
+            reconciledDates.push(dt);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Drabyashree Ledger] Self-heal warning:', err.message);
+  }
+
+  return { quarantinedDates, reconciledDates };
 }
 
 /**
@@ -489,7 +614,7 @@ export function reconcileAgainstOfficialBenchmark(tradeDate) {
  */
 export function getStoredDates(limit = 40) {
   return db
-    .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' ORDER BY trade_date DESC LIMIT ?`)
+    .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' AND COALESCE(is_quarantined, 0) = 0 ORDER BY trade_date DESC LIMIT ?`)
     .all(limit)
     .map(r => r.trade_date);
 }
@@ -757,19 +882,34 @@ export const ingestDailyStockPrices = db.transaction((tradeDate, priceRows) => {
   if (!tradeDate || !Array.isArray(priceRows) || priceRows.length === 0) return 0;
 
   const upsert = db.prepare(`
-    INSERT INTO daily_stock_summary (trade_date, symbol, open_price, high_price, low_price, close_price, total_volume, total_turnover)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO daily_stock_summary (trade_date, symbol, open_price, high_price, low_price, close_price, total_volume, total_turnover, is_quarantined, calendar_status, tape_scope, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'VALID', 'FULL_TAPE', 'TODAY_PRICES')
     ON CONFLICT(trade_date, symbol) DO UPDATE SET
-      open_price = COALESCE(excluded.open_price, daily_stock_summary.open_price),
+      open_price = CASE WHEN COALESCE(daily_stock_summary.open_price, 0) > 0 THEN daily_stock_summary.open_price ELSE excluded.open_price END,
       high_price = MAX(COALESCE(daily_stock_summary.high_price, 0), COALESCE(excluded.high_price, 0)),
       low_price = CASE 
         WHEN daily_stock_summary.low_price IS NULL OR daily_stock_summary.low_price <= 0 THEN excluded.low_price
         WHEN excluded.low_price IS NULL OR excluded.low_price <= 0 THEN daily_stock_summary.low_price
         ELSE MIN(daily_stock_summary.low_price, excluded.low_price)
       END,
-      close_price = excluded.close_price,
-      total_volume = excluded.total_volume,
-      total_turnover = excluded.total_turnover
+      close_price = CASE
+        WHEN COALESCE(daily_stock_summary.total_volume, 0) > excluded.total_volume
+             AND daily_stock_summary.source IN ('FULL_TAPE', 'NOTS_FULL_DUMP', 'DAILY_COLLECTOR')
+        THEN daily_stock_summary.close_price
+        ELSE excluded.close_price
+      END,
+      total_volume = CASE
+        WHEN COALESCE(daily_stock_summary.total_volume, 0) > excluded.total_volume
+             AND daily_stock_summary.source IN ('FULL_TAPE', 'NOTS_FULL_DUMP', 'DAILY_COLLECTOR')
+        THEN daily_stock_summary.total_volume
+        ELSE excluded.total_volume
+      END,
+      total_turnover = CASE
+        WHEN COALESCE(daily_stock_summary.total_volume, 0) > excluded.total_volume
+             AND daily_stock_summary.source IN ('FULL_TAPE', 'NOTS_FULL_DUMP', 'DAILY_COLLECTOR')
+        THEN daily_stock_summary.total_turnover
+        ELSE excluded.total_turnover
+      END
   `);
 
   let count = 0;
@@ -1492,6 +1632,9 @@ export async function rebuildHotCache() {
   const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
   const todayNpt = nowNpt.toISOString().split('T')[0];
 
+  // Auto-reconcile any partial masked sessions or diverged daily_stock_summary before rebuilding cache
+  reconcileLedgerSessionsFromContracts(db);
+
   // Purge any accidental future phantom records that have 0 broker records
   try {
     db.prepare(`DELETE FROM daily_stock_summary WHERE trade_date > ? AND trade_date NOT IN (SELECT DISTINCT trade_date FROM daily_broker_ledger)`).run(todayNpt);
@@ -1503,8 +1646,9 @@ export async function rebuildHotCache() {
       SELECT DISTINCT s.trade_date 
       FROM daily_stock_summary s
       WHERE s.calendar_status != 'PARTIAL_SESSION' 
+        AND COALESCE(s.is_quarantined, 0) = 0
         AND s.trade_date <= ?
-        AND EXISTS (SELECT 1 FROM daily_broker_ledger b WHERE b.trade_date = s.trade_date)
+        AND EXISTS (SELECT 1 FROM daily_broker_ledger b WHERE b.trade_date = s.trade_date AND COALESCE(b.is_quarantined, 0) = 0)
       ORDER BY s.trade_date DESC 
       LIMIT 30
     `)
@@ -1513,7 +1657,7 @@ export async function rebuildHotCache() {
 
   if (dates.length === 0) {
     dates = db
-      .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' AND trade_date <= ? ORDER BY trade_date DESC LIMIT 30`)
+      .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' AND COALESCE(is_quarantined, 0) = 0 AND trade_date <= ? ORDER BY trade_date DESC LIMIT 30`)
       .all(todayNpt)
       .map((r) => r.trade_date);
   }
@@ -1522,7 +1666,7 @@ export async function rebuildHotCache() {
     console.log("[Drabyashree Cache] No trading dates found in SQLite ledger. Attempting emergency restore from seed snapshot...");
     seedFromSnapshotGz(true);
     const retryDates = db
-      .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' ORDER BY trade_date DESC LIMIT 30`)
+      .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' AND COALESCE(is_quarantined, 0) = 0 ORDER BY trade_date DESC LIMIT 30`)
       .all()
       .map((r) => r.trade_date);
     if (retryDates.length === 0) {
@@ -1540,6 +1684,8 @@ export async function rebuildHotCache() {
       SELECT symbol, SUM(total_turnover) as turnover 
       FROM daily_stock_summary 
       WHERE trade_date >= ?
+        AND COALESCE(is_quarantined, 0) = 0
+        AND calendar_status != 'PARTIAL_SESSION'
       GROUP BY symbol 
       ORDER BY turnover DESC
     `)
@@ -1549,7 +1695,7 @@ export async function rebuildHotCache() {
 
   // Bulk load all summaries and broker ledgers in 2 batch queries instead of 500 N+1 roundtrips
   const allSummaries = db
-    .prepare(`SELECT * FROM daily_stock_summary WHERE trade_date >= ? ORDER BY trade_date DESC`)
+    .prepare(`SELECT * FROM daily_stock_summary WHERE trade_date >= ? AND COALESCE(is_quarantined, 0) = 0 AND calendar_status != 'PARTIAL_SESSION' ORDER BY trade_date DESC`)
     .all(oldestDate);
   const summariesBySymbol = new Map();
   for (const s of allSummaries) {
@@ -1562,7 +1708,7 @@ export async function rebuildHotCache() {
   }
 
   const allBrokers = db
-    .prepare(`SELECT trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt, cross_vol FROM daily_broker_ledger WHERE trade_date >= ?`)
+    .prepare(`SELECT trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt, cross_vol FROM daily_broker_ledger WHERE trade_date >= ? AND COALESCE(is_quarantined, 0) = 0`)
     .all(oldestDate);
   const brokersBySymDate = new Map();
   for (let idx = 0; idx < allBrokers.length; idx++) {
@@ -1739,8 +1885,9 @@ export function computeRadarForTimeframe(days) {
       SELECT DISTINCT s.trade_date 
       FROM daily_stock_summary s
       WHERE s.calendar_status != 'PARTIAL_SESSION' 
+        AND COALESCE(s.is_quarantined, 0) = 0
         AND s.trade_date <= ?
-        AND EXISTS (SELECT 1 FROM daily_broker_ledger b WHERE b.trade_date = s.trade_date)
+        AND EXISTS (SELECT 1 FROM daily_broker_ledger b WHERE b.trade_date = s.trade_date AND COALESCE(b.is_quarantined, 0) = 0)
       ORDER BY s.trade_date DESC 
       LIMIT ?
     `)
@@ -1749,7 +1896,7 @@ export function computeRadarForTimeframe(days) {
 
   if (dates.length === 0) {
     dates = db
-      .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' AND trade_date <= ? ORDER BY trade_date DESC LIMIT ?`)
+      .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' AND COALESCE(is_quarantined, 0) = 0 AND trade_date <= ? ORDER BY trade_date DESC LIMIT ?`)
       .all(todayNpt, targetDays)
       .map((r) => r.trade_date);
   }
@@ -1761,6 +1908,8 @@ export function computeRadarForTimeframe(days) {
       SELECT symbol, SUM(total_turnover) as turnover 
       FROM daily_stock_summary 
       WHERE trade_date >= ?
+        AND COALESCE(is_quarantined, 0) = 0
+        AND calendar_status != 'PARTIAL_SESSION'
       GROUP BY symbol 
       ORDER BY turnover DESC
     `)
@@ -1769,7 +1918,7 @@ export function computeRadarForTimeframe(days) {
     .filter((s) => !isNonEquityScrip(s));
 
   const allSummaries = db
-    .prepare(`SELECT * FROM daily_stock_summary WHERE trade_date >= ? ORDER BY trade_date DESC`)
+    .prepare(`SELECT * FROM daily_stock_summary WHERE trade_date >= ? AND COALESCE(is_quarantined, 0) = 0 AND calendar_status != 'PARTIAL_SESSION' ORDER BY trade_date DESC`)
     .all(oldestDate);
   const summariesBySymbol = new Map();
   for (const s of allSummaries) {
@@ -1782,7 +1931,7 @@ export function computeRadarForTimeframe(days) {
   }
 
   const allBrokers = db
-    .prepare(`SELECT trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt, cross_vol FROM daily_broker_ledger WHERE trade_date >= ?`)
+    .prepare(`SELECT trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt, cross_vol FROM daily_broker_ledger WHERE trade_date >= ? AND COALESCE(is_quarantined, 0) = 0`)
     .all(oldestDate);
   const brokersBySymDate = new Map();
   for (let idx = 0; idx < allBrokers.length; idx++) {
@@ -1885,6 +2034,7 @@ export function computeRadarForTimeframe(days) {
  * Reads existing historical snapshot gz, broker vault files & raw floorsheets from disk to bootstrap SQLite
  */
 export function seedFromDiskVault() {
+  reconcileLedgerSessionsFromContracts(db);
   const existingDates = getStoredDates(40);
   const brokerRowsCount = db.prepare(`SELECT COUNT(*) as c FROM daily_broker_ledger`).get()?.c || 0;
 

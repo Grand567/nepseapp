@@ -171,7 +171,7 @@ export function AlphaPlaybookService() {
       };
     }
 
-    // Deduct statutory round-trip frictions (brokerage 0.36%x2, SEBON 0.015%x2, DP Rs. 50, 7.5% CGT)
+    // Deduct statutory round-trip frictions (brokerage 0.36%x2, SEBON 0.015%x2, DP Rs. 50, 5.0% CGT)
     const estFriction = validEntry * 0.008 + 0.5;
     const riskPerShare = +(validEntry - validStop + estFriction).toFixed(2);
     const rewardPerShare = Math.max(0, +(validTarget - validEntry - estFriction).toFixed(2));

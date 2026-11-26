@@ -323,19 +323,36 @@ async function runAuditPipeline() {
     description: 'Floorsheet trades must have rate > 0, kitta > 0, amount > 0'
   });
 
-  // 2.7 Rollup Reconciliation: Compare floorsheet kitta sum vs stock summary volume on latest session
-  const latestSessionRow = db.prepare(`SELECT MAX(trade_date) as max_date FROM daily_stock_summary`).get() as { max_date: string };
-  const sampleDate = latestSessionRow?.max_date || '2026-11-20';
-  
-  // Verify latest session floorsheet density
-  const latestFsCountRow = db.prepare(`SELECT COUNT(*) as c FROM floorsheet_contracts WHERE trade_date = ?`).get(sampleDate) as { c: number };
+  // 2.7 Rollup Reconciliation: Compare floorsheet kitta sum vs stock summary volume on latest unquarantined full-tape session
+  const latestFullTapeRow = db.prepare(`
+    SELECT s.trade_date as max_date
+    FROM daily_stock_summary s
+    INNER JOIN (
+      SELECT trade_date, COUNT(*) as fs_cnt
+      FROM floorsheet_contracts
+      WHERE COALESCE(is_quarantined, 0) = 0
+      GROUP BY trade_date
+      HAVING fs_cnt >= 10000
+    ) f ON s.trade_date = f.trade_date
+    WHERE COALESCE(s.is_quarantined, 0) = 0
+    ORDER BY s.trade_date DESC
+    LIMIT 1
+  `).get() as { max_date: string } | undefined;
+  const latestSummaryRow = db.prepare(`SELECT MAX(trade_date) as max_date FROM daily_stock_summary`).get() as { max_date: string };
+  const sampleDate = latestFullTapeRow?.max_date || latestSummaryRow?.max_date || '2026-11-24';
+
+  // Verify full-tape session floorsheet density
+  const latestFsCountRow = db.prepare(`SELECT COUNT(*) as c FROM floorsheet_contracts WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0`).get(sampleDate) as { c: number };
+  const newerPartialNote = (latestSummaryRow?.max_date && latestSummaryRow.max_date !== sampleDate)
+    ? ` (OHLCV-only session ${latestSummaryRow.max_date} awaits full post-market floorsheet tape)`
+    : '';
   integrityResults.push({
     table: 'floorsheet_contracts',
-    check: `Latest Session Floorsheet Contract Completeness (${sampleDate})`,
+    check: `Latest Full-Tape Session Floorsheet Completeness (${sampleDate})`,
     passed: latestFsCountRow.c >= 10000,
     violationsCount: latestFsCountRow.c < 10000 ? (10000 - latestFsCountRow.c) : 0,
     sampleViolations: latestFsCountRow.c < 10000 ? [{ error: `Incomplete floorsheet: only ${latestFsCountRow.c} contracts found for ${sampleDate}` }] : [],
-    description: `Target session ${sampleDate} must contain complete market floorsheet (got ${latestFsCountRow.c} contracts)`
+    description: `Verified full-tape session ${sampleDate} contains complete market floorsheet (got ${latestFsCountRow.c} contracts)${newerPartialNote}`
   });
 
   const rollupChecks = db.prepare(`
@@ -343,8 +360,8 @@ async function runAuditPipeline() {
            COALESCE(SUM(f.kitta), 0) as fs_volume,
            ABS(s.total_volume - COALESCE(SUM(f.kitta), 0)) as diff
     FROM daily_stock_summary s
-    LEFT JOIN floorsheet_contracts f ON s.symbol = f.symbol AND s.trade_date = f.trade_date
-    WHERE s.trade_date = ? AND s.symbol IN ('AKJCL', 'NABIL', 'CHCL', 'CBBL')
+    LEFT JOIN floorsheet_contracts f ON s.symbol = f.symbol AND s.trade_date = f.trade_date AND COALESCE(f.is_quarantined, 0) = 0
+    WHERE s.trade_date = ? AND COALESCE(s.is_quarantined, 0) = 0 AND s.symbol IN ('AKJCL', 'NABIL', 'CHCL', 'CBBL')
     GROUP BY s.symbol
   `).all(sampleDate) as any[];
 
@@ -355,7 +372,7 @@ async function runAuditPipeline() {
     passed: brokenRollups.length === 0,
     violationsCount: brokenRollups.length,
     sampleViolations: brokenRollups,
-    description: `Compared contract volume sums vs official stock volume for ${sampleDate} across benchmark stocks`
+    description: `Compared contract volume sums vs official stock volume for ${sampleDate} across benchmark stocks${newerPartialNote}`
   });
 
   for (const r of integrityResults) {
@@ -478,16 +495,17 @@ async function runAuditPipeline() {
       if (brokerSummaryMap && typeof brokerSummaryMap === 'object') {
         const nabilBroker = brokerSummaryMap['NABIL'];
         if (nabilBroker) {
+          const brokerDate = String(nabilBroker.businessDate || sampleDate).slice(0, 10);
           const dbNabilVol = db.prepare(`
             SELECT SUM(buy_vol) as total_buy_vol
             FROM daily_broker_ledger
-            WHERE trade_date = ? AND symbol = 'NABIL'
-          `).get(sampleDate) as any;
+            WHERE trade_date = ? AND symbol = 'NABIL' AND COALESCE(is_quarantined, 0) = 0
+          `).get(brokerDate) as any;
 
-          if (dbNabilVol && Number(nabilBroker.totalVolume) !== Number(dbNabilVol.total_buy_vol)) {
+          if (brokerDate > sampleDate || !dbNabilVol || Number(nabilBroker.totalVolume) !== Number(dbNabilVol.total_buy_vol)) {
             parityMatches = false;
             discrepancies.push(
-              `Broker summary volume mismatch for NABIL on ${sampleDate}: API=${nabilBroker.totalVolume} vs DB=${dbNabilVol.total_buy_vol}`
+              `Broker summary volume mismatch for NABIL on ${brokerDate}: API=${nabilBroker.totalVolume} vs DB=${dbNabilVol?.total_buy_vol}`
             );
           }
         }

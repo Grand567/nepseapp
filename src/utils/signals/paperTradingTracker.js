@@ -14,6 +14,7 @@ import { STATUTORY_FEES } from './backtestEngine.js';
 import { calculateBrokerCommission, calculateSebonFee, DP_CHARGE } from '../calculations.js';
 import { calculateLiquiditySlippage } from '../nepseWalkForwardBacktest.mjs';
 import { evaluateTrailingRatchet, calculateRatchetLevels } from './trailingRatchetEngine.ts';
+import { formatNptDateIso } from '../nepseCalendar.js';
 
 const STORAGE_KEY = 'drabyashree_paper_trading_tracker_v1';
 const INITIAL_PAPER_CAPITAL = 1000000; // Rs. 10 Lakhs virtual equity
@@ -88,7 +89,7 @@ export function extractTriggerSignals(scoringResult) {
  * 1. Log daily stock selection pick (Buy / Watch / Avoid)
  */
 export function recordPaperPick({
-  date = new Date().toISOString().slice(0, 10),
+  date = formatNptDateIso(new Date()),
   stock = {},
   scoringResult = {},
   autoExecuteBuy = true
@@ -160,7 +161,7 @@ export function recordPaperPick({
 /**
  * 2. Process daily market tick & automatically track outcomes (T1, T2, Stop-Loss)
  */
-export function processDailyPaperOutcomes(marketQuotes = {}, currentDate = new Date().toISOString().slice(0, 10)) {
+export function processDailyPaperOutcomes(marketQuotes = {}, currentDate = formatNptDateIso(new Date())) {
   const state = getPaperTrackerState();
   const remainingPositions = [];
 
@@ -405,7 +406,7 @@ export function saveAutoBotConfig(cfg) {
   return { ...memBotConfig };
 }
 
-export function evaluateAutoBotSignals({ signals = [], marketQuotes = {}, date = new Date().toISOString().slice(0, 10) }) {
+export function evaluateAutoBotSignals({ signals = [], marketQuotes = {}, date = formatNptDateIso(new Date()) }) {
   const config = getAutoBotConfig();
   if (!config.enabled) {
     return { executedCount: 0, executedPicks: [], reason: 'Auto-bot mode is currently paused by user.' };

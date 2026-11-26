@@ -17,6 +17,7 @@
     "audit:ui": "node scripts/liveUiAudit.cjs",
     "audit:app": "node scripts/fullAppAudit.mjs",
     "audit:semantic": "node scripts/auditSemanticInvariants.mjs",
+    "audit:live": "node scripts/liveSessionCheck.mjs",
     "audit:prod": "node scripts/fullAppAudit.mjs --prod",
     "audit:hubs": "node tests/audit5RootHubsVerification.test.mjs",
     "audit:all": "npm run audit:static && node tests/audit5RootHubsVerification.test.mjs && node tests/audit13TabsVerification.test.mjs && node tests/auditCrossModuleConsistency.test.mjs && npm run audit:semantic && node --test tests/filesAandBOptimalStorage.test.mjs",

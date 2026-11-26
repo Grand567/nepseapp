@@ -47,8 +47,8 @@ const result = runOHLCVBacktest(candles, rsiStrategy, {
   takeProfitPct: 12,
   includeSebonFee: true,
   includeDpCharge: true,
-  cgtRateShort: 0.075,
-  cgtRateLong: 0.05,
+  cgtRateShort: 0.05,
+  cgtRateLong: 0.0375,
 });
 
 assert(!result.error, `No error on valid candles: ${result.error}`);

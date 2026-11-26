@@ -2,6 +2,13 @@
 // scripts/generate-license.mjs
 // Developer CLI tool to issue single-use, device-bound Pro license keys for customers.
 
+import dotenv from 'dotenv';
+import fs from 'fs';
+dotenv.config();
+if (fs.existsSync('proxy/.env')) {
+  dotenv.config({ path: 'proxy/.env', override: true });
+}
+
 import {
   generateServerLicenseKey as generateLicenseKey,
   cleanDeviceId,

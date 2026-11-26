@@ -532,7 +532,18 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
   const cleanDate = String(tradeDate || '').trim();
   if (!cleanDate) return 0;
 
+  const hasValidBrokers = trades.some((t) => {
+    const b = parseInt(String(t?.buyerMemberId || t?.buyerBroker || t?.buyer_broker || t?.buyer || 0).replace(/^0+/, ''), 10) || 0;
+    const s = parseInt(String(t?.sellerMemberId || t?.sellerBroker || t?.seller_broker || t?.seller || 0).replace(/^0+/, ''), 10) || 0;
+    return b > 0 && s > 0;
+  });
+  if (!hasValidBrokers) {
+    console.warn(`[dailyFloorsheetCollector] Rejecting masked intraday batch (${trades.length} contracts with 0 valid brokers) for ${cleanDate} from EOD SQLite ledger.`);
+    return 0;
+  }
+
   try {
+    const deletePartialContracts = db.prepare(`DELETE FROM floorsheet_contracts WHERE trade_date = ? AND (buyer_broker <= 0 OR seller_broker <= 0 OR COALESCE(is_quarantined, 0) = 1)`);
     const insertContract = db.prepare(`
       INSERT INTO floorsheet_contracts (
         contract_no, symbol, trade_date, trade_time,
@@ -551,7 +562,9 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
         amount = excluded.amount,
         aggressor_side = excluded.aggressor_side,
         is_internal_cross = excluded.is_internal_cross,
-        is_whale_print = excluded.is_whale_print
+        is_whale_print = excluded.is_whale_print,
+        is_quarantined = 0,
+        calendar_status = 'VALID'
     `);
 
     const brokerSummaryMap = new Map(); // key: symbol:brokerId -> { buyVol, sellVol, buyAmt, sellAmt, crossVol }
@@ -559,6 +572,7 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
 
     const tx = db.transaction((rows) => {
       let inserted = 0;
+      deletePartialContracts.run(cleanDate);
       // Sort chronologically (earliest to latest) so open_price and close_price (LTP) are accurately established
       const sortedRows = [...rows].sort((a, b) => {
         const timeA = String(a.tradeTime || a.trade_time || a.contractId || a.contract_no || '');
@@ -574,8 +588,9 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
         const sym = String(t.stockSymbol || t.symbol || '').toUpperCase().trim();
         if (!sym) continue;
 
-        const bBroker = parseInt(String(t.buyerMemberId || t.buyerBroker || t.buyer || 0).replace(/^0+/, ''), 10) || 0;
-        const sBroker = parseInt(String(t.sellerMemberId || t.sellerBroker || t.seller || 0).replace(/^0+/, ''), 10) || 0;
+        const bBroker = parseInt(String(t.buyerMemberId || t.buyerBroker || t.buyer_broker || t.buyer || 0).replace(/^0+/, ''), 10) || 0;
+        const sBroker = parseInt(String(t.sellerMemberId || t.sellerBroker || t.seller_broker || t.seller || 0).replace(/^0+/, ''), 10) || 0;
+        if (bBroker <= 0 || sBroker <= 0) continue;
         const kitta = Math.round(Number(t.contractQuantity ?? t.qty ?? t.quantity ?? t.kitta ?? t.shares ?? 0));
         const rate = Number(t.contractRate ?? t.rate ?? t.price ?? t.executionRate ?? 0);
         const amount = Number(t.contractAmount ?? t.amount ?? (kitta * rate) ?? 0);
@@ -676,11 +691,13 @@ export function ingestContractsToLedger(tradeDate, trades = []) {
     console.log(`[dailyFloorsheetCollector] Ingested ${totalInserted} contracts into drabyashree_ledger.db for ${cleanDate}.`);
 
     // Automatically recalculate and sync cumulative broker ledger JSON for frontend / offline APK
-    try {
-      syncBrokerAllTimeAndVaultFiles(db);
-      exportCumulativeBrokerLedger(db);
-    } catch (exportErr) {
-      console.warn('[dailyFloorsheetCollector] Auto-export cumulative ledger warning:', exportErr.message);
+    if (process.env.NEPSE_SKIP_STATIC_EXPORTS !== '1') {
+      try {
+        syncBrokerAllTimeAndVaultFiles(db);
+        exportCumulativeBrokerLedger(db);
+      } catch (exportErr) {
+        console.warn('[dailyFloorsheetCollector] Auto-export cumulative ledger warning:', exportErr.message);
+      }
     }
 
     return totalInserted;
@@ -729,28 +746,39 @@ export async function downloadAndArchiveDailyFloorsheet(dateStr = '', options = 
           try { if (fs.existsSync(gzFilePath)) fs.unlinkSync(gzFilePath); } catch (_) {}
           // Fall through to re-fetch below
         } else {
-          // ── Ensure floorsheet_contracts and daily_stock_summary are populated and in parity ──
-          if (db && cachedTrades.length > 0) {
-            const existingContracts = db.prepare(
-              'SELECT COUNT(*) as c FROM floorsheet_contracts WHERE trade_date = ?'
-            ).get(targetDate);
-            const existingSummary = db.prepare(
-              'SELECT COUNT(*) as c FROM daily_stock_summary WHERE trade_date = ?'
-            ).get(targetDate);
+          const fileHasValidBrokers = cachedTrades.some((t) => {
+            const b = parseInt(String(t?.buyerMemberId || t?.buyerBroker || t?.buyer_broker || t?.buyer || 0).replace(/^0+/, ''), 10) || 0;
+            const s = parseInt(String(t?.sellerMemberId || t?.sellerBroker || t?.seller_broker || t?.seller || 0).replace(/^0+/, ''), 10) || 0;
+            return b > 0 && s > 0;
+          });
+          if (!fileHasValidBrokers || cachedTrades.length < 1000) {
+            console.warn(`[dailyFloorsheetCollector] Ignoring partial/masked cached archive (${cachedTrades.length} rows, validBrokers=${fileHasValidBrokers}) for ${targetDate} — re-fetching full EOD.`);
+            try { fs.unlinkSync(jsonFilePath); } catch (_) {}
+            try { if (fs.existsSync(gzFilePath)) fs.unlinkSync(gzFilePath); } catch (_) {}
+          } else {
+            // ── Ensure floorsheet_contracts and daily_stock_summary are populated and in parity ──
+            if (db && cachedTrades.length > 0) {
+              const existingContracts = db.prepare(
+                'SELECT COUNT(*) as c FROM floorsheet_contracts WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0'
+              ).get(targetDate);
+              const existingSummary = db.prepare(
+                'SELECT COUNT(*) as c FROM daily_stock_summary WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0'
+              ).get(targetDate);
 
-            if (!existingContracts || existingContracts.c === 0 || existingContracts.c !== cachedTrades.length || !existingSummary || existingSummary.c === 0) {
-              console.log(`[dailyFloorsheetCollector] Ledger parity check failed (Contracts: ${existingContracts?.c}/${cachedTrades.length}, Summaries: ${existingSummary?.c}) for ${targetDate} — re-ingesting ${cachedTrades.length} cached contracts to reconcile ground truth...`);
-              ingestContractsToLedger(targetDate, cachedTrades);
+              if (!existingContracts || existingContracts.c === 0 || existingContracts.c !== cachedTrades.length || !existingSummary || existingSummary.c === 0) {
+                console.log(`[dailyFloorsheetCollector] Ledger parity check failed (Contracts: ${existingContracts?.c}/${cachedTrades.length}, Summaries: ${existingSummary?.c}) for ${targetDate} — re-ingesting ${cachedTrades.length} cached contracts to reconcile ground truth...`);
+                ingestContractsToLedger(targetDate, cachedTrades);
+              }
             }
+            return {
+              success: true,
+              date: targetDate,
+              tradeCount: cachedTrades.length,
+              filePath: jsonFilePath,
+              gzFilePath,
+              cached: true
+            };
           }
-          return {
-            success: true,
-            date: targetDate,
-            tradeCount: cachedTrades.length,
-            filePath: jsonFilePath,
-            gzFilePath,
-            cached: true
-          };
         }
       }
     } catch (_) {}
@@ -799,11 +827,11 @@ export async function downloadAndArchiveDailyFloorsheet(dateStr = '', options = 
           is_internal_cross AS isInternalCross,
           is_whale_print AS isWhalePrint
         FROM floorsheet_contracts
-        WHERE trade_date = ?
+        WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0
         ORDER BY contract_no ASC
       `).all(targetDate);
 
-      if (ledgerRows.length > 0) {
+      if (ledgerRows.length >= 1000) {
         trades = ledgerRows;
         console.log(`[dailyFloorsheetCollector] Retrieved ${trades.length} trades from drabyashree_ledger.db for ${targetDate}.`);
       }
@@ -818,6 +846,22 @@ export async function downloadAndArchiveDailyFloorsheet(dateStr = '', options = 
       success: false,
       date: targetDate,
       error: `No floorsheet trades available for session ${targetDate}`
+    };
+  }
+
+  const hasValidBrokers = trades.some((t) => {
+    const b = parseInt(String(t?.buyerMemberId || t?.buyerBroker || t?.buyer_broker || t?.buyer || 0).replace(/^0+/, ''), 10) || 0;
+    const s = parseInt(String(t?.sellerMemberId || t?.sellerBroker || t?.seller_broker || t?.seller || 0).replace(/^0+/, ''), 10) || 0;
+    return b > 0 && s > 0;
+  });
+  if (!hasValidBrokers) {
+    console.warn(`[dailyFloorsheetCollector] Refusing to persist/ingest masked partial batch (${trades.length} rows, 0 valid brokers) for ${targetDate}.`);
+    return {
+      success: false,
+      date: targetDate,
+      tradeCount: trades.length,
+      partialMasked: true,
+      error: `Masked intraday/partial batch (${trades.length} contracts with 0 valid brokers)`
     };
   }
 

@@ -13,7 +13,7 @@ export function WatchlistScreener({ onSelectScrip, lang = 'ne', stocks = [] }) {
       name: "नबिल बैंक लिमिटेड",
       enName: "Nabil Bank Ltd.",
       sector: "Bank",
-      ltp: 585.00,
+      ltp: 0,
       change: 1.92,
       changeAmt: "+11.00",
       dayLow: 574.00,

@@ -129,7 +129,7 @@ function enrichFloorsheetContracts(rawRows, fallbackSymbol) {
   const enriched = chronological.map((row, idx) => {
     const contractNo = String(row.contractNo ?? row.contract_no ?? row.contractId ?? `FS-${idx + 1}`);
     const symbol = String(row.symbol || row.stockSymbol || fallbackSymbol || 'NEPSE').toUpperCase();
-    const tradeDate = String(row.tradeDate ?? row.trade_date ?? row.businessDate ?? new Date().toISOString().slice(0, 10));
+    const tradeDate = String(row.tradeDate ?? row.trade_date ?? row.businessDate ?? formatNptDateIso(new Date()));
     const tradeTime = String(row.tradeTime ?? row.trade_time ?? '');
     const buyerBroker = Math.round(safeNum(row.buyerBroker ?? row.buyer_broker ?? row.buyerMemberId ?? row.buyer, 0));
     const sellerBroker = Math.round(safeNum(row.sellerBroker ?? row.seller_broker ?? row.sellerMemberId ?? row.seller, 0));
@@ -197,7 +197,7 @@ export async function handleFloorsheetHub(req, res) {
     const limit = Math.min(1000, Math.max(50, Math.round(safeNum(req.query.limit, 350))));
 
     let rawContracts = [];
-    let asOfDate = new Date().toISOString().slice(0, 10);
+    let asOfDate = formatNptDateIso(new Date());
     let source = 'EMPTY';
     let availableDates = [];
 
@@ -581,7 +581,7 @@ export async function handleFloorsheetHub(req, res) {
   } catch (err) {
     return res.status(200).json({
       ok: false,
-      asOfDate: new Date().toISOString().slice(0, 10),
+      asOfDate: formatNptDateIso(new Date()),
       availableDates: [],
       source: 'EMPTY',
       error: err instanceof Error ? err.message : 'Failed to load Floorsheet Hub',

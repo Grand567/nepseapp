@@ -90,6 +90,7 @@ export async function saveEncryptedUserProfiles(profiles = [], userId = null) {
   const list = Array.isArray(profiles) ? profiles : [];
   const encrypted = await Promise.all(list.map(p => encryptProfileVault(p, uid)));
   safeStorageSetItem(key, JSON.stringify(encrypted));
+  syncCachedHoldingsSummary(list, uid);
 
   if (typeof window !== 'undefined') {
     try {
@@ -97,6 +98,88 @@ export async function saveEncryptedUserProfiles(profiles = [], userId = null) {
     } catch (_) {}
   }
   return encrypted;
+}
+
+export function getHoldingsSummaryStorageKey(userId = null) {
+  return `nepse_hub_${resolveActiveUserId(userId)}_holdings_summary`;
+}
+
+/**
+ * Persists a non-secret holding summary for fast synchronous portfolio lookup across modules.
+ */
+export function syncCachedHoldingsSummary(profiles = [], userId = null) {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const key = getHoldingsSummaryStorageKey(userId);
+    const summaryProfiles = (Array.isArray(profiles) ? profiles : [])
+      .filter((p) => p && typeof p === 'object')
+      .map((p) => ({
+        id: p.id || null,
+        name: p.name || 'Account',
+        dpName: p.dpName || '',
+        lastSyncedAt: p.lastSyncedAt || null,
+        holdings: (Array.isArray(p.holdings) ? p.holdings : [])
+          .map((h) => ({
+            symbol: String(h?.symbol || h?.scrip || h?.script || '').toUpperCase().trim(),
+            kitta: Number(h?.kitta ?? h?.units ?? h?.qty ?? 0),
+            wacc: Number(h?.wacc || 0)
+          }))
+          .filter((h) => h.symbol && h.kitta > 0)
+      }));
+    localStorage.setItem(key, JSON.stringify(summaryProfiles));
+    return summaryProfiles;
+  } catch (_) {
+    return [];
+  }
+}
+
+/**
+ * Synchronously reads cached portfolio profiles/holdings for the active user vault,
+ * gracefully falling back to legacy keys only when no active summary exists.
+ */
+export function readCanonicalPortfolioSymbolsSync(userId = null) {
+  const symbols = new Set();
+  const profilesOut = [];
+  if (typeof localStorage === 'undefined') return { symbols, profiles: profilesOut };
+
+  const uid = resolveActiveUserId(userId);
+  const candidateKeys = [
+    getHoldingsSummaryStorageKey(uid),
+    getUserProfileStorageKey(uid),
+    `nepse_hub_${uid}_transactions`,
+    'nepse_portfolio_profiles',
+    'nepse_portfolio_holdings',
+    'nepse_portfolio',
+    'nepse_portfolio_v1'
+  ];
+
+  for (const key of candidateKeys) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        if (profilesOut.length === 0) profilesOut.push(...parsed);
+        for (const item of parsed) {
+          if (Array.isArray(item?.holdings)) {
+            for (const h of item.holdings) {
+              const sym = String(h?.symbol || h?.scrip || h?.script || '').toUpperCase().trim();
+              const kitta = Number(h?.kitta ?? h?.units ?? h?.qty ?? 1);
+              if (sym && sym !== 'NEPSE' && kitta > 0) symbols.add(sym);
+            }
+          } else {
+            const sym = String(typeof item === 'string' ? item : (item?.symbol || item?.scrip || '')).toUpperCase().trim();
+            if (sym && sym !== 'NEPSE') symbols.add(sym);
+          }
+        }
+        if (symbols.size > 0 && (key === candidateKeys[0] || key === candidateKeys[1])) {
+          break;
+        }
+      }
+    } catch (_) {}
+  }
+
+  return { symbols, profiles: profilesOut };
 }
 
 /**
@@ -111,6 +194,9 @@ export function clearSensitiveStorageOnSignOut(userId = null) {
   } catch (_) {}
   try {
     if (typeof localStorage !== 'undefined') {
+      if (userId) {
+        localStorage.removeItem(getHoldingsSummaryStorageKey(userId));
+      }
       for (const k of SENSITIVE_SIGN_OUT_KEYS) {
         localStorage.removeItem(k);
       }

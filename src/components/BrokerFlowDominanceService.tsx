@@ -6,9 +6,37 @@ import { fetchBrokerAnalysis, fetchBrokerHeatmap, fetchBrokerHoldings } from '..
 import { exportMarketBrokerSurveillance } from '../utils/floorsheetExport';
 import { StatCard, InfoBanner, Insight, Spinner, TimeframeFilterBar } from './ui';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json';
-import historicalMatricesSeed from '../data/broker_matrices_historical.json';
-import allTimeBrokerHoldingsSeed from '../data/broker_holdings_alltime.json';
 import SessionDateDropdown from './SessionDateDropdown';
+
+let _histMatricesCache: Record<string, any> | null = null;
+let _histMatricesPromise: Promise<Record<string, any> | null> | null = null;
+async function loadHistoricalMatricesSeed(): Promise<Record<string, any> | null> {
+  if (_histMatricesCache) return _histMatricesCache;
+  if (!_histMatricesPromise) {
+    _histMatricesPromise = import('../data/broker_matrices_historical.json')
+      .then((m) => {
+        _histMatricesCache = (m?.default || m || {}) as Record<string, any>;
+        return _histMatricesCache;
+      })
+      .catch(() => null);
+  }
+  return _histMatricesPromise;
+}
+
+let _allTimeHoldingsCache: Record<string, any> | null = null;
+let _allTimeHoldingsPromise: Promise<Record<string, any> | null> | null = null;
+async function loadAllTimeHoldingsSeed(): Promise<Record<string, any> | null> {
+  if (_allTimeHoldingsCache) return _allTimeHoldingsCache;
+  if (!_allTimeHoldingsPromise) {
+    _allTimeHoldingsPromise = import('../data/broker_holdings_alltime.json')
+      .then((m) => {
+        _allTimeHoldingsCache = (m?.default || m || {}) as Record<string, any>;
+        return _allTimeHoldingsCache;
+      })
+      .catch(() => null);
+  }
+  return _allTimeHoldingsPromise;
+}
 
 export function formatNepaliCurrency(amt: number): string {
   const abs = Math.abs(amt);
@@ -147,13 +175,7 @@ export function BrokerFlowDominanceService({
   const [smartMoneyFilter, setSmartMoneyFilter] = useState<'ALL' | 'ACCUMULATION' | 'TRAP' | 'RETAIL'>('ALL');
   const [stocks, setStocks] = useState<any[]>([]);
   const [floorsheet, setFloorsheet] = useState<any[]>([]);
-  const [heatmapData, setHeatmapData] = useState<any>(() => {
-    const initDate = selectedDate || date;
-    if (initDate && (historicalMatricesSeed as any)?.[initDate]) {
-      return (historicalMatricesSeed as any)[initDate];
-    }
-    return latestBrokerMatrix || null;
-  });
+  const [heatmapData, setHeatmapData] = useState<any>(() => latestBrokerMatrix || null);
   const [fetchedDates, setFetchedDates] = useState<string[]>([]);
   const [selectedBrokerModal, setSelectedBrokerModal] = useState<BrokerStat | null>(null);
   const [selectedTop10BrokerId, setSelectedTop10BrokerId] = useState<string>('58');
@@ -405,8 +427,9 @@ export function BrokerFlowDominanceService({
 
     const reqSeq = ++brokerRetSeqRef.current;
     const effDate = asOfDate !== undefined ? asOfDate : (sessionDateFilter || '');
-    // Use seed fallback so broker holdings render instantly (0ms) without waiting for network
-    const seed = !effDate ? ((allTimeBrokerHoldingsSeed as Record<string, any>)?.[targetId] || null) : null;
+    // Use dynamic seed fallback only when needed without bloating initial bundle
+    const allTimeHoldingsMap = !effDate ? await loadAllTimeHoldingsSeed() : null;
+    const seed = !effDate ? (allTimeHoldingsMap?.[targetId] || null) : null;
     if (seed && (!brokerRetentionData || String(brokerRetentionData.brokerId || '').replace(/^0+/, '') !== targetId.replace(/^0+/, ''))) {
       setBrokerRetentionData(seed);
     }
@@ -664,8 +687,9 @@ export function BrokerFlowDominanceService({
       const days = DAYS_MAP[activeTf] || 1;
       const effDate = targetDate || sessionDate || latestTradingSession(new Date(), !isMarketOpen(new Date()));
 
-      // Immediate local baseline switch (0ms) from pre-compiled historical matrices (ONLY when 1D and date matches)
-      const histSeed = (days === 1 && effDate) ? (historicalMatricesSeed as any)?.[effDate] : null;
+      // Immediate local baseline switch (0ms) from dynamically loaded historical matrices (ONLY when 1D and date matches)
+      const histMatricesMap = (days === 1 && effDate) ? await loadHistoricalMatricesSeed() : null;
+      const histSeed = (days === 1 && effDate && histMatricesMap) ? histMatricesMap[effDate] : null;
       const histList: any[] = Array.isArray(histSeed?.matrix)
         ? histSeed.matrix
         : (histSeed?.matrix && typeof histSeed.matrix === 'object' ? Object.values(histSeed.matrix) : []);

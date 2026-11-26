@@ -49,8 +49,8 @@ export const DEFAULT_FRICTION_CONSTANTS = {
   brokerCommissionRate: 0.0033, // 0.33% average tiered schedule
   sebonFeeRate: 0.00015,        // 0.015% per leg
   dpCharge: 25,                 // NPR 25 per leg
-  cgtRate: 0.075,               // Statutory 7.5% Short-Term retail CGT (<= 365 days)
-  cgtLongTermRate: 0.050,       // Statutory 5.0% Long-Term retail CGT (> 365 days)
+  cgtRate: 0.05,                // Statutory 5.0% Short-Term retail CGT (<= 365 days)
+  cgtLongTermRate: 0.0375,      // Statutory 3.75% Long-Term retail CGT (> 365 days)
   slippageBufferRate: 0.0025    // 0.25% execution slippage buffer
 };
 
@@ -435,7 +435,7 @@ export function calculateNetExpectancyAndSizing({
   const brokerRate = friction.brokerCommissionRate ?? 0.0033;
   const sebonRate = friction.sebonFeeRate ?? 0.00015;
   const dpCharge = friction.dpCharge ?? 25;
-  const cgtRate = isLongTerm ? 0.075 : (friction.cgtRate ?? 0.100);
+  const cgtRate = isLongTerm ? (friction.cgtLongTermRate ?? 0.0375) : (friction.cgtRate ?? 0.05);
   const slipRate = friction.slippageBufferRate ?? 0.0045;
 
   const buyCostFriction = entry * (brokerRate + sebonRate + slipRate);
@@ -1228,7 +1228,7 @@ export function formatInstitutionalExecutionTicket(d) {
     `• Hard Stop-Loss: Rs. ${sl} (-${slPct}% | 1.75x ATR)`,
     `• Target 1 (Conservative): Rs. ${t1} (+${t1Pct}%)`,
     `• Target 2 (Runner): Rs. ${t2} (+${t2Pct}%)`,
-    `• Net Post-Tax/Fee RRR: <b>${netRRR} : 1</b> (Includes 7.5% CGT &amp; Broker Fees)`,
+    `• Net Post-Tax/Fee RRR: <b>${netRRR} : 1</b> (Includes 5.0% CGT &amp; Broker Fees)`,
     ``,
     `🛡️ <b>POSITION SIZING &amp; LIQUIDITY GUARD</b>`,
     `• Risk Cap: 1.0% Portfolio Risk per Trade`,
@@ -1251,7 +1251,7 @@ export function formatInstitutionalExecutionTicket(d) {
     `• Hard Stop-Loss: Rs. ${sl} (-${slPct}% | 1.75x ATR)`,
     `• Target 1 (Conservative): Rs. ${t1} (+${t1Pct}%)`,
     `• Target 2 (Runner): Rs. ${t2} (+${t2Pct}%)`,
-    `• Net Post-Tax/Fee RRR: ${netRRR} : 1 (Includes 7.5% CGT & Broker Fees)`,
+    `• Net Post-Tax/Fee RRR: ${netRRR} : 1 (Includes 5.0% CGT & Broker Fees)`,
     ``,
     `🛡️ POSITION SIZING & LIQUIDITY GUARD`,
     `• Risk Cap: 1.0% Portfolio Risk per Trade`,
