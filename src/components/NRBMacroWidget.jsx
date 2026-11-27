@@ -87,6 +87,9 @@ export function buildBaselineNrbMacroData(overrides = {}) {
   const cdRatio = pickPositive(rawRegime.cdRatio, mp?.cdRatio?.value, 81.5);
   const normalizedRegime = classifyNrbMacroRegime(ibor, repo, cdRatio);
 
+  // Keep server-authoritative regime atomically when all 3 fields are present; otherwise use normalizedRegime atomically
+  const hasServerRegime = Boolean(rawRegime.regime && rawRegime.regimeScore != null && rawRegime.regimeGuidance);
+
   return {
     liveDataAvailable: Boolean(overrides?.liveDataAvailable),
     source: overrides?.source || 'NRB Monetary Baseline Vault',
@@ -94,12 +97,12 @@ export function buildBaselineNrbMacroData(overrides = {}) {
     macroRegime: {
       ...normalizedRegime,
       ...rawRegime,
-      regime: normalizedRegime.regime,
+      regime: hasServerRegime ? rawRegime.regime : normalizedRegime.regime,
       interbankRate: normalizedRegime.interbankRate,
       policyRepoRate: normalizedRegime.policyRepoRate,
       cdRatio: normalizedRegime.cdRatio,
-      regimeScore: rawRegime.regimeScore ?? normalizedRegime.regimeScore,
-      regimeGuidance: rawRegime.regimeGuidance || normalizedRegime.regimeGuidance,
+      regimeScore: hasServerRegime ? rawRegime.regimeScore : normalizedRegime.regimeScore,
+      regimeGuidance: hasServerRegime ? rawRegime.regimeGuidance : normalizedRegime.regimeGuidance,
     },
     monetaryPolicy: {
       interbankRate: { value: normalizedRegime.interbankRate, isLive: Boolean(mp?.interbankRate?.isLive) },

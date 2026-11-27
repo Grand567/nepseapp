@@ -165,17 +165,18 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
     (c) => c.iso3 === selectedCurrency
   );
 
-  const calculateConverted = () => {
-    if (!activeCurrencyRate) return 0;
+  const calculateConverted = (): number | null => {
+    if (!activeCurrencyRate) return null;
     const amount = parseFloat(converterAmount) || 0;
     const unit = parseFloat(activeCurrencyRate.unit) || 1;
     const buyRate = parseFloat(activeCurrencyRate.buy) || 0;
     const sellRate = parseFloat(activeCurrencyRate.sell) || buyRate;
 
     if (converterDirection === 'to_npr') {
+      if (buyRate <= 0) return null;
       return (amount / unit) * buyRate;
     } else {
-      if (sellRate <= 0) return 0;
+      if (sellRate <= 0) return null;
       return (amount / sellRate) * unit;
     }
   };
@@ -316,8 +317,11 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
               <div className="rounded-xl border border-emerald-800/60 bg-emerald-950/40 p-3 text-center flex flex-col justify-center">
                 <span className="text-[11px] font-semibold text-slate-400">Calculated Equivalent</span>
                 <span className="text-xl font-black font-mono text-emerald-400">
-                  {converterDirection === 'to_npr' ? 'Rs. ' : `${selectedCurrency} `}
-                  {calculateConverted().toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
+                  {(() => {
+                    const converted = calculateConverted();
+                    if (converted == null) return '—';
+                    return `${converterDirection === 'to_npr' ? 'Rs. ' : `${selectedCurrency} `}${converted.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+                  })()}
                 </span>
               </div>
             </div>
@@ -588,13 +592,13 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
                 <h4 className="font-bold text-sm">Fine Gold 24K (छापावाल सुन)</h4>
               </div>
               <div className="text-3xl font-black font-mono text-amber-300">
-                {bullionData?.fineGold24k?.tola != null ? `Rs. ${bullionData.fineGold24k.tola.toLocaleString()}` : (bullionLoading ? 'Syncing…' : 'Unavailable')}
+                {Number(bullionData?.fineGold24k?.tola) > 0 ? `Rs. ${Number(bullionData.fineGold24k.tola).toLocaleString()}` : (bullionLoading ? 'Syncing…' : 'Unavailable')}
               </div>
               <div className="text-xs text-slate-400 mt-1">per tola (11.664 grams)</div>
               <div className="mt-4 pt-3 border-t border-amber-900/40 flex justify-between text-xs">
                 <span className="text-slate-400">Per 10 Grams:</span>
                 <span className="font-bold font-mono text-amber-200">
-                  {bullionData?.fineGold24k?.per10g != null ? `Rs. ${bullionData.fineGold24k.per10g.toLocaleString()}` : '—'}
+                  {Number(bullionData?.fineGold24k?.per10g) > 0 ? `Rs. ${Number(bullionData.fineGold24k.per10g).toLocaleString()}` : '—'}
                 </span>
               </div>
             </div>
@@ -605,13 +609,13 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
                 <h4 className="font-bold text-sm">Tejabi Gold (तेजाबी सुन)</h4>
               </div>
               <div className="text-3xl font-black font-mono text-yellow-300">
-                {bullionData?.tejabiGold?.tola != null ? `Rs. ${bullionData.tejabiGold.tola.toLocaleString()}` : (bullionLoading ? 'Syncing…' : 'Unavailable')}
+                {Number(bullionData?.tejabiGold?.tola) > 0 ? `Rs. ${Number(bullionData.tejabiGold.tola).toLocaleString()}` : (bullionLoading ? 'Syncing…' : 'Unavailable')}
               </div>
               <div className="text-xs text-slate-400 mt-1">per tola (11.664 grams)</div>
               <div className="mt-4 pt-3 border-t border-yellow-900/40 flex justify-between text-xs">
                 <span className="text-slate-400">Per 10 Grams:</span>
                 <span className="font-bold font-mono text-yellow-200">
-                  {bullionData?.tejabiGold?.per10g != null ? `Rs. ${bullionData.tejabiGold.per10g.toLocaleString()}` : '—'}
+                  {Number(bullionData?.tejabiGold?.per10g) > 0 ? `Rs. ${Number(bullionData.tejabiGold.per10g).toLocaleString()}` : '—'}
                 </span>
               </div>
             </div>
@@ -622,13 +626,13 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
                 <h4 className="font-bold text-sm">Silver (चाँदी)</h4>
               </div>
               <div className="text-3xl font-black font-mono text-slate-200">
-                {bullionData?.silver?.tola != null ? `Rs. ${bullionData.silver.tola.toLocaleString()}` : (bullionLoading ? 'Syncing…' : 'Unavailable')}
+                {Number(bullionData?.silver?.tola) > 0 ? `Rs. ${Number(bullionData.silver.tola).toLocaleString()}` : (bullionLoading ? 'Syncing…' : 'Unavailable')}
               </div>
               <div className="text-xs text-slate-400 mt-1">per tola (11.664 grams)</div>
               <div className="mt-4 pt-3 border-t border-slate-800 flex justify-between text-xs">
                 <span className="text-slate-400">Per 10 Grams:</span>
                 <span className="font-bold font-mono text-slate-300">
-                  {bullionData?.silver?.per10g != null ? `Rs. ${bullionData.silver.per10g.toLocaleString()}` : '—'}
+                  {Number(bullionData?.silver?.per10g) > 0 ? `Rs. ${Number(bullionData.silver.per10g).toLocaleString()}` : '—'}
                 </span>
               </div>
             </div>

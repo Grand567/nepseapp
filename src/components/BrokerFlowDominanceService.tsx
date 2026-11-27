@@ -795,17 +795,10 @@ export function BrokerFlowDominanceService({
     loadData(timeframe, sessionDateFilter, fromDate, toDate);
   }, [timeframe, sessionDateFilter, fromDate, toDate]);
 
-  // ── Intraday Auto-Refresh (2 min during NEPSE market hours 11:00 AM – 3:00 PM NPT) ──
+  // ── Intraday Auto-Refresh (2 min during NEPSE Mon–Fri market hours 11:00 AM – 3:00 PM NPT) ──
   useEffect(() => {
-    const isNepseMarketOpen = () => {
-      const now = new Date();
-      const utcMins = now.getUTCHours() * 60 + now.getUTCMinutes();
-      const nptMins = (utcMins + 5 * 60 + 45) % (24 * 60); // UTC+5:45
-      // NEPSE Continuous session: 11:00 AM (660) – 3:00 PM (900)
-      return nptMins >= 660 && nptMins <= 900;
-    };
     const intervalId = setInterval(() => {
-      if (isNepseMarketOpen()) {
+      if (isMarketOpen(new Date())) {
         loadData(timeframe, sessionDateFilter, fromDate, toDate);
       }
     }, 2 * 60 * 1000); // every 2 minutes for fast dynamic updates
@@ -950,6 +943,11 @@ export function BrokerFlowDominanceService({
           else if (netFlow < 0) bias = 'Distribution';
         }
 
+        const topHoldingsTillNow = [...allScrips]
+          .filter(s => (s.cumHoldQty || s.netQty || 0) > 0)
+          .sort((x, y) => (y.cumHoldQty || y.netQty || 0) - (x.cumHoldQty || x.netQty || 0))
+          .slice(0, 10);
+
         list.push({
           brokerId: bId,
           brokerName: name,
@@ -959,6 +957,8 @@ export function BrokerFlowDominanceService({
           topStock: b.topStock || topStock || '—',
           totalTrades: Number(b.totalTrades || b.trades || Math.round((buyAmount + sellAmount) / 120000)) || 1,
           bias,
+          scrips: allScrips.length > 0 ? allScrips : undefined,
+          topHoldingsTillNow: topHoldingsTillNow.length > 0 ? topHoldingsTillNow : undefined,
           topScrips: topScrips.length > 0 ? topScrips : undefined,
           topAccumulation: topAccumulation.length > 0 ? topAccumulation : undefined,
           topDistribution: topDistribution.length > 0 ? topDistribution : undefined,
@@ -1083,6 +1083,11 @@ export function BrokerFlowDominanceService({
         else if (netFlow < -8000000) bias = 'Heavy Selling';
         else if (netFlow < 0) bias = 'Distribution';
 
+        const topHoldingsTillNow = [...allScrips]
+          .filter(s => (s.cumHoldQty || s.netQty || 0) > 0)
+          .sort((x, y) => (y.cumHoldQty || y.netQty || 0) - (x.cumHoldQty || x.netQty || 0))
+          .slice(0, 10);
+
         list.push({
           brokerId: bId,
           brokerName: name,
@@ -1092,6 +1097,8 @@ export function BrokerFlowDominanceService({
           topStock: topStock || '—',
           totalTrades,
           bias,
+          scrips: allScrips.length > 0 ? allScrips : undefined,
+          topHoldingsTillNow: topHoldingsTillNow.length > 0 ? topHoldingsTillNow : undefined,
           topScrips: topScrips.length > 0 ? topScrips : undefined,
           topAccumulation: topAccumulation.length > 0 ? topAccumulation : undefined,
           topDistribution: topDistribution.length > 0 ? topDistribution : undefined,

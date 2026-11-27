@@ -537,8 +537,14 @@ export default function IPOList({ initialTab = 'apply', userId = null }) {
     try {
 
     if (isNative) {
-      // Direct sequential submission on Android
-      const MEROSHARE_BASE = 'https://backend.cdsc.com.np/api/meroShare';
+      // Direct sequential submission on Android via CapacitorHttp (bypasses WebView CORS & forbidden Origin/Referer headers)
+      const MEROSHARE_BASE = 'https://webbackend.cdsc.com.np/api/meroShare';
+      const baseHeaders = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Origin': 'https://meroshare.cdsc.com.np',
+        'Referer': 'https://meroshare.cdsc.com.np/',
+      };
       const results = [];
       const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -547,67 +553,82 @@ export default function IPOList({ initialTab = 'apply', userId = null }) {
         if (i > 0) await sleep(3000);
 
         try {
-          // Resolve clientId (offline 16-digit BOID prefix first, network fallback second)
-          let clientId = 101;
+          // Resolve clientId from MeroShare capital list using 5-digit DP code
+          let clientId = Number(acc.clientId) || 101;
           const boidStr = String(acc.boid || '').trim();
           if (boidStr.length === 16) {
-            const resolved = parseInt(boidStr.substring(3, 8), 10);
-            if (!isNaN(resolved) && resolved >= 100 && resolved <= 400) {
-              clientId = resolved;
-            }
-          }
-          if (clientId === 101) {
             try {
-              const dpRes = await fetch(`${MEROSHARE_BASE}/capital/`);
-              if (dpRes.ok) {
-                const dpData = await dpRes.json();
-                if (Array.isArray(dpData)) {
-                  const fullPrefix = boidStr.substring(0, 8);
-                  const shortPrefix = boidStr.substring(3, 8);
-                  const match = dpData.find(dp => dp.code === fullPrefix || dp.code === shortPrefix);
-                  if (match) clientId = match.id;
-                }
+              const dpRes = await CapacitorHttp.request({
+                url: `${MEROSHARE_BASE}/capital/`,
+                method: 'GET',
+                headers: baseHeaders,
+                connectTimeout: 10000,
+                readTimeout: 10000,
+              });
+              const dpData = parseSafeJsonBody(dpRes?.data);
+              if (dpRes.status >= 200 && dpRes.status < 300 && Array.isArray(dpData)) {
+                const fullPrefix = boidStr.substring(0, 8);
+                const shortPrefix = boidStr.substring(3, 8);
+                const match = dpData.find(dp => String(dp.code) === fullPrefix || String(dp.code) === shortPrefix);
+                if (match?.id) clientId = Number(match.id);
               }
             } catch (_) {}
           }
 
           // Login
-          const loginRes = await fetch(`${MEROSHARE_BASE}/auth/`, {
+          const loginRes = await CapacitorHttp.request({
+            url: `${MEROSHARE_BASE}/auth/`,
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Origin': 'https://meroshare.cdsc.com.np', 'Referer': 'https://meroshare.cdsc.com.np/' },
-            body: JSON.stringify({ clientId: Number(clientId), username: acc.username, password: acc.password }),
+            headers: baseHeaders,
+            data: { clientId: Number(clientId), username: acc.username, password: acc.password },
+            connectTimeout: 12000,
+            readTimeout: 12000,
           });
-          const loginData = await loginRes.json();
-          if (!loginRes.ok) throw new Error(loginData.message || `Login failed (${loginRes.status})`);
+          const loginData = parseSafeJsonBody(loginRes?.data) || {};
+          if (loginRes.status < 200 || loginRes.status >= 300) {
+            throw new Error(loginData.message || `Login failed (${loginRes.status})`);
+          }
 
-          const authKey = [...loginRes.headers.keys()].find(k => k.toLowerCase() === 'authorization');
-          let token = loginData.token || loginData.accessToken || (authKey ? loginRes.headers.get(authKey) : null);
-          if (token && !token.startsWith('Bearer ')) token = `Bearer ${token}`;
+          const respHeaders = loginRes.headers || {};
+          const authKey = Object.keys(respHeaders).find(k => k.toLowerCase() === 'authorization');
+          let token = loginData.token || loginData.accessToken || (authKey ? respHeaders[authKey] : null);
+          if (token && !String(token).startsWith('Bearer ')) token = `Bearer ${token}`;
           if (!token) throw new Error('No auth token received.');
 
           // Get application template
-          const detailRes = await fetch(`${MEROSHARE_BASE}/applicableIssue/applicable/detail/${selectedIpo}`, {
-            headers: { 'Authorization': token, 'Origin': 'https://meroshare.cdsc.com.np', 'Referer': 'https://meroshare.cdsc.com.np/' },
+          const detailRes = await CapacitorHttp.request({
+            url: `${MEROSHARE_BASE}/applicableIssue/applicable/detail/${selectedIpo}`,
+            method: 'GET',
+            headers: { ...baseHeaders, 'Authorization': token },
+            connectTimeout: 12000,
+            readTimeout: 12000,
           });
-          if (!detailRes.ok) throw new Error(`Template fetch failed (${detailRes.status})`);
-          const template = await detailRes.json();
+          if (detailRes.status < 200 || detailRes.status >= 300) {
+            throw new Error(`Template fetch failed (${detailRes.status})`);
+          }
+          const template = parseSafeJsonBody(detailRes?.data);
           if (!template) throw new Error('No ASBA template found for this account.');
 
           // Submit
-          const submitRes = await fetch(`${MEROSHARE_BASE}/applicantForm/`, {
+          const submitRes = await CapacitorHttp.request({
+            url: `${MEROSHARE_BASE}/applicantForm/`,
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': token, 'Origin': 'https://meroshare.cdsc.com.np', 'Referer': 'https://meroshare.cdsc.com.np/' },
-            body: JSON.stringify({
+            headers: { ...baseHeaders, 'Authorization': token },
+            data: {
               ...template,
               appliedKitta: Number(appliedKitta),
               crnNumber: acc.crn?.trim(),
               transactionPin: acc.pin?.trim(),
               boid: acc.boid,
               demat: acc.boid,
-            }),
+            },
+            connectTimeout: 15000,
+            readTimeout: 15000,
           });
-          const submitData = await submitRes.json();
-          if (!submitRes.ok) throw new Error(submitData?.message || `Submission failed (${submitRes.status})`);
+          const submitData = parseSafeJsonBody(submitRes?.data) || {};
+          if (submitRes.status < 200 || submitRes.status >= 300) {
+            throw new Error(submitData?.message || `Submission failed (${submitRes.status})`);
+          }
           recordApplicationHistory(acc, appliedKitta, selectedIpo);
           results.push({ id: acc.id, name: acc.name, username: acc.username, status: 'success', resultText: submitData?.message || 'Application submitted!' });
 

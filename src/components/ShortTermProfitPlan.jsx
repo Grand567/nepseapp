@@ -91,8 +91,10 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   const isExcluded = isMutualFundOrDebenture(sym, sectorName, name, ltp);
 
   // ── 1. Dynamic True ATR Volatility Bands (P2) ──
-  const high = Number(stock.high || stock.highPrice || (stock.high52 ? stock.high52 * 0.95 : ltp * 1.025));
-  const low = Number(stock.low || stock.lowPrice || (stock.low52 ? stock.low52 * 1.05 : ltp * 0.975));
+  const high52 = Number(stock.high52w ?? stock.high52 ?? stock.fiftyTwoWeekHigh ?? 0);
+  const low52 = Number(stock.low52w ?? stock.low52 ?? stock.fiftyTwoWeekLow ?? 0);
+  const high = Number(stock.high || stock.highPrice || (high52 > 0 ? high52 * 0.95 : ltp * 1.025));
+  const low = Number(stock.low || stock.lowPrice || (low52 > 0 ? low52 * 1.05 : ltp * 0.975));
   const prevClose = Number(stock.previousClose || stock.prevClose || (pChg !== 0 ? ltp / (1 + pChg / 100) : ltp));
   
   let dynamicAtr = 0;
@@ -112,7 +114,7 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   const volTier = atrPct < 2.5 ? 'Low-Beta Blue-Chip' : atrPct <= 4.2 ? 'Moderate Volatility' : 'High-Beta Momentum';
 
   // Multi horizon & Targets calculation calibrated with true dynamic ATR
-  const levels = calculateMultiHorizonTargets(ltp, stock.high52, stock.low52, dynamicAtr, pChg, stock.symbol) || {};
+  const levels = calculateMultiHorizonTargets(ltp, high52 || undefined, low52 || undefined, dynamicAtr, pChg, stock.symbol) || {};
   const t2Guard = calculateT2CircuitTrapGuard(stock) || { isSafeToEnter: true, status: 'SAFE_ENTRY', advice: 'Safe' };
 
   // Suggested Entry, Stop Loss, Target 1

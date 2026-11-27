@@ -460,7 +460,7 @@ export function TechnicalRatingsGaugeService({ stocks: rawStocks = [] }: { stock
                   className="border-b border-white/5 hover:bg-white/[0.02] cursor-pointer"
                 >
                   <td className="p-3 font-black text-white">
-                    {s.symbol} <span className="text-[11px] font-normal text-slate-400">({s.sector})</span>
+                    {s.symbol} {s.sector ? <span className="text-[11px] font-normal text-slate-400">({s.sector})</span> : null}
                   </td>
                   <td className="p-3 text-right font-mono font-bold text-white">
                     Rs. {Number(s.ltp || 0).toLocaleString()}
@@ -471,7 +471,7 @@ export function TechnicalRatingsGaugeService({ stocks: rawStocks = [] }: { stock
                     </span>
                   </td>
                   <td className="p-3 text-center font-mono font-black text-white">
-                    {sp.score}/100
+                    {s.score ?? sp.score}/100
                   </td>
                   <td className="p-3 text-center">
                     <span className="text-emerald-400 font-bold">{sp.maSummary.buy}B</span> · <span className="text-slate-400">{sp.maSummary.neutral}N</span> · <span className="text-rose-400 font-bold">{sp.maSummary.sell}S</span>

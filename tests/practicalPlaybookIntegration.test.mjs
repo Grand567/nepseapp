@@ -446,5 +446,24 @@ test('Practical Playbook & App Integration (FR-1..FR-4)', async (t) => {
       smartFlowSrc.includes('accessible from all tabs'),
       'BrokerSmartFlowTracker must render inspectedStock modal across all tabs and avoid ++Rs.'
     );
+
+    const ipoSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'IPOList.jsx'), 'utf8');
+    assert.ok(
+      ipoSrc.includes('https://webbackend.cdsc.com.np/api/meroShare') &&
+      !ipoSrc.includes('https://backend.cdsc.com.np/api/meroShare'),
+      'IPOList native bulk apply must use webbackend.cdsc.com.np via CapacitorHttp'
+    );
+
+    const domSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'BrokerFlowDominanceService.tsx'), 'utf8');
+    assert.ok(
+      domSrc.includes('topHoldingsTillNow:') && domSrc.includes('isMarketOpen(new Date())'),
+      'BrokerFlowDominanceService must populate topHoldingsTillNow and use nepseCalendar isMarketOpen'
+    );
+
+    const nrbSrc = fs.readFileSync(path.join(ROOT_DIR, 'src', 'components', 'NRBMacroWidget.jsx'), 'utf8');
+    assert.ok(
+      nrbSrc.includes('hasServerRegime'),
+      'NRBMacroWidget must preserve server macroRegime atomically without mixing mismatched client labels'
+    );
   });
 });

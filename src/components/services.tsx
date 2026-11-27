@@ -1139,11 +1139,11 @@ export function TopPerformersService({
       }
 
       if (!d.length) {
-        if (type === 'gainers') d = [...mapped].sort((a, b) => b.pChange - a.pChange).slice(0, 30);
-        else if (type === 'losers') d = [...mapped].sort((a, b) => a.pChange - b.pChange).slice(0, 30);
-        else if (type === 'volume') d = [...mapped].sort((a, b) => b.volume - a.volume).slice(0, 30);
-        else if (type === 'turnover') d = [...mapped].sort((a, b) => b.turnover - a.turnover).slice(0, 30);
-        else d = [...mapped].sort((a, b) => (b.transactions || 0) - (a.transactions || 0)).slice(0, 30);
+        if (type === 'gainers') d = [...mapped].sort((a, b) => (Number(b.pChange) || 0) - (Number(a.pChange) || 0)).slice(0, 30);
+        else if (type === 'losers') d = [...mapped].sort((a, b) => (Number(a.pChange) || 0) - (Number(b.pChange) || 0)).slice(0, 30);
+        else if (type === 'volume') d = [...mapped].sort((a, b) => (Number(b.volume) || 0) - (Number(a.volume) || 0)).slice(0, 30);
+        else if (type === 'turnover') d = [...mapped].sort((a, b) => (Number(b.turnover) || 0) - (Number(a.turnover) || 0)).slice(0, 30);
+        else d = [...mapped].sort((a, b) => (Number(b.transactions) || 0) - (Number(a.transactions) || 0)).slice(0, 30);
       }
       setData(d);
     } catch (_) {}
@@ -1197,7 +1197,8 @@ export function TopPerformersService({
           colorFn: (v, row) => ((row?.periodChange ?? v ?? row?.percentageChange ?? 0) >= 0 ? '#16a34a' : '#dc2626')
         },
         { key: 'volume', label: 'Volume', align: 'right', format: (v, row) => (v || row.totalTradedQuantity)?.toLocaleString() || '—' },
-        { key: 'turnover', label: 'Turnover', align: 'right', format: (v) => (v ? `Rs. ${(v / 1e6).toFixed(1)}M` : '—') },
+        { key: 'turnover', label: 'Turnover', align: 'right', format: (v, row) => { const t = Number(v ?? row?.totalTurnover ?? 0); return t > 0 ? `Rs. ${(t / 1e6).toFixed(1)}M` : '—'; } },
+        ...(type === 'transactions' ? [{ key: 'transactions', label: 'Trades', align: 'right' as const, bold: true, format: (v: any, row: any) => { const tx = Number(v ?? row?.totalTransactions ?? row?.totalTrades ?? 0); return tx > 0 ? tx.toLocaleString() : '—'; } }] : []),
       ]} />
     </div>
   );
@@ -1896,6 +1897,7 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
     const list = loadedStocks;
     if (!Array.isArray(list) || list.length === 0) return [];
     const pool = list.filter(s => {
+      if (!isPureNepseEquity(s)) return false;
       const pCh = Number(s.pChange || 0);
       const vol = Number(s.volume || s.totalTradedQuantity || 0);
       const ltp = Number(s.ltp || s.price || 0);
@@ -3188,7 +3190,7 @@ export function BrokerHeatmapService({ selectedDate: propSelectedDate, date: pro
   }, [matrix]);
 
   if (loading) return <Spinner text="Constructing Broker Heatmap Matrix from Real Floorsheet Flow…" />;
-  if (!data || !matrix.length) return <InfoBanner type="warning">Broker heatmap is currently synchronizing with exchange data. Tap refresh to retry.</InfoBanner>;
+  if (!data || !Array.isArray(data.matrix) || data.matrix.length === 0) return <InfoBanner type="warning">Broker heatmap is currently synchronizing with exchange data. Tap refresh to retry.</InfoBanner>;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4">
@@ -4823,7 +4825,7 @@ export function BrokersDirectoryService() {
                   </span>
                 </td>
                 <td className="whitespace-nowrap px-3.5 py-2.5 font-mono text-slate-300">
-                  {b.contact ? (
+                  {b.contact && b.contact !== '—' ? (
                     <a href={`tel:${b.contact}`} className="inline-flex items-center gap-1 text-blue-400 hover:underline">
                       <Phone size={11} /> {b.contact}
                     </a>

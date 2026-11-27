@@ -480,8 +480,9 @@ export function evaluateMasterStock(
 
   // Support Base & Bounce-Back Reversal Analytics
   const rsiVal = Number(stock?.rsi || stock?.rsi14 || 50);
+  const low52 = Number(stock?.low52w ?? stock?.low52 ?? stock?.fiftyTwoWeekLow ?? 0);
   const isAtSupportBase = (ema200 > 0 && Math.abs(ltp - ema200) / ema200 <= 0.045) ||
-                          (Number(stock?.low52 || 0) > 0 && Math.abs(ltp - Number(stock?.low52)) / Number(stock?.low52) <= 0.05) ||
+                          (low52 > 0 && Math.abs(ltp - low52) / low52 <= 0.05) ||
                           (ema50 > 0 && Math.abs(ltp - ema50) / ema50 <= 0.03);
   const isOversoldBounce = rsiVal <= 38 && pChange >= 0;
   const isBounceBack = (isAtSupportBase || isOversoldBounce) && pChange >= -0.5;

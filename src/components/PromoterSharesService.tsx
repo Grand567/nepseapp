@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Shield, AlertTriangle, Clock, Search, Lock, Unlock, CheckCircle2, ChevronRight, Layers } from 'lucide-react';
 import { loadNepseData } from '../utils/liveData';
 import { fetchPromoterShares } from '../utils/servicesApi';
+import { isPureNepseEquity } from '../utils/nepseEquityFilter.js';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { StatCard, InfoBanner, Insight, Spinner } from './ui';
 
@@ -51,7 +52,7 @@ export function PromoterSharesService() {
       // Combine live stocks with any additional listed securities in the lockin registry
       const symbolSet = new Set<string>();
       const combinedStocks: any[] = [];
-      (liveStocks || []).forEach(s => {
+      (liveStocks || []).filter(isPureNepseEquity).forEach(s => {
         const sym = (s.symbol || '').toUpperCase();
         if (sym && !symbolSet.has(sym)) {
           symbolSet.add(sym);
