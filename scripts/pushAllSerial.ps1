@@ -86,9 +86,19 @@ Invoke-Step "Stage, commit & push to origin main" {
     git pull --rebase origin main
     if ($LASTEXITCODE -ne 0) { return }
     git push origin main
+    if ($LASTEXITCODE -ne 0) { return }
+    $hasHub = (git remote) -contains "hub"
+    if ($hasHub) {
+      git push hub main
+    }
   } else {
-    Write-Host "  [INFO] Working tree clean — nothing new to commit." -ForegroundColor Green
-    $global:LASTEXITCODE = 0
+    Write-Host "  [INFO] Working tree clean — ensuring origin & hub are up to date." -ForegroundColor Green
+    git push origin main
+    if ($LASTEXITCODE -ne 0) { return }
+    $hasHub = (git remote) -contains "hub"
+    if ($hasHub) {
+      git push hub main
+    }
   }
 }
 
