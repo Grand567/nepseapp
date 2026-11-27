@@ -340,12 +340,14 @@ function AppInner() {
       return;
     }
 
-    // 2. Explicit Stock / Pro Signal with Valid Symbol
+    // 2. Explicit Stock / Pro Signal with Valid Symbol (including Dividend & Right Share investment alerts)
     const isExplicitStockAction =
       action === 'OPEN_STOCK' ||
       action === 'OPEN_STOCK_DETAIL' ||
       action === 'OPEN_ACCUMULATION_CARD' ||
       action === 'OPEN_BROKER' ||
+      type === 'DIVIDEND_ALERT' ||
+      type === 'RIGHT_SHARE_ALERT' ||
       type.includes('BREAKOUT') ||
       type.includes('STOP_LOSS') ||
       type.includes('PROFIT') ||
@@ -372,17 +374,21 @@ function AppInner() {
       return;
     }
 
-    // 3. NEWS, Dividends, Right Shares, Macro & Corporate Announcements (In-App Reader Parity)
+    if ((type === 'DIVIDEND_ALERT' || type === 'RIGHT_SHARE_ALERT') && !symbol) {
+      closeStockDetail();
+      setActiveNewsArticle({ isOpen: false, article: null });
+      setSmartAlertModal({ isOpen: false, alert: null });
+      setActiveTab('radar');
+      return;
+    }
+
+    // 3. NEWS, Macro & Corporate Announcements (In-App Reader Parity)
     const isNews =
       action === 'OPEN_NEWS' ||
       category === 'news' ||
-      category === 'dividend' ||
-      category === 'right_share' ||
       category === 'general' ||
       type === 'NEWS_ALERT' ||
       type === 'TRENDING_NEWS_ALERT' ||
-      type === 'DIVIDEND_ALERT' ||
-      type === 'RIGHT_SHARE_ALERT' ||
       type === 'BOOK_CLOSURE_ALERT' ||
       type === 'EARNINGS_ALERT' ||
       type === 'MERGER_ALERT' ||

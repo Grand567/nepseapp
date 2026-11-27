@@ -396,6 +396,8 @@ public class DravyashreeAlertWorker extends Worker {
                     item.optBoolean("isHoldingHighlight", false) ||
                     item.optBoolean("isPortfolioTracked", false) ||
                     title.contains("[PRO HOLDING") ||
+                    type.contains("DIVIDEND") ||
+                    type.contains("RIGHT_SHARE") ||
                     type.contains("BREAKOUT") || 
                     type.contains("ACCUMULATION") || 
                     type.contains("ENTRY") || 
@@ -410,13 +412,15 @@ public class DravyashreeAlertWorker extends Worker {
                     || "ALLOTMENT_ALERT".equalsIgnoreCase(type)
                     || "ipo".equalsIgnoreCase(category)
                     || title.toLowerCase().contains("ipo");
-            if (action.isEmpty() || (isIpoAlert && "OPEN_NEWS".equalsIgnoreCase(action))) {
+            boolean isProCorporate = "DIVIDEND_ALERT".equalsIgnoreCase(type)
+                    || "RIGHT_SHARE_ALERT".equalsIgnoreCase(type);
+            if (isProCorporate && (action.isEmpty() || "OPEN_NEWS".equalsIgnoreCase(action))) {
+                action = (!symbol.isEmpty() && !"NEPSE".equalsIgnoreCase(symbol)) ? "OPEN_STOCK" : "OPEN_RADAR";
+            } else if (action.isEmpty() || (isIpoAlert && "OPEN_NEWS".equalsIgnoreCase(action))) {
                 if (isIpoAlert) {
                     action = "OPEN_IPO";
                 } else if ("NEWS_ALERT".equalsIgnoreCase(type)
                         || "TRENDING_NEWS_ALERT".equalsIgnoreCase(type)
-                        || "DIVIDEND_ALERT".equalsIgnoreCase(type)
-                        || "RIGHT_SHARE_ALERT".equalsIgnoreCase(type)
                         || "BOOK_CLOSURE_ALERT".equalsIgnoreCase(type)
                         || "MERGER_ALERT".equalsIgnoreCase(type)
                         || "SEBON_APPROVAL_ALERT".equalsIgnoreCase(type)

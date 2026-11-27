@@ -502,20 +502,23 @@ export const normalizeNotificationItem = (raw) => {
 
   const rawType = String(data.type || '').trim();
   const isIpo = rawType === 'IPO_ALERT' || rawType === 'ALLOTMENT_ALERT' || data.category === 'ipo' || data.action === 'OPEN_IPO';
-  const isGeneral = data.category === 'general' || [
+  const isProCorporate = rawType === 'DIVIDEND_ALERT' || rawType === 'RIGHT_SHARE_ALERT';
+  const isGeneral = !isProCorporate && (data.category === 'general' || [
     'NEWS_ALERT', 'IPO_ALERT', 'NEPSE_MACRO', 'TRENDING_NEWS_ALERT',
-    'DIVIDEND_ALERT', 'RIGHT_SHARE_ALERT', 'BOOK_CLOSURE_ALERT',
+    'BOOK_CLOSURE_ALERT',
     'MERGER_ALERT', 'SEBON_APPROVAL_ALERT', 'ALLOTMENT_ALERT',
     'MARKET_MILESTONE_ALERT', 'PORTFOLIO_NEWS_ALERT', 'EARNINGS_ALERT'
-  ].includes(rawType);
-  const category = data.category || (isGeneral ? 'general' : 'pro');
+  ].includes(rawType));
+  const category = isProCorporate ? 'pro' : (data.category || (isGeneral ? 'general' : 'pro'));
   const id = data.id || raw.id || `notif_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
 
   const rawSym = String(data.symbol || '').toUpperCase().trim();
   const cleanSymbol = (rawSym && rawSym !== 'NEPSE') ? rawSym : '';
-  const resolvedAction = (isIpo && (!data.action || data.action === 'OPEN_NEWS'))
-    ? 'OPEN_IPO'
-    : (data.action || (isIpo ? 'OPEN_IPO' : isGeneral ? 'OPEN_NEWS' : cleanSymbol ? 'OPEN_STOCK' : 'OPEN_RADAR'));
+  const resolvedAction = isProCorporate
+    ? (cleanSymbol ? 'OPEN_STOCK' : 'OPEN_RADAR')
+    : ((isIpo && (!data.action || data.action === 'OPEN_NEWS'))
+      ? 'OPEN_IPO'
+      : (data.action || (isIpo ? 'OPEN_IPO' : isGeneral ? 'OPEN_NEWS' : cleanSymbol ? 'OPEN_STOCK' : 'OPEN_RADAR')));
 
   const tsInfo = extractPayloadCreationTimestamp(raw);
   const createdAtIso = tsInfo.hasTimestamp ? tsInfo.createdAtIso : (data.created_at || data.triggeredAt || data.timestamp || new Date().toISOString());
@@ -641,8 +644,17 @@ export function markStatusBarPopped(item, nowMs = Date.now()) {
   }
 }
 
+function isGeneralNewsScheduledWindowNpt(nowMs = Date.now()) {
+  const nptMs = nowMs + (5 * 60 + 45) * 60 * 1000;
+  const nptDate = new Date(nptMs);
+  const nptMins = nptDate.getUTCHours() * 60 + nptDate.getUTCMinutes();
+  // Daily scheduled windows: 10:30 AM - 10:45 AM NPT (630..645) and 8:00 PM - 8:15 PM NPT (1200..1215)
+  return (nptMins >= 630 && nptMins < 645) || (nptMins >= 1200 && nptMins < 1215);
+}
+
 /**
- * Evaluates strict deduplication, immediate corporate/PRO holding bypass, and 1-hour other-news gate.
+ * Evaluates strict deduplication, immediate PRO/Dividend/Right-Share bypass (any time),
+ * and daily 10:30 AM / 8:00 PM NPT schedule gate for General News & Corporate Actions.
  */
 export function shouldPopStatusBarForNotification(normalized, options = {}) {
   if (!normalized) return { allow: false, immediate: false, reason: 'EMPTY_PAYLOAD' };
@@ -654,8 +666,10 @@ export function shouldPopStatusBarForNotification(normalized, options = {}) {
 
   const holdingsSet = getUserHoldingSymbolsSet();
   const cleanSym = String(normalized.symbol || '').toUpperCase().trim();
-  const isImmediateCorporate = isImmediateCorporateActionAlert(normalized);
+  const rawType = String(normalized.type || '').toUpperCase();
+  const isProCorporate = rawType === 'DIVIDEND_ALERT' || rawType === 'RIGHT_SHARE_ALERT';
   const isProOrHolding = Boolean(
+    isProCorporate ||
     normalized.isHoldingHighlight ||
     (cleanSym && holdingsSet.has(cleanSym)) ||
     normalized.category === 'pro' ||
@@ -663,34 +677,21 @@ export function shouldPopStatusBarForNotification(normalized, options = {}) {
     normalized.type === 'ADMIN_TEST_ALERT'
   );
 
-  if (isImmediateCorporate || isProOrHolding) {
-    return { allow: true, immediate: true, reason: 'IMMEDIATE_CORPORATE_OR_PRO_HOLDING' };
+  if (isProOrHolding) {
+    return { allow: true, immediate: true, reason: 'IMMEDIATE_PRO_SIGNAL' };
   }
 
-  let lastPopMs = 0;
-  if (typeof localStorage !== 'undefined') {
-    try {
-      lastPopMs = Number(localStorage.getItem(LAST_OTHER_NEWS_POP_KEY) || 0);
-    } catch (_) {}
+  // General News & Corporate Actions (nepse-general-news):
+  // Pop ONLY during daily 10:30 AM NPT or 8:00 PM NPT windows (or explicit scheduledDigest payload).
+  if (normalized.scheduledDigest || isGeneralNewsScheduledWindowNpt(now)) {
+    return { allow: true, immediate: false, reason: 'SCHEDULED_GENERAL_NEWS_WINDOW' };
   }
 
-  if (lastPopMs > 0 && (now - lastPopMs < OTHER_NEWS_INTERVAL_MS)) {
-    // Mark seen so throttled message never pops later as a delayed duplicate
-    markStatusBarPopped(normalized, now);
-    return {
-      allow: false,
-      immediate: false,
-      reason: 'THROTTLED_1H_OTHER_NEWS',
-      remainingMs: OTHER_NEWS_INTERVAL_MS - (now - lastPopMs)
-    };
-  }
-
-  if (typeof localStorage !== 'undefined') {
-    try {
-      localStorage.setItem(LAST_OTHER_NEWS_POP_KEY, String(now));
-    } catch (_) {}
-  }
-  return { allow: true, immediate: false, reason: 'ALLOWED_1H_WINDOW' };
+  return {
+    allow: false,
+    immediate: false,
+    reason: 'OUTSIDE_1030AM_8PM_GENERAL_NEWS_WINDOW'
+  };
 }
 
 export function triggerNativeStatusBarNotification(normalized, options = {}) {
