@@ -1,0 +1,18 @@
+# Vercel only hosts the Vite SPA frontend (dist/).
+# All /api/* traffic is rewritten in vercel.json to Cloudflare Worker -> Render.
+# Excluding api/ and backend/native folders prevents Vercel from bundling a 483MB serverless function.
+api/
+proxy/
+android/
+electron/
+cloudflare/
+tests/
+audit-reports/
+backtest/
+scripts/
+.requirements/
+*.apk
+*.exe
+*.db
+*.db-wal
+*.db-shm
