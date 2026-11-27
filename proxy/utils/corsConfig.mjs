@@ -7,6 +7,7 @@ export const CORS_DEFAULTS = [
   'https://drabyashree-nepse-hub.onrender.com',
   'https://nepseapp.onrender.com',
   'https://drabyashree-nepse-hub6936.vercel.app',
+  'https://drabyashree-nepse-hub6936-git-main-grand567s-projects.vercel.app',
   'https://nepse-hub.vercel.app',
   'https://drabyashree-nepse-hub-2347.vercel.app',
   'https://drabyashree-nepse-hub-11ef9.firebaseapp.com',
@@ -39,6 +40,7 @@ export function isAllowedOrigin(origin, { allowNoOrigin = true } = {}) {
   const allowedSet = getAllowedOriginsSet();
   return (
     allowedSet.has(origin) ||
+    /^https:\/\/drabyashree-nepse-hub6936-[a-z0-9-]+-grand567s-projects\.vercel\.app$/.test(origin) ||
     /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin)
   );
 }
