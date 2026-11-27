@@ -8,7 +8,7 @@ import { formatNptDateIso, isNepseTradingDay } from '../src/utils/nepseCalendar.
 import { downloadAndArchiveDailyFloorsheet } from '../proxy/utils/dailyFloorsheetCollector.mjs';
 import { getFullSessionFloorsheet, aggregateMarketFloorsheet } from '../proxy/brokerVault.mjs';
 import { compileHistoricalSubfiles } from '../proxy/utils/historicalSubfilesEngine.mjs';
-import { compileTodayStaticAnalytics } from '../proxy/utils/todayDataEngine.mjs';
+import { compileTodayStaticAnalytics, initTodayTickStream } from '../proxy/utils/todayDataEngine.mjs';
 import { build5DayHistoricalLedger } from '../proxy/utils/rollingLedgerEngine.mjs';
 import { exportCumulativeBrokerLedger, syncBrokerAllTimeAndVaultFiles } from '../proxy/utils/dailyFloorsheetCollector.mjs';
 import { db } from '../proxy/db/ledgerStore.js';
@@ -18,7 +18,15 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 async function syncToday() {
-  const targetDate = process.argv[2] ? String(process.argv[2]).trim() : formatNptDateIso(new Date());
+  const isAuto = process.argv.includes('--auto');
+  const explicitDateArg = process.argv.slice(2).find(a => /^\d{4}-\d{2}-\d{2}$/.test(a));
+  const targetDate = explicitDateArg ? explicitDateArg.trim() : formatNptDateIso(new Date());
+
+  if (isAuto && !isNepseTradingDay(new Date(`${targetDate}T12:00:00+05:45`))) {
+    console.log(`\n📅 [SyncEngine] ${targetDate} is a NEPSE weekend or public holiday — skipping auto EOD sync.`);
+    return;
+  }
+
   console.log(`\n🚀 [SyncEngine] Starting automated floorsheet & broker sync for: ${targetDate}`);
 
   // 1. Download and archive into daily_floorsheets and SQLite drabyashree_ledger.db
@@ -98,12 +106,20 @@ async function syncToday() {
     hasErrors = true;
   }
 
-  // 6. Recompile Today Static Analytics
+  // 6. Recompile Today Static Analytics & sync Tick Stream session_date
   try {
     compileTodayStaticAnalytics();
     console.log(`[SyncEngine] ✅ Recompiled today_static_analytics.json sub-file`);
   } catch (err) {
     console.error('[SyncEngine] Static analytics compile error:', err.message);
+    hasErrors = true;
+  }
+
+  try {
+    initTodayTickStream(targetDate);
+    console.log(`[SyncEngine] ✅ Synced today_tick_by_tick.json session_date to ${targetDate}`);
+  } catch (err) {
+    console.error('[SyncEngine] Tick stream init error:', err.message);
     hasErrors = true;
   }
 

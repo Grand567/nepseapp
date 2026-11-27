@@ -11,6 +11,12 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  formatNptDateIso,
+  isNepseTradingDay,
+  latestTradingSession,
+  getNptMinutesOfDay,
+} from '../src/utils/nepseCalendar.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -287,8 +293,19 @@ async function main() {
       diskCount = Array.isArray(parsed?.matrix) ? parsed.matrix.length : 0;
       diskDate = parsed?.date || parsed?.businessDate || null;
     }
+    const now = new Date();
+    const expectedEodSession = (isNepseTradingDay(now) && getNptMinutesOfDay(now) >= 16 * 60)
+      ? formatNptDateIso(now)
+      : latestTradingSession(now, true);
+
     if (hm.status === 200 && matrix.length > 0 && matrixDate && diskCount > 0) {
-      record('PASS', 'GET /api/smart-money/broker-heatmap + broker_matrix_latest.json', `API matrix=${matrix.length} brokers (${matrixDate}), disk=${diskCount} (${diskDate}) (${hm.latencyMs}ms)`);
+      const apiFresh = String(matrixDate).slice(0, 10) >= expectedEodSession;
+      const diskFresh = diskDate ? String(diskDate).slice(0, 10) >= expectedEodSession : false;
+      if (apiFresh && diskFresh) {
+        record('PASS', 'GET /api/smart-money/broker-heatmap + broker_matrix_latest.json', `API matrix=${matrix.length} brokers (${matrixDate}), disk=${diskCount} (${diskDate}) (${hm.latencyMs}ms)`);
+      } else {
+        record('WARN', 'GET /api/smart-money/broker-heatmap + broker_matrix_latest.json', `EOD lag detected (expected>=${expectedEodSession}): API=${matrix.length} (${matrixDate}), disk=${diskCount} (${diskDate}) (${hm.latencyMs}ms)`);
+      }
     } else {
       record('FAIL', 'GET /api/smart-money/broker-heatmap + broker_matrix_latest.json', formatHttpFailureDetail(hm, `apiMatrix=${matrix.length}, apiDate=${matrixDate}, diskMatrix=${diskCount}`));
     }
@@ -311,7 +328,11 @@ async function main() {
     record('FAIL', `GET /api/broker-analysis/${SYMBOL}`, err?.message || String(err));
   }
 
-  // 8. SSE live stream probes
+  // 8. SSE live stream probes (with strict session_date freshness check on ticks stream)
+  const expectedTickSession = isNepseTradingDay(new Date())
+    ? formatNptDateIso(new Date())
+    : latestTradingSession(new Date(), false);
+
   for (const streamPath of [
     `/api/today/ticks/stream?symbol=${encodeURIComponent(SYMBOL)}`,
     `/api/floorsheet/stream?symbol=${encodeURIComponent(SYMBOL)}`,
@@ -319,6 +340,14 @@ async function main() {
     const sse = await probeSseStream(streamPath, 4000);
     trackHtml429(sse);
     if (sse.ok) {
+      if (streamPath.startsWith('/api/today/ticks/stream')) {
+        const match = String(sse.firstChunk || '').match(/"session_date"\s*:\s*"(\d{4}-\d{2}-\d{2})"/);
+        const snapDate = match ? match[1] : null;
+        if (snapDate && snapDate !== expectedTickSession) {
+          record('FAIL', `SSE ${streamPath}`, `stale session_date=${snapDate} (expected ${expectedTickSession}) (${sse.latencyMs}ms)`);
+          continue;
+        }
+      }
       record('PASS', `SSE ${streamPath}`, `HTTP ${sse.status}, content-type=${sse.contentType}${sse.firstChunk ? `, event="${sse.firstChunk}"` : ''} (${sse.latencyMs}ms)`);
     } else {
       record('FAIL', `SSE ${streamPath}`, `status=${sse.status}, ct=${sse.contentType}, err=${sse.error || 'invalid stream'}`);

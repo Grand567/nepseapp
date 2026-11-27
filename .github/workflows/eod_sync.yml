@@ -1,0 +1,148 @@
+name: Automated NEPSE EOD Sync
+
+on:
+  schedule:
+    # Primary post-market sync: 15:35 NPT (09:50 UTC) Monday-Friday
+    - cron: '50 9 * * 1-5'
+    # Automatic catch-up retry: 16:20 NPT (10:35 UTC) Monday-Friday (if NEPSE unmasks brokers late)
+    - cron: '35 10 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      session_date:
+        description: 'Optional session date (YYYY-MM-DD). Leave blank for today in NPT.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nepse-eod-sync
+  cancel-in-progress: false
+
+jobs:
+  eod-sync:
+    name: Sync Daily Floorsheet, Broker Matrices & Sub-Files
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Determine target session date and trading-day guard
+        id: session
+        run: |
+          node --input-type=module -e "
+            import fs from 'fs';
+            import { formatNptDateIso, isNepseTradingDay } from './src/utils/nepseCalendar.js';
+            const inputDate = (process.env.INPUT_DATE || '').trim();
+            const targetDate = inputDate || formatNptDateIso(new Date());
+            const isTrading = inputDate ? true : isNepseTradingDay(new Date(targetDate + 'T12:00:00+05:45'));
+            let alreadySynced = false;
+            if (!inputDate && fs.existsSync('proxy/data/broker_matrix_latest.json')) {
+              try {
+                const latest = JSON.parse(fs.readFileSync('proxy/data/broker_matrix_latest.json', 'utf8'));
+                const latestDate = latest.date || latest.businessDate || '';
+                const count = Array.isArray(latest.matrix) ? latest.matrix.length : 0;
+                alreadySynced = latestDate === targetDate && count > 0;
+              } catch (_) {}
+            }
+            const shouldRun = isTrading && !alreadySynced;
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'target_date=' + targetDate + '\n');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'should_run=' + (shouldRun ? 'true' : 'false') + '\n');
+            console.log('Target session:', targetDate, '| isTrading:', isTrading, '| alreadySynced:', alreadySynced, '| should_run:', shouldRun);
+          "
+        env:
+          INPUT_DATE: ${{ github.event.inputs.session_date }}
+
+      - name: Run EOD floorsheet & sub-files sync
+        if: steps.session.outputs.should_run == 'true'
+        run: node scripts/syncTodayFloorsheet.mjs "${{ steps.session.outputs.target_date }}" --auto
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+
+      - name: Verify synced broker matrix freshness
+        id: verify
+        if: steps.session.outputs.should_run == 'true'
+        run: |
+          node --input-type=module -e "
+            import fs from 'fs';
+            const target = '${{ steps.session.outputs.target_date }}';
+            const data = JSON.parse(fs.readFileSync('proxy/data/broker_matrix_latest.json', 'utf8'));
+            const dt = data.date || data.businessDate || '';
+            const count = Array.isArray(data.matrix) ? data.matrix.length : 0;
+            const ready = dt === target && count > 0;
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'matrix_ready=' + (ready ? 'true' : 'false') + '\n');
+            console.log('broker_matrix_latest.json -> date=' + dt + ', brokers=' + count + ', ready=' + ready);
+          "
+
+      - name: Pack updated SQLite ledger snapshot (drabyashree_ledger.db.gz)
+        if: steps.session.outputs.should_run == 'true' && steps.verify.outputs.matrix_ready == 'true'
+        run: |
+          node scripts/pack_ledger_gz.mjs
+          SIZE_BYTES=$(stat -c%s proxy/data/drabyashree_ledger.db.gz)
+          echo "Packed drabyashree_ledger.db.gz size: $SIZE_BYTES bytes"
+          if [ "$SIZE_BYTES" -ge 100000000 ]; then
+            echo "::warning::drabyashree_ledger.db.gz reached >=100MB GitHub limit — skipping git add for .db.gz"
+            echo "include_db_gz=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "include_db_gz=true" >> "$GITHUB_OUTPUT"
+          fi
+        id: pack
+
+      - name: Commit and push updated EOD data
+        if: steps.session.outputs.should_run == 'true' && steps.verify.outputs.matrix_ready == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            proxy/data/broker_matrix_latest.json \
+            proxy/data/broker_alltime \
+            proxy/data/broker_vault \
+            proxy/data/daily_floorsheets/archive_index.json \
+            proxy/data/historical_4days_ledger.json \
+            proxy/data/historical_4days_ledger.json.gz \
+            proxy/data/historical_5days_ledger.json \
+            proxy/data/historical_5days_ledger.json.gz \
+            proxy/data/subfiles \
+            proxy/data/today_static_analytics.json \
+            proxy/data/today_static_analytics.json.gz \
+            proxy/data/today_tick_by_tick.json \
+            proxy/data/today_tick_by_tick.json.gz \
+            public/data \
+            src/data/broker_matrix_latest.json \
+            src/data/broker_matrices_historical.json \
+            src/data/nepse_cumulative_broker_ledger.json \
+            src/data/broker_holdings_alltime.json
+
+          if [ "${{ steps.pack.outputs.include_db_gz }}" = "true" ]; then
+            git add proxy/data/drabyashree_ledger.db.gz
+          fi
+
+          if git diff --cached --quiet; then
+            echo "No EOD data changes to commit for ${{ steps.session.outputs.target_date }}."
+            exit 0
+          fi
+
+          git commit -m "chore(eod): auto-sync NEPSE session ${{ steps.session.outputs.target_date }}"
+          git pull --rebase origin main
+          git push origin main
