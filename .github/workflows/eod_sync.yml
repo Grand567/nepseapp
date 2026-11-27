@@ -98,6 +98,12 @@ jobs:
 
       - name: Pack updated SQLite ledger snapshot (drabyashree_ledger.db.gz)
         if: steps.session.outputs.should_run == 'true' && steps.verify.outputs.matrix_ready == 'true'
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
         run: |
           node scripts/pack_ledger_gz.mjs
           SIZE_BYTES=$(stat -c%s proxy/data/drabyashree_ledger.db.gz)

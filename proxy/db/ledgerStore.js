@@ -54,6 +54,17 @@ const dbPath = path.join(DATA_DIR, "drabyashree_ledger.db");
 
 // Fast bootstrap: If SQLite DB doesn't exist, is empty (<100KB), or drabyashree_ledger.db.gz is newer than drabyashree_ledger.db (mtimeMs)
 // Uses low-memory streaming decompression (<2MB RAM) so it never trips Render 512MB RAM limit
+if ((process.env.RENDER || process.env.CI || !fs.existsSync(path.join(DATA_DIR, "drabyashree_ledger.db.gz"))) && process.env.SKIP_R2_LEDGER_BOOTSTRAP !== "1") {
+  try {
+    const { isR2Configured, downloadLedgerSnapshotFromR2 } = await import("../utils/cloudFloorsheetVault.mjs");
+    if (isR2Configured()) {
+      await downloadLedgerSnapshotFromR2(path.join(DATA_DIR, "drabyashree_ledger.db.gz"), { onlyIfNewer: true });
+    }
+  } catch (r2BootErr) {
+    console.warn("[Drabyashree Ledger] R2 snapshot bootstrap notice:", r2BootErr?.message || r2BootErr);
+  }
+}
+
 const candidateGzFiles = [
   path.join(DATA_DIR, "drabyashree_ledger.db.gz"),
   path.join(process.cwd(), "proxy", "data", "drabyashree_ledger.db.gz"),

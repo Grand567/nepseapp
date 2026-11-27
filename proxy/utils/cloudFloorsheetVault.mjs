@@ -35,8 +35,10 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   ListObjectsV2Command
 } from '@aws-sdk/client-s3';
+import { pipeline } from 'stream/promises';
 import { DAILY_FLOORSHEETS_DIR } from './floorsheetPaths.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -669,6 +671,89 @@ export async function syncLocalFloorsheetsToCloud() {
   } catch (err) {
     console.error('[cloudFloorsheetVault] Sync error:', err.message);
     return { success: false, error: err.message };
+  }
+}
+
+// ─── SQLite Ledger Snapshot Sync via Cloudflare R2 (Bypasses GitHub 100MB Limit) ─
+const R2_LEDGER_SNAPSHOT_KEY = 'system/drabyashree_ledger.db.gz';
+
+export async function uploadLedgerSnapshotToR2(localGzPath) {
+  const r2Client = getR2Client();
+  if (!r2Client) {
+    return { success: false, reason: 'R2 not configured' };
+  }
+  if (!localGzPath || !fs.existsSync(localGzPath)) {
+    return { success: false, reason: 'Local snapshot not found' };
+  }
+  try {
+    const { bucketName } = getR2Config();
+    const stat = fs.statSync(localGzPath);
+    const sizeMb = (stat.size / (1024 * 1024)).toFixed(2);
+    const stream = fs.createReadStream(localGzPath);
+    await r2Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: R2_LEDGER_SNAPSHOT_KEY,
+      Body: stream,
+      ContentLength: stat.size,
+      ContentType: 'application/gzip'
+    }));
+    console.log(`[cloudFloorsheetVault] 🚀 Uploaded SQLite ledger snapshot to R2 (${sizeMb} MB) -> ${R2_LEDGER_SNAPSHOT_KEY}`);
+    return { success: true, key: R2_LEDGER_SNAPSHOT_KEY, sizeBytes: stat.size };
+  } catch (err) {
+    console.warn(`[cloudFloorsheetVault] R2 ledger snapshot upload notice:`, err?.message || err);
+    return { success: false, reason: err?.message || String(err) };
+  }
+}
+
+export async function downloadLedgerSnapshotFromR2(destGzPath, { onlyIfNewer = true } = {}) {
+  const r2Client = getR2Client();
+  if (!r2Client) {
+    return { success: false, reason: 'R2 not configured' };
+  }
+  const tmpPath = `${destGzPath}.r2.${process.pid}.tmp`;
+  try {
+    const { bucketName } = getR2Config();
+    const head = await r2Client.send(new HeadObjectCommand({
+      Bucket: bucketName,
+      Key: R2_LEDGER_SNAPSHOT_KEY
+    }));
+    const remoteTime = head?.LastModified ? new Date(head.LastModified).getTime() : 0;
+    const remoteSize = Number(head?.ContentLength || 0);
+    if (remoteSize < 100000) {
+      return { success: false, reason: 'Remote snapshot too small or missing' };
+    }
+    if (onlyIfNewer && fs.existsSync(destGzPath)) {
+      const localStat = fs.statSync(destGzPath);
+      if (localStat.size >= 100000 && localStat.mtimeMs >= remoteTime && localStat.size === remoteSize) {
+        return { success: true, skipped: true, reason: 'Local snapshot already up-to-date' };
+      }
+      if (localStat.size >= 100000 && localStat.mtimeMs >= remoteTime + 5000) {
+        return { success: true, skipped: true, reason: 'Local snapshot is newer than R2' };
+      }
+    }
+
+    const t0 = Date.now();
+    const res = await r2Client.send(new GetObjectCommand({
+      Bucket: bucketName,
+      Key: R2_LEDGER_SNAPSHOT_KEY
+    }));
+    if (!res?.Body) {
+      return { success: false, reason: 'Empty R2 response body' };
+    }
+    const dir = path.dirname(destGzPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    await pipeline(res.Body, fs.createWriteStream(tmpPath));
+    fs.renameSync(tmpPath, destGzPath);
+    const sizeMb = (fs.statSync(destGzPath).size / (1024 * 1024)).toFixed(2);
+    console.log(`[cloudFloorsheetVault] ☁️ Restored SQLite ledger snapshot from R2 (${sizeMb} MB) in ${Date.now() - t0}ms`);
+    return { success: true, restored: true, sizeBytes: remoteSize };
+  } catch (err) {
+    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
+    if (err?.name !== 'NotFound' && err?.$metadata?.httpStatusCode !== 404) {
+      console.warn(`[cloudFloorsheetVault] R2 ledger snapshot download notice:`, err?.message || err);
+    }
+    return { success: false, reason: err?.message || String(err) };
   }
 }
 

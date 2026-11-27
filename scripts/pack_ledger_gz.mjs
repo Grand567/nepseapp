@@ -3,6 +3,7 @@ import zlib from 'zlib';
 import path from 'path';
 import { pipeline } from 'stream/promises';
 import Database from 'better-sqlite3';
+import { uploadLedgerSnapshotToR2, isR2Configured } from '../proxy/utils/cloudFloorsheetVault.mjs';
 
 console.log('Packing live SQLite ledger into proxy/data/drabyashree_ledger.db.gz ...');
 const candidateSrcs = [
@@ -51,6 +52,10 @@ try {
   const gzStat = fs.statSync(destGz);
   fs.writeFileSync(`${destDb}.gz.applied`, `${gzStat.size}:${Math.trunc(gzStat.mtimeMs || 0)}`, 'utf8');
   console.log(`Successfully compressed to ${destGz} (${(gzStat.size / 1024 / 1024).toFixed(2)} MB)`);
+
+  if (isR2Configured()) {
+    await uploadLedgerSnapshotToR2(destGz);
+  }
 } finally {
   try { if (fs.existsSync(tmpSnap)) fs.unlinkSync(tmpSnap); } catch (_) {}
   try { if (fs.existsSync(tmpGz)) fs.unlinkSync(tmpGz); } catch (_) {}
