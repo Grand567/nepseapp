@@ -3246,7 +3246,48 @@ export function auditMultiSessionTrapRisk(db, symbol, leadBrokerId = null) {
 }
 
 const DAILY_SELECTION_STATE_FILE = path.join(DATA_DIR, 'daily_selection_guide_state.json');
+const DAILY_SWING_STATE_FILE = path.join(DATA_DIR, 'daily_swing_dispatch_state.json');
 let inFlightScheduledGuideDate = null;
+
+function readDailySwingState() {
+  try {
+    if (fs.existsSync(DAILY_SWING_STATE_FILE)) {
+      return JSON.parse(fs.readFileSync(DAILY_SWING_STATE_FILE, 'utf8'));
+    }
+  } catch (_) {}
+  return { lastDispatchedDate: null, history: {} };
+}
+
+export function hasSwingDispatchedForDate(sessionDate) {
+  if (!sessionDate) return false;
+  const target = String(sessionDate).slice(0, 10);
+  const state = readDailySwingState();
+  return state.lastDispatchedDate === target || Boolean(state.history?.[target]);
+}
+
+export function markSwingDispatchedForDate(sessionDate, summary = {}) {
+  if (!sessionDate) return;
+  const target = String(sessionDate).slice(0, 10);
+  const state = readDailySwingState();
+  state.lastDispatchedDate = target;
+  state.updatedAt = new Date().toISOString();
+  state.history = state.history || {};
+  state.history[target] = {
+    dispatchedAt: state.updatedAt,
+    actionTier: summary.actionTier || 'UNKNOWN',
+    symbol: summary.symbol || 'NONE',
+  };
+  const keys = Object.keys(state.history).sort();
+  while (keys.length > 30) {
+    const oldest = keys.shift();
+    delete state.history[oldest];
+  }
+  try {
+    fs.writeFileSync(DAILY_SWING_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('[TelegramNotifier] Failed saving daily swing dispatch state file:', err.message);
+  }
+}
 
 function readDailySelectionState() {
   try {

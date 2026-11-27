@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { query } from './db.mjs';
-import { isNepseTradingDay, getDetailedMarketStatus, latestTradingSession } from '../src/utils/nepseCalendar.js';
+import { isNepseTradingDay, getDetailedMarketStatus, latestTradingSession, formatNptDateIso, getNptMinutesOfDay } from '../src/utils/nepseCalendar.js';
 import { getKathmanduTradingStatus } from './utils/kathmanduTime.mjs';
 import { 
   sendTelegramPrimePickAlert, 
@@ -12,6 +12,8 @@ import {
   run5StepSwingSelectionAndDispatch,
   dispatchScheduledDailySelectionGuide,
   hasSelectionGuideDispatchedForDate,
+  hasSwingDispatchedForDate,
+  markSwingDispatchedForDate,
   runBroker58RadarAndDispatch,
   dispatchEodStealthAccumulationOfTheDay,
   pollIncomingTelegramCommands,
@@ -276,7 +278,7 @@ export async function runFullUniversePrimePick() {
         return Number(b.turnover || 0) - Number(a.turnover || 0);
       });
 
-    const candidatesToScan = candidates.slice(0, 45);
+    const candidatesToScan = candidates.slice(0, IS_RENDER_CONSTRAINED ? 18 : 45);
     console.log(`[PrimePickWorker] Scanning top ${candidatesToScan.length} liquid & breakout stocks through Entry/Exit Analyzer...`);
 
     // Step 3: Run generateEntryExitPlan on top liquid candidates with real history
@@ -471,6 +473,111 @@ export async function syncDailyFloorsheetAndPrices(targetDate) {
   }
 }
 
+export function isSessionPreSyncedInSqlite(targetDb, targetDate) {
+  if (!targetDb || !targetDate) return false;
+  const cleanDate = String(targetDate).slice(0, 10);
+  try {
+    const prices = targetDb.prepare(
+      `SELECT COUNT(*) as c FROM daily_stock_summary WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0`
+    ).get(cleanDate)?.c || 0;
+    const brokerRows = targetDb.prepare(
+      `SELECT COUNT(*) as c FROM daily_broker_ledger WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0`
+    ).get(cleanDate)?.c || 0;
+    const contracts = targetDb.prepare(
+      `SELECT COUNT(*) as c FROM floorsheet_contracts WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0`
+    ).get(cleanDate)?.c || 0;
+    return prices >= 100 && brokerRows > 0 && contracts >= 1000;
+  } catch (_) {
+    return false;
+  }
+}
+
+const dispatchedMarketPulseWindows = new Set();
+
+export function getScheduledMarketHourPulseWindow(now = new Date()) {
+  const isTrading = isNepseTradingDay(now);
+  if (!isTrading) return { active: false, windowId: null, label: null };
+  const nptMins = getNptMinutesOfDay(now);
+  // Scheduled live market pulses: 12:00 PM NPT (720..730) & 2:00 PM NPT (840..850)
+  if (nptMins >= 720 && nptMins < 730) {
+    return { active: true, windowId: '12pm', label: '12:00 PM Mid-Session Market Pulse' };
+  }
+  if (nptMins >= 840 && nptMins < 850) {
+    return { active: true, windowId: '2pm', label: '2:00 PM Pre-Close Market Pulse' };
+  }
+  return { active: false, windowId: null, label: null };
+}
+
+export async function dispatchScheduledMarketHourPulse({
+  now = new Date(),
+  dryRun = false,
+  stocks = null,
+  indexSnapshot = null,
+  trackedHoldings = null,
+  onSent = null
+} = {}) {
+  const win = getScheduledMarketHourPulseWindow(now);
+  if (!win.active) return { dispatched: false, reason: 'outside_pulse_window' };
+
+  const dateIso = formatNptDateIso(now);
+  const windowKey = `${dateIso}_${win.windowId}`;
+  if (dispatchedMarketPulseWindows.has(windowKey)) {
+    return { dispatched: false, reason: 'already_dispatched', windowKey };
+  }
+
+  let stockList = Array.isArray(stocks) ? stocks : null;
+  if (!stockList) {
+    const cached = _getCache ? (_getCache('today-prices') || _getCache('market-summary')) : null;
+    stockList = Array.isArray(cached) ? cached : (cached?.data || cached?.stocks || null);
+    if ((!stockList || stockList.length === 0) && _fetchTodayPricesInternal) {
+      stockList = await _fetchTodayPricesInternal().catch(() => []);
+    }
+  }
+  stockList = Array.isArray(stockList) ? stockList : [];
+
+  let idx = indexSnapshot || (_getCache ? _getCache('market-indices') : null);
+  if (!idx?.nepse && _getMarketIndicesInternal) {
+    idx = await _getMarketIndicesInternal().catch(() => null);
+  }
+
+  const adv = stockList.filter(s => Number(s.pChange || s.percentageChange || 0) > 0).length;
+  const dec = stockList.filter(s => Number(s.pChange || s.percentageChange || 0) < 0).length;
+  const topTurn = [...stockList]
+    .sort((a, b) => Number(b.turnover || b.totalTradedValue || 0) - Number(a.turnover || a.totalTradedValue || 0))
+    .slice(0, 3)
+    .map(s => `${String(s.symbol || s.scrip || '').toUpperCase()} (${Number(s.pChange || s.percentageChange || 0) >= 0 ? '+' : ''}${Number(s.pChange || s.percentageChange || 0).toFixed(2)}%)`)
+    .join(', ');
+
+  const nepseVal = Number(idx?.nepse?.value || idx?.nepse?.currentValue || 0);
+  const nepseChg = Number(idx?.nepse?.pChange || idx?.nepse?.percentageChange || 0);
+  const holdings = Array.isArray(trackedHoldings) ? trackedHoldings : (typeof getUserTrackedHoldings === 'function' ? getUserTrackedHoldings() : []);
+  const holdingsSummary = holdings.slice(0, 5).map(h => {
+    const sym = String(h.symbol || '').toUpperCase();
+    const match = stockList.find(s => String(s.symbol || s.scrip || '').toUpperCase() === sym);
+    const liveLtp = Number(match?.ltp || match?.lastTradedPrice || h.ltp || 0);
+    return `• <b>${sym}</b>: LTP Rs. ${liveLtp || 'N/A'} (SL ${h.stopLoss || '—'} / T1 ${h.target1 || '—'})`;
+  });
+
+  const msgLines = [
+    `📡 <b>DRAVYASHREE LIVE MARKET PULSE (${win.label})</b>`,
+    `📅 <b>Session: ${dateIso}</b>`,
+    nepseVal > 0 ? `📊 <b>NEPSE:</b> ${nepseVal.toFixed(2)} (${nepseChg >= 0 ? '+' : ''}${nepseChg.toFixed(2)}%)` : `📊 <b>Market Breadth:</b> Active`,
+    `⚖️ <b>Breadth:</b> ${adv} Adv / ${dec} Dec`,
+    topTurn ? `🔥 <b>Turnover Leaders:</b> ${topTurn}` : null,
+    holdingsSummary.length > 0 ? `\n🛡️ <b>Tracked Holdings:</b>\n${holdingsSummary.join('\n')}` : `\n💡 <i>Send /analyze SYMBOL or /sniper for live institutional scans.</i>`,
+  ].filter(Boolean);
+
+  const html = msgLines.join('\n');
+  dispatchedMarketPulseWindows.add(windowKey);
+
+  if (typeof onSent === 'function') onSent(html);
+  if (dryRun) {
+    return { dispatched: true, dryRun: true, windowKey, html };
+  }
+  const tgRes = await sendTelegramMessage(html).catch(err => ({ success: false, error: err?.message }));
+  return { dispatched: Boolean(tgRes?.success), windowKey, telegramResult: tgRes };
+}
+
 // Scheduled post-market close floorsheet reconciliation & prime pick verification worker
 export async function runPostMarketCloseAnalysis(force = false) {
   const isTrading = isNepseTradingDay();
@@ -502,122 +609,145 @@ export async function runPostMarketCloseAnalysis(force = false) {
   activeHeavyWorker = 'postMarketAnalysis';
   console.log(`[Post-Market Worker] Running post-market floorsheet & prime pick analysis for target session: ${targetDate}...`);
   try {
-    await syncDailyFloorsheetAndPrices(targetDate);
-    // Download and archive into daily_floorsheets local folder
-    await downloadAndArchiveDailyFloorsheet(targetDate).catch(e => console.warn('[Post-Market Worker] dailyFloorsheetCollector notice:', e.message));
-    try {
-      syncBrokerAllTimeAndVaultFiles(db);
-      exportCumulativeBrokerLedger(db);
-    } catch (syncErr) {
-      console.warn('[Post-Market Worker] Vault & alltime sync notice:', syncErr.message);
-    }
-    await aggregateFloorsheetData({ bypassLiveGuard: true, bypassLock: true });
-
-    // Exchange-wide broker matrix aggregation & dual-write to proxy and src
-    try {
-      const fullTrades = await getFullSessionFloorsheet(targetDate);
-      if (Array.isArray(fullTrades) && fullTrades.length > 0) {
-        const aggData = aggregateMarketFloorsheet(fullTrades, targetDate);
-        const proxyPath = path.join(__dirname, 'data', 'broker_matrix_latest.json');
-        const srcPath = path.resolve(__dirname, '..', 'src', 'data', 'broker_matrix_latest.json');
-        fs.writeFileSync(proxyPath, JSON.stringify(aggData, null, 2), 'utf8');
-        fs.writeFileSync(srcPath, JSON.stringify(aggData, null, 2), 'utf8');
-
-        const histPath = path.resolve(__dirname, '..', 'src', 'data', 'broker_matrices_historical.json');
-        if (fs.existsSync(histPath)) {
-          try {
-            const histData = JSON.parse(fs.readFileSync(histPath, 'utf8'));
-            const lightMatrix = (aggData.matrix || []).map(({ scrips, ...rest }) => rest);
-            histData[targetDate] = { ...aggData, matrix: lightMatrix };
-            const recentDates = Object.keys(histData).sort().reverse().slice(0, 5);
-            const prunedSeed = {};
-            for (const rd of recentDates) prunedSeed[rd] = histData[rd];
-            fs.writeFileSync(histPath, JSON.stringify(prunedSeed), 'utf8');
-          } catch (hErr) {
-            console.warn('[Post-Market Worker] broker_matrices_historical seed notice:', hErr.message);
-          }
-        }
-        console.log(`[Post-Market Worker] ✅ Dual-written broker_matrix_latest.json & updated historical seed for: ${targetDate}`);
-      }
-    } catch (mErr) {
-      console.warn('[Post-Market Worker] Broker matrix dual-write notice:', mErr.message);
-    }
-    // Run the full Entry/Exit Analyzer scan across ALL 350+ stocks
-    await runFullUniversePrimePick();
-    // Post-Market EOD (3:45 PM): Dispatch Flowchart v2.0 + Dual-Tier Sniper Dispatch (Overnight Prep)
-    const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(e =>
-      console.warn('[Post-Market Worker] 5-Step Swing dispatch notice:', e.message)
-    );
-    // Safety Gate: Only promote & broadcast Verified Prime Pick when Dual-Tier Sniper/Balanced clears (>=75-87.5% WR).
-    // Low-WR Flowchart fallback picks stay Watchlist Only and never auto-broadcast as Prime Buy.
-    if (swingRes && swingRes.topPick && swingRes.topPick.isPrimeBuy === true) {
-      setVerifiedPostMarketPrimePick(swingRes.topPick);
+    const alreadyInSqlite = isSessionPreSyncedInSqlite(db, targetDate);
+    if (alreadyInSqlite) {
+      console.log(`[Post-Market Worker] ⚡ Session ${targetDate} already synced in SQLite — skipping redundant heavy floorsheet/vault rewrites to protect 512MB RAM.`);
+    } else {
+      await syncDailyFloorsheetAndPrices(targetDate);
+      // Download and archive into daily_floorsheets local folder
+      await downloadAndArchiveDailyFloorsheet(targetDate).catch(e => console.warn('[Post-Market Worker] dailyFloorsheetCollector notice:', e.message));
       try {
-        const tp = swingRes.topPick;
-        broadcastAlert({
-          id: `flowchart_v2_prime_${tp.symbol}_${targetDate}`,
-          symbol: tp.symbol,
-          type: 'INSTITUTIONAL_ENTRY',
-          category: 'pro',
-          tier: 'pro',
-          isPro: true,
-          skipTelegram: true,
-          action: 'OPEN_STOCK_DETAIL',
-          ltp: tp.ltp,
-          title: `👑 Dual-Tier Prime Sniper: ${tp.symbol}`,
-          body: `${tp.dualTierBadge || tp.rallyHorizonLabel || 'Dual-Tier Sniper'} | Buy Zone: Rs. ${tp.entryLow}–${tp.entryHigh} | SL: Rs. ${tp.stopLoss} | T1: Rs. ${tp.target1}`,
-          rallyTrack: tp.rallyTrack,
-          rallyHorizonLabel: tp.rallyHorizonLabel,
-          isDualTierSniper: Boolean(tp.isDualTierSniper),
-          isDualTierBalanced: Boolean(tp.isDualTierBalanced),
-          triggeredAt: new Date().toISOString(),
-        });
-      } catch (_) {}
-    }
-    // Daily 4-Gate Stock Selection Guide EOD Notification (Selected Pick or Explicit Hold-Cash Alert)
-    let liveIndexQuote = null;
-    try {
-      let idx = _getCache ? _getCache('market-indices') : null;
-      if (!idx?.nepse && _getMarketIndicesInternal) {
-        idx = await _getMarketIndicesInternal().catch(() => null);
+        syncBrokerAllTimeAndVaultFiles(db);
+        exportCumulativeBrokerLedger(db);
+      } catch (syncErr) {
+        console.warn('[Post-Market Worker] Vault & alltime sync notice:', syncErr.message);
       }
-      if (idx?.nepse && Number(idx.nepse.value) > 0) {
-        liveIndexQuote = {
-          value: Number(idx.nepse.value),
-          change: Number(idx.nepse.change || 0),
-          pChange: Number(idx.nepse.pChange || 0),
-          date: idx.asOfDate || targetDate
-        };
+      await aggregateFloorsheetData({ bypassLiveGuard: true, bypassLock: true });
+
+      // Exchange-wide broker matrix aggregation & dual-write to proxy and src
+      try {
+        const fullTrades = await getFullSessionFloorsheet(targetDate);
+        if (Array.isArray(fullTrades) && fullTrades.length > 0) {
+          const aggData = aggregateMarketFloorsheet(fullTrades, targetDate);
+          const proxyPath = path.join(__dirname, 'data', 'broker_matrix_latest.json');
+          const srcPath = path.resolve(__dirname, '..', 'src', 'data', 'broker_matrix_latest.json');
+          fs.writeFileSync(proxyPath, JSON.stringify(aggData, null, 2), 'utf8');
+          fs.writeFileSync(srcPath, JSON.stringify(aggData, null, 2), 'utf8');
+
+          const histPath = path.resolve(__dirname, '..', 'src', 'data', 'broker_matrices_historical.json');
+          if (fs.existsSync(histPath)) {
+            try {
+              const histData = JSON.parse(fs.readFileSync(histPath, 'utf8'));
+              const lightMatrix = (aggData.matrix || []).map(({ scrips, ...rest }) => rest);
+              histData[targetDate] = { ...aggData, matrix: lightMatrix };
+              const recentDates = Object.keys(histData).sort().reverse().slice(0, 5);
+              const prunedSeed = {};
+              for (const rd of recentDates) prunedSeed[rd] = histData[rd];
+              fs.writeFileSync(histPath, JSON.stringify(prunedSeed), 'utf8');
+            } catch (hErr) {
+              console.warn('[Post-Market Worker] broker_matrices_historical seed notice:', hErr.message);
+            }
+          }
+          console.log(`[Post-Market Worker] ✅ Dual-written broker_matrix_latest.json & updated historical seed for: ${targetDate}`);
+        }
+      } catch (mErr) {
+        console.warn('[Post-Market Worker] Broker matrix dual-write notice:', mErr.message);
       }
-    } catch (_) {}
-    await dispatchScheduledDailySelectionGuide({ targetDate, liveIndexQuote }).catch(e =>
-      console.warn('[Post-Market Worker] Daily Stock Selection Guide dispatch notice:', e.message)
-    );
-    // 5-Day Rolling Ledger Roll: Roll today into 4-day immutable ledger, prune oldest, & reset File A
-    await runCalendarGuardedDailyTransition({ targetDate }).catch(e =>
-      console.warn('[Post-Market Worker] Calendar-Guarded transition notice:', e.message)
-    );
-    // Refresh Sub-File A1 Static Analytics with today's newly reconciled EOD session
-    try {
-      console.log(`[Post-Market Worker] 📊 Recompiling Sub-File A1 static analytics for closed session: ${targetDate}...`);
-      compileTodayStaticAnalytics({ targetDate });
-    } catch (e) {
-      console.warn('[Post-Market Worker] Static analytics recompile notice:', e.message);
     }
-    // Recompile 4 Dedicated Historical Sub-Files (Day 1..4) with today's settled close
-    try {
-      console.log(`[Post-Market Worker] 📚 Recompiling 4 Historical Sub-Files (Days 1–4) for closed session: ${targetDate}...`);
-      const subfilesManifest = compileHistoricalSubfiles();
-      // Broadcast SSE rotation event to all connected clients
-      tickEventEmitter.emit('tick', {
-        event_type: 'SUBFILES_ROTATED',
-        timestamp: new Date().toISOString(),
-        available_sessions: subfilesManifest?.available_sessions || [],
-        latest_session: targetDate
+
+    // Priority 1 after 3:15 PM NPT: Dispatch scheduled Telegram digests BEFORE heavy full-universe scan
+    // so Render 512MB memory limits never starve post-market Telegram notifications.
+    if (force || !hasSwingDispatchedForDate(targetDate)) {
+      const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(e => {
+        console.warn('[Post-Market Worker] 5-Step Swing dispatch notice:', e.message);
+        return null;
       });
-      console.log(`[Post-Market Worker] 🚀 Broadcast SUBFILES_ROTATED event for ${targetDate}`);
-    } catch (e) {
-      console.warn('[Post-Market Worker] Historical subfiles recompile notice:', e.message);
+      if (swingRes?.telegramResult?.success) {
+        markSwingDispatchedForDate(targetDate, {
+          actionTier: swingRes.actionTier,
+          symbol: swingRes.topPick?.symbol || 'NONE'
+        });
+      }
+      if (swingRes && swingRes.topPick && swingRes.topPick.isPrimeBuy === true) {
+        setVerifiedPostMarketPrimePick(swingRes.topPick);
+        try {
+          const tp = swingRes.topPick;
+          broadcastAlert({
+            id: `flowchart_v2_prime_${tp.symbol}_${targetDate}`,
+            symbol: tp.symbol,
+            type: 'INSTITUTIONAL_ENTRY',
+            category: 'pro',
+            tier: 'pro',
+            isPro: true,
+            skipTelegram: true,
+            action: 'OPEN_STOCK_DETAIL',
+            ltp: tp.ltp,
+            title: `👑 Dual-Tier Prime Sniper: ${tp.symbol}`,
+            body: `${tp.dualTierBadge || tp.rallyHorizonLabel || 'Dual-Tier Sniper'} | Buy Zone: Rs. ${tp.entryLow}–${tp.entryHigh} | SL: Rs. ${tp.stopLoss} | T1: Rs. ${tp.target1}`,
+            rallyTrack: tp.rallyTrack,
+            rallyHorizonLabel: tp.rallyHorizonLabel,
+            isDualTierSniper: Boolean(tp.isDualTierSniper),
+            isDualTierBalanced: Boolean(tp.isDualTierBalanced),
+            triggeredAt: new Date().toISOString(),
+          });
+        } catch (_) {}
+      }
+    }
+
+    // Daily 4-Gate Stock Selection Guide EOD Notification (Selected Pick or Explicit Hold-Cash Alert)
+    if (force || !hasSelectionGuideDispatchedForDate(targetDate)) {
+      let liveIndexQuote = null;
+      try {
+        let idx = _getCache ? _getCache('market-indices') : null;
+        if (!idx?.nepse && _getMarketIndicesInternal) {
+          idx = await _getMarketIndicesInternal().catch(() => null);
+        }
+        if (idx?.nepse && Number(idx.nepse.value) > 0) {
+          liveIndexQuote = {
+            value: Number(idx.nepse.value),
+            change: Number(idx.nepse.change || 0),
+            pChange: Number(idx.nepse.pChange || 0),
+            date: idx.asOfDate || targetDate
+          };
+        }
+      } catch (_) {}
+      await dispatchScheduledDailySelectionGuide({ targetDate, liveIndexQuote }).catch(e =>
+        console.warn('[Post-Market Worker] Daily Stock Selection Guide dispatch notice:', e.message)
+      );
+    }
+
+    // Run lightweight post-market prime-pick scan only if memory budget permits
+    if (checkRenderMemoryBudget('PrimePickWorker:pre').ok) {
+      await runFullUniversePrimePick();
+    }
+
+    if (!alreadyInSqlite || !IS_RENDER_CONSTRAINED) {
+      // 5-Day Rolling Ledger Roll: Roll today into 4-day immutable ledger, prune oldest, & reset File A
+      await runCalendarGuardedDailyTransition({ targetDate }).catch(e =>
+        console.warn('[Post-Market Worker] Calendar-Guarded transition notice:', e.message)
+      );
+      // Refresh Sub-File A1 Static Analytics with today's newly reconciled EOD session
+      try {
+        console.log(`[Post-Market Worker] 📊 Recompiling Sub-File A1 static analytics for closed session: ${targetDate}...`);
+        compileTodayStaticAnalytics({ targetDate });
+      } catch (e) {
+        console.warn('[Post-Market Worker] Static analytics recompile notice:', e.message);
+      }
+      // Recompile 4 Dedicated Historical Sub-Files (Day 1..4) with today's settled close
+      try {
+        console.log(`[Post-Market Worker] 📚 Recompiling 4 Historical Sub-Files (Days 1–4) for closed session: ${targetDate}...`);
+        const subfilesManifest = compileHistoricalSubfiles();
+        // Broadcast SSE rotation event to all connected clients
+        tickEventEmitter.emit('tick', {
+          event_type: 'SUBFILES_ROTATED',
+          timestamp: new Date().toISOString(),
+          available_sessions: subfilesManifest?.available_sessions || [],
+          latest_session: targetDate
+        });
+        console.log(`[Post-Market Worker] 🚀 Broadcast SUBFILES_ROTATED event for ${targetDate}`);
+      } catch (e) {
+        console.warn('[Post-Market Worker] Historical subfiles recompile notice:', e.message);
+      }
     }
     // Verify that SQLite daily_broker_ledger has valid complete EOD rows for targetDate before locking session
     const brokerLedgerVerifiedCount = db
@@ -918,6 +1048,10 @@ export function startWorkers() {
       const isTradingDay = status.isTradingDay || status.isOpen;
 
       if (isTradingDay && nptMins >= 660 && nptMins <= 900) {
+        // Dispatch scheduled 12:00 PM & 2:00 PM live market pulses on Telegram
+        if (getScheduledMarketHourPulseWindow().active) {
+          dispatchScheduledMarketHourPulse().catch(() => {});
+        }
         if (isSmartAlertScanRunning || activeHeavyWorker) {
           return;
         }
@@ -1018,7 +1152,7 @@ export function startWorkers() {
       // STRICT TIMING: Run AFTER market close (>= 15:15 NPT on Monday to Friday, excl. holidays)
       // Once analyzed, remains locked for sessionDate until next trading session.
       if (kt.isEodWindow) {
-        if (lastPostMarketSessionAnalyzed !== sessionDate) {
+        if (lastPostMarketSessionAnalyzed !== sessionDate || !hasSwingDispatchedForDate(sessionDate)) {
           runPostMarketCloseAnalysis();
         } else if (!hasSelectionGuideDispatchedForDate(sessionDate)) {
           dispatchScheduledDailySelectionGuide({ targetDate: sessionDate }).catch(() => {});
