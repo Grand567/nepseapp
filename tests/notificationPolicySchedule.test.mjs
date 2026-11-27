@@ -46,7 +46,7 @@ test('Android Notification Policy: PRO Immediate, Portfolio-Only Exits, and 10:3
   });
 
   await t.test('3. PROFIT_BOOKING and STOP_LOSS_WARNING are strictly blocked for non-portfolio stocks', () => {
-    const nonHeldSym = 'ZZZ_UNHELD_TEST';
+    const nonHeldSym = 'TEST_UNHELD';
     untrackCustomHolding(nonHeldSym);
 
     const received = [];
@@ -57,6 +57,7 @@ test('Android Notification Policy: PRO Immediate, Portfolio-Only Exits, and 10:3
         type: 'STOP_LOSS_WARNING',
         symbol: nonHeldSym,
         ltp: 200,
+        isTest: true,
         title: `Stop-Loss Hit: ${nonHeldSym}`,
         body: 'Should be blocked because not in portfolio',
       });
@@ -65,6 +66,7 @@ test('Android Notification Policy: PRO Immediate, Portfolio-Only Exits, and 10:3
         type: 'PROFIT_BOOKING',
         symbol: nonHeldSym,
         ltp: 300,
+        isTest: true,
         title: `Target Hit: ${nonHeldSym}`,
         body: 'Should be blocked because not in portfolio',
       });
@@ -74,8 +76,8 @@ test('Android Notification Policy: PRO Immediate, Portfolio-Only Exits, and 10:3
       assert.equal(received.length, 0, 'No SSE/push event should fire for non-portfolio exit alert');
 
       // Now track the holding and verify it IS allowed
-      const heldSym = 'ZZZ_HELD_TEST';
-      trackCustomHolding({ symbol: heldSym, entryPrice: 300, kitta: 50, stopLoss: 280, target1: 340 });
+      const heldSym = 'TEST_HELD';
+      trackCustomHolding({ symbol: heldSym, entryPrice: 300, kitta: 50, stopLoss: 280, target1: 340, isTest: true });
       const allowedTp = broadcastAlert({
         id: `tp_held_${Date.now()}`,
         type: 'PROFIT_BOOKING',
@@ -83,6 +85,7 @@ test('Android Notification Policy: PRO Immediate, Portfolio-Only Exits, and 10:3
         ltp: 345,
         isUserHolding: true,
         isPortfolioTracked: true,
+        isTest: true,
         title: `Target Hit: ${heldSym}`,
         body: 'Portfolio holding target reached',
       });
