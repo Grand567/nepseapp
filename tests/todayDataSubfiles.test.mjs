@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
+import zlib from 'zlib';
 import {
   compileTodayStaticAnalytics,
   readTodayStaticAnalytics,
@@ -14,6 +15,7 @@ import {
   TODAY_TICK_BY_TICK_JSON,
   TODAY_TICK_BY_TICK_GZ
 } from '../proxy/utils/todayDataEngine.mjs';
+import { formatNptDateIso, isNepseTradingDay, latestTradingSession } from '../src/utils/nepseCalendar.js';
 
 test('Today Data Sub-Files: Compilation, Persistence & Statistical Precision', async (t) => {
   await t.test('Sub-File 1: today_static_analytics.json exists and has valid short/long term schemas', () => {
@@ -113,5 +115,28 @@ test('Today Data Sub-Files: Compilation, Persistence & Statistical Precision', a
     assert.ok(fs.existsSync(TODAY_STATIC_ANALYTICS_GZ), 'today_static_analytics.json.gz exists');
     assert.ok(fs.existsSync(TODAY_TICK_BY_TICK_JSON), 'today_tick_by_tick.json exists');
     assert.ok(fs.existsSync(TODAY_TICK_BY_TICK_GZ), 'today_tick_by_tick.json.gz exists');
+  });
+
+  await t.test('Stale tick stream session_date rolls over automatically to active trading session', () => {
+    const now = new Date();
+    const expectedSession = isNepseTradingDay(now)
+      ? formatNptDateIso(now)
+      : latestTradingSession(now, false);
+
+    // Seed a stale tick stream from a past session date (simulating cold-start / missed 10:45 AM pre-market window)
+    initTodayTickStream('2026-11-17');
+    const stalePayload = JSON.parse(fs.readFileSync(TODAY_TICK_BY_TICK_JSON, 'utf8'));
+    assert.equal(stalePayload.session_date, '2026-11-17');
+
+    // Reading the tick stream must detect the stale session_date and roll over automatically
+    const freshStream = readTodayTickStream();
+    assert.equal(freshStream.session_date, expectedSession, 'Stale tick stream must roll over to active session_date');
+    assert.deepEqual(freshStream.ticks, {}, 'Rolled-over tick stream must start with empty ticks');
+
+    // Persisted disk files must also reflect the rolled-over session_date
+    const diskJson = JSON.parse(fs.readFileSync(TODAY_TICK_BY_TICK_JSON, 'utf8'));
+    const diskGz = JSON.parse(zlib.gunzipSync(fs.readFileSync(TODAY_TICK_BY_TICK_GZ)).toString('utf8'));
+    assert.equal(diskJson.session_date, expectedSession);
+    assert.equal(diskGz.session_date, expectedSession);
   });
 });

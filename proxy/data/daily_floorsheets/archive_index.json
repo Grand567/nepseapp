@@ -1,5 +1,16 @@
 [
   {
+    "date": "2026-11-27",
+    "tradeCount": 42821,
+    "ingestedCount": 42821,
+    "totalVolume": 13198757,
+    "totalTurnover": 4824732214,
+    "jsonFileSizeKb": 21956.5,
+    "gzFileSizeKb": 2545.5,
+    "savedAt": "2026-11-27T10:16:32.567Z",
+    "status": "COMPLETE"
+  },
+  {
     "date": "2026-11-26",
     "tradeCount": 49806,
     "ingestedCount": 49806,

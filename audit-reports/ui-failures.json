@@ -1,1 +1,67 @@
-[]
+[
+  {
+    "timestamp": "2026-11-26T13:48:37.122Z",
+    "module": "Layer1_RegimeAndVetoes",
+    "tabPath": "swing-trade-selector",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Layer1_RegimeAndVetoes_swing-trade-selector.png"
+  },
+  {
+    "timestamp": "2026-11-26T13:59:18.686Z",
+    "module": "Layer1_RegimeAndVetoes",
+    "tabPath": "swing-trade-selector",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Layer1_RegimeAndVetoes_swing-trade-selector.png"
+  },
+  {
+    "timestamp": "2026-11-26T14:08:42.918Z",
+    "module": "Layer1_RegimeAndVetoes",
+    "tabPath": "swing-trade-selector",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Layer1_RegimeAndVetoes_swing-trade-selector.png"
+  },
+  {
+    "timestamp": "2026-11-26T14:09:00.267Z",
+    "module": "Layer2_SmartMoneyAndTiming",
+    "tabPath": "broker-smart-flow",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Layer2_SmartMoneyAndTiming_broker-smart-flow.png"
+  },
+  {
+    "timestamp": "2026-11-26T14:09:18.255Z",
+    "module": "Layer2_SmartMoneyAndTiming",
+    "tabPath": "broker-heatmap",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Layer2_SmartMoneyAndTiming_broker-heatmap.png"
+  },
+  {
+    "timestamp": "2026-11-26T14:09:36.416Z",
+    "module": "Layer2_SmartMoneyAndTiming",
+    "tabPath": "signals-track-record",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Layer2_SmartMoneyAndTiming_signals-track-record.png"
+  },
+  {
+    "timestamp": "2026-11-26T15:55:04.557Z",
+    "module": "Deep_smart-money",
+    "tabPath": "broker-analysis",
+    "failureType": "CORRUPT_TEXT",
+    "uiRenderedValue": "\"Broker #undefined\" in <text-base font-bold font-mono>; \"Broker #undefined\" in <text-base font-bold font-mono>",
+    "details": "Rendered corrupt token (NaN/undefined/Infinity/Invalid Date) in UI",
+    "screenshotPath": "audit-reports/screenshots/corrupt_text_Deep_smart-money_broker-analysis.png"
+  },
+  {
+    "timestamp": "2026-11-27T00:11:34.642Z",
+    "module": "Deep_smart-money",
+    "tabPath": "broker-dominance",
+    "failureType": "STUCK_SPINNER",
+    "details": "Loading spinner or skeleton remained visible for over 10 seconds",
+    "screenshotPath": "audit-reports/screenshots/stuck_spinner_Deep_smart-money_broker-dominance.png"
+  }
+]

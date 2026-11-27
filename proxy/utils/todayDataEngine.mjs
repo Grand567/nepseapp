@@ -20,7 +20,7 @@ import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
 import Database from 'better-sqlite3';
 import { getCircuitLimits, NEPSE_RULES } from './nepseRules.mjs';
-import { formatNptDateIso } from '../../src/utils/nepseCalendar.js';
+import { formatNptDateIso, isNepseTradingDay, latestTradingSession, getDetailedMarketStatus } from '../../src/utils/nepseCalendar.js';
 
 export const tickEventEmitter = new EventEmitter();
 tickEventEmitter.setMaxListeners(500);
@@ -579,16 +579,30 @@ export function compileTodayStaticAnalytics(options = {}) {
 }
 
 /**
+ * Returns the active trading session date (YYYY-MM-DD in Asia/Kathmandu) for the
+ * live tick stream: today's NPT date on NEPSE trading days (Mon–Fri, non-holidays),
+ * or the most recent completed trading session on weekends/holidays.
+ */
+export function getActiveTickSessionDate(now = new Date()) {
+  return isNepseTradingDay(now)
+    ? formatNptDateIso(now)
+    : latestTradingSession(now, false);
+}
+
+/**
  * ── 2. INITIALIZE & MAINTAIN LIVE TICK-BY-TICK STREAM SUB-FILE ───────────────
  */
 export function initTodayTickStream(targetDate = null) {
-  const sessionDate = targetDate || formatNptDateIso(new Date());
+  const sessionDate = targetDate || getActiveTickSessionDate();
+  const detailedStatus = (() => {
+    try { return getDetailedMarketStatus(); } catch (_) { return null; }
+  })();
   const payload = {
     file_type: 'TODAY_TICK_BY_TICK_STREAM_SUBFILE',
     version: '2.0-today-tick-subfile',
     feed_protocol: 'NEPSE_LEVEL2_STREAM_V2',
     session_date: sessionDate,
-    market_status: 'PRE_OPEN',
+    market_status: detailedStatus?.session || 'PRE_OPEN',
     initialized_at: new Date().toISOString(),
     last_tick_timestamp_npt: new Date().toISOString(),
     total_ticks_ingested: 0,
@@ -632,23 +646,35 @@ export function readTodayStaticAnalytics() {
 }
 
 export function readTodayTickStream() {
-  if (_cachedTickStream) return _cachedTickStream;
+  const expectedSessionDate = getActiveTickSessionDate();
+  if (_cachedTickStream) {
+    if (_cachedTickStream.session_date === expectedSessionDate) {
+      return _cachedTickStream;
+    }
+    return initTodayTickStream(expectedSessionDate);
+  }
   if (fs.existsSync(TODAY_TICK_BY_TICK_GZ)) {
     try {
       const gz = fs.readFileSync(TODAY_TICK_BY_TICK_GZ);
       const unzipped = zlib.gunzipSync(gz).toString('utf8');
-      _cachedTickStream = JSON.parse(unzipped);
-      return _cachedTickStream;
+      const parsed = JSON.parse(unzipped);
+      if (parsed && parsed.session_date === expectedSessionDate) {
+        _cachedTickStream = parsed;
+        return _cachedTickStream;
+      }
     } catch (_) {}
   }
   if (fs.existsSync(TODAY_TICK_BY_TICK_JSON)) {
     try {
       const raw = fs.readFileSync(TODAY_TICK_BY_TICK_JSON, 'utf8');
-      _cachedTickStream = JSON.parse(raw);
-      return _cachedTickStream;
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.session_date === expectedSessionDate) {
+        _cachedTickStream = parsed;
+        return _cachedTickStream;
+      }
     } catch (_) {}
   }
-  return initTodayTickStream();
+  return initTodayTickStream(expectedSessionDate);
 }
 
 /**

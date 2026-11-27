@@ -62,4 +62,16 @@ test('Floorsheet Live Ingestion & Date Freshness Audit', async (t) => {
     const akjclTrades = fullTrades.filter(t => (t.stockSymbol || t.symbol || '').toUpperCase() === 'AKJCL');
     assert.equal(akjclTrades.length, 360, 'Full session vault must contain all 360 AKJCL trades');
   });
+
+  await t.test('5. _missCache does not mask newly persisted local/SQLite floorsheets', async () => {
+    // Simulate a prior miss before EOD download completed (e.g. during downloadAndArchiveDailyFloorsheet)
+    if (!getFullSessionFloorsheet._missCache) {
+      getFullSessionFloorsheet._missCache = new Map();
+    }
+    getFullSessionFloorsheet._missCache.set('2026-11-06', Date.now() + 5 * 60 * 1000);
+
+    const fullTrades = await getFullSessionFloorsheet('2026-11-06');
+    assert.ok(Array.isArray(fullTrades) && fullTrades.length > 30000, 'Must still load local/SQLite floorsheet even if _missCache was previously set');
+    assert.equal(getFullSessionFloorsheet._missCache.has('2026-11-06'), false, 'Local/SQLite hit must clear stale _missCache entry');
+  });
 });

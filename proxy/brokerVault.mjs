@@ -2602,12 +2602,8 @@ export async function getFullSessionFloorsheet(dateStr = '') {
   const nptMinutesOfDay = nowNpt.getUTCHours() * 60 + nowNpt.getUTCMinutes();
   const isIntradayWindow = nptMinutesOfDay >= 660 && nptMinutesOfDay <= 930;
 
-  if (cleanDate) {
-    if (!getFullSessionFloorsheet._missCache) getFullSessionFloorsheet._missCache = new Map();
-    const missUntil = getFullSessionFloorsheet._missCache.get(cleanDate) || 0;
-    if (Date.now() < missUntil && !isIntradayWindow) {
-      return null;
-    }
+  if (cleanDate && !getFullSessionFloorsheet._missCache) {
+    getFullSessionFloorsheet._missCache = new Map();
   }
 
   const candidateDirs = [
@@ -2640,6 +2636,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
               parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
             }
             if (hasValidUnmaskedBrokers(parsed)) {
+              getFullSessionFloorsheet._missCache?.delete(cleanDate);
               const recDate = cleanDate || parsed[0]?.businessDate;
               if (recDate && typeof hasTradeDate === 'function' && !hasTradeDate(recDate)) {
                 try {
@@ -2669,6 +2666,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
           WHERE trade_date = ? AND COALESCE(is_quarantined, 0) = 0 AND buyer_broker > 0 AND seller_broker > 0
         `).all(cleanDate);
         if (Array.isArray(dbContracts) && dbContracts.length >= 1000) {
+          getFullSessionFloorsheet._missCache?.delete(cleanDate);
           return dbContracts;
         }
       } catch (dbErr) {
@@ -2676,10 +2674,17 @@ export async function getFullSessionFloorsheet(dateStr = '') {
       }
     }
 
+    // Only short-circuit slow remote cloud lookups via _missCache (never local disk or SQLite)
+    const missUntil = getFullSessionFloorsheet._missCache?.get(cleanDate) || 0;
+    if (Date.now() < missUntil && !isIntradayWindow) {
+      return null;
+    }
+
     // Cloud Archive Query for requested historical date
     try {
       const cloudContracts = await fetchFloorsheetFromCloud(cleanDate);
       if (hasValidUnmaskedBrokers(cloudContracts)) {
+        getFullSessionFloorsheet._missCache?.delete(cleanDate);
         try {
           ingestDailyFloorsheetTransaction(cleanDate, cloudContracts);
           if (typeof _contractsIngestor === 'function') _contractsIngestor(cleanDate, cloudContracts);

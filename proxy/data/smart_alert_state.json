@@ -672,19 +672,19 @@
     "historyCount": 0
   },
   "_lastActivePushToken": {
-    "token": "test_fcm_token_1795656623099_beta_dead",
+    "token": "test_fcm_token_1795692362578_beta_dead",
     "platform": "android",
     "appVersion": "1.0.6",
     "portfolioSymbols": [
       "HDL"
     ],
-    "lastSeenAt": "2026-11-26T01:30:23.103Z"
+    "lastSeenAt": "2026-11-26T11:26:02.582Z"
   },
   "GHL": {
     "state": "COOLDOWN",
     "pendingScans": 1,
-    "lastTriggeredAt": 1795656577644,
-    "lastEvaluatedAt": 1795656577644,
+    "lastTriggeredAt": 1795692317791,
+    "lastEvaluatedAt": 1795692317791,
     "historyCount": 1
   }
 }

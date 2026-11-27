@@ -162086,7 +162086,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 98,
+      "holdSessions": 102,
       "currentStopLoss": 263.1,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162108,7 +162108,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 98,
+      "holdSessions": 102,
       "currentStopLoss": 194,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162130,7 +162130,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 98,
+      "holdSessions": 102,
       "currentStopLoss": 342,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162152,7 +162152,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 98,
+      "holdSessions": 102,
       "currentStopLoss": 414.9,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162174,7 +162174,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 98,
+      "holdSessions": 102,
       "currentStopLoss": 294.3,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162196,7 +162196,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 98,
+      "holdSessions": 102,
       "currentStopLoss": 539.7,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162218,7 +162218,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 98,
+      "holdSessions": 102,
       "currentStopLoss": 378.8,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162240,7 +162240,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 97,
+      "holdSessions": 101,
       "currentStopLoss": 316.7,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162262,7 +162262,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 263.8,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162284,7 +162284,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 774.7,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162306,7 +162306,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 264.1,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162328,7 +162328,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 499.8,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162350,7 +162350,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 539.1,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162371,7 +162371,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 260.5,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162393,7 +162393,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 407.5,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162415,7 +162415,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 441.1,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162437,7 +162437,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 960.2,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162459,7 +162459,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 308.2,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162480,7 +162480,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 780.4,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162502,7 +162502,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 445.9,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162523,7 +162523,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 428.6,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162545,7 +162545,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 388.7,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162566,7 +162566,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 693.5,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162587,7 +162587,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 322.1,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162608,7 +162608,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 526.7,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162630,7 +162630,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 711,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162652,7 +162652,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 739.6,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162673,7 +162673,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 318.1,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162694,7 +162694,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 884.6,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162715,7 +162715,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 607.9,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162736,7 +162736,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 433.5,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162757,7 +162757,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 243.2,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162778,7 +162778,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 298.5,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162799,7 +162799,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 789.8,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162820,7 +162820,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 545.9,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162841,7 +162841,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 451.1,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162862,7 +162862,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 552,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162883,7 +162883,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 497.8,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162904,7 +162904,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 360.3,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162924,7 +162924,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 148.5,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162945,7 +162945,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 418.1,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162966,7 +162966,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 244.1,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -162987,7 +162987,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 381.4,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163008,7 +163008,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 399.6,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163028,7 +163028,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 311.5,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163049,7 +163049,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 359.9,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163070,7 +163070,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 683.7,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163091,7 +163091,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 422.6,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163112,7 +163112,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 1274.3,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163133,7 +163133,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 357.1,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163154,7 +163154,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 425.7,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163175,7 +163175,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 317.3,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163195,7 +163195,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 396.9,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163215,7 +163215,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 413.6,
       "ratchetStage": "INITIAL_RISK"
     },
@@ -163235,7 +163235,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 12,
+      "holdSessions": 16,
       "currentStopLoss": 312.7,
       "ratchetStage": "INITIAL_RISK"
     }
