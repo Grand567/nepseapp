@@ -408,5 +408,37 @@ export default {
       statusText: originResponse.statusText,
       headers: responseHeaders
     });
+  },
+
+  /**
+   * Cloudflare Cron Trigger (every 10 minutes):
+   * Keeps the single primary Render origin awake 24/7 without relying on throttled GitHub Actions crons
+   * and without exceeding Render's 750 free instance hours/month (only pings TARGET_ORIGIN).
+   */
+  async scheduled(event, env, ctx) {
+    const targetOrigin = (env && env.TARGET_ORIGIN ? env.TARGET_ORIGIN : DEFAULT_TARGET_ORIGIN).replace(/\/+$/, '');
+    const pingUrl = `${targetOrigin}/api/ping`;
+
+    const doPing = async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      try {
+        const res = await fetch(pingUrl, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Drabyashree-Cloudflare-KeepAlive/1.0',
+            'Cache-Control': 'no-cache'
+          }
+        });
+        console.log(`[Cron Keep-Alive] ${pingUrl} -> HTTP ${res.status} (${event.cron || 'scheduled'})`);
+      } catch (err) {
+        console.warn(`[Cron Keep-Alive] ${pingUrl} error: ${err?.message || err}`);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    ctx.waitUntil(doPing());
   }
 };

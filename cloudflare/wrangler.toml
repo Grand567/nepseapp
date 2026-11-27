@@ -6,3 +6,8 @@ account_id = "4b656ef0d7219550c9efab59181f6f53"
 
 [vars]
 TARGET_ORIGIN = "https://drabyashree-nepse-hub.onrender.com"
+
+# Free 24/7 Keep-Alive Cron Trigger (fires reliably every 10 min, well under Render's 15-min sleep threshold)
+# Pings ONLY the single primary Render origin so it stays within Render's 750 free hrs/month.
+[triggers]
+crons = ["*/10 * * * *"]
