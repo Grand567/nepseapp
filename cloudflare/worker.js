@@ -65,7 +65,8 @@ function isNepseTradingHours() {
 function isPostCloseSettlementWindow() {
   const { day, mins } = getNptTimeInfo();
   if (day === 0 || day === 6) return false;
-  return mins > 905 && mins <= 945;
+  // Cover full EOD unmasking + GitHub Actions EOD sync (15:35 / 16:20 NPT) + Render deploy through 17:00 NPT
+  return mins > 905 && mins <= 1020;
 }
 
 function secondsUntilNextPreOpen() {
@@ -245,7 +246,8 @@ export function getCacheTtlSeconds(url, request) {
     pathname.includes('/news') ||
     pathname.includes('/seasonality')
   ) {
-    return (isLive || isSettlement) ? 300 : Math.min(86400, maxOffHoursTtl);
+    if (isSettlement) return 60;
+    return isLive ? 300 : Math.min(86400, maxOffHoursTtl);
   }
 
   // 4. Health checks & ping

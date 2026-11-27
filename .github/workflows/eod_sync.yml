@@ -79,7 +79,7 @@ jobs:
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
           R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
 
-      - name: Verify synced broker matrix freshness
+      - name: Verify synced broker matrix freshness & semantic invariants
         id: verify
         if: steps.session.outputs.should_run == 'true'
         run: |
@@ -93,6 +93,8 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, 'matrix_ready=' + (ready ? 'true' : 'false') + '\n');
             console.log('broker_matrix_latest.json -> date=' + dt + ', brokers=' + count + ', ready=' + ready);
           "
+          node --test tests/todayDataSubfiles.test.mjs tests/floorsheetLiveTickAudit.test.mjs
+          npm run audit:semantic
 
       - name: Pack updated SQLite ledger snapshot (drabyashree_ledger.db.gz)
         if: steps.session.outputs.should_run == 'true' && steps.verify.outputs.matrix_ready == 'true'
